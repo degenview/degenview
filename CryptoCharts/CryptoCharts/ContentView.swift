@@ -41,20 +41,6 @@ struct ContentView: View {
                     }
                 } else {
                     VStack(spacing: 0) {
-                        // Global timeframe picker
-                        Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
-                            ForEach(TimeRange.allCases) { range in
-                                Text(range.rawValue).tag(range)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .onChange(of: contentViewModel.selectedTimeRange) {
-                            contentViewModel.setTimeRange(contentViewModel.selectedTimeRange)
-                        }
-
                         // Global loading indicator
                         if contentViewModel.isRefreshing {
                             ProgressView()
@@ -69,6 +55,7 @@ struct ContentView: View {
                                 ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
                                     chartCard(vm)
                                         .listRowSeparator(.hidden)
+                                        .padding(4)
                                 }
                                 .onMove { from, to in
                                     contentViewModel.moveTicker(from: from, to: to)
@@ -79,20 +66,32 @@ struct ContentView: View {
                         } else {
                             ScrollView {
                                 LazyVGrid(
-                                    columns: [GridItem(.flexible()), GridItem(.flexible())],
-                                    spacing: 12
+                                    columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
+                                    spacing: 0
                                 ) {
                                     ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
                                         chartCard(vm)
+                                            .padding(4)
                                     }
                                 }
-                                .padding(.vertical, 16)
-                                .padding(.horizontal, 12)
+                                .padding(4)
                             }
                         }
                     }
                     .navigationTitle("CryptoCharts")
                     .toolbar {
+                        ToolbarItem(placement: .automatic) {
+                            Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
+                                ForEach(TimeRange.allCases) { range in
+                                    Text(range.rawValue).tag(range)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .onChange(of: contentViewModel.selectedTimeRange) { _, newValue in
+                                contentViewModel.setTimeRange(newValue)
+                            }
+                        }
                         ToolbarItem(placement: .automatic) {
                             Button {
                                 contentViewModel.layoutMode = contentViewModel.layoutMode.next

@@ -4,6 +4,8 @@ struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     let intervalLabel: String
     let onRemove: () -> Void
+
+    @State private var showRemoveConfirmation = false
     let onRetry: () -> Void
     let onZoom: (CGFloat) -> Void
     var useLogScale = false
@@ -15,7 +17,12 @@ struct ChartCardView: View {
         }
         .padding(16)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-        .padding(.horizontal, 12)
+        .alert("Remove \(viewModel.ticker.uppercased())?", isPresented: $showRemoveConfirmation) {
+            Button("Remove", role: .destructive, action: onRemove)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This chart will be removed from your view.")
+        }
     }
 
     // MARK: - Header
@@ -54,7 +61,9 @@ struct ChartCardView: View {
                 .foregroundStyle(viewModel.priceChangeIsPositive ? .green : .red)
             }
 
-            Button(role: .destructive, action: onRemove) {
+            Button {
+                showRemoveConfirmation = true
+            } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(.secondary)
