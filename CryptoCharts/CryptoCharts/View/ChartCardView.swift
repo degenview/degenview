@@ -29,7 +29,6 @@ struct ChartCardView: View {
 
     let onRetry: () -> Void
     let onZoom: (CGFloat) -> Void
-    var useLogScale = false
 
     var body: some View {
         VStack(spacing: 2) {
@@ -125,7 +124,6 @@ struct ChartCardView: View {
             CandleChartView(
                 candles: viewModel.klineData,
                 chartHeight: chartHeight,
-                useLogScale: useLogScale,
                 onZoom: onZoom
             )
             .overlay(alignment: .bottom) {

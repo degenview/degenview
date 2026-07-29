@@ -7,7 +7,6 @@ struct CandleChartView: View {
     let candles: [KlineData]
     var chartHeight: CGFloat = 220
     var style: CandleChartStyle = .default
-    var useLogScale = false
     var onZoom: ((CGFloat) -> Void)?
 
     @State private var monitor: Any?
@@ -26,7 +25,6 @@ struct CandleChartView: View {
                 drawCurrentPriceBox(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawXAxis(context: &context, plotRect: plotRect)
             }
-            .id(useLogScale) // force redraw on scale toggle
             .onAppear {
                 chartFrame = geometry.frame(in: .global)
                 monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
@@ -74,39 +72,19 @@ struct CandleChartView: View {
         let high = candles.map(\.highPrice).max() ?? 1
         if low == high { return (low * 0.99, high * 1.01) }
         let padding = (high - low) * Double(style.pricePadding)
-        let rawMin = low - padding
-        // Log scale requires positive values
-        let safeMin = useLogScale ? max(rawMin, high * 0.0001) : rawMin
-        return (safeMin, high + padding)
+        return (low - padding, high + padding)
     }
 
     private func yForPrice(_ price: Double, plotRect: CGRect, priceRange: (min: Double, max: Double)) -> CGFloat {
-        if useLogScale {
-            let logMin = log(priceRange.min)
-            let logMax = log(priceRange.max)
-            let span = logMax - logMin
-            guard span > 0 else { return plotRect.midY }
-            let normalized = (log(max(price, priceRange.min)) - logMin) / span
-            return plotRect.maxY - CGFloat(normalized) * plotRect.height
-        } else {
-            let span = priceRange.max - priceRange.min
-            guard span > 0 else { return plotRect.midY }
-            let normalized = (price - priceRange.min) / span
-            return plotRect.maxY - CGFloat(normalized) * plotRect.height
-        }
+        let span = priceRange.max - priceRange.min
+        guard span > 0 else { return plotRect.midY }
+        let normalized = (price - priceRange.min) / span
+        return plotRect.maxY - CGFloat(normalized) * plotRect.height
     }
 
     // MARK: - Grid (lines + Y-axis price labels on left side)
 
     private func drawGrid(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
-        if useLogScale {
-            drawLogGrid(context: &context, plotRect: plotRect, priceRange: priceRange)
-        } else {
-            drawLinearGrid(context: &context, plotRect: plotRect, priceRange: priceRange)
-        }
-    }
-
-    private func drawLinearGrid(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
         let span = priceRange.max - priceRange.min
         guard span > 0 else { return }
 
@@ -114,31 +92,6 @@ struct CandleChartView: View {
             let fraction = CGFloat(i) / CGFloat(style.priceLabelCount)
             let y = plotRect.maxY - fraction * plotRect.height
             let price = priceRange.min + Double(fraction) * span
-            drawGridLine(context: &context, plotRect: plotRect, y: y, price: price)
-        }
-    }
-
-    private func drawLogGrid(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
-        let logMin = log10(priceRange.min)
-        let logMax = log10(priceRange.max)
-
-        // Generate nice grid levels at each power of 10 and at 2x/5x multiples
-        var levels: [Double] = []
-        let startPow = floor(logMin)
-        let endPow = ceil(logMax)
-        var pow10 = pow(10.0, startPow)
-        while pow10 <= pow(10.0, endPow) {
-            for mult in [1.0, 2.0, 5.0, 10.0] {
-                let level = pow10 * mult
-                if level >= priceRange.min && level <= priceRange.max && !levels.contains(where: { abs($0 - level) < level * 0.001 }) {
-                    levels.append(level)
-                }
-            }
-            pow10 *= 10
-        }
-
-        for price in levels {
-            let y = yForPrice(price, plotRect: plotRect, priceRange: priceRange)
             drawGridLine(context: &context, plotRect: plotRect, y: y, price: price)
         }
     }

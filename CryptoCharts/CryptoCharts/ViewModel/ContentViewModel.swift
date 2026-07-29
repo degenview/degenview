@@ -32,9 +32,6 @@ final class ContentViewModel: ObservableObject {
         }
     }
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
-    @Published var useLogScale = false {
-        didSet { markChanged() }
-    }
     @Published var layoutMode: LayoutMode = .vertical {
         didSet { markChanged() }
     }
@@ -214,7 +211,6 @@ final class ContentViewModel: ObservableObject {
             name: name,
             tickers: chartViewModels.map { $0.ticker },
             timeRange: selectedTimeRange,
-            useLogScale: useLogScale,
             layoutMode: layoutMode,
             createdAt: Date(),
             tickerConfigs: configs
@@ -246,7 +242,6 @@ final class ContentViewModel: ObservableObject {
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
         candleCount = view.timeRange.dataPointLimit
-        useLogScale = view.useLogScale
         layoutMode = view.layoutMode
 
         let configs = view.resolvedConfigs

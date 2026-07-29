@@ -8,10 +8,9 @@ macOS crypto candlestick chart app. SwiftUI + AppKit Canvas.
 - **3 data sources** — Binance, CoinGecko, DEXScreener (Solana/ETH pairs)
 - **Real-time updates** — Binance WebSocket streams for live price data
 - **6 timeframes** — 1H, 1D, 1W, 1M, 3M, 1Y
-- **Log / linear scale** — Toggle per view
 - **Scroll-to-zoom** — Adjust candle count via mouse scroll wheel
 - **2 layouts** — Vertical list (drag reorder) or 2-column grid (drag-and-drop reorder)
-- **Saved views** — Name and persist ticker sets, timeframe, layout, scale settings
+- **Saved views** — Name and persist ticker sets, timeframe, layout, candle count
 - **Unsaved changes tracking** — Auto-detects changes, inline save button
 - **Crypto icons** — CoinGecko icon lookup by base symbol
 - **Theme support** — System / Light / Dark
@@ -53,7 +52,7 @@ CryptoCharts/
 
 ## Data Flow
 
-1. `ContentViewModel` owns global state (ticker list, timeframe, layout, scale)
+1. `ContentViewModel` owns global state (ticker list, timeframe, layout, candle count)
 2. Each ticker gets a `ChartViewModel` that fetches OHLC data from its source API
 3. `CandleChartView` renders via AppKit `Canvas` — custom draw loop, no third-party chart lib
 4. Binance tickers open WebSocket streams for real-time price updates
@@ -81,8 +80,7 @@ No external dependencies — all SwiftUI + AppKit native APIs. No CocoaPods, SPM
 1. Click **+** to search and add tickers from Binance, CoinGecko, or DEXScreener
 2. Toggle **timeframe** in the toolbar (1H–1Y)
 3. Toggle **layout** between vertical list and 2-column grid
-4. Toggle **log/linear** scale
-5. **Scroll** over a chart to zoom (adjust candle count)
-6. Drag to **reorder** tickers
+4. **Scroll** over a chart to zoom (adjust candle count)
+5. Drag to **reorder** tickers
 7. **Save** current view (name + state) with the save button
 8. **Load** saved views from the folder menu

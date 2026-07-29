@@ -174,16 +174,6 @@ struct ContentView: View {
                             .accessibilityLabel("Theme")
                         }
                         ToolbarItem(placement: .automatic) {
-                            Button {
-                                contentViewModel.useLogScale.toggle()
-                            } label: {
-                                Image(systemName: contentViewModel.useLogScale
-                                    ? "function" : "equal.square")
-                            }
-                            .accessibilityLabel(contentViewModel.useLogScale
-                                ? "Linear scale" : "Log scale")
-                        }
-                        ToolbarItem(placement: .automatic) {
                             Menu {
                                 ForEach(contentViewModel.savedViews) { view in
                                     Button(view.name) {
@@ -281,8 +271,7 @@ struct ContentView: View {
                 } else if deltaY < 0 {
                     contentViewModel.adjustCandleCount(by: -step)
                 }
-            },
-            useLogScale: contentViewModel.useLogScale
+            }
         )
     }
 }

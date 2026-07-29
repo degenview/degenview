@@ -5,7 +5,6 @@ struct SavedView: Identifiable, Codable, Equatable {
     var name: String
     var tickers: [String]
     var timeRange: TimeRange
-    var useLogScale: Bool
     var layoutMode: LayoutMode
     var createdAt: Date
     /// Per-ticker data source configs. When nil (legacy data), tickers map to .binance.
