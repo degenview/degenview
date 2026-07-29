@@ -74,8 +74,26 @@ final class ContentViewModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
             connectWebSocket()
+            restoreLastView()
         }
         startAutoRefresh()
+    }
+
+    /// Restore the last-used saved view if available.
+    private func restoreLastView() {
+        guard let idString = UserDefaults.standard.string(forKey: "lastViewID"),
+              let id = UUID(uuidString: idString),
+              let view = savedViews.first(where: { $0.id == id })
+        else { return }
+        loadView(view)
+    }
+
+    private func saveLastViewID(_ id: UUID?) {
+        if let id {
+            UserDefaults.standard.set(id.uuidString, forKey: "lastViewID")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "lastViewID")
+        }
     }
 
     /// Refresh all charts every 5 seconds. Cache prevents redundant API calls.
@@ -200,6 +218,7 @@ final class ContentViewModel: ObservableObject {
         currentViewName = name
         currentViewID = view.id
         hasUnsavedChanges = false
+        saveLastViewID(view.id)
     }
 
     /// Save changes to the current named view without prompting.
@@ -227,6 +246,7 @@ final class ContentViewModel: ObservableObject {
         currentViewName = view.name
         currentViewID = view.id
         hasUnsavedChanges = false
+        saveLastViewID(view.id)
 
         refetchAll()
         connectWebSocket()
@@ -240,6 +260,7 @@ final class ContentViewModel: ObservableObject {
             currentViewName = "Unnamed"
             currentViewID = nil
             hasUnsavedChanges = false
+            saveLastViewID(nil)
         }
     }
 

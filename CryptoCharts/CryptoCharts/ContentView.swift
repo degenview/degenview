@@ -74,32 +74,59 @@ struct ContentView: View {
                         .padding(.horizontal, 20)
                         .padding(.vertical, 2)
 
-                        // Chart list (vertical) or grid
-                        if contentViewModel.layoutMode == .vertical {
-                            List {
-                                ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
-                                    chartCard(vm)
-                                        .listRowSeparator(.hidden)
-                                        .padding(4)
+                        // Chart list (vertical) or grid — fills remaining height, scrolls if needed
+                        GeometryReader { geometry in
+                            let n = max(1, contentViewModel.chartViewModels.count)
+                            let minHeight: CGFloat = 60
+                            let maxHeight: CGFloat = 250
+                            let cardGap: CGFloat = 4
+                            let cardChrome: CGFloat = 72 // header + padding + spacing
+                            let available = geometry.size.height
+
+                            let naturalHeight: CGFloat = {
+                                if contentViewModel.layoutMode == .vertical {
+                                    let gaps = CGFloat(max(0, n - 1)) * cardGap
+                                    let chrome = CGFloat(n) * cardChrome
+                                    return (available - gaps - chrome) / CGFloat(n)
+                                } else {
+                                    let rows = max(1, Int(ceil(Double(n) / 2.0)))
+                                    let gaps = CGFloat(max(0, rows - 1)) * cardGap
+                                    let chrome = CGFloat(rows) * cardChrome
+                                    return (available - gaps - chrome) / CGFloat(rows)
                                 }
-                                .onMove { from, to in
-                                    contentViewModel.moveTicker(from: from, to: to)
-                                }
-                            }
-                            .listStyle(.plain)
-                            .scrollContentBackground(.hidden)
-                        } else {
-                            ScrollView {
-                                LazyVGrid(
-                                    columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-                                    spacing: 0
-                                ) {
+                            }()
+
+                            let chartHeight = min(maxHeight, max(minHeight, naturalHeight))
+                            let needsScroll = chartHeight <= minHeight
+
+                            if contentViewModel.layoutMode == .vertical {
+                                List {
                                     ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
-                                        chartCard(vm)
+                                        chartCard(vm, height: chartHeight)
+                                            .listRowSeparator(.hidden)
                                             .padding(4)
                                     }
+                                    .onMove { from, to in
+                                        contentViewModel.moveTicker(from: from, to: to)
+                                    }
                                 }
-                                .padding(4)
+                                .listStyle(.plain)
+                                .scrollContentBackground(.hidden)
+                                .scrollDisabled(!needsScroll)
+                            } else {
+                                ScrollView {
+                                    LazyVGrid(
+                                        columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
+                                        spacing: 0
+                                    ) {
+                                        ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
+                                            chartCard(vm, height: chartHeight)
+                                                .padding(4)
+                                        }
+                                    }
+                                    .padding(4)
+                                }
+                                .frame(height: available)
                             }
                         }
                     }
@@ -218,10 +245,11 @@ struct ContentView: View {
 
     // MARK: - Chart Card Builder
 
-    private func chartCard(_ vm: ChartViewModel) -> some View {
+    private func chartCard(_ vm: ChartViewModel, height: CGFloat = 220) -> some View {
         ChartCardView(
             viewModel: vm,
             intervalLabel: contentViewModel.selectedTimeRange.binanceInterval,
+            chartHeight: height,
             onRemove: {
                 withAnimation {
                     contentViewModel.removeTicker(vm)

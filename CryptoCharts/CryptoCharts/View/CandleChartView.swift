@@ -5,6 +5,7 @@ import AppKit
 
 struct CandleChartView: View {
     let candles: [KlineData]
+    var chartHeight: CGFloat = 220
     var style: CandleChartStyle = .default
     var useLogScale = false
     var onZoom: ((CGFloat) -> Void)?
@@ -52,7 +53,7 @@ struct CandleChartView: View {
                 chartFrame = geometry.frame(in: .global)
             }
         }
-        .frame(height: 220)
+        .frame(height: max(50, chartHeight))
         .clipped()
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     let intervalLabel: String
+    var chartHeight: CGFloat = 220
     let onRemove: () -> Void
 
     @State private var showRemoveConfirmation = false
@@ -23,12 +24,12 @@ struct ChartCardView: View {
     var useLogScale = false
 
     var body: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 2) {
             headerView
             chartArea
         }
-        .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .padding(6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .alert("Remove \(viewModel.ticker.uppercased())?", isPresented: $showRemoveConfirmation) {
             Button("Remove", role: .destructive, action: onRemove)
             Button("Cancel", role: .cancel) {}
@@ -106,12 +107,13 @@ struct ChartCardView: View {
     private var chartArea: some View {
         if viewModel.isLoading && viewModel.klineData.isEmpty {
             ProgressView()
-                .frame(height: 220)
+                .frame(height: max(50, chartHeight))
         } else if let error = viewModel.errorMessage, viewModel.klineData.isEmpty {
             errorView(message: error)
         } else {
             CandleChartView(
                 candles: viewModel.klineData,
+                chartHeight: chartHeight,
                 useLogScale: useLogScale,
                 onZoom: onZoom
             )
