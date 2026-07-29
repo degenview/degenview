@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum AppTheme: String, CaseIterable, Identifiable {
     case system = "System"
@@ -122,6 +123,16 @@ struct ContentView: View {
                                         ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
                                             chartCard(vm, height: chartHeight)
                                                 .padding(4)
+                                                .onDrag {
+                                                    NSItemProvider(object: vm.ticker as NSString)
+                                                }
+                                                .onDrop(
+                                                    of: [.utf8PlainText],
+                                                    delegate: ReorderDropDelegate(
+                                                        targetTicker: vm.ticker,
+                                                        viewModel: contentViewModel
+                                                    )
+                                                )
                                         }
                                     }
                                     .padding(4)
@@ -273,6 +284,35 @@ struct ContentView: View {
             },
             useLogScale: contentViewModel.useLogScale
         )
+    }
+}
+
+// MARK: - Drag-and-Drop Reorder (Grid Layout)
+
+private struct ReorderDropDelegate: DropDelegate {
+    let targetTicker: String
+    let viewModel: ContentViewModel
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let provider = info.itemProviders(for: [.utf8PlainText]).first else {
+            return false
+        }
+
+        provider.loadItem(forTypeIdentifier: UTType.utf8PlainText.identifier, options: nil) { item, _ in
+            guard let data = item as? Data,
+                  let sourceTicker = String(data: data, encoding: .utf8)
+            else { return }
+
+            DispatchQueue.main.async {
+                guard let fromIdx = viewModel.chartViewModels.firstIndex(where: { $0.ticker == sourceTicker }),
+                      let toIdx = viewModel.chartViewModels.firstIndex(where: { $0.ticker == targetTicker }),
+                      fromIdx != toIdx
+                else { return }
+
+                viewModel.moveTicker(from: IndexSet(integer: fromIdx), to: toIdx)
+            }
+        }
+        return true
     }
 }
 
