@@ -79,13 +79,6 @@ struct ChartCardView: View {
                 useLogScale: useLogScale,
                 onZoom: onZoom
             )
-            .overlay(alignment: .topTrailing) {
-                if viewModel.isLoading {
-                    ProgressView()
-                        .scaleEffect(0.6)
-                        .padding(4)
-                }
-            }
             .overlay(alignment: .bottom) {
                 if let error = viewModel.errorMessage {
                     HStack(spacing: 6) {

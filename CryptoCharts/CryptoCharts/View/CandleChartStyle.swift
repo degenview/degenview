@@ -31,8 +31,8 @@ struct CandleChartStyle {
     var backgroundColor: Color = .clear
 
     // Current price line
-    var currentPriceLineColor: Color = .blue.opacity(0.4)
     var currentPriceLineWidth: CGFloat = 1
+    var currentPriceDashPattern: [CGFloat] = [5, 3]
 
     // Layout
     var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 70, bottom: 28, trailing: 60)

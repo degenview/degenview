@@ -26,6 +26,8 @@
 		A00000000000000000000011 /* CandleChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* CandleChartView.swift */; };
 		A00000000000000000000012 /* CandleChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* CandleChartStyle.swift */; };
 		A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* BinanceWebSocketService.swift */; };
+		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
+		A00000000000000000000015 /* ViewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* ViewStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -49,6 +51,8 @@
 		A00000000000000000000112 /* CandleChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartView.swift; sourceTree = "<group>"; };
 		A00000000000000000000113 /* CandleChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartStyle.swift; sourceTree = "<group>"; };
 		A00000000000000000000114 /* BinanceWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketService.swift; sourceTree = "<group>"; };
+		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
+		A00000000000000000000116 /* ViewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,6 +103,7 @@
 				A00000000000000000000103 /* KlineData.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
+				A00000000000000000000115 /* SavedView.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -109,6 +114,7 @@
 				A00000000000000000000106 /* BinanceAPIService.swift */,
 				A00000000000000000000107 /* TickerStore.swift */,
 					A00000000000000000000114 /* BinanceWebSocketService.swift */,
+				A00000000000000000000116 /* ViewStore.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -231,6 +237,8 @@
 				A00000000000000000000011 /* CandleChartView.swift in Sources */,
 				A00000000000000000000012 /* CandleChartStyle.swift in Sources */,
 					A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
+				A00000000000000000000014 /* SavedView.swift in Sources */,
+				A00000000000000000000015 /* ViewStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

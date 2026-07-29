@@ -1,6 +1,25 @@
 import Foundation
 import SwiftUI
 
+enum LayoutMode: String, CaseIterable, Codable {
+    case vertical
+    case grid
+
+    var icon: String {
+        switch self {
+        case .vertical: return "rectangle.stack"
+        case .grid:     return "rectangle.grid.1x2"
+        }
+    }
+
+    var next: LayoutMode {
+        switch self {
+        case .vertical: return .grid
+        case .grid:     return .vertical
+        }
+    }
+}
+
 @MainActor
 final class ContentViewModel: ObservableObject {
     @Published var chartViewModels: [ChartViewModel] = []
@@ -14,20 +33,26 @@ final class ContentViewModel: ObservableObject {
     }
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
     @Published var useLogScale = false
+    @Published var layoutMode: LayoutMode = .vertical
+    @Published var isRefreshing = false
 
     /// Minimum candles to show at max zoom-in.
     private let minCandles = 10
     /// Maximum candles to show at max zoom-out.
     private let maxCandles = 500
 
+    @Published var savedViews: [SavedView] = []
+
     private let api: BinanceAPIServiceProtocol
     private let tickerStore: TickerStore
+    private let viewStore = ViewStore()
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
 
     init(api: BinanceAPIServiceProtocol = BinanceAPIService(), tickerStore: TickerStore = TickerStore()) {
         self.api = api
         self.tickerStore = tickerStore
+        self.savedViews = viewStore.load()
     }
 
     /// Load persisted tickers, create chart view models, and start auto-refresh.
@@ -95,6 +120,9 @@ final class ContentViewModel: ObservableObject {
         refetchTask?.cancel()
         refetchTask = Task { [weak self] in
             guard let self else { return }
+            self.isRefreshing = true
+            defer { self.isRefreshing = false }
+
             let range = self.selectedTimeRange
             let count = self.candleCount
             for vm in self.chartViewModels {
@@ -130,6 +158,56 @@ final class ContentViewModel: ObservableObject {
         chartViewModels.removeAll { $0.ticker == vm.ticker }
         tickerStore.save(chartViewModels.map { $0.ticker })
         connectWebSocket()
+    }
+
+    /// Reorder tickers via drag-and-drop.
+    func moveTicker(from source: IndexSet, to destination: Int) {
+        chartViewModels.move(fromOffsets: source, toOffset: destination)
+        tickerStore.save(chartViewModels.map { $0.ticker })
+    }
+
+    // MARK: - Saved Views
+
+    /// Save the current state as a named view.
+    func saveCurrentView(name: String) {
+        let view = SavedView(
+            name: name,
+            tickers: chartViewModels.map { $0.ticker },
+            timeRange: selectedTimeRange,
+            useLogScale: useLogScale,
+            layoutMode: layoutMode,
+            createdAt: Date()
+        )
+        // Replace existing view with same name
+        savedViews.removeAll { $0.name == name }
+        savedViews.append(view)
+        viewStore.save(savedViews)
+    }
+
+    /// Apply a saved view, replacing all current state.
+    func loadView(_ view: SavedView) {
+        // Remove all current chart VMs
+        chartViewModels.removeAll()
+
+        // Apply settings
+        selectedTimeRange = view.timeRange
+        candleCount = view.timeRange.dataPointLimit
+        useLogScale = view.useLogScale
+        layoutMode = view.layoutMode
+
+        // Create new VMs in saved order
+        chartViewModels = view.tickers.map { ChartViewModel(ticker: $0, api: api) }
+        tickerStore.save(view.tickers)
+
+        // Fetch and connect
+        refetchAll()
+        connectWebSocket()
+    }
+
+    /// Delete a saved view.
+    func deleteView(_ view: SavedView) {
+        savedViews.removeAll { $0.id == view.id }
+        viewStore.save(savedViews)
     }
 
     /// Normalize user input to a Binance pair.

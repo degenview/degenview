@@ -21,6 +21,7 @@ struct CandleChartView: View {
             Canvas { context, size in
                 drawGrid(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawCandles(context: &context, plotRect: plotRect, priceRange: priceRange, slotWidth: candleSlotWidth)
+                drawCurrentPriceLine(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawCurrentPriceBox(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawXAxis(context: &context, plotRect: plotRect)
             }
@@ -196,6 +197,27 @@ struct CandleChartView: View {
                 context.fill(Path(bodyRect), with: .color(candleColor))
             }
         }
+    }
+
+    // MARK: - Current Price Line (dashed horizontal line across chart)
+
+    private func drawCurrentPriceLine(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
+        guard let lastCandle = candles.last else { return }
+        let price = lastCandle.closePrice
+        let isBullish = lastCandle.closePrice >= lastCandle.openPrice
+        let lineColor = isBullish ? style.bullishColor : style.bearishColor
+
+        let y = yForPrice(price, plotRect: plotRect, priceRange: priceRange)
+
+        var path = Path()
+        path.move(to: CGPoint(x: plotRect.minX, y: y))
+        path.addLine(to: CGPoint(x: plotRect.maxX, y: y))
+
+        let dashStyle = StrokeStyle(
+            lineWidth: style.currentPriceLineWidth,
+            dash: style.currentPriceDashPattern
+        )
+        context.stroke(path, with: .color(lineColor.opacity(0.5)), style: dashStyle)
     }
 
     // MARK: - Current Price Box (colored, to the right of candles)

@@ -28,6 +28,8 @@ struct ContentView: View {
     @StateObject private var contentViewModel = ContentViewModel()
 
     @State private var showAddSheet = false
+    @State private var showSaveAlert = false
+    @State private var saveViewName = ""
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     var body: some View {
@@ -53,42 +55,53 @@ struct ContentView: View {
                             contentViewModel.setTimeRange(contentViewModel.selectedTimeRange)
                         }
 
-                        ScrollView {
-                            LazyVStack(spacing: 16) {
+                        // Global loading indicator
+                        if contentViewModel.isRefreshing {
+                            ProgressView()
+                                .progressViewStyle(.linear)
+                                .scaleEffect(x: 1, y: 0.5)
+                                .padding(.horizontal, 16)
+                        }
+
+                        // Chart list (vertical) or grid
+                        if contentViewModel.layoutMode == .vertical {
+                            List {
                                 ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
-                                    ChartCardView(
-                                        viewModel: vm,
-                                        intervalLabel: contentViewModel.selectedTimeRange.binanceInterval,
-                                        onRemove: {
-                                            withAnimation {
-                                                contentViewModel.removeTicker(vm)
-                                            }
-                                        },
-                                        onRetry: {
-                                            Task {
-                                                await vm.fetchData(
-                                                    for: contentViewModel.selectedTimeRange,
-                                                    count: contentViewModel.candleCount
-                                                )
-                                            }
-                                        },
-                                        onZoom: { deltaY in
-                                            let step = max(1, Int(Double(contentViewModel.candleCount) * 0.1))
-                                            if deltaY > 0 {
-                                                contentViewModel.adjustCandleCount(by: step)
-                                            } else if deltaY < 0 {
-                                                contentViewModel.adjustCandleCount(by: -step)
-                                            }
-                                        },
-                                        useLogScale: contentViewModel.useLogScale
-                                    )
+                                    chartCard(vm)
+                                        .listRowSeparator(.hidden)
+                                }
+                                .onMove { from, to in
+                                    contentViewModel.moveTicker(from: from, to: to)
                                 }
                             }
-                            .padding(.vertical, 16)
+                            .listStyle(.plain)
+                            .scrollContentBackground(.hidden)
+                        } else {
+                            ScrollView {
+                                LazyVGrid(
+                                    columns: [GridItem(.flexible()), GridItem(.flexible())],
+                                    spacing: 12
+                                ) {
+                                    ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
+                                        chartCard(vm)
+                                    }
+                                }
+                                .padding(.vertical, 16)
+                                .padding(.horizontal, 12)
+                            }
                         }
                     }
                     .navigationTitle("CryptoCharts")
                     .toolbar {
+                        ToolbarItem(placement: .automatic) {
+                            Button {
+                                contentViewModel.layoutMode = contentViewModel.layoutMode.next
+                            } label: {
+                                Image(systemName: contentViewModel.layoutMode.icon)
+                            }
+                            .accessibilityLabel(contentViewModel.layoutMode == .vertical
+                                ? "Grid layout" : "Vertical layout")
+                        }
                         ToolbarItem(placement: .automatic) {
                             Picker("Theme", selection: $appTheme) {
                                 ForEach(AppTheme.allCases) { theme in
@@ -102,9 +115,45 @@ struct ContentView: View {
                             Button {
                                 contentViewModel.useLogScale.toggle()
                             } label: {
-                                Image(systemName: contentViewModel.useLogScale ? "function" : "equal.square")
+                                Image(systemName: contentViewModel.useLogScale
+                                    ? "function" : "equal.square")
                             }
-                            .accessibilityLabel(contentViewModel.useLogScale ? "Linear scale" : "Log scale")
+                            .accessibilityLabel(contentViewModel.useLogScale
+                                ? "Linear scale" : "Log scale")
+                        }
+                        ToolbarItem(placement: .automatic) {
+                            Menu {
+                                ForEach(contentViewModel.savedViews) { view in
+                                    Button(view.name) {
+                                        contentViewModel.loadView(view)
+                                    }
+                                }
+                                if !contentViewModel.savedViews.isEmpty {
+                                    Divider()
+                                    Menu("Delete…") {
+                                        ForEach(contentViewModel.savedViews) { view in
+                                            Button(role: .destructive) {
+                                                contentViewModel.deleteView(view)
+                                            } label: {
+                                                Text(view.name)
+                                            }
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Image(systemName: "folder")
+                            }
+                            .accessibilityLabel("Load View")
+                            .disabled(contentViewModel.savedViews.isEmpty)
+                        }
+                        ToolbarItem(placement: .automatic) {
+                            Button {
+                                saveViewName = ""
+                                showSaveAlert = true
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                            }
+                            .accessibilityLabel("Save View")
                         }
                         ToolbarItem(placement: .primaryAction) {
                             Button {
@@ -120,6 +169,17 @@ struct ContentView: View {
             .frame(minWidth: 380, idealWidth: 440)
         }
         .preferredColorScheme(appTheme.colorScheme)
+        .alert("Save View", isPresented: $showSaveAlert) {
+            TextField("Name", text: $saveViewName)
+            Button("Save") {
+                let name = saveViewName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                contentViewModel.saveCurrentView(name: name)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Save the current charts, timeframe, and layout as a named view.")
+        }
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(contentViewModel: contentViewModel)
         }
@@ -129,6 +189,37 @@ struct ContentView: View {
         .onDisappear {
             contentViewModel.stopAutoRefresh()
         }
+    }
+
+    // MARK: - Chart Card Builder
+
+    private func chartCard(_ vm: ChartViewModel) -> some View {
+        ChartCardView(
+            viewModel: vm,
+            intervalLabel: contentViewModel.selectedTimeRange.binanceInterval,
+            onRemove: {
+                withAnimation {
+                    contentViewModel.removeTicker(vm)
+                }
+            },
+            onRetry: {
+                Task {
+                    await vm.fetchData(
+                        for: contentViewModel.selectedTimeRange,
+                        count: contentViewModel.candleCount
+                    )
+                }
+            },
+            onZoom: { deltaY in
+                let step = max(1, Int(Double(contentViewModel.candleCount) * 0.1))
+                if deltaY > 0 {
+                    contentViewModel.adjustCandleCount(by: step)
+                } else if deltaY < 0 {
+                    contentViewModel.adjustCandleCount(by: -step)
+                }
+            },
+            useLogScale: contentViewModel.useLogScale
+        )
     }
 }
 
