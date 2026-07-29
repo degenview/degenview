@@ -52,13 +52,13 @@ final class ContentViewModel: ObservableObject {
     private var currentViewID: UUID?
     private var isApplyingView = false
 
-    private let api: BinanceAPIServiceProtocol
+    private let api: BinanceAPIService
     private let tickerStore: TickerStore
     private let viewStore = ViewStore()
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
 
-    init(api: BinanceAPIServiceProtocol = BinanceAPIService(), tickerStore: TickerStore = TickerStore()) {
+    init(api: BinanceAPIService = BinanceAPIService(), tickerStore: TickerStore = TickerStore()) {
         self.api = api
         self.tickerStore = tickerStore
         self.savedViews = viewStore.load()
@@ -66,8 +66,8 @@ final class ContentViewModel: ObservableObject {
 
     /// Load persisted tickers, create chart view models, and start auto-refresh.
     func loadTickers() {
-        let tickers = tickerStore.load()
-        chartViewModels = tickers.map { ChartViewModel(ticker: $0, api: api) }
+        let configs = tickerStore.load()
+        chartViewModels = configs.map { ChartViewModel(ticker: $0.symbol, source: $0.source) }
         Task {
             for vm in chartViewModels {
                 await vm.fetchData(for: selectedTimeRange, count: candleCount)
@@ -121,14 +121,20 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
-    /// Open WebSocket streams for all current tickers at the current interval.
+    /// Open WebSocket streams for Binance tickers only.
     private func connectWebSocket() {
-        let symbols = chartViewModels.map { $0.pair.lowercased() }
+        let binanceVMs = chartViewModels.filter { $0.source == .binance }
+        let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
+
+        guard !symbols.isEmpty else {
+            wsService.disconnect()
+            return
+        }
 
         wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
             self?.chartViewModels
-                .first(where: { $0.pair.uppercased() == symbol.uppercased() })?
+                .first(where: { $0.source == .binance && $0.apiSymbol.uppercased() == symbol.uppercased() })?
                 .applyKlineUpdate(kline)
         }
     }
@@ -161,22 +167,18 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    /// Validate and add a new ticker.
-    func addTicker(_ raw: String) async throws {
-        let normalized = normalizeTicker(raw)
-
-        guard !chartViewModels.contains(where: { $0.ticker.uppercased() == normalized.uppercased() }) else {
-            throw TickerError.duplicate(normalized)
+    /// Add a ticker with a chosen data source.
+    func addTicker(symbol: String, source: DataSourceType) async throws {
+        // Duplicate check: same symbol + same source
+        guard !chartViewModels.contains(where: {
+            $0.ticker.uppercased() == symbol.uppercased() && $0.source == source
+        }) else {
+            throw TickerError.duplicate(symbol)
         }
 
-        let isValid = try await api.validateSymbol(normalized)
-        guard isValid else {
-            throw TickerError.invalidSymbol(normalized)
-        }
-
-        let vm = ChartViewModel(ticker: normalized, api: api)
+        let vm = ChartViewModel(ticker: symbol, source: source)
         chartViewModels.append(vm)
-        tickerStore.save(chartViewModels.map { $0.ticker })
+        tickerStore.save(chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) })
 
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
         markChanged()
@@ -185,8 +187,8 @@ final class ContentViewModel: ObservableObject {
 
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
-        chartViewModels.removeAll { $0.ticker == vm.ticker }
-        tickerStore.save(chartViewModels.map { $0.ticker })
+        chartViewModels.removeAll { $0.ticker == vm.ticker && $0.source == vm.source }
+        persistTickers()
         markChanged()
         connectWebSocket()
     }
@@ -194,14 +196,19 @@ final class ContentViewModel: ObservableObject {
     /// Reorder tickers via drag-and-drop.
     func moveTicker(from source: IndexSet, to destination: Int) {
         chartViewModels.move(fromOffsets: source, toOffset: destination)
-        tickerStore.save(chartViewModels.map { $0.ticker })
+        persistTickers()
         markChanged()
+    }
+
+    private func persistTickers() {
+        tickerStore.save(chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) })
     }
 
     // MARK: - Saved Views
 
     /// Save the current state. Updates existing view if already named, otherwise creates new.
     func saveCurrentView(name: String) {
+        let configs = chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) }
         let view = SavedView(
             id: currentViewID ?? UUID(),
             name: name,
@@ -209,7 +216,8 @@ final class ContentViewModel: ObservableObject {
             timeRange: selectedTimeRange,
             useLogScale: useLogScale,
             layoutMode: layoutMode,
-            createdAt: Date()
+            createdAt: Date(),
+            tickerConfigs: configs
         )
         savedViews.removeAll { $0.id == view.id }
         savedViews.append(view)
@@ -223,7 +231,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Save changes to the current named view without prompting.
     func saveChanges() {
-        guard let id = currentViewID else {
+        guard currentViewID != nil else {
             // No saved view yet — treat as new save; caller should prompt for name
             return
         }
@@ -240,8 +248,10 @@ final class ContentViewModel: ObservableObject {
         candleCount = view.timeRange.dataPointLimit
         useLogScale = view.useLogScale
         layoutMode = view.layoutMode
-        chartViewModels = view.tickers.map { ChartViewModel(ticker: $0, api: api) }
-        tickerStore.save(view.tickers)
+
+        let configs = view.resolvedConfigs
+        chartViewModels = configs.map { ChartViewModel(ticker: $0.symbol, source: $0.source) }
+        tickerStore.save(configs)
 
         currentViewName = view.name
         currentViewID = view.id
@@ -270,15 +280,6 @@ final class ContentViewModel: ObservableObject {
         hasUnsavedChanges = true
     }
 
-    /// Normalize user input to a Binance pair.
-    private func normalizeTicker(_ raw: String) -> String {
-        let uppercased = raw.trimmingCharacters(in: .whitespaces).uppercased()
-        if uppercased.hasSuffix("USDT") || uppercased.hasSuffix("USDC") ||
-           uppercased.hasSuffix("BUSD") {
-            return uppercased
-        }
-        return "\(uppercased)USDT"
-    }
 }
 
 extension Comparable {
@@ -289,14 +290,11 @@ extension Comparable {
 
 enum TickerError: LocalizedError {
     case duplicate(String)
-    case invalidSymbol(String)
 
     var errorDescription: String? {
         switch self {
         case .duplicate(let ticker):
             return "\"\(ticker)\" is already in your list"
-        case .invalidSymbol(let ticker):
-            return "\"\(ticker)\" is not a valid trading pair on Binance"
         }
     }
 }

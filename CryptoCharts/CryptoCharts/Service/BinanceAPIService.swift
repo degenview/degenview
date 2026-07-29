@@ -62,16 +62,10 @@ enum BinanceAPIError: LocalizedError {
     }
 }
 
-// MARK: - Protocol
-
-protocol BinanceAPIServiceProtocol {
-    func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData]
-    func validateSymbol(_ symbol: String) async throws -> Bool
-}
-
 // MARK: - Service
 
-final class BinanceAPIService: BinanceAPIServiceProtocol {
+final class BinanceAPIService: TickerDataSource {
+    let type: DataSourceType = .binance
     private let session: URLSession
     private let baseURL = "https://api.binance.com"
     private let cache = KlineCache()
@@ -185,6 +179,45 @@ final class BinanceAPIService: BinanceAPIServiceProtocol {
         }
 
         return info.status == "TRADING"
+    }
+
+    /// Search for tickers matching a query. Returns up to 20 pairs sorted by volume.
+    func searchTickers(query: String) async throws -> [TickerSearchResult] {
+        let q = query.trimmingCharacters(in: .whitespaces).uppercased()
+        guard !q.isEmpty else { return [] }
+
+        guard let components = URLComponents(string: "\(baseURL)/api/v3/exchangeInfo") else {
+            throw BinanceAPIError.invalidURL
+        }
+        // No symbol filter — get full exchange info. Small payload, cacheable.
+        guard let url = components.url else {
+            throw BinanceAPIError.invalidURL
+        }
+
+        print("[Binance] Searching exchangeInfo for: \(q)")
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            throw BinanceAPIError.invalidResponse
+        }
+
+        let decoder = JSONDecoder()
+        let info = try decoder.decode(ExchangeInfoResponse.self, from: data)
+
+        let matching = info.symbols
+            .filter { $0.status == "TRADING" }
+            .filter { $0.symbol.contains(q) }
+            .prefix(20)
+
+        return matching.map { info in
+            TickerSearchResult(
+                symbol: "\(info.baseAsset)/\(info.quoteAsset)",
+                fullSymbol: info.symbol,
+                source: .binance,
+                price: nil
+            )
+        }
     }
 
     /// Fetch only the latest price for a symbol.

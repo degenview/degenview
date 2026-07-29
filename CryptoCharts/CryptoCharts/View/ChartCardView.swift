@@ -10,13 +10,21 @@ struct ChartCardView: View {
     @State private var iconURL: URL?
 
     private var baseSymbol: String {
-        let upper = viewModel.ticker.uppercased()
-        for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
-            if upper.hasSuffix(quote), upper.count > quote.count {
-                return String(upper.dropLast(quote.count))
+        switch viewModel.source {
+        case .binance:
+            let upper = viewModel.ticker.uppercased()
+            for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
+                if upper.hasSuffix(quote), upper.count > quote.count {
+                    return String(upper.dropLast(quote.count))
+                }
             }
+            return upper
+        case .coingecko, .dexscreener:
+            // For non-Binance sources, use ticker as-is for icon lookup
+            // Try to extract a clean base symbol
+            let parts = viewModel.ticker.components(separatedBy: "/")
+            return parts.first?.uppercased() ?? viewModel.ticker.uppercased()
         }
-        return upper
     }
 
     let onRetry: () -> Void
@@ -62,6 +70,9 @@ struct ChartCardView: View {
                     Text(viewModel.ticker.uppercased())
                         .font(.headline)
                         .fontWeight(.bold)
+                    Image(systemName: viewModel.source.icon)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                     Text(intervalLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)

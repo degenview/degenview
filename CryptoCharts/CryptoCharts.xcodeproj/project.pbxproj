@@ -29,6 +29,10 @@
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
 		A00000000000000000000015 /* ViewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* ViewStore.swift */; };
 		A00000000000000000000016 /* CoinGeckoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* CoinGeckoService.swift */; };
+		A00000000000000000000017 /* DataSourceType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* DataSourceType.swift */; };
+		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
+		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
+		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -55,6 +59,10 @@
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
 		A00000000000000000000116 /* ViewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewStore.swift; sourceTree = "<group>"; };
 		A00000000000000000000117 /* CoinGeckoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoService.swift; sourceTree = "<group>"; };
+		A00000000000000000000118 /* DataSourceType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceType.swift; sourceTree = "<group>"; };
+		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
+		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
+		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -106,6 +114,7 @@
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
+					A00000000000000000000118 /* DataSourceType.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -118,6 +127,9 @@
 					A00000000000000000000114 /* BinanceWebSocketService.swift */,
 				A00000000000000000000116 /* ViewStore.swift */,
 				A00000000000000000000117 /* CoinGeckoService.swift */,
+					A00000000000000000000119 /* TickerDataSource.swift */,
+					A0000000000000000000011A /* CoinGeckoAPIService.swift */,
+					A0000000000000000000011B /* DEXScreenerService.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -243,6 +255,10 @@
 				A00000000000000000000014 /* SavedView.swift in Sources */,
 				A00000000000000000000015 /* ViewStore.swift in Sources */,
 				A00000000000000000000016 /* CoinGeckoService.swift in Sources */,
+					A00000000000000000000017 /* DataSourceType.swift in Sources */,
+					A00000000000000000000018 /* TickerDataSource.swift in Sources */,
+					A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */,
+					A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

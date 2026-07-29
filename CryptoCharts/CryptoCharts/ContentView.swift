@@ -80,8 +80,8 @@ struct ContentView: View {
                             let n = max(1, contentViewModel.chartViewModels.count)
                             let minHeight: CGFloat = 60
                             let maxHeight: CGFloat = 250
-                            let cardGap: CGFloat = 4
-                            let cardChrome: CGFloat = 72 // header + padding + spacing
+                            let cardGap: CGFloat = 8
+                            let cardChrome: CGFloat = 55 // header + padding + spacing
                             let available = geometry.size.height
 
                             let naturalHeight: CGFloat = {
@@ -102,7 +102,7 @@ struct ContentView: View {
 
                             if contentViewModel.layoutMode == .vertical {
                                 List {
-                                    ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
+                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
                                         chartCard(vm, height: chartHeight)
                                             .listRowSeparator(.hidden)
                                             .padding(4)
@@ -124,12 +124,12 @@ struct ContentView: View {
                                             chartCard(vm, height: chartHeight)
                                                 .padding(4)
                                                 .onDrag {
-                                                    NSItemProvider(object: vm.ticker as NSString)
+                                                    NSItemProvider(object: vm.uniqueID as NSString)
                                                 }
                                                 .onDrop(
                                                     of: [.utf8PlainText],
                                                     delegate: ReorderDropDelegate(
-                                                        targetTicker: vm.ticker,
+                                                        targetTicker: vm.uniqueID,
                                                         viewModel: contentViewModel
                                                     )
                                                 )
@@ -290,7 +290,7 @@ struct ContentView: View {
 // MARK: - Drag-and-Drop Reorder (Grid Layout)
 
 private struct ReorderDropDelegate: DropDelegate {
-    let targetTicker: String
+    let targetTicker: String   // uniqueID of target
     let viewModel: ContentViewModel
 
     func performDrop(info: DropInfo) -> Bool {
@@ -300,12 +300,12 @@ private struct ReorderDropDelegate: DropDelegate {
 
         provider.loadItem(forTypeIdentifier: UTType.utf8PlainText.identifier, options: nil) { item, _ in
             guard let data = item as? Data,
-                  let sourceTicker = String(data: data, encoding: .utf8)
+                  let sourceID = String(data: data, encoding: .utf8)
             else { return }
 
             DispatchQueue.main.async {
-                guard let fromIdx = viewModel.chartViewModels.firstIndex(where: { $0.ticker == sourceTicker }),
-                      let toIdx = viewModel.chartViewModels.firstIndex(where: { $0.ticker == targetTicker }),
+                guard let fromIdx = viewModel.chartViewModels.firstIndex(where: { $0.uniqueID == sourceID }),
+                      let toIdx = viewModel.chartViewModels.firstIndex(where: { $0.uniqueID == targetTicker }),
                       fromIdx != toIdx
                 else { return }
 

@@ -4,10 +4,38 @@ import SwiftUI
 @MainActor
 final class ChartViewModel: ObservableObject {
     let ticker: String
-    private let api: BinanceAPIServiceProtocol
+    let source: DataSourceType
 
+    /// Unique identifier — ticker + source.
+    var uniqueID: String { "\(ticker)_\(source.rawValue)" }
+
+    private let api: TickerDataSource
+
+    /// The symbol used for API calls — source-dependent.
+    var apiSymbol: String {
+        switch source {
+        case .binance:
+            let upper = ticker.uppercased()
+            if upper.hasSuffix("USDT") || upper.hasSuffix("USDC") || upper.hasSuffix("BUSD") {
+                return upper
+            }
+            return "\(upper)USDT"
+        case .coingecko, .dexscreener:
+            // ticker IS the fullSymbol (coin ID or pair address) from search result
+            return ticker
+        }
+    }
+
+    /// Formatted pair label for display.
     var pair: String {
-        ticker.uppercased().hasSuffix("USDT") ? ticker.uppercased() : "\(ticker.uppercased())USDT"
+        switch source {
+        case .binance:
+            return apiSymbol
+        case .coingecko:
+            return ticker.uppercased()
+        case .dexscreener:
+            return ticker
+        }
     }
 
     @Published var klineData: [KlineData] = []
@@ -27,9 +55,10 @@ final class ChartViewModel: ObservableObject {
         return change >= 0
     }
 
-    init(ticker: String, api: BinanceAPIServiceProtocol = BinanceAPIService()) {
+    init(ticker: String, source: DataSourceType = .binance, api: TickerDataSource? = nil) {
         self.ticker = ticker
-        self.api = api
+        self.source = source
+        self.api = api ?? DataSourceFactory.shared.service(for: source)
     }
 
     /// Merge a WebSocket kline tick into the current dataset.
@@ -61,7 +90,7 @@ final class ChartViewModel: ObservableObject {
 
             do {
                 let data = try await self.api.fetchKlines(
-                    symbol: self.pair,
+                    symbol: self.apiSymbol,
                     interval: range.binanceInterval,
                     limit: count
                 )
