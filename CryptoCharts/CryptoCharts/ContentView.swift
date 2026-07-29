@@ -49,6 +49,31 @@ struct ContentView: View {
                                 .padding(.horizontal, 16)
                         }
 
+                        // View name bar
+                        HStack(spacing: 8) {
+                            Text(contentViewModel.currentViewName)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.secondary)
+
+                            if contentViewModel.hasUnsavedChanges {
+                                Button("Save Changes") {
+                                    if contentViewModel.currentViewName == "Unnamed" {
+                                        saveViewName = ""
+                                        showSaveAlert = true
+                                    } else {
+                                        contentViewModel.saveChanges()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.blue)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 2)
+
                         // Chart list (vertical) or grid
                         if contentViewModel.layoutMode == .vertical {
                             List {
@@ -147,7 +172,8 @@ struct ContentView: View {
                         }
                         ToolbarItem(placement: .automatic) {
                             Button {
-                                saveViewName = ""
+                                saveViewName = contentViewModel.currentViewName == "Unnamed"
+                                    ? "" : contentViewModel.currentViewName
                                 showSaveAlert = true
                             } label: {
                                 Image(systemName: "square.and.arrow.down")

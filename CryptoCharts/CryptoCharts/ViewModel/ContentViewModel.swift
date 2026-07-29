@@ -32,8 +32,12 @@ final class ContentViewModel: ObservableObject {
         }
     }
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
-    @Published var useLogScale = false
-    @Published var layoutMode: LayoutMode = .vertical
+    @Published var useLogScale = false {
+        didSet { markChanged() }
+    }
+    @Published var layoutMode: LayoutMode = .vertical {
+        didSet { markChanged() }
+    }
     @Published var isRefreshing = false
 
     /// Minimum candles to show at max zoom-in.
@@ -42,6 +46,11 @@ final class ContentViewModel: ObservableObject {
     private let maxCandles = 500
 
     @Published var savedViews: [SavedView] = []
+    @Published var currentViewName = "Unnamed"
+    @Published var hasUnsavedChanges = false
+
+    private var currentViewID: UUID?
+    private var isApplyingView = false
 
     private let api: BinanceAPIServiceProtocol
     private let tickerStore: TickerStore
@@ -89,6 +98,7 @@ final class ContentViewModel: ObservableObject {
     /// Set global timeframe and refetch all charts.
     func setTimeRange(_ range: TimeRange) {
         selectedTimeRange = range
+        markChanged()
         refetchAll()
         connectWebSocket()
     }
@@ -111,6 +121,7 @@ final class ContentViewModel: ObservableObject {
         let newCount = (candleCount - delta).clamped(to: minCandles...maxCandles)
         guard newCount != candleCount else { return }
         candleCount = newCount
+        markChanged()
         refetchAll()
     }
 
@@ -150,6 +161,7 @@ final class ContentViewModel: ObservableObject {
         tickerStore.save(chartViewModels.map { $0.ticker })
 
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
+        markChanged()
         connectWebSocket()
     }
 
@@ -157,6 +169,7 @@ final class ContentViewModel: ObservableObject {
     func removeTicker(_ vm: ChartViewModel) {
         chartViewModels.removeAll { $0.ticker == vm.ticker }
         tickerStore.save(chartViewModels.map { $0.ticker })
+        markChanged()
         connectWebSocket()
     }
 
@@ -164,13 +177,15 @@ final class ContentViewModel: ObservableObject {
     func moveTicker(from source: IndexSet, to destination: Int) {
         chartViewModels.move(fromOffsets: source, toOffset: destination)
         tickerStore.save(chartViewModels.map { $0.ticker })
+        markChanged()
     }
 
     // MARK: - Saved Views
 
-    /// Save the current state as a named view.
+    /// Save the current state. Updates existing view if already named, otherwise creates new.
     func saveCurrentView(name: String) {
         let view = SavedView(
+            id: currentViewID ?? UUID(),
             name: name,
             tickers: chartViewModels.map { $0.ticker },
             timeRange: selectedTimeRange,
@@ -178,28 +193,41 @@ final class ContentViewModel: ObservableObject {
             layoutMode: layoutMode,
             createdAt: Date()
         )
-        // Replace existing view with same name
-        savedViews.removeAll { $0.name == name }
+        savedViews.removeAll { $0.id == view.id }
         savedViews.append(view)
         viewStore.save(savedViews)
+
+        currentViewName = name
+        currentViewID = view.id
+        hasUnsavedChanges = false
+    }
+
+    /// Save changes to the current named view without prompting.
+    func saveChanges() {
+        guard let id = currentViewID else {
+            // No saved view yet — treat as new save; caller should prompt for name
+            return
+        }
+        saveCurrentView(name: currentViewName)
     }
 
     /// Apply a saved view, replacing all current state.
     func loadView(_ view: SavedView) {
-        // Remove all current chart VMs
-        chartViewModels.removeAll()
+        isApplyingView = true
+        defer { isApplyingView = false }
 
-        // Apply settings
+        chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
         candleCount = view.timeRange.dataPointLimit
         useLogScale = view.useLogScale
         layoutMode = view.layoutMode
-
-        // Create new VMs in saved order
         chartViewModels = view.tickers.map { ChartViewModel(ticker: $0, api: api) }
         tickerStore.save(view.tickers)
 
-        // Fetch and connect
+        currentViewName = view.name
+        currentViewID = view.id
+        hasUnsavedChanges = false
+
         refetchAll()
         connectWebSocket()
     }
@@ -208,6 +236,17 @@ final class ContentViewModel: ObservableObject {
     func deleteView(_ view: SavedView) {
         savedViews.removeAll { $0.id == view.id }
         viewStore.save(savedViews)
+        if currentViewID == view.id {
+            currentViewName = "Unnamed"
+            currentViewID = nil
+            hasUnsavedChanges = false
+        }
+    }
+
+    /// Mark current view as having unsaved changes (unless applying a loaded view).
+    private func markChanged() {
+        guard !isApplyingView else { return }
+        hasUnsavedChanges = true
     }
 
     /// Normalize user input to a Binance pair.
