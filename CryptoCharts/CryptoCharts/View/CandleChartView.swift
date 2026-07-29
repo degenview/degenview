@@ -22,6 +22,7 @@ struct CandleChartView: View {
                 drawGrid(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawCandles(context: &context, plotRect: plotRect, priceRange: priceRange, slotWidth: candleSlotWidth)
                 drawCurrentPriceBox(context: &context, plotRect: plotRect, priceRange: priceRange)
+                drawXAxis(context: &context, plotRect: plotRect)
             }
             .id(useLogScale) // force redraw on scale toggle
             .onAppear {
@@ -224,6 +225,52 @@ struct CandleChartView: View {
 
         // Text centered in box
         context.draw(resolved, at: CGPoint(x: boxRect.midX, y: boxRect.midY))
+    }
+
+    // MARK: - X Axis (time labels below the plot)
+
+    private func drawXAxis(context: inout GraphicsContext, plotRect: CGRect) {
+        guard candles.count >= 2 else { return }
+
+        let totalSpan = candles.last!.openTime.timeIntervalSince(candles.first!.openTime)
+        guard totalSpan > 0 else { return }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = timeAxisFormat(span: totalSpan)
+        formatter.timeZone = TimeZone(identifier: "UTC")!
+
+        let labelCount = style.timeLabelCount
+
+        for i in 0..<labelCount {
+            let fraction = CGFloat(i) / CGFloat(max(1, labelCount - 1))
+            let timestamp = candles.first!.openTime.addingTimeInterval(totalSpan * Double(fraction))
+
+            let label = formatter.string(from: timestamp)
+            let text = Text(label).font(.caption2).foregroundStyle(.secondary)
+            let resolved = context.resolve(text)
+            let textSize = resolved.measure(in: .init(width: 120, height: 14))
+
+            let x = plotRect.minX + fraction * plotRect.width
+            let drawX: CGFloat
+            if i == 0 {
+                drawX = x
+            } else if i == labelCount - 1 {
+                drawX = x - textSize.width
+            } else {
+                drawX = x - textSize.width / 2
+            }
+
+            let drawY = plotRect.maxY + 8
+            context.draw(resolved, at: CGPoint(x: drawX, y: drawY))
+        }
+    }
+
+    /// Pick a sensible date format for the visible time span.
+    private func timeAxisFormat(span: TimeInterval) -> String {
+        if span < 7200 { return "HH:mm" }            // < 2 hours
+        if span < 172800 { return "EEE HH:mm" }       // < 2 days
+        if span < 2592000 { return "MMM d" }          // < ~1 month
+        return "MMM yy"                               // months–years
     }
 
     // MARK: - Formatting
