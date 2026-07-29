@@ -28,6 +28,7 @@
 		A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* BinanceWebSocketService.swift */; };
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
 		A00000000000000000000015 /* ViewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* ViewStore.swift */; };
+		A00000000000000000000016 /* CoinGeckoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* CoinGeckoService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -53,6 +54,7 @@
 		A00000000000000000000114 /* BinanceWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketService.swift; sourceTree = "<group>"; };
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
 		A00000000000000000000116 /* ViewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewStore.swift; sourceTree = "<group>"; };
+		A00000000000000000000117 /* CoinGeckoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -115,6 +117,7 @@
 				A00000000000000000000107 /* TickerStore.swift */,
 					A00000000000000000000114 /* BinanceWebSocketService.swift */,
 				A00000000000000000000116 /* ViewStore.swift */,
+				A00000000000000000000117 /* CoinGeckoService.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -239,6 +242,7 @@
 					A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
 				A00000000000000000000014 /* SavedView.swift in Sources */,
 				A00000000000000000000015 /* ViewStore.swift in Sources */,
+				A00000000000000000000016 /* CoinGeckoService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

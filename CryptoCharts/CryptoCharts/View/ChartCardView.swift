@@ -6,6 +6,18 @@ struct ChartCardView: View {
     let onRemove: () -> Void
 
     @State private var showRemoveConfirmation = false
+    @State private var iconURL: URL?
+
+    private var baseSymbol: String {
+        let upper = viewModel.ticker.uppercased()
+        for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
+            if upper.hasSuffix(quote), upper.count > quote.count {
+                return String(upper.dropLast(quote.count))
+            }
+        }
+        return upper
+    }
+
     let onRetry: () -> Void
     let onZoom: (CGFloat) -> Void
     var useLogScale = false
@@ -23,6 +35,9 @@ struct ChartCardView: View {
         } message: {
             Text("This chart will be removed from your view.")
         }
+        .task {
+            iconURL = await CoinGeckoService.shared.iconURL(for: baseSymbol)
+        }
     }
 
     // MARK: - Header
@@ -31,6 +46,18 @@ struct ChartCardView: View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
+                    if let url = iconURL {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFit()
+                            default:
+                                Color.clear
+                            }
+                        }
+                        .frame(width: 20, height: 20)
+                        .clipShape(Circle())
+                    }
                     Text(viewModel.ticker.uppercased())
                         .font(.headline)
                         .fontWeight(.bold)
