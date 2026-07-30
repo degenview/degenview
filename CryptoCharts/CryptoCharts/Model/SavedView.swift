@@ -9,6 +9,8 @@ struct SavedView: Identifiable, Codable, Equatable {
     var createdAt: Date
     /// Per-ticker data source configs. When nil (legacy data), tickers map to .binance.
     var tickerConfigs: [TickerConfig]?
+    /// Zoom level — candle count at time of save. Nil for legacy views (falls back to timeRange default).
+    var candleCount: Int?
 
     static func == (lhs: SavedView, rhs: SavedView) -> Bool {
         lhs.id == rhs.id

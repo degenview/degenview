@@ -6,9 +6,13 @@ struct CandleChartStyle {
     var bearishColor: Color = .red
     var dojiColor: Color = .gray
 
-    // Candle geometry
-    var wickWidth: CGFloat = 1
-    var candleBodyWidth: CGFloat = 7        // fixed body width in points — constant regardless of interval/zoom
+    // Candle geometry — widths scale with slot (plot width ÷ candle count)
+    var candleBodyFraction: CGFloat = 0.75  // body width as fraction of slot width
+    var candleBodyMin: CGFloat = 1          // minimum body width in points
+    var candleBodyMax: CGFloat = 15         // maximum body width in points
+    var wickFraction: CGFloat = 0.12        // wick width as fraction of slot width
+    var wickMin: CGFloat = 0.5              // minimum wick width in points
+    var wickMax: CGFloat = 2                // maximum wick width in points
     var minBodyHeight: CGFloat = 1          // minimum body height in points (doji)
     var dojiThreshold: Double = 0.00001     // relative to price range; abs(close-open)/range < this → doji
 

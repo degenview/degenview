@@ -256,7 +256,8 @@ final class ContentViewModel: ObservableObject {
             timeRange: selectedTimeRange,
             layoutMode: layoutMode,
             createdAt: Date(),
-            tickerConfigs: configs
+            tickerConfigs: configs,
+            candleCount: candleCount
         )
         savedViews.removeAll { $0.id == view.id }
         savedViews.append(view)
@@ -284,7 +285,7 @@ final class ContentViewModel: ObservableObject {
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
-        candleCount = view.timeRange.dataPointLimit
+        candleCount = view.candleCount ?? view.timeRange.dataPointLimit
         layoutMode = view.layoutMode
 
         let configs = view.resolvedConfigs

@@ -15,9 +15,6 @@ struct CandleChartView: View {
 
     var onZoom: ((CGFloat) -> Void)?
 
-    @State private var monitor: Any?
-    @State private var chartFrame: CGRect = .zero
-
     var body: some View {
         GeometryReader { geometry in
             let plotRect = computePlotRect(in: geometry.size)
@@ -31,30 +28,8 @@ struct CandleChartView: View {
                 drawCurrentPriceBox(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawXAxis(context: &context, plotRect: plotRect)
             }
-            .onAppear {
-                chartFrame = geometry.frame(in: .global)
-                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
-                    let mouseScreen = NSEvent.mouseLocation
-                    guard let window = NSApp.keyWindow ?? NSApp.mainWindow else { return event }
-                    let mouseWindow = window.convertPoint(fromScreen: mouseScreen)
-                    let viewFrame = window.convertToScreen(chartFrame)
-
-                    if let contentView = window.contentView {
-                        let chartInWindow = contentView.convert(viewFrame, from: nil)
-                        if chartInWindow.contains(mouseWindow) {
-                            DispatchQueue.main.async {
-                                onZoom?(event.scrollingDeltaY)
-                            }
-                        }
-                    }
-                    return event
-                }
-            }
-            .onDisappear {
-                if let m = monitor { NSEvent.removeMonitor(m) }
-            }
-            .onChange(of: geometry.frame(in: .global)) {
-                chartFrame = geometry.frame(in: .global)
+            .overlay {
+                ScrollCaptureView(onScroll: onZoom ?? { _ in })
             }
         }
         .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
@@ -121,7 +96,8 @@ struct CandleChartView: View {
     private func drawCandles(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double), slotWidth: CGFloat) {
         let priceRangeSpan = priceRange.max - priceRange.min
         let dojiAbsThreshold = priceRangeSpan * style.dojiThreshold
-        let bodyWidth = style.candleBodyWidth
+        let bodyWidth = (slotWidth * style.candleBodyFraction).clamped(to: style.candleBodyMin...style.candleBodyMax)
+        let wickWidth = (slotWidth * style.wickFraction).clamped(to: style.wickMin...style.wickMax)
 
         for (i, candle) in candles.enumerated() {
             let x = plotRect.minX + CGFloat(i) * slotWidth + slotWidth / 2
@@ -139,8 +115,8 @@ struct CandleChartView: View {
             else { candleColor = bearishColor }
 
             // Wick
-            let wickRect = CGRect(x: x - style.wickWidth / 2, y: wickTop,
-                                  width: style.wickWidth, height: max(wickBottom - wickTop, 0.5))
+            let wickRect = CGRect(x: x - wickWidth / 2, y: wickTop,
+                                  width: wickWidth, height: max(wickBottom - wickTop, 0.5))
             context.fill(Path(wickRect), with: .color(candleColor))
 
             // Body
@@ -350,6 +326,38 @@ struct CandleChartView: View {
         return CGFloat(lo)
     }
 
+}
+
+// MARK: - Scroll Capture Overlay
+
+/// Transparent NSView overlay that captures scroll-wheel events directly.
+/// Reliable hit-testing — no global monitor or coordinate conversion needed.
+private struct ScrollCaptureView: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> _ScrollCaptureNSView {
+        let view = _ScrollCaptureNSView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: _ScrollCaptureNSView, context: Context) {
+        nsView.onScroll = onScroll
+    }
+}
+
+private final class _ScrollCaptureNSView: NSView {
+    var onScroll: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        if let onScroll {
+            onScroll(event.scrollingDeltaY)
+            // Consume event — prevents outer ScrollView from also scrolling
+            // when user is intentionally zooming a chart.
+        } else {
+            super.scrollWheel(with: event)
+        }
+    }
 }
 
 #Preview {
