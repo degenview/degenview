@@ -233,6 +233,13 @@ struct CandleChartView: View {
             let textSize = resolved.measure(in: .init(width: 120, height: 14))
 
             let x = plotRect.minX + fraction * plotRect.width
+
+            // Vertical grid line
+            var vLine = Path()
+            vLine.move(to: CGPoint(x: x, y: plotRect.minY))
+            vLine.addLine(to: CGPoint(x: x, y: plotRect.maxY))
+            context.stroke(vLine, with: .color(style.gridColor), lineWidth: style.gridLineWidth)
+
             let drawX: CGFloat
             if i == 0 {
                 drawX = x
