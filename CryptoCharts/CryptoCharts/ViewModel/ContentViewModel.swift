@@ -100,6 +100,7 @@ final class ContentViewModel: ObservableObject {
         let didRestore = restoreLastView()
         if !didRestore {
             Task {
+                await syncCoinGeckoSymbols()
                 for vm in chartViewModels {
                     await vm.fetchData(for: selectedTimeRange, count: candleCount)
                     try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
@@ -169,6 +170,17 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
+    /// Tell the CoinGecko service which coins are on screen, so it can prime all
+    /// of their charts from one request instead of waiting out the per-chart queue.
+    /// Must complete before the charts fetch — the list is what the prime covers.
+    private func syncCoinGeckoSymbols() async {
+        guard let cg = DataSourceFactory.shared.service(for: .coingecko) as? CoinGeckoAPIService else { return }
+        let symbols = chartViewModels
+            .filter { $0.source == .coingecko }
+            .map { $0.apiSymbol }
+        await cg.setActiveSymbols(symbols)
+    }
+
     /// Open WebSocket streams for Binance tickers only.
     private func connectWebSocket() {
         let binanceVMs = chartViewModels.filter { $0.source == .binance }
@@ -227,6 +239,7 @@ final class ContentViewModel: ObservableObject {
     }
 
     private func refetchAllVMs(silent: Bool = false) async {
+        await syncCoinGeckoSymbols()
         let range = self.selectedTimeRange
         let count = self.candleCount
         for vm in self.chartViewModels {
@@ -248,6 +261,7 @@ final class ContentViewModel: ObservableObject {
         chartViewModels.append(vm)
         saveTickerConfigs()
 
+        await syncCoinGeckoSymbols()
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
         markChanged()
         connectWebSocket()
@@ -267,6 +281,7 @@ final class ContentViewModel: ObservableObject {
         persistTickers()
         markChanged()
         Task {
+            await syncCoinGeckoSymbols()
             await vm.fetchData(for: selectedTimeRange, count: candleCount)
         }
         connectWebSocket()

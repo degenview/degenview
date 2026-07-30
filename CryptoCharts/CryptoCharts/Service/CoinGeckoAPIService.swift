@@ -20,6 +20,41 @@ private struct CoinSearchResult: Codable {
     }
 }
 
+/// `/coins/markets` row, trimmed to the sparkline fields.
+private struct MarketSparkline: Decodable {
+    let id: String
+    let lastUpdated: String?
+    let sparklineIn7d: Sparkline?
+
+    struct Sparkline: Decodable {
+        let price: [Double]
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case lastUpdated = "last_updated"
+        case sparklineIn7d = "sparkline_in_7d"
+    }
+
+    /// CoinGecko sends ISO-8601, sometimes with fractional seconds.
+    var lastUpdatedDate: Date? {
+        guard let lastUpdated else { return nil }
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = withFraction.date(from: lastUpdated) { return date }
+        return ISO8601DateFormatter().date(from: lastUpdated)
+    }
+}
+
+/// The coin IDs currently on screen, shared across concurrent fetches.
+private actor ActiveSymbols {
+    private(set) var current: [String] = []
+
+    func set(_ symbols: [String]) {
+        current = symbols
+    }
+}
+
 // MARK: - Symbol → ID Cache
 
 private struct CoinIDCache: Codable {
@@ -32,27 +67,47 @@ private struct CoinIDCache: Codable {
 // MARK: - Rate Limiter
 
 /// Enforces minimum interval between CoinGecko API calls to stay under ~25 req/min.
+///
+/// Callers *reserve* their slot before sleeping. Reserving after the sleep would
+/// let every concurrent caller read the same free slot during the suspension and
+/// fire simultaneously — with one chart per coin that means an instant burst and
+/// a 429 for everyone.
 private actor CGRateLimiter {
-    private var lastCallTime: Date = .distantPast
+    /// Earliest instant the next unreserved call may run.
+    private var nextSlot: Date = .distantPast
 
-    /// ≤20 calls/min, safe under ~30/min limit.
-    private let minGap = Timeout.coingeckoRateLimitGap
+    /// The public tier's ceiling isn't published and moves around, so the gap is
+    /// found by feedback rather than assumed: widen on every 429, ease back down
+    /// while calls succeed.
+    private var gap = Timeout.coingeckoRateLimitGap
 
-    /// Wait until we're clear to make another call. Returns immediately if gap satisfied.
+    /// Wait until this caller's reserved slot. Returns immediately if one is free now.
     func waitForSlot() async {
         let now = Date()
-        let nextSlot = lastCallTime.addingTimeInterval(minGap)
-        if now < nextSlot {
-            let wait = nextSlot.timeIntervalSince(now)
-            try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-        }
-        lastCallTime = Date()
+        let slot = max(now, nextSlot)
+        nextSlot = slot.addingTimeInterval(gap)
+
+        let wait = slot.timeIntervalSince(now)
+        guard wait > 0 else { return }
+        try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
     }
 
-    /// Back off after a 429.
-    func backoff(seconds: Int) async {
-        try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
-        lastCallTime = Date()  // reset — we've waited
+    /// Back off after a 429 — pushes out every slot not yet taken and widens the
+    /// gap. Doesn't sleep: the caller's retry blocks on `waitForSlot()` instead.
+    func backoff(seconds: Int) {
+        gap = min(gap * Timeout.coingeckoRateLimitGrowth, Timeout.coingeckoRateLimitMaxGap)
+
+        let resume = Date().addingTimeInterval(Double(seconds))
+        if resume > nextSlot { nextSlot = resume }
+
+#if DEBUG
+        print("[CoinGecko] Rate limiter gap → \(String(format: "%.1f", gap))s")
+#endif
+    }
+
+    /// Narrow the gap gradually while the API is keeping up.
+    func noteSuccess() {
+        gap = max(gap * Timeout.coingeckoRateLimitDecay, Timeout.coingeckoRateLimitGap)
     }
 }
 
@@ -65,13 +120,17 @@ final class CoinGeckoAPIService: TickerDataSource {
     private let session: URLSession
     private let cache: KlineCache
     private let rateLimiter = CGRateLimiter()
+    private let provisional = CoinGeckoProvisionalStore()
+    private let activeSymbols = ActiveSymbols()
     private var coinIDCache: CoinIDCache
     private let cacheURL: URL
     private var coinListRefreshTask: Task<Void, Never>?
 
     init() {
         self.session = AppSupport.defaultSession
-        self.cache = KlineCache()
+        // Persisted: CoinGecko's rate limit makes a cold start expensive, so a
+        // relaunch should paint from disk rather than from the request queue.
+        self.cache = KlineCache(persistenceKey: "coingecko")
         cacheURL = AppSupport.directory.appendingPathComponent("coingecko_coin_ids.json")
 
         if let data = try? Data(contentsOf: cacheURL),
@@ -85,9 +144,16 @@ final class CoinGeckoAPIService: TickerDataSource {
     // MARK: - Kline Fetching
 
     /// Return cached klines regardless of freshness — instant first render.
+    /// Falls back to any window we hold for the coin so zoom and timeframe
+    /// changes never blank the chart.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
+        let coinID = symbol.lowercased()
         let days = daysForInterval(interval, limit: count)
-        return await cache.getStale(symbol: symbol, interval: interval, days: days, count: count)
+
+        if let exact = await cache.getStale(symbol: coinID, interval: interval, days: days, count: count) {
+            return exact
+        }
+        return await cache.getAnyStale(symbol: coinID, count: count)
     }
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
@@ -98,20 +164,11 @@ final class CoinGeckoAPIService: TickerDataSource {
             return cached
         }
 
-        await rateLimiter.waitForSlot()
-
-        guard let url = buildOHLCURL(coinID: coinID, days: days) else {
-            throw CoinGeckoError.invalidURL
-        }
-
 #if DEBUG
         print("[CoinGecko] Fetching OHLC for \(coinID) days=\(days) limit=\(limit)")
 #endif
 
-        let (data, response) = try await session.data(from: url)
-        try await checkHTTPResponse(data: data, response: response, url: url)
-
-        let sorted = try parseOHLCResponse(data)
+        let sorted = try await fetchOHLC(coinID: coinID, days: days)
         let result = Array(sorted.suffix(limit))
 
 #if DEBUG
@@ -122,26 +179,145 @@ final class CoinGeckoAPIService: TickerDataSource {
         return result
     }
 
-    // MARK: - Staged Fetch (fast-first, then full)
+    /// One rate-limited OHLC request, retried once past a 429 backoff.
+    private func fetchOHLC(coinID: String, days: Int, attempts: Int = 2) async throws -> [KlineData] {
+        guard let url = buildOHLCURL(coinID: coinID, days: days) else {
+            throw CoinGeckoError.invalidURL
+        }
 
-    /// Fetches klines in two stages so the chart renders almost immediately:
-    /// 1. Fetch 1 day of data → tiny response, ~500 ms → candles appear fast.
-    /// 2. Fetch the full day range → chart fills in completely.
+        for attempt in 1...attempts {
+            await rateLimiter.waitForSlot()
+            try Task.checkCancellation()
+
+            do {
+                let (data, response) = try await session.data(from: url)
+                try await checkHTTPResponse(data: data, response: response, url: url)
+                await rateLimiter.noteSuccess()
+                return try parseOHLCResponse(data)
+            } catch CoinGeckoError.rateLimited where attempt < attempts {
+                // `backoff` already pushed out the queue — the next
+                // `waitForSlot()` sleeps through it.
+                continue
+            }
+        }
+
+        throw CoinGeckoError.rateLimited
+    }
+
+    /// Persist cached candles immediately — called on app termination.
+    func flushCache() async {
+        await cache.flush()
+    }
+
+    // MARK: - Provisional Candles (one request, every chart)
+
+    /// The coins currently on screen. Set by the view model so a single prime
+    /// request can cover all of them.
+    func setActiveSymbols(_ symbols: [String]) async {
+        await activeSymbols.set(symbols.map { $0.lowercased() })
+    }
+
+    /// Fetch 7-day hourly sparklines for every visible coin in one request.
+    /// Deduplicated and TTL-guarded — concurrent charts share the one call.
+    private func primeProvisionalCandles() async {
+        let symbols = await activeSymbols.current
+
+        // With a single chart there is nothing to amortise the extra request
+        // over: its own OHLC fetch is already first in the queue.
+        guard symbols.count > 1 else { return }
+
+        await provisional.ensurePrimed(ttl: Timeout.coingeckoProvisionalTTL) { [weak self] in
+            guard let self else { return [:] }
+            return await self.fetchSparklines(coinIDs: symbols)
+        }
+    }
+
+    /// One `/coins/markets` call returning 7 days of hourly prices per coin.
+    private func fetchSparklines(coinIDs: [String]) async -> [String: [CoinGeckoProvisionalStore.PricePoint]] {
+        guard !coinIDs.isEmpty,
+              var components = URLComponents(string: "\(baseURL)/coins/markets")
+        else { return [:] }
+
+        components.queryItems = [
+            URLQueryItem(name: "vs_currency", value: "usd"),
+            URLQueryItem(name: "ids", value: coinIDs.joined(separator: ",")),
+            URLQueryItem(name: "sparkline", value: "true"),
+            URLQueryItem(name: "per_page", value: String(min(coinIDs.count, Timeout.iconMaxCoins))),
+        ]
+        guard let url = components.url else { return [:] }
+
+        await rateLimiter.waitForSlot()
+        guard !Task.isCancelled else { return [:] }
+
+        do {
+#if DEBUG
+            print("[CoinGecko] Priming sparklines for \(coinIDs.count) coins")
+#endif
+            let (data, response) = try await session.data(from: url)
+            try await checkHTTPResponse(data: data, response: response, url: url)
+            await rateLimiter.noteSuccess()
+
+            let coins = try JSONDecoder().decode([MarketSparkline].self, from: data)
+            return Self.pricePoints(from: coins)
+        } catch {
+#if DEBUG
+            print("[CoinGecko] Sparkline prime failed: \(error.localizedDescription)")
+#endif
+            return [:]
+        }
+    }
+
+    /// Sparkline prices are evenly spaced hourly samples ending at `last_updated`.
+    private static func pricePoints(
+        from coins: [MarketSparkline]
+    ) -> [String: [CoinGeckoProvisionalStore.PricePoint]] {
+        var result: [String: [CoinGeckoProvisionalStore.PricePoint]] = [:]
+
+        for coin in coins {
+            let prices = coin.sparklineIn7d?.price ?? []
+            guard prices.count >= 2 else { continue }
+
+            let end = coin.lastUpdatedDate ?? Date()
+            let step: TimeInterval = 3_600
+            let points = prices.enumerated().map { index, price in
+                CoinGeckoProvisionalStore.PricePoint(
+                    time: end.addingTimeInterval(-Double(prices.count - 1 - index) * step),
+                    price: price
+                )
+            }
+            result[coin.id.lowercased()] = points
+        }
+        return result
+    }
+
+    // MARK: - Staged Fetch (cached → provisional → real)
+
+    /// Emits candles as they become available instead of only once the full
+    /// window has loaded:
     ///
-    /// Between stages the rate limiter enforces a 3 s gap, but the user sees
-    /// candles from stage 1 the whole time — no spinner after ~500 ms.
+    /// 1. Cached candles — any window we hold for the coin — yielded immediately.
+    /// 2. Provisional candles built from the shared 7-day sparkline prime, which
+    ///    covers every visible coin in a single request.
+    /// 3. The real target window, which supersedes the earlier batches.
+    ///
+    /// A per-chart "fetch a small window first" probe would not help here: every
+    /// request costs the same slot in the shared queue, so a probe just pushes
+    /// this chart's real data one slot later without arriving any sooner than it
+    /// would have. Only the batched prime beats the queue, because it pays one
+    /// request for all charts at once.
     func fetchKlinesStaged(
         symbol: String,
         interval: String,
-        limit: Int
+        limit: Int,
+        needsFirstPaint: Bool
     ) -> AsyncThrowingStream<[KlineData], Error> {
         AsyncThrowingStream { continuation in
             let coinID = symbol.lowercased()
             let fullDays = daysForInterval(interval, limit: limit)
 
-            Task {
+            let task = Task {
                 do {
-                    // Cache hit → yield all at once, skip fetching.
+                    // Fresh cache hit → yield all at once, skip fetching.
                     if let cached = await cache.get(
                         symbol: coinID, interval: interval,
                         days: fullDays, count: limit, ttl: Timeout.coingeckoCacheTTL
@@ -151,60 +327,46 @@ final class CoinGeckoAPIService: TickerDataSource {
                         return
                     }
 
-                    // Yield stale cache first so chart renders instantly.
-                    if let stale = await cache.getStale(
+                    // Stale candles for this window, else any window we hold for
+                    // this coin — either renders instantly.
+                    var hasCandles = !needsFirstPaint
+                    var stale = await cache.getStale(
                         symbol: coinID, interval: interval, days: fullDays, count: limit
-                    ) {
-                        continuation.yield(stale)
+                    )
+                    if stale == nil {
+                        stale = await cache.getAnyStale(symbol: coinID, count: limit)
                     }
 
-                    // Stage 1: fetch the smallest window for instant display.
-                    // 1 day of data is a tiny response — arrives in ~500 ms.
-                    // CoinGecko returns 30-minute candles for a 1-day window,
-                    // so it supplies ~48. Only run stage 1 when that satisfies
-                    // the full limit; otherwise skip straight to stage 2 so
-                    // rapid zooming never leaves the chart stuck with a wrong
-                    // candle count.
-                    let stage1 = Self.ohlcWindows[0]
-                    let needStage1 = fullDays > stage1.days && limit <= stage1.supply
+                    if let stale, !stale.isEmpty {
+                        continuation.yield(stale)
+                        hasCandles = true
+                    }
 
-                    if needStage1, let url1 = buildOHLCURL(coinID: coinID, days: stage1.days) {
-                        do {
-                            await rateLimiter.waitForSlot()
+                    // Nothing cached: fall back to the shared sparkline prime.
+                    // The first chart to ask triggers one request covering every
+                    // visible coin, so all of them paint together — well before
+                    // their own OHLC requests come up in the queue.
+                    if !hasCandles {
+                        await primeProvisionalCandles()
+                        try Task.checkCancellation()
 
+                        let granularity = Self.intervalSeconds[interval] ?? 3_600
+                        let approximate = await provisional.candles(
+                            for: coinID, granularity: granularity, limit: limit
+                        )
+                        if let approximate, !approximate.isEmpty {
                         #if DEBUG
-                            print("[CoinGecko] Stage 1: fetching \(stage1.days)d for \(coinID)")
+                            print("[CoinGecko] Provisional: \(approximate.count) candles for \(coinID)")
                         #endif
-
-                            let (data1, response1) = try await session.data(from: url1)
-                            try await checkHTTPResponse(data: data1, response: response1, url: url1)
-                            let sorted1 = try parseOHLCResponse(data1)
-                            let batch1 = Array(sorted1.suffix(limit))
-
-                            if !batch1.isEmpty {
-                                continuation.yield(batch1)
-                            }
-                        } catch {
-                            // Stage 1 is a best-effort fast path. On failure,
-                            // fall through to stage 2 — don't break the stream.
-                        #if DEBUG
-                            print("[CoinGecko] Stage 1 failed, proceeding to stage 2: \(error)")
-                        #endif
+                            continuation.yield(approximate)
                         }
                     }
 
-                    // Stage 2: always run the full fetch.
-                    await rateLimiter.waitForSlot()
+                    // The window actually requested — real OHLC data.
                 #if DEBUG
-                    print("[CoinGecko] Stage 2: fetching \(fullDays)d for \(coinID)")
+                    print("[CoinGecko] Fetching \(fullDays)d for \(coinID)")
                 #endif
-
-                    guard let url = buildOHLCURL(coinID: coinID, days: fullDays) else {
-                        throw CoinGeckoError.invalidURL
-                    }
-                    let (data, response) = try await session.data(from: url)
-                    try await checkHTTPResponse(data: data, response: response, url: url)
-                    let sorted = try parseOHLCResponse(data)
+                    let sorted = try await fetchOHLC(coinID: coinID, days: fullDays)
                     let result = Array(sorted.suffix(limit))
 
                     await cache.set(symbol: coinID, interval: interval, days: fullDays, data: sorted)
@@ -219,6 +381,10 @@ final class CoinGeckoAPIService: TickerDataSource {
                     continuation.finish(throwing: error)
                 }
             }
+
+            // A dropped consumer (chart removed, zoom superseded) must release
+            // its rate-limiter slots instead of holding up the other charts.
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 

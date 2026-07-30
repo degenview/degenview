@@ -141,7 +141,8 @@ final class ChartViewModel: ObservableObject {
                     try await self.fetchStaged(
                         cgService: cgService,
                         range: range,
-                        count: count
+                        count: count,
+                        generation: generation
                     )
                 } else {
                     let data = try await self.api.fetchKlines(
@@ -173,26 +174,38 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
-    /// Consume staged kline data from CoinGecko.
-    /// Stage 1 (1 day range) arrives in ~500 ms — chart renders almost instantly.
-    /// Stage 2 (full range) follows after rate-limit gap — chart fills in completely.
+    /// Consume staged kline data from CoinGecko, rendering each batch as it lands
+    /// instead of waiting for the full window.
+    ///
+    /// Batches arrive coarse-to-exact: cached candles first (instant), then a
+    /// 1-day probe if the chart was blank, then the requested window. Each batch
+    /// replaces the previous one, so the chart fills in rather than sitting empty
+    /// behind the rate limiter.
     private func fetchStaged(
         cgService: CoinGeckoAPIService,
         range: TimeRange,
-        count: Int
+        count: Int,
+        generation: Int
     ) async throws {
         let stream = cgService.fetchKlinesStaged(
             symbol: apiSymbol,
             interval: range.binanceInterval,
-            limit: count
+            limit: count,
+            needsFirstPaint: klineData.isEmpty
         )
 
         for try await batch in stream {
             guard !Task.isCancelled else { return }
+            // A newer fetch (zoom, timeframe, ticker change) owns the chart now.
+            guard fetchGeneration == generation else { return }
+            guard !batch.isEmpty else { continue }
+
             klineData = batch
             if let last = batch.last {
                 currentPrice = last.closePrice
             }
+            // Partial batches still count as a successful render.
+            lastUpdated = Date()
         }
     }
 }

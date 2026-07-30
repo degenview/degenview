@@ -26,8 +26,18 @@ enum Timeout {
     static let binanceCacheTTL: TimeInterval = 15
     /// CoinGecko kline cache TTL (seconds — free tier, slow to update).
     static let coingeckoCacheTTL: TimeInterval = 120
-    /// CoinGecko rate-limiter minimum gap between calls (seconds).
-    static let coingeckoRateLimitGap: TimeInterval = 3.0
+    /// CoinGecko rate-limiter starting gap between calls (seconds).
+    /// The public tier is throttled per rolling minute; the limiter widens this
+    /// on every 429 and narrows it again while calls succeed.
+    static let coingeckoRateLimitGap: TimeInterval = 4.0
+    /// Widest the CoinGecko gap may grow after repeated 429s (seconds).
+    static let coingeckoRateLimitMaxGap: TimeInterval = 20.0
+    /// Gap multiplier applied on a 429.
+    static let coingeckoRateLimitGrowth: Double = 1.6
+    /// Gap multiplier applied after each successful call.
+    static let coingeckoRateLimitDecay: Double = 0.92
+    /// How long a sparkline prime stays usable for provisional candles (seconds).
+    static let coingeckoProvisionalTTL: TimeInterval = 300
     /// CoinGecko coin-list cache staleness (seconds — 7 days).
     static let coinListStaleness: TimeInterval = 86400 * 7
     /// Icon cache staleness (seconds — 7 days).
@@ -42,6 +52,17 @@ enum Timeout {
     static let iconMaxCoins = 250
     /// DEXScreener search result limit.
     static let dexSearchLimit = 20
+}
+
+// MARK: - Cache Constants
+
+enum CacheLimit {
+    /// Drop on-disk kline entries older than this on load (seconds — 3 days).
+    static let diskStaleness: TimeInterval = 3 * 86400
+    /// Max kline entries written to disk.
+    static let maxDiskEntries = 120
+    /// Debounce before flushing the kline cache to disk (nanoseconds).
+    static let saveDebounceNS: UInt64 = 2_000_000_000
 }
 
 // MARK: - Format Constants

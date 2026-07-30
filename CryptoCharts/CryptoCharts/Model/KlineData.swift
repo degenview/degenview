@@ -1,6 +1,6 @@
 import Foundation
 
-struct KlineData: Identifiable {
+struct KlineData: Identifiable, Codable {
     let id = UUID()
     let openTime: Date
     let openPrice: Double
@@ -8,6 +8,11 @@ struct KlineData: Identifiable {
     var lowPrice: Double
     var closePrice: Double
     var volume: Double
+
+    /// `id` is excluded — it's a fresh per-instance identity, not persisted state.
+    private enum CodingKeys: String, CodingKey {
+        case openTime, openPrice, highPrice, lowPrice, closePrice, volume
+    }
 }
 
 extension KlineData {
