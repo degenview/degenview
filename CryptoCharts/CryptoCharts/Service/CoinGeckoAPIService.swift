@@ -86,19 +86,19 @@ final class CoinGeckoAPIService: TickerDataSource {
 
     /// Return cached klines regardless of freshness — instant first render.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
-        return await cache.getStale(symbol: symbol, interval: interval, count: count)
+        let days = daysForInterval(interval, limit: count)
+        return await cache.getStale(symbol: symbol, interval: interval, days: days, count: count)
     }
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         let coinID = symbol.lowercased()
+        let days = daysForInterval(interval, limit: limit)
 
-        if let cached = await cache.get(symbol: coinID, interval: interval, count: limit, ttl: Timeout.coingeckoCacheTTL) {
+        if let cached = await cache.get(symbol: coinID, interval: interval, days: days, count: limit, ttl: Timeout.coingeckoCacheTTL) {
             return cached
         }
 
         await rateLimiter.waitForSlot()
-
-        let days = daysForInterval(interval, limit: limit)
 
         guard let url = buildOHLCURL(coinID: coinID, days: days) else {
             throw CoinGeckoError.invalidURL
@@ -118,7 +118,7 @@ final class CoinGeckoAPIService: TickerDataSource {
         print("[CoinGecko] \(coinID) candles=\(result.count) (fetched \(sorted.count), limit \(limit))")
 #endif
 
-        await cache.set(symbol: coinID, interval: interval, data: sorted)
+        await cache.set(symbol: coinID, interval: interval, days: days, data: sorted)
         return result
     }
 
@@ -144,7 +144,7 @@ final class CoinGeckoAPIService: TickerDataSource {
                     // Cache hit → yield all at once, skip fetching.
                     if let cached = await cache.get(
                         symbol: coinID, interval: interval,
-                        count: limit, ttl: Timeout.coingeckoCacheTTL
+                        days: fullDays, count: limit, ttl: Timeout.coingeckoCacheTTL
                     ) {
                         continuation.yield(cached)
                         continuation.finish()
@@ -153,22 +153,27 @@ final class CoinGeckoAPIService: TickerDataSource {
 
                     // Yield stale cache first so chart renders instantly.
                     if let stale = await cache.getStale(
-                        symbol: coinID, interval: interval, count: limit
+                        symbol: coinID, interval: interval, days: fullDays, count: limit
                     ) {
                         continuation.yield(stale)
                     }
 
-                    // Stage 1: fetch minimal day range for instant display.
+                    // Stage 1: fetch the smallest window for instant display.
                     // 1 day of data is a tiny response — arrives in ~500 ms.
-                    let stage1Days = 1
-                    let needStage1 = fullDays > stage1Days
+                    // CoinGecko returns 30-minute candles for a 1-day window,
+                    // so it supplies ~48. Only run stage 1 when that satisfies
+                    // the full limit; otherwise skip straight to stage 2 so
+                    // rapid zooming never leaves the chart stuck with a wrong
+                    // candle count.
+                    let stage1 = Self.ohlcWindows[0]
+                    let needStage1 = fullDays > stage1.days && limit <= stage1.supply
 
-                    if needStage1, let url1 = buildOHLCURL(coinID: coinID, days: stage1Days) {
+                    if needStage1, let url1 = buildOHLCURL(coinID: coinID, days: stage1.days) {
                         do {
                             await rateLimiter.waitForSlot()
 
                         #if DEBUG
-                            print("[CoinGecko] Stage 1: fetching \(stage1Days)d for \(coinID)")
+                            print("[CoinGecko] Stage 1: fetching \(stage1.days)d for \(coinID)")
                         #endif
 
                             let (data1, response1) = try await session.data(from: url1)
@@ -189,14 +194,10 @@ final class CoinGeckoAPIService: TickerDataSource {
                     }
 
                     // Stage 2: always run the full fetch.
-                    if needStage1 {
-                        await rateLimiter.waitForSlot()
-                    #if DEBUG
-                        print("[CoinGecko] Stage 2: fetching \(fullDays)d for \(coinID)")
-                    #endif
-                    } else {
-                        await rateLimiter.waitForSlot()
-                    }
+                    await rateLimiter.waitForSlot()
+                #if DEBUG
+                    print("[CoinGecko] Stage 2: fetching \(fullDays)d for \(coinID)")
+                #endif
 
                     guard let url = buildOHLCURL(coinID: coinID, days: fullDays) else {
                         throw CoinGeckoError.invalidURL
@@ -206,7 +207,7 @@ final class CoinGeckoAPIService: TickerDataSource {
                     let sorted = try parseOHLCResponse(data)
                     let result = Array(sorted.suffix(limit))
 
-                    await cache.set(symbol: coinID, interval: interval, data: sorted)
+                    await cache.set(symbol: coinID, interval: interval, days: fullDays, data: sorted)
                     continuation.yield(result)
 
                 #if DEBUG
@@ -232,9 +233,14 @@ final class CoinGeckoAPIService: TickerDataSource {
         }
         components.queryItems = [
             URLQueryItem(name: "vs_currency", value: "usd"),
-            URLQueryItem(name: "days", value: String(days)),
+            URLQueryItem(name: "days", value: Self.daysParameter(days)),
         ]
         return components.url
+    }
+
+    /// CoinGecko spells the full-history window "max", not a day count.
+    private static func daysParameter(_ days: Int) -> String {
+        days >= maxDays ? "max" : String(days)
     }
 
     // MARK: - HTTP Response Validation
@@ -278,44 +284,74 @@ final class CoinGeckoAPIService: TickerDataSource {
         return klines.sorted { $0.openTime < $1.openTime }
     }
 
-    /// CoinGecko OHLC only accepts these `days` values. Snap to nearest valid bucket.
-    private static let validDays = [1, 7, 14, 30, 90, 180, 365, 9999]  // 9999 = "max"
+    // MARK: - OHLC Window Selection
 
-    /// Map Binance-style interval + limit to the nearest valid CoinGecko `days` parameter.
-    /// Accounts for CoinGecko's OHLC auto-granularity thresholds:
-    ///   1 day       → fine-grained (up to ~288 candles)
-    ///   2–90 days   → hourly candles
-    ///   91+ days    → daily candles
+    /// One selectable CoinGecko OHLC window.
+    ///
+    /// The public OHLC endpoint has no `limit` parameter and no granularity
+    /// parameter — it derives candle size from the `days` window alone:
+    ///   1–2 days   → 30-minute candles
+    ///   3–30 days  → 4-hour candles
+    ///   31+ days   → 4-day candles
+    private struct OHLCWindow {
+        let days: Int
+        let granularity: TimeInterval
+
+        /// Candles CoinGecko returns for this window.
+        var supply: Int { Int(Double(days) * 86_400 / granularity) }
+    }
+
+    /// Candle supply is *non-monotonic* in `days` — a 30-day window yields ~180
+    /// candles but a 90-day window only ~22. Scaling `days` with the requested
+    /// count (the way a Binance `limit` scales) therefore returns fewer candles
+    /// than asked for, and leaves the chart frozen across zoom steps that don't
+    /// happen to cross a window boundary. We select by supply instead.
+    private static let ohlcWindows: [OHLCWindow] = [
+        OHLCWindow(days: 1,   granularity: 1_800),    //  48 candles
+        OHLCWindow(days: 7,   granularity: 14_400),   //  42
+        OHLCWindow(days: 14,  granularity: 14_400),   //  84
+        OHLCWindow(days: 30,  granularity: 14_400),   // 180
+        OHLCWindow(days: 90,  granularity: 345_600),  //  22
+        OHLCWindow(days: 180, granularity: 345_600),  //  45
+        OHLCWindow(days: 365, granularity: 345_600),  //  91
+        // Full history — the only window that can exceed 180 candles. Its real
+        // supply depends on how long the coin has traded; the nominal figure
+        // just marks it as the deepest option.
+        OHLCWindow(days: maxDays, granularity: 345_600),
+    ]
+
+    /// Sentinel `days` value standing in for CoinGecko's "max" (full history)
+    /// window.
+    private static let maxDays = 9999
+
+    /// Binance-style interval → seconds, for matching against CG granularity.
+    private static let intervalSeconds: [String: TimeInterval] = [
+        "1m": 60, "5m": 300, "15m": 900, "30m": 1_800,
+        "1h": 3_600, "4h": 14_400,
+        "1d": 86_400, "1w": 604_800, "1M": 2_592_000,
+    ]
+
+    /// Pick the `days` window that can actually supply `limit` candles, at the
+    /// granularity closest to `interval`.
+    ///
+    /// Matching `limit` is what keeps a CoinGecko chart zooming in step with a
+    /// Binance one. The trade-off is span: CoinGecko offers no 1h/1d/1w candles
+    /// on the public tier, so the same candle count can cover a longer period.
     private func daysForInterval(_ interval: String, limit: Int) -> Int {
-        let raw: Int
-        switch interval {
-        case "1m", "5m", "15m", "30m":
-            // Sub-hourly: CG only gives fine granularity for days=1 (~288 candles
-            // for 5m). If more candles are needed, fall back to hourly (≤90 days).
-            if limit <= 288 { raw = 1 }
-            else            { raw = max(2, min(90, (limit + 23) / 24)) }
-        case "1h":
-            // Hourly: stay within 2–90 day band so CG returns hourly candles.
-            // 1 day of hourly data = 24 candles; 90 days = 2160 max.
-            raw = max(2, min(90, (limit + 23) / 24))
-        case "4h":
-            // 4-hourly: CG has no native 4h granularity. Use hourly band (≤90d),
-            // giving 6 candles/day; 90 days = 540 max.
-            raw = max(2, min(90, (limit + 5) / 6))
-        case "1d":
-            // Daily: must exceed 90 days or CG returns hourly candles.
-            raw = max(91, limit)
-        case "1w":
-            // Weekly: CG has no native weekly; use daily band (>90d).
-            // Request enough days for `limit` weekly candles of underlying data.
-            raw = max(91, limit * 7)
-        case "1M":
-            // Monthly: same as weekly — daily band, enough days for span.
-            raw = max(91, limit * 30)
-        default:
-            raw = max(1, limit)
-        }
-        return Self.validDays.first(where: { $0 >= raw }) ?? 365
+        let target = Self.intervalSeconds[interval] ?? 3_600
+
+        let usable = Self.ohlcWindows.filter { $0.supply >= limit }
+        guard !usable.isEmpty else { return Self.maxDays }
+
+        return usable.min { a, b in
+            // Compare granularity on a log scale so "twice as coarse" and
+            // "twice as fine" count equally against a window.
+            let distanceA = abs(log(a.granularity / target))
+            let distanceB = abs(log(b.granularity / target))
+            // Closest granularity wins; on a tie take the smaller window so we
+            // don't fetch history we'd immediately discard.
+            return (distanceA, a.supply) < (distanceB, b.supply)
+        }!.days
     }
 
     // MARK: - Search
