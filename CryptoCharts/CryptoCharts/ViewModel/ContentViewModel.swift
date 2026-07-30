@@ -69,24 +69,29 @@ final class ContentViewModel: ObservableObject {
             vm.applyConfig(config)
             return vm
         }
-        Task {
-            for vm in chartViewModels {
-                await vm.fetchData(for: selectedTimeRange, count: candleCount)
-                try? await Task.sleep(nanoseconds: 100_000_000)
+        let didRestore = restoreLastView()
+        if !didRestore {
+            Task {
+                for vm in chartViewModels {
+                    await vm.fetchData(for: selectedTimeRange, count: candleCount)
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                connectWebSocket()
             }
-            connectWebSocket()
-            restoreLastView()
         }
+        // loadView() handles refetchAll() + connectWebSocket() for restored views
         startAutoRefresh()
     }
 
     /// Restore the last-used saved view if available.
-    private func restoreLastView() {
+    @discardableResult
+    private func restoreLastView() -> Bool {
         guard let idString = UserDefaults.standard.string(forKey: "lastViewID"),
               let id = UUID(uuidString: idString),
               let view = savedViews.first(where: { $0.id == id })
-        else { return }
+        else { return false }
         loadView(view)
+        return true
     }
 
     private func saveLastViewID(_ id: UUID?) {
