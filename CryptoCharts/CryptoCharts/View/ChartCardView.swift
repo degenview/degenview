@@ -19,6 +19,7 @@ struct ChartCardView: View {
             chartArea
         }
         .padding(6)
+        .frame(height: chartHeight + ChartLayout.cardChrome)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
             iconURL = await CoinGeckoService.shared.iconURL(for: viewModel.baseSymbol)
