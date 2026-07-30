@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
-    var chartHeight: CGFloat = 220
+    var chartHeight: CGFloat
     let onRemove: () -> Void
     let onRetry: () -> Void
     let onZoom: (CGFloat) -> Void
@@ -127,12 +127,14 @@ struct ChartCardView: View {
 }
 
 #Preview {
-    let vm = ChartViewModel(ticker: "BTC")
-    vm.klineData = MockData.sampleKlines
-    vm.currentPrice = 68432.15
-
-    return ChartCardView(
-        viewModel: vm,
+    ChartCardView(
+        viewModel: {
+            let vm = ChartViewModel(ticker: "BTC")
+            vm.klineData = MockData.sampleKlines
+            vm.currentPrice = 68432.15
+            return vm
+        }(),
+        chartHeight: 220,
         onRemove: {},
         onRetry: {},
         onZoom: { _ in },

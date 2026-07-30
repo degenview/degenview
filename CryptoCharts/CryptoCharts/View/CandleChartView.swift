@@ -4,7 +4,7 @@ import SwiftUI
 
 struct CandleChartView: View {
     let candles: [KlineData]
-    var chartHeight: CGFloat = 220
+    var chartHeight: CGFloat
     var style: CandleChartStyle = .default
 
     // Per-chart overrides
@@ -323,7 +323,7 @@ struct CandleChartView: View {
 }
 
 #Preview {
-    CandleChartView(candles: MockData.sampleKlines)
+    CandleChartView(candles: MockData.sampleKlines, chartHeight: 220)
         .frame(width: 400, height: 260)
         .padding()
 }

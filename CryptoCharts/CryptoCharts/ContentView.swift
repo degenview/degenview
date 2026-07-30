@@ -93,23 +93,31 @@ struct ContentView: View {
                                 }
                             }()
 
-                            let chartHeight = min(ChartLayout.cardMaxHeight, max(ChartLayout.cardMinHeight, naturalHeight))
-                            let needsScroll = chartHeight <= ChartLayout.cardMinHeight
+                            // Charts fill available window height. Floor at chartMinHeight
+                            // (the canvas won't render below 50 pt anyway).
+                            let chartHeight = max(ChartLayout.chartMinHeight, naturalHeight)
 
                             if contentViewModel.layoutMode == .vertical {
-                                List {
-                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                        chartCard(vm, height: chartHeight)
-                                            .listRowSeparator(.hidden)
-                                            .padding(4)
+                                ScrollView {
+                                    VStack(spacing: ChartLayout.cardGap) {
+                                        ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
+                                            chartCard(vm, height: chartHeight)
+                                                .onDrag {
+                                                    NSItemProvider(object: vm.uniqueID as NSString)
+                                                }
+                                                .onDrop(
+                                                    of: [.utf8PlainText],
+                                                    delegate: ReorderDropDelegate(
+                                                        targetTicker: vm.uniqueID,
+                                                        viewModel: contentViewModel
+                                                    )
+                                                )
+                                        }
                                     }
-                                    .onMove { from, to in
-                                        contentViewModel.moveTicker(from: from, to: to)
-                                    }
+                                    .padding(4)
                                 }
-                                .listStyle(.plain)
-                                .scrollContentBackground(.hidden)
-                                .scrollDisabled(!needsScroll)
+                                .frame(height: available)
+                                .scrollIndicators(.never)
                             } else {
                                 ScrollView {
                                     LazyVGrid(
@@ -134,6 +142,7 @@ struct ContentView: View {
                                     .padding(4)
                                 }
                                 .frame(height: available)
+                                .scrollIndicators(.never)
                             }
                         }
                     }
@@ -245,7 +254,7 @@ struct ContentView: View {
 
     // MARK: - Chart Card Builder
 
-    private func chartCard(_ vm: ChartViewModel, height: CGFloat = 220) -> some View {
+    private func chartCard(_ vm: ChartViewModel, height: CGFloat) -> some View {
         ChartCardView(
             viewModel: vm,
             chartHeight: height,

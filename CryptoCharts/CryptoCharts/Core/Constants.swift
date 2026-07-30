@@ -3,16 +3,10 @@ import Foundation
 // MARK: - Layout Constants
 
 enum ChartLayout {
-    /// Minimum chart card height.
-    static let cardMinHeight: CGFloat = 60
-    /// Maximum chart card height.
-    static let cardMaxHeight: CGFloat = 250
     /// Gap between chart cards in vertical/grid layout.
     static let cardGap: CGFloat = 8
     /// Estimated non-chart chrome per card (header + padding + spacing).
     static let cardChrome: CGFloat = 55
-    /// Default chart height.
-    static let defaultChartHeight: CGFloat = 220
     /// Grid layout column count.
     static let gridColumns = 2
     /// Grid layout column width fraction.
