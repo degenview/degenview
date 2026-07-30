@@ -8,7 +8,7 @@ struct CandleChartStyle {
 
     // Candle geometry
     var wickWidth: CGFloat = 1
-    var bodyWidthRatio: CGFloat = 0.6      // fraction of available slot per candle
+    var candleBodyWidth: CGFloat = 7        // fixed body width in points — constant regardless of interval/zoom
     var minBodyHeight: CGFloat = 1          // minimum body height in points (doji)
     var dojiThreshold: Double = 0.00001     // relative to price range; abs(close-open)/range < this → doji
 
@@ -28,7 +28,7 @@ struct CandleChartStyle {
     var currentPriceDashPattern: [CGFloat] = [5, 3]
 
     // Layout
-    var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 28, trailing: 70)
+    var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 70)
 
     static let `default` = CandleChartStyle()
 }

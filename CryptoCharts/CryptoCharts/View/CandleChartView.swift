@@ -121,7 +121,7 @@ struct CandleChartView: View {
     private func drawCandles(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double), slotWidth: CGFloat) {
         let priceRangeSpan = priceRange.max - priceRange.min
         let dojiAbsThreshold = priceRangeSpan * style.dojiThreshold
-        let bodyWidth = slotWidth * style.bodyWidthRatio
+        let bodyWidth = style.candleBodyWidth
 
         for (i, candle) in candles.enumerated() {
             let x = plotRect.minX + CGFloat(i) * slotWidth + slotWidth / 2
@@ -209,49 +209,145 @@ struct CandleChartView: View {
         context.draw(resolved, at: CGPoint(x: boxRect.midX, y: boxRect.midY))
     }
 
-    // MARK: - X Axis (time labels below the plot)
+    // MARK: - X Axis (time labels below the plot, aligned to natural boundaries)
 
     private func drawXAxis(context: inout GraphicsContext, plotRect: CGRect) {
         guard candles.count >= 2 else { return }
 
-        let totalSpan = candles.last!.openTime.timeIntervalSince(candles.first!.openTime)
-        guard totalSpan > 0 else { return }
+        let firstDate = candles.first!.openTime
+        let lastDate = candles.last!.openTime
+        guard lastDate > firstDate else { return }
 
-        let formatter = DateFormatter()
-        formatter.dateFormat = TimeAxisFormatter.format(for: totalSpan)
-        formatter.timeZone = TimeZone(identifier: "UTC")!
+        let candleInterval = candles[1].openTime.timeIntervalSince(candles[0].openTime)
+        let slotWidth = plotRect.width / CGFloat(max(1, candles.count))
 
-        let labelCount = style.timeLabelCount
+        let calendar: Calendar = {
+            var c = Calendar(identifier: .gregorian)
+            c.timeZone = TimeZone(identifier: "UTC")!
+            return c
+        }()
 
-        for i in 0..<labelCount {
-            let fraction = CGFloat(i) / CGFloat(max(1, labelCount - 1))
-            let timestamp = candles.first!.openTime.addingTimeInterval(totalSpan * Double(fraction))
+        let boundaries = generateTimeBoundaries(
+            first: firstDate,
+            last: lastDate,
+            candleInterval: candleInterval,
+            calendar: calendar
+        )
 
-            let label = formatter.string(from: timestamp)
-            let text = Text(label).font(.caption2).foregroundStyle(.secondary)
-            let resolved = context.resolve(text)
-            let textSize = resolved.measure(in: .init(width: 120, height: 14))
+        for boundary in boundaries {
+            let index = candleIndex(for: boundary)
+            let x = plotRect.minX + index * slotWidth
 
-            let x = plotRect.minX + fraction * plotRect.width
-
-            // Vertical grid line
+            // Vertical grid line at boundary position
             var vLine = Path()
             vLine.move(to: CGPoint(x: x, y: plotRect.minY))
             vLine.addLine(to: CGPoint(x: x, y: plotRect.maxY))
             context.stroke(vLine, with: .color(style.gridColor), lineWidth: style.gridLineWidth)
-
-            let drawX: CGFloat
-            if i == 0 {
-                drawX = x
-            } else if i == labelCount - 1 {
-                drawX = x - textSize.width
-            } else {
-                drawX = x - textSize.width / 2
-            }
-
-            let drawY = plotRect.maxY + 8
-            context.draw(resolved, at: CGPoint(x: drawX, y: drawY))
         }
+    }
+
+    // MARK: - Time boundary generation
+
+    /// Generate natural time boundaries (month starts, hour marks, etc.) between first and last candle.
+    private func generateTimeBoundaries(first: Date, last: Date, candleInterval: TimeInterval, calendar: Calendar) -> [Date] {
+        var boundaries: [Date] = []
+
+        switch candleInterval {
+        case ..<7200:   // sub-2h candles (1h, 30m, 15m, etc.)
+            // Boundaries at 00:00 each day, or every 6h if span is short
+            let span = last.timeIntervalSince(first)
+            let hourStep = span < 172800 ? 6 : 24
+            boundaries = hourAlignedBoundaries(first: first, last: last, calendar: calendar, hourStep: hourStep)
+
+        case 7200..<172800:  // 2h to <2d candles
+            // Daily boundaries at 00:00
+            boundaries = dayAlignedBoundaries(first: first, last: last, calendar: calendar)
+
+        default:  // 2d+ candles (daily, weekly, monthly)
+            // Monthly boundaries at 1st of month
+            boundaries = monthAlignedBoundaries(first: first, last: last, calendar: calendar)
+        }
+
+        return boundaries
+    }
+
+    /// Boundaries at round hour marks (00:00, 06:00, 12:00, 18:00, or every N hours).
+    private func hourAlignedBoundaries(first: Date, last: Date, calendar: Calendar, hourStep: Int) -> [Date] {
+        var boundaries: [Date] = []
+
+        // Find first aligned hour boundary
+        var comps = calendar.dateComponents([.year, .month, .day, .hour], from: first)
+        comps.minute = 0
+        comps.second = 0
+        let alignedHour = (comps.hour! / hourStep) * hourStep
+        comps.hour = alignedHour
+
+        guard var boundary = calendar.date(from: comps) else { return [] }
+        if boundary < first {
+            boundary = calendar.date(byAdding: .hour, value: hourStep, to: boundary)!
+        }
+
+        while boundary <= last {
+            boundaries.append(boundary)
+            guard let next = calendar.date(byAdding: .hour, value: hourStep, to: boundary) else { break }
+            boundary = next
+        }
+
+        return boundaries
+    }
+
+    /// Boundaries at midnight (00:00) each day.
+    private func dayAlignedBoundaries(first: Date, last: Date, calendar: Calendar) -> [Date] {
+        // Reuse hour-aligned with step=24
+        return hourAlignedBoundaries(first: first, last: last, calendar: calendar, hourStep: 24)
+    }
+
+    /// Boundaries at 1st of each month.
+    private func monthAlignedBoundaries(first: Date, last: Date, calendar: Calendar) -> [Date] {
+        var boundaries: [Date] = []
+
+        var comps = calendar.dateComponents([.year, .month], from: first)
+        comps.day = 1
+        comps.hour = 0
+        comps.minute = 0
+        comps.second = 0
+
+        guard var boundary = calendar.date(from: comps) else { return [] }
+        if boundary < first {
+            boundary = calendar.date(byAdding: .month, value: 1, to: boundary)!
+        }
+
+        while boundary <= last {
+            boundaries.append(boundary)
+            guard let next = calendar.date(byAdding: .month, value: 1, to: boundary) else { break }
+            boundary = next
+        }
+
+        return boundaries
+    }
+
+    /// Map a boundary date to a fractional candle index for X positioning.
+    /// Uses binary search on candle open times; interpolates when boundary falls between candles.
+    private func candleIndex(for date: Date) -> CGFloat {
+        var lo = 0, hi = candles.count - 1
+        while lo < hi {
+            let mid = (lo + hi + 1) / 2
+            if candles[mid].openTime <= date {
+                lo = mid
+            } else {
+                hi = mid - 1
+            }
+        }
+
+        // Interpolate position between candle[lo] and candle[lo+1]
+        if lo < candles.count - 1 {
+            let span = candles[lo + 1].openTime.timeIntervalSince(candles[lo].openTime)
+            if span > 0 {
+                let fraction = date.timeIntervalSince(candles[lo].openTime) / span
+                return CGFloat(lo) + CGFloat(fraction)
+            }
+        }
+        return CGFloat(lo)
     }
 
 }
