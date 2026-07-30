@@ -8,13 +8,11 @@ struct ChartSettingsSheet: View {
     let onRemove: () -> Void
     let onStyleChanged: () -> Void
 
+    @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[ChartSettings]")
+
     @State private var selectedTab: Tab = .ticker
     @State private var searchText = ""
-    @State private var searchResults: [DataSourceType: [TickerSearchResult]] = [:]
-    @State private var isSearching = false
-    @State private var selectedResult: TickerSearchResult?
     @State private var errorMessage: String?
-    @State private var searchTask: Task<Void, Never>?
 
     // Appearance state — initialized from viewModel
     @State private var bullishColor: Color
@@ -120,7 +118,7 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    searchTask?.cancel()
+                    searchVM.cancelSearch()
                     dismiss()
                 }
                 .keyboardShortcut(.return)
@@ -128,9 +126,9 @@ struct ChartSettingsSheet: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: 420, height: 420)
+        .frame(width: UI.chartSettingsSheetWidth, height: UI.chartSettingsSheetHeight)
         .onDisappear {
-            searchTask?.cancel()
+            searchVM.cancelSearch()
         }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
@@ -167,15 +165,15 @@ struct ChartSettingsSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.body)
                     .onChange(of: searchText) {
-                        scheduleSearch()
+                        searchVM.scheduleSearch(query: searchText)
                     }
                     .onSubmit {
-                        if let first = firstAvailableResult {
-                            selectedResult = first
+                        if let first = searchVM.firstAvailableResult {
+                            searchVM.selectedResult = first
                         }
                     }
 
-                if isSearching {
+                if searchVM.isSearching {
                     ProgressView()
                         .scaleEffect(0.7)
                         .frame(width: 20, height: 20)
@@ -184,13 +182,17 @@ struct ChartSettingsSheet: View {
             .padding(.horizontal, 16)
 
             // Search results
-            if !searchResults.isEmpty {
+            if !searchVM.searchResults.isEmpty {
                 List {
-                    ForEach(orderedSources, id: \.self) { source in
-                        if let results = searchResults[source], !results.isEmpty {
+                    ForEach(searchVM.orderedSources, id: \.self) { source in
+                        if let results = searchVM.searchResults[source], !results.isEmpty {
                             Section {
                                 ForEach(results) { result in
-                                    searchResultRow(result)
+                                    SearchResultRow(
+                                        result: result,
+                                        isSelected: searchVM.selectedResult == result,
+                                        onSelect: { searchVM.selectedResult = result }
+                                    )
                                 }
                             } header: {
                                 Label(source.displayName, systemImage: source.icon)
@@ -201,11 +203,11 @@ struct ChartSettingsSheet: View {
                     }
                 }
                 .listStyle(.inset)
-                .frame(maxHeight: 180)
+                .frame(maxHeight: UI.chartSettingsResultsMaxHeight)
             }
 
             // Selected result
-            if let selected = selectedResult {
+            if let selected = searchVM.selectedResult {
                 HStack {
                     Label("New: \(selected.symbol)", systemImage: selected.source.icon)
                         .font(.callout.weight(.medium))
@@ -221,7 +223,7 @@ struct ChartSettingsSheet: View {
                     onUpdateTicker(selected.fullSymbol, selected.source)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedResult == nil)
+                .disabled(searchVM.selectedResult == nil)
             }
 
             if let error = errorMessage {
@@ -299,120 +301,6 @@ struct ChartSettingsSheet: View {
         default:
             "Shows \(decimalPlacesMode.rawValue) decimal place\(decimalPlacesMode.rawValue == "1" ? "" : "s") on the Y-axis."
         }
-    }
-
-    // MARK: - Search (reuses pattern from AddTickerSheet)
-
-    private var orderedSources: [DataSourceType] {
-        var sources = DataSourceType.allCases
-        sources.sort { a, b in
-            let aHas = !(searchResults[a]?.isEmpty ?? true)
-            let bHas = !(searchResults[b]?.isEmpty ?? true)
-            if aHas != bHas { return aHas }
-            return a.rawValue < b.rawValue
-        }
-        return sources
-    }
-
-    private var firstAvailableResult: TickerSearchResult? {
-        for source in orderedSources {
-            if let results = searchResults[source], let first = results.first {
-                return first
-            }
-        }
-        return nil
-    }
-
-    private func scheduleSearch() {
-        searchTask?.cancel()
-
-        let text = searchText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else {
-            searchResults = [:]
-            selectedResult = nil
-            return
-        }
-
-        let captured = text
-        searchTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled, searchText.trimmingCharacters(in: .whitespaces) == captured else { return }
-
-            isSearching = true
-            defer { isSearching = false }
-
-            let sources = DataSourceFactory.shared.allSources
-            var newResults: [DataSourceType: [TickerSearchResult]] = [:]
-
-            await withTaskGroup(of: (DataSourceType, [TickerSearchResult]?).self) { group in
-                for source in sources {
-                    group.addTask {
-                        do {
-                            let results = try await source.searchTickers(query: captured)
-                            return (source.type, results)
-                        } catch {
-                            print("[ChartSettings] \(source.type.displayName) search failed: \(error.localizedDescription)")
-                            return (source.type, nil)
-                        }
-                    }
-                }
-
-                for await (type, results) in group {
-                    if let r = results, !r.isEmpty {
-                        newResults[type] = r
-                    }
-                }
-            }
-
-            guard !Task.isCancelled else { return }
-            searchResults = newResults
-
-            if let selected = selectedResult,
-               !newResults.values.flatMap({ $0 }).contains(selected) {
-                selectedResult = nil
-            }
-        }
-    }
-
-    private func searchResultRow(_ result: TickerSearchResult) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.symbol)
-                    .font(.body.weight(.medium))
-
-                if let chain = result.chain, let dex = result.dex {
-                    Text("\(chain.capitalized) · \(dex.capitalized)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if result.source == .coingecko {
-                    Text("via CoinGecko")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if result.source == .binance {
-                    Text("via Binance")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if let price = result.price {
-                Text(price, format: .currency(code: "USD").precision(.fractionLength(2...6)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedResult = result
-        }
-        .background(selectedResult == result
-            ? Color.accentColor.opacity(0.15)
-            : Color.clear
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 }
 

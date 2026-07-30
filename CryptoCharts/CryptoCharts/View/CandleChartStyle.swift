@@ -23,13 +23,6 @@ struct CandleChartStyle {
     var gridColor: Color = .secondary.opacity(0.15)
     var gridLineWidth: CGFloat = 0.5
 
-    // Crosshair
-    var crosshairColor: Color = .yellow.opacity(0.7)
-    var crosshairLineWidth: CGFloat = 0.5
-
-    // Background
-    var backgroundColor: Color = .clear
-
     // Current price line
     var currentPriceLineWidth: CGFloat = 1
     var currentPriceDashPattern: [CGFloat] = [5, 3]

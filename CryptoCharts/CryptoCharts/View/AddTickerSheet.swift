@@ -2,13 +2,10 @@ import SwiftUI
 
 struct AddTickerSheet: View {
     @ObservedObject var contentViewModel: ContentViewModel
+    @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
 
     @State private var inputText = ""
-    @State private var searchResults: [DataSourceType: [TickerSearchResult]] = [:]
-    @State private var isSearching = false
-    @State private var selectedResult: TickerSearchResult?
     @State private var addError: String?
-    @State private var searchTask: Task<Void, Never>?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -26,16 +23,15 @@ struct AddTickerSheet: View {
                     .textFieldStyle(.roundedBorder)
                     .font(.body)
                     .onChange(of: inputText) {
-                        scheduleSearch()
+                        searchVM.scheduleSearch(query: inputText)
                     }
                     .onSubmit {
-                        // Pick first result on Enter if available
-                        if let first = firstAvailableResult {
-                            selectedResult = first
+                        if let first = searchVM.firstAvailableResult {
+                            searchVM.selectedResult = first
                         }
                     }
 
-                if isSearching {
+                if searchVM.isSearching {
                     ProgressView()
                         .scaleEffect(0.7)
                         .frame(width: 20, height: 20)
@@ -43,17 +39,17 @@ struct AddTickerSheet: View {
             }
 
             // Suggestions
-            if searchResults.isEmpty && !isSearching {
+            if searchVM.searchResults.isEmpty && !searchVM.isSearching {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Suggestions")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    LazyVGrid(columns: Array(repeating: .init(.flexible()), count: 5), spacing: 8) {
+                    LazyVGrid(columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8) {
                         ForEach(suggestions, id: \.self) { ticker in
                             Button(ticker) {
                                 inputText = ticker
-                                scheduleSearch()
+                                searchVM.scheduleSearch(query: ticker)
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -63,13 +59,17 @@ struct AddTickerSheet: View {
             }
 
             // Search results grouped by source
-            if !searchResults.isEmpty {
+            if !searchVM.searchResults.isEmpty {
                 List {
-                    ForEach(orderedSources, id: \.self) { source in
-                        if let results = searchResults[source], !results.isEmpty {
+                    ForEach(searchVM.orderedSources, id: \.self) { source in
+                        if let results = searchVM.searchResults[source], !results.isEmpty {
                             Section {
                                 ForEach(results) { result in
-                                    searchResultRow(result)
+                                    SearchResultRow(
+                                        result: result,
+                                        isSelected: searchVM.selectedResult == result,
+                                        onSelect: { searchVM.selectedResult = result }
+                                    )
                                 }
                             } header: {
                                 Label(source.displayName, systemImage: source.icon)
@@ -80,19 +80,19 @@ struct AddTickerSheet: View {
                     }
                 }
                 .listStyle(.inset)
-                .frame(minHeight: 100, maxHeight: 300)
+                .frame(minHeight: UI.addTickerResultsMinHeight, maxHeight: UI.addTickerResultsMaxHeight)
             }
 
             // No results
-            if !isSearching && !inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                && searchResults.isEmpty && searchTask == nil {
+            if !searchVM.isSearching && !inputText.trimmingCharacters(in: .whitespaces).isEmpty
+                && searchVM.searchResults.isEmpty {
                 Text("No results found")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
 
             // Selected result
-            if let selected = selectedResult {
+            if let selected = searchVM.selectedResult {
                 HStack {
                     Label(
                         "Selected: \(selected.symbol)",
@@ -127,7 +127,7 @@ struct AddTickerSheet: View {
             // Action buttons
             HStack(spacing: 12) {
                 Button("Cancel") {
-                    searchTask?.cancel()
+                    searchVM.cancelSearch()
                     dismiss()
                 }
                 .buttonStyle(.plain)
@@ -137,142 +137,22 @@ struct AddTickerSheet: View {
                     addTicker()
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedResult == nil)
+                .disabled(searchVM.selectedResult == nil)
                 .keyboardShortcut(.return)
             }
             .padding(.top, 8)
         }
         .padding(24)
-        .frame(width: 440)
+        .frame(width: UI.addTickerSheetWidth)
         .onDisappear {
-            searchTask?.cancel()
-        }
-    }
-
-    // MARK: - Search Result Row
-
-    private func searchResultRow(_ result: TickerSearchResult) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.symbol)
-                    .font(.body.weight(.medium))
-
-                if let chain = result.chain, let dex = result.dex {
-                    Text("\(chain.capitalized) · \(dex.capitalized)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if result.source == .coingecko {
-                    Text("via CoinGecko")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                } else if result.source == .binance {
-                    Text("via Binance")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Spacer()
-
-            if let price = result.price {
-                Text(price, format: .currency(code: "USD").precision(.fractionLength(2...6)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.vertical, 2)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            selectedResult = result
-        }
-        .background(selectedResult == result
-            ? Color.accentColor.opacity(0.15)
-            : Color.clear
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-    }
-
-    // MARK: - Search
-
-    private var orderedSources: [DataSourceType] {
-        var sources = DataSourceType.allCases
-        // Sort: sources with results first, then by enum order
-        sources.sort { a, b in
-            let aHas = !(searchResults[a]?.isEmpty ?? true)
-            let bHas = !(searchResults[b]?.isEmpty ?? true)
-            if aHas != bHas { return aHas }
-            return a.rawValue < b.rawValue
-        }
-        return sources
-    }
-
-    private var firstAvailableResult: TickerSearchResult? {
-        for source in orderedSources {
-            if let results = searchResults[source], let first = results.first {
-                return first
-            }
-        }
-        return nil
-    }
-
-    private func scheduleSearch() {
-        searchTask?.cancel()
-
-        let text = inputText.trimmingCharacters(in: .whitespaces)
-        guard !text.isEmpty else {
-            searchResults = [:]
-            selectedResult = nil
-            return
-        }
-
-        let captured = text
-        searchTask = Task { @MainActor in
-            // Debounce 300ms
-            try? await Task.sleep(nanoseconds: 300_000_000)
-            guard !Task.isCancelled, inputText.trimmingCharacters(in: .whitespaces) == captured else { return }
-
-            isSearching = true
-            defer { isSearching = false }
-
-            let sources = DataSourceFactory.shared.allSources
-            var newResults: [DataSourceType: [TickerSearchResult]] = [:]
-
-            // Search all sources in parallel
-            await withTaskGroup(of: (DataSourceType, [TickerSearchResult]?).self) { group in
-                for source in sources {
-                    group.addTask {
-                        do {
-                            let results = try await source.searchTickers(query: captured)
-                            return (source.type, results)
-                        } catch {
-                            print("[AddTicker] \(source.type.displayName) search failed: \(error.localizedDescription)")
-                            return (source.type, nil)
-                        }
-                    }
-                }
-
-                for await (type, results) in group {
-                    if let r = results, !r.isEmpty {
-                        newResults[type] = r
-                    }
-                }
-            }
-
-            guard !Task.isCancelled else { return }
-            searchResults = newResults
-
-            // Keep selection if still in results, otherwise clear
-            if let selected = selectedResult,
-               !newResults.values.flatMap({ $0 }).contains(selected) {
-                selectedResult = nil
-            }
+            searchVM.cancelSearch()
         }
     }
 
     // MARK: - Add
 
     private func addTicker() {
-        guard let selected = selectedResult else { return }
+        guard let selected = searchVM.selectedResult else { return }
 
         Task { @MainActor in
             do {

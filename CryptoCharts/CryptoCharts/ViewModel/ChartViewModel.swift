@@ -26,15 +26,20 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
-    /// Formatted pair label for display.
-    var pair: String {
+    /// Base asset symbol for icon lookup (strips quote currency suffixes).
+    var baseSymbol: String {
         switch source {
         case .binance:
-            return apiSymbol
-        case .coingecko:
-            return ticker.uppercased()
-        case .dexscreener:
-            return ticker
+            let upper = ticker.uppercased()
+            for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
+                if upper.hasSuffix(quote), upper.count > quote.count {
+                    return String(upper.dropLast(quote.count))
+                }
+            }
+            return upper
+        case .coingecko, .dexscreener:
+            let parts = ticker.components(separatedBy: "/")
+            return parts.first?.uppercased() ?? ticker.uppercased()
         }
     }
 

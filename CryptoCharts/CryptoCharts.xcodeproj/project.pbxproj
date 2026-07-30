@@ -7,27 +7,29 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
+		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
+		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
+		44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */; };
+		58630E0C416C081AF0953889 /* KlineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E167CD7B739B528C0792D361 /* KlineCache.swift */; };
+		8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */; };
 		A00000000000000000000001 /* CryptoChartsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* CryptoChartsApp.swift */; };
 		A00000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000102 /* ContentView.swift */; };
 		A00000000000000000000003 /* KlineData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* KlineData.swift */; };
 		A00000000000000000000004 /* TimeRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* TimeRange.swift */; };
 		A00000000000000000000005 /* SymbolInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* SymbolInfo.swift */; };
 		A00000000000000000000006 /* BinanceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* BinanceAPIService.swift */; };
-		A00000000000000000000007 /* TickerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000107 /* TickerStore.swift */; };
 		A00000000000000000000008 /* ChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* ChartViewModel.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
 		A0000000000000000000000A /* ChartCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* ChartCardView.swift */; };
 		A0000000000000000000000B /* AddTickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* AddTickerSheet.swift */; };
-		A0000000000000000000000C /* TimeRangePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010C /* TimeRangePicker.swift */; };
 		A0000000000000000000000D /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* EmptyStateView.swift */; };
 		A0000000000000000000000E /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010E /* MockData.swift */; };
 		A0000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010F /* Assets.xcassets */; };
-		A00000000000000000000010 /* ScrollWheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000111 /* ScrollWheelView.swift */; };
 		A00000000000000000000011 /* CandleChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* CandleChartView.swift */; };
 		A00000000000000000000012 /* CandleChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* CandleChartStyle.swift */; };
 		A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* BinanceWebSocketService.swift */; };
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
-		A00000000000000000000015 /* ViewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000116 /* ViewStore.swift */; };
 		A00000000000000000000016 /* CoinGeckoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* CoinGeckoService.swift */; };
 		A00000000000000000000017 /* DataSourceType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* DataSourceType.swift */; };
 		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
@@ -35,31 +37,36 @@
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
 		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
+		A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */; };
+		E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */; };
+		E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */; };
+		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReorderDropDelegate.swift; sourceTree = "<group>"; };
+		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
+		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
+		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
 		A00000000000000000000101 /* CryptoChartsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoChartsApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A00000000000000000000103 /* KlineData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineData.swift; sourceTree = "<group>"; };
 		A00000000000000000000104 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
 		A00000000000000000000105 /* SymbolInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymbolInfo.swift; sourceTree = "<group>"; };
 		A00000000000000000000106 /* BinanceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceAPIService.swift; sourceTree = "<group>"; };
-		A00000000000000000000107 /* TickerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerStore.swift; sourceTree = "<group>"; };
 		A00000000000000000000108 /* ChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
 		A0000000000000000000010A /* ChartCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCardView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010B /* AddTickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTickerSheet.swift; sourceTree = "<group>"; };
-		A0000000000000000000010C /* TimeRangePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRangePicker.swift; sourceTree = "<group>"; };
 		A0000000000000000000010D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010E /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
 		A0000000000000000000010F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000110 /* CryptoCharts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CryptoCharts.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A00000000000000000000111 /* ScrollWheelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScrollWheelView.swift; sourceTree = "<group>"; };
 		A00000000000000000000112 /* CandleChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartView.swift; sourceTree = "<group>"; };
 		A00000000000000000000113 /* CandleChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartStyle.swift; sourceTree = "<group>"; };
 		A00000000000000000000114 /* BinanceWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketService.swift; sourceTree = "<group>"; };
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
-		A00000000000000000000116 /* ViewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewStore.swift; sourceTree = "<group>"; };
 		A00000000000000000000117 /* CoinGeckoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoService.swift; sourceTree = "<group>"; };
 		A00000000000000000000118 /* DataSourceType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceType.swift; sourceTree = "<group>"; };
 		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
@@ -67,6 +74,11 @@
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
+		CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "DateFormat+Extensions.swift"; sourceTree = "<group>"; };
+		D7BF0A39943224E6FE7AB590 /* AppSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppSupport.swift; sourceTree = "<group>"; };
+		DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONStore.swift; sourceTree = "<group>"; };
+		E167CD7B739B528C0792D361 /* KlineCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KlineCache.swift; sourceTree = "<group>"; };
+		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -80,7 +92,16 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		A00000000000000000000300 /* = */ = {
+		27720E9AD19F30A5F3240B21 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */,
+			);
+			name = Core;
+			path = Core;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000300 = {
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000301 /* CryptoCharts */,
@@ -100,6 +121,7 @@
 				A00000000000000000000313 /* View */,
 				A00000000000000000000314 /* Preview Content */,
 				A00000000000000000000315 /* Util */,
+				27720E9AD19F30A5F3240B21 /* Core */,
 			);
 			path = CryptoCharts;
 			sourceTree = "<group>";
@@ -119,7 +141,7 @@
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
-					A00000000000000000000118 /* DataSourceType.swift */,
+				A00000000000000000000118 /* DataSourceType.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -128,13 +150,13 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000106 /* BinanceAPIService.swift */,
-				A00000000000000000000107 /* TickerStore.swift */,
-					A00000000000000000000114 /* BinanceWebSocketService.swift */,
-				A00000000000000000000116 /* ViewStore.swift */,
+				A00000000000000000000114 /* BinanceWebSocketService.swift */,
 				A00000000000000000000117 /* CoinGeckoService.swift */,
-					A00000000000000000000119 /* TickerDataSource.swift */,
-					A0000000000000000000011A /* CoinGeckoAPIService.swift */,
-					A0000000000000000000011B /* DEXScreenerService.swift */,
+				A00000000000000000000119 /* TickerDataSource.swift */,
+				A0000000000000000000011A /* CoinGeckoAPIService.swift */,
+				A0000000000000000000011B /* DEXScreenerService.swift */,
+				E167CD7B739B528C0792D361 /* KlineCache.swift */,
+				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -144,6 +166,7 @@
 			children = (
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
+				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
 			);
 			path = ViewModel;
 			sourceTree = "<group>";
@@ -153,12 +176,12 @@
 			children = (
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
-				A0000000000000000000010C /* TimeRangePicker.swift */,
 				A0000000000000000000010D /* EmptyStateView.swift */,
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
-					A00000000000000000000111 /* ScrollWheelView.swift */,
-					A00000000000000000000112 /* CandleChartView.swift */,
-					A00000000000000000000113 /* CandleChartStyle.swift */,
+				A00000000000000000000112 /* CandleChartView.swift */,
+				A00000000000000000000113 /* CandleChartStyle.swift */,
+				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
+				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -175,6 +198,10 @@
 			isa = PBXGroup;
 			children = (
 				A0000000000000000000011D /* ColorHex.swift */,
+				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
+				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
+				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
+				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
 			);
 			path = Util;
 			sourceTree = "<group>";
@@ -254,27 +281,33 @@
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,
-				A00000000000000000000007 /* TickerStore.swift in Sources */,
 				A00000000000000000000008 /* ChartViewModel.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
 				A0000000000000000000000A /* ChartCardView.swift in Sources */,
 				A0000000000000000000000B /* AddTickerSheet.swift in Sources */,
-				A0000000000000000000000C /* TimeRangePicker.swift in Sources */,
 				A0000000000000000000000D /* EmptyStateView.swift in Sources */,
 				A0000000000000000000000E /* MockData.swift in Sources */,
-				A00000000000000000000010 /* ScrollWheelView.swift in Sources */,
 				A00000000000000000000011 /* CandleChartView.swift in Sources */,
 				A00000000000000000000012 /* CandleChartStyle.swift in Sources */,
-					A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
+				A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
 				A00000000000000000000014 /* SavedView.swift in Sources */,
-				A00000000000000000000015 /* ViewStore.swift in Sources */,
 				A00000000000000000000016 /* CoinGeckoService.swift in Sources */,
-					A00000000000000000000017 /* DataSourceType.swift in Sources */,
-					A00000000000000000000018 /* TickerDataSource.swift in Sources */,
-					A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */,
-					A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
+				A00000000000000000000017 /* DataSourceType.swift in Sources */,
+				A00000000000000000000018 /* TickerDataSource.swift in Sources */,
+				A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */,
+				A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
 				A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */,
 				A0000000000000000000001C /* ColorHex.swift in Sources */,
+				58630E0C416C081AF0953889 /* KlineCache.swift in Sources */,
+				E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */,
+				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
+				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
+				E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */,
+				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
+				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
+				133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */,
+				A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */,
+				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -37,14 +37,9 @@ final class DEXScreenerService: TickerDataSource {
     let type: DataSourceType = .dexscreener
 
     private let baseURL = "https://api.dexscreener.com/latest/dex"
-    private let session: URLSession
+    private let session = AppSupport.defaultSession
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: config)
-    }
+    init() {}
 
     // MARK: - Kline Fetching (unsupported on free tier)
 
@@ -67,7 +62,9 @@ final class DEXScreenerService: TickerDataSource {
             throw DEXScreenerError.invalidURL
         }
 
+#if DEBUG
         print("[DEXScreener] Search: \(q)")
+#endif
 
         let (data, response) = try await session.data(from: url)
 
@@ -91,7 +88,7 @@ final class DEXScreenerService: TickerDataSource {
         }
         .values
         .sorted { ($0.liquidity?.usd ?? 0) > ($1.liquidity?.usd ?? 0) }
-        .prefix(20)
+        .prefix(Timeout.dexSearchLimit)
 
         return filtered.compactMap { pair in
             guard let baseSymbol = pair.baseToken?.symbol,

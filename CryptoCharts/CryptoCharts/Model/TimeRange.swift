@@ -34,26 +34,4 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         }
     }
 
-    var chartTitle: String {
-        switch self {
-        case .oneHour:      return "Last Hour"
-        case .oneDay:       return "Last 24 Hours"
-        case .oneWeek:      return "Last Week"
-        case .oneMonth:     return "Last Month"
-        case .threeMonths:  return "Last 3 Months"
-        case .oneYear:      return "Last Year"
-        }
-    }
-
-    /// DateFormatter style for the X axis depending on range.
-    var dateFormat: String {
-        switch self {
-        case .oneHour:      return "HH:mm"
-        case .oneDay:       return "HH:mm"
-        case .oneWeek:      return "EEE HH:mm"
-        case .oneMonth:     return "MMM d"
-        case .threeMonths:  return "MMM d"
-        case .oneYear:      return "MMM yy"
-        }
-    }
 }

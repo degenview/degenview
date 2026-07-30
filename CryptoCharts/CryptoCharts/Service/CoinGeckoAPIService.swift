@@ -34,7 +34,9 @@ private struct CoinIDCache: Codable {
 /// Enforces minimum interval between CoinGecko API calls to stay under ~25 req/min.
 private actor CGRateLimiter {
     private var lastCallTime: Date = .distantPast
-    private let minGap: TimeInterval = 3.0  // ≤20 calls/min, safe under ~30/min limit
+
+    /// ≤20 calls/min, safe under ~30/min limit.
+    private let minGap = Timeout.coingeckoRateLimitGap
 
     /// Wait until we're clear to make another call. Returns immediately if gap satisfied.
     func waitForSlot() async {
@@ -62,27 +64,15 @@ final class CoinGeckoAPIService: TickerDataSource {
     private let baseURL = "https://api.coingecko.com/api/v3"
     private let session: URLSession
     private let cache: KlineCache
-    /// CoinGecko free tier is ~30 req/min. Long cache — OHLC candles close slowly, no WebSocket.
-    private let cacheTTL: TimeInterval = 120
-
     private let rateLimiter = CGRateLimiter()
     private var coinIDCache: CoinIDCache
     private let cacheURL: URL
     private var coinListRefreshTask: Task<Void, Never>?
 
     init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: config)
+        self.session = AppSupport.defaultSession
         self.cache = KlineCache()
-
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first!
-        let dir = appSupport.appendingPathComponent("CryptoCharts", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        cacheURL = dir.appendingPathComponent("coingecko_coin_ids.json")
+        cacheURL = AppSupport.directory.appendingPathComponent("coingecko_coin_ids.json")
 
         if let data = try? Data(contentsOf: cacheURL),
            let cached = try? JSONDecoder().decode(CoinIDCache.self, from: data) {
@@ -99,7 +89,7 @@ final class CoinGeckoAPIService: TickerDataSource {
         let coinID = symbol.lowercased()
 
         // Check cache
-        if let cached = await cache.get(symbol: coinID, interval: interval, count: limit, ttl: cacheTTL) {
+        if let cached = await cache.get(symbol: coinID, interval: interval, count: limit, ttl: Timeout.coingeckoCacheTTL) {
             return cached
         }
 
@@ -127,7 +117,9 @@ final class CoinGeckoAPIService: TickerDataSource {
             throw CoinGeckoError.invalidURL
         }
 
+#if DEBUG
         print("[CoinGecko] Fetching OHLC for \(coinID) days=\(days) limit=\(limit)")
+#endif
 
         let (data, response) = try await session.data(from: url)
 
@@ -142,15 +134,19 @@ final class CoinGeckoAPIService: TickerDataSource {
             // Extract Retry-After header, back off, then re-throw
             let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
             let waitSeconds = retryAfter.flatMap(Int.init) ?? 30
+#if DEBUG
             print("[CoinGecko] 429 rate limited. Backing off \(waitSeconds)s…")
+#endif
             await rateLimiter.backoff(seconds: waitSeconds)
             throw CoinGeckoError.rateLimited
         case 404:
             throw CoinGeckoError.coinNotFound(coinID)
         case 400:
             let body = String(data: data, encoding: .utf8) ?? ""
+#if DEBUG
             print("[CoinGecko] 400 Bad Request for URL: \(url.absoluteString)")
             print("[CoinGecko] Response: \(body)")
+#endif
             throw CoinGeckoError.httpError(400)
         default:
             throw CoinGeckoError.httpError(httpResponse.statusCode)
@@ -165,7 +161,9 @@ final class CoinGeckoAPIService: TickerDataSource {
         let sorted = klines.sorted { $0.openTime < $1.openTime }
         let result = Array(sorted.suffix(limit))
 
+#if DEBUG
         print("[CoinGecko] \(coinID) candles=\(result.count) (fetched \(sorted.count), limit \(limit))")
+#endif
 
         await cache.set(symbol: coinID, interval: interval, data: result)
         return result
@@ -197,7 +195,7 @@ final class CoinGeckoAPIService: TickerDataSource {
         guard !q.isEmpty else { return [] }
 
         // Refresh coin list cache in background if stale
-        if coinIDCache.updatedAt.timeIntervalSinceNow < -86400 * 7 {
+        if coinIDCache.updatedAt.timeIntervalSinceNow < -Timeout.coinListStaleness {
             refreshCoinListInBackground()
         }
 
@@ -210,7 +208,9 @@ final class CoinGeckoAPIService: TickerDataSource {
             throw CoinGeckoError.invalidURL
         }
 
+#if DEBUG
         print("[CoinGecko] Search: \(q)")
+#endif
 
         let (data, response) = try await session.data(from: url)
 
@@ -253,9 +253,13 @@ final class CoinGeckoAPIService: TickerDataSource {
                 }
                 self.coinIDCache = CoinIDCache(idMap: map, updatedAt: Date())
                 self.saveCoinIDCache()
+#if DEBUG
                 print("[CoinGecko] Coin list refreshed: \(map.count) symbols")
+#endif
             } catch {
+#if DEBUG
                 print("[CoinGecko] Coin list refresh failed: \(error.localizedDescription)")
+#endif
             }
         }
     }

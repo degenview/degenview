@@ -1,36 +1,5 @@
 import Foundation
 
-// MARK: - Cache
-
-actor KlineCache {
-    private var entries: [String: CachedEntry] = [:]
-
-    private struct CachedEntry {
-        let data: [KlineData]
-        let fetchedAt: Date
-    }
-
-    private func key(symbol: String, interval: String) -> String {
-        "\(symbol.uppercased())-\(interval)"
-    }
-
-    /// Return cached candles if fresh enough and we have at least `count` of them.
-    func get(symbol: String, interval: String, count: Int, ttl: TimeInterval = 15) -> [KlineData]? {
-        guard let entry = entries[key(symbol: symbol, interval: interval)] else { return nil }
-        guard Date().timeIntervalSince(entry.fetchedAt) < ttl else { return nil }
-        guard entry.data.count >= count else { return nil }
-        return Array(entry.data.suffix(count))
-    }
-
-    func set(symbol: String, interval: String, data: [KlineData]) {
-        entries[key(symbol: symbol, interval: interval)] = CachedEntry(data: data, fetchedAt: Date())
-    }
-
-    func invalidate() {
-        entries.removeAll()
-    }
-}
-
 // MARK: - Errors
 
 enum BinanceAPIError: LocalizedError {
@@ -66,24 +35,16 @@ enum BinanceAPIError: LocalizedError {
 
 final class BinanceAPIService: TickerDataSource {
     let type: DataSourceType = .binance
-    private let session: URLSession
+    private let session = AppSupport.defaultSession
     private let baseURL = "https://api.binance.com"
     private let cache = KlineCache()
 
-    /// How long cached data stays fresh. After this, the latest candle is re-fetched.
-    private let cacheTTL: TimeInterval = 15
-
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 10
-        config.timeoutIntervalForResource = 30
-        self.session = URLSession(configuration: config)
-    }
+    init() {}
 
     /// Fetch candlestick data from Binance. Uses in-memory cache.
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         // Check cache first
-        if let cached = await cache.get(symbol: symbol, interval: interval, count: limit, ttl: cacheTTL) {
+        if let cached = await cache.get(symbol: symbol, interval: interval, count: limit, ttl: Timeout.binanceCacheTTL) {
             return cached
         }
 
@@ -131,7 +92,7 @@ final class BinanceAPIService: TickerDataSource {
 
         let sorted = klines.sorted { $0.openTime < $1.openTime }
 
-        // DEBUG: log fetch details and last 3 candles
+#if DEBUG
         let formatter = DateFormatter()
         formatter.dateFormat = "HH:mm"
         formatter.timeZone = TimeZone(identifier: "UTC")!
@@ -140,45 +101,12 @@ final class BinanceAPIService: TickerDataSource {
             let bullish = k.closePrice > k.openPrice ? "🟢" : "🔴"
             print("[API]   \(formatter.string(from: k.openTime)) O=\(k.openPrice) H=\(k.highPrice) L=\(k.lowPrice) C=\(k.closePrice) \(bullish)")
         }
+#endif
 
         // Cache the result
         await cache.set(symbol: symbol, interval: interval, data: sorted)
 
         return sorted
-    }
-
-    /// Validate that a symbol exists and is actively trading on Binance.
-    func validateSymbol(_ symbol: String) async throws -> Bool {
-        guard var components = URLComponents(string: "\(baseURL)/api/v3/exchangeInfo") else {
-            throw BinanceAPIError.invalidURL
-        }
-
-        components.queryItems = [
-            URLQueryItem(name: "symbol", value: symbol.uppercased()),
-        ]
-
-        guard let url = components.url else {
-            throw BinanceAPIError.invalidURL
-        }
-
-        let (data, response) = try await session.data(from: url)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw BinanceAPIError.invalidResponse
-        }
-
-        guard httpResponse.statusCode == 200 else {
-            throw BinanceAPIError.httpError(httpResponse.statusCode)
-        }
-
-        let decoder = JSONDecoder()
-        let exchangeInfo = try decoder.decode(ExchangeInfoResponse.self, from: data)
-
-        guard let info = exchangeInfo.symbols.first else {
-            return false
-        }
-
-        return info.status == "TRADING"
     }
 
     /// Search for tickers matching a query. Returns up to 20 pairs sorted by volume.
@@ -194,7 +122,9 @@ final class BinanceAPIService: TickerDataSource {
             throw BinanceAPIError.invalidURL
         }
 
+#if DEBUG
         print("[Binance] Searching exchangeInfo for: \(q)")
+#endif
 
         let (data, response) = try await session.data(from: url)
 
@@ -220,9 +150,4 @@ final class BinanceAPIService: TickerDataSource {
         }
     }
 
-    /// Fetch only the latest price for a symbol.
-    func fetchLatestPrice(symbol: String) async throws -> Double? {
-        let klines = try await fetchKlines(symbol: symbol, interval: "1m", limit: 1)
-        return klines.last?.closePrice
-    }
 }

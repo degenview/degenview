@@ -57,7 +57,7 @@ struct CandleChartView: View {
                 chartFrame = geometry.frame(in: .global)
             }
         }
-        .frame(height: max(50, chartHeight))
+        .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
         .clipped()
     }
 
@@ -108,7 +108,7 @@ struct CandleChartView: View {
         path.addLine(to: CGPoint(x: plotRect.maxX, y: y))
         context.stroke(path, with: .color(style.gridColor), lineWidth: style.gridLineWidth)
 
-        let label = formatPrice(price)
+        let label = PriceFormatter.format(price, decimalPlaces: yAxisDecimalPlaces)
         let text = Text(label).font(.caption2).foregroundStyle(.secondary)
         let resolved = context.resolve(text)
         let textSize = resolved.measure(in: .init(width: 80, height: 14))
@@ -190,7 +190,7 @@ struct CandleChartView: View {
 
         let y = yForPrice(price, plotRect: plotRect, priceRange: priceRange)
 
-        let label = formatPrice(price)
+        let label = PriceFormatter.format(price, decimalPlaces: yAxisDecimalPlaces)
         let text = Text(label).font(.caption2).bold().foregroundStyle(.white)
         let resolved = context.resolve(text)
         let textSize = resolved.measure(in: .init(width: 100, height: 20))
@@ -218,7 +218,7 @@ struct CandleChartView: View {
         guard totalSpan > 0 else { return }
 
         let formatter = DateFormatter()
-        formatter.dateFormat = timeAxisFormat(span: totalSpan)
+        formatter.dateFormat = TimeAxisFormatter.format(for: totalSpan)
         formatter.timeZone = TimeZone(identifier: "UTC")!
 
         let labelCount = style.timeLabelCount
@@ -254,77 +254,6 @@ struct CandleChartView: View {
         }
     }
 
-    /// Pick a sensible date format for the visible time span.
-    private func timeAxisFormat(span: TimeInterval) -> String {
-        if span < 7200 { return "HH:mm" }            // < 2 hours
-        if span < 172800 { return "EEE HH:mm" }       // < 2 days
-        if span < 2592000 { return "MMM d" }          // < ~1 month
-        return "MMM yy"                               // months–years
-    }
-
-    // MARK: - Formatting
-
-    /// Format price with subscript zero-count for very small numbers (CoinMarketCap style).
-    /// Examples: 0.00000278 → "0.0₅278", 45.23 → "45.23", 1,234,567 → "1,234,567"
-    private func formatPrice(_ price: Double) -> String {
-        guard price > 0 else { return "0" }
-
-        // Very small: CoinMarketCap subscript zero-count notation
-        if price < 0.001 {
-            var zeroCount = 0
-            var scaled = price
-            while scaled < 0.1 {
-                scaled *= 10
-                zeroCount += 1
-            }
-            // scaled is in [0.1, 1.0) — extract 3 fixed significant digits
-            let sigValue = Int(round(scaled * 1_000))
-            let sigStr: String
-            if sigValue >= 1_000 {
-                // Rounding overflow (e.g., 0.099999 → 1000)
-                zeroCount = max(0, zeroCount - 1)
-                sigStr = "100"
-            } else {
-                sigStr = String(format: "%03d", sigValue)
-            }
-            return "0.0\(zeroCount.subscriptUnicode)\(sigStr)"
-        }
-
-        // Large numbers: just grouped decimal
-        if price >= 1_000_000 {
-            if let places = yAxisDecimalPlaces {
-                return price.formatted(.number.grouping(.automatic).precision(.fractionLength(places)))
-            }
-            return price.formatted(.number.grouping(.automatic).precision(.fractionLength(0)))
-        }
-
-        let digits: Int
-        if let places = yAxisDecimalPlaces {
-            digits = places
-        } else if price >= 1000 { digits = 0 }
-        else if price >= 1 { digits = 2 }
-        else if price >= 0.01 { digits = 4 }
-        else { digits = 6 }
-
-        return price.formatted(
-            .number
-            .precision(.fractionLength(digits))
-            .grouping(.automatic)
-        )
-    }
-}
-
-private extension Int {
-    /// Unicode subscript digits: 0→₀, 1→₁, …, 9→₉
-    var subscriptUnicode: String {
-        String(self).map { char -> String in
-            guard let digit = char.wholeNumberValue,
-                  let scalar = UnicodeScalar(0x2080 + digit) else {
-                return String(char)
-            }
-            return String(scalar)
-        }.joined()
-    }
 }
 
 #Preview {

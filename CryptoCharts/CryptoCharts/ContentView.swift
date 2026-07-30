@@ -58,7 +58,7 @@ struct ContentView: View {
 
                             if contentViewModel.hasUnsavedChanges {
                                 Button("Save Changes") {
-                                    if contentViewModel.currentViewName == "Unnamed" {
+                                    if contentViewModel.currentViewName == UI.unnamedView {
                                         saveViewName = ""
                                         showSaveAlert = true
                                     } else {
@@ -78,27 +78,23 @@ struct ContentView: View {
                         // Chart list (vertical) or grid — fills remaining height, scrolls if needed
                         GeometryReader { geometry in
                             let n = max(1, contentViewModel.chartViewModels.count)
-                            let minHeight: CGFloat = 60
-                            let maxHeight: CGFloat = 250
-                            let cardGap: CGFloat = 8
-                            let cardChrome: CGFloat = 55 // header + padding + spacing
                             let available = geometry.size.height
 
                             let naturalHeight: CGFloat = {
                                 if contentViewModel.layoutMode == .vertical {
-                                    let gaps = CGFloat(max(0, n - 1)) * cardGap
-                                    let chrome = CGFloat(n) * cardChrome
+                                    let gaps = CGFloat(max(0, n - 1)) * ChartLayout.cardGap
+                                    let chrome = CGFloat(n) * ChartLayout.cardChrome
                                     return (available - gaps - chrome) / CGFloat(n)
                                 } else {
-                                    let rows = max(1, Int(ceil(Double(n) / 2.0)))
-                                    let gaps = CGFloat(max(0, rows - 1)) * cardGap
-                                    let chrome = CGFloat(rows) * cardChrome
+                                    let rows = max(1, Int(ceil(Double(n) / ChartLayout.gridColumnFraction)))
+                                    let gaps = CGFloat(max(0, rows - 1)) * ChartLayout.cardGap
+                                    let chrome = CGFloat(rows) * ChartLayout.cardChrome
                                     return (available - gaps - chrome) / CGFloat(rows)
                                 }
                             }()
 
-                            let chartHeight = min(maxHeight, max(minHeight, naturalHeight))
-                            let needsScroll = chartHeight <= minHeight
+                            let chartHeight = min(ChartLayout.cardMaxHeight, max(ChartLayout.cardMinHeight, naturalHeight))
+                            let needsScroll = chartHeight <= ChartLayout.cardMinHeight
 
                             if contentViewModel.layoutMode == .vertical {
                                 List {
@@ -200,7 +196,7 @@ struct ContentView: View {
                         }
                         ToolbarItem(placement: .automatic) {
                             Button {
-                                saveViewName = contentViewModel.currentViewName == "Unnamed"
+                                saveViewName = contentViewModel.currentViewName == UI.unnamedView
                                     ? "" : contentViewModel.currentViewName
                                 showSaveAlert = true
                             } label: {
@@ -219,7 +215,7 @@ struct ContentView: View {
                     }
                 }
             }
-            .frame(minWidth: 380, idealWidth: 440)
+            .frame(minWidth: UI.windowMinWidth, idealWidth: UI.windowIdealWidth)
         }
         .preferredColorScheme(appTheme.colorScheme)
         .alert("Save View", isPresented: $showSaveAlert) {
@@ -264,7 +260,7 @@ struct ContentView: View {
                 }
             },
             onZoom: { deltaY in
-                let step = max(1, Int(Double(contentViewModel.candleCount) * 0.1))
+                let step = max(1, Int(Double(contentViewModel.candleCount) * Candle.zoomStepFraction))
                 if deltaY > 0 {
                     contentViewModel.adjustCandleCount(by: step)
                 } else if deltaY < 0 {
@@ -278,35 +274,6 @@ struct ContentView: View {
                 contentViewModel.persistChartSettings()
             }
         )
-    }
-}
-
-// MARK: - Drag-and-Drop Reorder (Grid Layout)
-
-private struct ReorderDropDelegate: DropDelegate {
-    let targetTicker: String   // uniqueID of target
-    let viewModel: ContentViewModel
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard let provider = info.itemProviders(for: [.utf8PlainText]).first else {
-            return false
-        }
-
-        provider.loadItem(forTypeIdentifier: UTType.utf8PlainText.identifier, options: nil) { item, _ in
-            guard let data = item as? Data,
-                  let sourceID = String(data: data, encoding: .utf8)
-            else { return }
-
-            DispatchQueue.main.async {
-                guard let fromIdx = viewModel.chartViewModels.firstIndex(where: { $0.uniqueID == sourceID }),
-                      let toIdx = viewModel.chartViewModels.firstIndex(where: { $0.uniqueID == targetTicker }),
-                      fromIdx != toIdx
-                else { return }
-
-                viewModel.moveTicker(from: IndexSet(integer: fromIdx), to: toIdx)
-            }
-        }
-        return true
     }
 }
 

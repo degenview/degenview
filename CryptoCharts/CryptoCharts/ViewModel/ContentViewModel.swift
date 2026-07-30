@@ -37,33 +37,27 @@ final class ContentViewModel: ObservableObject {
     }
     @Published var isRefreshing = false
 
-    /// Minimum candles to show at max zoom-in.
-    private let minCandles = 10
-    /// Maximum candles to show at max zoom-out.
-    private let maxCandles = 500
-
     @Published var savedViews: [SavedView] = []
-    @Published var currentViewName = "Unnamed"
+    @Published var currentViewName = UI.unnamedView
     @Published var hasUnsavedChanges = false
 
     private var currentViewID: UUID?
     private var isApplyingView = false
 
     private let api: BinanceAPIService
-    private let tickerStore: TickerStore
-    private let viewStore = ViewStore()
+    private let tickerStore = JSONStore<[TickerConfig]>(filename: "tickers.json")
+    private let viewStore = JSONStore<[SavedView]>(filename: "views.json")
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
 
-    init(api: BinanceAPIService = BinanceAPIService(), tickerStore: TickerStore = TickerStore()) {
+    init(api: BinanceAPIService = BinanceAPIService()) {
         self.api = api
-        self.tickerStore = tickerStore
-        self.savedViews = viewStore.load()
+        self.savedViews = viewStore.load() ?? []
     }
 
     /// Load persisted tickers, create chart view models, and start auto-refresh.
     func loadTickers() {
-        let configs = tickerStore.load()
+        let configs = tickerStore.load() ?? loadLegacyTickers()
         chartViewModels = configs.map { config in
             let vm = ChartViewModel(ticker: config.symbol, source: config.source)
             vm.applyConfig(config)
@@ -74,13 +68,26 @@ final class ContentViewModel: ObservableObject {
             Task {
                 for vm in chartViewModels {
                     await vm.fetchData(for: selectedTimeRange, count: candleCount)
-                    try? await Task.sleep(nanoseconds: 100_000_000)
+                    try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
                 }
                 connectWebSocket()
             }
         }
         // loadView() handles refetchAll() + connectWebSocket() for restored views
         startAutoRefresh()
+    }
+
+    /// Migrate legacy [String] format to [TickerConfig] once, then save.
+    private func loadLegacyTickers() -> [TickerConfig] {
+        guard let data = try? Data(contentsOf: AppSupport.directory.appendingPathComponent("tickers.json")),
+              let strings = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+#if DEBUG
+        print("[TickerStore] Migrated \(strings.count) legacy tickers to .binance")
+#endif
+        let configs = strings.map { TickerConfig(symbol: $0, source: .binance) }
+        tickerStore.save(configs)
+        return configs
     }
 
     /// Restore the last-used saved view if available.
@@ -105,7 +112,7 @@ final class ContentViewModel: ObservableObject {
     /// Refresh all charts every 5 seconds. Cache prevents redundant API calls.
     func startAutoRefresh() {
         stopAutoRefresh()
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: Timeout.autoRefresh, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
                 self.refetchAll()
@@ -145,10 +152,10 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    /// Adjust candle count by a delta. Clamped to [minCandles, maxCandles].
+    /// Adjust candle count by a delta. Clamped to [min, max].
     /// Positive delta = zoom in (fewer candles), negative = zoom out (more candles).
     func adjustCandleCount(by delta: Int) {
-        let newCount = (candleCount - delta).clamped(to: minCandles...maxCandles)
+        let newCount = (candleCount - delta).clamped(to: Candle.minCandles...Candle.maxCandles)
         guard newCount != candleCount else { return }
         candleCount = newCount
         markChanged()
@@ -184,7 +191,7 @@ final class ContentViewModel: ObservableObject {
 
         let vm = ChartViewModel(ticker: symbol, source: source)
         chartViewModels.append(vm)
-        tickerStore.save(chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) })
+        saveTickerConfigs()
 
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
         markChanged()
@@ -217,23 +224,8 @@ final class ContentViewModel: ObservableObject {
         markChanged()
     }
 
-    private func persistTickers() {
-        tickerStore.save(chartViewModels.map { vm in
-            TickerConfig(
-                symbol: vm.ticker,
-                source: vm.source,
-                bullishColorHex: vm.bullishColor.hexString,
-                bearishColorHex: vm.bearishColor.hexString,
-                yAxisDecimalPlaces: vm.yAxisDecimalPlaces
-            )
-        })
-    }
-
-    // MARK: - Saved Views
-
-    /// Save the current state. Updates existing view if already named, otherwise creates new.
-    func saveCurrentView(name: String) {
-        let configs = chartViewModels.map { vm in
+    private func makeTickerConfigs() -> [TickerConfig] {
+        chartViewModels.map { vm in
             TickerConfig(
                 symbol: vm.ticker,
                 source: vm.source,
@@ -242,6 +234,21 @@ final class ContentViewModel: ObservableObject {
                 yAxisDecimalPlaces: vm.yAxisDecimalPlaces
             )
         }
+    }
+
+    private func persistTickers() {
+        tickerStore.save(makeTickerConfigs())
+    }
+
+    private func saveTickerConfigs() {
+        tickerStore.save(makeTickerConfigs())
+    }
+
+    // MARK: - Saved Views
+
+    /// Save the current state. Updates existing view if already named, otherwise creates new.
+    func saveCurrentView(name: String) {
+        let configs = makeTickerConfigs()
         let view = SavedView(
             id: currentViewID ?? UUID(),
             name: name,
@@ -302,7 +309,7 @@ final class ContentViewModel: ObservableObject {
         savedViews.removeAll { $0.id == view.id }
         viewStore.save(savedViews)
         if currentViewID == view.id {
-            currentViewName = "Unnamed"
+            currentViewName = UI.unnamedView
             currentViewID = nil
             hasUnsavedChanges = false
             saveLastViewID(nil)
@@ -321,12 +328,6 @@ final class ContentViewModel: ObservableObject {
         hasUnsavedChanges = true
     }
 
-}
-
-extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
-    }
 }
 
 enum TickerError: LocalizedError {

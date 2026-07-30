@@ -25,12 +25,7 @@ final class CoinGeckoService {
     private var cache: IconCache
 
     init() {
-        let appSupport = FileManager.default.urls(
-            for: .applicationSupportDirectory, in: .userDomainMask
-        ).first!
-        let dir = appSupport.appendingPathComponent("CryptoCharts", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        cacheURL = dir.appendingPathComponent("icon_cache.json")
+        cacheURL = AppSupport.directory.appendingPathComponent("icon_cache.json")
 
         if let data = try? Data(contentsOf: cacheURL),
            let cached = try? JSONDecoder().decode(IconCache.self, from: data) {
@@ -55,7 +50,9 @@ final class CoinGeckoService {
             return URL(string: urlString)
         }
 
+#if DEBUG
         print("[CoinGecko] Unknown symbol: \(symbol)")
+#endif
         return nil
     }
 
@@ -64,10 +61,10 @@ final class CoinGeckoService {
     /// Fetch top 250 coins by market cap. Symbol → image URL.
     /// Highest-cap coin wins per symbol (e.g. "btc" → bitcoin, not batcat).
     private func refreshCacheIfNeeded() async {
-        let stale = cache.updatedAt.addingTimeInterval(7 * 86400)
+        let stale = cache.updatedAt.addingTimeInterval(Timeout.iconCacheStaleness)
         guard Date() > stale else { return }
 
-        let urlString = "\(baseURL)/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=250&sparkline=false"
+        let urlString = "\(baseURL)/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=\(Timeout.iconMaxCoins)&sparkline=false"
         guard let url = URL(string: urlString) else { return }
 
         do {
@@ -84,7 +81,9 @@ final class CoinGeckoService {
             cache.updatedAt = Date()
             saveCache()
         } catch {
+#if DEBUG
             print("[CoinGecko] Failed to refresh: \(error.localizedDescription)")
+#endif
         }
     }
 

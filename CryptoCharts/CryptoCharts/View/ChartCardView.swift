@@ -12,24 +12,6 @@ struct ChartCardView: View {
     @State private var showSettings = false
     @State private var iconURL: URL?
 
-    private var baseSymbol: String {
-        switch viewModel.source {
-        case .binance:
-            let upper = viewModel.ticker.uppercased()
-            for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
-                if upper.hasSuffix(quote), upper.count > quote.count {
-                    return String(upper.dropLast(quote.count))
-                }
-            }
-            return upper
-        case .coingecko, .dexscreener:
-            // For non-Binance sources, use ticker as-is for icon lookup
-            // Try to extract a clean base symbol
-            let parts = viewModel.ticker.components(separatedBy: "/")
-            return parts.first?.uppercased() ?? viewModel.ticker.uppercased()
-        }
-    }
-
     var body: some View {
         VStack(spacing: 2) {
             headerView
@@ -38,7 +20,7 @@ struct ChartCardView: View {
         .padding(6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
-            iconURL = await CoinGeckoService.shared.iconURL(for: baseSymbol)
+            iconURL = await CoinGeckoService.shared.iconURL(for: viewModel.baseSymbol)
         }
         .sheet(isPresented: $showSettings) {
             ChartSettingsSheet(
@@ -111,7 +93,7 @@ struct ChartCardView: View {
     private var chartArea: some View {
         if viewModel.isLoading && viewModel.klineData.isEmpty {
             ProgressView()
-                .frame(height: max(50, chartHeight))
+                .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
         } else if let error = viewModel.errorMessage, viewModel.klineData.isEmpty {
             errorView(message: error)
         } else {
@@ -158,7 +140,7 @@ struct ChartCardView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
         }
-        .frame(height: 220)
+        .frame(height: ChartLayout.defaultChartHeight)
     }
 }
 
