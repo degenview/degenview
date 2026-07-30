@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
-    let intervalLabel: String
     var chartHeight: CGFloat = 220
     let onRemove: () -> Void
 
@@ -72,12 +71,6 @@ struct ChartCardView: View {
                     Image(systemName: viewModel.source.icon)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
-                    Text(intervalLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 3))
                 }
 
                 if let price = viewModel.currentPrice {
@@ -172,7 +165,6 @@ struct ChartCardView: View {
 
     return ChartCardView(
         viewModel: vm,
-        intervalLabel: "15m",
         onRemove: {},
         onRetry: {},
         onZoom: { _ in }

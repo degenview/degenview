@@ -249,7 +249,6 @@ struct ContentView: View {
     private func chartCard(_ vm: ChartViewModel, height: CGFloat = 220) -> some View {
         ChartCardView(
             viewModel: vm,
-            intervalLabel: contentViewModel.selectedTimeRange.binanceInterval,
             chartHeight: height,
             onRemove: {
                 withAnimation {
