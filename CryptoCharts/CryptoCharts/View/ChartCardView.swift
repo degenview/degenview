@@ -4,8 +4,12 @@ struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat = 220
     let onRemove: () -> Void
+    let onRetry: () -> Void
+    let onZoom: (CGFloat) -> Void
+    let onUpdateTicker: (String, DataSourceType) -> Void
+    let onStyleChanged: () -> Void
 
-    @State private var showRemoveConfirmation = false
+    @State private var showSettings = false
     @State private var iconURL: URL?
 
     private var baseSymbol: String {
@@ -26,9 +30,6 @@ struct ChartCardView: View {
         }
     }
 
-    let onRetry: () -> Void
-    let onZoom: (CGFloat) -> Void
-
     var body: some View {
         VStack(spacing: 2) {
             headerView
@@ -36,14 +37,16 @@ struct ChartCardView: View {
         }
         .padding(6)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .alert("Remove \(viewModel.ticker.uppercased())?", isPresented: $showRemoveConfirmation) {
-            Button("Remove", role: .destructive, action: onRemove)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This chart will be removed from your view.")
-        }
         .task {
             iconURL = await CoinGeckoService.shared.iconURL(for: baseSymbol)
+        }
+        .sheet(isPresented: $showSettings) {
+            ChartSettingsSheet(
+                viewModel: viewModel,
+                onUpdateTicker: onUpdateTicker,
+                onRemove: onRemove,
+                onStyleChanged: onStyleChanged
+            )
         }
     }
 
@@ -51,34 +54,42 @@ struct ChartCardView: View {
 
     private var headerView: some View {
         HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    if let url = iconURL {
-                        AsyncImage(url: url) { phase in
-                            switch phase {
-                            case .success(let image):
-                                image.resizable().scaledToFit()
-                            default:
-                                Color.clear
+            Button {
+                showSettings = true
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        if let url = iconURL {
+                            AsyncImage(url: url) { phase in
+                                switch phase {
+                                case .success(let image):
+                                    image.resizable().scaledToFit()
+                                default:
+                                    Color.clear
+                                }
                             }
+                            .frame(width: 20, height: 20)
+                            .clipShape(Circle())
                         }
-                        .frame(width: 20, height: 20)
-                        .clipShape(Circle())
+                        Text(viewModel.ticker.uppercased())
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        Image(systemName: viewModel.source.icon)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "gearshape.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary.opacity(0.6))
                     }
-                    Text(viewModel.ticker.uppercased())
-                        .font(.headline)
-                        .fontWeight(.bold)
-                    Image(systemName: viewModel.source.icon)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
 
-                if let price = viewModel.currentPrice {
-                    Text(price, format: .currency(code: "USD").precision(.fractionLength(2...8)))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    if let price = viewModel.currentPrice {
+                        Text(price, format: .currency(code: "USD").precision(.fractionLength(2...8)))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
+            .buttonStyle(.plain)
 
             Spacer()
 
@@ -91,16 +102,6 @@ struct ChartCardView: View {
                 .font(.caption.weight(.medium))
                 .foregroundStyle(viewModel.priceChangeIsPositive ? .green : .red)
             }
-
-            Button {
-                showRemoveConfirmation = true
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Remove \(viewModel.ticker)")
         }
     }
 
@@ -117,6 +118,9 @@ struct ChartCardView: View {
             CandleChartView(
                 candles: viewModel.klineData,
                 chartHeight: chartHeight,
+                bullishColor: viewModel.bullishColor,
+                bearishColor: viewModel.bearishColor,
+                yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                 onZoom: onZoom
             )
             .overlay(alignment: .bottom) {
@@ -167,7 +171,9 @@ struct ChartCardView: View {
         viewModel: vm,
         onRemove: {},
         onRetry: {},
-        onZoom: { _ in }
+        onZoom: { _ in },
+        onUpdateTicker: { _, _ in },
+        onStyleChanged: {}
     )
     .frame(width: 400)
     .padding()

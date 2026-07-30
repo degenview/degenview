@@ -7,6 +7,12 @@ struct CandleChartView: View {
     let candles: [KlineData]
     var chartHeight: CGFloat = 220
     var style: CandleChartStyle = .default
+
+    // Per-chart overrides
+    var bullishColor: Color = .green
+    var bearishColor: Color = .red
+    var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
+
     var onZoom: ((CGFloat) -> Void)?
 
     @State private var monitor: Any?
@@ -129,8 +135,8 @@ struct CandleChartView: View {
 
             let candleColor: Color
             if isDoji { candleColor = style.dojiColor }
-            else if isBullish { candleColor = style.bullishColor }
-            else { candleColor = style.bearishColor }
+            else if isBullish { candleColor = bullishColor }
+            else { candleColor = bearishColor }
 
             // Wick
             let wickRect = CGRect(x: x - style.wickWidth / 2, y: wickTop,
@@ -159,7 +165,7 @@ struct CandleChartView: View {
         guard let lastCandle = candles.last else { return }
         let price = lastCandle.closePrice
         let isBullish = lastCandle.closePrice >= lastCandle.openPrice
-        let lineColor = isBullish ? style.bullishColor : style.bearishColor
+        let lineColor = isBullish ? bullishColor : bearishColor
 
         let y = yForPrice(price, plotRect: plotRect, priceRange: priceRange)
 
@@ -180,7 +186,7 @@ struct CandleChartView: View {
         guard let lastCandle = candles.last else { return }
         let price = lastCandle.closePrice
         let isBullish = lastCandle.closePrice >= lastCandle.openPrice
-        let boxColor = isBullish ? style.bullishColor : style.bearishColor
+        let boxColor = isBullish ? bullishColor : bearishColor
 
         let y = yForPrice(price, plotRect: plotRect, priceRange: priceRange)
 
@@ -279,11 +285,16 @@ struct CandleChartView: View {
 
         // Large numbers: just grouped decimal
         if price >= 1_000_000 {
+            if let places = yAxisDecimalPlaces {
+                return price.formatted(.number.grouping(.automatic).precision(.fractionLength(places)))
+            }
             return price.formatted(.number.grouping(.automatic).precision(.fractionLength(0)))
         }
 
         let digits: Int
-        if price >= 1000 { digits = 0 }
+        if let places = yAxisDecimalPlaces {
+            digits = places
+        } else if price >= 1000 { digits = 0 }
         else if price >= 1 { digits = 2 }
         else if price >= 0.01 { digits = 4 }
         else { digits = 6 }

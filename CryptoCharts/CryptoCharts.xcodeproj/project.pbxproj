@@ -33,6 +33,8 @@
 		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
 		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
+		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
+		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -63,6 +65,8 @@
 		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
 		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
+		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
+		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -95,6 +99,7 @@
 				A00000000000000000000312 /* ViewModel */,
 				A00000000000000000000313 /* View */,
 				A00000000000000000000314 /* Preview Content */,
+				A00000000000000000000315 /* Util */,
 			);
 			path = CryptoCharts;
 			sourceTree = "<group>";
@@ -150,6 +155,7 @@
 				A0000000000000000000010B /* AddTickerSheet.swift */,
 				A0000000000000000000010C /* TimeRangePicker.swift */,
 				A0000000000000000000010D /* EmptyStateView.swift */,
+				A0000000000000000000011C /* ChartSettingsSheet.swift */,
 					A00000000000000000000111 /* ScrollWheelView.swift */,
 					A00000000000000000000112 /* CandleChartView.swift */,
 					A00000000000000000000113 /* CandleChartStyle.swift */,
@@ -163,6 +169,14 @@
 				A0000000000000000000010E /* MockData.swift */,
 			);
 			path = "Preview Content";
+			sourceTree = "<group>";
+		};
+		A00000000000000000000315 /* Util */ = {
+			isa = PBXGroup;
+			children = (
+				A0000000000000000000011D /* ColorHex.swift */,
+			);
+			path = Util;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -259,6 +273,8 @@
 					A00000000000000000000018 /* TickerDataSource.swift in Sources */,
 					A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */,
 					A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
+				A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */,
+				A0000000000000000000001C /* ColorHex.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

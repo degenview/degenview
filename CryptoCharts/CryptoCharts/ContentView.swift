@@ -120,7 +120,7 @@ struct ContentView: View {
                                         columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
                                         spacing: 0
                                     ) {
-                                        ForEach(contentViewModel.chartViewModels, id: \.ticker) { vm in
+                                        ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
                                             chartCard(vm, height: chartHeight)
                                                 .padding(4)
                                                 .onDrag {
@@ -270,6 +270,12 @@ struct ContentView: View {
                 } else if deltaY < 0 {
                     contentViewModel.adjustCandleCount(by: -step)
                 }
+            },
+            onUpdateTicker: { symbol, source in
+                contentViewModel.updateTicker(vm, symbol: symbol, source: source)
+            },
+            onStyleChanged: {
+                contentViewModel.persistChartSettings()
             }
         )
     }

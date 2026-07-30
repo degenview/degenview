@@ -3,13 +3,13 @@ import SwiftUI
 
 @MainActor
 final class ChartViewModel: ObservableObject {
-    let ticker: String
-    let source: DataSourceType
+    @Published var ticker: String
+    @Published var source: DataSourceType
 
-    /// Unique identifier — ticker + source.
-    var uniqueID: String { "\(ticker)_\(source.rawValue)" }
+    /// Unique identifier — derived from initial ticker+source, stable across updates.
+    let uniqueID: String
 
-    private let api: TickerDataSource
+    private var api: TickerDataSource
 
     /// The symbol used for API calls — source-dependent.
     var apiSymbol: String {
@@ -44,6 +44,12 @@ final class ChartViewModel: ObservableObject {
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
 
+    // MARK: - Chart appearance settings
+
+    @Published var bullishColor: Color = .green
+    @Published var bearishColor: Color = .red
+    @Published var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
+
     private var fetchTask: Task<Void, Never>?
 
     var priceChangePercent: Double? {
@@ -58,7 +64,22 @@ final class ChartViewModel: ObservableObject {
     init(ticker: String, source: DataSourceType = .binance, api: TickerDataSource? = nil) {
         self.ticker = ticker
         self.source = source
+        self.uniqueID = "\(ticker)_\(source.rawValue)"
         self.api = api ?? DataSourceFactory.shared.service(for: source)
+    }
+
+    /// Apply persisted chart settings from a TickerConfig.
+    func applyConfig(_ config: TickerConfig) {
+        if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
+        if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
+        yAxisDecimalPlaces = config.yAxisDecimalPlaces
+    }
+
+    /// Update ticker symbol and/or source, re-fetch data.
+    func updateTicker(symbol: String, source: DataSourceType) {
+        ticker = symbol
+        self.source = source
+        api = DataSourceFactory.shared.service(for: source)
     }
 
     /// Merge a WebSocket kline tick into the current dataset.

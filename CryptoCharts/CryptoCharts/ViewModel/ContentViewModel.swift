@@ -64,7 +64,11 @@ final class ContentViewModel: ObservableObject {
     /// Load persisted tickers, create chart view models, and start auto-refresh.
     func loadTickers() {
         let configs = tickerStore.load()
-        chartViewModels = configs.map { ChartViewModel(ticker: $0.symbol, source: $0.source) }
+        chartViewModels = configs.map { config in
+            let vm = ChartViewModel(ticker: config.symbol, source: config.source)
+            vm.applyConfig(config)
+            return vm
+        }
         Task {
             for vm in chartViewModels {
                 await vm.fetchData(for: selectedTimeRange, count: candleCount)
@@ -184,9 +188,20 @@ final class ContentViewModel: ObservableObject {
 
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
-        chartViewModels.removeAll { $0.ticker == vm.ticker && $0.source == vm.source }
+        chartViewModels.removeAll { $0.uniqueID == vm.uniqueID }
         persistTickers()
         markChanged()
+        connectWebSocket()
+    }
+
+    /// Update a chart's ticker symbol and/or source, then refetch.
+    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType) {
+        vm.updateTicker(symbol: symbol, source: source)
+        persistTickers()
+        markChanged()
+        Task {
+            await vm.fetchData(for: selectedTimeRange, count: candleCount)
+        }
         connectWebSocket()
     }
 
@@ -198,14 +213,30 @@ final class ContentViewModel: ObservableObject {
     }
 
     private func persistTickers() {
-        tickerStore.save(chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) })
+        tickerStore.save(chartViewModels.map { vm in
+            TickerConfig(
+                symbol: vm.ticker,
+                source: vm.source,
+                bullishColorHex: vm.bullishColor.hexString,
+                bearishColorHex: vm.bearishColor.hexString,
+                yAxisDecimalPlaces: vm.yAxisDecimalPlaces
+            )
+        })
     }
 
     // MARK: - Saved Views
 
     /// Save the current state. Updates existing view if already named, otherwise creates new.
     func saveCurrentView(name: String) {
-        let configs = chartViewModels.map { TickerConfig(symbol: $0.ticker, source: $0.source) }
+        let configs = chartViewModels.map { vm in
+            TickerConfig(
+                symbol: vm.ticker,
+                source: vm.source,
+                bullishColorHex: vm.bullishColor.hexString,
+                bearishColorHex: vm.bearishColor.hexString,
+                yAxisDecimalPlaces: vm.yAxisDecimalPlaces
+            )
+        }
         let view = SavedView(
             id: currentViewID ?? UUID(),
             name: name,
@@ -245,7 +276,11 @@ final class ContentViewModel: ObservableObject {
         layoutMode = view.layoutMode
 
         let configs = view.resolvedConfigs
-        chartViewModels = configs.map { ChartViewModel(ticker: $0.symbol, source: $0.source) }
+        chartViewModels = configs.map { config in
+            let vm = ChartViewModel(ticker: config.symbol, source: config.source)
+            vm.applyConfig(config)
+            return vm
+        }
         tickerStore.save(configs)
 
         currentViewName = view.name
@@ -267,6 +302,12 @@ final class ContentViewModel: ObservableObject {
             hasUnsavedChanges = false
             saveLastViewID(nil)
         }
+    }
+
+    /// Persist chart appearance settings (colors, decimals) to disk.
+    func persistChartSettings() {
+        persistTickers()
+        markChanged()
     }
 
     /// Mark current view as having unsaved changes (unless applying a loaded view).
