@@ -95,56 +95,34 @@ struct ChartCardView: View {
 
     @ViewBuilder
     private var chartArea: some View {
-        if viewModel.isLoading && viewModel.klineData.isEmpty {
-            ProgressView()
-                .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
-        } else if let error = viewModel.errorMessage, viewModel.klineData.isEmpty {
-            errorView(message: error)
-        } else {
-            CandleChartView(
-                candles: viewModel.klineData,
-                chartHeight: chartHeight,
-                bullishColor: viewModel.bullishColor,
-                bearishColor: viewModel.bearishColor,
-                yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
-            )
-            .overlay(alignment: .bottom) {
-                if let error = viewModel.errorMessage {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text(error)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Button("Retry", action: onRetry)
-                            .font(.caption2)
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.blue)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
+        CandleChartView(
+            candles: viewModel.klineData,
+            chartHeight: chartHeight,
+            bullishColor: viewModel.bullishColor,
+            bearishColor: viewModel.bearishColor,
+            yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
+        )
+        .overlay(alignment: .bottom) {
+            if let error = viewModel.errorMessage {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Button("Retry", action: onRetry)
+                        .font(.caption2)
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
             }
         }
     }
 
-    private func errorView(message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wifi.slash")
-                .font(.system(size: 32))
-                .foregroundStyle(.secondary)
-            Text(message)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            Button("Retry", action: onRetry)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-        }
-        .frame(height: ChartLayout.defaultChartHeight)
-    }
 }
 
 #Preview {

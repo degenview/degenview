@@ -90,35 +90,17 @@ final class CoinGeckoAPIService: TickerDataSource {
     }
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
-        // symbol here is the CoinGecko coin ID (e.g. "bitcoin", "ethereum")
         let coinID = symbol.lowercased()
 
-        // Check cache
         if let cached = await cache.get(symbol: coinID, interval: interval, count: limit, ttl: Timeout.coingeckoCacheTTL) {
             return cached
         }
 
-        // Wait for rate-limit slot
         await rateLimiter.waitForSlot()
 
-        // Map our interval to CoinGecko days param
         let days = daysForInterval(interval, limit: limit)
 
-        // CoinGecko requires percent-encoded coin ID in path
-        guard let encodedID = coinID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-            throw CoinGeckoError.invalidURL
-        }
-
-        guard var components = URLComponents(string: "\(baseURL)/coins/\(encodedID)/ohlc") else {
-            throw CoinGeckoError.invalidURL
-        }
-
-        components.queryItems = [
-            URLQueryItem(name: "vs_currency", value: "usd"),
-            URLQueryItem(name: "days", value: String(days)),
-        ]
-
-        guard let url = components.url else {
+        guard let url = buildOHLCURL(coinID: coinID, days: days) else {
             throw CoinGeckoError.invalidURL
         }
 
@@ -127,16 +109,144 @@ final class CoinGeckoAPIService: TickerDataSource {
 #endif
 
         let (data, response) = try await session.data(from: url)
+        try await checkHTTPResponse(data: data, response: response, url: url)
 
+        let sorted = try parseOHLCResponse(data)
+        let result = Array(sorted.suffix(limit))
+
+#if DEBUG
+        print("[CoinGecko] \(coinID) candles=\(result.count) (fetched \(sorted.count), limit \(limit))")
+#endif
+
+        await cache.set(symbol: coinID, interval: interval, data: sorted)
+        return result
+    }
+
+    // MARK: - Staged Fetch (fast-first, then full)
+
+    /// Fetches klines in two stages so the chart renders almost immediately:
+    /// 1. Fetch 1 day of data → tiny response, ~500 ms → candles appear fast.
+    /// 2. Fetch the full day range → chart fills in completely.
+    ///
+    /// Between stages the rate limiter enforces a 3 s gap, but the user sees
+    /// candles from stage 1 the whole time — no spinner after ~500 ms.
+    func fetchKlinesStaged(
+        symbol: String,
+        interval: String,
+        limit: Int
+    ) -> AsyncThrowingStream<[KlineData], Error> {
+        AsyncThrowingStream { continuation in
+            let coinID = symbol.lowercased()
+            let fullDays = daysForInterval(interval, limit: limit)
+
+            Task {
+                do {
+                    // Cache hit → yield all at once, skip fetching.
+                    if let cached = await cache.get(
+                        symbol: coinID, interval: interval,
+                        count: limit, ttl: Timeout.coingeckoCacheTTL
+                    ) {
+                        continuation.yield(cached)
+                        continuation.finish()
+                        return
+                    }
+
+                    // Yield stale cache first so chart renders instantly.
+                    if let stale = await cache.getStale(
+                        symbol: coinID, interval: interval, count: limit
+                    ) {
+                        continuation.yield(stale)
+                    }
+
+                    // Stage 1: fetch minimal day range for instant display.
+                    // 1 day of data is a tiny response — arrives in ~500 ms.
+                    let stage1Days = 1
+                    let needStage1 = fullDays > stage1Days
+
+                    if needStage1, let url1 = buildOHLCURL(coinID: coinID, days: stage1Days) {
+                        do {
+                            await rateLimiter.waitForSlot()
+
+                        #if DEBUG
+                            print("[CoinGecko] Stage 1: fetching \(stage1Days)d for \(coinID)")
+                        #endif
+
+                            let (data1, response1) = try await session.data(from: url1)
+                            try await checkHTTPResponse(data: data1, response: response1, url: url1)
+                            let sorted1 = try parseOHLCResponse(data1)
+                            let batch1 = Array(sorted1.suffix(limit))
+
+                            if !batch1.isEmpty {
+                                continuation.yield(batch1)
+                            }
+                        } catch {
+                            // Stage 1 is a best-effort fast path. On failure,
+                            // fall through to stage 2 — don't break the stream.
+                        #if DEBUG
+                            print("[CoinGecko] Stage 1 failed, proceeding to stage 2: \(error)")
+                        #endif
+                        }
+                    }
+
+                    // Stage 2: always run the full fetch.
+                    if needStage1 {
+                        await rateLimiter.waitForSlot()
+                    #if DEBUG
+                        print("[CoinGecko] Stage 2: fetching \(fullDays)d for \(coinID)")
+                    #endif
+                    } else {
+                        await rateLimiter.waitForSlot()
+                    }
+
+                    guard let url = buildOHLCURL(coinID: coinID, days: fullDays) else {
+                        throw CoinGeckoError.invalidURL
+                    }
+                    let (data, response) = try await session.data(from: url)
+                    try await checkHTTPResponse(data: data, response: response, url: url)
+                    let sorted = try parseOHLCResponse(data)
+                    let result = Array(sorted.suffix(limit))
+
+                    await cache.set(symbol: coinID, interval: interval, data: sorted)
+                    continuation.yield(result)
+
+                #if DEBUG
+                    print("[CoinGecko] Staged fetch complete for \(coinID)")
+                #endif
+
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
+    }
+
+    // MARK: - URL Building
+
+    private func buildOHLCURL(coinID: String, days: Int) -> URL? {
+        guard let encodedID = coinID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return nil
+        }
+        guard var components = URLComponents(string: "\(baseURL)/coins/\(encodedID)/ohlc") else {
+            return nil
+        }
+        components.queryItems = [
+            URLQueryItem(name: "vs_currency", value: "usd"),
+            URLQueryItem(name: "days", value: String(days)),
+        ]
+        return components.url
+    }
+
+    // MARK: - HTTP Response Validation
+
+    private func checkHTTPResponse(data: Data, response: URLResponse, url: URL) async throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw CoinGeckoError.invalidResponse
         }
-
         switch httpResponse.statusCode {
         case 200:
-            break
+            return
         case 429:
-            // Extract Retry-After header, back off, then re-throw
             let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
             let waitSeconds = retryAfter.flatMap(Int.init) ?? 30
 #if DEBUG
@@ -145,7 +255,7 @@ final class CoinGeckoAPIService: TickerDataSource {
             await rateLimiter.backoff(seconds: waitSeconds)
             throw CoinGeckoError.rateLimited
         case 404:
-            throw CoinGeckoError.coinNotFound(coinID)
+            throw CoinGeckoError.coinNotFound(url.lastPathComponent)
         case 400:
             let body = String(data: data, encoding: .utf8) ?? ""
 #if DEBUG
@@ -156,23 +266,16 @@ final class CoinGeckoAPIService: TickerDataSource {
         default:
             throw CoinGeckoError.httpError(httpResponse.statusCode)
         }
+    }
 
-        // CoinGecko OHLC format: [[timestamp_ms, open, high, low, close], ...]
+    // MARK: - JSON Parsing
+
+    private func parseOHLCResponse(_ data: Data) throws -> [KlineData] {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [[Any]] else {
             throw CoinGeckoError.parseError("Expected array of arrays")
         }
-
         let klines = json.compactMap { KlineData(rawCoinGecko: $0) }
-        let sorted = klines.sorted { $0.openTime < $1.openTime }
-        let result = Array(sorted.suffix(limit))
-
-#if DEBUG
-        print("[CoinGecko] \(coinID) candles=\(result.count) (fetched \(sorted.count), limit \(limit))")
-#endif
-
-        // Store full dataset — allows cache hits for nearby limit values without refetching.
-        await cache.set(symbol: coinID, interval: interval, data: sorted)
-        return result
+        return klines.sorted { $0.openTime < $1.openTime }
     }
 
     /// CoinGecko OHLC only accepts these `days` values. Snap to nearest valid bucket.
@@ -190,7 +293,6 @@ final class CoinGeckoAPIService: TickerDataSource {
         case "1M":                      raw = max(1, limit * 30)
         default:                        raw = max(1, limit)
         }
-        // Snap to nearest valid CoinGecko bucket (round up so we always have enough data)
         return Self.validDays.first(where: { $0 >= raw }) ?? 365
     }
 
@@ -230,9 +332,9 @@ final class CoinGeckoAPIService: TickerDataSource {
         return result.coins.map { coin in
             TickerSearchResult(
                 symbol: coin.symbol.uppercased(),
-                fullSymbol: coin.id,           // coin ID used for OHLC fetch
+                fullSymbol: coin.id,
                 source: .coingecko,
-                price: nil                    // search doesn't include price
+                price: nil
             )
         }
     }

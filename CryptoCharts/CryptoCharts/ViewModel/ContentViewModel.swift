@@ -220,18 +220,18 @@ final class ContentViewModel: ObservableObject {
         refetchTask?.cancel()
         let task = Task { [weak self] in
             guard let self else { return }
-            await self.refetchAllVMs()
+            await self.refetchAllVMs(silent: true)
         }
         refetchTask = task
         await task.value
     }
 
-    private func refetchAllVMs() async {
+    private func refetchAllVMs(silent: Bool = false) async {
         let range = self.selectedTimeRange
         let count = self.candleCount
         for vm in self.chartViewModels {
             guard !Task.isCancelled else { return }
-            await vm.fetchData(for: range, count: count)
+            await vm.fetchData(for: range, count: count, silent: silent)
         }
     }
 

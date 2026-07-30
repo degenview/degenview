@@ -44,7 +44,6 @@ final class ChartViewModel: ObservableObject {
     }
 
     @Published var klineData: [KlineData] = []
-    @Published var isLoading = false
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
@@ -56,6 +55,8 @@ final class ChartViewModel: ObservableObject {
     @Published var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
 
     private var fetchTask: Task<Void, Never>?
+    private var fetchGeneration = 0
+    private var isFetching = false
 
     var priceChangePercent: Double? {
         klineData.priceChangePercent
@@ -106,14 +107,23 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
-    func fetchData(for range: TimeRange, count: Int) async {
+    func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
+        // Silent refresh: if a fetch is already running let it finish.
+        if silent, isFetching {
+            return
+        }
+
         fetchTask?.cancel()
+        fetchGeneration += 1
+        let generation = fetchGeneration
+
         errorMessage = nil
+        isFetching = true
 
         let hadData = !klineData.isEmpty
         let isSlowSource = source != .binance
 
-        // Cache-first for slow sources: show stale data instantly, no spinner.
+        // Cache-first for slow sources: show stale data instantly.
         if !hadData, isSlowSource {
             if let cached = await api.getCachedKlines(symbol: apiSymbol, interval: range.binanceInterval, count: count) {
                 klineData = cached
@@ -121,51 +131,68 @@ final class ChartViewModel: ObservableObject {
             }
         }
 
-        // Only spin when we have nothing to show.
-        if klineData.isEmpty {
-            isLoading = true
-        }
-
         fetchTask = Task { [weak self] in
             guard let self else { return }
 
             do {
-                let data = try await self.api.fetchKlines(
-                    symbol: self.apiSymbol,
-                    interval: range.binanceInterval,
-                    limit: count
-                )
-                guard !Task.isCancelled else { return }
-
-                // Progressive reveal: only for slow sources on true first load (no cache at all).
-                // Uses real suspension (Task.sleep) so SwiftUI renders each chunk.
-                if isSlowSource, !hadData, klineData.isEmpty, !data.isEmpty {
-                    let batches = 8
-                    let chunkSize = max(1, data.count / batches)
-                    var shown = chunkSize
-                    while shown < data.count {
-                        guard !Task.isCancelled else { return }
-                        klineData = Array(data[0..<shown])
-                        currentPrice = data[shown - 1].closePrice
-                        try? await Task.sleep(nanoseconds: 30_000_000) // ~2 frames
-                        shown += chunkSize
-                    }
+                if isSlowSource,
+                   let cgService = api as? CoinGeckoAPIService
+                {
+                    try await self.fetchStaged(
+                        cgService: cgService,
+                        range: range,
+                        count: count
+                    )
+                } else {
+                    let data = try await self.api.fetchKlines(
+                        symbol: self.apiSymbol,
+                        interval: range.binanceInterval,
+                        limit: count
+                    )
+                    guard !Task.isCancelled else { return }
+                    guard fetchGeneration == generation else { return }
+                    klineData = data
+                    currentPrice = data.last?.closePrice
                 }
 
                 guard !Task.isCancelled else { return }
-                klineData = data
-                currentPrice = data.last?.closePrice
+                guard fetchGeneration == generation else { return }
                 lastUpdated = Date()
                 errorMessage = nil
             } catch is CancellationError {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
+                guard fetchGeneration == generation else { return }
                 errorMessage = error.localizedDescription
             }
 
+            // Only touch flags if this is still the current generation.
+            guard fetchGeneration == generation else { return }
+            isFetching = false
+        }
+    }
+
+    /// Consume staged kline data from CoinGecko.
+    /// Stage 1 (1 day range) arrives in ~500 ms — chart renders almost instantly.
+    /// Stage 2 (full range) follows after rate-limit gap — chart fills in completely.
+    private func fetchStaged(
+        cgService: CoinGeckoAPIService,
+        range: TimeRange,
+        count: Int
+    ) async throws {
+        let stream = cgService.fetchKlinesStaged(
+            symbol: apiSymbol,
+            interval: range.binanceInterval,
+            limit: count
+        )
+
+        for try await batch in stream {
             guard !Task.isCancelled else { return }
-            isLoading = false
+            klineData = batch
+            if let last = batch.last {
+                currentPrice = last.closePrice
+            }
         }
     }
 }
