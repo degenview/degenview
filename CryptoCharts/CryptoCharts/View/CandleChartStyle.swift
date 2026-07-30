@@ -35,7 +35,7 @@ struct CandleChartStyle {
     var currentPriceDashPattern: [CGFloat] = [5, 3]
 
     // Layout
-    var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 70, bottom: 28, trailing: 60)
+    var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 28, trailing: 70)
 
     static let `default` = CandleChartStyle()
 }

@@ -82,7 +82,7 @@ struct CandleChartView: View {
         return plotRect.maxY - CGFloat(normalized) * plotRect.height
     }
 
-    // MARK: - Grid (lines + Y-axis price labels on left side)
+    // MARK: - Grid (lines + Y-axis price labels on right side)
 
     private func drawGrid(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
         let span = priceRange.max - priceRange.min
@@ -106,7 +106,7 @@ struct CandleChartView: View {
         let text = Text(label).font(.caption2).foregroundStyle(.secondary)
         let resolved = context.resolve(text)
         let textSize = resolved.measure(in: .init(width: 80, height: 14))
-        let labelX = plotRect.minX - textSize.width - 4
+        let labelX = plotRect.maxX + style.chartInsets.trailing - textSize.width - 4
         context.draw(resolved, at: CGPoint(x: labelX, y: y - textSize.height / 2))
     }
 
@@ -174,7 +174,7 @@ struct CandleChartView: View {
         context.stroke(path, with: .color(lineColor.opacity(0.5)), style: dashStyle)
     }
 
-    // MARK: - Current Price Box (colored, to the right of candles)
+    // MARK: - Current Price Box (right of candles; overlaps Y-axis when too wide)
 
     private func drawCurrentPriceBox(context: inout GraphicsContext, plotRect: CGRect, priceRange: (min: Double, max: Double)) {
         guard let lastCandle = candles.last else { return }
@@ -192,7 +192,7 @@ struct CandleChartView: View {
         let boxWidth = textSize.width + 10
         let boxHeight: CGFloat = 18
 
-        // Position to the right of the plot area, not overlapping candles
+        // Position right of plot area; naturally overlaps Y-axis labels when too wide
         let boxX = plotRect.maxX + 4
         let boxY = (y - boxHeight / 2).clamped(to: (plotRect.minY + 1)...(plotRect.maxY - boxHeight - 1))
 
@@ -251,18 +251,61 @@ struct CandleChartView: View {
 
     // MARK: - Formatting
 
+    /// Format price with subscript zero-count for very small numbers (CoinMarketCap style).
+    /// Examples: 0.00000278 → "0.0₅278", 45.23 → "45.23", 1,234,567 → "1,234,567"
     private func formatPrice(_ price: Double) -> String {
+        guard price > 0 else { return "0" }
+
+        // Very small: CoinMarketCap subscript zero-count notation
+        if price < 0.001 {
+            var zeroCount = 0
+            var scaled = price
+            while scaled < 0.1 {
+                scaled *= 10
+                zeroCount += 1
+            }
+            // scaled is in [0.1, 1.0) — extract 3 fixed significant digits
+            let sigValue = Int(round(scaled * 1_000))
+            let sigStr: String
+            if sigValue >= 1_000 {
+                // Rounding overflow (e.g., 0.099999 → 1000)
+                zeroCount = max(0, zeroCount - 1)
+                sigStr = "100"
+            } else {
+                sigStr = String(format: "%03d", sigValue)
+            }
+            return "0.0\(zeroCount.subscriptUnicode)\(sigStr)"
+        }
+
+        // Large numbers: just grouped decimal
+        if price >= 1_000_000 {
+            return price.formatted(.number.grouping(.automatic).precision(.fractionLength(0)))
+        }
+
         let digits: Int
         if price >= 1000 { digits = 0 }
         else if price >= 1 { digits = 2 }
         else if price >= 0.01 { digits = 4 }
-        else { digits = 8 }
+        else { digits = 6 }
 
         return price.formatted(
             .number
-            .precision(.fractionLength(0...digits))
+            .precision(.fractionLength(digits))
             .grouping(.automatic)
         )
+    }
+}
+
+private extension Int {
+    /// Unicode subscript digits: 0→₀, 1→₁, …, 9→₉
+    var subscriptUnicode: String {
+        String(self).map { char -> String in
+            guard let digit = char.wholeNumberValue,
+                  let scalar = UnicodeScalar(0x2080 + digit) else {
+                return String(char)
+            }
+            return String(scalar)
+        }.joined()
     }
 }
 
