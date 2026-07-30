@@ -21,6 +21,14 @@ actor KlineCache {
         return Array(entry.data.suffix(count))
     }
 
+    /// Return cached candles regardless of staleness. Used for instant-first-render
+    /// when we want to show *something* while fresh data loads.
+    func getStale(symbol: String, interval: String, count: Int) -> [KlineData]? {
+        guard let entry = entries[key(symbol: symbol, interval: interval)] else { return nil }
+        guard entry.data.count >= count else { return nil }
+        return Array(entry.data.suffix(count))
+    }
+
     func set(symbol: String, interval: String, data: [KlineData]) {
         entries[key(symbol: symbol, interval: interval)] = CachedEntry(data: data, fetchedAt: Date())
     }

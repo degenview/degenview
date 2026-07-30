@@ -39,8 +39,19 @@ protocol TickerDataSource: AnyObject {
     /// Fetch candlestick / OHLC data.
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData]
 
+    /// Synchronously return cached klines without hitting the network.
+    /// Returns nil if no cache or cache miss. Used for instant-first-render.
+    func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]?
+
     /// Search for tickers matching a query string.
     func searchTickers(query: String) async throws -> [TickerSearchResult]
+}
+
+extension TickerDataSource {
+    /// Default: no cache access. Services with caches override.
+    func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
+        return nil
+    }
 }
 
 // MARK: - Factory

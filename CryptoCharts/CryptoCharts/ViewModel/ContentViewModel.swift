@@ -52,18 +52,34 @@ final class ContentViewModel: ObservableObject {
     private let wsService = BinanceWebSocketService()
 
     private var scrollMonitor: Any?
+    private var pendingZoomDelta = 0
+    private var zoomDebounceTask: Task<Void, Never>?
+
+    /// Suppress scroll-zoom when sheets or popovers are presented.
+    var isShowingSheet = false
 
     init(api: BinanceAPIService = BinanceAPIService()) {
         self.api = api
         self.savedViews = viewStore.load() ?? []
 
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, !self.chartViewModels.isEmpty else { return event }
+            guard let self, !self.chartViewModels.isEmpty, !self.isShowingSheet else { return event }
             let step = max(1, Int(Double(self.candleCount) * Candle.zoomStepFraction))
             if event.scrollingDeltaY > 0 {
-                self.adjustCandleCount(by: step)
+                self.pendingZoomDelta += step
             } else if event.scrollingDeltaY < 0 {
-                self.adjustCandleCount(by: -step)
+                self.pendingZoomDelta -= step
+            } else {
+                return event
+            }
+            self.zoomDebounceTask?.cancel()
+            self.zoomDebounceTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 150_000_000) // 150 ms
+                guard let self else { return }
+                let delta = self.pendingZoomDelta
+                self.pendingZoomDelta = 0
+                guard delta != 0 else { return }
+                self.adjustCandleCount(by: delta)
             }
             return event
         }
@@ -178,7 +194,12 @@ final class ContentViewModel: ObservableObject {
         guard newCount != candleCount else { return }
         candleCount = newCount
         markChanged()
-        refetchAll()
+        // Silent refetch — candle count change is visual feedback enough.
+        refetchTask?.cancel()
+        refetchTask = Task { [weak self] in
+            guard let self else { return }
+            await self.refetchAllVMs()
+        }
     }
 
     private var refetchTask: Task<Void, Never>?

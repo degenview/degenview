@@ -109,7 +109,22 @@ final class ChartViewModel: ObservableObject {
     func fetchData(for range: TimeRange, count: Int) async {
         fetchTask?.cancel()
         errorMessage = nil
-        isLoading = true
+
+        let hadData = !klineData.isEmpty
+        let isSlowSource = source != .binance
+
+        // Cache-first for slow sources: show stale data instantly, no spinner.
+        if !hadData, isSlowSource {
+            if let cached = await api.getCachedKlines(symbol: apiSymbol, interval: range.binanceInterval, count: count) {
+                klineData = cached
+                currentPrice = cached.last?.closePrice
+            }
+        }
+
+        // Only spin when we have nothing to show.
+        if klineData.isEmpty {
+            isLoading = true
+        }
 
         fetchTask = Task { [weak self] in
             guard let self else { return }
@@ -122,19 +137,35 @@ final class ChartViewModel: ObservableObject {
                 )
                 guard !Task.isCancelled else { return }
 
-                self.klineData = data
-                self.currentPrice = data.last?.closePrice
-                self.lastUpdated = Date()
-                self.errorMessage = nil
+                // Progressive reveal: only for slow sources on true first load (no cache at all).
+                // Uses real suspension (Task.sleep) so SwiftUI renders each chunk.
+                if isSlowSource, !hadData, klineData.isEmpty, !data.isEmpty {
+                    let batches = 8
+                    let chunkSize = max(1, data.count / batches)
+                    var shown = chunkSize
+                    while shown < data.count {
+                        guard !Task.isCancelled else { return }
+                        klineData = Array(data[0..<shown])
+                        currentPrice = data[shown - 1].closePrice
+                        try? await Task.sleep(nanoseconds: 30_000_000) // ~2 frames
+                        shown += chunkSize
+                    }
+                }
+
+                guard !Task.isCancelled else { return }
+                klineData = data
+                currentPrice = data.last?.closePrice
+                lastUpdated = Date()
+                errorMessage = nil
             } catch is CancellationError {
-                // Superseded by a newer request — ignore
+                return
             } catch {
                 guard !Task.isCancelled else { return }
-                self.errorMessage = error.localizedDescription
+                errorMessage = error.localizedDescription
             }
 
             guard !Task.isCancelled else { return }
-            self.isLoading = false
+            isLoading = false
         }
     }
 }

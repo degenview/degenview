@@ -232,6 +232,9 @@ struct ContentView: View {
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(contentViewModel: contentViewModel)
         }
+        .onChange(of: showAddSheet) { _, new in
+            contentViewModel.isShowingSheet = new
+        }
         .task {
             contentViewModel.loadTickers()
         }
@@ -272,6 +275,9 @@ struct ContentView: View {
             },
             onStyleChanged: {
                 contentViewModel.persistChartSettings()
+            },
+            onSettingsPresented: { shown in
+                contentViewModel.isShowingSheet = shown
             }
         )
     }

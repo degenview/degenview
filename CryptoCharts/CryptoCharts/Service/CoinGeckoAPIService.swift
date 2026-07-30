@@ -84,6 +84,11 @@ final class CoinGeckoAPIService: TickerDataSource {
 
     // MARK: - Kline Fetching
 
+    /// Return cached klines regardless of freshness — instant first render.
+    func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
+        return await cache.getStale(symbol: symbol, interval: interval, count: count)
+    }
+
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         // symbol here is the CoinGecko coin ID (e.g. "bitcoin", "ethereum")
         let coinID = symbol.lowercased()

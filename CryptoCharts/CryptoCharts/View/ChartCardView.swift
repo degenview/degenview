@@ -8,6 +8,7 @@ struct ChartCardView: View {
     let onZoom: (CGFloat) -> Void
     let onUpdateTicker: (String, DataSourceType) -> Void
     let onStyleChanged: () -> Void
+    var onSettingsPresented: ((Bool) -> Void)? = nil
 
     @State private var showSettings = false
     @State private var iconURL: URL?
@@ -29,6 +30,9 @@ struct ChartCardView: View {
                 onRemove: onRemove,
                 onStyleChanged: onStyleChanged
             )
+        }
+        .onChange(of: showSettings) { _, new in
+            onSettingsPresented?(new)
         }
     }
 
