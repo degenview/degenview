@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 enum LayoutMode: String, CaseIterable, Codable {
     case vertical
@@ -50,9 +51,26 @@ final class ContentViewModel: ObservableObject {
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
 
+    private var scrollMonitor: Any?
+
     init(api: BinanceAPIService = BinanceAPIService()) {
         self.api = api
         self.savedViews = viewStore.load() ?? []
+
+        scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, !self.chartViewModels.isEmpty else { return event }
+            let step = max(1, Int(Double(self.candleCount) * Candle.zoomStepFraction))
+            if event.scrollingDeltaY > 0 {
+                self.adjustCandleCount(by: step)
+            } else if event.scrollingDeltaY < 0 {
+                self.adjustCandleCount(by: -step)
+            }
+            return event
+        }
+    }
+
+    deinit {
+        if let m = scrollMonitor { NSEvent.removeMonitor(m) }
     }
 
     /// Load persisted tickers, create chart view models, and start auto-refresh.
@@ -110,12 +128,13 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Refresh all charts every 5 seconds. Cache prevents redundant API calls.
+    /// No loading indicator — silent background refresh.
     func startAutoRefresh() {
         stopAutoRefresh()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Timeout.autoRefresh, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
-                self.refetchAll()
+                await self.refetchAllSilent()
             }
         }
     }
@@ -164,19 +183,34 @@ final class ContentViewModel: ObservableObject {
 
     private var refetchTask: Task<Void, Never>?
 
+    /// Refetch with loading indicator (user-initiated: zoom, time range change).
     private func refetchAll() {
         refetchTask?.cancel()
         refetchTask = Task { [weak self] in
             guard let self else { return }
             self.isRefreshing = true
             defer { self.isRefreshing = false }
+            await self.refetchAllVMs()
+        }
+    }
 
-            let range = self.selectedTimeRange
-            let count = self.candleCount
-            for vm in self.chartViewModels {
-                guard !Task.isCancelled else { return }
-                await vm.fetchData(for: range, count: count)
-            }
+    /// Refetch without loading indicator (auto-refresh timer).
+    private func refetchAllSilent() async {
+        refetchTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.refetchAllVMs()
+        }
+        refetchTask = task
+        await task.value
+    }
+
+    private func refetchAllVMs() async {
+        let range = self.selectedTimeRange
+        let count = self.candleCount
+        for vm in self.chartViewModels {
+            guard !Task.isCancelled else { return }
+            await vm.fetchData(for: range, count: count)
         }
     }
 

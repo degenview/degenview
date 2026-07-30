@@ -1,5 +1,4 @@
 import SwiftUI
-import AppKit
 
 // MARK: - CandleChartView
 
@@ -13,8 +12,6 @@ struct CandleChartView: View {
     var bearishColor: Color = .red
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
 
-    var onZoom: ((CGFloat) -> Void)?
-
     var body: some View {
         GeometryReader { geometry in
             let plotRect = computePlotRect(in: geometry.size)
@@ -27,9 +24,6 @@ struct CandleChartView: View {
                 drawCurrentPriceLine(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawCurrentPriceBox(context: &context, plotRect: plotRect, priceRange: priceRange)
                 drawXAxis(context: &context, plotRect: plotRect)
-            }
-            .overlay {
-                ScrollCaptureView(onScroll: onZoom ?? { _ in })
             }
         }
         .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
@@ -326,38 +320,6 @@ struct CandleChartView: View {
         return CGFloat(lo)
     }
 
-}
-
-// MARK: - Scroll Capture Overlay
-
-/// Transparent NSView overlay that captures scroll-wheel events directly.
-/// Reliable hit-testing — no global monitor or coordinate conversion needed.
-private struct ScrollCaptureView: NSViewRepresentable {
-    let onScroll: (CGFloat) -> Void
-
-    func makeNSView(context: Context) -> _ScrollCaptureNSView {
-        let view = _ScrollCaptureNSView()
-        view.onScroll = onScroll
-        return view
-    }
-
-    func updateNSView(_ nsView: _ScrollCaptureNSView, context: Context) {
-        nsView.onScroll = onScroll
-    }
-}
-
-private final class _ScrollCaptureNSView: NSView {
-    var onScroll: ((CGFloat) -> Void)?
-
-    override func scrollWheel(with event: NSEvent) {
-        if let onScroll {
-            onScroll(event.scrollingDeltaY)
-            // Consume event — prevents outer ScrollView from also scrolling
-            // when user is intentionally zooming a chart.
-        } else {
-            super.scrollWheel(with: event)
-        }
-    }
 }
 
 #Preview {

@@ -102,8 +102,7 @@ struct ChartCardView: View {
                 chartHeight: chartHeight,
                 bullishColor: viewModel.bullishColor,
                 bearishColor: viewModel.bearishColor,
-                yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
-                onZoom: onZoom
+                yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
             )
             .overlay(alignment: .bottom) {
                 if let error = viewModel.errorMessage {

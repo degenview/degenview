@@ -165,7 +165,8 @@ final class CoinGeckoAPIService: TickerDataSource {
         print("[CoinGecko] \(coinID) candles=\(result.count) (fetched \(sorted.count), limit \(limit))")
 #endif
 
-        await cache.set(symbol: coinID, interval: interval, data: result)
+        // Store full dataset — allows cache hits for nearby limit values without refetching.
+        await cache.set(symbol: coinID, interval: interval, data: sorted)
         return result
     }
 
