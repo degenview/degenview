@@ -282,16 +282,38 @@ final class CoinGeckoAPIService: TickerDataSource {
     private static let validDays = [1, 7, 14, 30, 90, 180, 365, 9999]  // 9999 = "max"
 
     /// Map Binance-style interval + limit to the nearest valid CoinGecko `days` parameter.
+    /// Accounts for CoinGecko's OHLC auto-granularity thresholds:
+    ///   1 day       → fine-grained (up to ~288 candles)
+    ///   2–90 days   → hourly candles
+    ///   91+ days    → daily candles
     private func daysForInterval(_ interval: String, limit: Int) -> Int {
         let raw: Int
         switch interval {
-        case "1m", "5m", "15m", "30m": raw = max(1, (limit * 5) / (24 * 60))
-        case "1h":                      raw = max(1, limit / 24)
-        case "4h":                      raw = max(1, limit / 6)
-        case "1d":                      raw = max(1, limit)
-        case "1w":                      raw = max(1, limit * 7)
-        case "1M":                      raw = max(1, limit * 30)
-        default:                        raw = max(1, limit)
+        case "1m", "5m", "15m", "30m":
+            // Sub-hourly: CG only gives fine granularity for days=1 (~288 candles
+            // for 5m). If more candles are needed, fall back to hourly (≤90 days).
+            if limit <= 288 { raw = 1 }
+            else            { raw = max(2, min(90, (limit + 23) / 24)) }
+        case "1h":
+            // Hourly: stay within 2–90 day band so CG returns hourly candles.
+            // 1 day of hourly data = 24 candles; 90 days = 2160 max.
+            raw = max(2, min(90, (limit + 23) / 24))
+        case "4h":
+            // 4-hourly: CG has no native 4h granularity. Use hourly band (≤90d),
+            // giving 6 candles/day; 90 days = 540 max.
+            raw = max(2, min(90, (limit + 5) / 6))
+        case "1d":
+            // Daily: must exceed 90 days or CG returns hourly candles.
+            raw = max(91, limit)
+        case "1w":
+            // Weekly: CG has no native weekly; use daily band (>90d).
+            // Request enough days for `limit` weekly candles of underlying data.
+            raw = max(91, limit * 7)
+        case "1M":
+            // Monthly: same as weekly — daily band, enough days for span.
+            raw = max(91, limit * 30)
+        default:
+            raw = max(1, limit)
         }
         return Self.validDays.first(where: { $0 >= raw }) ?? 365
     }
