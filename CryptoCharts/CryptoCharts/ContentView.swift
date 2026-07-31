@@ -297,14 +297,7 @@ struct ContentView: View {
                     )
                 }
             },
-            onZoom: { deltaY in
-                let step = max(1, Int(Double(contentViewModel.candleCount) * Candle.zoomStepFraction))
-                if deltaY > 0 {
-                    contentViewModel.adjustCandleCount(by: step)
-                } else if deltaY < 0 {
-                    contentViewModel.adjustCandleCount(by: -step)
-                }
-            },
+            onZoomRegion: { contentViewModel.registerZoomRegion($0) },
             onUpdateTicker: { symbol, source, displayName in
                 contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
             },

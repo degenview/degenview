@@ -71,6 +71,9 @@ final class ContentViewModel: ObservableObject {
     private var scrollMonitor: Any?
     private var pendingZoomDelta = 0
     private var zoomDebounceTask: Task<Void, Never>?
+    /// Card rectangles a scroll has to land in to count as a zoom. Weak, so a
+    /// removed card's marker view takes its entry with it.
+    private let zoomRegions = NSHashTable<NSView>.weakObjects()
 
     /// Suppress scroll-zoom when sheets or popovers are presented.
     var isShowingSheet = false
@@ -108,6 +111,7 @@ final class ContentViewModel: ObservableObject {
             // A local monitor sees every scroll in the app, so without this each
             // open tab would zoom on a scroll aimed at one of the others.
             guard let own = self.ownWindow, event.window === own else { return event }
+            guard self.pointerIsOverChart(event) else { return event }
             let step = max(1, Int(Double(self.candleCount) * Candle.zoomStepFraction))
             if event.scrollingDeltaY > 0 {
                 self.pendingZoomDelta += step
@@ -131,6 +135,28 @@ final class ContentViewModel: ObservableObject {
 
     deinit {
         if let m = scrollMonitor { NSEvent.removeMonitor(m) }
+    }
+
+    // MARK: - Scroll-zoom targeting
+
+    /// Each chart card hands over the view covering it, so the window-wide
+    /// monitor can tell a zoom from a scroll aimed anywhere else.
+    func registerZoomRegion(_ view: NSView) {
+        zoomRegions.add(view)
+    }
+
+    /// `bounds`, not `visibleRect`: SwiftUI's superviews don't clip their
+    /// subviews, so a card's `visibleRect` covers the whole window and matches
+    /// every scroll. The toolbar strip is excluded separately — a card scrolled
+    /// up under it still sits at window coordinates the toolbar draws over.
+    private func pointerIsOverChart(_ event: NSEvent) -> Bool {
+        guard let window = event.window, let content = window.contentView else { return false }
+        let point = event.locationInWindow
+        guard window.contentLayoutRect.contains(content.convert(point, from: nil)) else { return false }
+        return zoomRegions.allObjects.contains { region in
+            guard region.window === window, !region.isHiddenOrHasHiddenAncestor else { return false }
+            return region.bounds.contains(region.convert(point, from: nil))
+        }
     }
 
     /// Bind to the hosting window: scope the scroll monitor, follow occlusion,

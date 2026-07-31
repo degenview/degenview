@@ -1,11 +1,13 @@
 import SwiftUI
+import AppKit
 
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat
     let onRemove: () -> Void
     let onRetry: () -> Void
-    let onZoom: (CGFloat) -> Void
+    /// Hands the card's backing `NSView` to the scroll-zoom monitor.
+    let onZoomRegion: (NSView) -> Void
     let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
@@ -21,6 +23,7 @@ struct ChartCardView: View {
         .padding(6)
         .frame(height: chartHeight + ChartLayout.cardChrome)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .background(ZoomHitRegion(onResolve: onZoomRegion))
         .task(id: viewModel.iconKey) {
             iconURL = nil
             iconURL = await IconResolver.shared.iconURL(
@@ -136,6 +139,29 @@ struct ChartCardView: View {
 
 }
 
+/// Non-interactive AppKit view stretched over one chart card.
+///
+/// Scroll-zoom runs off a window-wide `NSEvent` monitor, which knows nothing
+/// about what the pointer is over. Handing it a real `NSView` lets it hit-test
+/// the scroll location against AppKit geometry instead of reconstructing
+/// SwiftUI's flipped coordinate space by hand.
+/// `hitTest` returns nil so the card's own controls keep every mouse event.
+private struct ZoomHitRegion: NSViewRepresentable {
+    let onResolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PassthroughView()
+        onResolve(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class PassthroughView: NSView {
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    }
+}
+
 #Preview {
     ChartCardView(
         viewModel: {
@@ -147,7 +173,7 @@ struct ChartCardView: View {
         chartHeight: 220,
         onRemove: {},
         onRetry: {},
-        onZoom: { _ in },
+        onZoomRegion: { _ in },
         onUpdateTicker: { _, _, _ in },
         onStyleChanged: {}
     )
