@@ -26,55 +26,38 @@ enum AppTheme: String, CaseIterable, Identifiable {
 }
 
 struct ContentView: View {
-    @StateObject private var contentViewModel = ContentViewModel()
+    @StateObject private var contentViewModel: ContentViewModel
 
     @State private var showAddSheet = false
     @State private var showSaveAlert = false
     @State private var saveViewName = ""
+    @State private var showRenameAlert = false
+    @State private var renameText = ""
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
+
+    init(tabID: UUID) {
+        _contentViewModel = StateObject(wrappedValue: ContentViewModel(tabID: tabID))
+    }
 
     var body: some View {
         NavigationStack {
-            Group {
+            VStack(spacing: 0) {
+                // Global loading indicator
+                if contentViewModel.isRefreshing {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .scaleEffect(x: 1, y: 0.5)
+                        .padding(.horizontal, 16)
+                }
+
                 if contentViewModel.chartViewModels.isEmpty {
-                    EmptyStateView {
-                        showAddSheet = true
-                    }
+                    EmptyStateView(
+                        savedViews: contentViewModel.savedViews,
+                        onAddTapped: { showAddSheet = true },
+                        onOpenView: { contentViewModel.loadView($0) }
+                    )
                 } else {
                     VStack(spacing: 0) {
-                        // Global loading indicator
-                        if contentViewModel.isRefreshing {
-                            ProgressView()
-                                .progressViewStyle(.linear)
-                                .scaleEffect(x: 1, y: 0.5)
-                                .padding(.horizontal, 16)
-                        }
-
-                        // View name bar
-                        HStack(spacing: 8) {
-                            Text(contentViewModel.currentViewName)
-                                .font(.subheadline.weight(.medium))
-                                .foregroundStyle(.secondary)
-
-                            if contentViewModel.hasUnsavedChanges {
-                                Button("Save Changes") {
-                                    if contentViewModel.currentViewName == UI.unnamedView {
-                                        saveViewName = ""
-                                        showSaveAlert = true
-                                    } else {
-                                        contentViewModel.saveChanges()
-                                    }
-                                }
-                                .buttonStyle(.plain)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.blue)
-                            }
-
-                            Spacer()
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 2)
-
                         // Chart list (vertical) or grid — fills remaining height, scrolls if needed
                         GeometryReader { geometry in
                             let n = max(1, contentViewModel.chartViewModels.count)
@@ -94,7 +77,7 @@ struct ContentView: View {
                             }()
 
                             // Charts fill available window height. Floor at chartMinHeight
-                            // (the canvas won't render below 50 pt anyway).
+                            // (the canvas won't render below 50 pt anyway).
                             let chartHeight = max(ChartLayout.chartMinHeight, naturalHeight)
 
                             if contentViewModel.layoutMode == .vertical {
@@ -146,86 +129,20 @@ struct ContentView: View {
                             }
                         }
                     }
-                    .navigationTitle("CryptoCharts")
-                    .toolbar {
-                        ToolbarItem(placement: .automatic) {
-                            Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
-                                ForEach(TimeRange.allCases) { range in
-                                    Text(range.rawValue).tag(range)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .labelsHidden()
-                            .onChange(of: contentViewModel.selectedTimeRange) { _, newValue in
-                                contentViewModel.setTimeRange(newValue)
-                            }
-                        }
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                contentViewModel.layoutMode = contentViewModel.layoutMode.next
-                            } label: {
-                                Image(systemName: contentViewModel.layoutMode.icon)
-                            }
-                            .accessibilityLabel(contentViewModel.layoutMode == .vertical
-                                ? "Grid layout" : "Vertical layout")
-                        }
-                        ToolbarItem(placement: .automatic) {
-                            Picker("Theme", selection: $appTheme) {
-                                ForEach(AppTheme.allCases) { theme in
-                                    Label(theme.rawValue, systemImage: theme.icon).tag(theme)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .accessibilityLabel("Theme")
-                        }
-                        ToolbarItem(placement: .automatic) {
-                            Menu {
-                                ForEach(contentViewModel.savedViews) { view in
-                                    Button(view.name) {
-                                        contentViewModel.loadView(view)
-                                    }
-                                }
-                                if !contentViewModel.savedViews.isEmpty {
-                                    Divider()
-                                    Menu("Delete…") {
-                                        ForEach(contentViewModel.savedViews) { view in
-                                            Button(role: .destructive) {
-                                                contentViewModel.deleteView(view)
-                                            } label: {
-                                                Text(view.name)
-                                            }
-                                        }
-                                    }
-                                }
-                            } label: {
-                                Image(systemName: "folder")
-                            }
-                            .accessibilityLabel("Load View")
-                            .disabled(contentViewModel.savedViews.isEmpty)
-                        }
-                        ToolbarItem(placement: .automatic) {
-                            Button {
-                                saveViewName = contentViewModel.currentViewName == UI.unnamedView
-                                    ? "" : contentViewModel.currentViewName
-                                showSaveAlert = true
-                            } label: {
-                                Image(systemName: "square.and.arrow.down")
-                            }
-                            .accessibilityLabel("Save View")
-                        }
-                        ToolbarItem(placement: .primaryAction) {
-                            Button {
-                                showAddSheet = true
-                            } label: {
-                                Image(systemName: "plus")
-                            }
-                            .accessibilityLabel("Add Ticker")
-                        }
-                    }
                 }
             }
+            // The title is the tab label, and an empty tab still needs the
+            // toolbar — both belong outside the empty/non-empty branch.
+            .navigationTitle(contentViewModel.tabName)
+            .toolbar { toolbarContent }
             .frame(minWidth: UI.windowMinWidth, idealWidth: UI.windowIdealWidth)
         }
+        .background(
+            WindowAccessor { window in
+                contentViewModel.attach(to: window)
+            }
+            .frame(width: 0, height: 0)
+        )
         .preferredColorScheme(appTheme.colorScheme)
         .alert("Save View", isPresented: $showSaveAlert) {
             TextField("Name", text: $saveViewName)
@@ -238,17 +155,126 @@ struct ContentView: View {
         } message: {
             Text("Save the current charts, timeframe, and layout as a named view.")
         }
+        .alert("Rename Tab", isPresented: $showRenameAlert) {
+            TextField("Name", text: $renameText)
+            Button("Rename") { contentViewModel.renameTab(to: renameText) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The tab name is also the window title.")
+        }
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(contentViewModel: contentViewModel)
         }
         .onChange(of: showAddSheet) { _, new in
             contentViewModel.isShowingSheet = new
         }
-        .task {
-            contentViewModel.loadTickers()
+    }
+
+    // MARK: - Toolbar
+
+    /// Commit the tab's edits back to its saved view, prompting for a name the
+    /// first time — an unnamed tab has no view to write to yet.
+    private func saveChanges() {
+        if contentViewModel.tabName == UI.unnamedView {
+            saveViewName = ""
+            showSaveAlert = true
+        } else {
+            contentViewModel.saveChanges()
         }
-        .onDisappear {
-            contentViewModel.stopAutoRefresh()
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
+            Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
+                ForEach(TimeRange.allCases) { range in
+                    Text(range.rawValue).tag(range)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .onChange(of: contentViewModel.selectedTimeRange) { _, newValue in
+                contentViewModel.setTimeRange(newValue)
+            }
+        }
+        ToolbarItem(placement: .automatic) {
+            Button {
+                contentViewModel.layoutMode = contentViewModel.layoutMode.next
+            } label: {
+                Image(systemName: contentViewModel.layoutMode.icon)
+            }
+            .accessibilityLabel(contentViewModel.layoutMode == .vertical
+                ? "Grid layout" : "Vertical layout")
+        }
+        ToolbarItem(placement: .automatic) {
+            Picker("Theme", selection: $appTheme) {
+                ForEach(AppTheme.allCases) { theme in
+                    Label(theme.rawValue, systemImage: theme.icon).tag(theme)
+                }
+            }
+            .pickerStyle(.menu)
+            .accessibilityLabel("Theme")
+        }
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                // The name bar used to be the rename affordance; with it gone
+                // this menu is the only place left to reach it.
+                Button("Rename Tab…") {
+                    renameText = contentViewModel.tabName == UI.unnamedView
+                        ? "" : contentViewModel.tabName
+                    showRenameAlert = true
+                }
+
+                if !contentViewModel.savedViews.isEmpty {
+                    Divider()
+                    ForEach(contentViewModel.savedViews) { view in
+                        Button(view.name) {
+                            contentViewModel.loadView(view)
+                        }
+                    }
+                    Divider()
+                    Menu("Delete…") {
+                        ForEach(contentViewModel.savedViews) { view in
+                            Button(role: .destructive) {
+                                contentViewModel.deleteView(view)
+                            } label: {
+                                Text(view.name)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: "folder")
+            }
+            .accessibilityLabel("Load View")
+        }
+        // Only meaningful once the tab has drifted from what's on disk.
+        if contentViewModel.hasUnsavedChanges {
+            ToolbarItem(placement: .automatic) {
+                Button(action: saveChanges) {
+                    Image(systemName: "square.and.arrow.down.on.square")
+                }
+                .accessibilityLabel("Save Changes")
+                .help("Save changes to \"\(contentViewModel.tabName)\"")
+            }
+        }
+        ToolbarItem(placement: .automatic) {
+            Button {
+                saveViewName = contentViewModel.tabName == UI.unnamedView
+                    ? "" : contentViewModel.tabName
+                showSaveAlert = true
+            } label: {
+                Image(systemName: "square.and.arrow.down")
+            }
+            .accessibilityLabel("Save View")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                showAddSheet = true
+            } label: {
+                Image(systemName: "plus")
+            }
+            .accessibilityLabel("Add Ticker")
         }
     }
 
@@ -293,5 +319,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(tabID: UUID())
 }

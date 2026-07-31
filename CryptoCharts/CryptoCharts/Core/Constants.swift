@@ -160,6 +160,9 @@ enum UI {
     static let suggestionGridColumns = 5
     /// Market artwork edge length in a Polymarket search row.
     static let polymarketRowImageSize: CGFloat = 24
+    /// Saved-view shortcut list on an empty tab.
+    static let emptyStateViewListMaxHeight: CGFloat = 200
+    static let emptyStateViewListWidth: CGFloat = 280
     /// Named view sentinel.
     static let unnamedView = "Unnamed"
 }

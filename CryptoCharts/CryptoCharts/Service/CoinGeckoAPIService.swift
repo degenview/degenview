@@ -53,11 +53,29 @@ private struct MarketSparkline: Decodable {
 }
 
 /// The coin IDs currently on screen, shared across concurrent fetches.
+///
+/// Keyed by tab, because every tab syncs its own list before each refetch. A
+/// flat array here would make the last tab to sync evict the other tabs' coins
+/// from the batched prime, dropping them back onto the rate-limited per-chart
+/// queue.
 private actor ActiveSymbols {
-    private(set) var current: [String] = []
+    private var byOwner: [UUID: [String]] = [:]
 
-    func set(_ symbols: [String]) {
-        current = symbols
+    /// Deduped union across every tab, order-stable so the request URL is cacheable.
+    var current: [String] {
+        var seen = Set<String>()
+        return byOwner
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+            .flatMap(\.value)
+            .filter { seen.insert($0).inserted }
+    }
+
+    func set(_ symbols: [String], for owner: UUID) {
+        byOwner[owner] = symbols
+    }
+
+    func remove(owner: UUID) {
+        byOwner[owner] = nil
     }
 }
 
@@ -171,10 +189,15 @@ final class CoinGeckoAPIService: TickerDataSource {
 
     // MARK: - Provisional Candles (one request, every chart)
 
-    /// The coins currently on screen. Set by the view model so a single prime
-    /// request can cover all of them.
-    func setActiveSymbols(_ symbols: [String]) async {
-        await activeSymbols.set(symbols.map { $0.lowercased() })
+    /// The coins currently on screen in one tab. Set by that tab's view model so
+    /// a single prime request can cover every tab's coins at once.
+    func setActiveSymbols(_ symbols: [String], for owner: UUID) async {
+        await activeSymbols.set(symbols.map { $0.lowercased() }, for: owner)
+    }
+
+    /// Drop a closed tab's coins from the prime.
+    func clearActiveSymbols(for owner: UUID) async {
+        await activeSymbols.remove(owner: owner)
     }
 
     /// Fetch 7-day hourly sparklines for every visible coin in one request.

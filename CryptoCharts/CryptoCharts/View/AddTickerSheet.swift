@@ -201,5 +201,5 @@ struct AddTickerSheet: View {
 }
 
 #Preview {
-    AddTickerSheet(contentViewModel: ContentViewModel())
+    AddTickerSheet(contentViewModel: ContentViewModel(tabID: UUID()))
 }

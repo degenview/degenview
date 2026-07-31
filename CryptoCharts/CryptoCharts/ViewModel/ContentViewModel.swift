@@ -21,8 +21,14 @@ enum LayoutMode: String, CaseIterable, Codable {
     }
 }
 
+/// State for one tab. Every window owns exactly one of these, hydrated from the
+/// `ChartTab` that `TabsStore` holds for its id and written back on every change.
 @MainActor
 final class ContentViewModel: ObservableObject {
+    /// Which tab this view model drives — also the key for its slice of the
+    /// CoinGecko prime and its entry in `WindowCoordinator`.
+    let tabID: UUID
+
     @Published var chartViewModels: [ChartViewModel] = []
     @Published var selectedTimeRange: TimeRange = .oneDay {
         didSet {
@@ -39,14 +45,25 @@ final class ContentViewModel: ObservableObject {
     @Published var isRefreshing = false
 
     @Published var savedViews: [SavedView] = []
-    @Published var currentViewName = UI.unnamedView
+
+    /// The tab's label. Shows in the name bar *and* as the window title, which on
+    /// macOS is what the system tab bar draws.
+    @Published var tabName = UI.unnamedView {
+        didSet {
+            guard oldValue != tabName else { return }
+            WindowCoordinator.shared.syncTitle(for: tabID)
+        }
+    }
     @Published var hasUnsavedChanges = false
 
     private var currentViewID: UUID?
     private var isApplyingView = false
+    /// Set while `init` assigns the tab's fields. `layoutMode`'s `didSet` would
+    /// otherwise write the tab back before `chartViewModels` is populated,
+    /// erasing the very charts being restored.
+    private var isHydrating = true
 
     private let api: BinanceAPIService
-    private let tickerStore = JSONStore<[TickerConfig]>(filename: "tickers.json")
     private let viewStore = JSONStore<[SavedView]>(filename: "views.json")
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
@@ -58,12 +75,39 @@ final class ContentViewModel: ObservableObject {
     /// Suppress scroll-zoom when sheets or popovers are presented.
     var isShowingSheet = false
 
-    init(api: BinanceAPIService = BinanceAPIService()) {
+    // MARK: - Window binding
+
+    private weak var ownWindow: NSWindow?
+    private var observers: [NSObjectProtocol] = []
+    /// Hidden tabs don't poll — see `updateVisibility(_:)`.
+    private var isWindowVisible = false
+    private var didInitialLoad = false
+
+    init(tabID: UUID, api: BinanceAPIService = BinanceAPIService()) {
+        self.tabID = tabID
         self.api = api
         self.savedViews = viewStore.load() ?? []
 
+        let tab = TabsStore.shared.ensureTab(tabID)
+        tabName = tab.name
+        currentViewID = tab.savedViewID
+        selectedTimeRange = tab.timeRange
+        // Assigned after the range, whose didSet would otherwise reset it.
+        candleCount = tab.candleCount
+        layoutMode = tab.layoutMode
+        chartViewModels = tab.tickerConfigs.map { config in
+            let vm = ChartViewModel(ticker: config.symbol, source: config.source)
+            vm.applyConfig(config)
+            return vm
+        }
+        hasUnsavedChanges = false
+        isHydrating = false
+
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, !self.chartViewModels.isEmpty, !self.isShowingSheet else { return event }
+            // A local monitor sees every scroll in the app, so without this each
+            // open tab would zoom on a scroll aimed at one of the others.
+            guard let own = self.ownWindow, event.window === own else { return event }
             let step = max(1, Int(Double(self.candleCount) * Candle.zoomStepFraction))
             if event.scrollingDeltaY > 0 {
                 self.pendingZoomDelta += step
@@ -89,65 +133,102 @@ final class ContentViewModel: ObservableObject {
         if let m = scrollMonitor { NSEvent.removeMonitor(m) }
     }
 
-    /// Load persisted tickers, create chart view models, and start auto-refresh.
-    func loadTickers() {
-        let configs = tickerStore.load() ?? loadLegacyTickers()
-        chartViewModels = configs.map { config in
-            let vm = ChartViewModel(ticker: config.symbol, source: config.source)
-            vm.applyConfig(config)
-            return vm
-        }
-        let didRestore = restoreLastView()
-        if !didRestore {
-            Task {
-                await syncCoinGeckoSymbols()
-                for vm in chartViewModels {
-                    await vm.fetchData(for: selectedTimeRange, count: candleCount)
-                    try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
-                }
-                connectWebSocket()
+    /// Bind to the hosting window: scope the scroll monitor, follow occlusion,
+    /// and tear down when the tab is closed for real.
+    func attach(to window: NSWindow) {
+        guard ownWindow !== window else { return }
+        ownWindow = window
+        WindowCoordinator.shared.register(window, for: tabID)
+
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification,
+                object: window,
+                queue: .main
+            ) { [weak self, weak window] _ in
+                guard let window else { return }
+                let visible = window.occlusionState.contains(.visible)
+                Task { @MainActor [weak self] in self?.updateVisibility(visible) }
             }
+        )
+
+        observers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.teardown() }
+            }
+        )
+
+        updateVisibility(window.occlusionState.contains(.visible))
+    }
+
+    /// Only the tab the user is looking at polls. A background tab's window is
+    /// occluded, which covers both tab switching and minimizing.
+    private func updateVisibility(_ visible: Bool) {
+        guard visible != isWindowVisible else { return }
+        isWindowVisible = visible
+
+        guard visible else {
+            suspend()
+            return
         }
-        // loadView() handles refetchAll() + connectWebSocket() for restored views
+
         startAutoRefresh()
-    }
+        connectWebSocket()
 
-    /// Migrate legacy [String] format to [TickerConfig] once, then save.
-    private func loadLegacyTickers() -> [TickerConfig] {
-        guard let data = try? Data(contentsOf: AppSupport.directory.appendingPathComponent("tickers.json")),
-              let strings = try? JSONDecoder().decode([String].self, from: data)
-        else { return [] }
-#if DEBUG
-        print("[TickerStore] Migrated \(strings.count) legacy tickers to .binance")
-#endif
-        let configs = strings.map { TickerConfig(symbol: $0, source: .binance) }
-        tickerStore.save(configs)
-        return configs
-    }
-
-    /// Restore the last-used saved view if available.
-    @discardableResult
-    private func restoreLastView() -> Bool {
-        guard let idString = UserDefaults.standard.string(forKey: "lastViewID"),
-              let id = UUID(uuidString: idString),
-              let view = savedViews.first(where: { $0.id == id })
-        else { return false }
-        loadView(view)
-        return true
-    }
-
-    private func saveLastViewID(_ id: UUID?) {
-        if let id {
-            UserDefaults.standard.set(id.uuidString, forKey: "lastViewID")
+        if !didInitialLoad {
+            didInitialLoad = true
+            Task { await initialFetch() }
         } else {
-            UserDefaults.standard.removeObject(forKey: "lastViewID")
+            Task { await refetchAllSilent() }
         }
+    }
+
+    /// Stop network work while the tab is hidden.
+    private func suspend() {
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+        wsService.disconnect()
+        refetchTask?.cancel()
+    }
+
+    /// Release everything this tab holds — its window is closing for good.
+    private func teardown() {
+        suspend()
+        if let m = scrollMonitor {
+            NSEvent.removeMonitor(m)
+            scrollMonitor = nil
+        }
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.removeAll()
+        zoomDebounceTask?.cancel()
+
+        let id = tabID
+        Task {
+            guard let cg = DataSourceFactory.shared.service(for: .coingecko) as? CoinGeckoAPIService else { return }
+            await cg.clearActiveSymbols(for: id)
+        }
+        WindowCoordinator.shared.unregister(id)
+    }
+
+    /// Stagger the first paint so a full tab doesn't fire every request at once.
+    private func initialFetch() async {
+        await syncCoinGeckoSymbols()
+        for vm in chartViewModels {
+            guard !Task.isCancelled else { return }
+            await vm.fetchData(for: selectedTimeRange, count: candleCount)
+            try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
+        }
+        connectWebSocket()
     }
 
     /// Refresh all charts every 5 seconds. Cache prevents redundant API calls.
-    /// No loading indicator — silent background refresh.
-    func startAutoRefresh() {
-        stopAutoRefresh()
+    /// No loading indicator — silent background refresh. Runs only while visible.
+    private func startAutoRefresh() {
+        refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Timeout.autoRefresh, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
@@ -156,13 +237,7 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    func stopAutoRefresh() {
-        refreshTimer?.invalidate()
-        refreshTimer = nil
-        wsService.disconnect()
-    }
-
-    /// Set global timeframe and refetch all charts.
+    /// Set this tab's timeframe and refetch its charts.
     func setTimeRange(_ range: TimeRange) {
         selectedTimeRange = range
         markChanged()
@@ -178,11 +253,14 @@ final class ContentViewModel: ObservableObject {
         let symbols = chartViewModels
             .filter { $0.source == .coingecko }
             .map { $0.apiSymbol }
-        await cg.setActiveSymbols(symbols)
+        await cg.setActiveSymbols(symbols, for: tabID)
     }
 
     /// Open WebSocket streams for Binance tickers only.
     private func connectWebSocket() {
+        // A hidden tab has nothing to draw a tick onto.
+        guard isWindowVisible else { return }
+
         let binanceVMs = chartViewModels.filter { $0.source == .binance }
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
@@ -310,7 +388,31 @@ final class ContentViewModel: ObservableObject {
     }
 
     private func persistTickers() {
-        tickerStore.save(makeTickerConfigs())
+        syncTab()
+    }
+
+    /// Write the whole tab record back. Cheap — `TabsStore` debounces the file write.
+    private func syncTab() {
+        guard !isHydrating else { return }
+        let configs = makeTickerConfigs()
+        TabsStore.shared.update(tabID) { tab in
+            tab.name = tabName
+            tab.savedViewID = currentViewID
+            tab.tickerConfigs = configs
+            tab.timeRange = selectedTimeRange
+            tab.layoutMode = layoutMode
+            tab.candleCount = candleCount
+        }
+    }
+
+    // MARK: - Tab naming
+
+    /// Rename the tab without touching the saved-view library.
+    func renameTab(to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        tabName = trimmed
+        syncTab()
     }
 
     // MARK: - Saved Views
@@ -332,10 +434,10 @@ final class ContentViewModel: ObservableObject {
         savedViews.append(view)
         viewStore.save(savedViews)
 
-        currentViewName = name
+        tabName = name
         currentViewID = view.id
         hasUnsavedChanges = false
-        saveLastViewID(view.id)
+        syncTab()
     }
 
     /// Save changes to the current named view without prompting.
@@ -344,10 +446,10 @@ final class ContentViewModel: ObservableObject {
             // No saved view yet — treat as new save; caller should prompt for name
             return
         }
-        saveCurrentView(name: currentViewName)
+        saveCurrentView(name: tabName)
     }
 
-    /// Apply a saved view, replacing all current state.
+    /// Apply a saved view to this tab, replacing its current state.
     func loadView(_ view: SavedView) {
         isApplyingView = true
         defer { isApplyingView = false }
@@ -363,26 +465,26 @@ final class ContentViewModel: ObservableObject {
             vm.applyConfig(config)
             return vm
         }
-        tickerStore.save(configs)
 
-        currentViewName = view.name
+        tabName = view.name
         currentViewID = view.id
         hasUnsavedChanges = false
-        saveLastViewID(view.id)
+        syncTab()
 
+        didInitialLoad = true
         refetchAll()
         connectWebSocket()
     }
 
-    /// Delete a saved view.
+    /// Delete a saved view. Tabs sitting on it keep their charts but lose the link.
     func deleteView(_ view: SavedView) {
         savedViews.removeAll { $0.id == view.id }
         viewStore.save(savedViews)
         if currentViewID == view.id {
-            currentViewName = UI.unnamedView
+            tabName = UI.unnamedView
             currentViewID = nil
             hasUnsavedChanges = false
-            saveLastViewID(nil)
+            syncTab()
         }
     }
 
@@ -394,6 +496,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Mark current view as having unsaved changes (unless applying a loaded view).
     private func markChanged() {
+        syncTab()
         guard !isApplyingView else { return }
         hasUnsavedChanges = true
     }

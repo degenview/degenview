@@ -52,6 +52,10 @@
 		E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */; };
 		E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */; };
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
+		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
+		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
+		D10000000000000000000003 /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000103 /* WindowCoordinator.swift */; };
+		D10000000000000000000004 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000104 /* WindowAccessor.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -101,6 +105,10 @@
 		E167CD7B739B528C0792D361 /* KlineCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KlineCache.swift; sourceTree = "<group>"; };
 		B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoinGeckoProvisionalStore.swift; sourceTree = "<group>"; };
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
+		D10000000000000000000101 /* ChartTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTab.swift; sourceTree = "<group>"; };
+		D10000000000000000000102 /* TabsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsStore.swift; sourceTree = "<group>"; };
+		D10000000000000000000103 /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
+		D10000000000000000000104 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -165,6 +173,7 @@
 				A00000000000000000000115 /* SavedView.swift */,
 				A00000000000000000000118 /* DataSourceType.swift */,
 				C10000000000000000000101 /* PolymarketModels.swift */,
+				D10000000000000000000101 /* ChartTab.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -183,6 +192,8 @@
 				C10000000000000000000102 /* PolymarketService.swift */,
 				E167CD7B739B528C0792D361 /* KlineCache.swift */,
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
+				D10000000000000000000102 /* TabsStore.swift */,
+				D10000000000000000000103 /* WindowCoordinator.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -214,6 +225,7 @@
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
 				C10000000000000000000107 /* PolymarketResultRow.swift */,
 				C10000000000000000000108 /* SearchPane.swift */,
+				D10000000000000000000104 /* WindowAccessor.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -347,6 +359,10 @@
 				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
 				E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */,
+				D10000000000000000000001 /* ChartTab.swift in Sources */,
+				D10000000000000000000002 /* TabsStore.swift in Sources */,
+				D10000000000000000000003 /* WindowCoordinator.swift in Sources */,
+				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
 				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
 				133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */,
