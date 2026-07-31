@@ -40,18 +40,46 @@ enum Timeout {
     static let coingeckoProvisionalTTL: TimeInterval = 300
     /// CoinGecko coin-list cache staleness (seconds — 7 days).
     static let coinListStaleness: TimeInterval = 86400 * 7
-    /// Icon cache staleness (seconds — 7 days).
-    static let iconCacheStaleness: TimeInterval = 7 * 86400
     /// Auto-refresh interval for all charts (seconds).
     static let autoRefresh: TimeInterval = 5
     /// Debounce delay for ticker search (nanoseconds).
     static let searchDebounceNS: UInt64 = 300_000_000
     /// Stagger delay between individual ticker fetches at launch (nanoseconds).
     static let fetchStaggerNS: UInt64 = 100_000_000
-    /// CoinGecko max coins fetched for icon cache.
-    static let iconMaxCoins = 250
     /// DEXScreener search result limit.
     static let dexSearchLimit = 20
+}
+
+// MARK: - CoinGecko Constants
+
+enum CoinGecko {
+    /// Largest `per_page` the API accepts on `/coins/markets`.
+    static let pageLimit = 250
+}
+
+// MARK: - Icon Constants
+
+enum Icon {
+    /// Rendered icon edge length (points).
+    static let size: CGFloat = 20
+    /// How long a resolved icon URL stays usable (seconds — 7 days).
+    static let cacheStaleness: TimeInterval = 7 * 86400
+    /// How long an exhausted lookup is remembered before the chain runs again
+    /// (seconds — 1 day). Without this, every miss re-walks all four sources on
+    /// each card appearance.
+    static let negativeTTL: TimeInterval = 86400
+    /// Coins pulled into the market map that seeds symbol → icon lookups.
+    static let maxCoins = 250
+    /// Minimum spacing between market-snapshot attempts (seconds). Keeps a failed
+    /// refresh from re-firing for every card that asks next.
+    static let refreshRetryInterval: TimeInterval = 300
+    /// How long a coin-id lookup waits for sibling cards to join its batch (nanoseconds).
+    static let batchWindowNS: UInt64 = 150_000_000
+    /// Longest string still plausibly a ticker — anything longer is a contract address.
+    static let maxSymbolLength = 12
+    /// Last-resort static icon set — no API, no rate limit, 404 on miss.
+    /// Unmaintained since ~2021, so it only backstops long-established symbols.
+    static let staticCDNBase = "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color"
 }
 
 // MARK: - Cache Constants

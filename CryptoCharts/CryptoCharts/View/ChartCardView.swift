@@ -21,8 +21,13 @@ struct ChartCardView: View {
         .padding(6)
         .frame(height: chartHeight + ChartLayout.cardChrome)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .task {
-            iconURL = await CoinGeckoService.shared.iconURL(for: viewModel.baseSymbol)
+        .task(id: viewModel.iconKey) {
+            iconURL = nil
+            iconURL = await IconResolver.shared.iconURL(
+                ticker: viewModel.ticker,
+                source: viewModel.source,
+                baseSymbol: viewModel.baseSymbol
+            )
         }
         .sheet(isPresented: $showSettings) {
             ChartSettingsSheet(
@@ -46,18 +51,7 @@ struct ChartCardView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        if let url = iconURL {
-                            AsyncImage(url: url) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image.resizable().scaledToFit()
-                                default:
-                                    Color.clear
-                                }
-                            }
-                            .frame(width: 20, height: 20)
-                            .clipShape(Circle())
-                        }
+                        TickerIconView(symbol: viewModel.baseSymbol, url: iconURL)
                         Text(viewModel.ticker.uppercased())
                             .font(.headline)
                             .fontWeight(.bold)

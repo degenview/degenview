@@ -31,10 +31,12 @@
 		A00000000000000000000012 /* CandleChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* CandleChartStyle.swift */; };
 		A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* BinanceWebSocketService.swift */; };
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
-		A00000000000000000000016 /* CoinGeckoService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* CoinGeckoService.swift */; };
+		A00000000000000000000016 /* IconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* IconResolver.swift */; };
 		A00000000000000000000017 /* DataSourceType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* DataSourceType.swift */; };
 		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
 		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
+		A0000000000000000000001D /* CGRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011E /* CGRateLimiter.swift */; };
+		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
 		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
@@ -68,10 +70,12 @@
 		A00000000000000000000113 /* CandleChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartStyle.swift; sourceTree = "<group>"; };
 		A00000000000000000000114 /* BinanceWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketService.swift; sourceTree = "<group>"; };
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
-		A00000000000000000000117 /* CoinGeckoService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoService.swift; sourceTree = "<group>"; };
+		A00000000000000000000117 /* IconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconResolver.swift; sourceTree = "<group>"; };
 		A00000000000000000000118 /* DataSourceType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceType.swift; sourceTree = "<group>"; };
 		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
 		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
+		A0000000000000000000011E /* CGRateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGRateLimiter.swift; sourceTree = "<group>"; };
+		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
@@ -153,7 +157,8 @@
 			children = (
 				A00000000000000000000106 /* BinanceAPIService.swift */,
 				A00000000000000000000114 /* BinanceWebSocketService.swift */,
-				A00000000000000000000117 /* CoinGeckoService.swift */,
+				A00000000000000000000117 /* IconResolver.swift */,
+				A0000000000000000000011E /* CGRateLimiter.swift */,
 				A00000000000000000000119 /* TickerDataSource.swift */,
 				A0000000000000000000011A /* CoinGeckoAPIService.swift */,
 				B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */,
@@ -178,6 +183,7 @@
 			isa = PBXGroup;
 			children = (
 				A0000000000000000000010A /* ChartCardView.swift */,
+				A0000000000000000000011F /* TickerIconView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
 				A0000000000000000000010D /* EmptyStateView.swift */,
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
@@ -286,6 +292,7 @@
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,
 				A00000000000000000000008 /* ChartViewModel.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
+				A0000000000000000000001E /* TickerIconView.swift in Sources */,
 				A0000000000000000000000A /* ChartCardView.swift in Sources */,
 				A0000000000000000000000B /* AddTickerSheet.swift in Sources */,
 				A0000000000000000000000D /* EmptyStateView.swift in Sources */,
@@ -294,11 +301,12 @@
 				A00000000000000000000012 /* CandleChartStyle.swift in Sources */,
 				A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
 				A00000000000000000000014 /* SavedView.swift in Sources */,
-				A00000000000000000000016 /* CoinGeckoService.swift in Sources */,
+				A00000000000000000000016 /* IconResolver.swift in Sources */,
 				A00000000000000000000017 /* DataSourceType.swift in Sources */,
 				A00000000000000000000018 /* TickerDataSource.swift in Sources */,
 				A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */,
 				B10000000000000000000001 /* CoinGeckoProvisionalStore.swift in Sources */,
+				A0000000000000000000001D /* CGRateLimiter.swift in Sources */,
 				A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
 				A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */,
 				A0000000000000000000001C /* ColorHex.swift in Sources */,

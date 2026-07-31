@@ -46,6 +46,20 @@ Requires Xcode 16+, macOS 14+.
 - Grid lines drawn first, then candles, then price overlay, then X-axis labels
 - Price formatting: auto-adjusts decimal places based on price magnitude
 
+### Coin icons
+- `IconResolver` (actor) resolves one icon per `"<source>:<ticker>"` key and caches the
+  result in `icon_cache.json` — misses too, on a shorter TTL, so a dead lookup doesn't
+  re-walk the chain on every card appearance
+- Chain: market snapshot (symbol *and* coin id) → source-specific (CoinGecko `ids=`,
+  batched; DEXScreener pair address) → CoinGecko `/search` → static icon set → `nil`
+- A DEXScreener pair lookup also yields the base token symbol, which the symbol-keyed
+  steps then reuse — the ticker itself is a contract address
+- All CoinGecko traffic (OHLC *and* icons) queues behind `CGRateLimiter.shared`
+- `nil` is not a failure state for the UI: `TickerIconView` draws a monogram, so the
+  20×20 slot is occupied either way and card headers stay aligned
+- Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
+  `updateTicker` by design and would pin the old coin's artwork to a renamed card
+
 ### WebSocket updates
 - `BinanceWebSocketService.connect(symbols:interval:)` opens one combined stream
 - Callback dispatches to matching `ChartViewModel.applyKlineUpdate(_:)`

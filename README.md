@@ -36,6 +36,7 @@ CryptoCharts/
 │   ├── CandleChartView.swift          # AppKit Canvas renderer: candles, grid, price line, axis
 │   ├── CandleChartStyle.swift         # Colors, sizing, doji threshold config
 │   ├── AddTickerSheet.swift           # Multi-source ticker search sheet
+│   ├── TickerIconView.swift           # Coin icon slot with letter-monogram fallback
 │   ├── EmptyStateView.swift           # Empty state with "Add Ticker" prompt
 │   ├── ScrollWheelView.swift          # Scroll wheel zoom wrapper
 │   └── TimeRangePicker.swift          # Timeframe segmented picker
@@ -43,7 +44,8 @@ CryptoCharts/
     ├── BinanceAPIService.swift        # Binance REST API + kline fetching
     ├── BinanceWebSocketService.swift  # Binance WebSocket streams
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC API
-    ├── CoinGeckoService.swift         # CoinGecko icon / search API
+    ├── CGRateLimiter.swift            # Shared CoinGecko public-tier pacing (OHLC + icons)
+    ├── IconResolver.swift             # Coin icons: multi-source fallback chain + cache
     ├── DEXScreenerService.swift       # DEXScreener pairs API
     ├── TickerDataSource.swift         # Protocol + factory for all 3 sources
     ├── TickerStore.swift              # Persisted ticker list (UserDefaults)
@@ -57,7 +59,9 @@ CryptoCharts/
 3. `CandleChartView` renders via AppKit `Canvas` — custom draw loop, no third-party chart lib
 4. Binance tickers open WebSocket streams for real-time price updates
 5. Auto-refresh timer (5s) re-fetches all charts; API responses are cached per (symbol, interval, limit) key
-6. CoinGecko icons fetched async per chart card, cached by `CoinGeckoService`
+6. Icons resolved async per chart card by `IconResolver`, which walks a fallback chain
+   (market snapshot → source-specific lookup → CoinGecko search → static icon set) and
+   caches hits *and* misses; anything unresolved renders as a letter monogram
 
 ## Requirements
 

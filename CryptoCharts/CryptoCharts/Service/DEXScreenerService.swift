@@ -16,10 +16,17 @@ private struct DEXPair: Codable {
     let volume: DEXVolume?
     let liquidity: DEXLiquidity?
     let pairCreatedAt: Int64?
+    let info: DEXInfo?
 
     struct DEXToken: Codable {
         let symbol: String?
         let name: String?
+    }
+
+    /// Present only for pairs whose token has been listed with artwork — most
+    /// long-tail pairs send `"info": null`.
+    struct DEXInfo: Codable {
+        let imageUrl: String?
     }
 
     struct DEXVolume: Codable {
@@ -36,7 +43,10 @@ private struct DEXPair: Codable {
 final class DEXScreenerService: TickerDataSource {
     let type: DataSourceType = .dexscreener
 
-    private let baseURL = "https://api.dexscreener.com/latest/dex"
+    /// Shared with the static icon lookup below, which runs without an instance.
+    static let apiBase = "https://api.dexscreener.com/latest/dex"
+
+    private let baseURL = DEXScreenerService.apiBase
     private let session = AppSupport.defaultSession
 
     init() {}
@@ -108,6 +118,53 @@ final class DEXScreenerService: TickerDataSource {
                     "pairAddress": pair.pairAddress ?? "",
                 ]
             )
+        }
+    }
+
+    // MARK: - Icon Lookup
+
+    /// What a pair-address lookup can contribute to icon resolution.
+    struct PairIcon: Sendable {
+        /// Token artwork, when DEXScreener has any for this pair.
+        let imageURL: URL?
+        /// The pair's base token symbol — lets the icon chain keep going with a real
+        /// ticker once the address itself has been resolved.
+        let baseSymbol: String?
+    }
+
+    /// Look up a pair by its address. Searching by address returns that one pair, so
+    /// the chain doesn't need the chain id — the address alone identifies it.
+    ///
+    /// Static so `IconResolver` can call it without sending a (non-Sendable) service
+    /// instance across actor isolation.
+    static func pairIcon(forPair address: String) async -> PairIcon? {
+        let q = address.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty,
+              var components = URLComponents(string: "\(apiBase)/search")
+        else { return nil }
+
+        components.queryItems = [URLQueryItem(name: "q", value: q)]
+        guard let url = components.url else { return nil }
+
+        do {
+            let (data, response) = try await AppSupport.defaultSession.data(from: url)
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                return nil
+            }
+
+            let result = try JSONDecoder().decode(DEXPairsResponse.self, from: data)
+            guard let pairs = result.pairs, !pairs.isEmpty else { return nil }
+
+            let image = pairs.compactMap { $0.info?.imageUrl }.first
+            return PairIcon(
+                imageURL: image.flatMap { URL(string: $0) },
+                baseSymbol: pairs.first?.baseToken?.symbol
+            )
+        } catch {
+#if DEBUG
+            print("[DEXScreener] Icon lookup failed for \(q): \(error.localizedDescription)")
+#endif
+            return nil
         }
     }
 }

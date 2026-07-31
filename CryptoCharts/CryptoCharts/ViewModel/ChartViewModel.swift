@@ -43,6 +43,11 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    /// Identity of the icon currently wanted. `uniqueID` deliberately survives
+    /// `updateTicker`, so it can't drive the icon lookup — the card would keep
+    /// showing the previous coin's artwork.
+    var iconKey: String { "\(source.rawValue):\(ticker)" }
+
     @Published var klineData: [KlineData] = []
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?

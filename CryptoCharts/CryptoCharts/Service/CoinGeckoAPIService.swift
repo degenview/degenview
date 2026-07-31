@@ -17,6 +17,12 @@ private struct CoinSearchResult: Codable {
         let name: String
         let marketCapRank: Int?
         let thumb: String?
+        let large: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, symbol, name, thumb, large
+            case marketCapRank = "market_cap_rank"
+        }
     }
 }
 
@@ -64,62 +70,16 @@ private struct CoinIDCache: Codable {
 
 // MARK: - Service
 
-// MARK: - Rate Limiter
-
-/// Enforces minimum interval between CoinGecko API calls to stay under ~25 req/min.
-///
-/// Callers *reserve* their slot before sleeping. Reserving after the sleep would
-/// let every concurrent caller read the same free slot during the suspension and
-/// fire simultaneously — with one chart per coin that means an instant burst and
-/// a 429 for everyone.
-private actor CGRateLimiter {
-    /// Earliest instant the next unreserved call may run.
-    private var nextSlot: Date = .distantPast
-
-    /// The public tier's ceiling isn't published and moves around, so the gap is
-    /// found by feedback rather than assumed: widen on every 429, ease back down
-    /// while calls succeed.
-    private var gap = Timeout.coingeckoRateLimitGap
-
-    /// Wait until this caller's reserved slot. Returns immediately if one is free now.
-    func waitForSlot() async {
-        let now = Date()
-        let slot = max(now, nextSlot)
-        nextSlot = slot.addingTimeInterval(gap)
-
-        let wait = slot.timeIntervalSince(now)
-        guard wait > 0 else { return }
-        try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
-    }
-
-    /// Back off after a 429 — pushes out every slot not yet taken and widens the
-    /// gap. Doesn't sleep: the caller's retry blocks on `waitForSlot()` instead.
-    func backoff(seconds: Int) {
-        gap = min(gap * Timeout.coingeckoRateLimitGrowth, Timeout.coingeckoRateLimitMaxGap)
-
-        let resume = Date().addingTimeInterval(Double(seconds))
-        if resume > nextSlot { nextSlot = resume }
-
-#if DEBUG
-        print("[CoinGecko] Rate limiter gap → \(String(format: "%.1f", gap))s")
-#endif
-    }
-
-    /// Narrow the gap gradually while the API is keeping up.
-    func noteSuccess() {
-        gap = max(gap * Timeout.coingeckoRateLimitDecay, Timeout.coingeckoRateLimitGap)
-    }
-}
-
-// MARK: - Service
-
 final class CoinGeckoAPIService: TickerDataSource {
     let type: DataSourceType = .coingecko
 
-    private let baseURL = "https://api.coingecko.com/api/v3"
+    /// Shared with the static icon lookup below, which runs without an instance.
+    static let apiBase = "https://api.coingecko.com/api/v3"
+
+    private let baseURL = CoinGeckoAPIService.apiBase
     private let session: URLSession
     private let cache: KlineCache
-    private let rateLimiter = CGRateLimiter()
+    private let rateLimiter = CGRateLimiter.shared
     private let provisional = CoinGeckoProvisionalStore()
     private let activeSymbols = ActiveSymbols()
     private var coinIDCache: CoinIDCache
@@ -242,7 +202,7 @@ final class CoinGeckoAPIService: TickerDataSource {
             URLQueryItem(name: "vs_currency", value: "usd"),
             URLQueryItem(name: "ids", value: coinIDs.joined(separator: ",")),
             URLQueryItem(name: "sparkline", value: "true"),
-            URLQueryItem(name: "per_page", value: String(min(coinIDs.count, Timeout.iconMaxCoins))),
+            URLQueryItem(name: "per_page", value: String(min(coinIDs.count, CoinGecko.pageLimit))),
         ]
         guard let url = components.url else { return [:] }
 
@@ -531,35 +491,79 @@ final class CoinGeckoAPIService: TickerDataSource {
             refreshCoinListInBackground()
         }
 
-        guard var components = URLComponents(string: "\(baseURL)/search") else {
-            throw CoinGeckoError.invalidURL
-        }
-        components.queryItems = [URLQueryItem(name: "query", value: q)]
-
-        guard let url = components.url else {
-            throw CoinGeckoError.invalidURL
-        }
-
-#if DEBUG
-        print("[CoinGecko] Search: \(q)")
-#endif
-
-        let (data, response) = try await session.data(from: url)
-
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw CoinGeckoError.invalidResponse
-        }
-
-        let decoder = JSONDecoder()
-        let result = try decoder.decode(CoinSearchResult.self, from: data)
-
-        return result.coins.map { coin in
+        return try await Self.searchCoins(query: q).map { coin in
             TickerSearchResult(
                 symbol: coin.symbol.uppercased(),
                 fullSymbol: coin.id,
                 source: .coingecko,
                 price: nil
             )
+        }
+    }
+
+    /// The `/search` request itself — shared by ticker search and icon resolution.
+    /// Static so `IconResolver` can reuse this decode path without reaching into
+    /// (non-Sendable) instance state from another actor.
+    private static func searchCoins(query: String) async throws -> [CoinSearchResult.CoinSearchCoin] {
+        guard var components = URLComponents(string: "\(apiBase)/search") else {
+            throw CoinGeckoError.invalidURL
+        }
+        components.queryItems = [URLQueryItem(name: "query", value: query)]
+
+        guard let url = components.url else {
+            throw CoinGeckoError.invalidURL
+        }
+
+#if DEBUG
+        print("[CoinGecko] Search: \(query)")
+#endif
+
+        let (data, response) = try await AppSupport.defaultSession.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw CoinGeckoError.invalidResponse
+        }
+        if httpResponse.statusCode == 429 {
+            let waitSeconds = httpResponse.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init) ?? 30
+            await CGRateLimiter.shared.backoff(seconds: waitSeconds)
+            throw CoinGeckoError.rateLimited
+        }
+        guard httpResponse.statusCode == 200 else {
+            throw CoinGeckoError.httpError(httpResponse.statusCode)
+        }
+
+        return try JSONDecoder().decode(CoinSearchResult.self, from: data).coins
+    }
+
+    // MARK: - Icon Lookup
+
+    /// Icon for a symbol the market snapshot didn't cover — `/search` reaches every
+    /// coin CoinGecko knows, not just the top few hundred by market cap.
+    ///
+    /// Prefers an exact symbol match and, among those, the best-ranked coin, so "btc"
+    /// resolves to bitcoin rather than to a same-ticker copycat.
+    static func iconURL(searchingFor symbol: String) async -> URL? {
+        let q = symbol.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return nil }
+
+        await CGRateLimiter.shared.waitForSlot()
+        guard !Task.isCancelled else { return nil }
+
+        do {
+            let coins = try await searchCoins(query: q)
+            await CGRateLimiter.shared.noteSuccess()
+
+            let exact = coins.filter { $0.symbol.lowercased() == q }
+            let candidates = exact.isEmpty ? coins : exact
+            let best = candidates.min { ($0.marketCapRank ?? .max) < ($1.marketCapRank ?? .max) }
+
+            guard let image = best?.large ?? best?.thumb else { return nil }
+            return URL(string: image)
+        } catch {
+#if DEBUG
+            print("[CoinGecko] Icon search failed for \(q): \(error.localizedDescription)")
+#endif
+            return nil
         }
     }
 
