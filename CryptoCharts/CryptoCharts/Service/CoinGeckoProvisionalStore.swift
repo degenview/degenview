@@ -34,7 +34,7 @@ actor CoinGeckoProvisionalStore {
 
         let task = Task {
             let loaded = await load()
-            await self.store(loaded)
+            self.store(loaded)
         }
         primeTask = task
         await task.value
