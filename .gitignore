@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Xcode — per-user state (window layout, breakpoints, scheme ordering)
+xcuserdata/
+*.xcuserstate
+
+# Xcode — build output
+build/
+DerivedData/
+*.xcarchive
+*.dSYM
+*.dSYM.zip
+*.hmap
+*.ipa
+*.moved-aside
