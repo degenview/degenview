@@ -269,11 +269,12 @@ final class CoinGeckoAPIService: TickerDataSource {
         symbol: String,
         interval: String,
         limit: Int,
-        needsFirstPaint: Bool
+        needsFirstPaint: Bool,
+        maxSpanDays: Int = .max
     ) -> AsyncThrowingStream<[KlineData], Error> {
         AsyncThrowingStream { continuation in
             let coinID = symbol.lowercased()
-            let fullDays = daysForInterval(interval, limit: limit)
+            let fullDays = daysForInterval(interval, limit: limit, maxSpanDays: maxSpanDays)
 
             let task = Task {
                 do {
@@ -463,10 +464,27 @@ final class CoinGeckoAPIService: TickerDataSource {
     /// Matching `limit` is what keeps a CoinGecko chart zooming in step with a
     /// Binance one. The trade-off is span: CoinGecko offers no 1h/1d/1w candles
     /// on the public tier, so the same candle count can cover a longer period.
-    private func daysForInterval(_ interval: String, limit: Int) -> Int {
+    ///
+    /// `maxSpanDays` caps the window to the timeframe's intended span so CG
+    /// charts don't show months of data when the user selects "1 Day."
+    private func daysForInterval(_ interval: String, limit: Int,
+                                 maxSpanDays: Int = .max) -> Int {
         let target = Self.intervalSeconds[interval] ?? 3_600
 
-        let usable = Self.ohlcWindows.filter { $0.supply >= limit }
+        var usable = Self.ohlcWindows.filter { $0.supply >= limit }
+
+        // Honour the span cap when there are qualifying windows.
+        let capped = usable.filter { $0.days <= maxSpanDays }
+        if !capped.isEmpty {
+            usable = capped
+        } else {
+            // No window both supplies enough candles and fits the cap.
+            // Prefer correct span over candle count: fall back to the
+            // window within the cap that has the most supply.
+            let spanWindows = Self.ohlcWindows.filter { $0.days <= maxSpanDays }
+            if !spanWindows.isEmpty { usable = spanWindows }
+        }
+
         guard !usable.isEmpty else { return Self.maxDays }
 
         return usable.min { a, b in
