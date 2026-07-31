@@ -2,41 +2,108 @@ import SwiftUI
 
 struct AddTickerSheet: View {
     @ObservedObject var contentViewModel: ContentViewModel
-    @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
 
+    @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
+    @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[AddTicker/Polymarket]")
+
+    @State private var selectedTab: Tab = .crypto
     @State private var inputText = ""
+    @State private var polymarketText = ""
     @State private var addError: String?
 
     @Environment(\.dismiss) private var dismiss
 
     private let suggestions = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
 
+    enum Tab: String, CaseIterable {
+        case crypto = "Crypto"
+        case polymarket = "Polymarket"
+    }
+
+    /// Whichever pane is showing owns the selection the Add button commits.
+    private var activeSelection: TickerSearchResult? {
+        switch selectedTab {
+        case .crypto:     return searchVM.selectedResult
+        case .polymarket: return polymarketVM.selectedResult
+        }
+    }
+
     var body: some View {
         VStack(spacing: 16) {
             // Header
-            Text("Add Ticker")
+            Text("Add Chart")
                 .font(.headline)
 
-            // Search input
-            HStack(spacing: 8) {
-                TextField("Ticker symbol (e.g. BTC or PEPE)", text: $inputText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body)
-                    .onChange(of: inputText) {
-                        searchVM.scheduleSearch(query: inputText)
-                    }
-                    .onSubmit {
-                        if let first = searchVM.firstAvailableResult {
-                            searchVM.selectedResult = first
-                        }
-                    }
-
-                if searchVM.isSearching {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .frame(width: 20, height: 20)
+            Picker("", selection: $selectedTab) {
+                ForEach(Tab.allCases, id: \.self) { tab in
+                    Text(tab.rawValue).tag(tab)
                 }
             }
+            .pickerStyle(.segmented)
+
+            switch selectedTab {
+            case .crypto:
+                cryptoTab
+            case .polymarket:
+                PolymarketSearchPane(
+                    searchVM: polymarketVM,
+                    searchText: $polymarketText,
+                    resultsMaxHeight: UI.addTickerResultsMaxHeight
+                )
+            }
+
+            // Error from add attempt
+            if let error = addError {
+                HStack {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            // Action buttons
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    cancelSearches()
+                    dismiss()
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.escape)
+
+                Button("Add") {
+                    addTicker()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(activeSelection == nil)
+                .keyboardShortcut(.return)
+            }
+            .padding(.top, 8)
+        }
+        .padding(24)
+        .frame(width: UI.addTickerSheetWidth)
+        .onChange(of: selectedTab) { addError = nil }
+        .onDisappear {
+            cancelSearches()
+        }
+    }
+
+    // MARK: - Crypto Tab
+
+    private var cryptoTab: some View {
+        VStack(spacing: 16) {
+            SearchFieldRow(
+                placeholder: "Ticker symbol (e.g. BTC or PEPE)",
+                text: $inputText,
+                isSearching: searchVM.isSearching,
+                onChange: { searchVM.scheduleSearch(query: $0) },
+                onSubmit: {
+                    if let first = searchVM.firstAvailableResult {
+                        searchVM.selectedResult = first
+                    }
+                }
+            )
 
             // Suggestions
             if searchVM.searchResults.isEmpty && !searchVM.isSearching {
@@ -93,72 +160,37 @@ struct AddTickerSheet: View {
 
             // Selected result
             if let selected = searchVM.selectedResult {
-                HStack {
-                    Label(
-                        "Selected: \(selected.symbol)",
-                        systemImage: selected.source.icon
-                    )
-                    .font(.callout.weight(.medium))
-                    .foregroundStyle(.primary)
-
-                    if let price = selected.price {
-                        Text(price, format: .currency(code: "USD").precision(.fractionLength(2...6)))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-                .padding(8)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                SelectedResultBanner(prefix: "Selected", result: selected)
             }
-
-            // Error from add attempt
-            if let error = addError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // Action buttons
-            HStack(spacing: 12) {
-                Button("Cancel") {
-                    searchVM.cancelSearch()
-                    dismiss()
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.escape)
-
-                Button("Add") {
-                    addTicker()
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(searchVM.selectedResult == nil)
-                .keyboardShortcut(.return)
-            }
-            .padding(.top, 8)
-        }
-        .padding(24)
-        .frame(width: UI.addTickerSheetWidth)
-        .onDisappear {
-            searchVM.cancelSearch()
         }
     }
 
     // MARK: - Add
 
+    private func cancelSearches() {
+        searchVM.cancelSearch()
+        polymarketVM.cancelSearch()
+    }
+
     private func addTicker() {
-        guard let selected = searchVM.selectedResult else { return }
+        guard let selected = activeSelection else { return }
 
         Task { @MainActor in
             do {
+                // Polymarket search already handed us the market artwork; seed the
+                // resolver so the new card paints it without another round trip.
+                if selected.source == .polymarket {
+                    await IconResolver.shared.remember(
+                        ticker: selected.fullSymbol,
+                        source: .polymarket,
+                        url: selected.imageURL
+                    )
+                }
+
                 try await contentViewModel.addTicker(
                     symbol: selected.fullSymbol,
-                    source: selected.source
+                    source: selected.source,
+                    displayName: selected.source == .polymarket ? selected.symbol : nil
                 )
                 dismiss()
             } catch {

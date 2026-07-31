@@ -6,7 +6,7 @@ struct ChartCardView: View {
     let onRemove: () -> Void
     let onRetry: () -> Void
     let onZoom: (CGFloat) -> Void
-    let onUpdateTicker: (String, DataSourceType) -> Void
+    let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
 
@@ -52,9 +52,12 @@ struct ChartCardView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         TickerIconView(symbol: viewModel.baseSymbol, url: iconURL)
-                        Text(viewModel.ticker.uppercased())
+                        // Market questions are long — keep the header on one line.
+                        Text(viewModel.title)
                             .font(.headline)
                             .fontWeight(.bold)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                         Image(systemName: viewModel.source.icon)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -64,7 +67,7 @@ struct ChartCardView: View {
                     }
 
                     if let price = viewModel.currentPrice {
-                        Text(price, format: .currency(code: "USD").precision(.fractionLength(2...8)))
+                        Text(PriceFormatter.headline(price, scale: viewModel.priceScale))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -90,13 +93,26 @@ struct ChartCardView: View {
 
     @ViewBuilder
     private var chartArea: some View {
-        CandleChartView(
-            candles: viewModel.klineData,
-            chartHeight: chartHeight,
-            bullishColor: viewModel.bullishColor,
-            bearishColor: viewModel.bearishColor,
-            yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
-        )
+        Group {
+            if viewModel.usesLineChart {
+                LineChartView(
+                    points: viewModel.klineData,
+                    chartHeight: chartHeight,
+                    bullishColor: viewModel.bullishColor,
+                    bearishColor: viewModel.bearishColor,
+                    yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
+                    scale: viewModel.priceScale
+                )
+            } else {
+                CandleChartView(
+                    candles: viewModel.klineData,
+                    chartHeight: chartHeight,
+                    bullishColor: viewModel.bullishColor,
+                    bearishColor: viewModel.bearishColor,
+                    yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
+                )
+            }
+        }
         .overlay(alignment: .bottom) {
             if let error = viewModel.errorMessage {
                 HStack(spacing: 6) {
@@ -132,7 +148,7 @@ struct ChartCardView: View {
         onRemove: {},
         onRetry: {},
         onZoom: { _ in },
-        onUpdateTicker: { _, _ in },
+        onUpdateTicker: { _, _, _ in },
         onStyleChanged: {}
     )
     .frame(width: 400)

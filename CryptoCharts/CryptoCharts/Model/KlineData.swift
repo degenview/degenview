@@ -64,6 +64,21 @@ extension KlineData {
         self.volume = 0   // CoinGecko OHLC doesn't include volume
     }
 
+    /// A single price observation, with no OHLC spread.
+    ///
+    /// Line-chart sources (Polymarket) report one price per timestamp. Flattening it
+    /// into a candle keeps them on the shared pipeline — `KlineCache`, `currentPrice`,
+    /// `priceChangePercent` and `ChartViewModel.fetchData` all work unchanged, and
+    /// `LineChartView` only ever reads `openTime` and `closePrice`.
+    init(time: Date, price: Double) {
+        self.openTime = time
+        self.openPrice = price
+        self.highPrice = price
+        self.lowPrice = price
+        self.closePrice = price
+        self.volume = 0
+    }
+
     // MARK: - Type-flexible parsers
 
     /// Extract a timestamp in milliseconds from Int64, Double, or NSNumber.
@@ -88,5 +103,25 @@ extension Array where Element == KlineData {
     var priceChangePercent: Double? {
         guard let first = first, let last = last, first.closePrice != 0 else { return nil }
         return ((last.closePrice - first.closePrice) / first.closePrice) * 100
+    }
+
+    /// Thin to at most `count` points by uniform stride, always keeping the newest one.
+    ///
+    /// APIs that only expose coarse bucket sizes (Polymarket's `fidelity`) hand back
+    /// far more points than the zoom level asks for; this trims them without moving
+    /// the window.
+    func downsampled(to count: Int) -> [KlineData] {
+        guard count > 0, self.count > count else { return self }
+        guard count > 1 else { return last.map { [$0] } ?? [] }
+
+        let stride = Double(self.count - 1) / Double(count - 1)
+        var thinned: [KlineData] = []
+        thinned.reserveCapacity(count)
+
+        for i in 0..<count {
+            let index = Int((Double(i) * stride).rounded())
+            thinned.append(self[Swift.min(index, self.count - 1)])
+        }
+        return thinned
     }
 }

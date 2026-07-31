@@ -94,10 +94,26 @@ actor IconResolver {
         return url
     }
 
+    /// Seed the cache with artwork the caller already has.
+    ///
+    /// A Polymarket search payload carries the market image, so adding a chart from
+    /// search needs no lookup at all — without this, the card would re-fetch the same
+    /// URL it just displayed in the picker.
+    func remember(ticker: String, source: DataSourceType, url: URL?) {
+        remember(key: "\(source.rawValue):\(ticker.lowercased())", url: url)
+    }
+
     // MARK: - Chain
 
     private func resolve(ticker: String, source: DataSourceType, baseSymbol: String) async -> URL? {
         var symbol = baseSymbol
+
+        // Prediction markets carry their own artwork and have no crypto symbol behind
+        // them — none of the coin-oriented steps below can contribute, so skip them
+        // rather than spend a market-snapshot refresh on the way past.
+        if source == .polymarket {
+            return await PolymarketService.marketInfo(tokenID: ticker)?.imageURL
+        }
 
         // 1. Market snapshot — covers Binance base symbols and top-ranked coin ids.
         await refreshMarketMapIfNeeded()
@@ -123,7 +139,7 @@ actor IconResolver {
                 }
             }
 
-        case .binance:
+        case .binance, .polymarket:
             break
         }
 
@@ -153,6 +169,9 @@ actor IconResolver {
             image = cache.idMap[ticker.lowercased()] ?? cache.symbolMap[symbol.lowercased()]
         case .binance, .dexscreener:
             image = cache.symbolMap[symbol.lowercased()]
+        case .polymarket:
+            // Market questions never key into a coin symbol map.
+            image = nil
         }
         return image.flatMap { URL(string: $0) }
     }

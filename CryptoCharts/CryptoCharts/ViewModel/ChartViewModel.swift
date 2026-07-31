@@ -6,10 +6,20 @@ final class ChartViewModel: ObservableObject {
     @Published var ticker: String
     @Published var source: DataSourceType
 
+    /// Human-readable label, for sources whose `ticker` is an opaque identifier.
+    /// A Polymarket CLOB token id is 77 digits, so the market question rides along.
+    @Published var displayName: String?
+
     /// Unique identifier — derived from initial ticker+source, stable across updates.
     let uniqueID: String
 
     private var api: TickerDataSource
+
+    /// What the card header and settings sheet call this chart.
+    var title: String {
+        if let displayName, !displayName.isEmpty { return displayName }
+        return ticker.uppercased()
+    }
 
     /// The symbol used for API calls — source-dependent.
     var apiSymbol: String {
@@ -20,8 +30,8 @@ final class ChartViewModel: ObservableObject {
                 return upper
             }
             return "\(upper)USDT"
-        case .coingecko, .dexscreener:
-            // ticker IS the fullSymbol (coin ID or pair address) from search result
+        case .coingecko, .dexscreener, .polymarket:
+            // ticker IS the fullSymbol (coin ID, pair address, or CLOB token id)
             return ticker
         }
     }
@@ -40,8 +50,17 @@ final class ChartViewModel: ObservableObject {
         case .coingecko, .dexscreener:
             let parts = ticker.components(separatedBy: "/")
             return parts.first?.uppercased() ?? ticker.uppercased()
+        case .polymarket:
+            // The ticker is a token id; the monogram fallback needs the question.
+            return title
         }
     }
+
+    /// Whether prices read as USD or as probabilities.
+    var priceScale: PriceScale { source.priceScale }
+
+    /// Prediction markets report one price per timestamp, so they draw as a line.
+    var usesLineChart: Bool { source == .polymarket }
 
     /// Identity of the icon currently wanted. `uniqueID` deliberately survives
     /// `updateTicker`, so it can't drive the icon lookup — the card would keep
@@ -72,9 +91,10 @@ final class ChartViewModel: ObservableObject {
         return change >= 0
     }
 
-    init(ticker: String, source: DataSourceType = .binance, api: TickerDataSource? = nil) {
+    init(ticker: String, source: DataSourceType = .binance, displayName: String? = nil, api: TickerDataSource? = nil) {
         self.ticker = ticker
         self.source = source
+        self.displayName = displayName
         self.uniqueID = "\(ticker)_\(source.rawValue)"
         self.api = api ?? DataSourceFactory.shared.service(for: source)
     }
@@ -84,12 +104,14 @@ final class ChartViewModel: ObservableObject {
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
+        if let name = config.displayName { displayName = name }
     }
 
     /// Update ticker symbol and/or source, re-fetch data.
-    func updateTicker(symbol: String, source: DataSourceType) {
+    func updateTicker(symbol: String, source: DataSourceType, displayName: String? = nil) {
         ticker = symbol
         self.source = source
+        self.displayName = displayName
         api = DataSourceFactory.shared.service(for: source)
     }
 
@@ -149,6 +171,18 @@ final class ChartViewModel: ObservableObject {
                         count: count,
                         generation: generation
                     )
+                } else if let pmService = api as? PolymarketService {
+                    // Polymarket needs the whole TimeRange, not the interval token:
+                    // that token maps 1D and 3M both onto "1d".
+                    let data = try await pmService.fetchPrices(
+                        tokenID: self.apiSymbol,
+                        range: range,
+                        count: count
+                    )
+                    guard !Task.isCancelled else { return }
+                    guard fetchGeneration == generation else { return }
+                    klineData = data
+                    currentPrice = data.last?.closePrice
                 } else {
                     let data = try await self.api.fetchKlines(
                         symbol: self.apiSymbol,

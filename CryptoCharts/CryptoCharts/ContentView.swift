@@ -279,8 +279,8 @@ struct ContentView: View {
                     contentViewModel.adjustCandleCount(by: -step)
                 }
             },
-            onUpdateTicker: { symbol, source in
-                contentViewModel.updateTicker(vm, symbol: symbol, source: source)
+            onUpdateTicker: { symbol, source, displayName in
+                contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
             },
             onStyleChanged: {
                 contentViewModel.persistChartSettings()

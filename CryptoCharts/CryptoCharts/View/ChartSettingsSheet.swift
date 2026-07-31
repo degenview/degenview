@@ -4,15 +4,18 @@ import SwiftUI
 
 struct ChartSettingsSheet: View {
     @ObservedObject var viewModel: ChartViewModel
-    let onUpdateTicker: (String, DataSourceType) -> Void
+    /// (symbol, source, displayName) — `displayName` is nil for crypto sources,
+    /// whose symbol already reads fine on the card.
+    let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onRemove: () -> Void
     let onStyleChanged: () -> Void
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[ChartSettings]")
+    @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[ChartSettings/Polymarket]")
 
-    @State private var selectedTab: Tab = .ticker
+    @State private var selectedTab: Tab
     @State private var searchText = ""
-    @State private var errorMessage: String?
+    @State private var polymarketText = ""
 
     // Appearance state — initialized from viewModel
     @State private var bullishColor: Color
@@ -23,6 +26,7 @@ struct ChartSettingsSheet: View {
 
     enum Tab: String, CaseIterable {
         case ticker = "Ticker"
+        case polymarket = "Polymarket"
         case appearance = "Appearance"
     }
 
@@ -65,7 +69,7 @@ struct ChartSettingsSheet: View {
     }
 
     init(viewModel: ChartViewModel,
-         onUpdateTicker: @escaping (String, DataSourceType) -> Void,
+         onUpdateTicker: @escaping (String, DataSourceType, String?) -> Void,
          onRemove: @escaping () -> Void,
          onStyleChanged: @escaping () -> Void) {
         self.viewModel = viewModel
@@ -75,13 +79,18 @@ struct ChartSettingsSheet: View {
         _bullishColor = State(initialValue: viewModel.bullishColor)
         _bearishColor = State(initialValue: viewModel.bearishColor)
         _decimalPlacesMode = State(initialValue: DecimalMode.from(viewModel.yAxisDecimalPlaces))
+        // Open on the tab that matches what this chart already is.
+        _selectedTab = State(initialValue: viewModel.source == .polymarket ? .polymarket : .ticker)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Title
-            Text("\(viewModel.ticker.uppercased()) Settings")
+            Text("\(viewModel.title) Settings")
                 .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 8)
 
@@ -100,6 +109,8 @@ struct ChartSettingsSheet: View {
             switch selectedTab {
             case .ticker:
                 tickerTab
+            case .polymarket:
+                polymarketTab
             case .appearance:
                 appearanceTab
             }
@@ -118,7 +129,7 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    searchVM.cancelSearch()
+                    cancelSearches()
                     dismiss()
                 }
                 .keyboardShortcut(.return)
@@ -128,7 +139,7 @@ struct ChartSettingsSheet: View {
         }
         .frame(width: UI.chartSettingsSheetWidth, height: UI.chartSettingsSheetHeight)
         .onDisappear {
-            searchVM.cancelSearch()
+            cancelSearches()
         }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
@@ -148,37 +159,19 @@ struct ChartSettingsSheet: View {
 
     private var tickerTab: some View {
         VStack(spacing: 12) {
-            // Current ticker
-            HStack {
-                Text("Current:")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Label(viewModel.ticker.uppercased(), systemImage: viewModel.source.icon)
-                    .font(.body.weight(.medium))
-                Spacer()
-            }
-            .padding(.horizontal, 16)
+            currentChartRow
 
-            // Search input
-            HStack(spacing: 8) {
-                TextField("New ticker symbol (e.g. BTC or PEPE)", text: $searchText)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body)
-                    .onChange(of: searchText) {
-                        searchVM.scheduleSearch(query: searchText)
+            SearchFieldRow(
+                placeholder: "New ticker symbol (e.g. BTC or PEPE)",
+                text: $searchText,
+                isSearching: searchVM.isSearching,
+                onChange: { searchVM.scheduleSearch(query: $0) },
+                onSubmit: {
+                    if let first = searchVM.firstAvailableResult {
+                        searchVM.selectedResult = first
                     }
-                    .onSubmit {
-                        if let first = searchVM.firstAvailableResult {
-                            searchVM.selectedResult = first
-                        }
-                    }
-
-                if searchVM.isSearching {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                        .frame(width: 20, height: 20)
                 }
-            }
+            )
             .padding(.horizontal, 16)
 
             // Search results
@@ -208,38 +201,84 @@ struct ChartSettingsSheet: View {
 
             // Selected result
             if let selected = searchVM.selectedResult {
-                HStack {
-                    Label("New: \(selected.symbol)", systemImage: selected.source.icon)
-                        .font(.callout.weight(.medium))
-                    Spacer()
-                }
-                .padding(8)
-                .padding(.horizontal, 8)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                .padding(.horizontal, 16)
+                SelectedResultBanner(prefix: "New", result: selected)
+                    .padding(.horizontal, 16)
 
                 Button("Change Ticker") {
-                    dismiss()
-                    onUpdateTicker(selected.fullSymbol, selected.source)
+                    apply(selected)
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(searchVM.selectedResult == nil)
-            }
-
-            if let error = errorMessage {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 16)
             }
 
             Spacer()
         }
         .padding(.top, 8)
+    }
+
+    // MARK: - Polymarket Tab
+
+    private var polymarketTab: some View {
+        VStack(spacing: 12) {
+            currentChartRow
+
+            PolymarketSearchPane(
+                searchVM: polymarketVM,
+                searchText: $polymarketText,
+                resultsMinHeight: UI.chartSettingsResultsMinHeight,
+                resultsMaxHeight: UI.chartSettingsResultsMaxHeight
+            )
+            .padding(.horizontal, 16)
+
+            if let selected = polymarketVM.selectedResult {
+                Button("Change Market") {
+                    apply(selected)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
+            Spacer()
+        }
+        .padding(.top, 8)
+    }
+
+    /// What this chart currently tracks — shown above both search panes.
+    private var currentChartRow: some View {
+        HStack {
+            Text("Current:")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Label(viewModel.title, systemImage: viewModel.source.icon)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Apply
+
+    private func cancelSearches() {
+        searchVM.cancelSearch()
+        polymarketVM.cancelSearch()
+    }
+
+    private func apply(_ selected: TickerSearchResult) {
+        // The search payload already carried the market artwork; seed the resolver so
+        // the card repaints without another round trip.
+        if selected.source == .polymarket {
+            let ticker = selected.fullSymbol
+            let url = selected.imageURL
+            Task { await IconResolver.shared.remember(ticker: ticker, source: .polymarket, url: url) }
+        }
+
+        cancelSearches()
+        dismiss()
+        onUpdateTicker(
+            selected.fullSymbol,
+            selected.source,
+            selected.source == .polymarket ? selected.symbol : nil
+        )
     }
 
     // MARK: - Appearance Tab
@@ -248,14 +287,14 @@ struct ChartSettingsSheet: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 24) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Bullish Candle")
+                    Text(viewModel.usesLineChart ? "Line Up" : "Bullish Candle")
                         .font(.subheadline.weight(.medium))
                     ColorPicker("", selection: $bullishColor)
                         .labelsHidden()
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Bearish Candle")
+                    Text(viewModel.usesLineChart ? "Line Down" : "Bearish Candle")
                         .font(.subheadline.weight(.medium))
                     ColorPicker("", selection: $bearishColor)
                         .labelsHidden()
@@ -308,7 +347,7 @@ struct ChartSettingsSheet: View {
     let vm = ChartViewModel(ticker: "BTC")
     ChartSettingsSheet(
         viewModel: vm,
-        onUpdateTicker: { _, _ in },
+        onUpdateTicker: { _, _, _ in },
         onRemove: {},
         onStyleChanged: {}
     )

@@ -57,6 +57,18 @@ enum CoinGecko {
     static let pageLimit = 250
 }
 
+// MARK: - Polymarket Constants
+
+enum Polymarket {
+    /// `limit_per_type` on `/public-search` — events returned, each expanding into
+    /// its markets, so the flattened row count is a multiple of this.
+    static let searchLimitPerType = 10
+    /// Price-history cache TTL (seconds).
+    static let cacheTTL: TimeInterval = 60
+    /// Longest market title kept intact in a search row before truncation.
+    static let maxTitleLength = 90
+}
+
 // MARK: - Icon Constants
 
 enum Icon {
@@ -141,10 +153,13 @@ enum UI {
     static let addTickerResultsMaxHeight: CGFloat = 300
     /// Search results min height in Add Ticker sheet.
     static let addTickerResultsMinHeight: CGFloat = 100
-    /// Search results max height in Chart Settings sheet.
+    /// Search results height range in Chart Settings sheet.
+    static let chartSettingsResultsMinHeight: CGFloat = 80
     static let chartSettingsResultsMaxHeight: CGFloat = 180
     /// Suggestion grid columns.
     static let suggestionGridColumns = 5
+    /// Market artwork edge length in a Polymarket search row.
+    static let polymarketRowImageSize: CGFloat = 24
     /// Named view sentinel.
     static let unnamedView = "Unnamed"
 }

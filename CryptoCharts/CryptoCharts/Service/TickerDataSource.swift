@@ -21,6 +21,13 @@ struct TickerSearchResult: Identifiable, Hashable {
     /// Pair contract address for DEX pairs
     var pairAddress: String? { metadata["pairAddress"] }
 
+    /// Parent event title for Polymarket markets (e.g. "How many Fed rate cuts in 2026?")
+    var eventTitle: String? { metadata["eventTitle"]?.nilIfEmpty }
+    /// Full market question for Polymarket markets
+    var question: String? { metadata["question"]?.nilIfEmpty }
+    /// Artwork supplied by the source itself, when the search payload carries one
+    var imageURL: URL? { metadata["imageURL"]?.nilIfEmpty.flatMap(URL.init(string:)) }
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(fullSymbol)
         hasher.combine(source)
@@ -62,17 +69,28 @@ final class DataSourceFactory {
     private lazy var binanceService = BinanceAPIService()
     private lazy var coinGeckoService = CoinGeckoAPIService()
     private lazy var dexScreenerService = DEXScreenerService()
+    private lazy var polymarketService = PolymarketService()
 
     func service(for type: DataSourceType) -> TickerDataSource {
         switch type {
         case .binance:     return binanceService
         case .coingecko:   return coinGeckoService
         case .dexscreener: return dexScreenerService
+        case .polymarket:  return polymarketService
         }
     }
 
-    /// All sources available for searching.
+    /// Crypto sources fanned out to by the multi-source ticker search.
+    /// Polymarket is searched separately — different query shape, different rows.
     var allSources: [TickerDataSource] {
         [binanceService, coinGeckoService, dexScreenerService]
     }
+
+    /// Concretely typed accessor — the Polymarket search pane and the chart fetch
+    /// path both need `PolymarketService`'s non-protocol methods.
+    var polymarket: PolymarketService { polymarketService }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

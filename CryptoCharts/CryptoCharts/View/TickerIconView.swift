@@ -8,6 +8,7 @@ import SwiftUI
 struct TickerIconView: View {
     let symbol: String
     let url: URL?
+    var size: CGFloat = Icon.size
 
     var body: some View {
         Group {
@@ -24,7 +25,7 @@ struct TickerIconView: View {
                 monogram
             }
         }
-        .frame(width: Icon.size, height: Icon.size)
+        .frame(width: size, height: size)
         .clipShape(Circle())
     }
 
@@ -35,7 +36,7 @@ struct TickerIconView: View {
             .fill(background)
             .overlay {
                 Text(initials)
-                    .font(.system(size: Icon.size * 0.42, weight: .bold, design: .rounded))
+                    .font(.system(size: size * 0.42, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
                     .minimumScaleFactor(0.6)
                     .padding(1)

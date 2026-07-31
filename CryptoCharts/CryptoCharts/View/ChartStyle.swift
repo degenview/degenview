@@ -1,6 +1,11 @@
 import SwiftUI
 
-struct CandleChartStyle {
+/// Visual parameters shared by every chart renderer.
+///
+/// Grid, price axis, insets and the current-price marker are identical whether the
+/// series is drawn as candles or as a line, so one style struct feeds both. The
+/// candle- and line-specific sections apply only to their own renderer.
+struct ChartStyle {
     // Candle colors
     var bullishColor: Color = .green
     var bearishColor: Color = .red
@@ -15,6 +20,11 @@ struct CandleChartStyle {
     var wickMax: CGFloat = 2                // maximum wick width in points
     var minBodyHeight: CGFloat = 1          // minimum body height in points (doji)
     var dojiThreshold: Double = 0.00001     // relative to price range; abs(close-open)/range < this → doji
+
+    // Line geometry
+    var lineWidth: CGFloat = 1.5
+    /// Opacity at the top of the gradient under the line; fades to zero at the bottom.
+    var areaFillOpacity: Double = 0.18
 
     // Price axis
     var pricePadding: CGFloat = 0.05        // vertical padding fraction
@@ -34,5 +44,5 @@ struct CandleChartStyle {
     // Layout
     var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 70)
 
-    static let `default` = CandleChartStyle()
+    static let `default` = ChartStyle()
 }

@@ -249,17 +249,19 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Add a ticker with a chosen data source.
-    func addTicker(symbol: String, source: DataSourceType) async throws {
+    /// - Parameter displayName: label to show instead of the raw symbol, for sources
+    ///   whose symbol is an opaque id (Polymarket CLOB token ids).
+    func addTicker(symbol: String, source: DataSourceType, displayName: String? = nil) async throws {
         // Duplicate check: same symbol + same source
         guard !chartViewModels.contains(where: {
             $0.ticker.uppercased() == symbol.uppercased() && $0.source == source
         }) else {
-            throw TickerError.duplicate(symbol)
+            throw TickerError.duplicate(displayName ?? symbol)
         }
 
-        let vm = ChartViewModel(ticker: symbol, source: source)
+        let vm = ChartViewModel(ticker: symbol, source: source, displayName: displayName)
         chartViewModels.append(vm)
-        saveTickerConfigs()
+        persistTickers()
 
         await syncCoinGeckoSymbols()
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
@@ -276,8 +278,8 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Update a chart's ticker symbol and/or source, then refetch.
-    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType) {
-        vm.updateTicker(symbol: symbol, source: source)
+    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil) {
+        vm.updateTicker(symbol: symbol, source: source, displayName: displayName)
         persistTickers()
         markChanged()
         Task {
@@ -301,16 +303,13 @@ final class ContentViewModel: ObservableObject {
                 source: vm.source,
                 bullishColorHex: vm.bullishColor.hexString,
                 bearishColorHex: vm.bearishColor.hexString,
-                yAxisDecimalPlaces: vm.yAxisDecimalPlaces
+                yAxisDecimalPlaces: vm.yAxisDecimalPlaces,
+                displayName: vm.displayName
             )
         }
     }
 
     private func persistTickers() {
-        tickerStore.save(makeTickerConfigs())
-    }
-
-    private func saveTickerConfigs() {
         tickerStore.save(makeTickerConfigs())
     }
 

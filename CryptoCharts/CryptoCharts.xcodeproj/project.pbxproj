@@ -28,7 +28,15 @@
 		A0000000000000000000000E /* MockData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010E /* MockData.swift */; };
 		A0000000000000000000000F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010F /* Assets.xcassets */; };
 		A00000000000000000000011 /* CandleChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000112 /* CandleChartView.swift */; };
-		A00000000000000000000012 /* CandleChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000113 /* CandleChartStyle.swift */; };
+		C10000000000000000000001 /* PolymarketModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000101 /* PolymarketModels.swift */; };
+		C10000000000000000000002 /* PolymarketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000102 /* PolymarketService.swift */; };
+		C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000103 /* PolymarketSearchViewModel.swift */; };
+		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
+		C10000000000000000000005 /* ChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000105 /* ChartStyle.swift */; };
+		C10000000000000000000006 /* LineChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000106 /* LineChartView.swift */; };
+		C10000000000000000000007 /* PolymarketResultRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000107 /* PolymarketResultRow.swift */; };
+		C10000000000000000000008 /* SearchPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000108 /* SearchPane.swift */; };
+		C10000000000000000000009 /* SearchDebouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000109 /* SearchDebouncer.swift */; };
 		A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000114 /* BinanceWebSocketService.swift */; };
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
 		A00000000000000000000016 /* IconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* IconResolver.swift */; };
@@ -67,7 +75,15 @@
 		A0000000000000000000010F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A00000000000000000000110 /* CryptoCharts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CryptoCharts.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000112 /* CandleChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartView.swift; sourceTree = "<group>"; };
-		A00000000000000000000113 /* CandleChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartStyle.swift; sourceTree = "<group>"; };
+		C10000000000000000000101 /* PolymarketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketModels.swift; sourceTree = "<group>"; };
+		C10000000000000000000102 /* PolymarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketService.swift; sourceTree = "<group>"; };
+		C10000000000000000000103 /* PolymarketSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketSearchViewModel.swift; sourceTree = "<group>"; };
+		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
+		C10000000000000000000105 /* ChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStyle.swift; sourceTree = "<group>"; };
+		C10000000000000000000106 /* LineChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineChartView.swift; sourceTree = "<group>"; };
+		C10000000000000000000107 /* PolymarketResultRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketResultRow.swift; sourceTree = "<group>"; };
+		C10000000000000000000108 /* SearchPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPane.swift; sourceTree = "<group>"; };
+		C10000000000000000000109 /* SearchDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchDebouncer.swift; sourceTree = "<group>"; };
 		A00000000000000000000114 /* BinanceWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketService.swift; sourceTree = "<group>"; };
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
 		A00000000000000000000117 /* IconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconResolver.swift; sourceTree = "<group>"; };
@@ -148,6 +164,7 @@
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
 				A00000000000000000000118 /* DataSourceType.swift */,
+				C10000000000000000000101 /* PolymarketModels.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -163,6 +180,7 @@
 				A0000000000000000000011A /* CoinGeckoAPIService.swift */,
 				B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */,
 				A0000000000000000000011B /* DEXScreenerService.swift */,
+				C10000000000000000000102 /* PolymarketService.swift */,
 				E167CD7B739B528C0792D361 /* KlineCache.swift */,
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
 			);
@@ -175,6 +193,7 @@
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
 				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
+				C10000000000000000000103 /* PolymarketSearchViewModel.swift */,
 			);
 			path = ViewModel;
 			sourceTree = "<group>";
@@ -188,9 +207,13 @@
 				A0000000000000000000010D /* EmptyStateView.swift */,
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
 				A00000000000000000000112 /* CandleChartView.swift */,
-				A00000000000000000000113 /* CandleChartStyle.swift */,
+				C10000000000000000000106 /* LineChartView.swift */,
+				C10000000000000000000104 /* ChartPlot.swift */,
+				C10000000000000000000105 /* ChartStyle.swift */,
 				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
+				C10000000000000000000107 /* PolymarketResultRow.swift */,
+				C10000000000000000000108 /* SearchPane.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -211,6 +234,7 @@
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
 				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
 				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
+				C10000000000000000000109 /* SearchDebouncer.swift */,
 			);
 			path = Util;
 			sourceTree = "<group>";
@@ -298,7 +322,15 @@
 				A0000000000000000000000D /* EmptyStateView.swift in Sources */,
 				A0000000000000000000000E /* MockData.swift in Sources */,
 				A00000000000000000000011 /* CandleChartView.swift in Sources */,
-				A00000000000000000000012 /* CandleChartStyle.swift in Sources */,
+				C10000000000000000000001 /* PolymarketModels.swift in Sources */,
+				C10000000000000000000002 /* PolymarketService.swift in Sources */,
+				C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */,
+				C10000000000000000000004 /* ChartPlot.swift in Sources */,
+				C10000000000000000000005 /* ChartStyle.swift in Sources */,
+				C10000000000000000000006 /* LineChartView.swift in Sources */,
+				C10000000000000000000007 /* PolymarketResultRow.swift in Sources */,
+				C10000000000000000000008 /* SearchPane.swift in Sources */,
+				C10000000000000000000009 /* SearchDebouncer.swift in Sources */,
 				A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
 				A00000000000000000000014 /* SavedView.swift in Sources */,
 				A00000000000000000000016 /* IconResolver.swift in Sources */,
