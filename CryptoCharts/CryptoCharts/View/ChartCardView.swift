@@ -98,26 +98,32 @@ struct ChartCardView: View {
 
     @ViewBuilder
     private var chartArea: some View {
-        Group {
+        // Computed once per layout pass and shared by both renderers — the warm-up
+        // candles ahead of the visible window never reach the chart itself.
+        let indicators = viewModel.indicators
+
+        return Group {
             if viewModel.usesLineChart {
                 LineChartView(
-                    points: viewModel.klineData,
+                    points: viewModel.visibleKlines,
                     chartHeight: chartHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     scale: viewModel.priceScale,
-                    yZoom: viewModel.yZoom
+                    yZoom: viewModel.yZoom,
+                    indicators: indicators
                 )
             } else {
                 CandleChartView(
-                    candles: viewModel.klineData,
+                    candles: viewModel.visibleKlines,
                     chartHeight: chartHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     yZoom: viewModel.yZoom,
-                    showVolume: viewModel.showVolume
+                    showVolume: viewModel.showVolume,
+                    indicators: indicators
                 )
             }
         }

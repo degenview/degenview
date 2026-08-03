@@ -15,6 +15,9 @@ struct CandleChartView: View {
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
     var yZoom: Double = 1               // 1 = auto-fit; >1 = taller candles
     var showVolume: Bool = false
+    /// Precomputed by the view model over the full buffer, already trimmed to these
+    /// candles — so a long-period overlay is warmed up at the left edge.
+    var indicators: IndicatorSeries = .none
 
     var body: some View {
         GeometryReader { geometry in
@@ -40,7 +43,16 @@ struct CandleChartView: View {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
                     drawCandles(context: &layer, plot: plot)
+
+                    // Price-scale overlays share the candles' clip: a zoomed-in
+                    // domain pushes them past the plot just the same.
+                    if let bands = indicators.bollinger {
+                        plot.drawBollinger(&layer, bands: bands)
+                    }
+                    plot.drawEMA(&layer, values: indicators.ema)
                 }
+
+                plot.drawRSI(&context, values: indicators.rsi)
 
                 if let last = candles.last {
                     let color = last.closePrice >= last.openPrice ? bullishColor : bearishColor
@@ -67,7 +79,7 @@ struct CandleChartView: View {
         let peak = candles.map(\.quoteVolume).max() ?? 0
         guard peak > 0 else { return }
 
-        let pane = plot.volumeRect(fraction: style.volumePaneFraction)
+        let pane = plot.bottomPane(fraction: style.volumePaneFraction)
         let slotWidth = plot.slotWidth(forCount: candles.count)
         let barWidth = (slotWidth * style.candleBodyFraction).clamped(to: style.candleBodyMin...style.candleBodyMax)
 

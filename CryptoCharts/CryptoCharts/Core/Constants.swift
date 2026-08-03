@@ -143,6 +143,36 @@ enum Candle {
     static let zoomStepFraction: Double = 0.1
 }
 
+// MARK: - Indicator Constants
+
+enum Indicator {
+    /// Extra candles fetched beyond the visible window, so period-based indicators
+    /// are already warmed up at the left edge instead of starting partway across.
+    ///
+    /// Sized to the longest offered EMA, and fetched whether or not any indicator is
+    /// on: it costs one wider response rather than an extra request, and it doubles
+    /// as slack that lets zooming redraw from data already in hand.
+    static let warmupHeadroom = 200
+
+    /// Periods offered for the EMA overlay.
+    static let emaPeriods = [9, 20, 50, 100, 200]
+    static let emaDefaultPeriod = 20
+
+    /// Bollinger defaults — 20-period SMA, bands two standard deviations out.
+    static let bollingerPeriod = 20
+    static let bollingerMultiplier: Double = 2
+}
+
+// MARK: - RSI Constants
+
+enum RSI {
+    /// Lookback in candles. 14 is Wilder's original and what every chart defaults to.
+    static let period = 14
+    /// Guide levels drawn across the indicator strip.
+    static let overbought: Double = 70
+    static let oversold: Double = 30
+}
+
 // MARK: - Vertical Zoom Constants
 
 /// Vertical price-scale zoom, applied on top of the auto-fitted price range.

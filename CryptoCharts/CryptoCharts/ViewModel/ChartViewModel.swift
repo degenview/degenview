@@ -67,7 +67,20 @@ final class ChartViewModel: ObservableObject {
     /// showing the previous coin's artwork.
     var iconKey: String { "\(source.rawValue):\(ticker)" }
 
+    /// Everything fetched, including the warm-up candles that sit off the left edge.
+    /// Read `visibleKlines` for what the chart actually draws.
     @Published var klineData: [KlineData] = []
+
+    /// How many of the newest candles are on screen. The rest are warm-up for
+    /// period-based indicators, and slack that lets a zoom redraw without refetching.
+    @Published private(set) var visibleCount: Int = TimeRange.oneDay.dataPointLimit
+
+    /// The candles the chart draws — the newest `visibleCount` of the buffer.
+    var visibleKlines: [KlineData] {
+        guard visibleCount > 0, klineData.count > visibleCount else { return klineData }
+        return Array(klineData.suffix(visibleCount))
+    }
+
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
@@ -82,6 +95,28 @@ final class ChartViewModel: ObservableObject {
     /// quote volume they're drawn from.
     @Published var showVolume: Bool = false
 
+    /// RSI line across the bottom of the plot. Off by default. Computed from closes,
+    /// so unlike volume it works on every source.
+    @Published var showRSI: Bool = false
+
+    /// Price-scale overlays: an EMA at `emaPeriod`, and Bollinger bands.
+    @Published var showEMA: Bool = false
+    @Published var emaPeriod: Int = Indicator.emaDefaultPeriod
+    @Published var showBollinger: Bool = false
+
+    /// Every enabled indicator, computed over the full buffer and trimmed to the
+    /// visible tail so warm-up happens off screen.
+    var indicators: IndicatorSeries {
+        IndicatorSeries.make(
+            candles: klineData,
+            visibleCount: visibleCount,
+            showRSI: showRSI,
+            showEMA: showEMA,
+            emaPeriod: emaPeriod,
+            showBollinger: showBollinger
+        )
+    }
+
     /// Vertical price-scale zoom. 1 = auto-fit; >1 shows a narrower slice of price,
     /// drawing the series taller. Driven by dragging the Y-axis gutter.
     @Published var yZoom: Double = 1
@@ -94,8 +129,10 @@ final class ChartViewModel: ObservableObject {
     private var fetchGeneration = 0
     private var isFetching = false
 
+    /// Change across the *visible* window — the warm-up candles are off screen, so
+    /// counting them would report a move the user can't see.
     var priceChangePercent: Double? {
-        klineData.priceChangePercent
+        visibleKlines.priceChangePercent
     }
 
     var priceChangeIsPositive: Bool {
@@ -118,6 +155,10 @@ final class ChartViewModel: ObservableObject {
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
         yZoom = config.yZoom ?? 1
         showVolume = config.showVolume ?? false
+        showRSI = config.showRSI ?? false
+        showEMA = config.showEMA ?? false
+        emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
+        showBollinger = config.showBollinger ?? false
         if let name = config.displayName { displayName = name }
     }
 
@@ -166,11 +207,33 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    /// Show a different slice of the buffer without going back to the network.
+    ///
+    /// Zooming changes how many candles are on screen far more often than it exhausts
+    /// the warm-up headroom, so the redraw happens immediately here and the refetch
+    /// that tops the buffer back up runs behind it.
+    func setVisibleCount(_ count: Int) {
+        let wanted = Swift.max(1, count)
+        guard wanted != visibleCount else { return }
+        visibleCount = wanted
+    }
+
+    /// Candles to request for a visible window of `count`.
+    ///
+    /// Only the count-based sources can buy older history this way — see
+    /// `DataSourceType.fetchesByCount`.
+    private func fetchCount(for count: Int) -> Int {
+        source.fetchesByCount ? count + Indicator.warmupHeadroom : count
+    }
+
     func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
         // Silent refresh: if a fetch is already running let it finish.
         if silent, isFetching {
             return
         }
+
+        visibleCount = Swift.max(1, count)
+        let count = fetchCount(for: count)
 
         fetchTask?.cancel()
         fetchGeneration += 1

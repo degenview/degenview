@@ -25,6 +25,21 @@ struct ChartStyle {
     var volumePaneFraction: CGFloat = 0.22  // share of plot height the bars rise into
     var volumeOpacity: Double = 0.35        // kept low: candles draw on top of them
 
+    // RSI — off unless enabled per chart
+    var rsiPaneFraction: CGFloat = 0.28     // share of plot height the 0–100 scale maps to
+    var rsiColor: Color = .purple
+    var rsiLineWidth: CGFloat = 1.2
+    var rsiGuideColor: Color = .purple.opacity(0.25)
+    var rsiGuideDashPattern: [CGFloat] = [3, 3]
+
+    // Price-scale overlays — off unless enabled per chart
+    var emaColor: Color = .orange
+    var emaLineWidth: CGFloat = 1.3
+    var bollingerColor: Color = .cyan
+    var bollingerLineWidth: CGFloat = 1
+    /// Tint between the bands. Low enough to leave the candles legible through it.
+    var bollingerFillOpacity: Double = 0.08
+
     // Line geometry
     var lineWidth: CGFloat = 1.5
     /// Opacity at the top of the gradient under the line; fades to zero at the bottom.

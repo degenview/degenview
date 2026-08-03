@@ -55,12 +55,13 @@ struct ChartPlot {
         plotRect.minX + CGFloat(index) * slotWidth + slotWidth / 2
     }
 
-    /// Strip along the bottom of the plot that volume bars rise into.
+    /// Strip along the bottom of the plot that an indicator draws into — volume bars
+    /// and the RSI line both use one.
     ///
     /// Overlaid on the price area rather than carved out of it: cards are short, and
-    /// giving a fifth of the height to a separate subchart costs more than bars
+    /// giving a fifth of the height to a separate subchart costs more than indicators
     /// sharing space the series rarely reaches.
-    func volumeRect(fraction: CGFloat) -> CGRect {
+    func bottomPane(fraction: CGFloat) -> CGRect {
         let height = plotRect.height * fraction
         return CGRect(x: plotRect.minX, y: plotRect.maxY - height,
                       width: plotRect.width, height: height)
@@ -99,6 +100,126 @@ struct ChartPlot {
         let textSize = resolved.measure(in: .init(width: 80, height: 14))
         let labelX = plotRect.maxX + style.chartInsets.trailing - textSize.width - 4
         context.draw(resolved, at: CGPoint(x: labelX, y: y - textSize.height / 2))
+    }
+
+    // MARK: - Price-scale overlays
+
+    /// Polyline through readings that share the price axis, skipping the nil warm-up
+    /// at the front. Used by every overlay that plots in price units.
+    private func overlayPath(_ values: [Double?]) -> Path {
+        let slot = slotWidth(forCount: values.count)
+        var path = Path()
+        var started = false
+
+        for (index, value) in values.enumerated() {
+            guard let value else { continue }
+            let point = CGPoint(x: x(forIndex: index, slotWidth: slot), y: y(for: value))
+            if started {
+                path.addLine(to: point)
+            } else {
+                path.move(to: point)
+                started = true
+            }
+        }
+        return path
+    }
+
+    func drawEMA(_ context: inout GraphicsContext, values: [Double?]) {
+        guard values.contains(where: { $0 != nil }) else { return }
+        context.stroke(
+            overlayPath(values),
+            with: .color(style.emaColor),
+            style: StrokeStyle(lineWidth: style.emaLineWidth, lineCap: .round, lineJoin: .round)
+        )
+    }
+
+    /// Bollinger bands: upper and lower rails with the moving average between them,
+    /// and a light tint across the channel.
+    func drawBollinger(_ context: inout GraphicsContext, bands: BollingerSeries) {
+        guard bands.hasValues else { return }
+
+        // Tint: down the upper rail, back along the lower one.
+        let slot = slotWidth(forCount: bands.upper.count)
+        var channel = Path()
+        var started = false
+        var lowerPoints: [CGPoint] = []
+
+        for (index, upper) in bands.upper.enumerated() {
+            guard let upper, let lower = bands.lower[index] else { continue }
+            let xPosition = x(forIndex: index, slotWidth: slot)
+            let top = CGPoint(x: xPosition, y: y(for: upper))
+            if started {
+                channel.addLine(to: top)
+            } else {
+                channel.move(to: top)
+                started = true
+            }
+            lowerPoints.append(CGPoint(x: xPosition, y: y(for: lower)))
+        }
+
+        if started {
+            for point in lowerPoints.reversed() { channel.addLine(to: point) }
+            channel.closeSubpath()
+            context.fill(channel, with: .color(style.bollingerColor.opacity(style.bollingerFillOpacity)))
+        }
+
+        let rail = StrokeStyle(lineWidth: style.bollingerLineWidth, lineCap: .round, lineJoin: .round)
+        context.stroke(overlayPath(bands.upper), with: .color(style.bollingerColor.opacity(0.7)), style: rail)
+        context.stroke(overlayPath(bands.lower), with: .color(style.bollingerColor.opacity(0.7)), style: rail)
+        context.stroke(
+            overlayPath(bands.middle),
+            with: .color(style.bollingerColor.opacity(0.45)),
+            style: StrokeStyle(lineWidth: style.bollingerLineWidth, dash: style.rsiGuideDashPattern)
+        )
+    }
+
+    // MARK: - RSI
+
+    /// RSI line across the bottom strip, with guides at the overbought and oversold
+    /// levels. `values` is aligned 1:1 with the series and nil until the indicator has
+    /// enough history, so the line starts partway across rather than at the left edge.
+    ///
+    /// Lives here rather than in a renderer because it isn't the series — both the
+    /// candle and line charts draw it the same way.
+    func drawRSI(_ context: inout GraphicsContext, values: [Double?]) {
+        guard values.contains(where: { $0 != nil }) else { return }
+
+        let pane = bottomPane(fraction: style.rsiPaneFraction)
+        let slot = slotWidth(forCount: values.count)
+
+        func y(for reading: Double) -> CGFloat {
+            pane.maxY - CGFloat(reading / 100) * pane.height
+        }
+
+        for level in [RSI.overbought, RSI.oversold] {
+            var guideLine = Path()
+            guideLine.move(to: CGPoint(x: pane.minX, y: y(for: level)))
+            guideLine.addLine(to: CGPoint(x: pane.maxX, y: y(for: level)))
+            context.stroke(
+                guideLine,
+                with: .color(style.rsiGuideColor),
+                style: StrokeStyle(lineWidth: style.gridLineWidth, dash: style.rsiGuideDashPattern)
+            )
+        }
+
+        var line = Path()
+        var started = false
+        for (index, reading) in values.enumerated() {
+            guard let reading else { continue }
+            let point = CGPoint(x: x(forIndex: index, slotWidth: slot), y: y(for: reading))
+            if started {
+                line.addLine(to: point)
+            } else {
+                line.move(to: point)
+                started = true
+            }
+        }
+
+        context.stroke(
+            line,
+            with: .color(style.rsiColor),
+            style: StrokeStyle(lineWidth: style.rsiLineWidth, lineCap: .round, lineJoin: .round)
+        )
     }
 
     // MARK: - Current price marker

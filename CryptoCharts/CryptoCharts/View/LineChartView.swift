@@ -20,6 +20,9 @@ struct LineChartView: View {
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
     var scale: PriceScale = .currency
     var yZoom: Double = 1               // 1 = auto-fit; >1 = taller series
+    /// Precomputed by the view model over the full buffer, already trimmed to these
+    /// points — so a long-period overlay is warmed up at the left edge.
+    var indicators: IndicatorSeries = .none
 
     /// Green when the series ends above where it started, red otherwise.
     private var lineColor: Color {
@@ -48,7 +51,14 @@ struct LineChartView: View {
                 context.drawLayer { layer in
                     layer.clip(to: Path(plot.plotRect))
                     drawSeries(context: &layer, plot: plot)
+
+                    if let bands = indicators.bollinger {
+                        plot.drawBollinger(&layer, bands: bands)
+                    }
+                    plot.drawEMA(&layer, values: indicators.ema)
                 }
+
+                plot.drawRSI(&context, values: indicators.rsi)
 
                 if let last = points.last {
                     plot.drawCurrentPriceLine(&context, price: last.closePrice, color: lineColor)

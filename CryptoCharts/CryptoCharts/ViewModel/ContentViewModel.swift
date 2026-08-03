@@ -399,6 +399,9 @@ final class ContentViewModel: ObservableObject {
         guard newCount != candleCount else { return }
         candleCount = newCount
         markChanged()
+        // Redraw from the warm-up headroom straight away; the refetch below only has
+        // to top the buffer back up, so a zoom no longer waits on the network.
+        chartViewModels.forEach { $0.setVisibleCount(newCount) }
         // Silent refetch — candle count change is visual feedback enough.
         refetchTask?.cancel()
         refetchTask = Task { [weak self] in
@@ -499,6 +502,10 @@ final class ContentViewModel: ObservableObject {
                 yAxisDecimalPlaces: vm.yAxisDecimalPlaces,
                 yZoom: vm.yZoom == 1 ? nil : vm.yZoom,
                 showVolume: vm.showVolume ? true : nil,
+                showRSI: vm.showRSI ? true : nil,
+                showEMA: vm.showEMA ? true : nil,
+                emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
+                showBollinger: vm.showBollinger ? true : nil,
                 displayName: vm.displayName
             )
         }

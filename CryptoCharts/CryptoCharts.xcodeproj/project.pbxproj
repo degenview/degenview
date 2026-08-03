@@ -45,6 +45,7 @@
 		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
 		A0000000000000000000001D /* CGRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011E /* CGRateLimiter.swift */; };
 		A00000000000000000000901 /* GeckoTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000902 /* GeckoTerminalService.swift */; };
+		A00000000000000000000903 /* Indicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904 /* Indicators.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
@@ -97,6 +98,7 @@
 		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011E /* CGRateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGRateLimiter.swift; sourceTree = "<group>"; };
 		A00000000000000000000902 /* GeckoTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoTerminalService.swift; sourceTree = "<group>"; };
+		A00000000000000000000904 /* Indicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Indicators.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
@@ -170,6 +172,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000103 /* KlineData.swift */,
+				A00000000000000000000904 /* Indicators.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
@@ -326,6 +329,7 @@
 				A00000000000000000000001 /* CryptoChartsApp.swift in Sources */,
 				A00000000000000000000002 /* ContentView.swift in Sources */,
 				A00000000000000000000003 /* KlineData.swift in Sources */,
+				A00000000000000000000903 /* Indicators.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,

@@ -22,6 +22,10 @@ struct ChartSettingsSheet: View {
     @State private var bearishColor: Color
     @State private var decimalPlacesMode: DecimalMode
     @State private var showVolume: Bool
+    @State private var showRSI: Bool
+    @State private var showEMA: Bool
+    @State private var emaPeriod: Int
+    @State private var showBollinger: Bool
 
     @Environment(\.dismiss) private var dismiss
 
@@ -29,6 +33,7 @@ struct ChartSettingsSheet: View {
         case ticker = "Ticker"
         case polymarket = "Polymarket"
         case appearance = "Appearance"
+        case indicators = "Indicators"
     }
 
     enum DecimalMode: String, CaseIterable, Identifiable {
@@ -81,6 +86,10 @@ struct ChartSettingsSheet: View {
         _bearishColor = State(initialValue: viewModel.bearishColor)
         _decimalPlacesMode = State(initialValue: DecimalMode.from(viewModel.yAxisDecimalPlaces))
         _showVolume = State(initialValue: viewModel.showVolume)
+        _showRSI = State(initialValue: viewModel.showRSI)
+        _showEMA = State(initialValue: viewModel.showEMA)
+        _emaPeriod = State(initialValue: viewModel.emaPeriod)
+        _showBollinger = State(initialValue: viewModel.showBollinger)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: viewModel.source == .polymarket ? .polymarket : .ticker)
     }
@@ -115,6 +124,8 @@ struct ChartSettingsSheet: View {
                 polymarketTab
             case .appearance:
                 appearanceTab
+            case .indicators:
+                indicatorsTab
             }
 
             Divider()
@@ -157,6 +168,22 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showVolume) {
             viewModel.showVolume = showVolume
+            onStyleChanged()
+        }
+        .onChange(of: showRSI) {
+            viewModel.showRSI = showRSI
+            onStyleChanged()
+        }
+        .onChange(of: showEMA) {
+            viewModel.showEMA = showEMA
+            onStyleChanged()
+        }
+        .onChange(of: emaPeriod) {
+            viewModel.emaPeriod = emaPeriod
+            onStyleChanged()
+        }
+        .onChange(of: showBollinger) {
+            viewModel.showBollinger = showBollinger
             onStyleChanged()
         }
     }
@@ -334,26 +361,75 @@ struct ChartSettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Line sources report one price per timestamp and no turnover at all.
-            if !viewModel.usesLineChart {
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle("Volume Bars", isOn: $showVolume)
-                        .toggleStyle(.switch)
-                        // Left visible rather than hidden: a greyed-out switch with a
-                        // reason reads better than a setting that silently does nothing.
-                        .disabled(!viewModel.source.providesVolume)
-
-                    Text(volumeHint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             Spacer()
         }
         .padding(16)
+    }
+
+    // MARK: - Indicators Tab
+
+    private var indicatorsTab: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // Line sources report one price per timestamp and no turnover at all.
+                if !viewModel.usesLineChart {
+                    indicatorRow(hint: volumeHint) {
+                        Toggle("Volume Bars", isOn: $showVolume)
+                            .toggleStyle(.switch)
+                            // Left visible rather than hidden: a greyed-out switch with a
+                            // reason reads better than a setting that silently does nothing.
+                            .disabled(!viewModel.source.providesVolume)
+                    }
+                }
+
+                // The rest come from closing prices alone, so every source can draw them.
+                indicatorRow(hint: rsiHint) {
+                    Toggle("RSI (\(RSI.period))", isOn: $showRSI)
+                        .toggleStyle(.switch)
+                }
+
+                indicatorRow(hint: emaHint) {
+                    HStack {
+                        Toggle("EMA", isOn: $showEMA)
+                            .toggleStyle(.switch)
+
+                        Picker("Period", selection: $emaPeriod) {
+                            ForEach(Indicator.emaPeriods, id: \.self) { period in
+                                Text("\(period)").tag(period)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 80)
+                        .disabled(!showEMA)
+                    }
+                }
+
+                indicatorRow(hint: bollingerHint) {
+                    Toggle("Bollinger Bands", isOn: $showBollinger)
+                        .toggleStyle(.switch)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// A toggle (or toggle plus its options) above the line of explanation that
+    /// belongs to it.
+    private func indicatorRow<Control: View>(
+        hint: String,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            control()
+            Text(hint)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     private var volumeHint: String {
@@ -361,6 +437,24 @@ struct ChartSettingsSheet: View {
             return "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
         }
         return "Turnover per candle, drawn along the bottom of the chart."
+    }
+
+    /// Flags the warm-up explicitly: RSI has no value for its first `period` candles,
+    /// so a short range draws a stub of a line or none at all.
+    private var rsiHint: String {
+        let loaded = viewModel.klineData.count
+        if loaded > 0 && loaded <= RSI.period {
+            return "Only \(loaded) candles loaded — RSI needs more than \(RSI.period). Zoom out or pick a longer range."
+        }
+        return "Momentum from 0–100 across the bottom, with guides at \(Int(RSI.oversold)) and \(Int(RSI.overbought))."
+    }
+
+    private var emaHint: String {
+        "Exponential moving average over the closes, drawn on the price scale."
+    }
+
+    private var bollingerHint: String {
+        "\(Indicator.bollingerPeriod)-period average with bands \(Int(Indicator.bollingerMultiplier)) standard deviations either side — wide when volatile, tight when calm."
     }
 
     private var decimalHint: String {
