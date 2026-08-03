@@ -12,8 +12,14 @@ struct ChartCardView: View {
     let onAxisRegion: (NSView) -> Void
     /// Hands the plot area's `NSView` to the trend-line drawing monitor.
     var onPlotRegion: (NSView) -> Void = { _ in }
-    /// Whether a drawing tool is armed — shows the endpoint handles and the crosshair.
+    /// Whether any tool is armed — drives the crosshair cursor over the plot.
     var isToolArmed: Bool = false
+    /// Narrower than `isToolArmed`: only the trend-line tool shows endpoint handles.
+    var showTrendHandles: Bool = false
+    /// The tab's crosshair, if this card is inside one. Optional so previews stand alone.
+    var crosshair: CrosshairTracker? = nil
+    /// Called when the pointer leaves this card — the mouse monitor can't see that.
+    var onCrosshairExit: () -> Void = {}
     let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
@@ -120,7 +126,7 @@ struct ChartCardView: View {
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
-                    showTrendHandles: isToolArmed
+                    showTrendHandles: showTrendHandles
                 )
             } else {
                 CandleChartView(
@@ -135,12 +141,24 @@ struct ChartCardView: View {
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
-                    showTrendHandles: isToolArmed
+                    showTrendHandles: showTrendHandles
                 )
             }
         }
         .overlay {
             PlotHitRegion(isArmed: isToolArmed, onResolve: onPlotRegion)
+        }
+        .overlay {
+            if let crosshair {
+                CrosshairOverlay(viewModel: viewModel, tracker: crosshair)
+                    .allowsHitTesting(false)
+            }
+        }
+        // The mouse monitor only sees moves inside the window, so a pointer that leaves
+        // it altogether would strand the crosshair on the last chart it touched.
+        .onHover { isInside in
+            guard !isInside else { return }
+            onCrosshairExit()
         }
         .overlay(alignment: .trailing) {
             PriceAxisRegion(onResolve: onAxisRegion)
@@ -167,6 +185,34 @@ struct ChartCardView: View {
         }
     }
 
+}
+
+/// The crosshair, drawn in its own thin `Canvas` above the series.
+///
+/// Separate from `CandleChartView`/`LineChartView` on purpose: the pointer moves 60×/sec,
+/// and folding this into the series canvas would re-run every indicator and redraw every
+/// candle that often. Only this view observes the tracker, so only this view redraws.
+///
+/// It rebuilds the geometry rather than being handed it — the overlay is exactly
+/// co-extensive with the chart canvas, so `plot(in:)` on the same size reproduces what the
+/// renderer drew, the same trick the hit regions rely on.
+private struct CrosshairOverlay: View {
+    @ObservedObject var viewModel: ChartViewModel
+    @ObservedObject var tracker: CrosshairTracker
+
+    var body: some View {
+        GeometryReader { geometry in
+            Canvas { context, _ in
+                guard let crosshair = tracker.current else { return }
+                viewModel.plot(in: geometry.size).drawCrosshair(
+                    &context,
+                    crosshair: crosshair,
+                    isOwner: crosshair.ownerID == viewModel.uniqueID,
+                    points: viewModel.visibleKlines
+                )
+            }
+        }
+    }
 }
 
 /// Non-interactive AppKit view stretched over one chart card.

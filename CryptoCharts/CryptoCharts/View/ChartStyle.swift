@@ -70,6 +70,14 @@ struct ChartStyle {
     /// Dash for the rubber band between the first click and the second.
     var trendDashPattern: [CGFloat] = [4, 3]
 
+    // Crosshair. Neutral on purpose — blue and pink belong to trend lines, and purple,
+    // orange and cyan to the indicators, so a tinted crosshair would read as one of them.
+    var crosshairColor: Color = .secondary
+    var crosshairLineWidth: CGFloat = 1
+    var crosshairDashPattern: [CGFloat] = [3, 3]
+    /// Backing for the time and price read-outs, dark enough for white text either theme.
+    var crosshairLabelColor: Color = .black.opacity(0.75)
+
     // Layout
     var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 70)
 

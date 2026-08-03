@@ -37,8 +37,10 @@ final class ContentViewModel: ObservableObject {
                 candleCount = selectedTimeRange.dataPointLimit
                 // The rubber band of a half-drawn line tracks the pointer, which is
                 // over the toolbar rather than the plot — drop it rather than leave
-                // it stretched across a chart that just changed under it.
+                // it stretched across a chart that just changed under it. The crosshair
+                // goes for the same reason: its time is no longer on screen.
                 for vm in chartViewModels { vm.cancelDraft() }
+                crosshair.clear()
             }
         }
     }
@@ -94,14 +96,20 @@ final class ContentViewModel: ObservableObject {
     /// The endpoint being dragged right now, and the chart it belongs to.
     private var lineDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
 
-    /// Which drawing tool the tool strip has armed. Window-scoped: arming in one tab
-    /// leaves the others alone.
-    @Published var activeTool: ChartTool = .none {
+    /// The tab's crosshair. Its own observable object rather than a `@Published` here —
+    /// see `CrosshairTracker`.
+    let crosshair = CrosshairTracker()
+
+    /// Which tool the tool strip has armed. Window-scoped: arming in one tab leaves the
+    /// others alone. The crosshair starts armed — it only reads, so a tab opens ready to
+    /// take a measurement and Esc still puts it away.
+    @Published var activeTool: ChartTool = .crosshair {
         didSet {
             guard activeTool != oldValue else { return }
             // The rubber band runs off mouse-moved events, and AppKit only posts
             // those to a window that has asked for them.
             ownWindow?.acceptsMouseMovedEvents = activeTool != .none
+            crosshair.clear()
             guard activeTool == .none else { return }
             for vm in chartViewModels {
                 vm.cancelDraft()
@@ -296,6 +304,7 @@ final class ContentViewModel: ObservableObject {
     /// plot is what keeps a reorder drag from starting under the pointer.
     private func handleDrawing(_ event: NSEvent) -> NSEvent? {
         guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
+        if activeTool == .crosshair { return handleCrosshair(event) }
         guard activeTool == .trendLine else { return event }
 
         if event.type == .keyDown { return handleDrawingKey(event) }
@@ -351,6 +360,42 @@ final class ContentViewModel: ObservableObject {
 
         case .leftMouseUp:
             return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// Tracks the pointer for the crosshair tool.
+    ///
+    /// Read-only, so unlike the trend-line tool it swallows nothing but Esc: clicks keep
+    /// reaching the cards, and drag-reorder and the gutter drag work while it is armed.
+    ///
+    /// A pointer that leaves the window posts no further mouse-moved event, so this can't
+    /// be the only thing that clears the crosshair — `ChartCardView`'s `onHover` handles
+    /// the exit.
+    private func handleCrosshair(_ event: NSEvent) -> NSEvent? {
+        switch event.type {
+        case .keyDown:
+            guard event.keyCode == 53 else { return event }  // Esc
+            activeTool = .none
+            return nil
+
+        case .mouseMoved:
+            guard let hit = plotHit(at: event) else {
+                crosshair.clear()
+                return event
+            }
+            let rect = hit.plot.plotRect
+            guard rect.width > 0 else { return event }
+            crosshair.update(
+                Crosshair(
+                    ownerID: hit.vm.uniqueID,
+                    xFraction: (hit.point.x - rect.minX) / rect.width,
+                    price: hit.plot.price(forY: hit.point.y)
+                )
+            )
+            return event
 
         default:
             return event
@@ -414,6 +459,9 @@ final class ContentViewModel: ObservableObject {
     func attach(to window: NSWindow) {
         guard ownWindow !== window else { return }
         ownWindow = window
+        // `activeTool`'s observer can't do this for the tool armed at launch — there was
+        // no window to ask when it was assigned.
+        window.acceptsMouseMovedEvents = activeTool != .none
         WindowCoordinator.shared.register(window, for: tabID)
 
         observers.append(

@@ -27,5 +27,6 @@ struct TrendLine: Codable, Equatable, Hashable, Identifiable {
 /// Which drawing tool the window's tool strip has armed.
 enum ChartTool {
     case none
+    case crosshair
     case trendLine
 }

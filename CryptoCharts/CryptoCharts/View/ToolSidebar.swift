@@ -3,8 +3,8 @@ import SwiftUI
 /// Vertical strip of drawing tools down the left edge of the window.
 ///
 /// Sits outside the chart column, so the card-height math in `ContentView` is
-/// unaffected and the strip spans the empty state too. One tool today; the layout is
-/// a stack so more can be added under it.
+/// unaffected and the strip spans the empty state too. The layout is a stack, so more
+/// tools can be added under the ones already here.
 struct ToolSidebar: View {
     let activeTool: ChartTool
     let onSelect: (ChartTool) -> Void
@@ -12,6 +12,13 @@ struct ToolSidebar: View {
     var body: some View {
         HStack(spacing: 0) {
             VStack(spacing: 4) {
+                ToolButton(
+                    icon: "plus",
+                    label: "Crosshair",
+                    isActive: activeTool == .crosshair
+                ) {
+                    onSelect(.crosshair)
+                }
                 ToolButton(
                     icon: "line.diagonal",
                     label: "Trend line",

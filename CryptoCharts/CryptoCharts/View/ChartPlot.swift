@@ -386,6 +386,107 @@ struct ChartPlot {
         context.draw(resolved, at: CGPoint(x: boxRect.midX, y: boxRect.midY))
     }
 
+    // MARK: - Crosshair
+
+    /// The crosshair tool's read-out. Every chart in the tab draws the vertical line and
+    /// its time label; only the chart the pointer is over draws the horizontal line and
+    /// the price pill, since the price scale is that chart's alone.
+    ///
+    /// Positioned by fraction of the plot, not by time. The charts in a tab show the same
+    /// number of candles, so the same fraction is the same slot on each and the lines line
+    /// up. Where a source's candles are a different size — CoinGecko's are — that column
+    /// is a different moment, which is why the time label is computed per chart.
+    func drawCrosshair(
+        _ context: inout GraphicsContext,
+        crosshair: Crosshair,
+        isOwner: Bool,
+        points: [KlineData]
+    ) {
+        guard points.count > 1 else { return }
+
+        let x = plotRect.minX + crosshair.xFraction * plotRect.width
+        let stroke = StrokeStyle(
+            lineWidth: style.crosshairLineWidth,
+            dash: style.crosshairDashPattern
+        )
+
+        if x >= plotRect.minX, x <= plotRect.maxX {
+            var vertical = Path()
+            vertical.move(to: CGPoint(x: x, y: plotRect.minY))
+            vertical.addLine(to: CGPoint(x: x, y: plotRect.maxY))
+            context.stroke(vertical, with: .color(style.crosshairColor), style: stroke)
+
+            // Only the hovered chart is labelled. The other cards carry the line to show
+            // where the pointer sits, and a row of times that disagree — sources use
+            // different candle sizes — reads as an error rather than as information.
+            if isOwner {
+                let index = fractionalIndex(forX: x, slotWidth: slotWidth(forCount: points.count))
+                // Snapped to the candle under the pointer, not interpolated between two.
+                // The line is free to sit anywhere, but the label names a candle, and a
+                // candle has one open time — on 1H that time is on the hour, on 1D it is
+                // a date. Interpolating reported moments no bar on screen stands for.
+                let slot = Int(index.rounded()).clamped(to: 0...(points.count - 1))
+                let date = points[slot].openTime
+                let interval = points[1].openTime.timeIntervalSince(points[0].openTime)
+                let label = resolveLabel(context, TimeAxisFormatter.string(date, interval: interval))
+                // Centred under the line, nudged inside the plot when it would overhang.
+                let originX = (x - label.size.width / 2)
+                    .clamped(to: plotRect.minX...max(plotRect.minX, plotRect.maxX - label.size.width))
+                draw(
+                    label,
+                    in: CGRect(
+                        origin: CGPoint(x: originX, y: plotRect.maxY - label.size.height - 2),
+                        size: label.size
+                    ),
+                    into: &context
+                )
+            }
+        }
+
+        guard isOwner else { return }
+        let y = self.y(for: crosshair.price)
+        // A Y-zoom drag since the last mouse move can push the reading off the plot.
+        guard y >= plotRect.minY, y <= plotRect.maxY else { return }
+
+        var horizontal = Path()
+        horizontal.move(to: CGPoint(x: plotRect.minX, y: y))
+        horizontal.addLine(to: CGPoint(x: plotRect.maxX, y: y))
+        context.stroke(horizontal, with: .color(style.crosshairColor), style: stroke)
+
+        // Same slot as the current-price pill, which it covers while the tool is armed.
+        let label = resolveLabel(
+            context,
+            PriceFormatter.format(crosshair.price, decimalPlaces: yAxisDecimalPlaces, scale: scale)
+        )
+        let originY = (y - label.size.height / 2)
+            .clamped(to: (plotRect.minY + 1)...(plotRect.maxY - label.size.height - 1))
+        draw(
+            label,
+            in: CGRect(origin: CGPoint(x: plotRect.maxX + 4, y: originY), size: label.size),
+            into: &context
+        )
+    }
+
+    /// A read-out pill's text and the box it needs. Measured separately from drawing so
+    /// each caller can place the box its own way — centred under a line, or in the gutter.
+    private func resolveLabel(
+        _ context: GraphicsContext,
+        _ string: String
+    ) -> (text: GraphicsContext.ResolvedText, size: CGSize) {
+        let text = context.resolve(Text(string).font(.caption2).bold().foregroundStyle(.white))
+        let measured = text.measure(in: CGSize(width: 140, height: 20))
+        return (text, CGSize(width: measured.width + 10, height: 18))
+    }
+
+    private func draw(
+        _ label: (text: GraphicsContext.ResolvedText, size: CGSize),
+        in rect: CGRect,
+        into context: inout GraphicsContext
+    ) {
+        context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(style.crosshairLabelColor))
+        context.draw(label.text, at: CGPoint(x: rect.midX, y: rect.midY))
+    }
+
     // MARK: - Time axis (vertical grid lines at natural time boundaries)
 
     func drawTimeGrid(_ context: inout GraphicsContext, points: [KlineData]) {
@@ -398,8 +499,10 @@ struct ChartPlot {
         let interval = points[1].openTime.timeIntervalSince(points[0].openTime)
         let slot = slotWidth(forCount: points.count)
 
+        // Local, matching the crosshair label. A grid line drawn at UTC midnight would
+        // fall two hours off the "00:00" the label reads out beside it.
         var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.timeZone = .current
 
         let boundaries = Self.timeBoundaries(
             first: firstDate,

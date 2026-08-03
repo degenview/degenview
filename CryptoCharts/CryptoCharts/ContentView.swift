@@ -317,6 +317,9 @@ struct ContentView: View {
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
             isToolArmed: contentViewModel.activeTool != .none,
+            showTrendHandles: contentViewModel.activeTool == .trendLine,
+            crosshair: contentViewModel.crosshair,
+            onCrosshairExit: { contentViewModel.crosshair.clear(owner: vm.uniqueID) },
             onUpdateTicker: { symbol, source, displayName in
                 contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
             },

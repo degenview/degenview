@@ -48,6 +48,7 @@
 		A00000000000000000000903 /* Indicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904 /* Indicators.swift */; };
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
+		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
@@ -103,6 +104,7 @@
 		A00000000000000000000904 /* Indicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Indicators.swift; sourceTree = "<group>"; };
 		A00000000000000000000906 /* TrendLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendLine.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
+		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
@@ -178,6 +180,7 @@
 				A00000000000000000000103 /* KlineData.swift */,
 				A00000000000000000000904 /* Indicators.swift */,
 				A00000000000000000000906 /* TrendLine.swift */,
+				A0000000000000000000090A /* Crosshair.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
@@ -338,6 +341,7 @@
 				A00000000000000000000903 /* Indicators.swift in Sources */,
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
+				A00000000000000000000909 /* Crosshair.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,
