@@ -19,6 +19,7 @@ struct LineChartView: View {
     var bearishColor: Color = .red
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
     var scale: PriceScale = .currency
+    var yZoom: Double = 1               // 1 = auto-fit; >1 = taller series
 
     /// Green when the series ends above where it started, red otherwise.
     private var lineColor: Color {
@@ -30,7 +31,10 @@ struct LineChartView: View {
         GeometryReader { geometry in
             let plot = ChartPlot(
                 plotRect: ChartPlot.rect(in: geometry.size, insets: style.chartInsets),
-                priceRange: ChartPlot.priceRange(for: points, padding: style.pricePadding),
+                priceRange: ChartPlot.zoomed(
+                    ChartPlot.priceRange(for: points, padding: style.pricePadding),
+                    by: yZoom
+                ),
                 style: style,
                 scale: scale,
                 yAxisDecimalPlaces: yAxisDecimalPlaces
@@ -38,7 +42,13 @@ struct LineChartView: View {
 
             Canvas { context, _ in
                 plot.drawGrid(&context)
-                drawSeries(context: &context, plot: plot)
+
+                // Only the series is clipped: a zoomed-in price scale pushes the line
+                // past the plot, and the axis labels live outside it by design.
+                context.drawLayer { layer in
+                    layer.clip(to: Path(plot.plotRect))
+                    drawSeries(context: &layer, plot: plot)
+                }
 
                 if let last = points.last {
                     plot.drawCurrentPriceLine(&context, price: last.closePrice, color: lineColor)

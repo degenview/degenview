@@ -21,6 +21,7 @@ struct ChartSettingsSheet: View {
     @State private var bullishColor: Color
     @State private var bearishColor: Color
     @State private var decimalPlacesMode: DecimalMode
+    @State private var showVolume: Bool
 
     @Environment(\.dismiss) private var dismiss
 
@@ -79,6 +80,7 @@ struct ChartSettingsSheet: View {
         _bullishColor = State(initialValue: viewModel.bullishColor)
         _bearishColor = State(initialValue: viewModel.bearishColor)
         _decimalPlacesMode = State(initialValue: DecimalMode.from(viewModel.yAxisDecimalPlaces))
+        _showVolume = State(initialValue: viewModel.showVolume)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: viewModel.source == .polymarket ? .polymarket : .ticker)
     }
@@ -151,6 +153,10 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: decimalPlacesMode) {
             viewModel.yAxisDecimalPlaces = decimalPlacesMode.intValue
+            onStyleChanged()
+        }
+        .onChange(of: showVolume) {
+            viewModel.showVolume = showVolume
             onStyleChanged()
         }
     }
@@ -328,9 +334,33 @@ struct ChartSettingsSheet: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Line sources report one price per timestamp and no turnover at all.
+            if !viewModel.usesLineChart {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Toggle("Volume Bars", isOn: $showVolume)
+                        .toggleStyle(.switch)
+                        // Left visible rather than hidden: a greyed-out switch with a
+                        // reason reads better than a setting that silently does nothing.
+                        .disabled(!viewModel.source.providesVolume)
+
+                    Text(volumeHint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Spacer()
         }
         .padding(16)
+    }
+
+    private var volumeHint: String {
+        guard viewModel.source.providesVolume else {
+            return "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
+        }
+        return "Turnover per candle, drawn along the bottom of the chart."
     }
 
     private var decimalHint: String {

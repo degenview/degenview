@@ -17,7 +17,8 @@ private struct WSKlinePayload: Decodable {
     let h: String  // High
     let l: String  // Low
     let c: String  // Close
-    let v: String  // Volume
+    let v: String  // Volume (base asset)
+    let q: String  // Quote asset volume — turnover in USDT
     let x: Bool    // Is this kline closed? (unused — kept as decode placeholder)
 
     func toKlineData() -> KlineData? {
@@ -32,7 +33,8 @@ private struct WSKlinePayload: Decodable {
             highPrice: high,
             lowPrice: low,
             closePrice: close,
-            volume: volume
+            volume: volume,
+            quoteVolume: Double(q) ?? 0
         )
     }
 }

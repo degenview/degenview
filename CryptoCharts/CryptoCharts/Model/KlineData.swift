@@ -8,10 +8,46 @@ struct KlineData: Identifiable, Codable {
     var lowPrice: Double
     var closePrice: Double
     var volume: Double
+    /// Turnover in the quote currency (USD for a *USDT pair) over the candle.
+    /// `volume` counts the base asset, so this is the one that plots as money.
+    /// Zero for sources that don't report it — see the `init`s below.
+    var quoteVolume: Double = 0
 
     /// `id` is excluded — it's a fresh per-instance identity, not persisted state.
     private enum CodingKeys: String, CodingKey {
-        case openTime, openPrice, highPrice, lowPrice, closePrice, volume
+        case openTime, openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume
+    }
+
+    /// Hand-written so `quoteVolume` can be optional on the way in: it was added
+    /// after the kline cache shipped, and a synthesized decoder would reject every
+    /// entry already on disk. Encoding stays synthesized.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        openTime = try container.decode(Date.self, forKey: .openTime)
+        openPrice = try container.decode(Double.self, forKey: .openPrice)
+        highPrice = try container.decode(Double.self, forKey: .highPrice)
+        lowPrice = try container.decode(Double.self, forKey: .lowPrice)
+        closePrice = try container.decode(Double.self, forKey: .closePrice)
+        volume = try container.decode(Double.self, forKey: .volume)
+        quoteVolume = try container.decodeIfPresent(Double.self, forKey: .quoteVolume) ?? 0
+    }
+
+    init(
+        openTime: Date,
+        openPrice: Double,
+        highPrice: Double,
+        lowPrice: Double,
+        closePrice: Double,
+        volume: Double,
+        quoteVolume: Double = 0
+    ) {
+        self.openTime = openTime
+        self.openPrice = openPrice
+        self.highPrice = highPrice
+        self.lowPrice = lowPrice
+        self.closePrice = closePrice
+        self.volume = volume
+        self.quoteVolume = quoteVolume
     }
 }
 
@@ -35,11 +71,9 @@ extension KlineData {
         self.lowPrice = low
         self.closePrice = close
 
-        if let vol = Self.extractDouble(raw[5]) {
-            self.volume = vol
-        } else {
-            self.volume = 0
-        }
+        self.volume = Self.extractDouble(raw[5]) ?? 0
+        // Index 7 is quote asset volume — turnover in USDT rather than in coins.
+        self.quoteVolume = raw.count > 7 ? (Self.extractDouble(raw[7]) ?? 0) : 0
     }
 
     /// Parse from CoinGecko OHLC array.
@@ -61,7 +95,9 @@ extension KlineData {
         self.highPrice = high
         self.lowPrice = low
         self.closePrice = close
-        self.volume = 0   // CoinGecko OHLC doesn't include volume
+        // CoinGecko's OHLC endpoint carries no volume; /market_chart would.
+        self.volume = 0
+        self.quoteVolume = 0
     }
 
     /// A single price observation, with no OHLC spread.
@@ -77,6 +113,7 @@ extension KlineData {
         self.lowPrice = price
         self.closePrice = price
         self.volume = 0
+        self.quoteVolume = 0
     }
 
     // MARK: - Type-flexible parsers
@@ -103,6 +140,40 @@ extension Array where Element == KlineData {
     var priceChangePercent: Double? {
         guard let first = first, let last = last, first.closePrice != 0 else { return nil }
         return ((last.closePrice - first.closePrice) / first.closePrice) * 100
+    }
+
+    /// Merge into at most `count` candles by folding contiguous runs together.
+    ///
+    /// Unlike ``downsampled(to:)``, which throws points away, this keeps the extremes:
+    /// open comes from the first candle in the run, close from the last, high/low from
+    /// the whole run, and both volumes are summed. Sources with no weekly or monthly
+    /// bucket (GeckoTerminal tops out at daily) use this to build one.
+    func aggregated(into count: Int) -> [KlineData] {
+        guard count > 0, self.count > count else { return self }
+
+        var merged: [KlineData] = []
+        merged.reserveCapacity(count)
+
+        for bucket in 0..<count {
+            let start = self.count * bucket / count
+            let end = self.count * (bucket + 1) / count
+            guard start < end else { continue }
+            let run = self[start..<end]
+            guard let first = run.first, let last = run.last else { continue }
+
+            merged.append(
+                KlineData(
+                    openTime: first.openTime,
+                    openPrice: first.openPrice,
+                    highPrice: run.map(\.highPrice).max() ?? first.highPrice,
+                    lowPrice: run.map(\.lowPrice).min() ?? first.lowPrice,
+                    closePrice: last.closePrice,
+                    volume: run.reduce(0) { $0 + $1.volume },
+                    quoteVolume: run.reduce(0) { $0 + $1.quoteVolume }
+                )
+            )
+        }
+        return merged
     }
 
     /// Thin to at most `count` points by uniform stride, always keeping the newest one.

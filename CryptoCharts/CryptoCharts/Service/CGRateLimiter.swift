@@ -18,7 +18,15 @@ actor CGRateLimiter {
     /// The public tier's ceiling isn't published and moves around, so the gap is
     /// found by feedback rather than assumed: widen on every 429, ease back down
     /// while calls succeed.
-    private var gap = Timeout.coingeckoRateLimitGap
+    private var gap: TimeInterval
+    /// Floor the gap decays back to. Per-instance: GeckoTerminal is a separate host
+    /// with its own budget, so it queues on its own limiter at its own pace.
+    private let baseGap: TimeInterval
+
+    init(gap: TimeInterval = Timeout.coingeckoRateLimitGap) {
+        self.gap = gap
+        self.baseGap = gap
+    }
 
     /// Wait until this caller's reserved slot. Returns immediately if one is free now.
     func waitForSlot() async {
@@ -46,6 +54,6 @@ actor CGRateLimiter {
 
     /// Narrow the gap gradually while the API is keeping up.
     func noteSuccess() {
-        gap = max(gap * Timeout.coingeckoRateLimitDecay, Timeout.coingeckoRateLimitGap)
+        gap = max(gap * Timeout.coingeckoRateLimitDecay, baseGap)
     }
 }

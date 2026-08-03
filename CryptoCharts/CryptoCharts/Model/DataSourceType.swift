@@ -20,6 +20,19 @@ enum DataSourceType: String, CaseIterable, Codable {
         self == .polymarket ? .probability : .currency
     }
 
+    /// Whether this source reports per-candle turnover for the volume bars to draw.
+    ///
+    /// Binance sends quote volume with every kline, and DEX pairs get theirs from
+    /// GeckoTerminal. CoinGecko's OHLC endpoint has no volume column — only
+    /// `/market_chart`, which reports a rolling 24h figure rather than per-candle —
+    /// and Polymarket reports none at all.
+    var providesVolume: Bool {
+        switch self {
+        case .binance, .dexscreener:  return true
+        case .coingecko, .polymarket: return false
+        }
+    }
+
     var icon: String {
         switch self {
         case .binance:     return "building.columns.fill"
@@ -39,6 +52,12 @@ struct TickerConfig: Codable, Equatable, Hashable {
     var bullishColorHex: String?
     var bearishColorHex: String?
     var yAxisDecimalPlaces: Int?  // nil = auto-detect
+
+    /// Vertical price-scale zoom set by dragging the Y axis. nil = auto-fit (1.0).
+    var yZoom: Double?
+
+    /// Volume bars under the candles. nil = off.
+    var showVolume: Bool?
 
     /// Human-readable label shown on the card. Only set for sources whose `symbol`
     /// is an opaque identifier — a Polymarket CLOB token id is 77 digits, so the

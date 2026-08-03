@@ -48,6 +48,12 @@ enum Timeout {
     static let fetchStaggerNS: UInt64 = 100_000_000
     /// DEXScreener search result limit.
     static let dexSearchLimit = 20
+    /// GeckoTerminal OHLC cache lifetime (seconds).
+    static let geckoTerminalCacheTTL: TimeInterval = 120
+    /// Minimum gap between GeckoTerminal calls — public tier allows ~30/min.
+    static let geckoTerminalRateLimitGap: TimeInterval = 2.2
+    /// Most candles GeckoTerminal returns from one OHLCV call.
+    static let geckoTerminalMaxCandles = 1000
 }
 
 // MARK: - CoinGecko Constants
@@ -135,6 +141,19 @@ enum Candle {
     static let maxCandles = 500
     /// Zoom step fraction of current candle count.
     static let zoomStepFraction: Double = 0.1
+}
+
+// MARK: - Vertical Zoom Constants
+
+/// Vertical price-scale zoom, applied on top of the auto-fitted price range.
+enum PriceZoom {
+    /// Widest price slice, relative to auto-fit.
+    static let minFactor: Double = 0.25
+    /// Narrowest price slice, relative to auto-fit.
+    static let maxFactor: Double = 20
+    /// Vertical drag distance in points that doubles or halves the zoom.
+    /// Exponential, so the drag feels the same at 1x and at 10x.
+    static let pointsPerDoubling: Double = 120
 }
 
 // MARK: - UI Constants

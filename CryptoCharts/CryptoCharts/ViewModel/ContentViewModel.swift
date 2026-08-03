@@ -75,6 +75,15 @@ final class ContentViewModel: ObservableObject {
     /// removed card's marker view takes its entry with it.
     private let zoomRegions = NSHashTable<NSView>.weakObjects()
 
+    private var mouseMonitor: Any?
+    /// Y-axis gutters, each mapped to the chart it scales. Weak on both sides, so a
+    /// removed card drops out on its own.
+    private let axisRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
+    /// The chart whose axis is being dragged right now, and where the drag started.
+    private var axisDragTarget: ChartViewModel?
+    private var axisDragOrigin: NSPoint = .zero
+    private var axisDidDrag = false
+
     /// Suppress scroll-zoom when sheets or popovers are presented.
     var isShowingSheet = false
 
@@ -131,10 +140,18 @@ final class ContentViewModel: ObservableObject {
             }
             return event
         }
+
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            guard let self else { return event }
+            return self.handleAxisDrag(event)
+        }
     }
 
     deinit {
         if let m = scrollMonitor { NSEvent.removeMonitor(m) }
+        if let m = mouseMonitor { NSEvent.removeMonitor(m) }
     }
 
     // MARK: - Scroll-zoom targeting
@@ -157,6 +174,74 @@ final class ContentViewModel: ObservableObject {
             guard region.window === window, !region.isHiddenOrHasHiddenAncestor else { return false }
             return region.bounds.contains(region.convert(point, from: nil))
         }
+    }
+
+    // MARK: - Y-axis drag zoom
+
+    /// Each chart card hands over the view covering its price-axis gutter, paired
+    /// with the chart that gutter belongs to.
+    func registerAxisRegion(_ view: NSView, for viewModel: ChartViewModel) {
+        axisRegions.setObject(viewModel, forKey: view)
+    }
+
+    /// Drag the price axis to scale it: up for a narrower price slice (taller
+    /// candles), down for a wider one. Double-click restores auto-fit.
+    ///
+    /// Runs off a monitor rather than an `NSView`'s mouse handlers because SwiftUI's
+    /// hosting view claims these events for the cards' `.onDrag` reordering before
+    /// AppKit offers them to any child view. Returning nil for a gesture that lands
+    /// on a gutter is what keeps that reorder drag from starting.
+    private func handleAxisDrag(_ event: NSEvent) -> NSEvent? {
+        guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
+
+        switch event.type {
+        case .leftMouseDown:
+            guard let target = axisRegion(at: event) else { return event }
+            guard event.clickCount < 2 else {
+                axisDragTarget = nil
+                target.resetYZoom()
+                persistChartSettings()
+                return nil
+            }
+            axisDragTarget = target
+            // Window coordinates are y-up, so the delta is already "positive = up".
+            axisDragOrigin = event.locationInWindow
+            axisDidDrag = false
+            target.beginYZoomDrag()
+            return nil
+
+        case .leftMouseDragged:
+            guard let target = axisDragTarget else { return event }
+            axisDidDrag = true
+            target.updateYZoom(dragOffset: event.locationInWindow.y - axisDragOrigin.y)
+            return nil
+
+        case .leftMouseUp:
+            guard axisDragTarget != nil else { return event }
+            axisDragTarget = nil
+            // One persist per gesture, not one per mouse-move.
+            if axisDidDrag { persistChartSettings() }
+            axisDidDrag = false
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// The chart whose price-axis gutter sits under this event, if any.
+    private func axisRegion(at event: NSEvent) -> ChartViewModel? {
+        guard let window = event.window, let content = window.contentView else { return nil }
+        let point = event.locationInWindow
+        guard window.contentLayoutRect.contains(content.convert(point, from: nil)) else { return nil }
+        guard let views = axisRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
+        for view in views {
+            guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { continue }
+            if view.bounds.contains(view.convert(point, from: nil)) {
+                return axisRegions.object(forKey: view)
+            }
+        }
+        return nil
     }
 
     /// Bind to the hosting window: scope the scroll monitor, follow occlusion,
@@ -227,6 +312,10 @@ final class ContentViewModel: ObservableObject {
         if let m = scrollMonitor {
             NSEvent.removeMonitor(m)
             scrollMonitor = nil
+        }
+        if let m = mouseMonitor {
+            NSEvent.removeMonitor(m)
+            mouseMonitor = nil
         }
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
@@ -408,6 +497,8 @@ final class ContentViewModel: ObservableObject {
                 bullishColorHex: vm.bullishColor.hexString,
                 bearishColorHex: vm.bearishColor.hexString,
                 yAxisDecimalPlaces: vm.yAxisDecimalPlaces,
+                yZoom: vm.yZoom == 1 ? nil : vm.yZoom,
+                showVolume: vm.showVolume ? true : nil,
                 displayName: vm.displayName
             )
         }

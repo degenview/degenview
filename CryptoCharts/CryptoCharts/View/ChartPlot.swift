@@ -35,6 +35,16 @@ struct ChartPlot {
         return (low - inset, high + inset)
     }
 
+    /// Narrow or widen a price domain around its center. `zoom > 1` shows a smaller
+    /// slice of price, so the series draws taller. Data outside the slice falls
+    /// outside `plotRect` and is clipped by the renderer.
+    static func zoomed(_ range: (min: Double, max: Double), by zoom: Double) -> (min: Double, max: Double) {
+        guard zoom > 0, zoom != 1 else { return range }
+        let mid = (range.min + range.max) / 2
+        let half = (range.max - range.min) / 2 / zoom
+        return (mid - half, mid + half)
+    }
+
     /// Slot width for a series of `count` points — the horizontal step between them.
     func slotWidth(forCount count: Int) -> CGFloat {
         plotRect.width / CGFloat(max(1, count))
@@ -43,6 +53,17 @@ struct ChartPlot {
     /// Center X of the point at `index`.
     func x(forIndex index: Int, slotWidth: CGFloat) -> CGFloat {
         plotRect.minX + CGFloat(index) * slotWidth + slotWidth / 2
+    }
+
+    /// Strip along the bottom of the plot that volume bars rise into.
+    ///
+    /// Overlaid on the price area rather than carved out of it: cards are short, and
+    /// giving a fifth of the height to a separate subchart costs more than bars
+    /// sharing space the series rarely reaches.
+    func volumeRect(fraction: CGFloat) -> CGRect {
+        let height = plotRect.height * fraction
+        return CGRect(x: plotRect.minX, y: plotRect.maxY - height,
+                      width: plotRect.width, height: height)
     }
 
     func y(for price: Double) -> CGFloat {
@@ -82,9 +103,11 @@ struct ChartPlot {
 
     // MARK: - Current price marker
 
-    /// Dashed horizontal line at the latest price.
+    /// Dashed horizontal line at the latest price. Skipped when a zoomed-in price
+    /// scale has pushed the latest price off the plot — the pill still marks it.
     func drawCurrentPriceLine(_ context: inout GraphicsContext, price: Double, color: Color) {
         let y = self.y(for: price)
+        guard y >= plotRect.minY, y <= plotRect.maxY else { return }
 
         var path = Path()
         path.move(to: CGPoint(x: plotRect.minX, y: y))

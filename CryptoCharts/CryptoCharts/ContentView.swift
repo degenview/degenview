@@ -298,6 +298,7 @@ struct ContentView: View {
                 }
             },
             onZoomRegion: { contentViewModel.registerZoomRegion($0) },
+            onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onUpdateTicker: { symbol, source, displayName in
                 contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
             },

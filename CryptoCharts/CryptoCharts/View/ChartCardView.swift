@@ -8,6 +8,8 @@ struct ChartCardView: View {
     let onRetry: () -> Void
     /// Hands the card's backing `NSView` to the scroll-zoom monitor.
     let onZoomRegion: (NSView) -> Void
+    /// Hands the Y-axis gutter's `NSView` to the price-zoom drag monitor.
+    let onAxisRegion: (NSView) -> Void
     let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
@@ -104,7 +106,8 @@ struct ChartCardView: View {
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
-                    scale: viewModel.priceScale
+                    scale: viewModel.priceScale,
+                    yZoom: viewModel.yZoom
                 )
             } else {
                 CandleChartView(
@@ -112,9 +115,15 @@ struct ChartCardView: View {
                     chartHeight: chartHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
-                    yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces
+                    yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
+                    yZoom: viewModel.yZoom,
+                    showVolume: viewModel.showVolume
                 )
             }
+        }
+        .overlay(alignment: .trailing) {
+            PriceAxisRegion(onResolve: onAxisRegion)
+                .frame(width: ChartStyle.default.chartInsets.trailing)
         }
         .overlay(alignment: .bottom) {
             if let error = viewModel.errorMessage {
@@ -162,6 +171,37 @@ private struct ZoomHitRegion: NSViewRepresentable {
     }
 }
 
+/// Marks the Y-axis gutter as the drag target for vertical price zoom, and shows the
+/// resize cursor over it. The drag itself is handled by `ContentViewModel`'s mouse
+/// monitor, which hit-tests against this view.
+///
+/// The monitor rather than `mouseDown`/`mouseDragged` overrides here: SwiftUI's
+/// hosting view claims mouse events for the card's `.onDrag` reordering before AppKit
+/// ever offers them to a child view, so an event-handling `NSView` in this position
+/// never fires. A local monitor sees events ahead of the window, which is also how
+/// scroll-zoom already works.
+private struct PriceAxisRegion: NSViewRepresentable {
+    let onResolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = AxisRegionView()
+        onResolve(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class AxisRegionView: NSView {
+        /// Cursor rects only — the monitor does the rest, and letting this view take
+        /// hits would swallow clicks meant for the card underneath.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .resizeUpDown)
+        }
+    }
+}
+
 #Preview {
     ChartCardView(
         viewModel: {
@@ -174,6 +214,7 @@ private struct ZoomHitRegion: NSViewRepresentable {
         onRemove: {},
         onRetry: {},
         onZoomRegion: { _ in },
+        onAxisRegion: { _ in },
         onUpdateTicker: { _, _, _ in },
         onStyleChanged: {}
     )

@@ -13,12 +13,17 @@ struct CandleChartView: View {
     var bullishColor: Color = .green
     var bearishColor: Color = .red
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
+    var yZoom: Double = 1               // 1 = auto-fit; >1 = taller candles
+    var showVolume: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
             let plot = ChartPlot(
                 plotRect: ChartPlot.rect(in: geometry.size, insets: style.chartInsets),
-                priceRange: ChartPlot.priceRange(for: candles, padding: style.pricePadding),
+                priceRange: ChartPlot.zoomed(
+                    ChartPlot.priceRange(for: candles, padding: style.pricePadding),
+                    by: yZoom
+                ),
                 style: style,
                 scale: .currency,
                 yAxisDecimalPlaces: yAxisDecimalPlaces
@@ -26,7 +31,16 @@ struct CandleChartView: View {
 
             Canvas { context, _ in
                 plot.drawGrid(&context)
-                drawCandles(context: &context, plot: plot)
+
+                // Only the series is clipped: a zoomed-in price scale pushes candles
+                // past the plot, and the axis labels live outside it by design.
+                context.drawLayer { layer in
+                    layer.clip(to: Path(plot.plotRect))
+                    if showVolume {
+                        drawVolumeBars(context: &layer, plot: plot)
+                    }
+                    drawCandles(context: &layer, plot: plot)
+                }
 
                 if let last = candles.last {
                     let color = last.closePrice >= last.openPrice ? bullishColor : bearishColor
@@ -39,6 +53,34 @@ struct CandleChartView: View {
         }
         .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
         .clipped()
+    }
+
+    // MARK: - Volume
+
+    /// Turnover bars along the bottom of the plot, scaled so the busiest candle in
+    /// view fills the strip. Uses quote volume (USDT), not base volume, so the bars
+    /// compare as money rather than as coins.
+    ///
+    /// Sources other than Binance report no volume, which leaves every bar at zero —
+    /// the guard below draws nothing rather than a flat smear along the axis.
+    private func drawVolumeBars(context: inout GraphicsContext, plot: ChartPlot) {
+        let peak = candles.map(\.quoteVolume).max() ?? 0
+        guard peak > 0 else { return }
+
+        let pane = plot.volumeRect(fraction: style.volumePaneFraction)
+        let slotWidth = plot.slotWidth(forCount: candles.count)
+        let barWidth = (slotWidth * style.candleBodyFraction).clamped(to: style.candleBodyMin...style.candleBodyMax)
+
+        for (i, candle) in candles.enumerated() {
+            guard candle.quoteVolume > 0 else { continue }
+            let height = max(pane.height * CGFloat(candle.quoteVolume / peak), style.minBodyHeight)
+            let x = plot.x(forIndex: i, slotWidth: slotWidth)
+            let color = candle.closePrice >= candle.openPrice ? bullishColor : bearishColor
+
+            let bar = CGRect(x: x - barWidth / 2, y: pane.maxY - height,
+                             width: barWidth, height: height)
+            context.fill(Path(bar), with: .color(color.opacity(style.volumeOpacity)))
+        }
     }
 
     // MARK: - Candles

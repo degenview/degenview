@@ -78,6 +78,18 @@ final class ChartViewModel: ObservableObject {
     @Published var bearishColor: Color = .red
     @Published var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
 
+    /// Turnover bars under the candles. Off by default — only Binance reports the
+    /// quote volume they're drawn from.
+    @Published var showVolume: Bool = false
+
+    /// Vertical price-scale zoom. 1 = auto-fit; >1 shows a narrower slice of price,
+    /// drawing the series taller. Driven by dragging the Y-axis gutter.
+    @Published var yZoom: Double = 1
+
+    /// Zoom when the axis drag began. The drag maps absolutely from this, rather
+    /// than accumulating per mouse-move.
+    private var yZoomDragStart: Double = 1
+
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
     private var isFetching = false
@@ -104,7 +116,26 @@ final class ChartViewModel: ObservableObject {
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
+        yZoom = config.yZoom ?? 1
+        showVolume = config.showVolume ?? false
         if let name = config.displayName { displayName = name }
+    }
+
+    // MARK: - Vertical zoom
+
+    func beginYZoomDrag() {
+        yZoomDragStart = yZoom
+    }
+
+    /// `dy` is the distance dragged since the gesture began, positive upward.
+    /// Up narrows the price slice, so the candles grow taller.
+    func updateYZoom(dragOffset dy: CGFloat) {
+        let factor = pow(2, Double(dy) / PriceZoom.pointsPerDoubling)
+        yZoom = (yZoomDragStart * factor).clamped(to: PriceZoom.minFactor...PriceZoom.maxFactor)
+    }
+
+    func resetYZoom() {
+        yZoom = 1
     }
 
     /// Update ticker symbol and/or source, re-fetch data.
@@ -126,6 +157,7 @@ final class ChartViewModel: ObservableObject {
             klineData[klineData.count - 1].highPrice = kline.highPrice
             klineData[klineData.count - 1].lowPrice = kline.lowPrice
             klineData[klineData.count - 1].volume = kline.volume
+            klineData[klineData.count - 1].quoteVolume = kline.quoteVolume
         }
         // New candle (openTime > last.openTime): skip — REST fetch adds it within 5 s
 

@@ -21,6 +21,10 @@ struct ChartStyle {
     var minBodyHeight: CGFloat = 1          // minimum body height in points (doji)
     var dojiThreshold: Double = 0.00001     // relative to price range; abs(close-open)/range < this → doji
 
+    // Volume bars — off unless enabled per chart
+    var volumePaneFraction: CGFloat = 0.22  // share of plot height the bars rise into
+    var volumeOpacity: Double = 0.35        // kept low: candles draw on top of them
+
     // Line geometry
     var lineWidth: CGFloat = 1.5
     /// Opacity at the top of the gradient under the line; fades to zero at the bottom.

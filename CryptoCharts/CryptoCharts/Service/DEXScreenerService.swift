@@ -49,12 +49,22 @@ final class DEXScreenerService: TickerDataSource {
     private let baseURL = DEXScreenerService.apiBase
     private let session = AppSupport.defaultSession
 
+    /// DEXScreener publishes no candles on its free tier, so charts for the pools it
+    /// finds come from GeckoTerminal, which indexes the same pools and does.
+    private let charts = GeckoTerminalService()
+
     init() {}
 
-    // MARK: - Kline Fetching (unsupported on free tier)
+    // MARK: - Kline Fetching
 
+    /// `symbol` is the pair contract address — what `searchTickers` puts in
+    /// `fullSymbol` and what gets persisted as the ticker.
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
-        throw DEXScreenerError.noChartData
+        try await charts.fetchKlines(pairAddress: symbol, interval: interval, limit: limit)
+    }
+
+    func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
+        await charts.cachedKlines(pairAddress: symbol, interval: interval, count: count)
     }
 
     // MARK: - Search
@@ -174,13 +184,11 @@ final class DEXScreenerService: TickerDataSource {
 enum DEXScreenerError: LocalizedError {
     case invalidURL
     case invalidResponse
-    case noChartData
 
     var errorDescription: String? {
         switch self {
         case .invalidURL:      return "Invalid URL"
         case .invalidResponse: return "Unexpected response from DEXScreener"
-        case .noChartData:     return "Candlestick charts not available for DEX pairs on the free tier"
         }
     }
 }
