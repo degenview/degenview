@@ -35,15 +35,17 @@ enum DataSourceType: String, CaseIterable, Codable {
 
     /// Whether a larger `limit` buys *older* candles at the same interval.
     ///
-    /// True for the count-based APIs. CoinGecko instead picks a days-window whose
-    /// granularity follows the span, and Polymarket's count only sets downsample
-    /// fidelity inside a fixed window — asking either for more would change the
-    /// candle size or shrink the visible span rather than extend history, so
-    /// indicator warm-up is fetched only where it actually works.
+    /// True everywhere except Polymarket, whose count only sets downsample fidelity
+    /// inside a fixed window — asking for more shrinks the step rather than extending
+    /// history, so indicator warm-up is fetched only where it actually works.
+    ///
+    /// CoinGecko qualifies because its window is a fixed span per interval, deep
+    /// enough for the furthest zoom-out: a larger `limit` slices further back into a
+    /// buffer already fetched, at the same candle size, without another request.
     var fetchesByCount: Bool {
         switch self {
-        case .binance, .dexscreener:  return true
-        case .coingecko, .polymarket: return false
+        case .binance, .dexscreener, .coingecko: return true
+        case .polymarket:                        return false
         }
     }
 

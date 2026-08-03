@@ -80,14 +80,6 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         return (interval, fidelity)
     }
 
-    /// Maximum days of history CoinGecko should fetch for this timeframe.
-    ///
-    /// Derived from ``effectiveSpanDays`` — CG has no sub-day candles on the
-    /// public tier, so shorter ranges accept a 1-day window.
-    var preferredMaxDays: Int {
-        max(1, effectiveSpanDays)
-    }
-
     /// Number of candles to fetch from the API.
     var dataPointLimit: Int {
         switch self {

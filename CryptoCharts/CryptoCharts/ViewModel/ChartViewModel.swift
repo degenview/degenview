@@ -479,8 +479,7 @@ final class ChartViewModel: ObservableObject {
             symbol: apiSymbol,
             interval: range.binanceInterval,
             limit: count,
-            needsFirstPaint: klineData.isEmpty,
-            maxSpanDays: range.preferredMaxDays
+            needsFirstPaint: klineData.isEmpty
         )
 
         for try await batch in stream {

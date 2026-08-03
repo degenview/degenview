@@ -42,6 +42,19 @@ actor KlineCache {
         return Array(entry.data.suffix(count))
     }
 
+    /// The whole entry, if fresh — however many candles it holds.
+    ///
+    /// For sources whose window is a fixed span rather than a candle count, "at least
+    /// `count` candles" is the wrong question: CoinGecko's year of weekly candles is
+    /// 52 whether the chart asked for 26 or 226, and judging that entry short would
+    /// refetch it on every zoom step for data that doesn't exist. They take the whole
+    /// window and slice the tail themselves.
+    func getFull(symbol: String, interval: String, days: Int, ttl: TimeInterval) -> [KlineData]? {
+        guard let entry = entries[key(symbol: symbol, interval: interval, days: days)] else { return nil }
+        guard Date().timeIntervalSince(entry.fetchedAt) < ttl, !entry.data.isEmpty else { return nil }
+        return entry.data
+    }
+
     /// Return cached candles regardless of staleness, and regardless of whether
     /// there are as many as requested. Used for instant-first-render: a short or
     /// stale chart beats an empty one while the real fetch is queued.

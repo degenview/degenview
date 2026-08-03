@@ -76,30 +76,6 @@ extension KlineData {
         self.quoteVolume = raw.count > 7 ? (Self.extractDouble(raw[7]) ?? 0) : 0
     }
 
-    /// Parse from CoinGecko OHLC array.
-    /// Array layout: [timestamp_ms, open, high, low, close]
-    /// - Values are Double (or NSNumber) — timestamp is epoch ms, prices are USD.
-    init?(rawCoinGecko: [Any]) {
-        guard rawCoinGecko.count >= 5 else { return nil }
-
-        guard let ts = Self.extractTimestamp(rawCoinGecko[0]) else { return nil }
-        self.openTime = Date(timeIntervalSince1970: ts / 1000.0)
-
-        guard let open = Self.extractDouble(rawCoinGecko[1]),
-              let high = Self.extractDouble(rawCoinGecko[2]),
-              let low  = Self.extractDouble(rawCoinGecko[3]),
-              let close = Self.extractDouble(rawCoinGecko[4])
-        else { return nil }
-
-        self.openPrice = open
-        self.highPrice = high
-        self.lowPrice = low
-        self.closePrice = close
-        // CoinGecko's OHLC endpoint carries no volume; /market_chart would.
-        self.volume = 0
-        self.quoteVolume = 0
-    }
-
     /// A single price observation, with no OHLC spread.
     ///
     /// Line-chart sources (Polymarket) report one price per timestamp. Flattening it
@@ -116,10 +92,99 @@ extension KlineData {
         self.quoteVolume = 0
     }
 
+    // MARK: - Candles from a price series
+
+    /// Build candles of `interval` seconds from timestamped prices, newest last.
+    ///
+    /// Sources that report a price series rather than candles still have to draw as
+    /// candles here — CoinGecko's `/market_chart` is the only endpoint of theirs that
+    /// covers an arbitrary span at a fine enough step to give one candle per hour or
+    /// per day, and its samples are plain prices.
+    ///
+    /// Buckets open where Binance opens its klines, so a card built from prices names
+    /// the same periods as the Binance card beside it — see ``bucketStart(of:interval:)``.
+    /// Each candle opens at the previous one's close, so the series is continuous rather
+    /// than a row of gaps; only the first opens at its own first sample.
+    ///
+    /// How much of a candle this recovers depends on how many samples land inside it.
+    /// A day built from hourly prices gets a real body and close to real extremes; an
+    /// hour built from a single hourly price gets a body and no wick, because a wick is
+    /// information the series doesn't carry. Volume isn't carried either — CoinGecko
+    /// reports a rolling 24h figure, which is not this candle's.
+    ///
+    /// Expects ascending `time`.
+    static func candles(from samples: [(time: Date, price: Double)],
+                        interval: TimeInterval) -> [KlineData] {
+        guard interval > 0, !samples.isEmpty else { return [] }
+
+        var candles: [KlineData] = []
+        var run: [Double] = []
+        var currentBucket: Date?
+
+        func flush() {
+            guard let start = currentBucket, let close = run.last else { return }
+            let open = candles.last?.closePrice ?? run[0]
+            candles.append(
+                KlineData(
+                    openTime: start,
+                    openPrice: open,
+                    highPrice: max(run.max() ?? open, open),
+                    lowPrice: min(run.min() ?? open, open),
+                    closePrice: close,
+                    volume: 0
+                )
+            )
+        }
+
+        for sample in samples {
+            let start = bucketStart(of: sample.time, interval: interval)
+            if start != currentBucket {
+                flush()
+                run.removeAll(keepingCapacity: true)
+                currentBucket = start
+            }
+            run.append(sample.price)
+        }
+        flush()
+
+        return candles
+    }
+
+    /// Where the candle of `interval` containing `date` opens.
+    ///
+    /// Epoch multiples for anything up to a day, which is how Binance aligns minute,
+    /// hour and day klines. Weeks and months don't divide the epoch evenly, so those go
+    /// through the calendar instead: Binance opens a weekly kline on Monday and a
+    /// monthly one on the 1st, while epoch multiples would put every week on a Thursday
+    /// and every "month" 30 days after the last one. Two charts side by side have to
+    /// agree on which week a candle is.
+    static func bucketStart(of date: Date, interval: TimeInterval) -> Date {
+        switch interval {
+        case ..<604_800:
+            return Date(
+                timeIntervalSince1970:
+                    (date.timeIntervalSince1970 / interval).rounded(.down) * interval
+            )
+        case ..<2_419_200:  // a week, up to the shortest month
+            return utcCalendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
+        default:
+            return utcCalendar.dateInterval(of: .month, for: date)?.start ?? date
+        }
+    }
+
+    /// Weeks start on Monday, matching Binance's weekly klines rather than the
+    /// locale's idea of a first day.
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = 2
+        return calendar
+    }()
+
     // MARK: - Type-flexible parsers
 
     /// Extract a timestamp in milliseconds from Int64, Double, or NSNumber.
-    private static func extractTimestamp(_ value: Any) -> Double? {
+    static func extractTimestamp(_ value: Any) -> Double? {
         if let v = value as? Int64 { return Double(v) }
         if let v = value as? Double { return v }
         if let v = value as? NSNumber { return v.doubleValue }
@@ -127,7 +192,7 @@ extension KlineData {
     }
 
     /// Extract a Double from String, Double, or NSNumber.
-    private static func extractDouble(_ value: Any) -> Double? {
+    static func extractDouble(_ value: Any) -> Double? {
         if let v = value as? String { return Double(v) }
         if let v = value as? Double { return v }
         if let v = value as? NSNumber { return v.doubleValue }

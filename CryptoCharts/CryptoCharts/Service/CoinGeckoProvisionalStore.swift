@@ -34,7 +34,7 @@ actor CoinGeckoProvisionalStore {
 
         let task = Task {
             let loaded = await load()
-            self.store(loaded)
+            await self.store(loaded)
         }
         primeTask = task
         await task.value
@@ -54,42 +54,26 @@ actor CoinGeckoProvisionalStore {
         series[coinID.lowercased()]?.last?.price
     }
 
-    /// Build up to `limit` candles at roughly `granularity`, newest last.
+    /// Build up to `limit` candles of `granularity` seconds, newest last.
+    ///
+    /// Built the same way as the candles that replace them, so the swap doesn't move
+    /// anything: epoch-aligned buckets, each opening at the previous one's close.
+    /// Samples are spaced an hour apart but stamped from `last_updated`, so grouping
+    /// them by count instead would open every candle at whatever minute the prime
+    /// happened to run, and the crosshair would read 19:37 on an hourly chart.
     ///
     /// Returns fewer candles than asked for when 7 days of hourly samples can't
     /// fill the window — a short chart now beats a full chart in 20 seconds, and
     /// the real fetch extends it.
     func candles(for coinID: String, granularity: TimeInterval, limit: Int) -> [KlineData]? {
         let points = series[coinID.lowercased()] ?? []
-        guard points.count >= 2, limit > 0 else { return nil }
+        guard points.count >= 2, limit > 0, granularity > 0 else { return nil }
 
-        // Samples are hourly, so a bucket is however many hours the target
-        // candle spans. Sub-hourly targets degenerate to one sample per candle.
-        let hoursPerCandle = max(1, Int((granularity / 3_600).rounded()))
-
-        var candles: [KlineData] = []
-        var end = points.count
-
-        while end > 0, candles.count < limit {
-            let start = max(0, end - hoursPerCandle)
-            let bucket = points[start..<end]
-            guard let open = bucket.first, let close = bucket.last else { break }
-
-            let prices = bucket.map(\.price)
-            candles.append(
-                KlineData(
-                    openTime: open.time,
-                    openPrice: open.price,
-                    highPrice: prices.max() ?? open.price,
-                    lowPrice: prices.min() ?? open.price,
-                    closePrice: close.price,
-                    volume: 0
-                )
-            )
-            end = start
-        }
-
+        let candles = KlineData.candles(
+            from: points.map { (time: $0.time, price: $0.price) },
+            interval: granularity
+        )
         guard !candles.isEmpty else { return nil }
-        return candles.reversed()
+        return Array(candles.suffix(limit))
     }
 }
