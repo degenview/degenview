@@ -129,19 +129,24 @@ final class CoinGeckoAPIService: TickerDataSource {
     /// Return cached klines regardless of freshness — instant first render.
     /// Falls back to any window we hold for the coin so zoom and timeframe
     /// changes never blank the chart.
+    /// `count` includes indicator warm-up, so it doesn't say which window the chart is
+    /// on — both are tried before falling back to any window held for the coin.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
         let coinID = symbol.lowercased()
-        let days = Self.marketChartDays(interval: interval)
 
-        if let exact = await cache.getStale(symbol: coinID, interval: interval, days: days, count: count) {
-            return exact
+        for days in Self.marketChartWindows(interval: interval) {
+            if let exact = await cache.getStale(
+                symbol: coinID, interval: interval, days: days, count: count
+            ) {
+                return exact
+            }
         }
         return await cache.getAnyStale(symbol: coinID, count: count)
     }
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         let coinID = symbol.lowercased()
-        let days = Self.marketChartDays(interval: interval)
+        let days = Self.marketChartDays(interval: interval, requiredCount: limit)
 
         if let cached = await cache.getFull(symbol: coinID, interval: interval, days: days,
                                             ttl: Timeout.coingeckoCacheTTL) {
@@ -298,15 +303,22 @@ final class CoinGeckoAPIService: TickerDataSource {
     /// this chart's real data one slot later without arriving any sooner than it
     /// would have. Only the batched prime beats the queue, because it pays one
     /// request for all charts at once.
+    /// - Parameters:
+    ///   - limit: candles to hand back — the visible window plus spare headroom.
+    ///   - requiredCount: candles the chart genuinely reads: what it draws, plus the
+    ///     warm-up its overlays need. Picks the window, so a chart showing 60 daily
+    ///     candles gets the one with real highs and lows rather than the deep one that
+    ///     blanket headroom alone would ask for.
     func fetchKlinesStaged(
         symbol: String,
         interval: String,
         limit: Int,
+        requiredCount: Int,
         needsFirstPaint: Bool
     ) -> AsyncThrowingStream<[KlineData], Error> {
         AsyncThrowingStream { continuation in
             let coinID = symbol.lowercased()
-            let fullDays = Self.marketChartDays(interval: interval)
+            let fullDays = Self.marketChartDays(interval: interval, requiredCount: requiredCount)
 
             let task = Task {
                 do {
@@ -463,37 +475,84 @@ final class CoinGeckoAPIService: TickerDataSource {
         "1d": 86_400, "1w": 604_800, "1M": 2_592_000,
     ]
 
-    /// Days of `/market_chart` history to request for candles of `interval`.
+    /// One `/market_chart` window: a span of days, and what CoinGecko returns for it.
     ///
     /// This is the endpoint the charts are built from rather than `/ohlc`, because
     /// `/ohlc` takes its candle size from a fixed set of windows — 30 minutes for a
     /// 1-day window, 4 hours up to 30 days, 4 days beyond — and none of them is the
     /// size any timeframe here asks for. `/market_chart` takes a free-form `days` and
-    /// picks its sample step from it:
-    ///   1 day    → 5-minute samples
-    ///   2–90     → hourly
-    ///   90+      → daily
+    /// picks its sample step from the span alone; there is no parameter for it on the
+    /// public tier.
+    private struct MarketChartWindow {
+        let days: Int
+
+        /// Seconds between the samples this span comes back at.
+        var sampleStep: TimeInterval {
+            switch days {
+            case ...1:  return 300      // 5-minute
+            case ...90: return 3_600    // hourly
+            default:    return 86_400   // daily
+            }
+        }
+
+        /// Candles of `interval` this window can build.
+        func capacity(forCandlesOf interval: TimeInterval) -> Int {
+            Int(Double(days) * 86_400 / interval)
+        }
+    }
+
+    /// The spans where CoinGecko changes step, and so the only windows worth asking
+    /// for: any span inside a tier returns the same resolution as the tier's widest.
+    private static let sampleTiers = [1, 90, 365]
+
+    /// Days of `/market_chart` history to build `requiredCount` candles of `interval`.
     ///
-    /// Every step is fine enough to fold into the timeframe above it, so a window of
-    /// `n` days yields the same candles a Binance chart draws for that span — same
-    /// count, same width, same hours.
+    /// Two windows per interval, and how many candles the chart reads picks between
+    /// them.
     ///
-    /// Deliberately a function of `interval` alone, not of how many candles are on
-    /// screen. `days` is part of the cache key, so a window that tracked the zoom
-    /// level would change key on a zoom step, and the new key means a network fetch
-    /// through a queue that clears a few requests a minute — during which the card
-    /// keeps drawing the buffer it already had, which reads as a chart that ignores
-    /// the zoom. One window per interval means every zoom level after the first is
-    /// served by slicing a buffer already in hand.
+    /// The *fine* window is the widest span whose samples still land more than one to
+    /// a candle, which is what gives a candle a real high and low. Its reach is short
+    /// — an hourly candle needs 5-minute samples, and those exist for one day, so 24
+    /// candles — but inside that reach the wicks are real.
     ///
-    /// So the window is the deepest zoom the chart offers, bounded by the step the
-    /// span comes back at: past 90 days CoinGecko samples daily, which can't build an
-    /// hourly candle, and a year is as far back as the public tier goes.
-    static func marketChartDays(interval: String) -> Int {
+    /// The *deep* window covers the furthest the chart can zoom out, bounded by the
+    /// tier whose samples are still fine enough to fold into one candle. Its candles
+    /// carry a body and no wick wherever a single sample is all that lands in them.
+    ///
+    /// Both are functions of the interval and a threshold, never of the exact count.
+    /// `days` is part of the cache key, so a window that tracked the zoom level would
+    /// change key on every zoom step, and each new key is a fetch through a queue that
+    /// clears a few requests a minute — during which the card keeps drawing the buffer
+    /// it already had, which reads as a chart ignoring the zoom. With two windows the
+    /// key changes once, at the crossover, and both stay cached either side of it.
+    static func marketChartDays(interval: String, requiredCount: Int) -> Int {
         let target = intervalSeconds[interval] ?? 3_600
-        let deepest = (Double(Candle.maxCandles) * target / 86_400).rounded(.up)
-        let finestEnoughStep = target < 3_600 ? 1 : (target < 86_400 ? 90 : 365)
-        return Swift.min(Int(deepest), finestEnoughStep, 365).clamped(to: 1...365)
+        let fine = fineWindow(for: target)
+        if fine.capacity(forCandlesOf: target) >= Swift.max(1, requiredCount) {
+            return fine.days
+        }
+        return deepWindow(for: target).days
+    }
+
+    private static func fineWindow(for interval: TimeInterval) -> MarketChartWindow {
+        let windows = sampleTiers.map(MarketChartWindow.init).filter { $0.sampleStep < interval }
+        return windows.last ?? MarketChartWindow(days: 1)
+    }
+
+    /// Both windows for an interval, finest first. One entry when they coincide —
+    /// weekly and monthly candles are built from daily samples either way.
+    static func marketChartWindows(interval: String) -> [Int] {
+        let target = intervalSeconds[interval] ?? 3_600
+        let fine = fineWindow(for: target).days
+        let deep = deepWindow(for: target).days
+        return fine == deep ? [fine] : [fine, deep]
+    }
+
+    private static func deepWindow(for interval: TimeInterval) -> MarketChartWindow {
+        let deepest = Int((Double(Candle.maxCandles) * interval / 86_400).rounded(.up))
+        // A tier whose step is coarser than the candle can't build one at all.
+        let usable = sampleTiers.filter { MarketChartWindow(days: $0).sampleStep <= interval }
+        return MarketChartWindow(days: Swift.min(deepest, usable.last ?? 1).clamped(to: 1...365))
     }
 
     // MARK: - Search

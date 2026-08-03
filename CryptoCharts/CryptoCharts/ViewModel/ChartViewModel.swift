@@ -380,6 +380,21 @@ final class ChartViewModel: ObservableObject {
         source.fetchesByCount ? count + Indicator.warmupHeadroom : count
     }
 
+    /// Candles of history the overlays currently on need before the visible window.
+    ///
+    /// `Indicator.warmupHeadroom` is sized for the longest EMA on offer and fetched
+    /// regardless; this is what's actually needed right now. CoinGecko has to choose
+    /// between a window with real highs and lows and a deeper one without, and the
+    /// answer turns on how far back this chart genuinely reads — a 20-period EMA and
+    /// a 200-period EMA don't want the same window.
+    private var indicatorWarmup: Int {
+        var needed = 0
+        if showEMA { needed = Swift.max(needed, emaPeriod) }
+        if showRSI { needed = Swift.max(needed, RSI.period) }
+        if showBollinger { needed = Swift.max(needed, Indicator.bollingerPeriod) }
+        return needed
+    }
+
     func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
         // Silent refresh: if a fetch is already running let it finish.
         if silent, isFetching {
@@ -479,6 +494,7 @@ final class ChartViewModel: ObservableObject {
             symbol: apiSymbol,
             interval: range.binanceInterval,
             limit: count,
+            requiredCount: visibleCount + indicatorWarmup,
             needsFirstPaint: klineData.isEmpty
         )
 
