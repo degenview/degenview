@@ -41,95 +41,14 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // Global loading indicator
-                if contentViewModel.isRefreshing {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .scaleEffect(x: 1, y: 0.5)
-                        .padding(.horizontal, 16)
+            HStack(spacing: 0) {
+                // Drawing tools. Outside the chart column, so the card-height math
+                // below measures only what's left and needs no adjustment.
+                ToolSidebar(activeTool: contentViewModel.activeTool) { tool in
+                    contentViewModel.toggleTool(tool)
                 }
 
-                if contentViewModel.chartViewModels.isEmpty {
-                    EmptyStateView(
-                        savedViews: contentViewModel.savedViews,
-                        onAddTapped: { showAddSheet = true },
-                        onOpenView: { contentViewModel.loadView($0) }
-                    )
-                } else {
-                    VStack(spacing: 0) {
-                        // Chart list (vertical) or grid — fills remaining height, scrolls if needed
-                        GeometryReader { geometry in
-                            let n = max(1, contentViewModel.chartViewModels.count)
-                            let available = geometry.size.height
-
-                            let naturalHeight: CGFloat = {
-                                if contentViewModel.layoutMode == .vertical {
-                                    let gaps = CGFloat(max(0, n - 1)) * ChartLayout.cardGap
-                                    let chrome = CGFloat(n) * ChartLayout.cardChrome
-                                    return (available - gaps - chrome) / CGFloat(n)
-                                } else {
-                                    let rows = max(1, Int(ceil(Double(n) / ChartLayout.gridColumnFraction)))
-                                    let gaps = CGFloat(max(0, rows - 1)) * ChartLayout.cardGap
-                                    let chrome = CGFloat(rows) * ChartLayout.cardChrome
-                                    return (available - gaps - chrome) / CGFloat(rows)
-                                }
-                            }()
-
-                            // Charts fill available window height. Floor at chartMinHeight
-                            // (the canvas won't render below 50 pt anyway).
-                            let chartHeight = max(ChartLayout.chartMinHeight, naturalHeight)
-
-                            if contentViewModel.layoutMode == .vertical {
-                                ScrollView {
-                                    VStack(spacing: ChartLayout.cardGap) {
-                                        ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                            chartCard(vm, height: chartHeight)
-                                                .onDrag {
-                                                    NSItemProvider(object: vm.uniqueID as NSString)
-                                                }
-                                                .onDrop(
-                                                    of: [.utf8PlainText],
-                                                    delegate: ReorderDropDelegate(
-                                                        targetTicker: vm.uniqueID,
-                                                        viewModel: contentViewModel
-                                                    )
-                                                )
-                                        }
-                                    }
-                                    .padding(4)
-                                }
-                                .frame(height: available)
-                                .scrollIndicators(.never)
-                            } else {
-                                ScrollView {
-                                    LazyVGrid(
-                                        columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-                                        spacing: 0
-                                    ) {
-                                        ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                            chartCard(vm, height: chartHeight)
-                                                .padding(4)
-                                                .onDrag {
-                                                    NSItemProvider(object: vm.uniqueID as NSString)
-                                                }
-                                                .onDrop(
-                                                    of: [.utf8PlainText],
-                                                    delegate: ReorderDropDelegate(
-                                                        targetTicker: vm.uniqueID,
-                                                        viewModel: contentViewModel
-                                                    )
-                                                )
-                                        }
-                                    }
-                                    .padding(4)
-                                }
-                                .frame(height: available)
-                                .scrollIndicators(.never)
-                            }
-                        }
-                    }
-                }
+                chartColumn
             }
             // The title is the tab label, and an empty tab still needs the
             // toolbar — both belong outside the empty/non-empty branch.
@@ -167,6 +86,103 @@ struct ContentView: View {
         }
         .onChange(of: showAddSheet) { _, new in
             contentViewModel.isShowingSheet = new
+        }
+    }
+
+    // MARK: - Chart Column
+
+    /// Everything right of the tool strip.
+    @ViewBuilder
+    private var chartColumn: some View {
+        VStack(spacing: 0) {
+            // Global loading indicator
+            if contentViewModel.isRefreshing {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .scaleEffect(x: 1, y: 0.5)
+                    .padding(.horizontal, 16)
+            }
+
+            if contentViewModel.chartViewModels.isEmpty {
+                EmptyStateView(
+                    savedViews: contentViewModel.savedViews,
+                    onAddTapped: { showAddSheet = true },
+                    onOpenView: { contentViewModel.loadView($0) }
+                )
+            } else {
+                VStack(spacing: 0) {
+                    // Chart list (vertical) or grid — fills remaining height, scrolls if needed
+                    GeometryReader { geometry in
+                        let n = max(1, contentViewModel.chartViewModels.count)
+                        let available = geometry.size.height
+
+                        let naturalHeight: CGFloat = {
+                            if contentViewModel.layoutMode == .vertical {
+                                let gaps = CGFloat(max(0, n - 1)) * ChartLayout.cardGap
+                                let chrome = CGFloat(n) * ChartLayout.cardChrome
+                                return (available - gaps - chrome) / CGFloat(n)
+                            } else {
+                                let rows = max(1, Int(ceil(Double(n) / ChartLayout.gridColumnFraction)))
+                                let gaps = CGFloat(max(0, rows - 1)) * ChartLayout.cardGap
+                                let chrome = CGFloat(rows) * ChartLayout.cardChrome
+                                return (available - gaps - chrome) / CGFloat(rows)
+                            }
+                        }()
+
+                        // Charts fill available window height. Floor at chartMinHeight
+                        // (the canvas won't render below 50 pt anyway).
+                        let chartHeight = max(ChartLayout.chartMinHeight, naturalHeight)
+
+                        if contentViewModel.layoutMode == .vertical {
+                            ScrollView {
+                                VStack(spacing: ChartLayout.cardGap) {
+                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
+                                        chartCard(vm, height: chartHeight)
+                                            .onDrag {
+                                                NSItemProvider(object: vm.uniqueID as NSString)
+                                            }
+                                            .onDrop(
+                                                of: [.utf8PlainText],
+                                                delegate: ReorderDropDelegate(
+                                                    targetTicker: vm.uniqueID,
+                                                    viewModel: contentViewModel
+                                                )
+                                            )
+                                    }
+                                }
+                                .padding(4)
+                            }
+                            .frame(height: available)
+                            .scrollIndicators(.never)
+                        } else {
+                            ScrollView {
+                                LazyVGrid(
+                                    columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
+                                    spacing: 0
+                                ) {
+                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
+                                        chartCard(vm, height: chartHeight)
+                                            .padding(4)
+                                            .onDrag {
+                                                NSItemProvider(object: vm.uniqueID as NSString)
+                                            }
+                                            .onDrop(
+                                                of: [.utf8PlainText],
+                                                delegate: ReorderDropDelegate(
+                                                    targetTicker: vm.uniqueID,
+                                                    viewModel: contentViewModel
+                                                )
+                                            )
+                                    }
+                                }
+                                .padding(4)
+                            }
+                            .frame(height: available)
+                            .scrollIndicators(.never)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -299,6 +315,8 @@ struct ContentView: View {
             },
             onZoomRegion: { contentViewModel.registerZoomRegion($0) },
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
+            onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
+            isToolArmed: contentViewModel.activeTool != .none,
             onUpdateTicker: { symbol, source, displayName in
                 contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
             },

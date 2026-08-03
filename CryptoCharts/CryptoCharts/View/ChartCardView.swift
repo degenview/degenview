@@ -10,6 +10,10 @@ struct ChartCardView: View {
     let onZoomRegion: (NSView) -> Void
     /// Hands the Y-axis gutter's `NSView` to the price-zoom drag monitor.
     let onAxisRegion: (NSView) -> Void
+    /// Hands the plot area's `NSView` to the trend-line drawing monitor.
+    var onPlotRegion: (NSView) -> Void = { _ in }
+    /// Whether a drawing tool is armed — shows the endpoint handles and the crosshair.
+    var isToolArmed: Bool = false
     let onUpdateTicker: (String, DataSourceType, String?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
@@ -112,7 +116,11 @@ struct ChartCardView: View {
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     scale: viewModel.priceScale,
                     yZoom: viewModel.yZoom,
-                    indicators: indicators
+                    indicators: indicators,
+                    trendLines: viewModel.trendLines,
+                    trendDraft: viewModel.trendDraft,
+                    selectedTrendLineID: viewModel.selectedLineID,
+                    showTrendHandles: isToolArmed
                 )
             } else {
                 CandleChartView(
@@ -123,9 +131,16 @@ struct ChartCardView: View {
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     yZoom: viewModel.yZoom,
                     showVolume: viewModel.showVolume,
-                    indicators: indicators
+                    indicators: indicators,
+                    trendLines: viewModel.trendLines,
+                    trendDraft: viewModel.trendDraft,
+                    selectedTrendLineID: viewModel.selectedLineID,
+                    showTrendHandles: isToolArmed
                 )
             }
+        }
+        .overlay {
+            PlotHitRegion(isArmed: isToolArmed, onResolve: onPlotRegion)
         }
         .overlay(alignment: .trailing) {
             PriceAxisRegion(onResolve: onAxisRegion)
@@ -186,6 +201,49 @@ private struct ZoomHitRegion: NSViewRepresentable {
 /// ever offers them to a child view, so an event-handling `NSView` in this position
 /// never fires. A local monitor sees events ahead of the window, which is also how
 /// scroll-zoom already works.
+/// Marks the chart canvas as the target for the trend-line tool, and shows the
+/// crosshair over it while a tool is armed.
+///
+/// Same arrangement as `PriceAxisRegion` and for the same reason — the drawing itself
+/// is handled by `ContentViewModel`'s mouse monitor, which hit-tests against this view.
+/// Flipped, so its coordinates match the `Canvas` space `ChartPlot` maps into and the
+/// monitor can convert a click without reconstructing the flip by hand.
+private struct PlotHitRegion: NSViewRepresentable {
+    let isArmed: Bool
+    let onResolve: (NSView) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = PlotRegionView()
+        view.isArmed = isArmed
+        onResolve(view)
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? PlotRegionView, view.isArmed != isArmed else { return }
+        view.isArmed = isArmed
+        view.window?.invalidateCursorRects(for: view)
+    }
+
+    private final class PlotRegionView: NSView {
+        var isArmed = false
+
+        override var isFlipped: Bool { true }
+
+        /// Cursor rects only — the monitor does the rest, and letting this view take
+        /// hits would swallow clicks meant for the card underneath.
+        override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+        override func resetCursorRects() {
+            guard isArmed else { return }
+            // Stop short of the price gutter, which keeps its own resize cursor.
+            var rect = bounds
+            rect.size.width = max(0, rect.width - ChartStyle.default.chartInsets.trailing)
+            addCursorRect(rect, cursor: .crosshair)
+        }
+    }
+}
+
 private struct PriceAxisRegion: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 

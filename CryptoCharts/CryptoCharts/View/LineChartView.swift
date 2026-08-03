@@ -24,6 +24,13 @@ struct LineChartView: View {
     /// points — so a long-period overlay is warmed up at the left edge.
     var indicators: IndicatorSeries = .none
 
+    // Hand-drawn trend lines, plus the one being drawn right now.
+    var trendLines: [TrendLine] = []
+    var trendDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+    var selectedTrendLineID: UUID? = nil
+    /// Endpoint circles show only while the line tool is armed.
+    var showTrendHandles: Bool = false
+
     /// Green when the series ends above where it started, red otherwise.
     private var lineColor: Color {
         guard let first = points.first, let last = points.last else { return bullishColor }
@@ -32,15 +39,13 @@ struct LineChartView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let plot = ChartPlot(
-                plotRect: ChartPlot.rect(in: geometry.size, insets: style.chartInsets),
-                priceRange: ChartPlot.zoomed(
-                    ChartPlot.priceRange(for: points, padding: style.pricePadding),
-                    by: yZoom
-                ),
-                style: style,
+            let plot = ChartPlot.make(
+                points: points,
+                size: geometry.size,
+                yZoom: yZoom,
                 scale: scale,
-                yAxisDecimalPlaces: yAxisDecimalPlaces
+                yAxisDecimalPlaces: yAxisDecimalPlaces,
+                style: style
             )
 
             Canvas { context, _ in
@@ -56,6 +61,17 @@ struct LineChartView: View {
                         plot.drawBollinger(&layer, bands: bands)
                     }
                     plot.drawEMA(&layer, values: indicators.ema)
+
+                    // Above the series, still inside its clip — a line anchored off
+                    // the visible window must not spill into the price gutter.
+                    plot.drawTrendLines(
+                        &layer,
+                        lines: trendLines,
+                        draft: trendDraft,
+                        selectedID: selectedTrendLineID,
+                        showHandles: showTrendHandles,
+                        points: points
+                    )
                 }
 
                 plot.drawRSI(&context, values: indicators.rsi)

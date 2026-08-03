@@ -35,6 +35,10 @@ final class ContentViewModel: ObservableObject {
             // Reset candle count to default when timeframe changes
             if oldValue != selectedTimeRange {
                 candleCount = selectedTimeRange.dataPointLimit
+                // The rubber band of a half-drawn line tracks the pointer, which is
+                // over the toolbar rather than the plot — drop it rather than leave
+                // it stretched across a chart that just changed under it.
+                for vm in chartViewModels { vm.cancelDraft() }
             }
         }
     }
@@ -83,6 +87,28 @@ final class ContentViewModel: ObservableObject {
     private var axisDragTarget: ChartViewModel?
     private var axisDragOrigin: NSPoint = .zero
     private var axisDidDrag = false
+
+    /// Plot areas, each mapped to the chart drawn in it. Weak on both sides, so a
+    /// removed card drops out on its own.
+    private let plotRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
+    /// The endpoint being dragged right now, and the chart it belongs to.
+    private var lineDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
+
+    /// Which drawing tool the tool strip has armed. Window-scoped: arming in one tab
+    /// leaves the others alone.
+    @Published var activeTool: ChartTool = .none {
+        didSet {
+            guard activeTool != oldValue else { return }
+            // The rubber band runs off mouse-moved events, and AppKit only posts
+            // those to a window that has asked for them.
+            ownWindow?.acceptsMouseMovedEvents = activeTool != .none
+            guard activeTool == .none else { return }
+            for vm in chartViewModels {
+                vm.cancelDraft()
+                vm.selectedLineID = nil
+            }
+        }
+    }
 
     /// Suppress scroll-zoom when sheets or popovers are presented.
     var isShowingSheet = false
@@ -142,10 +168,13 @@ final class ContentViewModel: ObservableObject {
         }
 
         mouseMonitor = NSEvent.addLocalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+            matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved, .keyDown]
         ) { [weak self] event in
             guard let self else { return event }
-            return self.handleAxisDrag(event)
+            // The price gutter gets first refusal; a swallowed event never reaches
+            // the drawing tool, which only ever acts inside the plot anyway.
+            guard let remaining = self.handleAxisDrag(event) else { return nil }
+            return self.handleDrawing(remaining)
         }
     }
 
@@ -242,6 +271,142 @@ final class ContentViewModel: ObservableObject {
             }
         }
         return nil
+    }
+
+    // MARK: - Trend-line drawing
+
+    /// Each chart card hands over the view covering its plot, paired with the chart
+    /// drawn in it.
+    func registerPlotRegion(_ view: NSView, for viewModel: ChartViewModel) {
+        plotRegions.setObject(viewModel, forKey: view)
+    }
+
+    /// Toggle a tool on the strip; clicking the armed one disarms it.
+    func toggleTool(_ tool: ChartTool) {
+        activeTool = activeTool == tool ? .none : tool
+    }
+
+    /// Click once to start a line, again to finish it; drag either end circle to move
+    /// it. Nothing here runs unless the tool is armed, so a disarmed window behaves
+    /// exactly as it did before drawing existed.
+    ///
+    /// Shares the mouse monitor with the axis-zoom drag for the same reason it exists:
+    /// SwiftUI's hosting view claims these events for the cards' `.onDrag` reordering
+    /// before AppKit offers them to any child view. Returning nil for a press inside a
+    /// plot is what keeps a reorder drag from starting under the pointer.
+    private func handleDrawing(_ event: NSEvent) -> NSEvent? {
+        guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
+        guard activeTool == .trendLine else { return event }
+
+        if event.type == .keyDown { return handleDrawingKey(event) }
+
+        // A handle drag owns the pointer until release, wherever it wanders.
+        if let target = lineDragTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    target.vm.moveAnchor(
+                        lineID: target.id,
+                        isStart: target.isStart,
+                        to: target.vm.anchor(at: hit.point, in: hit.plot)
+                    )
+                }
+                return nil
+            case .leftMouseUp:
+                lineDragTarget = nil
+                // One persist per gesture, not one per mouse-move.
+                persistChartSettings()
+                return nil
+            default:
+                break
+            }
+        }
+
+        guard let hit = plotHit(at: event) else { return event }
+        let anchor = hit.vm.anchor(at: hit.point, in: hit.plot)
+
+        switch event.type {
+        case .mouseMoved:
+            // Rubber band only. Never swallowed — the pointer still belongs to the app.
+            hit.vm.updateDraft(to: anchor)
+            return event
+
+        case .leftMouseDown:
+            // A click on another card abandons whatever was half-drawn there, rather
+            // than leaving a dangling rubber band behind.
+            clearDrawingState(except: hit.vm)
+
+            if hit.vm.hasDraft {
+                if hit.vm.commitDraft(at: anchor, in: hit.plot) { persistChartSettings() }
+            } else if let handle = hit.vm.handleHit(at: hit.point, in: hit.plot) {
+                lineDragTarget = (hit.vm, handle.id, handle.isStart)
+                hit.vm.selectedLineID = handle.id
+            } else if let line = hit.vm.lineHit(at: hit.point, in: hit.plot) {
+                hit.vm.selectedLineID = line
+            } else {
+                hit.vm.selectedLineID = nil
+                hit.vm.beginDraft(at: anchor)
+            }
+            return nil
+
+        case .leftMouseUp:
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// Esc backs out of a half-drawn line, then out of the tool. Delete removes the
+    /// selected line. Anything else passes through untouched.
+    private func handleDrawingKey(_ event: NSEvent) -> NSEvent? {
+        switch event.keyCode {
+        case 53:  // Esc
+            if let drafting = chartViewModels.first(where: { $0.hasDraft }) {
+                drafting.cancelDraft()
+            } else {
+                activeTool = .none
+            }
+            return nil
+
+        case 51, 117:  // Delete, forward delete
+            guard let target = chartViewModels.first(where: { $0.selectedLineID != nil }) else {
+                return event
+            }
+            if target.removeSelectedLine() { persistChartSettings() }
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// The chart under this event, its current geometry, and where the pointer landed
+    /// in that chart's canvas space.
+    private func plotHit(at event: NSEvent) -> (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)? {
+        guard let window = event.window, let content = window.contentView else { return nil }
+        let location = event.locationInWindow
+        guard window.contentLayoutRect.contains(content.convert(location, from: nil)) else { return nil }
+        guard let views = plotRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
+
+        for view in views {
+            guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { continue }
+            // The region view is flipped, so this is already the canvas' own space.
+            let point = view.convert(location, from: nil)
+            guard view.bounds.contains(point), let vm = plotRegions.object(forKey: view) else { continue }
+            let plot = vm.plot(in: view.bounds.size)
+            // The trailing gutter overlaps this region but belongs to the axis drag.
+            guard plot.plotRect.contains(point) else { return nil }
+            return (vm, plot, point)
+        }
+        return nil
+    }
+
+    private func clearDrawingState(except keep: ChartViewModel) {
+        for vm in chartViewModels where vm !== keep {
+            vm.cancelDraft()
+            vm.selectedLineID = nil
+        }
     }
 
     /// Bind to the hosting window: scope the scroll monitor, follow occlusion,
@@ -506,6 +671,7 @@ final class ContentViewModel: ObservableObject {
                 showEMA: vm.showEMA ? true : nil,
                 emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
                 showBollinger: vm.showBollinger ? true : nil,
+                trendLines: vm.trendLines.isEmpty ? nil : vm.trendLines,
                 displayName: vm.displayName
             )
         }

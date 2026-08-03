@@ -186,11 +186,23 @@ enum PriceZoom {
     static let pointsPerDoubling: Double = 120
 }
 
+// MARK: - Drawing Tool Constants
+
+/// Hand-drawn chart annotations. Sizes that only affect looks live on `ChartStyle`;
+/// these are the interaction ones.
+enum Drawing {
+    /// How far a click may land from a handle or a line and still count as a hit.
+    static let hitTolerance: CGFloat = 8
+}
+
 // MARK: - UI Constants
 
 enum UI {
-    /// Window minimum width.
-    static let windowMinWidth: CGFloat = 380
+    /// Width of the vertical tool strip down the left edge of the window.
+    static let toolSidebarWidth: CGFloat = 36
+    /// Window minimum width. Includes the tool strip, so cards keep the width they
+    /// had before it existed.
+    static let windowMinWidth: CGFloat = 380 + toolSidebarWidth
     /// Window ideal width.
     static let windowIdealWidth: CGFloat = 440
     /// Sheet frame width for Add Ticker.

@@ -15,6 +15,31 @@ struct ChartPlot {
 
     // MARK: - Geometry
 
+    /// The plot a renderer draws into, for a canvas of `size`.
+    ///
+    /// Both chart views build their geometry here, and so does the drawing-tool hit
+    /// testing in `ChartViewModel` — which has to reproduce exactly what was drawn
+    /// from nothing but the hit view's size. One factory keeps the two from drifting.
+    static func make(
+        points: [KlineData],
+        size: CGSize,
+        yZoom: Double,
+        scale: PriceScale,
+        yAxisDecimalPlaces: Int?,
+        style: ChartStyle = .default
+    ) -> ChartPlot {
+        ChartPlot(
+            plotRect: Self.rect(in: size, insets: style.chartInsets),
+            priceRange: Self.zoomed(
+                Self.priceRange(for: points, padding: style.pricePadding),
+                by: yZoom
+            ),
+            style: style,
+            scale: scale,
+            yAxisDecimalPlaces: yAxisDecimalPlaces
+        )
+    }
+
     static func rect(in size: CGSize, insets: EdgeInsets) -> CGRect {
         CGRect(
             x: insets.leading,
@@ -55,6 +80,18 @@ struct ChartPlot {
         plotRect.minX + CGFloat(index) * slotWidth + slotWidth / 2
     }
 
+    /// Same slot centers as `x(forIndex:)`, but between points — and outside the
+    /// series, where a trend line anchored to a date off the visible window lands.
+    func x(forFractionalIndex index: CGFloat, slotWidth: CGFloat) -> CGFloat {
+        plotRect.minX + index * slotWidth + slotWidth / 2
+    }
+
+    /// Inverse of `x(forFractionalIndex:)` — where a click falls in point-index space.
+    func fractionalIndex(forX x: CGFloat, slotWidth: CGFloat) -> CGFloat {
+        guard slotWidth > 0 else { return 0 }
+        return (x - plotRect.minX) / slotWidth - 0.5
+    }
+
     /// Strip along the bottom of the plot that an indicator draws into — volume bars
     /// and the RSI line both use one.
     ///
@@ -72,6 +109,13 @@ struct ChartPlot {
         guard span > 0 else { return plotRect.midY }
         let normalized = (price - priceRange.min) / span
         return plotRect.maxY - CGFloat(normalized) * plotRect.height
+    }
+
+    /// Inverse of `y(for:)` — the price a click landed on.
+    func price(forY y: CGFloat) -> Double {
+        guard plotRect.height > 0 else { return priceRange.min }
+        let normalized = Double((plotRect.maxY - y) / plotRect.height)
+        return priceRange.min + normalized * (priceRange.max - priceRange.min)
     }
 
     // MARK: - Grid (horizontal lines + Y-axis price labels on the right)
@@ -222,6 +266,87 @@ struct ChartPlot {
         )
     }
 
+    // MARK: - Trend lines
+
+    /// Where an anchor sits under the current geometry. Anchors are time + price, so
+    /// this is the whole reason a line survives a timeframe switch: the projection is
+    /// redone against whatever points are on screen now.
+    func position(of anchor: TrendAnchor, points: [KlineData], slotWidth slot: CGFloat) -> CGPoint {
+        let index = Self.fractionalIndex(of: anchor.date, in: points)
+        return CGPoint(x: x(forFractionalIndex: index, slotWidth: slot), y: y(for: anchor.price))
+    }
+
+    /// Hand-drawn trend lines, plus the rubber band of one being drawn right now.
+    /// Handles show only while the tool is armed — a disarmed chart is just the lines.
+    func drawTrendLines(
+        _ context: inout GraphicsContext,
+        lines: [TrendLine],
+        draft: (start: TrendAnchor, end: TrendAnchor)?,
+        selectedID: UUID?,
+        showHandles: Bool,
+        points: [KlineData]
+    ) {
+        guard !points.isEmpty, !lines.isEmpty || draft != nil else { return }
+        let slot = slotWidth(forCount: points.count)
+
+        for line in lines {
+            let isSelected = line.id == selectedID
+            drawTrendSegment(
+                &context,
+                from: position(of: line.start, points: points, slotWidth: slot),
+                to: position(of: line.end, points: points, slotWidth: slot),
+                color: isSelected ? style.trendLineSelectedColor : style.trendLineColor,
+                width: isSelected ? style.trendLineSelectedWidth : style.trendLineWidth,
+                dashed: false,
+                handles: showHandles
+            )
+        }
+
+        if let draft {
+            drawTrendSegment(
+                &context,
+                from: position(of: draft.start, points: points, slotWidth: slot),
+                to: position(of: draft.end, points: points, slotWidth: slot),
+                color: style.trendLineSelectedColor,
+                width: style.trendLineWidth,
+                dashed: true,
+                handles: true
+            )
+        }
+    }
+
+    private func drawTrendSegment(
+        _ context: inout GraphicsContext,
+        from start: CGPoint,
+        to end: CGPoint,
+        color: Color,
+        width: CGFloat,
+        dashed: Bool,
+        handles: Bool
+    ) {
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+        context.stroke(
+            path,
+            with: .color(color),
+            style: StrokeStyle(
+                lineWidth: width,
+                lineCap: .round,
+                dash: dashed ? style.trendDashPattern : []
+            )
+        )
+
+        guard handles else { return }
+        let radius = style.trendHandleRadius
+        for point in [start, end] {
+            let box = CGRect(x: point.x - radius, y: point.y - radius,
+                             width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: box), with: .color(color))
+            context.stroke(Path(ellipseIn: box), with: .color(.white.opacity(0.9)), lineWidth: 1)
+        }
+    }
+
     // MARK: - Current price marker
 
     /// Dashed horizontal line at the latest price. Skipped when a zoomed-in price
@@ -362,8 +487,16 @@ struct ChartPlot {
 
     /// Map a date to a fractional point index for X positioning.
     /// Binary search on open times; interpolates when the date falls between points.
-    private static func fractionalIndex(of date: Date, in points: [KlineData]) -> CGFloat {
-        var lo = 0, hi = points.count - 1
+    ///
+    /// Dates outside the visible window extrapolate rather than clamp — a trend line
+    /// drawn on 1H and viewed on 1D is anchored before the first candle on screen, and
+    /// pinning it to index 0 would collapse it into a stub along the left edge instead
+    /// of letting the visible part keep its true slope. The renderer clips the rest.
+    static func fractionalIndex(of date: Date, in points: [KlineData]) -> CGFloat {
+        guard points.count > 1 else { return 0 }
+        let last = points.count - 1
+
+        var lo = 0, hi = last
         while lo < hi {
             let mid = (lo + hi + 1) / 2
             if points[mid].openTime <= date {
@@ -373,13 +506,40 @@ struct ChartPlot {
             }
         }
 
-        if lo < points.count - 1 {
-            let span = points[lo + 1].openTime.timeIntervalSince(points[lo].openTime)
-            if span > 0 {
-                let fraction = date.timeIntervalSince(points[lo].openTime) / span
-                return CGFloat(lo) + CGFloat(fraction)
-            }
+        // At or past the final point: extrapolate on the closing interval.
+        if lo >= last {
+            let span = points[last].openTime.timeIntervalSince(points[last - 1].openTime)
+            guard span > 0 else { return CGFloat(last) }
+            return CGFloat(last) + CGFloat(date.timeIntervalSince(points[last].openTime) / span)
         }
-        return CGFloat(lo)
+
+        // Between two points, or before the first — where the fraction goes negative
+        // and extrapolates off the left edge for the same reason.
+        let span = points[lo + 1].openTime.timeIntervalSince(points[lo].openTime)
+        guard span > 0 else { return CGFloat(lo) }
+        return CGFloat(lo) + CGFloat(date.timeIntervalSince(points[lo].openTime) / span)
+    }
+
+    /// Inverse of `fractionalIndex(of:in:)` — the date a click's X position lands on,
+    /// extrapolating past either end on the neighbouring interval.
+    static func date(atFractionalIndex index: CGFloat, in points: [KlineData]) -> Date {
+        guard let first = points.first, let final = points.last else { return Date() }
+        guard points.count > 1 else { return first.openTime }
+        let last = points.count - 1
+
+        let floorIndex = Int(index.rounded(.down))
+
+        if floorIndex < 0 {
+            let span = points[1].openTime.timeIntervalSince(first.openTime)
+            return first.openTime.addingTimeInterval(span * Double(index))
+        }
+        if floorIndex >= last {
+            let span = final.openTime.timeIntervalSince(points[last - 1].openTime)
+            return final.openTime.addingTimeInterval(span * Double(index - CGFloat(last)))
+        }
+
+        let span = points[floorIndex + 1].openTime.timeIntervalSince(points[floorIndex].openTime)
+        return points[floorIndex].openTime
+            .addingTimeInterval(span * Double(index - CGFloat(floorIndex)))
     }
 }

@@ -83,6 +83,9 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Bollinger bands on the price scale. nil = off.
     var showBollinger: Bool?
 
+    /// Trend lines drawn by hand on this chart. nil = none drawn.
+    var trendLines: [TrendLine]?
+
     /// Human-readable label shown on the card. Only set for sources whose `symbol`
     /// is an opaque identifier — a Polymarket CLOB token id is 77 digits, so the
     /// market question has to ride along. Nil for crypto (the symbol reads fine).

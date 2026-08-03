@@ -125,6 +125,25 @@ final class ChartViewModel: ObservableObject {
     /// than accumulating per mouse-move.
     private var yZoomDragStart: Double = 1
 
+    // MARK: - Trend lines
+
+    /// Lines drawn by hand on this chart, anchored to time and price.
+    @Published var trendLines: [TrendLine] = []
+
+    /// First click of a line in progress, and the rubber-band end that follows the
+    /// pointer until the second click lands.
+    @Published private(set) var draftStart: TrendAnchor?
+    @Published private(set) var draftEnd: TrendAnchor?
+
+    @Published var selectedLineID: UUID?
+
+    var trendDraft: (start: TrendAnchor, end: TrendAnchor)? {
+        guard let draftStart, let draftEnd else { return nil }
+        return (draftStart, draftEnd)
+    }
+
+    var hasDraft: Bool { draftStart != nil }
+
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
     private var isFetching = false
@@ -159,6 +178,7 @@ final class ChartViewModel: ObservableObject {
         showEMA = config.showEMA ?? false
         emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
         showBollinger = config.showBollinger ?? false
+        trendLines = config.trendLines ?? []
         if let name = config.displayName { displayName = name }
     }
 
@@ -177,6 +197,140 @@ final class ChartViewModel: ObservableObject {
 
     func resetYZoom() {
         yZoom = 1
+    }
+
+    // MARK: - Drawing geometry
+
+    /// The geometry this chart is currently drawn with, for a canvas of `size`.
+    ///
+    /// The drawing tool runs off a window-wide `NSEvent` monitor, which sees only a
+    /// point and a view — it has to rebuild the mapping the renderer used. Sharing
+    /// `ChartPlot.make` with both chart views is what keeps hits landing on pixels.
+    func plot(in size: CGSize) -> ChartPlot {
+        ChartPlot.make(
+            points: visibleKlines,
+            size: size,
+            yZoom: yZoom,
+            scale: priceScale,
+            yAxisDecimalPlaces: yAxisDecimalPlaces
+        )
+    }
+
+    /// Convert a click into a time+price anchor that survives zoom and timeframe changes.
+    func anchor(at point: CGPoint, in plot: ChartPlot) -> TrendAnchor {
+        let points = visibleKlines
+        let index = plot.fractionalIndex(
+            forX: point.x,
+            slotWidth: plot.slotWidth(forCount: points.count)
+        )
+        return TrendAnchor(
+            date: ChartPlot.date(atFractionalIndex: index, in: points),
+            price: plot.price(forY: point.y)
+        )
+    }
+
+    /// The endpoint circle under `point`. Ends are reported separately so a drag
+    /// knows which one it moves; lines are searched newest first, matching what the
+    /// renderer draws on top.
+    func handleHit(at point: CGPoint, in plot: ChartPlot) -> (id: UUID, isStart: Bool)? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+
+        for line in trendLines.reversed() {
+            for (anchor, isStart) in [(line.start, true), (line.end, false)] {
+                let position = plot.position(of: anchor, points: points, slotWidth: slot)
+                if hypot(position.x - point.x, position.y - point.y) <= Drawing.hitTolerance {
+                    return (line.id, isStart)
+                }
+            }
+        }
+        return nil
+    }
+
+    /// The line whose body passes within `Drawing.hitTolerance` of `point`.
+    func lineHit(at point: CGPoint, in plot: ChartPlot) -> UUID? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+
+        for line in trendLines.reversed() {
+            let start = plot.position(of: line.start, points: points, slotWidth: slot)
+            let end = plot.position(of: line.end, points: points, slotWidth: slot)
+            if Self.distance(from: point, toSegmentFrom: start, to: end) <= Drawing.hitTolerance {
+                return line.id
+            }
+        }
+        return nil
+    }
+
+    /// Shortest distance from a point to a line segment.
+    private static func distance(from point: CGPoint, toSegmentFrom start: CGPoint, to end: CGPoint) -> CGFloat {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(point.x - start.x, point.y - start.y) }
+
+        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+        let t = projection.clamped(to: 0...1)
+        return hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy))
+    }
+
+    // MARK: - Drawing a line
+
+    /// First click: place the starting circle. The rubber band tracks the pointer
+    /// from here until the second click.
+    func beginDraft(at anchor: TrendAnchor) {
+        draftStart = anchor
+        draftEnd = anchor
+        selectedLineID = nil
+    }
+
+    func updateDraft(to anchor: TrendAnchor) {
+        guard draftStart != nil else { return }
+        draftEnd = anchor
+    }
+
+    /// Second click. Rejects a click that landed back on the first one — a
+    /// zero-length line would be invisible and impossible to select or delete — and
+    /// leaves the draft open so the next click can still finish it.
+    @discardableResult
+    func commitDraft(at anchor: TrendAnchor, in plot: ChartPlot) -> Bool {
+        guard let start = draftStart else { return false }
+        let points = visibleKlines
+        let slot = plot.slotWidth(forCount: points.count)
+        let from = plot.position(of: start, points: points, slotWidth: slot)
+        let to = plot.position(of: anchor, points: points, slotWidth: slot)
+        guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
+
+        trendLines.append(TrendLine(start: start, end: anchor))
+        draftStart = nil
+        draftEnd = nil
+        return true
+    }
+
+    func cancelDraft() {
+        draftStart = nil
+        draftEnd = nil
+    }
+
+    /// Move one end of a line — called per mouse-move while a handle is dragged.
+    func moveAnchor(lineID: UUID, isStart: Bool, to anchor: TrendAnchor) {
+        guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
+        if isStart {
+            trendLines[index].start = anchor
+        } else {
+            trendLines[index].end = anchor
+        }
+    }
+
+    @discardableResult
+    func removeSelectedLine() -> Bool {
+        guard let id = selectedLineID,
+              let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
+        trendLines.remove(at: index)
+        selectedLineID = nil
+        return true
     }
 
     /// Update ticker symbol and/or source, re-fetch data.

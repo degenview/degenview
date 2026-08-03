@@ -60,6 +60,16 @@ struct ChartStyle {
     var currentPriceLineWidth: CGFloat = 1
     var currentPriceDashPattern: [CGFloat] = [5, 3]
 
+    // Hand-drawn trend lines. Blue and pink stay clear of every other overlay —
+    // green/red candles, purple RSI, orange EMA, cyan Bollinger.
+    var trendLineColor: Color = .blue
+    var trendLineSelectedColor: Color = .pink
+    var trendLineWidth: CGFloat = 1.5
+    var trendLineSelectedWidth: CGFloat = 2
+    var trendHandleRadius: CGFloat = 4
+    /// Dash for the rubber band between the first click and the second.
+    var trendDashPattern: [CGFloat] = [4, 3]
+
     // Layout
     var chartInsets: EdgeInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 70)
 
