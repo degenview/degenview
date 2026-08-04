@@ -203,8 +203,29 @@ enum UI {
     /// Window minimum width. Includes the tool strip, so cards keep the width they
     /// had before it existed.
     static let windowMinWidth: CGFloat = 380 + toolSidebarWidth
-    /// Window ideal width.
-    static let windowIdealWidth: CGFloat = 440
+    /// Window minimum height — toolbar plus one card at `chartMinHeight`.
+    static let windowMinHeight: CGFloat = 420
+    /// Window ideal size — landscape; charts read across time, not down it.
+    static let windowIdealWidth: CGFloat = 1240
+    static let windowIdealHeight: CGFloat = 800
+    /// Fraction of the screen's visible frame a fresh window takes.
+    static let windowDefaultWidthFraction: CGFloat = 0.78
+    static let windowDefaultHeightFraction: CGFloat = 0.85
+    /// Ceiling on the computed default, so a 5K display doesn't get a 2400 pt window.
+    static let windowDefaultMaxWidth: CGFloat = 1440
+    static let windowDefaultMaxHeight: CGFloat = 900
+    /// Narrowest the default may be before height is trimmed to keep it landscape.
+    static let windowMinAspect: CGFloat = 1.3
+    /// UserDefaults key the main window's frame is remembered under.
+    ///
+    /// AppKit's own frame autosave is no use here: SwiftUI names the window after
+    /// the scene's *load address*, so the key changes with every build and a
+    /// remembered frame is never found again.
+    static let windowFrameDefaultsKey = "charts.mainWindowFrame"
+    /// How much of a remembered window must still land on an attached display for
+    /// it to be reused — enough of the title bar to grab.
+    static let windowRestoreMinVisibleWidth: CGFloat = 160
+    static let windowRestoreMinVisibleHeight: CGFloat = 80
     /// Sheet frame width for Add Ticker.
     static let addTickerSheetWidth: CGFloat = 440
     /// Sheet frame dimensions for Chart Settings.

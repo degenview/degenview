@@ -55,6 +55,7 @@
 		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
 		A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */; };
 		E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */; };
+		A0000000000000000000041A /* WindowFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000041B /* WindowFrame.swift */; };
 		E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */; };
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
@@ -109,6 +110,7 @@
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
+		A0000000000000000000041B /* WindowFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFrame.swift; sourceTree = "<group>"; };
 		CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "DateFormat+Extensions.swift"; sourceTree = "<group>"; };
 		D7BF0A39943224E6FE7AB590 /* AppSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppSupport.swift; sourceTree = "<group>"; };
 		DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONStore.swift; sourceTree = "<group>"; };
@@ -262,6 +264,7 @@
 				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
 				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
 				C10000000000000000000109 /* SearchDebouncer.swift */,
+				A0000000000000000000041B /* WindowFrame.swift */,
 			);
 			path = Util;
 			sourceTree = "<group>";
@@ -378,6 +381,7 @@
 				E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */,
 				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
+				A0000000000000000000041A /* WindowFrame.swift in Sources */,
 				E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */,
 				D10000000000000000000001 /* ChartTab.swift in Sources */,
 				D10000000000000000000002 /* TabsStore.swift in Sources */,

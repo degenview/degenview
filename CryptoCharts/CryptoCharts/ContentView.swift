@@ -54,7 +54,12 @@ struct ContentView: View {
             // toolbar — both belong outside the empty/non-empty branch.
             .navigationTitle(contentViewModel.tabName)
             .toolbar { toolbarContent }
-            .frame(minWidth: UI.windowMinWidth, idealWidth: UI.windowIdealWidth)
+            .frame(
+                minWidth: UI.windowMinWidth,
+                idealWidth: UI.windowIdealWidth,
+                minHeight: UI.windowMinHeight,
+                idealHeight: UI.windowIdealHeight
+            )
         }
         .background(
             WindowAccessor { window in

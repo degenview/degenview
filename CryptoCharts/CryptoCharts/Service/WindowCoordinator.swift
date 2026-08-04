@@ -73,19 +73,77 @@ final class WindowCoordinator {
         window.isRestorable = false
         windows[tabID] = WeakWindow(window)
 
+        var joinedTabGroup = false
         if let anchorID = pendingJoins.removeValue(forKey: tabID),
            let anchor = self.window(for: anchorID),
            anchor !== window,
            anchor.tabGroup?.windows.contains(window) != true {
             anchor.addTabbedWindow(window, ordered: .above)
             window.makeKeyAndOrderFront(nil)
+            joinedTabGroup = true
         }
+
+        // A tab takes the frame of the group it joined; only a window standing
+        // on its own has a frame to decide.
+        if !joinedTabGroup { applyStartingFrame(to: window) }
 
         syncTitle(window, tabID: tabID)
 
         // The bar carries the `+` button and is the only place a lone tab can be
         // renamed or dragged from, so it stays up even at one tab.
         ensureTabBarVisible(window)
+    }
+
+    /// Whether the window whose frame is remembered has been placed yet.
+    private var didPlaceInitialWindow = false
+
+    /// Size, place, and then track the first standalone window of the session.
+    ///
+    /// It reopens where the user last left it; failing that — cold install, or a
+    /// frame saved on a display that is no longer attached — it gets a landscape
+    /// frame scaled to the screen it opened on.
+    ///
+    /// The frame is written by hand rather than through `setFrameAutosaveName`:
+    /// SwiftUI keeps reasserting its own autosave name on the window, and that
+    /// name embeds the scene's load address, so it changes with every build and
+    /// nothing saved under it is ever read back.
+    private func applyStartingFrame(to window: NSWindow) {
+        guard !didPlaceInitialWindow else { return }
+        didPlaceInitialWindow = true
+
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        if let saved = savedFrame(), WindowFrame.isReachable(saved, on: screens) {
+            window.setFrame(saved, display: false)
+        } else if let visible = (window.screen ?? NSScreen.main)?.visibleFrame {
+            window.setFrame(WindowFrame.default(in: visible), display: false)
+        }
+
+        for name in [NSWindow.didEndLiveResizeNotification, NSWindow.didMoveNotification] {
+            NotificationCenter.default.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak window] _ in
+                guard let window else { return }
+                Task { @MainActor in WindowCoordinator.shared.rememberFrame(of: window) }
+            }
+        }
+    }
+
+    /// A full-screen or zoomed window is a temporary state, not the size the user
+    /// wants the app to open at.
+    private func rememberFrame(of window: NSWindow) {
+        guard !window.styleMask.contains(.fullScreen), !window.isZoomed else { return }
+        UserDefaults.standard.set(NSStringFromRect(window.frame),
+                                  forKey: UI.windowFrameDefaultsKey)
+    }
+
+    private func savedFrame() -> NSRect? {
+        guard let raw = UserDefaults.standard.string(forKey: UI.windowFrameDefaultsKey)
+        else { return nil }
+        let frame = NSRectFromString(raw)
+        // Guards a truncated or hand-edited value, which parses as zero.
+        guard frame.width >= UI.windowMinWidth, frame.height >= UI.windowMinHeight
+        else { return nil }
+        return frame
     }
 
     /// AppKit hides the bar whenever a group is down to one window. Re-asserting

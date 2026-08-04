@@ -12,7 +12,9 @@ struct CryptoChartsApp: App {
         WindowGroup(for: UUID.self) { $tabID in
             ChartTabRoot(requestedID: tabID)
         }
-        .defaultSize(width: 440, height: 700)
+        // A landscape first guess, so the screen-fitted frame `WindowCoordinator`
+        // applies once the window is on screen isn't a visible jump.
+        .defaultSize(width: UI.windowIdealWidth, height: UI.windowIdealHeight)
         .windowResizability(.contentMinSize)
         .commands { TabCommands() }
     }
