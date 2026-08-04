@@ -26,6 +26,13 @@ struct ToolSidebar: View {
                 ) {
                     onSelect(.trendLine)
                 }
+                ToolButton(
+                    icon: "ruler",
+                    label: "Ruler",
+                    isActive: activeTool == .ruler
+                ) {
+                    onSelect(.ruler)
+                }
                 Spacer(minLength: 0)
             }
             .padding(.vertical, 6)

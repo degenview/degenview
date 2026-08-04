@@ -144,6 +144,10 @@ No test target yet. Manual testing flow:
 10. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab
 11. Quit and relaunch — same tabs, same order, same window grouping
+12. Arm the ruler, drag a rectangle up (green) and down (red); check the read-out's percent
+    against the price axis and its bar count against the candles inside. One more click
+    puts it away — on that chart only. Switching tool or timeframe drops it, and it never
+    comes back after a relaunch
 
 Adding a new `.swift` file means four hand-edits to `project.pbxproj` (`PBXBuildFile`,
 `PBXFileReference`, the group's `children`, the `Sources` phase). The project does not use

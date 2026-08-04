@@ -30,11 +30,31 @@ enum TimeAxisFormatter {
         return formatter.string(from: date)
     }
 
+    /// How long a span covers, in the two coarsest units it needs: "1d 14h", "3h 20m",
+    /// "45m". For the ruler's read-out, where the exact seconds never matter.
+    ///
+    /// Years and months are calendar approximations — a multi-year span on a monthly
+    /// chart reads better as "3y 1mo" than as "1127d".
+    static func duration(_ seconds: TimeInterval) -> String {
+        durationFormatter.string(from: abs(seconds)) ?? ""
+    }
+
     /// Built once. Crosshair labels are formatted on every mouse move, for every chart
     /// in the tab, and `DateFormatter` is expensive to create.
     private static let formatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter
+    }()
+
+    /// Same reasoning as `formatter`: the ruler reformats this on every mouse move
+    /// while a rectangle is being drawn.
+    private static let durationFormatter: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = [.year, .month, .day, .hour, .minute]
+        formatter.unitsStyle = .abbreviated
+        formatter.maximumUnitCount = 2
+        formatter.zeroFormattingBehavior = .dropAll
         return formatter
     }()
 }

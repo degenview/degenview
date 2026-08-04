@@ -126,7 +126,9 @@ struct ChartCardView: View {
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
-                    showTrendHandles: showTrendHandles
+                    showTrendHandles: showTrendHandles,
+                    rulers: viewModel.rulers,
+                    rulerDraft: viewModel.rulerDraft
                 )
             } else {
                 CandleChartView(
@@ -141,7 +143,9 @@ struct ChartCardView: View {
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
-                    showTrendHandles: showTrendHandles
+                    showTrendHandles: showTrendHandles,
+                    rulers: viewModel.rulers,
+                    rulerDraft: viewModel.rulerDraft
                 )
             }
         }

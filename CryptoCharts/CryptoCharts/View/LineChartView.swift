@@ -31,6 +31,11 @@ struct LineChartView: View {
     /// Endpoint circles show only while the line tool is armed.
     var showTrendHandles: Bool = false
 
+    // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
+    // so there is no armed flag to gate them on.
+    var rulers: [RulerRect] = []
+    var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+
     /// Green when the series ends above where it started, red otherwise.
     private var lineColor: Color {
         guard let first = points.first, let last = points.last else { return bullishColor }
@@ -71,6 +76,15 @@ struct LineChartView: View {
                         selectedID: selectedTrendLineID,
                         showHandles: showTrendHandles,
                         points: points
+                    )
+
+                    plot.drawRulers(
+                        &layer,
+                        rects: rulers,
+                        draft: rulerDraft,
+                        points: points,
+                        bullish: bullishColor,
+                        bearish: bearishColor
                     )
                 }
 

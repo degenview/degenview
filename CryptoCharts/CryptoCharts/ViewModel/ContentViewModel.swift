@@ -38,8 +38,13 @@ final class ContentViewModel: ObservableObject {
                 // The rubber band of a half-drawn line tracks the pointer, which is
                 // over the toolbar rather than the plot — drop it rather than leave
                 // it stretched across a chart that just changed under it. The crosshair
-                // goes for the same reason: its time is no longer on screen.
-                for vm in chartViewModels { vm.cancelDraft() }
+                // goes for the same reason: its time is no longer on screen, and so does
+                // any measurement, which was taken against the candles just replaced.
+                for vm in chartViewModels {
+                    vm.cancelDraft()
+                    vm.cancelRulerDraft()
+                    vm.clearRulers()
+                }
                 crosshair.clear()
             }
         }
@@ -110,6 +115,12 @@ final class ContentViewModel: ObservableObject {
             // those to a window that has asked for them.
             ownWindow?.acceptsMouseMovedEvents = activeTool != .none
             crosshair.clear()
+            // A measurement belongs to the armed ruler — reaching for another tool is
+            // done with it. Trend lines, being annotations, stay.
+            for vm in chartViewModels {
+                vm.cancelRulerDraft()
+                vm.clearRulers()
+            }
             guard activeTool == .none else { return }
             for vm in chartViewModels {
                 vm.cancelDraft()
@@ -305,6 +316,7 @@ final class ContentViewModel: ObservableObject {
     private func handleDrawing(_ event: NSEvent) -> NSEvent? {
         guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
         if activeTool == .crosshair { return handleCrosshair(event) }
+        if activeTool == .ruler { return handleRuler(event) }
         guard activeTool == .trendLine else { return event }
 
         if event.type == .keyDown { return handleDrawingKey(event) }
@@ -364,6 +376,73 @@ final class ContentViewModel: ObservableObject {
         default:
             return event
         }
+    }
+
+    /// Click once to pin a corner, again to finish the rectangle, a third time to put it
+    /// away. Same click-move-click shape as the line tool, minus the parts a measurement
+    /// doesn't need: nothing to select, nothing to drag, nothing to persist.
+    private func handleRuler(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown { return handleRulerKey(event) }
+
+        guard let hit = plotHit(at: event) else { return event }
+        let anchor = hit.vm.anchor(at: hit.point, in: hit.plot)
+
+        switch event.type {
+        case .mouseMoved:
+            // Rubber band only. Never swallowed — the pointer still belongs to the app.
+            hit.vm.updateRulerDraft(to: anchor)
+            return event
+
+        case .leftMouseDown:
+            // A click on another card abandons whatever was half-drawn there, but leaves
+            // its finished measurement up — two charts can be read side by side.
+            clearDrawingState(except: hit.vm)
+
+            if hit.vm.hasRulerDraft {
+                hit.vm.commitRulerDraft(at: anchor, in: hit.plot)
+            } else if !hit.vm.clearRulers() {
+                // Nothing was up to dismiss, so this click starts a rectangle instead.
+                hit.vm.beginRulerDraft(at: anchor)
+            }
+            return nil
+
+        case .leftMouseUp:
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// Esc backs out of a half-drawn rectangle, then out of the measurements on screen,
+    /// then out of the tool. Delete clears the measurements outright.
+    private func handleRulerKey(_ event: NSEvent) -> NSEvent? {
+        switch event.keyCode {
+        case 53:  // Esc
+            if let drafting = chartViewModels.first(where: { $0.hasRulerDraft }) {
+                drafting.cancelRulerDraft()
+            } else if !clearAllRulers() {
+                activeTool = .none
+            }
+            return nil
+
+        case 51, 117:  // Delete, forward delete
+            return clearAllRulers() ? nil : event
+
+        default:
+            return event
+        }
+    }
+
+    /// Puts every chart's measurements away, reporting whether any were up. Not written
+    /// as a `filter`, which would hide a side effect in a predicate.
+    @discardableResult
+    private func clearAllRulers() -> Bool {
+        var cleared = false
+        for vm in chartViewModels {
+            if vm.clearRulers() { cleared = true }
+        }
+        return cleared
     }
 
     /// Tracks the pointer for the crosshair tool.
@@ -447,9 +526,12 @@ final class ContentViewModel: ObservableObject {
         return nil
     }
 
+    /// Drops what the other charts had in progress. Their finished rectangles stay —
+    /// clearing a measurement is per-chart, so a click here can't wipe the one next door.
     private func clearDrawingState(except keep: ChartViewModel) {
         for vm in chartViewModels where vm !== keep {
             vm.cancelDraft()
+            vm.cancelRulerDraft()
             vm.selectedLineID = nil
         }
     }

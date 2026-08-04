@@ -24,9 +24,27 @@ struct TrendLine: Codable, Equatable, Hashable, Identifiable {
     var end: TrendAnchor
 }
 
+/// A measuring rectangle, pinned by two opposite corners.
+///
+/// Deliberately not `Codable`: a ruler is a measurement, not an annotation. It lives on
+/// the chart view model only, and the next click puts it away.
+///
+/// Which way the move went is read from the anchors rather than stored, so a rectangle
+/// keeps its colour when a timeframe switch reprojects it.
+struct RulerRect: Equatable, Identifiable {
+    var id = UUID()
+    var start: TrendAnchor
+    var end: TrendAnchor
+
+    /// True when the second corner landed above the first — measured bottom to top.
+    /// A flat measurement counts as up, matching how the card header reads a 0% change.
+    var isUpward: Bool { end.price >= start.price }
+}
+
 /// Which drawing tool the window's tool strip has armed.
 enum ChartTool {
     case none
     case crosshair
     case trendLine
+    case ruler
 }

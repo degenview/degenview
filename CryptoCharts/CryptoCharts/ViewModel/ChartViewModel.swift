@@ -144,6 +144,24 @@ final class ChartViewModel: ObservableObject {
 
     var hasDraft: Bool { draftStart != nil }
 
+    // MARK: - Ruler
+
+    /// Measuring rectangles on this chart. Never persisted and never restored — a ruler
+    /// answers a question and then goes away on the next click.
+    @Published private(set) var rulers: [RulerRect] = []
+
+    /// First corner of a rectangle in progress, and the opposite corner that follows the
+    /// pointer until the second click lands.
+    @Published private(set) var rulerDraftStart: TrendAnchor?
+    @Published private(set) var rulerDraftEnd: TrendAnchor?
+
+    var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? {
+        guard let rulerDraftStart, let rulerDraftEnd else { return nil }
+        return (rulerDraftStart, rulerDraftEnd)
+    }
+
+    var hasRulerDraft: Bool { rulerDraftStart != nil }
+
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
     private var isFetching = false
@@ -330,6 +348,52 @@ final class ChartViewModel: ObservableObject {
               let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
         trendLines.remove(at: index)
         selectedLineID = nil
+        return true
+    }
+
+    // MARK: - Drawing a ruler
+
+    /// First click: pin one corner. The rectangle tracks the pointer from here until the
+    /// second click.
+    func beginRulerDraft(at anchor: TrendAnchor) {
+        rulerDraftStart = anchor
+        rulerDraftEnd = anchor
+    }
+
+    func updateRulerDraft(to anchor: TrendAnchor) {
+        guard rulerDraftStart != nil else { return }
+        rulerDraftEnd = anchor
+    }
+
+    /// Second click. Rejects a click that landed back on the first one — a rectangle with
+    /// no area would report 0% over one candle — and leaves the draft open so the next
+    /// click can still finish it.
+    @discardableResult
+    func commitRulerDraft(at anchor: TrendAnchor, in plot: ChartPlot) -> Bool {
+        guard let start = rulerDraftStart else { return false }
+        let points = visibleKlines
+        let slot = plot.slotWidth(forCount: points.count)
+        let from = plot.position(of: start, points: points, slotWidth: slot)
+        let to = plot.position(of: anchor, points: points, slotWidth: slot)
+        guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
+
+        rulers.append(RulerRect(start: start, end: anchor))
+        rulerDraftStart = nil
+        rulerDraftEnd = nil
+        return true
+    }
+
+    func cancelRulerDraft() {
+        rulerDraftStart = nil
+        rulerDraftEnd = nil
+    }
+
+    /// Put every measurement on this chart away. Reports whether there was anything to
+    /// clear, so the caller can tell a dismissing click from one that starts a rectangle.
+    @discardableResult
+    func clearRulers() -> Bool {
+        guard !rulers.isEmpty else { return false }
+        rulers.removeAll()
         return true
     }
 

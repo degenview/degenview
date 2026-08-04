@@ -26,6 +26,11 @@ struct CandleChartView: View {
     /// Endpoint circles show only while the line tool is armed.
     var showTrendHandles: Bool = false
 
+    // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
+    // so there is no armed flag to gate them on.
+    var rulers: [RulerRect] = []
+    var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+
     var body: some View {
         GeometryReader { geometry in
             let plot = ChartPlot.make(
@@ -65,6 +70,15 @@ struct CandleChartView: View {
                         selectedID: selectedTrendLineID,
                         showHandles: showTrendHandles,
                         points: candles
+                    )
+
+                    plot.drawRulers(
+                        &layer,
+                        rects: rulers,
+                        draft: rulerDraft,
+                        points: candles,
+                        bullish: bullishColor,
+                        bearish: bearishColor
                     )
                 }
 

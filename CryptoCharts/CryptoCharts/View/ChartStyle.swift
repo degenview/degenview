@@ -70,6 +70,17 @@ struct ChartStyle {
     /// Dash for the rubber band between the first click and the second.
     var trendDashPattern: [CGFloat] = [4, 3]
 
+    // Ruler rectangles. No colour of their own — they take the chart's bull/bear colours,
+    // since the whole point of the tool is which way the move went. The fill stays as low
+    // as the Bollinger tint so the candles being measured still read through it.
+    var rulerFillOpacity: Double = 0.12
+    /// Faint on purpose: the border marks where the measurement ends, it isn't the
+    /// measurement. A solid edge competes with the candles it brackets.
+    var rulerBorderOpacity: Double = 0.4
+    var rulerBorderWidth: CGFloat = 1
+    /// Dash for the rectangle between the first click and the second.
+    var rulerDashPattern: [CGFloat] = [4, 3]
+
     // Crosshair. Neutral on purpose — blue and pink belong to trend lines, and purple,
     // orange and cyan to the indicators, so a tinted crosshair would read as one of them.
     var crosshairColor: Color = .secondary

@@ -347,6 +347,108 @@ struct ChartPlot {
         }
     }
 
+    // MARK: - Ruler
+
+    /// Measuring rectangles, plus the one being dragged out right now.
+    ///
+    /// The bull/bear colours are passed in rather than read off `style`: they are a
+    /// per-chart setting, and which way the measured move went is the whole point of the
+    /// tool, so the rectangle has to agree with the candles under it.
+    func drawRulers(
+        _ context: inout GraphicsContext,
+        rects: [RulerRect],
+        draft: (start: TrendAnchor, end: TrendAnchor)?,
+        points: [KlineData],
+        bullish: Color,
+        bearish: Color
+    ) {
+        guard !points.isEmpty, !rects.isEmpty || draft != nil else { return }
+        let slot = slotWidth(forCount: points.count)
+
+        for rect in rects {
+            drawRulerBox(&context, rect: rect, points: points, slotWidth: slot,
+                         bullish: bullish, bearish: bearish, dashed: false)
+        }
+
+        if let draft {
+            drawRulerBox(&context, rect: RulerRect(start: draft.start, end: draft.end),
+                         points: points, slotWidth: slot,
+                         bullish: bullish, bearish: bearish, dashed: true)
+        }
+    }
+
+    private func drawRulerBox(
+        _ context: inout GraphicsContext,
+        rect: RulerRect,
+        points: [KlineData],
+        slotWidth slot: CGFloat,
+        bullish: Color,
+        bearish: Color,
+        dashed: Bool
+    ) {
+        let from = position(of: rect.start, points: points, slotWidth: slot)
+        let to = position(of: rect.end, points: points, slotWidth: slot)
+        let box = CGRect(
+            x: min(from.x, to.x),
+            y: min(from.y, to.y),
+            width: abs(to.x - from.x),
+            height: abs(to.y - from.y)
+        )
+        let color = rect.isUpward ? bullish : bearish
+
+        context.fill(Path(box), with: .color(color.opacity(style.rulerFillOpacity)))
+        context.stroke(
+            Path(box),
+            with: .color(color.opacity(style.rulerBorderOpacity)),
+            style: StrokeStyle(
+                lineWidth: style.rulerBorderWidth,
+                dash: dashed ? style.rulerDashPattern : []
+            )
+        )
+
+        // Outside the edge the measurement ended on — above when measuring up, below when
+        // measuring down — so the pill never covers the candles being read.
+        let label = resolveBlock(context, rulerReadout(rect, points: points))
+        let originY = (rect.isUpward ? box.minY - label.size.height - 4 : box.maxY + 4)
+            .clamped(to: plotRect.minY...max(plotRect.minY, plotRect.maxY - label.size.height))
+        let originX = (box.midX - label.size.width / 2)
+            .clamped(to: plotRect.minX...max(plotRect.minX, plotRect.maxX - label.size.width))
+        draw(
+            label,
+            in: CGRect(origin: CGPoint(x: originX, y: originY), size: label.size),
+            into: &context
+        )
+    }
+
+    /// What the rectangle measures: the move as a percentage, the same move in price, and
+    /// how much chart it covers.
+    private func rulerReadout(_ rect: RulerRect, points: [KlineData]) -> String {
+        let delta = rect.end.price - rect.start.price
+        let percent = rect.start.price != 0 ? delta / rect.start.price * 100 : 0
+        let sign = delta < 0 ? "-" : "+"
+
+        // `PriceFormatter` clamps probabilities to 0…100, so a downward move on a
+        // Polymarket chart would print as "0.0%" if the sign went through it.
+        let priceText = PriceFormatter.format(abs(delta), decimalPlaces: yAxisDecimalPlaces, scale: scale)
+
+        let startIndex = Self.fractionalIndex(of: rect.start.date, in: points).rounded()
+        let endIndex = Self.fractionalIndex(of: rect.end.date, in: points).rounded()
+        // Inclusive of the candles at both ends: a rectangle from one bar to the next
+        // covers two of them.
+        let bars = Int(abs(endIndex - startIndex)) + 1
+        let barsText = bars == 1 ? "1 bar" : "\(bars) bars"
+
+        // Empty for a span under a minute, which the smallest candle still outlasts.
+        let span = TimeAxisFormatter.duration(rect.end.date.timeIntervalSince(rect.start.date))
+        let coverage = span.isEmpty ? barsText : "\(barsText), \(span)"
+
+        return """
+        \(sign)\(abs(percent).formatted(.number.precision(.fractionLength(2))))%
+        \(sign)\(priceText)
+        \(coverage)
+        """
+    }
+
     // MARK: - Current price marker
 
     /// Dashed horizontal line at the latest price. Skipped when a zoomed-in price
@@ -476,6 +578,23 @@ struct ChartPlot {
         let text = context.resolve(Text(string).font(.caption2).bold().foregroundStyle(.white))
         let measured = text.measure(in: CGSize(width: 140, height: 20))
         return (text, CGSize(width: measured.width + 10, height: 18))
+    }
+
+    /// Same pill, several lines tall. `resolveLabel` measures in a box one line high and
+    /// returns a fixed height, which is right for a single reading and wrong for the
+    /// ruler's stacked one.
+    private func resolveBlock(
+        _ context: GraphicsContext,
+        _ string: String
+    ) -> (text: GraphicsContext.ResolvedText, size: CGSize) {
+        let text = context.resolve(
+            Text(string)
+                .font(.caption2)
+                .bold()
+                .foregroundStyle(.white)
+        )
+        let measured = text.measure(in: CGSize(width: 200, height: 80))
+        return (text, CGSize(width: measured.width + 10, height: measured.height + 8))
     }
 
     private func draw(
