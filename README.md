@@ -66,7 +66,7 @@ no external dependencies.
 - macOS 14 or later
 - Xcode 16 or later
 - Swift 6
-- An Alpaca account and API keys only if you want stock data
+- A free Alpaca account and API keys only if you want stock data
 
 ## Build and run
 
