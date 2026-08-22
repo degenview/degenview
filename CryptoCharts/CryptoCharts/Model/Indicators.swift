@@ -13,6 +13,7 @@ struct IndicatorSeries {
     var ema: [Double?] = []
     var emaPeriod: Int = Indicator.emaDefaultPeriod
     var bollinger: BollingerSeries?
+    var trendFlips: [TrendFlipDirection?] = []
 
     static let none = IndicatorSeries()
 
@@ -24,11 +25,12 @@ struct IndicatorSeries {
         showRSI: Bool,
         showEMA: Bool,
         emaPeriod: Int,
-        showBollinger: Bool
+        showBollinger: Bool,
+        showTrendFlips: Bool
     ) -> IndicatorSeries {
         guard !candles.isEmpty else { return .none }
 
-        func visible(_ values: [Double?]) -> [Double?] {
+        func visible<T>(_ values: [T]) -> [T] {
             guard visibleCount > 0, values.count > visibleCount else { return values }
             return Array(values.suffix(visibleCount))
         }
@@ -50,8 +52,16 @@ struct IndicatorSeries {
                 lower: visible(bands.lower)
             )
         }
+        if showTrendFlips {
+            series.trendFlips = visible(candles.supertrendFlips())
+        }
         return series
     }
+}
+
+enum TrendFlipDirection: Equatable {
+    case bullish
+    case bearish
 }
 
 /// Upper / middle / lower Bollinger bands, each aligned with the visible candles.
@@ -66,6 +76,74 @@ struct BollingerSeries {
 // MARK: - Math
 
 extension Array where Element == KlineData {
+
+    /// Supertrend regime changes using a Wilder-smoothed Average True Range.
+    ///
+    /// The current final candle is deliberately suppressed. Its high, low and close
+    /// can still change, so its signal becomes confirmed only when a newer candle (or
+    /// line-series observation) arrives.
+    func supertrendFlips(
+        period: Int = Indicator.supertrendPeriod,
+        multiplier: Double = Indicator.supertrendMultiplier
+    ) -> [TrendFlipDirection?] {
+        var flips = [TrendFlipDirection?](repeating: nil, count: count)
+        guard period > 0, multiplier > 0, count >= period else { return flips }
+
+        var trueRanges = [Double](repeating: 0, count: count)
+        for i in indices {
+            let candle = self[i]
+            let highLow = candle.highPrice - candle.lowPrice
+            guard i > 0 else {
+                trueRanges[i] = highLow
+                continue
+            }
+            let previousClose = self[i - 1].closePrice
+            trueRanges[i] = Swift.max(
+                highLow,
+                Swift.max(
+                    abs(candle.highPrice - previousClose),
+                    abs(candle.lowPrice - previousClose)
+                )
+            )
+        }
+
+        let seedIndex = period - 1
+        var atr = trueRanges[0...seedIndex].reduce(0, +) / Double(period)
+        let seedMidpoint = (self[seedIndex].highPrice + self[seedIndex].lowPrice) / 2
+        var upperBand = seedMidpoint + multiplier * atr
+        var lowerBand = seedMidpoint - multiplier * atr
+        var isBullish = false
+        var supertrendWasUpperBand = true
+
+        guard count > period else { return flips }
+        for i in period..<count {
+            atr = (atr * Double(period - 1) + trueRanges[i]) / Double(period)
+
+            let candle = self[i]
+            let midpoint = (candle.highPrice + candle.lowPrice) / 2
+            let basicUpper = midpoint + multiplier * atr
+            let basicLower = midpoint - multiplier * atr
+            let previousClose = self[i - 1].closePrice
+
+            if basicUpper < upperBand || previousClose > upperBand { upperBand = basicUpper }
+            if basicLower > lowerBand || previousClose < lowerBand { lowerBand = basicLower }
+
+            let previousDirection = isBullish
+            if supertrendWasUpperBand {
+                isBullish = candle.closePrice > upperBand
+            } else {
+                isBullish = candle.closePrice >= lowerBand
+            }
+            supertrendWasUpperBand = !isBullish
+
+            if isBullish != previousDirection {
+                flips[i] = isBullish ? .bullish : .bearish
+            }
+        }
+
+        flips[flips.count - 1] = nil
+        return flips
+    }
 
     /// Relative Strength Index.
     ///

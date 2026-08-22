@@ -848,6 +848,7 @@ final class ContentViewModel: ObservableObject {
                 showEMA: vm.showEMA ? true : nil,
                 emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
                 showBollinger: vm.showBollinger ? true : nil,
+                showTrendFlips: vm.showTrendFlips ? true : nil,
                 // Drawings live in DrawingStore, keyed by source+ticker. Keep this
                 // field nil so tabs and saved views no longer own copies of lines.
                 trendLines: nil,

@@ -40,6 +40,14 @@ struct ChartStyle {
     /// Tint between the bands. Low enough to leave the candles legible through it.
     var bollingerFillOpacity: Double = 0.08
 
+    // Confirmed Supertrend regime changes — colored with each chart's bull/bear colors.
+    var trendFlipMarkerSize: CGFloat = 7
+    var trendFlipMarkerGap: CGFloat = 4
+    var trendFlipLabelFontSize: CGFloat = 8
+    var trendFlipLabelHorizontalPadding: CGFloat = 4
+    var trendFlipLabelVerticalPadding: CGFloat = 2
+    var trendFlipLabelGap: CGFloat = 2
+
     // Line geometry
     var lineWidth: CGFloat = 1.5
     /// Opacity at the top of the gradient under the line; fades to zero at the bottom.

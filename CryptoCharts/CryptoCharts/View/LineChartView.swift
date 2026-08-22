@@ -79,6 +79,13 @@ struct LineChartView: View {
                         plot.drawBollinger(&layer, bands: bands)
                     }
                     plot.drawEMA(&layer, values: indicators.ema)
+                    plot.drawTrendFlips(
+                        &layer,
+                        flips: indicators.trendFlips,
+                        points: points,
+                        bullish: bullishColor,
+                        bearish: bearishColor
+                    )
 
                     // Above the series, still inside its clip — a line anchored off
                     // the visible window must not spill into the price gutter.

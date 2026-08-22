@@ -104,6 +104,9 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Bollinger bands on the price scale. nil = off.
     var showBollinger: Bool?
 
+    /// Confirmed bullish/bearish Supertrend change markers. nil = off.
+    var showTrendFlips: Bool?
+
     /// Legacy trend-line storage. New versions migrate this into DrawingStore and
     /// always write nil so drawings are not attached to tabs or saved views.
     var trendLines: [TrendLine]?

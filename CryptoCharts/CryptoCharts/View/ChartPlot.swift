@@ -217,6 +217,81 @@ struct ChartPlot {
         )
     }
 
+    /// Labeled up/down triangles at confirmed Supertrend regime changes. Each combined
+    /// marker is clamped inside the plot so a flip at a price extreme stays readable.
+    func drawTrendFlips(
+        _ context: inout GraphicsContext,
+        flips: [TrendFlipDirection?],
+        points: [KlineData],
+        bullish: Color,
+        bearish: Color
+    ) {
+        guard flips.count == points.count, flips.contains(where: { $0 != nil }) else { return }
+
+        let slot = slotWidth(forCount: points.count)
+        let size = style.trendFlipMarkerSize
+        let half = size / 2
+
+        for (index, flip) in flips.enumerated() {
+            guard let flip else { continue }
+            let point = points[index]
+            let xPosition = x(forIndex: index, slotWidth: slot)
+            let isBullish = flip == .bullish
+            let color = isBullish ? bullish : bearish
+            let label = Text(isBullish ? "Bullish" : "Bearish")
+                .font(.system(size: style.trendFlipLabelFontSize, weight: .semibold))
+                .foregroundStyle(.white)
+            let resolvedLabel = context.resolve(label)
+            let measured = resolvedLabel.measure(in: CGSize(width: 80, height: 20))
+            let labelSize = CGSize(
+                width: measured.width + style.trendFlipLabelHorizontalPadding * 2,
+                height: measured.height + style.trendFlipLabelVerticalPadding * 2
+            )
+            let groupHeight = size + style.trendFlipLabelGap + labelSize.height
+            let priceY = y(for: isBullish ? point.lowPrice : point.highPrice)
+            let rawGroupCenter = priceY + (isBullish
+                ? style.trendFlipMarkerGap + groupHeight / 2
+                : -(style.trendFlipMarkerGap + groupHeight / 2))
+            let groupCenter = rawGroupCenter.clamped(
+                to: (plotRect.minY + groupHeight / 2)...(plotRect.maxY - groupHeight / 2)
+            )
+            let triangleCenterY = groupCenter + (isBullish
+                ? -(groupHeight - size) / 2
+                : (groupHeight - size) / 2)
+            let labelCenterY = groupCenter + (isBullish
+                ? (groupHeight - labelSize.height) / 2
+                : -(groupHeight - labelSize.height) / 2)
+            let labelCenterX = xPosition.clamped(
+                to: (plotRect.minX + labelSize.width / 2)...(plotRect.maxX - labelSize.width / 2)
+            )
+
+            var marker = Path()
+            if isBullish {
+                marker.move(to: CGPoint(x: xPosition, y: triangleCenterY - half))
+                marker.addLine(to: CGPoint(x: xPosition - half, y: triangleCenterY + half))
+                marker.addLine(to: CGPoint(x: xPosition + half, y: triangleCenterY + half))
+            } else {
+                marker.move(to: CGPoint(x: xPosition, y: triangleCenterY + half))
+                marker.addLine(to: CGPoint(x: xPosition - half, y: triangleCenterY - half))
+                marker.addLine(to: CGPoint(x: xPosition + half, y: triangleCenterY - half))
+            }
+            marker.closeSubpath()
+            context.fill(marker, with: .color(color))
+
+            let labelRect = CGRect(
+                x: labelCenterX - labelSize.width / 2,
+                y: labelCenterY - labelSize.height / 2,
+                width: labelSize.width,
+                height: labelSize.height
+            )
+            context.fill(
+                RoundedRectangle(cornerRadius: labelSize.height / 2).path(in: labelRect),
+                with: .color(color)
+            )
+            context.draw(resolvedLabel, at: CGPoint(x: labelRect.midX, y: labelRect.midY))
+        }
+    }
+
     // MARK: - RSI
 
     /// RSI line across the bottom strip, with guides at the overbought and oversold

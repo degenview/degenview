@@ -167,6 +167,10 @@ enum Indicator {
     /// Bollinger defaults — 20-period SMA, bands two standard deviations out.
     static let bollingerPeriod = 20
     static let bollingerMultiplier: Double = 2
+
+    /// Supertrend defaults — Wilder ATR over 10 candles, offset by three ATRs.
+    static let supertrendPeriod = 10
+    static let supertrendMultiplier: Double = 3
 }
 
 // MARK: - RSI Constants

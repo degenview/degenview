@@ -32,6 +32,7 @@ struct ChartSettingsSheet: View {
     @State private var showEMA: Bool
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
+    @State private var showTrendFlips: Bool
 
     @Environment(\.dismiss) private var dismiss
 
@@ -95,6 +96,7 @@ struct ChartSettingsSheet: View {
         _showEMA = State(initialValue: viewModel.showEMA)
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
+        _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
         _assetType = State(initialValue: viewModel.source == .polymarket ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
@@ -210,6 +212,10 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showBollinger) {
             viewModel.showBollinger = showBollinger
+            onStyleChanged()
+        }
+        .onChange(of: showTrendFlips) {
+            viewModel.showTrendFlips = showTrendFlips
             onStyleChanged()
         }
     }
@@ -452,7 +458,8 @@ struct ChartSettingsSheet: View {
                     }
                 }
 
-                // The rest come from closing prices alone, so every source can draw them.
+                // Every source shares KlineData. Line sources carry flat OHLC points,
+                // whose point-to-point gaps still provide Supertrend's true range.
                 indicatorRow(hint: rsiHint) {
                     Toggle("RSI (\(RSI.period))", isOn: $showRSI)
                         .toggleStyle(.switch)
@@ -477,6 +484,11 @@ struct ChartSettingsSheet: View {
 
                 indicatorRow(hint: bollingerHint) {
                     Toggle("Bollinger Bands", isOn: $showBollinger)
+                        .toggleStyle(.switch)
+                }
+
+                indicatorRow(hint: trendFlipsHint) {
+                    Toggle("Trend Flips (Supertrend)", isOn: $showTrendFlips)
                         .toggleStyle(.switch)
                 }
 
@@ -525,6 +537,10 @@ struct ChartSettingsSheet: View {
 
     private var bollingerHint: String {
         "\(Indicator.bollingerPeriod)-period average with bands \(Int(Indicator.bollingerMultiplier)) standard deviations either side — wide when volatile, tight when calm."
+    }
+
+    private var trendFlipsHint: String {
+        "Bullish and bearish markers from \(Indicator.supertrendPeriod)-period ATR × \(Int(Indicator.supertrendMultiplier)). Signals appear after the candle closes and can whipsaw in sideways markets."
     }
 
     private var decimalHint: String {

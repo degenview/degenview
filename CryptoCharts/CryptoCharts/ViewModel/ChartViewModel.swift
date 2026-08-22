@@ -150,6 +150,7 @@ final class ChartViewModel: ObservableObject {
     @Published var showEMA: Bool = false
     @Published var emaPeriod: Int = Indicator.emaDefaultPeriod
     @Published var showBollinger: Bool = false
+    @Published var showTrendFlips: Bool = false
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -160,7 +161,8 @@ final class ChartViewModel: ObservableObject {
             showRSI: showRSI,
             showEMA: showEMA,
             emaPeriod: emaPeriod,
-            showBollinger: showBollinger
+            showBollinger: showBollinger,
+            showTrendFlips: showTrendFlips
         )
     }
 
@@ -248,6 +250,7 @@ final class ChartViewModel: ObservableObject {
         showEMA = config.showEMA ?? false
         emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
         showBollinger = config.showBollinger ?? false
+        showTrendFlips = config.showTrendFlips ?? false
         if let legacyLines = config.trendLines {
             DrawingStore.shared.importLegacy(legacyLines, ticker: ticker, source: source)
         }
@@ -563,6 +566,7 @@ final class ChartViewModel: ObservableObject {
         if showEMA { needed = Swift.max(needed, emaPeriod) }
         if showRSI { needed = Swift.max(needed, RSI.period) }
         if showBollinger { needed = Swift.max(needed, Indicator.bollingerPeriod) }
+        if showTrendFlips { needed = Swift.max(needed, Indicator.supertrendPeriod) }
         return needed
     }
 
