@@ -1,7 +1,7 @@
 import Foundation
 
 /// Generic JSON-backed persistence for any Codable type.
-/// Reads/writes a single JSON file in the CryptoCharts Application Support directory.
+/// Reads/writes a single JSON file in the DegenView Application Support directory.
 final class JSONStore<T: Codable> {
     private let storageURL: URL
 

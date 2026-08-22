@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
-struct CryptoChartsApp: App {
+struct DegenViewApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {

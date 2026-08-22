@@ -1,4 +1,4 @@
-# AGENTS.md — CryptoCharts
+# AGENTS.md — DegenView
 
 Guidance for AI coding agents working in this repo.
 
@@ -9,8 +9,8 @@ macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST
 ## Build
 
 ```bash
-open CryptoCharts/CryptoCharts.xcodeproj
-# ⌘R in Xcode, or: xcodebuild -project CryptoCharts/CryptoCharts.xcodeproj -scheme CryptoCharts build
+open DegenView.xcodeproj
+# ⌘R in Xcode, or: xcodebuild -project DegenView.xcodeproj -scheme DegenView build
 ```
 
 Requires Xcode 16+, macOS 14+.

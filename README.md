@@ -1,4 +1,4 @@
-# CryptoCharts
+# DegenView
 
 macOS crypto candlestick chart app. SwiftUI + AppKit Canvas.
 
@@ -24,8 +24,8 @@ macOS crypto candlestick chart app. SwiftUI + AppKit Canvas.
 ## Architecture
 
 ```
-CryptoCharts/
-├── CryptoChartsApp.swift              # App entry, tab scene, New Tab command, app delegate
+DegenView/
+├── DegenViewApp.swift                 # App entry, tab scene, New Tab command, app delegate
 ├── ContentView.swift                  # One tab's view: toolbar, theme, drag-drop delegates
 ├── Model/
 │   ├── KlineData.swift                # OHLCV data model, Binance + CoinGecko parsers
@@ -82,7 +82,7 @@ CryptoCharts/
 ## Build & Run
 
 ```bash
-open CryptoCharts/CryptoCharts.xcodeproj
+open DegenView.xcodeproj
 ```
 
 Then **Product → Run** (⌘R) in Xcode.

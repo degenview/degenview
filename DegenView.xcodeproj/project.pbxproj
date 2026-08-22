@@ -15,7 +15,7 @@
 		d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62da476d2ea14915af7cffe9 /* ImageCache.swift */; };
 		B10000000000000000000001 /* CoinGeckoProvisionalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */; };
 		8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */; };
-		A00000000000000000000001 /* CryptoChartsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* CryptoChartsApp.swift */; };
+		A00000000000000000000001 /* DegenViewApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* DegenViewApp.swift */; };
 		A00000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000102 /* ContentView.swift */; };
 		A00000000000000000000003 /* KlineData.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103 /* KlineData.swift */; };
 		A00000000000000000000004 /* TimeRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104 /* TimeRange.swift */; };
@@ -79,7 +79,7 @@
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
 		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
 		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
-		A00000000000000000000101 /* CryptoChartsApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CryptoChartsApp.swift; sourceTree = "<group>"; };
+		A00000000000000000000101 /* DegenViewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DegenViewApp.swift; sourceTree = "<group>"; };
 		A00000000000000000000102 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A00000000000000000000103 /* KlineData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineData.swift; sourceTree = "<group>"; };
 		A00000000000000000000104 /* TimeRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeRange.swift; sourceTree = "<group>"; };
@@ -95,7 +95,7 @@
 		A0000000000000000000010D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010E /* MockData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockData.swift; sourceTree = "<group>"; };
 		A0000000000000000000010F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		A00000000000000000000110 /* CryptoCharts.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CryptoCharts.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000110 /* DegenView.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DegenView.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A00000000000000000000112 /* CandleChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleChartView.swift; sourceTree = "<group>"; };
 		C10000000000000000000101 /* PolymarketModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketModels.swift; sourceTree = "<group>"; };
 		C10000000000000000000102 /* PolymarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketService.swift; sourceTree = "<group>"; };
@@ -164,15 +164,15 @@
 		A00000000000000000000300 = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000301 /* CryptoCharts */,
+				A00000000000000000000301 /* DegenView */,
 				A00000000000000000000302 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		A00000000000000000000301 /* CryptoCharts */ = {
+		A00000000000000000000301 /* DegenView */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000101 /* CryptoChartsApp.swift */,
+				A00000000000000000000101 /* DegenViewApp.swift */,
 				A00000000000000000000102 /* ContentView.swift */,
 				A0000000000000000000010F /* Assets.xcassets */,
 				A00000000000000000000310 /* Model */,
@@ -183,13 +183,13 @@
 				A00000000000000000000315 /* Util */,
 				27720E9AD19F30A5F3240B21 /* Core */,
 			);
-			path = CryptoCharts;
+			path = DegenView;
 			sourceTree = "<group>";
 		};
 		A00000000000000000000302 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A00000000000000000000110 /* CryptoCharts.app */,
+				A00000000000000000000110 /* DegenView.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -299,9 +299,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		A00000000000000000000401 /* CryptoCharts */ = {
+		A00000000000000000000401 /* DegenView */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = A00000000000000000000601 /* Build configuration list for PBXNativeTarget "CryptoCharts" */;
+			buildConfigurationList = A00000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenView" */;
 			buildPhases = (
 				A00000000000000000000501 /* Sources */,
 				A00000000000000000000201 /* Frameworks */,
@@ -311,9 +311,9 @@
 			);
 			dependencies = (
 			);
-			name = CryptoCharts;
-			productName = CryptoCharts;
-			productReference = A00000000000000000000110 /* CryptoCharts.app */;
+			name = DegenView;
+			productName = DegenView;
+			productReference = A00000000000000000000110 /* DegenView.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -331,7 +331,7 @@
 					};
 				};
 			};
-			buildConfigurationList = A00000000000000000000702 /* Build configuration list for PBXProject "CryptoCharts" */;
+			buildConfigurationList = A00000000000000000000702 /* Build configuration list for PBXProject "DegenView" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -344,7 +344,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				A00000000000000000000401 /* CryptoCharts */,
+				A00000000000000000000401 /* DegenView */,
 			);
 		};
 /* End PBXProject section */
@@ -372,7 +372,7 @@
 				E20000000000000000000002 /* AlpacaAPIService.swift in Sources */,
 				E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */,
 				E20000000000000000000004 /* AppSettingsView.swift in Sources */,
-				A00000000000000000000001 /* CryptoChartsApp.swift in Sources */,
+				A00000000000000000000001 /* DegenViewApp.swift in Sources */,
 				A00000000000000000000002 /* ContentView.swift in Sources */,
 				A00000000000000000000003 /* KlineData.swift in Sources */,
 				A00000000000000000000903 /* Indicators.swift in Sources */,
@@ -538,7 +538,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A00000000000000000000601 /* Build configuration list for PBXNativeTarget "CryptoCharts" */ = {
+		A00000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenView" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A00000000000000000000803 /* Debug */,
@@ -547,7 +547,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		A00000000000000000000702 /* Build configuration list for PBXProject "CryptoCharts" */ = {
+		A00000000000000000000702 /* Build configuration list for PBXProject "DegenView" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A00000000000000000000801 /* Debug */,
