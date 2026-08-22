@@ -73,6 +73,7 @@ final class DataSourceFactory {
     private lazy var binanceService = BinanceAPIService()
     private lazy var coinGeckoService = CoinGeckoAPIService()
     private lazy var dexScreenerService = DEXScreenerService()
+    private lazy var alpacaService = AlpacaAPIService()
     private lazy var polymarketService = PolymarketService()
 
     func service(for type: DataSourceType) -> TickerDataSource {
@@ -80,6 +81,7 @@ final class DataSourceFactory {
         case .binance:     return binanceService
         case .coingecko:   return coinGeckoService
         case .dexscreener: return dexScreenerService
+        case .alpaca:      return alpacaService
         case .polymarket:  return polymarketService
         }
     }
@@ -93,6 +95,7 @@ final class DataSourceFactory {
     /// Concretely typed accessor — the Polymarket search pane and the chart fetch
     /// path both need `PolymarketService`'s non-protocol methods.
     var polymarket: PolymarketService { polymarketService }
+    var alpaca: AlpacaAPIService { alpacaService }
 }
 
 private extension String {

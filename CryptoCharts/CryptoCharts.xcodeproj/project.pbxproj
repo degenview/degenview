@@ -63,6 +63,10 @@
 		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
 		D10000000000000000000003 /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000103 /* WindowCoordinator.swift */; };
 		D10000000000000000000004 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000104 /* WindowAccessor.swift */; };
+		E20000000000000000000001 /* AlpacaCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000101 /* AlpacaCredentials.swift */; };
+		E20000000000000000000002 /* AlpacaAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000102 /* AlpacaAPIService.swift */; };
+		E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000103 /* AlpacaWebSocketService.swift */; };
+		E20000000000000000000004 /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000104 /* AppSettingsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -123,6 +127,10 @@
 		D10000000000000000000102 /* TabsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsStore.swift; sourceTree = "<group>"; };
 		D10000000000000000000103 /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
 		D10000000000000000000104 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
+		E20000000000000000000101 /* AlpacaCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaCredentials.swift; sourceTree = "<group>"; };
+		E20000000000000000000102 /* AlpacaAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaAPIService.swift; sourceTree = "<group>"; };
+		E20000000000000000000103 /* AlpacaWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaWebSocketService.swift; sourceTree = "<group>"; };
+		E20000000000000000000104 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -198,6 +206,9 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				E20000000000000000000101 /* AlpacaCredentials.swift */,
+				E20000000000000000000102 /* AlpacaAPIService.swift */,
+				E20000000000000000000103 /* AlpacaWebSocketService.swift */,
 				A00000000000000000000106 /* BinanceAPIService.swift */,
 				A00000000000000000000114 /* BinanceWebSocketService.swift */,
 				A00000000000000000000117 /* IconResolver.swift */,
@@ -231,6 +242,7 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
 				A0000000000000000000011F /* TickerIconView.swift */,
@@ -341,6 +353,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E20000000000000000000001 /* AlpacaCredentials.swift in Sources */,
+				E20000000000000000000002 /* AlpacaAPIService.swift in Sources */,
+				E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */,
+				E20000000000000000000004 /* AppSettingsView.swift in Sources */,
 				A00000000000000000000001 /* CryptoChartsApp.swift in Sources */,
 				A00000000000000000000002 /* ContentView.swift in Sources */,
 				A00000000000000000000003 /* KlineData.swift in Sources */,

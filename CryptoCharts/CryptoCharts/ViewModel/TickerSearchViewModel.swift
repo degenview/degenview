@@ -12,14 +12,16 @@ final class TickerSearchViewModel: ObservableObject {
 
     private let debouncer = SearchDebouncer()
     private let logPrefix: String
+    private let sources: () -> [TickerDataSource]
 
-    init(logPrefix: String = "[Search]") {
+    init(logPrefix: String = "[Search]", sources: @escaping () -> [TickerDataSource] = { DataSourceFactory.shared.allSources }) {
         self.logPrefix = logPrefix
+        self.sources = sources
     }
 
     /// Crypto sources, those with results first, then alphabetically.
     var orderedSources: [DataSourceType] {
-        var sources = DataSourceType.cryptoSources
+        var sources = sources().map(\.type)
         sources.sort { a, b in
             let aHas = !(searchResults[a]?.isEmpty ?? true)
             let bHas = !(searchResults[b]?.isEmpty ?? true)
@@ -65,7 +67,7 @@ final class TickerSearchViewModel: ObservableObject {
         isSearching = true
         defer { isSearching = false }
 
-        let sources = DataSourceFactory.shared.allSources
+        let sources = sources()
         var newResults: [DataSourceType: [TickerSearchResult]] = [:]
 
         await withTaskGroup(of: (DataSourceType, [TickerSearchResult]?).self) { group in

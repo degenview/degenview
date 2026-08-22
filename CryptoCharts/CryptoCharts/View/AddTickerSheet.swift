@@ -4,19 +4,28 @@ struct AddTickerSheet: View {
     @ObservedObject var contentViewModel: ContentViewModel
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
+    @StateObject private var stockVM = TickerSearchViewModel(
+        logPrefix: "[AddTicker/Stocks]",
+        sources: { [DataSourceFactory.shared.alpaca] }
+    )
     @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[AddTicker/Polymarket]")
 
     @State private var selectedTab: Tab = .crypto
     @State private var inputText = ""
     @State private var polymarketText = ""
+    @State private var stockText = ""
     @State private var addError: String?
+    @State private var needsAlpacaSetup = false
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openSettings) private var openSettings
 
     private let suggestions = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
+    private let stockSuggestions = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD"]
 
     enum Tab: String, CaseIterable {
         case crypto = "Crypto"
+        case stocks = "Stocks"
         case polymarket = "Polymarket"
     }
 
@@ -24,6 +33,7 @@ struct AddTickerSheet: View {
     private var activeSelection: TickerSearchResult? {
         switch selectedTab {
         case .crypto:     return searchVM.selectedResult
+        case .stocks:     return stockVM.selectedResult
         case .polymarket: return polymarketVM.selectedResult
         }
     }
@@ -44,6 +54,8 @@ struct AddTickerSheet: View {
             switch selectedTab {
             case .crypto:
                 cryptoTab
+            case .stocks:
+                stockTab
             case .polymarket:
                 PolymarketSearchPane(
                     searchVM: polymarketVM,
@@ -61,6 +73,21 @@ struct AddTickerSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+            }
+
+            if needsAlpacaSetup {
+                HStack {
+                    Text("Set up Alpaca before adding a stock chart.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Open Settings") {
+                        UserDefaults.standard.set(SettingsTab.alpaca.rawValue, forKey: "settingsTab")
+                        openSettings()
+                    }
+                }
+                .padding(10)
+                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
             }
 
             // Action buttons
@@ -86,6 +113,53 @@ struct AddTickerSheet: View {
         .onChange(of: selectedTab) { addError = nil }
         .onDisappear {
             cancelSearches()
+        }
+    }
+
+    // MARK: - Stocks Tab
+
+    private var stockTab: some View {
+        VStack(spacing: 16) {
+            SearchFieldRow(
+                placeholder: "US stock symbol or company name (e.g. AAPL)",
+                text: $stockText,
+                isSearching: stockVM.isSearching,
+                onChange: { stockVM.scheduleSearch(query: $0) },
+                onSubmit: { stockVM.selectedResult = stockVM.firstAvailableResult }
+            )
+
+            if stockVM.searchResults.isEmpty && !stockVM.isSearching {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Popular US stocks and ETFs · free IEX feed")
+                        .font(.caption).foregroundStyle(.secondary)
+                    LazyVGrid(columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8) {
+                        ForEach(stockSuggestions, id: \.self) { symbol in
+                            Button(symbol) {
+                                stockText = symbol
+                                stockVM.selectedResult = TickerSearchResult(
+                                    symbol: symbol, fullSymbol: symbol, source: .alpaca, price: nil
+                                )
+                                if AlpacaCredentialsStore.isConfigured { stockVM.scheduleSearch(query: symbol) }
+                            }
+                            .buttonStyle(.bordered).controlSize(.small)
+                        }
+                    }
+                }
+            }
+
+            if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
+                List(results) { result in
+                    SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
+                        stockVM.selectedResult = result
+                    }
+                }
+                .listStyle(.inset)
+                .frame(minHeight: UI.addTickerResultsMinHeight, maxHeight: UI.addTickerResultsMaxHeight)
+            }
+
+            if let selected = stockVM.selectedResult {
+                SelectedResultBanner(prefix: "Selected", result: selected)
+            }
         }
     }
 
@@ -169,11 +243,17 @@ struct AddTickerSheet: View {
 
     private func cancelSearches() {
         searchVM.cancelSearch()
+        stockVM.cancelSearch()
         polymarketVM.cancelSearch()
     }
 
     private func addTicker() {
         guard let selected = activeSelection else { return }
+
+        if selected.source == .alpaca, !AlpacaCredentialsStore.isConfigured {
+            needsAlpacaSetup = true
+            return
+        }
 
         Task { @MainActor in
             do {

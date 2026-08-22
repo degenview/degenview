@@ -78,6 +78,7 @@ final class ContentViewModel: ObservableObject {
     private let viewStore = JSONStore<[SavedView]>(filename: "views.json")
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
+    private let alpacaWSService = AlpacaWebSocketService()
 
     private var scrollMonitor: Any?
     private var pendingZoomDelta = 0
@@ -598,6 +599,7 @@ final class ContentViewModel: ObservableObject {
         refreshTimer?.invalidate()
         refreshTimer = nil
         wsService.disconnect()
+        alpacaWSService.disconnect()
         refetchTask?.cancel()
     }
 
@@ -666,7 +668,7 @@ final class ContentViewModel: ObservableObject {
         await cg.setActiveSymbols(symbols, for: tabID)
     }
 
-    /// Open WebSocket streams for Binance tickers only.
+    /// Open each provider's live stream for the symbols visible in this tab.
     private func connectWebSocket() {
         // A hidden tab has nothing to draw a tick onto.
         guard isWindowVisible else { return }
@@ -675,15 +677,26 @@ final class ContentViewModel: ObservableObject {
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
 
-        guard !symbols.isEmpty else {
+        if symbols.isEmpty {
             wsService.disconnect()
-            return
+        } else {
+            wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
+                self?.chartViewModels
+                    .first(where: { $0.source == .binance && $0.apiSymbol.uppercased() == symbol.uppercased() })?
+                    .applyKlineUpdate(kline)
+            }
         }
 
-        wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
-            self?.chartViewModels
-                .first(where: { $0.source == .binance && $0.apiSymbol.uppercased() == symbol.uppercased() })?
-                .applyKlineUpdate(kline)
+        let stockSymbols = chartViewModels.filter { $0.source == .alpaca }.map(\.apiSymbol)
+        if stockSymbols.isEmpty || !AlpacaCredentialsStore.isConfigured {
+            alpacaWSService.disconnect()
+        } else {
+            alpacaWSService.connect(symbols: stockSymbols) { [weak self] symbol, kline in
+                guard let self else { return }
+                self.chartViewModels
+                    .first(where: { $0.source == .alpaca && $0.apiSymbol.uppercased() == symbol.uppercased() })?
+                    .applyLiveBar(kline, candleDuration: self.selectedTimeRange.binanceIntervalSeconds)
+            }
         }
     }
 

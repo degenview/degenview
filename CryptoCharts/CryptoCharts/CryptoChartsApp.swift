@@ -17,6 +17,10 @@ struct CryptoChartsApp: App {
         .defaultSize(width: UI.windowIdealWidth, height: UI.windowIdealHeight)
         .windowResizability(.contentMinSize)
         .commands { TabCommands() }
+
+        Settings {
+            AppSettingsView()
+        }
     }
 }
 

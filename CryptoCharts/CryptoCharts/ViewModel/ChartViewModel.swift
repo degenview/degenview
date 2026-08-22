@@ -30,7 +30,7 @@ final class ChartViewModel: ObservableObject {
                 return upper
             }
             return "\(upper)USDT"
-        case .coingecko, .dexscreener, .polymarket:
+        case .coingecko, .dexscreener, .alpaca, .polymarket:
             // ticker IS the fullSymbol (coin ID, pair address, or CLOB token id)
             return ticker
         }
@@ -53,6 +53,8 @@ final class ChartViewModel: ObservableObject {
         case .polymarket:
             // The ticker is a token id; the monogram fallback needs the question.
             return title
+        case .alpaca:
+            return ticker.uppercased()
         }
     }
 
@@ -470,6 +472,23 @@ final class ChartViewModel: ObservableObject {
         if currentPrice != kline.closePrice {
             currentPrice = kline.closePrice
         }
+    }
+
+    /// Fold a completed lower-resolution live bar into the current displayed candle.
+    /// Alpaca's free stream emits minute bars even when the chart is hourly or daily.
+    func applyLiveBar(_ bar: KlineData, candleDuration: TimeInterval) {
+        guard !klineData.isEmpty else { return }
+        let index = klineData.count - 1
+        let last = klineData[index]
+        guard bar.openTime >= last.openTime,
+              bar.openTime < last.openTime.addingTimeInterval(candleDuration) else { return }
+
+        klineData[index].highPrice = max(last.highPrice, bar.highPrice)
+        klineData[index].lowPrice = min(last.lowPrice, bar.lowPrice)
+        klineData[index].closePrice = bar.closePrice
+        klineData[index].volume += bar.volume
+        klineData[index].quoteVolume += bar.quoteVolume
+        currentPrice = bar.closePrice
     }
 
     /// Show a different slice of the buffer without going back to the network.

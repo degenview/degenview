@@ -4,12 +4,13 @@ enum DataSourceType: String, CaseIterable, Codable {
     case binance     = "Binance"
     case coingecko   = "CoinGecko"
     case dexscreener = "DEXScreener"
+    case alpaca      = "Alpaca (IEX)"
     case polymarket  = "Polymarket"
 
     /// Crypto price sources — the set the multi-source ticker search fans out to.
     /// Polymarket is excluded: prediction markets get their own search pane.
     static var cryptoSources: [DataSourceType] {
-        allCases.filter { $0 != .polymarket }
+        [.binance, .coingecko, .dexscreener]
     }
 
     var displayName: String { rawValue }
@@ -28,8 +29,8 @@ enum DataSourceType: String, CaseIterable, Codable {
     /// and Polymarket reports none at all.
     var providesVolume: Bool {
         switch self {
-        case .binance, .dexscreener:  return true
-        case .coingecko, .polymarket: return false
+        case .binance, .dexscreener, .alpaca: return true
+        case .coingecko, .polymarket:         return false
         }
     }
 
@@ -44,7 +45,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     /// buffer already fetched, at the same candle size, without another request.
     var fetchesByCount: Bool {
         switch self {
-        case .binance, .dexscreener, .coingecko: return true
+        case .binance, .dexscreener, .coingecko, .alpaca: return true
         case .polymarket:                        return false
         }
     }
@@ -54,9 +55,18 @@ enum DataSourceType: String, CaseIterable, Codable {
         case .binance:     return "building.columns.fill"
         case .coingecko:   return "chart.line.uptrend.xyaxis"
         case .dexscreener: return "arrow.triangle.swap"
+        case .alpaca:      return "chart.xyaxis.line"
         case .polymarket:  return "chart.line.flattrend.xyaxis"
         }
     }
+}
+
+enum ChartAssetType: String, CaseIterable, Identifiable {
+    case crypto = "Crypto"
+    case stock = "Stock"
+    case polymarket = "Polymarket"
+
+    var id: String { rawValue }
 }
 
 /// One tradable choice within a Polymarket event — a token ID + human label pair.

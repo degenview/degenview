@@ -139,7 +139,7 @@ actor IconResolver {
                 }
             }
 
-        case .binance, .polymarket:
+        case .binance, .alpaca, .polymarket:
             break
         }
 
@@ -167,7 +167,7 @@ actor IconResolver {
             // The ticker is the coin id; fall back to the symbol for ids that
             // happen to match one (e.g. a coin listed under "btc").
             image = cache.idMap[ticker.lowercased()] ?? cache.symbolMap[symbol.lowercased()]
-        case .binance, .dexscreener:
+        case .binance, .dexscreener, .alpaca:
             image = cache.symbolMap[symbol.lowercased()]
         case .polymarket:
             // Market questions never key into a coin symbol map.

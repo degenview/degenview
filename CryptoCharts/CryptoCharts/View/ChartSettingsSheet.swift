@@ -11,11 +11,17 @@ struct ChartSettingsSheet: View {
     let onStyleChanged: () -> Void
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[ChartSettings]")
+    @StateObject private var stockVM = TickerSearchViewModel(
+        logPrefix: "[ChartSettings/Stocks]",
+        sources: { [DataSourceFactory.shared.alpaca] }
+    )
     @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[ChartSettings/Polymarket]")
 
     @State private var selectedTab: Tab
     @State private var searchText = ""
     @State private var polymarketText = ""
+    @State private var stockText = ""
+    @State private var assetType: ChartAssetType
 
     // Appearance state — initialized from viewModel
     @State private var bullishColor: Color
@@ -31,7 +37,6 @@ struct ChartSettingsSheet: View {
 
     enum Tab: String, CaseIterable {
         case ticker = "Ticker"
-        case polymarket = "Polymarket"
         case appearance = "Appearance"
         case indicators = "Indicators"
     }
@@ -91,7 +96,8 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         // Open on the tab that matches what this chart already is.
-        _selectedTab = State(initialValue: viewModel.source == .polymarket ? .polymarket : .ticker)
+        _selectedTab = State(initialValue: .ticker)
+        _assetType = State(initialValue: viewModel.source == .polymarket ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
     }
 
     var body: some View {
@@ -139,8 +145,6 @@ struct ChartSettingsSheet: View {
             switch selectedTab {
             case .ticker:
                 tickerTab
-            case .polymarket:
-                polymarketTab
             case .appearance:
                 appearanceTab
             case .indicators:
@@ -161,12 +165,11 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    if selectedTab == .polymarket, let selected = polymarketVM.selectedResult {
-                        apply(selected)
-                    } else {
-                        cancelSearches()
-                        dismiss()
-                    }
+                    let selected = assetType == .crypto ? searchVM.selectedResult
+                        : assetType == .stock ? stockVM.selectedResult
+                        : polymarketVM.selectedResult
+                    if selectedTab == .ticker, let selected { apply(selected) }
+                    else { cancelSearches(); dismiss() }
                 }
                 .keyboardShortcut(.return)
             }
@@ -214,6 +217,24 @@ struct ChartSettingsSheet: View {
     // MARK: - Ticker Tab
 
     private var tickerTab: some View {
+        VStack(spacing: 12) {
+            Picker("Chart type", selection: $assetType) {
+                ForEach(ChartAssetType.allCases) { type in Text(type.rawValue).tag(type) }
+            }
+            .padding(.horizontal, 16)
+
+            currentChartRow
+
+            switch assetType {
+            case .crypto: cryptoTickerSearch
+            case .stock: stockTickerSearch
+            case .polymarket: polymarketTab
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var cryptoTickerSearch: some View {
         VStack(spacing: 12) {
             SearchFieldRow(
                 placeholder: "New ticker symbol (e.g. BTC or PEPE)",
@@ -266,7 +287,38 @@ struct ChartSettingsSheet: View {
 
             Spacer()
         }
-        .padding(.top, 8)
+    }
+
+    private var stockTickerSearch: some View {
+        VStack(spacing: 12) {
+            SearchFieldRow(
+                placeholder: "US stock symbol or company name",
+                text: $stockText,
+                isSearching: stockVM.isSearching,
+                onChange: { stockVM.scheduleSearch(query: $0) },
+                onSubmit: { stockVM.selectedResult = stockVM.firstAvailableResult }
+            )
+            .padding(.horizontal, 16)
+
+            if !AlpacaCredentialsStore.isConfigured {
+                Text("Configure Alpaca in Settings before changing this chart to a stock.")
+                    .font(.caption).foregroundStyle(.orange).padding(.horizontal, 16)
+            }
+
+            if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
+                List(results) { result in
+                    SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
+                        stockVM.selectedResult = result
+                    }
+                }
+                .listStyle(.inset).frame(maxHeight: UI.chartSettingsResultsMaxHeight)
+            }
+            if let selected = stockVM.selectedResult {
+                SelectedResultBanner(prefix: "New", result: selected).padding(.horizontal, 16)
+                Button("Change Ticker") { apply(selected) }.buttonStyle(.borderedProminent)
+            }
+            Spacer()
+        }
     }
 
     // MARK: - Polymarket Tab
@@ -305,6 +357,7 @@ struct ChartSettingsSheet: View {
 
     private func cancelSearches() {
         searchVM.cancelSearch()
+        stockVM.cancelSearch()
         polymarketVM.cancelSearch()
     }
 

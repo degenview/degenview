@@ -228,15 +228,6 @@ struct ContentView: View {
                 ? "Grid layout" : "Vertical layout")
         }
         ToolbarItem(placement: .automatic) {
-            Picker("Theme", selection: $appTheme) {
-                ForEach(AppTheme.allCases) { theme in
-                    Label(theme.rawValue, systemImage: theme.icon).tag(theme)
-                }
-            }
-            .pickerStyle(.menu)
-            .accessibilityLabel("Theme")
-        }
-        ToolbarItem(placement: .automatic) {
             Menu {
                 // The name bar used to be the rename affordance; with it gone
                 // this menu is the only place left to reach it.
