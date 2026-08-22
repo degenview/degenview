@@ -228,6 +228,8 @@ enum UI {
     static let windowRestoreMinVisibleHeight: CGFloat = 80
     /// Sheet frame width for Add Ticker.
     static let addTickerSheetWidth: CGFloat = 440
+    /// Width of the optional favorites rail on the right.
+    static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.
     static let chartSettingsSheetWidth: CGFloat = 420
     static let chartSettingsSheetHeight: CGFloat = 420

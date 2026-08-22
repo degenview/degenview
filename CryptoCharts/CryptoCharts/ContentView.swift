@@ -29,6 +29,9 @@ struct ContentView: View {
     @StateObject private var contentViewModel: ContentViewModel
 
     @State private var showAddSheet = false
+    @State private var showAddFavoriteSheet = false
+    @State private var showFavorites = false
+    @StateObject private var favoritesStore = FavoritesStore.shared
     @State private var showSaveAlert = false
     @State private var saveViewName = ""
     @State private var showRenameAlert = false
@@ -49,14 +52,24 @@ struct ContentView: View {
                 }
 
                 chartColumn
+
+                if showFavorites {
+                    Divider()
+                    FavoritesSidebar(
+                        store: favoritesStore,
+                        onAdd: { showAddFavoriteSheet = true },
+                        onSelect: contentViewModel.openFavorite
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
             // The title is the tab label, and an empty tab still needs the
             // toolbar — both belong outside the empty/non-empty branch.
             .navigationTitle(contentViewModel.tabName)
             .toolbar { toolbarContent }
             .frame(
-                minWidth: UI.windowMinWidth,
-                idealWidth: UI.windowIdealWidth,
+                minWidth: UI.windowMinWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
+                idealWidth: UI.windowIdealWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
                 minHeight: UI.windowMinHeight,
                 idealHeight: UI.windowIdealHeight
             )
@@ -87,10 +100,32 @@ struct ContentView: View {
             Text("The tab name is also the window title.")
         }
         .sheet(isPresented: $showAddSheet) {
-            AddTickerSheet(contentViewModel: contentViewModel)
+            AddTickerSheet { selected in
+                let displayName: String? = {
+                    guard selected.source == .polymarket else { return nil }
+                    if let series = selected.pmSeries, series.count > 1 {
+                        return selected.eventTitle ?? selected.symbol
+                    }
+                    return selected.symbol
+                }()
+                try await contentViewModel.addTicker(
+                    symbol: selected.fullSymbol,
+                    source: selected.source,
+                    displayName: displayName,
+                    pmSeries: selected.pmSeries
+                )
+            }
         }
-        .onChange(of: showAddSheet) { _, new in
-            contentViewModel.isShowingSheet = new
+        .sheet(isPresented: $showAddFavoriteSheet) {
+            AddTickerSheet(title: "Add Favorite", actionLabel: "Favorite") { selected in
+                try favoritesStore.add(selected)
+            }
+        }
+        .onChange(of: showAddSheet) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
+        }
+        .onChange(of: showAddFavoriteSheet) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
         }
     }
 
@@ -279,6 +314,15 @@ struct ContentView: View {
                 Image(systemName: "square.and.arrow.down")
             }
             .accessibilityLabel("Save View")
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                withAnimation { showFavorites.toggle() }
+            } label: {
+                Image(systemName: showFavorites ? "sidebar.right" : "sidebar.right")
+            }
+            .accessibilityLabel(showFavorites ? "Hide Favorites" : "Show Favorites")
+            .help(showFavorites ? "Hide Favorites" : "Show Favorites")
         }
         ToolbarItem(placement: .primaryAction) {
             Button {

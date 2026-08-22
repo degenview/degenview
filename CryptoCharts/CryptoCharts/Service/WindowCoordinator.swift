@@ -233,6 +233,14 @@ final class WindowCoordinator {
         openWindow(value: tab.id)
     }
 
+    /// Open a favorite as a new system tab beside the tab that requested it.
+    func newTab(for favorite: FavoriteItem, beside anchorID: UUID) {
+        guard let openWindow = openWindowAction else { return }
+        let tab = TabsStore.shared.makeTab(name: favorite.name, tickerConfig: favorite.config)
+        pendingJoins[tab.id] = anchorID
+        openWindow(value: tab.id)
+    }
+
     // MARK: - Restore
 
     private var didRestore = false

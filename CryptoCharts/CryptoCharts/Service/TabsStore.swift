@@ -73,6 +73,15 @@ final class TabsStore: ObservableObject {
         return tab
     }
 
+    /// Create a tab that is ready to render a selected shortcut on its first frame.
+    @discardableResult
+    func makeTab(name: String, tickerConfig: TickerConfig) -> ChartTab {
+        let tab = ChartTab(name: name, tickerConfigs: [tickerConfig])
+        tabs.append(tab)
+        scheduleSave()
+        return tab
+    }
+
     /// Fetch-or-create, so a window handed an unknown id still opens.
     func ensureTab(_ id: UUID) -> ChartTab {
         if let existing = tab(id) { return existing }

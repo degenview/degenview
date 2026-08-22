@@ -788,6 +788,34 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
+    /// Load a favorite here when this tab has room; otherwise give it its own tab.
+    func openFavorite(_ favorite: FavoriteItem) {
+        if chartViewModels.count > 1 {
+            WindowCoordinator.shared.newTab(for: favorite, beside: tabID)
+            return
+        }
+
+        let config = favorite.config
+        if let existing = chartViewModels.first {
+            updateTicker(
+                existing,
+                symbol: config.symbol,
+                source: config.source,
+                displayName: config.displayName,
+                pmSeries: config.pmSeries
+            )
+        } else {
+            Task {
+                try? await addTicker(
+                    symbol: config.symbol,
+                    source: config.source,
+                    displayName: config.displayName,
+                    pmSeries: config.pmSeries
+                )
+            }
+        }
+    }
+
     /// Update a chart's ticker symbol and/or source, then refetch.
     func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
         vm.updateTicker(symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)

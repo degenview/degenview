@@ -1,7 +1,9 @@
 import SwiftUI
 
 struct AddTickerSheet: View {
-    @ObservedObject var contentViewModel: ContentViewModel
+    let title: String
+    let actionLabel: String
+    let onAdd: @MainActor (TickerSearchResult) async throws -> Void
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
     @StateObject private var stockVM = TickerSearchViewModel(
@@ -19,6 +21,16 @@ struct AddTickerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openSettings) private var openSettings
+
+    init(
+        title: String = "Add Chart",
+        actionLabel: String = "Add",
+        onAdd: @escaping @MainActor (TickerSearchResult) async throws -> Void
+    ) {
+        self.title = title
+        self.actionLabel = actionLabel
+        self.onAdd = onAdd
+    }
 
     private let suggestions = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
     private let stockSuggestions = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD"]
@@ -41,7 +53,7 @@ struct AddTickerSheet: View {
     var body: some View {
         VStack(spacing: 16) {
             // Header
-            Text("Add Chart")
+            Text(title)
                 .font(.headline)
 
             Picker("", selection: $selectedTab) {
@@ -99,7 +111,7 @@ struct AddTickerSheet: View {
                 .buttonStyle(.plain)
                 .keyboardShortcut(.escape)
 
-                Button("Add") {
+                Button(actionLabel) {
                     addTicker()
                 }
                 .buttonStyle(.borderedProminent)
@@ -267,20 +279,7 @@ struct AddTickerSheet: View {
                     )
                 }
 
-                let displayName: String? = {
-                    guard selected.source == .polymarket else { return nil }
-                    if let series = selected.pmSeries, series.count > 1 {
-                        return selected.eventTitle ?? selected.symbol
-                    }
-                    return selected.symbol
-                }()
-
-                try await contentViewModel.addTicker(
-                    symbol: selected.fullSymbol,
-                    source: selected.source,
-                    displayName: displayName,
-                    pmSeries: selected.pmSeries
-                )
+                try await onAdd(selected)
                 dismiss()
             } catch {
                 addError = error.localizedDescription
@@ -290,5 +289,5 @@ struct AddTickerSheet: View {
 }
 
 #Preview {
-    AddTickerSheet(contentViewModel: ContentViewModel(tabID: UUID()))
+    AddTickerSheet { _ in }
 }
