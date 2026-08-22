@@ -30,7 +30,7 @@ struct ContentView: View {
 
     @State private var showAddSheet = false
     @State private var showAddFavoriteSheet = false
-    @State private var showFavorites = false
+    @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var favoritesStore = FavoritesStore.shared
     @State private var showSaveAlert = false
     @State private var saveViewName = ""
