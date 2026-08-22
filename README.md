@@ -40,6 +40,29 @@ no external dependencies.
 - **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
   green/red rectangle; measurements are intentionally temporary
 
+### Historical bar replay
+
+- **No-lookahead replay** — Choose a historical candle and progressively reveal the
+  market from that point. Future candles are removed at the data boundary before chart
+  rendering, indicators, volume, crosshair inspection, autoscaling, or drawing snapping
+- **Native replay controls** — Select a bar, date/time, random bar, or first available
+  bar; then step, play/pause, change speed or interval, restart, or return to latest
+- **Granular Binance and Alpaca replay** — When lower-timeframe OHLCV is available,
+  DegenView paginates up to 100,000 source bars and incrementally reconstructs the active
+  displayed candle. Other providers fall back to deterministic complete-chart-bar steps
+  without fabricating intrabar prices
+- **Deterministic partial candles** — Open comes from the first observed source bar,
+  high/low from observed extremes, close from the latest observed close, and volume from
+  observed volume only. Source close times—not opening times—advance the replay clock
+- **Shared replay clock** — Every chart in a tab is constrained by one authoritative
+  historical timestamp, including layouts with different symbols
+- **Replay-safe live data** — WebSockets and automatic refresh are suspended during
+  replay and restored when returning to latest
+- **Session restoration** — Interrupted replay state is saved with the tab and restored
+  paused, including the start/current timestamps, interval, and speed
+- **Keyboard controls** — **Shift–↓** toggles Play/Pause, **Shift–→** advances one step,
+  and **Escape** cancels start-point selection
+
 ### Dashboard and persistence
 
 - **Native macOS tabs and windows** — Every tab owns independent charts, timeframe,
@@ -101,6 +124,24 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
    and click one to open it in the current tab.
 8. Press **⌘T** or use the tab bar's **+** for an empty tab. Drag tabs out into windows or
    merge them again through the tab bar or **File → Merge All Windows**.
+9. Open the toolbar **Replay** menu and choose **Select bar**. Move over a chart to snap
+   the orange marker to a historical candle, then click to begin. Use the replay strip to
+   step, play, change speed/resolution, choose a new start, or return to latest.
+
+### Replay data support
+
+| Provider | Granular replay | Available behavior |
+| --- | --- | --- |
+| Binance | Yes | `1m`, `5m`, `15m`, `30m`, `1h`, and `1D` where finer than the chart |
+| Alpaca | Yes | Minute/hour/day historical bars from the configured IEX feed |
+| CoinGecko | No | Complete displayed bars |
+| DEXScreener / GeckoTerminal | No | Complete displayed bars |
+| Polymarket | No | Complete displayed observations |
+
+**Auto** chooses the finest provider-supported interval that fits the loaded span within
+the 100,000-source-bar replay budget. Intervals that cannot cover the span accurately are
+not shown. If a granular request fails or contains no data, that chart displays a
+non-blocking notice and safely falls back to complete bars.
 
 ## Architecture
 
@@ -114,6 +155,7 @@ DegenView/
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
 │   ├── DataSourceType.swift           # Sources and persisted ticker configuration
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
+│   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
@@ -128,6 +170,7 @@ DegenView/
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── ChartCardView.swift            # Card header, chart, editor, errors
+│   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
 │   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket search
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, and ruler tools
@@ -141,6 +184,7 @@ DegenView/
     ├── GeckoTerminalService.swift     # DEX-pair historical OHLCV
     ├── AlpacaAPIService.swift         # Alpaca search and historical bars
     ├── AlpacaWebSocketService.swift   # Alpaca live stock bars
+    ├── ReplayEngine.swift             # Deterministic replay state machine and aggregation
     ├── PolymarketService.swift        # Event search and probability history
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs, saved views, and session persistence
@@ -164,6 +208,25 @@ DegenView/
    rate limiter, and its cache is flushed to disk when the app quits.
 6. `TabsStore`, `FavoritesStore`, and `DrawingStore` persist independent JSON documents in
    Application Support; Alpaca secrets live in Keychain rather than JSON.
+7. During replay, each chart retains its immutable canonical history and exposes only a
+   binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
+   timestamp and one cancellable playback task.
+8. Binance and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
+   lower-timeframe bars are aggregated against the provider-returned displayed-bar
+   boundaries, preserving stock sessions, market gaps, and DST alignment.
+
+## Tests
+
+The `DegenViewTests` target covers replay selection, stepping, seeking, completion,
+restoration, duplicate/missing timestamps, deterministic OHLCV aggregation, granular
+partial candles, source-close-time progression, and future-data leakage.
+
+```bash
+xcodebuild test \
+  -project DegenView.xcodeproj \
+  -scheme DegenView \
+  -destination 'platform=macOS'
+```
 
 ## License
 

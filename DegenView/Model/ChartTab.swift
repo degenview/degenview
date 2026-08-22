@@ -17,6 +17,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
     var timeRange: TimeRange
     var layoutMode: LayoutMode
     var candleCount: Int
+    var replaySession: ReplaySession?
 
     init(
         id: UUID = UUID(),
@@ -25,7 +26,8 @@ struct ChartTab: Identifiable, Codable, Equatable {
         tickerConfigs: [TickerConfig] = [],
         timeRange: TimeRange = .oneDay,
         layoutMode: LayoutMode = .vertical,
-        candleCount: Int? = nil
+        candleCount: Int? = nil,
+        replaySession: ReplaySession? = nil
     ) {
         self.id = id
         self.name = name
@@ -34,6 +36,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
         self.timeRange = timeRange
         self.layoutMode = layoutMode
         self.candleCount = candleCount ?? timeRange.dataPointLimit
+        self.replaySession = replaySession
     }
 }
 

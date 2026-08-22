@@ -93,7 +93,13 @@ final class ChartViewModel: ObservableObject {
         guard pmSeries.count > 1 else { return [] }
         return pmSeries.filter(\.enabled).compactMap { s in
             guard let data = pmSeriesData[s.tokenID], !data.isEmpty else { return nil }
-            return (s.tokenID, s.label, data, pmColor(for: s.tokenID))
+            let gated: [KlineData]
+            if let replayTimestamp {
+                gated = Array(data.prefix(Self.upperBound(of: replayTimestamp, in: data)))
+            } else {
+                gated = data
+            }
+            return (s.tokenID, s.label, gated, pmColor(for: s.tokenID))
         }
     }
 
@@ -118,14 +124,31 @@ final class ChartViewModel: ObservableObject {
     /// Read `visibleKlines` for what the chart actually draws.
     @Published var klineData: [KlineData] = []
 
+    /// The tab's authoritative replay clock. The canonical fetched series remains
+    /// untouched; every chart/indicator/interaction consumer reads through this gate.
+    @Published private(set) var replayTimestamp: Date?
+    @Published private(set) var replaySelectionTimestamp: Date?
+    @Published private(set) var granularReplayData: [KlineData] = []
+    private(set) var granularReplayInterval: ReplayInterval?
+
+    var replayKlines: [KlineData] {
+        guard let replayTimestamp else { return klineData }
+        guard let interval = granularReplayInterval,
+              let sourceSeconds = interval.seconds,
+              !granularReplayData.isEmpty
+        else { return Array(klineData.prefix(Self.upperBound(of: replayTimestamp, in: klineData))) }
+        return aggregatedReplayKlines(through: replayTimestamp, sourceSeconds: sourceSeconds)
+    }
+
     /// How many of the newest candles are on screen. The rest are warm-up for
     /// period-based indicators, and slack that lets a zoom redraw without refetching.
     @Published private(set) var visibleCount: Int = TimeRange.oneDay.dataPointLimit
 
     /// The candles the chart draws — the newest `visibleCount` of the buffer.
     var visibleKlines: [KlineData] {
-        guard visibleCount > 0, klineData.count > visibleCount else { return klineData }
-        return Array(klineData.suffix(visibleCount))
+        let available = replayKlines
+        guard visibleCount > 0, available.count > visibleCount else { return available }
+        return Array(available.suffix(visibleCount))
     }
 
     @Published var errorMessage: String?
@@ -156,7 +179,7 @@ final class ChartViewModel: ObservableObject {
     /// visible tail so warm-up happens off screen.
     var indicators: IndicatorSeries {
         IndicatorSeries.make(
-            candles: klineData,
+            candles: replayKlines,
             visibleCount: visibleCount,
             showRSI: showRSI,
             showEMA: showEMA,
@@ -223,6 +246,160 @@ final class ChartViewModel: ObservableObject {
     /// counting them would report a move the user can't see.
     var priceChangePercent: Double? {
         visibleKlines.priceChangePercent
+    }
+
+    var displayedPrice: Double? { replayTimestamp == nil ? currentPrice : replayKlines.last?.closePrice }
+
+    func applyReplayTimestamp(_ timestamp: Date?) {
+        replayTimestamp = timestamp
+    }
+
+    func applyReplaySelectionTimestamp(_ timestamp: Date?) {
+        replaySelectionTimestamp = timestamp
+    }
+
+    var supportedReplayIntervals: [ReplayInterval] {
+        guard let source = api as? GranularReplayDataSource else { return [.automatic, .chartBar] }
+        let span: TimeInterval = {
+            guard let first = klineData.first, let last = klineData.last else { return 0 }
+            return last.openTime.timeIntervalSince(first.openTime) + currentReplayChartSeconds
+        }()
+        return source.supportedReplayIntervals(chartInterval: currentReplayChartInterval).filter { interval in
+            guard let seconds = interval.seconds else { return true }
+            return span <= 0 || span / seconds <= 100_000
+        }
+    }
+
+    func resolvedReplayInterval(_ requested: ReplayInterval) -> ReplayInterval {
+        guard requested == .automatic else {
+            return supportedReplayIntervals.contains(requested) ? requested : .chartBar
+        }
+        let concrete = supportedReplayIntervals.compactMap { interval -> (ReplayInterval, TimeInterval)? in
+            guard let seconds = interval.seconds else { return nil }
+            return (interval, seconds)
+        }.sorted { $0.1 < $1.1 }
+        guard let first = klineData.first, let last = klineData.last else { return .chartBar }
+        let span = last.openTime.timeIntervalSince(first.openTime) + currentReplayChartSeconds
+        return concrete.first(where: { span / $0.1 <= 100_000 })?.0 ?? concrete.last?.0 ?? .chartBar
+    }
+
+    func loadGranularReplayData(interval requested: ReplayInterval) async throws -> ReplayInterval {
+        let interval = resolvedReplayInterval(requested)
+        guard interval != .chartBar,
+              let source = api as? GranularReplayDataSource,
+              let first = klineData.first,
+              let last = klineData.last
+        else {
+            granularReplayData = []
+            granularReplayInterval = nil
+            return .chartBar
+        }
+        let data = try await source.fetchReplayKlines(
+            symbol: apiSymbol,
+            interval: interval,
+            start: first.openTime,
+            end: last.openTime.addingTimeInterval(currentReplayChartSeconds),
+            maximumCount: 100_000
+        )
+        guard !data.isEmpty else {
+            granularReplayData = []
+            granularReplayInterval = nil
+            return .chartBar
+        }
+        granularReplayData = data
+        granularReplayInterval = interval
+        return interval
+    }
+
+    func clearGranularReplayData() {
+        granularReplayData = []
+        granularReplayInterval = nil
+    }
+
+    func replayTimeline(fallbackToChartBars: Bool = true) -> [Date] {
+        if let seconds = granularReplayInterval?.seconds, !granularReplayData.isEmpty {
+            return granularReplayData.map { $0.openTime.addingTimeInterval(seconds) }
+        }
+        return fallbackToChartBars ? klineData.map(\.openTime) : []
+    }
+
+    func replayBarEnd(containing date: Date) -> Date {
+        guard let index = klineData.lastIndex(where: { $0.openTime <= date }) else { return date }
+        if index + 1 < klineData.count { return klineData[index + 1].openTime }
+        return klineData[index].openTime.addingTimeInterval(currentReplayChartSeconds)
+    }
+
+    private var currentReplayChartInterval: String {
+        // The owning ContentViewModel passes the same selected TimeRange used to fetch;
+        // fetched bar spacing is more reliable for fallback ranges with shared tokens.
+        guard klineData.count > 1 else { return "1d" }
+        let spacing = klineData[1].openTime.timeIntervalSince(klineData[0].openTime)
+        if spacing <= 3_600 { return "1h" }
+        if spacing <= 86_400 { return "1d" }
+        if spacing <= 604_800 { return "1w" }
+        return "1M"
+    }
+
+    private var currentReplayChartSeconds: TimeInterval {
+        guard klineData.count > 1 else { return 86_400 }
+        return max(60, klineData[1].openTime.timeIntervalSince(klineData[0].openTime))
+    }
+
+    private func aggregatedReplayKlines(through timestamp: Date, sourceSeconds: TimeInterval) -> [KlineData] {
+        var output: [KlineData] = []
+        let canonicalEnd = Self.upperBound(of: timestamp, in: klineData)
+        output.reserveCapacity(canonicalEnd)
+
+        for index in 0..<canonicalEnd {
+            let candle = klineData[index]
+            let bucketEnd = index + 1 < klineData.count
+                ? klineData[index + 1].openTime
+                : candle.openTime.addingTimeInterval(currentReplayChartSeconds)
+            let observedEnd = min(timestamp, bucketEnd)
+            let startIndex = Self.lowerBound(of: candle.openTime, in: granularReplayData)
+            let endIndex = Self.upperBound(
+                of: observedEnd.addingTimeInterval(-sourceSeconds),
+                in: granularReplayData
+            )
+            if startIndex < endIndex,
+               let aggregate = ReplayEngine.aggregate(
+                    granularReplayData[startIndex..<endIndex],
+                    bucketStart: candle.openTime
+               ) {
+                output.append(aggregate)
+            } else if bucketEnd <= timestamp {
+                // The displayed provider already confirmed this completed bucket.
+                // This covers session gaps without exposing a still-forming candle.
+                output.append(candle)
+            }
+        }
+        return output
+    }
+
+    func replayDate(nearestTo point: CGPoint, in plot: ChartPlot) -> Date? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let fractional = plot.fractionalIndex(forX: point.x, slotWidth: plot.slotWidth(forCount: points.count))
+        let index = Int(fractional.rounded()).clamped(to: 0...(points.count - 1))
+        return points[index].openTime
+    }
+
+    private static func upperBound(of timestamp: Date, in candles: [KlineData]) -> Int {
+        var low = 0, high = candles.count
+        while low < high {
+            let mid = (low + high) / 2
+            if candles[mid].openTime <= timestamp { low = mid + 1 } else { high = mid }
+        }
+        return low
+    }
+
+    private static func lowerBound(of timestamp: Date, in candles: [KlineData]) -> Int {
+        var low = 0, high = candles.count
+        while low < high {
+            let mid = (low + high) / 2
+            if candles[mid].openTime < timestamp { low = mid + 1 } else { high = mid }
+        }
+        return low
     }
 
     var priceChangeIsPositive: Bool {
@@ -479,6 +656,7 @@ final class ChartViewModel: ObservableObject {
 
     /// Update ticker symbol and/or source, re-fetch data.
     func updateTicker(symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
+        clearGranularReplayData()
         ticker = symbol
         self.source = source
         self.displayName = displayName

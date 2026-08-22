@@ -33,7 +33,7 @@ enum BinanceAPIError: LocalizedError {
 
 // MARK: - Service
 
-final class BinanceAPIService: TickerDataSource {
+final class BinanceAPIService: GranularReplayDataSource {
     let type: DataSourceType = .binance
     private let session = AppSupport.defaultSession
     private let baseURL = "https://api.binance.com"
@@ -112,6 +112,86 @@ final class BinanceAPIService: TickerDataSource {
         await cache.set(symbol: symbol, interval: interval, days: 0, data: sorted)
 
         return sorted
+    }
+
+    func supportedReplayIntervals(chartInterval: String) -> [ReplayInterval] {
+        let chartSeconds = Self.intervalSeconds(chartInterval)
+        return ReplayInterval.allCases.filter { interval in
+            guard let seconds = interval.seconds else { return interval == .automatic || interval == .chartBar }
+            return seconds <= chartSeconds
+        }
+    }
+
+    func fetchReplayKlines(
+        symbol: String,
+        interval: ReplayInterval,
+        start: Date,
+        end: Date,
+        maximumCount: Int = 100_000
+    ) async throws -> [KlineData] {
+        guard let token = interval.apiInterval, let seconds = interval.seconds, start <= end else { return [] }
+        var cursor = start
+        var result: [KlineData] = []
+        result.reserveCapacity(min(maximumCount, 10_000))
+
+        while cursor <= end, result.count < maximumCount {
+            guard var components = URLComponents(string: "\(baseURL)/api/v3/klines") else {
+                throw BinanceAPIError.invalidURL
+            }
+            let pageLimit = min(1_000, maximumCount - result.count)
+            components.queryItems = [
+                URLQueryItem(name: "symbol", value: symbol.uppercased()),
+                URLQueryItem(name: "interval", value: token),
+                URLQueryItem(name: "startTime", value: String(Int64(cursor.timeIntervalSince1970 * 1_000))),
+                URLQueryItem(name: "endTime", value: String(Int64(end.timeIntervalSince1970 * 1_000))),
+                URLQueryItem(name: "limit", value: String(pageLimit))
+            ]
+            guard let url = components.url else { throw BinanceAPIError.invalidURL }
+            let (data, response) = try await session.data(from: url)
+            guard let http = response as? HTTPURLResponse else { throw BinanceAPIError.invalidResponse }
+            guard http.statusCode == 200 else {
+                if http.statusCode == 429 { throw BinanceAPIError.rateLimited }
+                throw BinanceAPIError.httpError(http.statusCode)
+            }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [[Any]] else {
+                throw BinanceAPIError.parseError("Expected replay kline array")
+            }
+            let page = json.compactMap(KlineData.init(raw:)).sorted { $0.openTime < $1.openTime }
+            guard let last = page.last else { break }
+            result.append(contentsOf: page)
+            let next = last.openTime.addingTimeInterval(seconds)
+            guard next > cursor else { break }
+            cursor = next
+            if page.count < pageLimit { break }
+        }
+        return Self.sanitized(result, maximumCount: maximumCount)
+    }
+
+    private static func intervalSeconds(_ interval: String) -> TimeInterval {
+        switch interval {
+        case "1m": return 60
+        case "5m": return 300
+        case "15m": return 900
+        case "30m": return 1_800
+        case "1h": return 3_600
+        case "1d": return 86_400
+        case "1w": return 604_800
+        case "1M": return 2_592_000
+        default: return 0
+        }
+    }
+
+    private static func sanitized(_ candles: [KlineData], maximumCount: Int) -> [KlineData] {
+        var seen = Set<Date>()
+        return candles
+            .filter { candle in
+                candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite &&
+                candle.closePrice.isFinite && candle.volume.isFinite && candle.highPrice >= candle.lowPrice &&
+                seen.insert(candle.openTime).inserted
+            }
+            .sorted { $0.openTime < $1.openTime }
+            .prefix(maximumCount)
+            .map { $0 }
     }
 
     /// Search for tickers matching a query. Returns up to 20 pairs sorted by volume.

@@ -58,6 +58,19 @@ protocol TickerDataSource: AnyObject {
     func searchTickers(query: String) async throws -> [TickerSearchResult]
 }
 
+/// Optional capability for sources that expose timestamp-bounded OHLCV at a
+/// resolution finer than the displayed chart. Replay never assumes this exists.
+protocol GranularReplayDataSource: TickerDataSource {
+    func supportedReplayIntervals(chartInterval: String) -> [ReplayInterval]
+    func fetchReplayKlines(
+        symbol: String,
+        interval: ReplayInterval,
+        start: Date,
+        end: Date,
+        maximumCount: Int
+    ) async throws -> [KlineData]
+}
+
 extension TickerDataSource {
     /// Default: no cache access. Services with caches override.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {

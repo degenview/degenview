@@ -16,7 +16,7 @@ enum AlpacaError: LocalizedError {
     }
 }
 
-final class AlpacaAPIService: TickerDataSource {
+final class AlpacaAPIService: GranularReplayDataSource {
     let type: DataSourceType = .alpaca
     private let session: URLSession
     private var assetCache: [Asset]?
@@ -41,6 +41,66 @@ final class AlpacaAPIService: TickerDataSource {
             KlineData(openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
                       closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
         }
+    }
+
+    func supportedReplayIntervals(chartInterval: String) -> [ReplayInterval] {
+        let chartSeconds: TimeInterval
+        switch chartInterval {
+        case "1h": chartSeconds = 3_600
+        case "1d": chartSeconds = 86_400
+        case "1w": chartSeconds = 604_800
+        case "1M": chartSeconds = 2_592_000
+        default: chartSeconds = 0
+        }
+        return ReplayInterval.allCases.filter { interval in
+            guard let seconds = interval.seconds else { return interval == .automatic || interval == .chartBar }
+            return seconds <= chartSeconds
+        }
+    }
+
+    func fetchReplayKlines(
+        symbol: String,
+        interval: ReplayInterval,
+        start: Date,
+        end: Date,
+        maximumCount: Int = 100_000
+    ) async throws -> [KlineData] {
+        guard let timeframe = Self.replayTimeframe(interval), start <= end else { return [] }
+        let credentials = try configuredCredentials()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var pageToken: String?
+        var result: [KlineData] = []
+        result.reserveCapacity(min(maximumCount, 10_000))
+
+        repeat {
+            var components = URLComponents(string: "https://data.alpaca.markets/v2/stocks/\(symbol.uppercased())/bars")!
+            var items = [
+                URLQueryItem(name: "timeframe", value: timeframe),
+                URLQueryItem(name: "start", value: formatter.string(from: start)),
+                URLQueryItem(name: "end", value: formatter.string(from: end)),
+                URLQueryItem(name: "limit", value: String(min(10_000, maximumCount - result.count))),
+                URLQueryItem(name: "adjustment", value: "all"),
+                URLQueryItem(name: "feed", value: "iex"),
+                URLQueryItem(name: "sort", value: "asc")
+            ]
+            if let pageToken { items.append(URLQueryItem(name: "page_token", value: pageToken)) }
+            components.queryItems = items
+            let data = try await request(components.url!, credentials: credentials)
+            let response = try JSONDecoder.alpaca.decode(BarsResponse.self, from: data)
+            result.append(contentsOf: response.bars.map { bar in
+                KlineData(openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
+                          closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
+            })
+            pageToken = result.count < maximumCount ? response.nextPageToken : nil
+        } while pageToken != nil
+
+        var seen = Set<Date>()
+        return result.filter { candle in
+            candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite &&
+            candle.closePrice.isFinite && candle.highPrice >= candle.lowPrice &&
+            seen.insert(candle.openTime).inserted
+        }.sorted { $0.openTime < $1.openTime }
     }
 
     func searchTickers(query: String) async throws -> [TickerSearchResult] {
@@ -97,6 +157,18 @@ final class AlpacaAPIService: TickerDataSource {
         }
     }
 
+    private static func replayTimeframe(_ interval: ReplayInterval) -> String? {
+        switch interval {
+        case .oneMinute: return "1Min"
+        case .fiveMinutes: return "5Min"
+        case .fifteenMinutes: return "15Min"
+        case .thirtyMinutes: return "30Min"
+        case .oneHour: return "1Hour"
+        case .oneDay: return "1Day"
+        case .automatic, .chartBar: return nil
+        }
+    }
+
     /// Alpaca otherwise defaults historical bars to the current trading day. That
     /// produces an empty response before the open and throughout weekends/holidays.
     /// Include ample non-trading time, then request descending bars so `limit` keeps
@@ -117,14 +189,16 @@ final class AlpacaAPIService: TickerDataSource {
 
     private struct BarsResponse: Decodable {
         let bars: [Bar]
+        let nextPageToken: String?
 
-        private enum CodingKeys: String, CodingKey { case bars }
+        private enum CodingKeys: String, CodingKey { case bars; case nextPageToken = "next_page_token" }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
             // Alpaca sometimes omits `bars` instead of returning an empty array
             // when IEX has no observations for the requested symbol.
             bars = try container.decodeIfPresent([Bar].self, forKey: .bars) ?? []
+            nextPageToken = try container.decodeIfPresent(String.self, forKey: .nextPageToken)
         }
     }
     private struct Bar: Decodable {

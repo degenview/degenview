@@ -28,6 +28,11 @@ final class ContentViewModel: ObservableObject {
     /// Which tab this view model drives — also the key for its slice of the
     /// CoinGecko prime and its entry in `WindowCoordinator`.
     let tabID: UUID
+    let replay = ReplayEngine()
+    private var pendingReplayRestore: ReplaySession?
+    @Published private(set) var isPreparingReplay = false
+    @Published var replayNotice: String?
+    private var replayPreparationTask: Task<Void, Never>?
 
     @Published var chartViewModels: [ChartViewModel] = []
     @Published var selectedTimeRange: TimeRange = .oneDay {
@@ -148,6 +153,7 @@ final class ContentViewModel: ObservableObject {
         self.savedViews = viewStore.load() ?? []
 
         let tab = TabsStore.shared.ensureTab(tabID)
+        pendingReplayRestore = tab.replaySession
         tabName = tab.name
         currentViewID = tab.savedViewID
         selectedTimeRange = tab.timeRange
@@ -192,10 +198,17 @@ final class ContentViewModel: ObservableObject {
             matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved, .keyDown]
         ) { [weak self] event in
             guard let self else { return event }
+            if self.replay.status == .selectingStart {
+                return self.handleReplaySelection(event)
+            }
             // The price gutter gets first refusal; a swallowed event never reaches
             // the drawing tool, which only ever acts inside the plot anyway.
             guard let remaining = self.handleAxisDrag(event) else { return nil }
             return self.handleDrawing(remaining)
+        }
+
+        replay.onStateChange = { [weak self] in
+            self?.applyReplayState()
         }
     }
 
@@ -300,6 +313,144 @@ final class ContentViewModel: ObservableObject {
     /// drawn in it.
     func registerPlotRegion(_ view: NSView, for viewModel: ChartViewModel) {
         plotRegions.setObject(viewModel, forKey: view)
+    }
+
+    // MARK: - Historical replay
+
+    func beginReplaySelection() {
+        guard !chartViewModels.isEmpty else { return }
+        replay.beginSelecting()
+        activeTool = .none
+        crosshair.clear()
+        wsService.disconnect()
+        alpacaWSService.disconnect()
+    }
+
+    func selectReplayStart(_ date: Date) {
+        guard let primary = chartViewModels.first, !primary.klineData.isEmpty else { return }
+        clearReplaySelectionMarkers()
+        replayPreparationTask?.cancel()
+        replayPreparationTask = Task { [weak self] in
+            guard let self else { return }
+            self.isPreparingReplay = true
+            self.replayNotice = nil
+            defer { self.isPreparingReplay = false }
+            await self.prepareGranularReplay(interval: .automatic)
+            guard !Task.isCancelled, let primary = self.chartViewModels.first else { return }
+            let timeline = primary.replayTimeline()
+            self.replay.start(
+                at: date,
+                initialCursorAt: primary.granularReplayInterval == nil
+                    ? date : primary.replayBarEnd(containing: date),
+                symbol: primary.apiSymbol,
+                timeframe: self.selectedTimeRange,
+                timeline: timeline
+            )
+            self.replay.setInterval(.automatic)
+        }
+    }
+
+    func selectFirstReplayBar() {
+        guard let date = chartViewModels.first?.klineData.first?.openTime else { return }
+        selectReplayStart(date)
+    }
+
+    func selectRandomReplayBar() {
+        guard let data = chartViewModels.first?.klineData, data.count > 1 else { return }
+        // Reserve at least 20% (and at least one bar) for useful future progression.
+        let reserve = max(1, min(data.count - 1, max(5, data.count / 5)))
+        selectReplayStart(data[Int.random(in: 0..<(data.count - reserve))].openTime)
+    }
+
+    func selectReplayDate(_ date: Date) { selectReplayStart(date) }
+
+    func returnToLive() {
+        replayPreparationTask?.cancel()
+        replay.jumpToLatest()
+        chartViewModels.forEach { $0.clearGranularReplayData() }
+        clearReplaySelectionMarkers()
+        if isWindowVisible { connectWebSocket() }
+        refetchAll()
+    }
+
+    var availableReplayIntervals: [ReplayInterval] {
+        chartViewModels.first?.supportedReplayIntervals ?? [.automatic, .chartBar]
+    }
+
+    func setReplayInterval(_ interval: ReplayInterval) {
+        guard replay.session != nil else { return }
+        replay.pause()
+        replayPreparationTask?.cancel()
+        replayPreparationTask = Task { [weak self] in
+            guard let self else { return }
+            self.isPreparingReplay = true
+            self.replayNotice = nil
+            defer { self.isPreparingReplay = false }
+            await self.prepareGranularReplay(interval: interval)
+            guard !Task.isCancelled, let primary = self.chartViewModels.first else { return }
+            self.replay.setInterval(interval)
+            self.replay.updateTimeline(
+                primary.replayTimeline(),
+                symbol: primary.apiSymbol,
+                timeframe: self.selectedTimeRange
+            )
+        }
+    }
+
+    private func prepareGranularReplay(interval: ReplayInterval) async {
+        var failures: [String] = []
+        for vm in chartViewModels {
+            guard !Task.isCancelled else { return }
+            do {
+                let resolved = try await vm.loadGranularReplayData(interval: interval)
+                if interval != .chartBar, resolved == .chartBar {
+                    failures.append(vm.title)
+                }
+            } catch {
+                vm.clearGranularReplayData()
+                failures.append(vm.title)
+            }
+        }
+        if !failures.isEmpty {
+            replayNotice = "Granular history unavailable for \(failures.joined(separator: ", ")); replaying complete chart bars."
+        }
+    }
+
+    private func applyReplayState() {
+        let timestamp = replay.currentTimestamp
+        for vm in chartViewModels {
+            vm.applyReplayTimestamp(replay.isActive && replay.status != .selectingStart ? timestamp : nil)
+        }
+        syncTab()
+    }
+
+    private func clearReplaySelectionMarkers() {
+        chartViewModels.forEach { $0.applyReplaySelectionTimestamp(nil) }
+    }
+
+    private func handleReplaySelection(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown {
+            guard event.keyCode == 53 else { return event }
+            replay.cancelSelection()
+            clearReplaySelectionMarkers()
+            return nil
+        }
+        guard let hit = plotHit(at: event),
+              let date = hit.vm.replayDate(nearestTo: hit.point, in: hit.plot)
+        else {
+            if event.type == .mouseMoved { clearReplaySelectionMarkers() }
+            return event
+        }
+        if event.type == .mouseMoved {
+            clearReplaySelectionMarkers()
+            hit.vm.applyReplaySelectionTimestamp(date)
+            return event
+        }
+        if event.type == .leftMouseDown {
+            selectReplayStart(date)
+            return nil
+        }
+        return event.type == .leftMouseUp ? nil : event
     }
 
     /// Toggle a tool on the strip; clicking the armed one disarms it.
@@ -638,6 +789,11 @@ final class ContentViewModel: ObservableObject {
             await vm.fetchData(for: selectedTimeRange, count: candleCount)
             try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
         }
+        if let saved = pendingReplayRestore, let primary = chartViewModels.first {
+            await prepareGranularReplay(interval: saved.replayInterval)
+            replay.restore(saved, timeline: primary.replayTimeline())
+            pendingReplayRestore = nil
+        }
         connectWebSocket()
     }
 
@@ -648,6 +804,7 @@ final class ContentViewModel: ObservableObject {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: Timeout.autoRefresh, repeats: true) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor in
+                guard !self.replay.isActive else { return }
                 await self.refetchAllSilent()
             }
         }
@@ -655,6 +812,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Set this tab's timeframe and refetch its charts.
     func setTimeRange(_ range: TimeRange) {
+        if replay.isActive { chartViewModels.forEach { $0.clearGranularReplayData() } }
         selectedTimeRange = range
         markChanged()
         refetchAll()
@@ -675,7 +833,11 @@ final class ContentViewModel: ObservableObject {
     /// Open each provider's live stream for the symbols visible in this tab.
     private func connectWebSocket() {
         // A hidden tab has nothing to draw a tick onto.
-        guard isWindowVisible else { return }
+        guard isWindowVisible, !replay.isActive else {
+            wsService.disconnect()
+            alpacaWSService.disconnect()
+            return
+        }
 
         let binanceVMs = chartViewModels.filter { $0.source == .binance }
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
@@ -754,6 +916,10 @@ final class ContentViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             await vm.fetchData(for: range, count: count, silent: silent)
         }
+        if replay.isActive, replay.status != .selectingStart, let primary = chartViewModels.first {
+            await prepareGranularReplay(interval: replay.session?.replayInterval ?? .automatic)
+            replay.updateTimeline(primary.replayTimeline(), symbol: primary.apiSymbol, timeframe: range)
+        }
     }
 
     /// Add a ticker with a chosen data source.
@@ -823,6 +989,10 @@ final class ContentViewModel: ObservableObject {
         Task {
             await syncCoinGeckoSymbols()
             await vm.fetchData(for: selectedTimeRange, count: candleCount)
+            if replay.isActive, let primary = chartViewModels.first {
+                await prepareGranularReplay(interval: replay.session?.replayInterval ?? .automatic)
+                replay.updateTimeline(primary.replayTimeline(), symbol: primary.apiSymbol, timeframe: selectedTimeRange)
+            }
         }
         connectWebSocket()
     }
@@ -873,6 +1043,7 @@ final class ContentViewModel: ObservableObject {
             tab.timeRange = selectedTimeRange
             tab.layoutMode = layoutMode
             tab.candleCount = candleCount
+            tab.replaySession = replay.session
         }
     }
 
@@ -922,6 +1093,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Apply a saved view to this tab, replacing its current state.
     func loadView(_ view: SavedView) {
+        replay.stop()
         isApplyingView = true
         defer { isApplyingView = false }
 

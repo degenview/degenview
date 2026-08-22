@@ -36,6 +36,8 @@ struct ContentView: View {
     @State private var saveViewName = ""
     @State private var showRenameAlert = false
     @State private var renameText = ""
+    @State private var showReplayDatePicker = false
+    @State private var replayDate = Date()
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     init(tabID: UUID) {
@@ -121,6 +123,24 @@ struct ContentView: View {
                 try favoritesStore.add(selected)
             }
         }
+        .sheet(isPresented: $showReplayDatePicker) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Select Replay Date and Time").font(.headline)
+                DatePicker("Replay starts at", selection: $replayDate)
+                    .datePickerStyle(.field)
+                HStack {
+                    Spacer()
+                    Button("Cancel", role: .cancel) { showReplayDatePicker = false }
+                    Button("Start Replay") {
+                        contentViewModel.selectReplayDate(replayDate)
+                        showReplayDatePicker = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20)
+            .frame(width: 380)
+        }
         .onChange(of: showAddSheet) { _, _ in
             contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
         }
@@ -135,6 +155,26 @@ struct ContentView: View {
     @ViewBuilder
     private var chartColumn: some View {
         VStack(spacing: 0) {
+            if contentViewModel.replay.isActive {
+                ReplayControlBar(
+                    engine: contentViewModel.replay,
+                    onChangeStart: contentViewModel.beginReplaySelection,
+                    onReturnToLive: contentViewModel.returnToLive,
+                    onClose: contentViewModel.returnToLive,
+                    availableIntervals: contentViewModel.availableReplayIntervals,
+                    onIntervalChanged: contentViewModel.setReplayInterval,
+                    isPreparing: contentViewModel.isPreparingReplay
+                )
+            }
+            if let notice = contentViewModel.replayNotice, contentViewModel.replay.isActive {
+                Text(notice)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.orange.opacity(0.08))
+            }
             // Global loading indicator
             if contentViewModel.isRefreshing {
                 ProgressView()
@@ -241,6 +281,25 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                Button("Select bar") { contentViewModel.beginReplaySelection() }
+                Button("Select date/time…") {
+                    replayDate = contentViewModel.replay.currentTimestamp ?? Date()
+                    showReplayDatePicker = true
+                }
+                Button("Random bar") { contentViewModel.selectRandomReplayBar() }
+                Button("First available bar") { contentViewModel.selectFirstReplayBar() }
+                if contentViewModel.replay.isActive {
+                    Divider()
+                    Button("Return to Latest") { contentViewModel.returnToLive() }
+                }
+            } label: {
+                Label("Replay", systemImage: "clock.arrow.circlepath")
+            }
+            .accessibilityLabel("Historical bar replay")
+            .help("Start or control historical replay")
+        }
         ToolbarItem(placement: .automatic) {
             Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
                 ForEach(TimeRange.allCases) { range in

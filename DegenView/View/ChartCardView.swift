@@ -82,9 +82,15 @@ struct ChartCardView: View {
                         Image(systemName: "gearshape.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary.opacity(0.6))
+                        if viewModel.replayTimestamp != nil {
+                            Label("Replay", systemImage: "clock.arrow.circlepath")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.orange)
+                                .accessibilityLabel("Historical replay mode")
+                        }
                     }
 
-                    if let price = viewModel.currentPrice {
+                    if let price = viewModel.displayedPrice {
                         Text(PriceFormatter.headline(price, scale: viewModel.priceScale))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
@@ -198,6 +204,12 @@ struct ChartCardView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            if let date = viewModel.replaySelectionTimestamp {
+                ReplaySelectionMarker(viewModel: viewModel, date: date)
+                    .allowsHitTesting(false)
+            }
+        }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves
         // it altogether would strand the crosshair on the last chart it touched.
         .onHover { isInside in
@@ -240,6 +252,27 @@ struct ChartCardView: View {
         }
     }
 
+}
+
+private struct ReplaySelectionMarker: View {
+    @ObservedObject var viewModel: ChartViewModel
+    let date: Date
+
+    var body: some View {
+        GeometryReader { geometry in
+            Canvas { context, _ in
+                let points = viewModel.visibleKlines
+                guard let index = points.firstIndex(where: { $0.openTime == date }) else { return }
+                let plot = viewModel.plot(in: geometry.size)
+                let x = plot.x(forIndex: index, slotWidth: plot.slotWidth(forCount: points.count))
+                var path = Path()
+                path.move(to: CGPoint(x: x, y: plot.plotRect.minY))
+                path.addLine(to: CGPoint(x: x, y: plot.plotRect.maxY))
+                context.stroke(path, with: .color(.orange), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
+            }
+        }
+        .accessibilityHidden(true)
+    }
 }
 
 private struct TrendLineEditor: View {

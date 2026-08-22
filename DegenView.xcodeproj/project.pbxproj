@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
@@ -71,9 +72,24 @@
 		E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000103 /* AlpacaWebSocketService.swift */; };
 		E20000000000000000000004 /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000104 /* AppSettingsView.swift */; };
 		F20000000000000000000001 /* DrawingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000101 /* DrawingStore.swift */; };
+		E30000000000000000000001 /* ReplaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000101 /* ReplaySession.swift */; };
+		E30000000000000000000002 /* ReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000102 /* ReplayEngine.swift */; };
+		E30000000000000000000003 /* ReplayControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000103 /* ReplayControlBar.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		E40000000000000000000201 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000701 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000401;
+			remoteInfo = DegenView;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
+		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReorderDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
@@ -139,9 +155,18 @@
 		E20000000000000000000103 /* AlpacaWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaWebSocketService.swift; sourceTree = "<group>"; };
 		E20000000000000000000104 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
 		F20000000000000000000101 /* DrawingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingStore.swift; sourceTree = "<group>"; };
+		E30000000000000000000101 /* ReplaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySession.swift; sourceTree = "<group>"; };
+		E30000000000000000000102 /* ReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngine.swift; sourceTree = "<group>"; };
+		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		E40000000000000000000301 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = ();
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A00000000000000000000201 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -165,6 +190,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000301 /* DegenView */,
+				E40000000000000000000401 /* DegenViewTests */,
 				A00000000000000000000302 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -190,6 +216,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000110 /* DegenView.app */,
+				E40000000000000000000102 /* DegenViewTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -197,6 +224,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
 				A00000000000000000000103 /* KlineData.swift */,
 				A00000000000000000000904 /* Indicators.swift */,
@@ -215,6 +243,7 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				E30000000000000000000102 /* ReplayEngine.swift */,
 				F10000000000000000000102 /* FavoritesStore.swift */,
 				E20000000000000000000101 /* AlpacaCredentials.swift */,
 				E20000000000000000000102 /* AlpacaAPIService.swift */,
@@ -253,6 +282,7 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				E30000000000000000000103 /* ReplayControlBar.swift */,
 				F10000000000000000000103 /* FavoritesSidebar.swift */,
 				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
@@ -296,9 +326,33 @@
 			path = Util;
 			sourceTree = "<group>";
 		};
+		E40000000000000000000401 /* DegenViewTests */ = {
+			isa = PBXGroup;
+			children = (
+				E40000000000000000000101 /* ReplayEngineTests.swift */,
+			);
+			path = DegenViewTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		E40000000000000000000501 /* DegenViewTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E40000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewTests" */;
+			buildPhases = (
+				E40000000000000000000302 /* Sources */,
+				E40000000000000000000301 /* Frameworks */,
+			);
+			buildRules = ();
+			dependencies = (
+				E40000000000000000000202 /* PBXTargetDependency */,
+			);
+			name = DegenViewTests;
+			productName = DegenViewTests;
+			productReference = E40000000000000000000102 /* DegenViewTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		A00000000000000000000401 /* DegenView */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A00000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenView" */;
@@ -325,10 +379,11 @@
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
-				TargetAttributes = {
+			TargetAttributes = {
 					A00000000000000000000401 = {
 						CreatedOnToolsVersion = 16.0;
 					};
+					E40000000000000000000501 = { CreatedOnToolsVersion = 16.0; TestTargetID = A00000000000000000000401; };
 				};
 			};
 			buildConfigurationList = A00000000000000000000702 /* Build configuration list for PBXProject "DegenView" */;
@@ -345,6 +400,7 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000401 /* DegenView */,
+				E40000000000000000000501 /* DegenViewTests */,
 			);
 		};
 /* End PBXProject section */
@@ -361,10 +417,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		E40000000000000000000302 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A00000000000000000000501 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E30000000000000000000001 /* ReplaySession.swift in Sources */,
+				E30000000000000000000002 /* ReplayEngine.swift in Sources */,
+				E30000000000000000000003 /* ReplayControlBar.swift in Sources */,
 				F10000000000000000000001 /* FavoriteItem.swift in Sources */,
 				F10000000000000000000002 /* FavoritesStore.swift in Sources */,
 				F10000000000000000000003 /* FavoritesSidebar.swift in Sources */,
@@ -433,7 +500,43 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		E40000000000000000000202 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000401 /* DegenView */;
+			targetProxy = E40000000000000000000201 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		E40000000000000000000801 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cryptocharts.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DegenView.app/Contents/MacOS/DegenView";
+			};
+			name = Debug;
+		};
+		E40000000000000000000802 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cryptocharts.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DegenView.app/Contents/MacOS/DegenView";
+			};
+			name = Release;
+		};
 		A00000000000000000000801 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -538,6 +641,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		E40000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E40000000000000000000801 /* Debug */,
+				E40000000000000000000802 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A00000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenView" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
