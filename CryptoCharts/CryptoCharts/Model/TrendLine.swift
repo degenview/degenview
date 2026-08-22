@@ -1,4 +1,38 @@
 import Foundation
+import SwiftUI
+
+enum TrendLineColor: String, Codable, CaseIterable, Hashable {
+    case blue, green, red, orange, purple, gray
+
+    var title: String { rawValue.capitalized }
+
+    var color: Color {
+        switch self {
+        case .blue:   return .blue
+        case .green:  return .green
+        case .red:    return .red
+        case .orange: return .orange
+        case .purple: return .purple
+        case .gray:   return .gray
+        }
+    }
+}
+
+enum TrendLineThickness: Double, Codable, CaseIterable, Hashable {
+    case thin = 1
+    case medium = 1.5
+    case thick = 2.5
+    case extraThick = 4
+
+    var title: String {
+        switch self {
+        case .thin:       return "Thin"
+        case .medium:     return "Medium"
+        case .thick:      return "Thick"
+        case .extraThick: return "Extra Thick"
+        }
+    }
+}
 
 /// One end of a hand-drawn trend line, pinned to the data rather than to pixels.
 ///
@@ -22,6 +56,12 @@ struct TrendLine: Codable, Equatable, Hashable, Identifiable {
     var id = UUID()
     var start: TrendAnchor
     var end: TrendAnchor
+    /// Optional so lines written by older app versions decode with today's defaults.
+    var color: TrendLineColor? = nil
+    var thickness: TrendLineThickness? = nil
+
+    var resolvedColor: TrendLineColor { color ?? .blue }
+    var resolvedThickness: TrendLineThickness { thickness ?? .medium }
 }
 
 /// A measuring rectangle, pinned by two opposite corners.

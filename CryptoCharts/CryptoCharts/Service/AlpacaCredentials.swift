@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-struct AlpacaCredentials: Equatable {
+struct AlpacaCredentials: Codable, Equatable {
     var keyID: String
     var secretKey: String
 
@@ -13,22 +13,52 @@ struct AlpacaCredentials: Equatable {
 
 enum AlpacaCredentialsStore {
     private static let service = "com.cryptocharts.alpaca"
-    private static let keyIDAccount = "key-id"
-    private static let secretAccount = "secret-key"
+    private static let credentialsAccount = "credentials-v1"
+    private static let lock = NSLock()
+    private static var cachedCredentials: AlpacaCredentials?
 
     static var credentials: AlpacaCredentials {
-        AlpacaCredentials(keyID: read(keyIDAccount), secretKey: read(secretAccount))
+        lock.lock()
+        defer { lock.unlock() }
+
+        if let cachedCredentials { return cachedCredentials }
+
+        if let data = readData(account: credentialsAccount),
+           let stored = try? JSONDecoder().decode(AlpacaCredentials.self, from: data) {
+            cachedCredentials = stored
+            return stored
+        }
+
+        let empty = AlpacaCredentials(keyID: "", secretKey: "")
+        cachedCredentials = empty
+        return empty
     }
 
     static var isConfigured: Bool { credentials.isConfigured }
 
     static func save(_ credentials: AlpacaCredentials) throws {
-        try write(credentials.keyID.trimmingCharacters(in: .whitespacesAndNewlines), account: keyIDAccount)
-        try write(credentials.secretKey.trimmingCharacters(in: .whitespacesAndNewlines), account: secretAccount)
+        let normalized = AlpacaCredentials(
+            keyID: credentials.keyID.trimmingCharacters(in: .whitespacesAndNewlines),
+            secretKey: credentials.secretKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        lock.lock()
+        do {
+            if normalized.isConfigured {
+                try writeData(JSONEncoder().encode(normalized), account: credentialsAccount)
+            } else {
+                delete(account: credentialsAccount)
+            }
+            cachedCredentials = normalized
+            lock.unlock()
+        } catch {
+            lock.unlock()
+            throw error
+        }
         NotificationCenter.default.post(name: .alpacaCredentialsChanged, object: nil)
     }
 
-    private static func read(_ account: String) -> String {
+    private static func readData(account: String) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -38,24 +68,41 @@ enum AlpacaCredentialsStore {
         ]
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-              let data = item as? Data else { return "" }
-        return String(data: data, encoding: .utf8) ?? ""
+              let data = item as? Data else { return nil }
+        return data
     }
 
-    private static func write(_ value: String, account: String) throws {
+    private static func writeData(_ data: Data, account: String) throws {
         let key: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(key as CFDictionary)
-        guard !value.isEmpty else { return }
-        var item = key
-        item[kSecValueData as String] = Data(value.utf8)
-        let status = SecItemAdd(item as CFDictionary, nil)
-        guard status == errSecSuccess else {
+        let status = SecItemUpdate(
+            key as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if status == errSecSuccess { return }
+        guard status == errSecItemNotFound else {
             throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
         }
+
+        var item = key
+        item[kSecValueData as String] = data
+        let addStatus = SecItemAdd(item as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw NSError(domain: NSOSStatusErrorDomain, code: Int(addStatus))
+        }
+    }
+
+    private static func delete(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { return }
     }
 }
 

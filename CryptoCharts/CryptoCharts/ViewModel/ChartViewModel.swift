@@ -182,6 +182,9 @@ final class ChartViewModel: ObservableObject {
     @Published private(set) var draftEnd: TrendAnchor?
 
     @Published var selectedLineID: UUID?
+    /// The selected line whose appearance popover is open. Kept separate from
+    /// selection so grabbing an endpoint does not open a popover under the drag.
+    @Published var editingLineID: UUID?
 
     var trendDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let draftStart, let draftEnd else { return nil }
@@ -389,12 +392,23 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    func setColor(_ color: TrendLineColor, for lineID: UUID) {
+        guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
+        trendLines[index].color = color
+    }
+
+    func setThickness(_ thickness: TrendLineThickness, for lineID: UUID) {
+        guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
+        trendLines[index].thickness = thickness
+    }
+
     @discardableResult
     func removeSelectedLine() -> Bool {
         guard let id = selectedLineID,
               let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
         trendLines.remove(at: index)
         selectedLineID = nil
+        editingLineID = nil
         return true
     }
 

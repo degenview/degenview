@@ -55,6 +55,9 @@ struct ChartCardView: View {
         .onChange(of: showSettings) { _, new in
             onSettingsPresented?(new)
         }
+        .onChange(of: viewModel.editingLineID) { old, new in
+            if (old == nil) != (new == nil) { onSettingsPresented?(new != nil) }
+        }
     }
 
     // MARK: - Header
@@ -224,8 +227,144 @@ struct ChartCardView: View {
                 .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 4))
             }
         }
+        .overlay(alignment: .top) {
+            if let lineID = viewModel.editingLineID {
+                TrendLineEditor(
+                    viewModel: viewModel,
+                    lineID: lineID,
+                    onChange: onStyleChanged,
+                    onDismiss: { viewModel.editingLineID = nil }
+                )
+                .padding(.top, 8)
+            }
+        }
     }
 
+}
+
+private struct TrendLineEditor: View {
+    @ObservedObject var viewModel: ChartViewModel
+    let lineID: UUID
+    let onChange: () -> Void
+    let onDismiss: () -> Void
+
+    private var line: TrendLine? {
+        return viewModel.trendLines.first { $0.id == lineID }
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Menu {
+                ForEach(TrendLineColor.allCases, id: \.self) { option in
+                    Button {
+                        viewModel.setColor(option, for: lineID)
+                        onChange()
+                    } label: {
+                        HStack {
+                            Circle()
+                                .fill(option.color)
+                                .frame(width: 10, height: 10)
+                            Text(option.title)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(line?.resolvedColor.color ?? .blue)
+                        .frame(width: 10, height: 10)
+                    Text(line?.resolvedColor.title ?? TrendLineColor.blue.title)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(minWidth: 78)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Line color")
+
+            Menu {
+                ForEach(TrendLineThickness.allCases, id: \.self) { option in
+                    Button {
+                        viewModel.setThickness(option, for: lineID)
+                        onChange()
+                    } label: {
+                        Image(nsImage: option.menuImage)
+                    }
+                    .accessibilityLabel(option.title)
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    ThicknessSample(thickness: line?.resolvedThickness ?? .medium)
+                        .frame(width: 46, height: 18)
+                    Image(systemName: "chevron.down")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+            }
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .accessibilityLabel("Line thickness")
+
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.caption.bold())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Close line editor")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(.secondary.opacity(0.25), lineWidth: 1)
+        }
+        .shadow(radius: 4, y: 2)
+    }
+}
+
+private struct ThicknessSample: View {
+    let thickness: TrendLineThickness
+
+    var body: some View {
+        ZStack {
+            Color.clear
+            Capsule()
+                .fill(Color.primary)
+                .frame(width: 48, height: CGFloat(thickness.rawValue))
+        }
+        .frame(width: 54, height: 18)
+        .contentShape(Rectangle())
+        .accessibilityLabel(thickness.title)
+    }
+}
+
+private extension TrendLineThickness {
+    /// Native menus discard arbitrary SwiftUI shapes from their rows, but retain an
+    /// `NSImage`. A template image also lets AppKit choose the correct light/dark tint.
+    var menuImage: NSImage {
+        let image = NSImage(size: NSSize(width: 54, height: 16), flipped: false) { rect in
+            NSColor.labelColor.setStroke()
+            let line = NSBezierPath()
+            line.lineWidth = CGFloat(rawValue)
+            line.lineCapStyle = .round
+            line.move(to: NSPoint(x: 3, y: rect.midY))
+            line.line(to: NSPoint(x: rect.maxX - 3, y: rect.midY))
+            line.stroke()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
 }
 
 /// The crosshair, drawn in its own thin `Canvas` above the series.

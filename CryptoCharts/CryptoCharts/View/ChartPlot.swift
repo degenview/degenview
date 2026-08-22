@@ -295,8 +295,8 @@ struct ChartPlot {
                 &context,
                 from: position(of: line.start, points: points, slotWidth: slot),
                 to: position(of: line.end, points: points, slotWidth: slot),
-                color: isSelected ? style.trendLineSelectedColor : style.trendLineColor,
-                width: isSelected ? style.trendLineSelectedWidth : style.trendLineWidth,
+                color: line.resolvedColor.color,
+                width: CGFloat(line.resolvedThickness.rawValue) + (isSelected ? 0.5 : 0),
                 dashed: false,
                 handles: showHandles
             )

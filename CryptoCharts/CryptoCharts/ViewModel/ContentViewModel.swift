@@ -126,6 +126,7 @@ final class ContentViewModel: ObservableObject {
             for vm in chartViewModels {
                 vm.cancelDraft()
                 vm.selectedLineID = nil
+                vm.editingLineID = nil
             }
         }
     }
@@ -363,10 +364,13 @@ final class ContentViewModel: ObservableObject {
             } else if let handle = hit.vm.handleHit(at: hit.point, in: hit.plot) {
                 lineDragTarget = (hit.vm, handle.id, handle.isStart)
                 hit.vm.selectedLineID = handle.id
+                hit.vm.editingLineID = nil
             } else if let line = hit.vm.lineHit(at: hit.point, in: hit.plot) {
                 hit.vm.selectedLineID = line
+                hit.vm.editingLineID = line
             } else {
                 hit.vm.selectedLineID = nil
+                hit.vm.editingLineID = nil
                 hit.vm.beginDraft(at: anchor)
             }
             return nil
@@ -534,6 +538,7 @@ final class ContentViewModel: ObservableObject {
             vm.cancelDraft()
             vm.cancelRulerDraft()
             vm.selectedLineID = nil
+            vm.editingLineID = nil
         }
     }
 
