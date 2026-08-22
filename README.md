@@ -164,3 +164,8 @@ DegenView/
    rate limiter, and its cache is flushed to disk when the app quits.
 6. `TabsStore`, `FavoritesStore`, and `DrawingStore` persist independent JSON documents in
    Application Support; Alpaca secrets live in Keychain rather than JSON.
+
+## License
+
+DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE)
+(`GPL-3.0-only`). Copyright © 2026 Nico Oelgart.
