@@ -43,6 +43,40 @@ final class FavoritesStore: ObservableObject {
         store.save(items)
     }
 
+    /// Reorder favorites using SwiftUI `List` move coordinates, then persist the
+    /// resulting array so every tab and the next launch see the same arrangement.
+    func move(fromOffsets offsets: IndexSet, toOffset destination: Int) {
+        guard !offsets.isEmpty else { return }
+
+        let moving = offsets.sorted().map { items[$0] }
+        let removedBeforeDestination = offsets.count(in: 0..<destination)
+        let offsetSet = Set(offsets)
+        var reordered = items.enumerated().compactMap { index, item in
+            offsetSet.contains(index) ? nil : item
+        }
+        let insertionIndex = max(0, min(destination - removedBeforeDestination, reordered.count))
+        reordered.insert(contentsOf: moving, at: insertionIndex)
+
+        guard reordered != items else { return }
+        items = reordered
+        store.save(items)
+    }
+
+    /// Move one dragged favorite to the position occupied by another row. SwiftUI's
+    /// macOS sidebar lists don't activate `onMove` outside edit mode, so the explicit
+    /// drop delegate uses stable IDs and funnels the mutation through here.
+    func move(_ draggedID: UUID, to targetID: UUID) {
+        guard let source = items.firstIndex(where: { $0.id == draggedID }),
+              let target = items.firstIndex(where: { $0.id == targetID }),
+              source != target
+        else { return }
+
+        move(
+            fromOffsets: IndexSet(integer: source),
+            toOffset: target > source ? target + 1 : target
+        )
+    }
+
     private static func labels(for result: TickerSearchResult) -> (name: String, ticker: String) {
         if result.source == .polymarket {
             return (result.eventTitle ?? result.question ?? result.symbol, result.symbol)

@@ -20,6 +20,8 @@ private struct IconCache: Codable {
     /// `symbolMap` because ids and symbols share a namespace ("bitcoin" is both).
     var idMap: [String: String] = [:]
     var marketUpdatedAt: Date = .distantPast
+    /// Optional so caches written before stock-specific resolution still decode.
+    var stockResolverVersion: Int?
 
     struct Entry: Codable {
         let url: String?
@@ -63,6 +65,13 @@ actor IconResolver {
 
     init() {
         cache = store.load() ?? IconCache()
+        if cache.stockResolverVersion != Icon.stockResolverVersion {
+            cache.entries = cache.entries.filter { key, _ in
+                !key.hasPrefix("\(DataSourceType.alpaca.rawValue):")
+            }
+            cache.stockResolverVersion = Icon.stockResolverVersion
+            store.save(cache)
+        }
     }
 
     // MARK: - Public
@@ -113,6 +122,13 @@ actor IconResolver {
         // rather than spend a market-snapshot refresh on the way past.
         if source == .polymarket {
             return await PolymarketService.marketInfo(tokenID: ticker)?.imageURL
+        }
+
+        // Equity tickers share symbols with tokenized stocks and unrelated crypto
+        // projects. Keep them out of every coin-oriented step below: an absent stock
+        // logo must become a monogram, never a plausible-but-wrong CoinGecko match.
+        if source == .alpaca {
+            return await stockIcon(symbol: ticker)
         }
 
         // 1. Market snapshot — covers Binance base symbols and top-ranked coin ids.
@@ -309,6 +325,27 @@ actor IconResolver {
     }
 
     // MARK: - Static icon set
+
+    /// Company artwork for Alpaca equities. Verify the endpoint before caching it;
+    /// an unknown ticker returns a text 404 rather than an image.
+    private func stockIcon(symbol: String) async -> URL? {
+        let ticker = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard isPlausibleSymbol(ticker),
+              let encoded = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(Icon.stockCDNBase)/\(encoded).png")
+        else { return nil }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+
+        guard let (_, response) = try? await session.data(for: request),
+              let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200,
+              httpResponse.mimeType?.hasPrefix("image/") == true
+        else { return nil }
+
+        return url
+    }
 
     /// A plain file in a public repo — no API, no rate limit, 404 on miss. The 404
     /// has to be checked here: caching the URL unverified would leave the card with

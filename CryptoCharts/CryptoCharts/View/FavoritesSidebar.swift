@@ -1,9 +1,11 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct FavoritesSidebar: View {
     @ObservedObject var store: FavoritesStore
     let onAdd: () -> Void
     let onSelect: (FavoriteItem) -> Void
+    @State private var draggedFavoriteID: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -36,6 +38,18 @@ struct FavoritesSidebar: View {
                             .contextMenu {
                                 Button("Delete", role: .destructive) { store.remove(item) }
                             }
+                            .onDrag {
+                                draggedFavoriteID = item.id
+                                return NSItemProvider(object: item.id.uuidString as NSString)
+                            }
+                            .onDrop(
+                                of: [UTType.text],
+                                delegate: FavoriteDropDelegate(
+                                    targetID: item.id,
+                                    store: store,
+                                    draggedID: $draggedFavoriteID
+                                )
+                            )
                     }
                     .onDelete { offsets in
                         let removed = offsets.map { store.items[$0] }
@@ -47,6 +61,31 @@ struct FavoritesSidebar: View {
         }
         .frame(width: UI.favoritesSidebarWidth)
         .background(.bar)
+    }
+}
+
+private struct FavoriteDropDelegate: DropDelegate {
+    let targetID: UUID
+    let store: FavoritesStore
+    @Binding var draggedID: UUID?
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID, draggedID != targetID else { return }
+        withAnimation { store.move(draggedID, to: targetID) }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggedID = nil
+        return true
+    }
+
+    func dropExited(info: DropInfo) {
+        // Keep the identity while crossing the small gaps between rows. The next
+        // target's `dropEntered` needs it to continue the reorder.
     }
 }
 

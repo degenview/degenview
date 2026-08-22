@@ -98,6 +98,12 @@ enum Icon {
     /// Last-resort static icon set — no API, no rate limit, 404 on miss.
     /// Unmaintained since ~2021, so it only backstops long-established symbols.
     static let staticCDNBase = "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color"
+    /// Community-maintained stock artwork, keyed by uppercase exchange ticker.
+    /// Raw GitHub returns 404 when the repository has no matching company logo.
+    static let stockCDNBase = "https://raw.githubusercontent.com/nvstly/icons/main/ticker_icons"
+    /// Bump when stock resolution semantics change so cached crypto false-positives
+    /// for Alpaca symbols are discarded once without flushing unrelated icons.
+    static let stockResolverVersion = 2
 }
 
 // MARK: - Cache Constants
