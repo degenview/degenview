@@ -70,6 +70,7 @@
 		E20000000000000000000002 /* AlpacaAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000102 /* AlpacaAPIService.swift */; };
 		E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000103 /* AlpacaWebSocketService.swift */; };
 		E20000000000000000000004 /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000104 /* AppSettingsView.swift */; };
+		F20000000000000000000001 /* DrawingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000101 /* DrawingStore.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -137,6 +138,7 @@
 		E20000000000000000000102 /* AlpacaAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaAPIService.swift; sourceTree = "<group>"; };
 		E20000000000000000000103 /* AlpacaWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaWebSocketService.swift; sourceTree = "<group>"; };
 		E20000000000000000000104 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
+		F20000000000000000000101 /* DrawingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingStore.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -232,6 +234,7 @@
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
 				D10000000000000000000102 /* TabsStore.swift */,
 				D10000000000000000000103 /* WindowCoordinator.swift */,
+				F20000000000000000000101 /* DrawingStore.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -411,6 +414,7 @@
 				58630E0C416C081AF0953889 /* KlineCache.swift in Sources */,
 				d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */,
 				E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */,
+				F20000000000000000000001 /* DrawingStore.swift in Sources */,
 				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
 				A0000000000000000000041A /* WindowFrame.swift in Sources */,

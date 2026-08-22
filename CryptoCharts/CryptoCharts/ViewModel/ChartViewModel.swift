@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 @MainActor
 final class ChartViewModel: ObservableObject {
@@ -175,6 +176,7 @@ final class ChartViewModel: ObservableObject {
 
     /// Lines drawn by hand on this chart, anchored to time and price.
     @Published var trendLines: [TrendLine] = []
+    private var drawingStoreSubscription: AnyCancellable?
 
     /// First click of a line in progress, and the rubber-band end that follows the
     /// pointer until the second click lands.
@@ -232,6 +234,7 @@ final class ChartViewModel: ObservableObject {
         self.displayName = displayName
         self.uniqueID = "\(ticker)_\(source.rawValue)"
         self.api = api ?? DataSourceFactory.shared.service(for: source)
+        observeDrawings()
     }
 
     /// Apply persisted chart settings from a TickerConfig.
@@ -245,7 +248,10 @@ final class ChartViewModel: ObservableObject {
         showEMA = config.showEMA ?? false
         emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
         showBollinger = config.showBollinger ?? false
-        trendLines = config.trendLines ?? []
+        if let legacyLines = config.trendLines {
+            DrawingStore.shared.importLegacy(legacyLines, ticker: ticker, source: source)
+        }
+        trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
     }
@@ -372,6 +378,7 @@ final class ChartViewModel: ObservableObject {
         guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
 
         trendLines.append(TrendLine(start: start, end: anchor))
+        persistTrendLines()
         draftStart = nil
         draftEnd = nil
         return true
@@ -392,14 +399,22 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    /// Flush endpoint movement once the drag finishes. Keeping this separate avoids
+    /// an atomic disk write for every mouse-move event.
+    func persistTrendLines() {
+        DrawingStore.shared.save(trendLines, ticker: ticker, source: source)
+    }
+
     func setColor(_ color: TrendLineColor, for lineID: UUID) {
         guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
         trendLines[index].color = color
+        persistTrendLines()
     }
 
     func setThickness(_ thickness: TrendLineThickness, for lineID: UUID) {
         guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
         trendLines[index].thickness = thickness
+        persistTrendLines()
     }
 
     @discardableResult
@@ -409,6 +424,7 @@ final class ChartViewModel: ObservableObject {
         trendLines.remove(at: index)
         selectedLineID = nil
         editingLineID = nil
+        persistTrendLines()
         return true
     }
 
@@ -466,6 +482,17 @@ final class ChartViewModel: ObservableObject {
         if let series = pmSeries { self.pmSeries = series } else if source != .polymarket { self.pmSeries = [] }
         self.pmSeriesData = [:]
         api = DataSourceFactory.shared.service(for: source)
+        trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
+    }
+
+    private func observeDrawings() {
+        drawingStoreSubscription = DrawingStore.shared.$linesByInstrument
+            .sink { [weak self] allLines in
+                guard let self else { return }
+                let key = DrawingStore.shared.key(ticker: self.ticker, source: self.source)
+                let sharedLines = allLines[key] ?? []
+                if self.trendLines != sharedLines { self.trendLines = sharedLines }
+            }
     }
 
     /// Merge a WebSocket kline tick into the current dataset.

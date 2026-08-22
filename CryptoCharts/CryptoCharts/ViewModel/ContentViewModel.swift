@@ -336,9 +336,8 @@ final class ContentViewModel: ObservableObject {
                 }
                 return nil
             case .leftMouseUp:
+                target.vm.persistTrendLines()
                 lineDragTarget = nil
-                // One persist per gesture, not one per mouse-move.
-                persistChartSettings()
                 return nil
             default:
                 break
@@ -360,7 +359,7 @@ final class ContentViewModel: ObservableObject {
             clearDrawingState(except: hit.vm)
 
             if hit.vm.hasDraft {
-                if hit.vm.commitDraft(at: anchor, in: hit.plot) { persistChartSettings() }
+                _ = hit.vm.commitDraft(at: anchor, in: hit.plot)
             } else if let handle = hit.vm.handleHit(at: hit.point, in: hit.plot) {
                 lineDragTarget = (hit.vm, handle.id, handle.isStart)
                 hit.vm.selectedLineID = handle.id
@@ -502,7 +501,7 @@ final class ContentViewModel: ObservableObject {
             guard let target = chartViewModels.first(where: { $0.selectedLineID != nil }) else {
                 return event
             }
-            if target.removeSelectedLine() { persistChartSettings() }
+            _ = target.removeSelectedLine()
             return nil
 
         default:
@@ -849,7 +848,9 @@ final class ContentViewModel: ObservableObject {
                 showEMA: vm.showEMA ? true : nil,
                 emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
                 showBollinger: vm.showBollinger ? true : nil,
-                trendLines: vm.trendLines.isEmpty ? nil : vm.trendLines,
+                // Drawings live in DrawingStore, keyed by source+ticker. Keep this
+                // field nil so tabs and saved views no longer own copies of lines.
+                trendLines: nil,
                 displayName: vm.displayName,
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
             )

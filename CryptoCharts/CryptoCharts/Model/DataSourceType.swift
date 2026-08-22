@@ -104,7 +104,8 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Bollinger bands on the price scale. nil = off.
     var showBollinger: Bool?
 
-    /// Trend lines drawn by hand on this chart. nil = none drawn.
+    /// Legacy trend-line storage. New versions migrate this into DrawingStore and
+    /// always write nil so drawings are not attached to tabs or saved views.
     var trendLines: [TrendLine]?
 
     /// Human-readable label shown on the card. Only set for sources whose `symbol`
