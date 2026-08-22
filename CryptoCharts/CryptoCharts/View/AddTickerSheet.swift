@@ -187,10 +187,19 @@ struct AddTickerSheet: View {
                     )
                 }
 
+                let displayName: String? = {
+                    guard selected.source == .polymarket else { return nil }
+                    if let series = selected.pmSeries, series.count > 1 {
+                        return selected.eventTitle ?? selected.symbol
+                    }
+                    return selected.symbol
+                }()
+
                 try await contentViewModel.addTicker(
                     symbol: selected.fullSymbol,
                     source: selected.source,
-                    displayName: selected.source == .polymarket ? selected.symbol : nil
+                    displayName: displayName,
+                    pmSeries: selected.pmSeries
                 )
                 dismiss()
             } catch {

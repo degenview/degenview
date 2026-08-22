@@ -59,6 +59,15 @@ enum DataSourceType: String, CaseIterable, Codable {
     }
 }
 
+/// One tradable choice within a Polymarket event — a token ID + human label pair.
+struct PmSeriesConfig: Codable, Equatable, Hashable, Identifiable {
+    let tokenID: String
+    let label: String
+    var enabled: Bool
+
+    var id: String { tokenID }
+}
+
 /// Persisted config for a single ticker — symbol + which API to fetch from.
 struct TickerConfig: Codable, Equatable, Hashable {
     let symbol: String
@@ -92,4 +101,8 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// is an opaque identifier — a Polymarket CLOB token id is 77 digits, so the
     /// market question has to ride along. Nil for crypto (the symbol reads fine).
     var displayName: String?
+
+    /// All tradable choices for multi-outcome Polymarket events. Nil for single-choice
+    /// markets and all non-Polymarket sources.
+    var pmSeries: [PmSeriesConfig]?
 }

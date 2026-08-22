@@ -28,6 +28,10 @@ struct TickerSearchResult: Identifiable, Hashable {
     /// Artwork supplied by the source itself, when the search payload carries one
     var imageURL: URL? { metadata["imageURL"]?.nilIfEmpty.flatMap(URL.init(string:)) }
 
+    /// All tradable choices for multi-outcome Polymarket events. Nil for single-choice
+    /// markets. When set, selecting this result adds all choices as separate chart lines.
+    var pmSeries: [PmSeriesConfig]? = nil
+
     func hash(into hasher: inout Hasher) {
         hasher.combine(fullSymbol)
         hasher.combine(source)

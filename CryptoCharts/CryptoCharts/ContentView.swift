@@ -325,8 +325,8 @@ struct ContentView: View {
             showTrendHandles: contentViewModel.activeTool == .trendLine,
             crosshair: contentViewModel.crosshair,
             onCrosshairExit: { contentViewModel.crosshair.clear(owner: vm.uniqueID) },
-            onUpdateTicker: { symbol, source, displayName in
-                contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName)
+            onUpdateTicker: { symbol, source, displayName, pmSeries in
+                contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
             },
             onStyleChanged: {
                 contentViewModel.persistChartSettings()

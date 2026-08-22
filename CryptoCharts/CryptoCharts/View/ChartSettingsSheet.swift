@@ -4,9 +4,9 @@ import SwiftUI
 
 struct ChartSettingsSheet: View {
     @ObservedObject var viewModel: ChartViewModel
-    /// (symbol, source, displayName) — `displayName` is nil for crypto sources,
+    /// (symbol, source, displayName, pmSeries) — `displayName` is nil for crypto sources,
     /// whose symbol already reads fine on the card.
-    let onUpdateTicker: (String, DataSourceType, String?) -> Void
+    let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onRemove: () -> Void
     let onStyleChanged: () -> Void
 
@@ -75,7 +75,7 @@ struct ChartSettingsSheet: View {
     }
 
     init(viewModel: ChartViewModel,
-         onUpdateTicker: @escaping (String, DataSourceType, String?) -> Void,
+         onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
          onRemove: @escaping () -> Void,
          onStyleChanged: @escaping () -> Void) {
         self.viewModel = viewModel
@@ -96,14 +96,33 @@ struct ChartSettingsSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title
-            Text("\(viewModel.title) Settings")
-                .font(.headline)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+            // Title row with native-style close button
+            HStack(spacing: 0) {
+                Button {
+                    cancelSearches()
+                    dismiss()
+                } label: {
+                    Circle()
+                        .fill(Color(nsColor: .systemRed))
+                        .frame(width: 12, height: 12)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Text("\(viewModel.title) Settings")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer()
+
+                // Balance the close button so the title stays centered.
+                Circle().frame(width: 12, height: 12).opacity(0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
 
             // Tab picker
             Picker("", selection: $selectedTab) {
@@ -142,8 +161,12 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    cancelSearches()
-                    dismiss()
+                    if selectedTab == .polymarket, let selected = polymarketVM.selectedResult {
+                        apply(selected)
+                    } else {
+                        cancelSearches()
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.return)
             }
@@ -192,8 +215,6 @@ struct ChartSettingsSheet: View {
 
     private var tickerTab: some View {
         VStack(spacing: 12) {
-            currentChartRow
-
             SearchFieldRow(
                 placeholder: "New ticker symbol (e.g. BTC or PEPE)",
                 text: $searchText,
@@ -252,8 +273,6 @@ struct ChartSettingsSheet: View {
 
     private var polymarketTab: some View {
         VStack(spacing: 12) {
-            currentChartRow
-
             PolymarketSearchPane(
                 searchVM: polymarketVM,
                 searchText: $polymarketText,
@@ -261,13 +280,6 @@ struct ChartSettingsSheet: View {
                 resultsMaxHeight: UI.chartSettingsResultsMaxHeight
             )
             .padding(.horizontal, 16)
-
-            if let selected = polymarketVM.selectedResult {
-                Button("Change Market") {
-                    apply(selected)
-                }
-                .buttonStyle(.borderedProminent)
-            }
 
             Spacer()
         }
@@ -307,11 +319,16 @@ struct ChartSettingsSheet: View {
 
         cancelSearches()
         dismiss()
-        onUpdateTicker(
-            selected.fullSymbol,
-            selected.source,
-            selected.source == .polymarket ? selected.symbol : nil
-        )
+
+        let displayName: String? = {
+            guard selected.source == .polymarket else { return nil }
+            if let series = selected.pmSeries, series.count > 1 {
+                return selected.eventTitle ?? selected.symbol
+            }
+            return selected.symbol
+        }()
+
+        onUpdateTicker(selected.fullSymbol, selected.source, displayName, selected.pmSeries)
     }
 
     // MARK: - Appearance Tab
@@ -471,7 +488,7 @@ struct ChartSettingsSheet: View {
     let vm = ChartViewModel(ticker: "BTC")
     ChartSettingsSheet(
         viewModel: vm,
-        onUpdateTicker: { _, _, _ in },
+        onUpdateTicker: { _, _, _, _ in },
         onRemove: {},
         onStyleChanged: {}
     )

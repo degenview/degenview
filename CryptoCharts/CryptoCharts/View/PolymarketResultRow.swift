@@ -7,11 +7,20 @@ import SwiftUI
 /// probability instead of a USD price.
 struct PolymarketResultRow: View {
     let result: TickerSearchResult
-    let isSelected: Bool
-    let onSelect: () -> Void
+    var isSelected: Bool = false
+    var onSelect: () -> Void = {}
+    /// Non-nil enables checkbox mode — shows a toggle instead of row-selection highlight.
+    var isChecked: Bool? = nil
+    var onToggle: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
+            if let checked = isChecked {
+                Image(systemName: checked ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(checked ? Color.accentColor : Color.secondary)
+                    .font(.body)
+            }
+
             TickerIconView(
                 symbol: result.symbol,
                 url: result.imageURL,
@@ -33,7 +42,10 @@ struct PolymarketResultRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onTapGesture { onSelect() }
+        .onTapGesture {
+            if isChecked != nil { onToggle?() }
+            else { onSelect() }
+        }
         .background(isSelected
             ? Color.accentColor.opacity(0.15)
             : Color.clear

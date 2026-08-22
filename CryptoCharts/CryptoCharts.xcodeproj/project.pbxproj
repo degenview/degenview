@@ -12,6 +12,7 @@
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
 		44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */; };
 		58630E0C416C081AF0953889 /* KlineCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E167CD7B739B528C0792D361 /* KlineCache.swift */; };
+		d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62da476d2ea14915af7cffe9 /* ImageCache.swift */; };
 		B10000000000000000000001 /* CoinGeckoProvisionalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */; };
 		8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */; };
 		A00000000000000000000001 /* CryptoChartsApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000101 /* CryptoChartsApp.swift */; };
@@ -115,6 +116,7 @@
 		D7BF0A39943224E6FE7AB590 /* AppSupport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AppSupport.swift; sourceTree = "<group>"; };
 		DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONStore.swift; sourceTree = "<group>"; };
 		E167CD7B739B528C0792D361 /* KlineCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KlineCache.swift; sourceTree = "<group>"; };
+		62da476d2ea14915af7cffe9 /* ImageCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
 		B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoinGeckoProvisionalStore.swift; sourceTree = "<group>"; };
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
 		D10000000000000000000101 /* ChartTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTab.swift; sourceTree = "<group>"; };
@@ -207,6 +209,7 @@
 				A0000000000000000000011B /* DEXScreenerService.swift */,
 				C10000000000000000000102 /* PolymarketService.swift */,
 				E167CD7B739B528C0792D361 /* KlineCache.swift */,
+				62da476d2ea14915af7cffe9 /* ImageCache.swift */,
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
 				D10000000000000000000102 /* TabsStore.swift */,
 				D10000000000000000000103 /* WindowCoordinator.swift */,
@@ -378,6 +381,7 @@
 				A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */,
 				A0000000000000000000001C /* ColorHex.swift in Sources */,
 				58630E0C416C081AF0953889 /* KlineCache.swift in Sources */,
+				d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */,
 				E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */,
 				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,

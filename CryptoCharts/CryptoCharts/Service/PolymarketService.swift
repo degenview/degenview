@@ -49,15 +49,24 @@ final class PolymarketService: TickerDataSource {
         // API's relevance order so sections stay grouped by event.
         return events.flatMap { event -> [TickerSearchResult] in
             let eventTitle = event.title ?? ""
-            return (event.markets ?? []).compactMap { market in
+
+            // Collect all tradable choices upfront so multi-choice events can carry the
+            // full list on every result row (selecting any row picks all choices).
+            let tradable = (event.markets ?? []).compactMap { market -> (tokenID: String, label: String, market: PolymarketMarket)? in
                 guard market.isTradable,
                       let tokenID = market.yesTokenID,
                       let label = market.shortTitle, !label.isEmpty
                 else { return nil }
+                return (tokenID, label, market)
+            }
 
+            let allSeries: [PmSeriesConfig]? = tradable.count > 1
+                ? tradable.map { PmSeriesConfig(tokenID: $0.tokenID, label: $0.label, enabled: true) }
+                : nil
+
+            return tradable.compactMap { (tokenID, label, market) in
                 let artwork = market.artworkURL ?? event.artworkURL
-
-                return TickerSearchResult(
+                var result = TickerSearchResult(
                     symbol: label,
                     fullSymbol: tokenID,
                     source: .polymarket,
@@ -68,6 +77,8 @@ final class PolymarketService: TickerDataSource {
                         "imageURL": artwork?.absoluteString ?? "",
                     ]
                 )
+                result.pmSeries = allSeries
+                return result
             }
         }
     }

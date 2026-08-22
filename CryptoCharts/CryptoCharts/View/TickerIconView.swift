@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// A coin icon that always occupies the same slot.
 ///
@@ -10,23 +11,32 @@ struct TickerIconView: View {
     let url: URL?
     var size: CGFloat = Icon.size
 
+    @State private var loadedImage: NSImage?
+
+    init(symbol: String, url: URL?, size: CGFloat = Icon.size) {
+        self.symbol = symbol
+        self.url = url
+        self.size = size
+        // Seed from cache so re-scrolled cells show the image instantly.
+        _loadedImage = State(initialValue: url.flatMap { ImageCache.shared.cachedImage(for: $0) })
+    }
+
     var body: some View {
         Group {
-            if let url {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFit()
-                    default:
-                        monogram
-                    }
-                }
+            if let img = loadedImage {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFit()
             } else {
                 monogram
             }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        .task(id: url) {
+            guard let url else { loadedImage = nil; return }
+            loadedImage = await ImageCache.shared.image(for: url)
+        }
     }
 
     // MARK: - Fallback

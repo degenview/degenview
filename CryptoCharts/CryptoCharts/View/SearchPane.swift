@@ -36,6 +36,15 @@ struct SelectedResultBanner: View {
     let prefix: String
     let result: TickerSearchResult
 
+    /// Event title for multi-choice PM; symbol for everything else.
+    private var displayLabel: String {
+        if let series = result.pmSeries, series.count > 1,
+           let title = result.eventTitle, !title.isEmpty {
+            return title
+        }
+        return result.symbol
+    }
+
     var body: some View {
         HStack(spacing: 8) {
             if let url = result.imageURL {
@@ -45,7 +54,7 @@ struct SelectedResultBanner: View {
                     .foregroundStyle(.secondary)
             }
 
-            Text("\(prefix): \(result.symbol)")
+            Text("\(prefix): \(displayLabel)")
                 .font(.callout.weight(.medium))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
@@ -63,10 +72,10 @@ struct SelectedResultBanner: View {
     }
 }
 
-/// Polymarket market search: field, grouped results, empty states, selection banner.
+/// Polymarket market search: field, grouped results, empty states.
 ///
-/// Used verbatim by the Polymarket tab of both sheets — only the action button below
-/// it differs ("Add" vs "Change Market"), which stays with the caller.
+/// Multi-choice groups show a group-level checkbox in the section header
+/// plus individual toggles per row. Single-choice groups use tap-to-select.
 struct PolymarketSearchPane: View {
     @ObservedObject var searchVM: PolymarketSearchViewModel
     @Binding var searchText: String
@@ -94,17 +103,29 @@ struct PolymarketSearchPane: View {
                     ForEach(searchVM.groups) { group in
                         Section {
                             ForEach(group.results) { result in
-                                PolymarketResultRow(
-                                    result: result,
-                                    isSelected: searchVM.selectedResult == result,
-                                    onSelect: { searchVM.selectedResult = result }
-                                )
+                                if group.results.count > 1 {
+                                    PolymarketResultRow(
+                                        result: result,
+                                        isChecked: searchVM.checkedChoices[result.fullSymbol] ?? false,
+                                        onToggle: { searchVM.toggleChoice(result.fullSymbol) }
+                                    )
+                                } else {
+                                    PolymarketResultRow(
+                                        result: result,
+                                        isSelected: searchVM.selectedResult == result,
+                                        onSelect: { searchVM.selectedResult = result }
+                                    )
+                                }
                             }
                         } header: {
-                            Text(group.eventTitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            if group.results.count > 1 {
+                                groupHeader(for: group)
+                            } else {
+                                Text(group.eventTitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
                     }
                 }
@@ -123,10 +144,30 @@ struct PolymarketSearchPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
 
-            if let selected = searchVM.selectedResult {
-                SelectedResultBanner(prefix: "Selected", result: selected)
+    /// Section header with a group-level toggle checkbox for multi-choice events.
+    private func groupHeader(for group: PolymarketResultGroup) -> some View {
+        let allChecked = searchVM.isGroupChecked(group)
+        let anyChecked = searchVM.isGroupAnyChecked(group)
+        let iconName = allChecked
+            ? "checkmark.square.fill"
+            : anyChecked ? "minus.square.fill" : "square"
+
+        return Button {
+            searchVM.toggleGroup(group)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: iconName)
+                    .foregroundStyle(anyChecked ? Color.accentColor : Color.secondary)
+                    .font(.caption)
+                Text(group.eventTitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         }
+        .buttonStyle(.plain)
     }
 }

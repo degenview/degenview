@@ -67,6 +67,50 @@ final class ChartViewModel: ObservableObject {
     /// showing the previous coin's artwork.
     var iconKey: String { "\(source.rawValue):\(ticker)" }
 
+    /// All tradable choices for multi-outcome Polymarket events. Empty for single-choice
+    /// markets and all non-Polymarket sources.
+    @Published var pmSeries: [PmSeriesConfig] = []
+
+    /// Fetched price history keyed by CLOB token id, populated during multi-series fetches.
+    @Published private(set) var pmSeriesData: [String: [KlineData]] = [:]
+
+    /// Fixed palette for multi-series lines. Index maps to `pmSeries` order.
+    static let seriesPalette: [Color] = [.blue, .orange, .purple, .green, .red, .cyan, .pink]
+
+    /// Color for a given token id within `pmSeries`.
+    func pmColor(for tokenID: String) -> Color {
+        guard let index = pmSeries.firstIndex(where: { $0.tokenID == tokenID }) else {
+            return Self.seriesPalette[0]
+        }
+        return Self.seriesPalette[index % Self.seriesPalette.count]
+    }
+
+    /// Enabled series with their fetched data and display color, in `pmSeries` order.
+    var pmVisibleSeries: [(tokenID: String, label: String, data: [KlineData], color: Color)] {
+        guard pmSeries.count > 1 else { return [] }
+        return pmSeries.filter(\.enabled).compactMap { s in
+            guard let data = pmSeriesData[s.tokenID], !data.isEmpty else { return nil }
+            return (s.tokenID, s.label, data, pmColor(for: s.tokenID))
+        }
+    }
+
+    /// Toggle a Polymarket series on/off by its token id and refresh the primary data.
+    func togglePmSeries(_ tokenID: String) {
+        guard let i = pmSeries.firstIndex(where: { $0.tokenID == tokenID }) else { return }
+        pmSeries[i].enabled.toggle()
+        syncPrimaryKlineData()
+    }
+
+    /// Keep `klineData` / `currentPrice` in sync with the first enabled PM series.
+    private func syncPrimaryKlineData() {
+        guard !pmSeries.isEmpty else { return }
+        if let first = pmSeries.first(where: \.enabled),
+           let data = pmSeriesData[first.tokenID], !data.isEmpty {
+            klineData = data
+            currentPrice = data.last?.closePrice
+        }
+    }
+
     /// Everything fetched, including the warm-up candles that sit off the left edge.
     /// Read `visibleKlines` for what the chart actually draws.
     @Published var klineData: [KlineData] = []
@@ -198,6 +242,7 @@ final class ChartViewModel: ObservableObject {
         showBollinger = config.showBollinger ?? false
         trendLines = config.trendLines ?? []
         if let name = config.displayName { displayName = name }
+        if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
     }
 
     // MARK: - Vertical zoom
@@ -398,10 +443,12 @@ final class ChartViewModel: ObservableObject {
     }
 
     /// Update ticker symbol and/or source, re-fetch data.
-    func updateTicker(symbol: String, source: DataSourceType, displayName: String? = nil) {
+    func updateTicker(symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
         ticker = symbol
         self.source = source
         self.displayName = displayName
+        if let series = pmSeries { self.pmSeries = series } else if source != .polymarket { self.pmSeries = [] }
+        self.pmSeriesData = [:]
         api = DataSourceFactory.shared.service(for: source)
     }
 
@@ -502,15 +549,26 @@ final class ChartViewModel: ObservableObject {
                 } else if let pmService = api as? PolymarketService {
                     // Polymarket needs the whole TimeRange, not the interval token:
                     // that token maps 1D and 3M both onto "1d".
-                    let data = try await pmService.fetchPrices(
-                        tokenID: self.apiSymbol,
-                        range: range,
-                        count: count
-                    )
-                    guard !Task.isCancelled else { return }
-                    guard fetchGeneration == generation else { return }
-                    klineData = data
-                    currentPrice = data.last?.closePrice
+                    if pmSeries.count > 1 {
+                        try await self.fetchPmMultiSeries(
+                            pmService: pmService,
+                            range: range,
+                            count: count,
+                            generation: generation
+                        )
+                        return
+                    } else {
+                        let tokenID = pmSeries.first?.tokenID ?? self.apiSymbol
+                        let data = try await pmService.fetchPrices(
+                            tokenID: tokenID,
+                            range: range,
+                            count: count
+                        )
+                        guard !Task.isCancelled else { return }
+                        guard fetchGeneration == generation else { return }
+                        klineData = data
+                        currentPrice = data.last?.closePrice
+                    }
                 } else {
                     let data = try await self.api.fetchKlines(
                         symbol: self.apiSymbol,
@@ -539,6 +597,38 @@ final class ChartViewModel: ObservableObject {
             guard fetchGeneration == generation else { return }
             isFetching = false
         }
+    }
+
+    /// Fetch all Polymarket series in parallel and update `pmSeriesData`.
+    ///
+    /// Individual series failures are silently ignored — the chart shows whatever
+    /// data arrived. Sets `lastUpdated` on any partial or full success.
+    private func fetchPmMultiSeries(
+        pmService: PolymarketService,
+        range: TimeRange,
+        count: Int,
+        generation: Int
+    ) async throws {
+        let series = pmSeries
+        let results: [(String, [KlineData])] = await withTaskGroup(of: (String, [KlineData]).self) { group in
+            for s in series {
+                group.addTask {
+                    let data = (try? await pmService.fetchPrices(tokenID: s.tokenID, range: range, count: count)) ?? []
+                    return (s.tokenID, data)
+                }
+            }
+            var collected: [(String, [KlineData])] = []
+            for await pair in group { collected.append(pair) }
+            return collected
+        }
+
+        guard !Task.isCancelled, fetchGeneration == generation else { return }
+
+        pmSeriesData = Dictionary(uniqueKeysWithValues: results)
+        syncPrimaryKlineData()
+        lastUpdated = Date()
+        errorMessage = nil
+        isFetching = false
     }
 
     /// Consume staged kline data from CoinGecko, rendering each batch as it lands

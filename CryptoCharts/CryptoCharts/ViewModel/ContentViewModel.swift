@@ -742,7 +742,8 @@ final class ContentViewModel: ObservableObject {
     /// Add a ticker with a chosen data source.
     /// - Parameter displayName: label to show instead of the raw symbol, for sources
     ///   whose symbol is an opaque id (Polymarket CLOB token ids).
-    func addTicker(symbol: String, source: DataSourceType, displayName: String? = nil) async throws {
+    /// - Parameter pmSeries: all tradable choices for multi-outcome Polymarket events.
+    func addTicker(symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) async throws {
         // Duplicate check: same symbol + same source
         guard !chartViewModels.contains(where: {
             $0.ticker.uppercased() == symbol.uppercased() && $0.source == source
@@ -751,6 +752,7 @@ final class ContentViewModel: ObservableObject {
         }
 
         let vm = ChartViewModel(ticker: symbol, source: source, displayName: displayName)
+        if let series = pmSeries, !series.isEmpty { vm.pmSeries = series }
         chartViewModels.append(vm)
         persistTickers()
 
@@ -769,8 +771,8 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Update a chart's ticker symbol and/or source, then refetch.
-    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil) {
-        vm.updateTicker(symbol: symbol, source: source, displayName: displayName)
+    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
+        vm.updateTicker(symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
         persistTickers()
         markChanged()
         Task {
@@ -802,7 +804,8 @@ final class ContentViewModel: ObservableObject {
                 emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
                 showBollinger: vm.showBollinger ? true : nil,
                 trendLines: vm.trendLines.isEmpty ? nil : vm.trendLines,
-                displayName: vm.displayName
+                displayName: vm.displayName,
+                pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
             )
         }
     }

@@ -20,7 +20,7 @@ struct ChartCardView: View {
     var crosshair: CrosshairTracker? = nil
     /// Called when the pointer leaves this card — the mouse monitor can't see that.
     var onCrosshairExit: () -> Void = {}
-    let onUpdateTicker: (String, DataSourceType, String?) -> Void
+    let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
 
@@ -47,7 +47,7 @@ struct ChartCardView: View {
         .sheet(isPresented: $showSettings) {
             ChartSettingsSheet(
                 viewModel: viewModel,
-                onUpdateTicker: onUpdateTicker,
+                onUpdateTicker: { sym, src, name, series in onUpdateTicker(sym, src, name, series) },
                 onRemove: onRemove,
                 onStyleChanged: onStyleChanged
             )
@@ -104,6 +104,41 @@ struct ChartCardView: View {
         }
     }
 
+    // MARK: - PM Series Legend
+
+    /// Horizontally-scrolling row of toggleable colored chips, one per Polymarket choice.
+    private var pmSeriesLegend: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                ForEach(viewModel.pmSeries) { series in
+                    let color = viewModel.pmColor(for: series.tokenID)
+                    Button {
+                        viewModel.togglePmSeries(series.tokenID)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(color)
+                                .frame(width: 6, height: 6)
+                            Text(series.label)
+                                .font(.caption2)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(
+                            series.enabled
+                                ? color.opacity(0.15)
+                                : Color.secondary.opacity(0.08),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(series.enabled ? .primary : .secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     // MARK: - Chart Area
 
     @ViewBuilder
@@ -111,6 +146,7 @@ struct ChartCardView: View {
         // Computed once per layout pass and shared by both renderers — the warm-up
         // candles ahead of the visible window never reach the chart itself.
         let indicators = viewModel.indicators
+        let multiSeries = viewModel.pmVisibleSeries.map { (data: $0.data, color: $0.color, label: $0.label) }
 
         return Group {
             if viewModel.usesLineChart {
@@ -123,6 +159,7 @@ struct ChartCardView: View {
                     scale: viewModel.priceScale,
                     yZoom: viewModel.yZoom,
                     indicators: indicators,
+                    extraSeries: multiSeries,
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
@@ -329,7 +366,7 @@ private struct PriceAxisRegion: NSViewRepresentable {
         onRetry: {},
         onZoomRegion: { _ in },
         onAxisRegion: { _ in },
-        onUpdateTicker: { _, _, _ in },
+        onUpdateTicker: { _, _, _, _ in },
         onStyleChanged: {}
     )
     .frame(width: 400)
