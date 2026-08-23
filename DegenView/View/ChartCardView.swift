@@ -23,6 +23,16 @@ struct ChartCardView: View {
     let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
+    var onPaperBuy: () -> Void = {}
+    var onPaperSell: () -> Void = {}
+    var paperConnected = false
+    var paperPositions: [PaperPosition] = []
+    var paperOrders: [PaperOrder] = []
+    var paperAccountCurrency: PaperCurrency = .USD
+    var paperUnrealizedPnL: (PaperPosition) -> Decimal = { _ in 0 }
+    var onPaperModify: (PaperOrder, Decimal) -> Void = { _, _ in }
+    var onPaperCancel: (PaperOrder) -> Void = { _ in }
+    var onPaperClose: (PaperPosition) -> Void = { _ in }
 
     @State private var showSettings = false
     @State private var iconURL: URL?
@@ -100,6 +110,21 @@ struct ChartCardView: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            if paperConnected, let price = viewModel.displayedPrice {
+                HStack(spacing: 4) {
+                    Button(action: onPaperSell) {
+                        VStack(spacing: 0) { Text("SELL").font(.caption2.bold()); Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(.caption2.monospacedDigit()) }
+                    }
+                    .buttonStyle(.bordered).tint(.red)
+                    .accessibilityLabel("Sell \(viewModel.title), paper order at last price \(price)")
+                    Button(action: onPaperBuy) {
+                        VStack(spacing: 0) { Text("BUY").font(.caption2.bold()); Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(.caption2.monospacedDigit()) }
+                    }
+                    .buttonStyle(.borderedProminent).tint(.blue)
+                    .accessibilityLabel("Buy \(viewModel.title), paper order at last price \(price)")
+                }
+            }
 
             if let change = viewModel.priceChangePercent {
                 HStack(spacing: 4) {
@@ -208,6 +233,13 @@ struct ChartCardView: View {
             if let date = viewModel.replaySelectionTimestamp {
                 ReplaySelectionMarker(viewModel: viewModel, date: date)
                     .allowsHitTesting(false)
+            }
+        }
+        .overlay {
+            if paperConnected && viewModel.replayTimestamp == nil {
+                PaperChartTradingOverlay(candles: viewModel.visibleKlines, positions: paperPositions,
+                    orders: paperOrders, accountCurrency: paperAccountCurrency, unrealizedPnL: paperUnrealizedPnL,
+                    onModify: onPaperModify, onCancel: onPaperCancel, onClose: onPaperClose)
             }
         }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves

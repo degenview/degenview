@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
+		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
@@ -63,6 +64,7 @@
 		A0000000000000000000041A /* WindowFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000041B /* WindowFrame.swift */; };
 		E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */; };
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
+		F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* PaperTradingFormatter.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
 		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
 		D10000000000000000000003 /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000103 /* WindowCoordinator.swift */; };
@@ -75,6 +77,12 @@
 		E30000000000000000000001 /* ReplaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000101 /* ReplaySession.swift */; };
 		E30000000000000000000002 /* ReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000102 /* ReplayEngine.swift */; };
 		E30000000000000000000003 /* ReplayControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000103 /* ReplayControlBar.swift */; };
+		F30000000000000000000001 /* PaperTradingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* PaperTradingModels.swift */; };
+		F30000000000000000000002 /* PaperTradingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* PaperTradingEngine.swift */; };
+		F30000000000000000000003 /* PaperTradingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* PaperTradingStore.swift */; };
+		F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000104 /* PaperOrderTicketSheet.swift */; };
+		F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* PaperAccountManagerView.swift */; };
+		F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* PaperChartTradingOverlay.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -89,10 +97,12 @@
 
 /* Begin PBXFileReference section */
 		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
+		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReorderDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
+		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
 		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
 		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
 		A00000000000000000000101 /* DegenViewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DegenViewApp.swift; sourceTree = "<group>"; };
@@ -158,6 +168,12 @@
 		E30000000000000000000101 /* ReplaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySession.swift; sourceTree = "<group>"; };
 		E30000000000000000000102 /* ReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngine.swift; sourceTree = "<group>"; };
 		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
+		F30000000000000000000101 /* PaperTradingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingModels.swift; sourceTree = "<group>"; };
+		F30000000000000000000102 /* PaperTradingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngine.swift; sourceTree = "<group>"; };
+		F30000000000000000000103 /* PaperTradingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingStore.swift; sourceTree = "<group>"; };
+		F30000000000000000000104 /* PaperOrderTicketSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketSheet.swift; sourceTree = "<group>"; };
+		F30000000000000000000105 /* PaperAccountManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperAccountManagerView.swift; sourceTree = "<group>"; };
+		F30000000000000000000107 /* PaperChartTradingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartTradingOverlay.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -224,6 +240,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
 				A00000000000000000000103 /* KlineData.swift */,
@@ -243,6 +260,8 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				F30000000000000000000102 /* PaperTradingEngine.swift */,
+				F30000000000000000000103 /* PaperTradingStore.swift */,
 				E30000000000000000000102 /* ReplayEngine.swift */,
 				F10000000000000000000102 /* FavoritesStore.swift */,
 				E20000000000000000000101 /* AlpacaCredentials.swift */,
@@ -282,6 +301,9 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
+				F30000000000000000000104 /* PaperOrderTicketSheet.swift */,
+				F30000000000000000000105 /* PaperAccountManagerView.swift */,
 				E30000000000000000000103 /* ReplayControlBar.swift */,
 				F10000000000000000000103 /* FavoritesSidebar.swift */,
 				E20000000000000000000104 /* AppSettingsView.swift */,
@@ -315,6 +337,7 @@
 		A00000000000000000000315 /* Util */ = {
 			isa = PBXGroup;
 			children = (
+				F30000000000000000000108 /* PaperTradingFormatter.swift */,
 				A0000000000000000000011D /* ColorHex.swift */,
 				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
@@ -329,6 +352,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
 			);
 			path = DegenViewTests;
@@ -421,6 +445,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -429,6 +454,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */,
+				F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */,
+				F30000000000000000000001 /* PaperTradingModels.swift in Sources */,
+				F30000000000000000000002 /* PaperTradingEngine.swift in Sources */,
+				F30000000000000000000003 /* PaperTradingStore.swift in Sources */,
+				F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */,
+				F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */,
 				E30000000000000000000001 /* ReplaySession.swift in Sources */,
 				E30000000000000000000002 /* ReplayEngine.swift in Sources */,
 				E30000000000000000000003 /* ReplayControlBar.swift in Sources */,

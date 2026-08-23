@@ -39,6 +39,12 @@ struct ContentView: View {
     @State private var showReplayDatePicker = false
     @State private var replayDate = Date()
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
+    @StateObject private var paperTrading = PaperTradingStore.shared
+    @AppStorage("showPaperTradingOnCharts") private var showPaperTradingOnCharts = true
+    @AppStorage("hasChosenPaperTradingChartVisibility") private var hasChosenPaperTradingChartVisibility = false
+    @State private var showTradingPanel = false
+    @State private var paperManagerTab: PaperManagerTab = .positions
+    @State private var orderTicket: PaperOrderTicketContext?
 
     init(tabID: UUID) {
         _contentViewModel = StateObject(wrappedValue: ContentViewModel(tabID: tabID))
@@ -141,6 +147,13 @@ struct ContentView: View {
             .padding(20)
             .frame(width: 380)
         }
+        .sheet(item: $orderTicket) { ticket in
+            PaperOrderTicketSheet(store: paperTrading, instrument: ticket.instrument,
+                                  referencePrice: ticket.price, initialSide: ticket.side)
+        }
+        .alert("Paper Trading", isPresented: Binding(get: { paperTrading.lastError != nil && orderTicket == nil }, set: { if !$0 { paperTrading.clearError() } })) {
+            Button("OK") { paperTrading.clearError() }
+        } message: { Text(paperTrading.lastError ?? "") }
         .onChange(of: showAddSheet) { _, _ in
             contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
         }
@@ -154,6 +167,22 @@ struct ContentView: View {
     /// Everything right of the tool strip.
     @ViewBuilder
     private var chartColumn: some View {
+        if showTradingPanel && paperTrading.isConnected {
+            VSplitView {
+                chartsOnly
+                    .frame(minHeight: 260)
+                PaperAccountManagerView(store: paperTrading, selectedTab: $paperManagerTab) {
+                    showTradingPanel = false
+                }
+                .frame(minHeight: 180, idealHeight: 280)
+            }
+        } else {
+            chartsOnly
+        }
+    }
+
+    @ViewBuilder
+    private var chartsOnly: some View {
         VStack(spacing: 0) {
             if contentViewModel.replay.isActive {
                 ReplayControlBar(
@@ -281,6 +310,44 @@ struct ContentView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .automatic) {
+            Menu {
+                if paperTrading.isConnected {
+                    Button(showTradingPanel ? "Hide Account Manager" : "Open Account Manager") {
+                        if showTradingPanel {
+                            showTradingPanel = false
+                        } else {
+                            showTradingPanelWithChartControlsDefault()
+                        }
+                    }
+                    Toggle("Show Trading on Charts", isOn: Binding(
+                        get: { showPaperTradingOnCharts },
+                        set: { value in
+                            showPaperTradingOnCharts = value
+                            hasChosenPaperTradingChartVisibility = true
+                        }
+                    ))
+                    if let vm = contentViewModel.chartViewModels.first {
+                        Divider()
+                        Button("Buy \(vm.title)…") { openTicket(for: vm, side: .buy) }
+                            .keyboardShortcut("b", modifiers: [.command, .shift])
+                        Button("Sell \(vm.title)…") { openTicket(for: vm, side: .sell) }
+                            .keyboardShortcut("s", modifiers: [.command, .shift])
+                    }
+                } else {
+                    Button("Connect Paper Trading") {
+                        Task {
+                            await paperTrading.connect()
+                            showTradingPanelWithChartControlsDefault()
+                        }
+                    }
+                }
+            } label: {
+                Label(paperTrading.isConnected ? "PAPER" : "Trade", systemImage: "arrow.left.arrow.right")
+            }
+            .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
+            .help("Paper Trading")
+        }
         ToolbarItem(placement: .automatic) {
             Menu {
                 Button("Select bar") { contentViewModel.beginReplaySelection() }
@@ -427,9 +494,54 @@ struct ContentView: View {
             },
             onSettingsPresented: { shown in
                 contentViewModel.isShowingSheet = shown
-            }
+            },
+            onPaperBuy: { openTicket(for: vm, side: .buy) },
+            onPaperSell: { openTicket(for: vm, side: .sell) },
+            paperConnected: paperTrading.isConnected && showPaperTradingOnCharts,
+            paperPositions: paperTrading.positions.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
+            paperOrders: paperTrading.workingOrders.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
+            paperAccountCurrency: paperTrading.selectedAccount?.baseCurrency ?? .USD,
+            paperUnrealizedPnL: { position in
+                guard let quote = paperTrading.snapshot.quotes[position.instrument.key],
+                      let mark = position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
+                else { return 0 }
+                return (position.signedQuantity >= 0 ? mark - position.averageEntryPrice : position.averageEntryPrice - mark) * position.quantity * position.instrument.pointValue
+            },
+            onPaperModify: { order, price in
+                let changes = order.type == .stop || (order.type == .stopLimit && !order.stopTriggered)
+                    ? PaperOrderChanges(stopPrice: price) : PaperOrderChanges(limitPrice: price)
+                Task { await paperTrading.modify(order.id, changes: changes) }
+            },
+            onPaperCancel: { order in Task { await paperTrading.cancel(order.id) } },
+            onPaperClose: { position in Task { await paperTrading.close(position) } }
         )
+        .onChange(of: vm.currentPrice) { _, price in
+            guard let price else { return }
+            let instrument = PaperInstrument.chart(symbol: vm.apiSymbol, displayName: vm.title, source: vm.source)
+            Task { await paperTrading.process(instrument: instrument, last: Decimal(price), timestamp: Date()) }
+        }
     }
+
+    private func openTicket(for vm: ChartViewModel, side: PaperOrderSide) {
+        let instrument = PaperInstrument.chart(symbol: vm.apiSymbol, displayName: vm.title, source: vm.source)
+        orderTicket = .init(instrument: instrument, price: vm.displayedPrice.map { Decimal($0) }, side: side)
+    }
+
+    /// Existing installs may carry a hidden value from the retired eye button. Treat
+    /// visibility as default-on until the user makes a choice in the PAPER menu.
+    private func showTradingPanelWithChartControlsDefault() {
+        if !hasChosenPaperTradingChartVisibility {
+            showPaperTradingOnCharts = true
+        }
+        showTradingPanel = true
+    }
+}
+
+private struct PaperOrderTicketContext: Identifiable {
+    let id = UUID()
+    let instrument: PaperInstrument
+    let price: Decimal?
+    let side: PaperOrderSide
 }
 
 #Preview {
