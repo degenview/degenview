@@ -73,6 +73,16 @@ final class TabsStore: ObservableObject {
         return tab
     }
 
+    @discardableResult
+    func makePortfolioTab() -> ChartTab {
+        let tab = ChartTab(name: "Portfolio", kind: .portfolio)
+        tabs.append(tab)
+        scheduleSave()
+        return tab
+    }
+
+    var portfolioTab: ChartTab? { tabs.first { $0.kind == .portfolio } }
+
     /// Create a tab that is ready to render a selected shortcut on its first frame.
     @discardableResult
     func makeTab(name: String, tickerConfig: TickerConfig) -> ChartTab {

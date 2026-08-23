@@ -7,6 +7,15 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */; };
+		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
+		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
+		AA1000000000000000000001 /* PortfolioModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000101 /* PortfolioModels.swift */; };
+		AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000102 /* PortfolioAccountingEngine.swift */; };
+		AA1000000000000000000003 /* PortfolioLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000103 /* PortfolioLedger.swift */; };
+		AA1000000000000000000004 /* PortfolioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000104 /* PortfolioStore.swift */; };
+		AA1000000000000000000005 /* PortfolioCSVService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000105 /* PortfolioCSVService.swift */; };
+		AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000106 /* PortfolioDashboardView.swift */; };
 		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
@@ -96,6 +105,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngineTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000108 /* PortfolioTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetAutoMapper.swift; sourceTree = "<group>"; };
+		AA1000000000000000000101 /* PortfolioModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioModels.swift; sourceTree = "<group>"; };
+		AA1000000000000000000102 /* PortfolioAccountingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngine.swift; sourceTree = "<group>"; };
+		AA1000000000000000000103 /* PortfolioLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioLedger.swift; sourceTree = "<group>"; };
+		AA1000000000000000000104 /* PortfolioStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStore.swift; sourceTree = "<group>"; };
+		AA1000000000000000000105 /* PortfolioCSVService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCSVService.swift; sourceTree = "<group>"; };
+		AA1000000000000000000106 /* PortfolioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioDashboardView.swift; sourceTree = "<group>"; };
 		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -240,6 +258,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				AA1000000000000000000101 /* PortfolioModels.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
@@ -260,6 +279,11 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */,
+				AA1000000000000000000102 /* PortfolioAccountingEngine.swift */,
+				AA1000000000000000000103 /* PortfolioLedger.swift */,
+				AA1000000000000000000104 /* PortfolioStore.swift */,
+				AA1000000000000000000105 /* PortfolioCSVService.swift */,
 				F30000000000000000000102 /* PaperTradingEngine.swift */,
 				F30000000000000000000103 /* PaperTradingStore.swift */,
 				E30000000000000000000102 /* ReplayEngine.swift */,
@@ -301,6 +325,8 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				AA1000000000000000000108 /* PortfolioTabView.swift */,
+				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
 				F30000000000000000000104 /* PaperOrderTicketSheet.swift */,
 				F30000000000000000000105 /* PaperAccountManagerView.swift */,
@@ -352,6 +378,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
 			);
@@ -445,6 +472,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 			);
@@ -454,6 +482,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
+				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
+				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
+				AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */,
+				AA1000000000000000000003 /* PortfolioLedger.swift in Sources */,
+				AA1000000000000000000004 /* PortfolioStore.swift in Sources */,
+				AA1000000000000000000005 /* PortfolioCSVService.swift in Sources */,
+				AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */,
 				F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */,
 				F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */,
 				F30000000000000000000001 /* PaperTradingModels.swift in Sources */,

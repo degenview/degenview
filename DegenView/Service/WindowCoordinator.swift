@@ -25,6 +25,7 @@ final class WindowCoordinator {
     /// Tab a freshly opened window should join, recorded before `openWindow`
     /// steals key status from the window we want to anchor on.
     private var pendingJoins: [UUID: UUID] = [:]
+    private var pendingPortfolioAssets: [UUID: PortfolioAsset] = [:]
 
     /// Whether the launch window has already claimed the persisted session.
     /// Everything opened afterwards without a tab id — the tab bar's `+`,
@@ -241,6 +242,30 @@ final class WindowCoordinator {
         openWindow(value: tab.id)
     }
 
+    /// Opens the single portfolio workspace as a real AppKit tab. Repeated requests
+    /// focus the existing tab instead of creating duplicate portfolio workspaces.
+    func openPortfolio(beside anchorID: UUID, initialAsset: PortfolioAsset? = nil) {
+        guard let openWindow = openWindowAction else { return }
+        let tab = TabsStore.shared.portfolioTab ?? TabsStore.shared.makePortfolioTab()
+        if let initialAsset { pendingPortfolioAssets[tab.id] = initialAsset }
+
+        if let existing = window(for: tab.id) {
+            existing.makeKeyAndOrderFront(nil)
+            if let initialAsset {
+                NotificationCenter.default.post(name: .portfolioAddTransaction, object: initialAsset)
+                pendingPortfolioAssets[tab.id] = nil
+            }
+            return
+        }
+
+        pendingJoins[tab.id] = anchorID
+        openWindow(value: tab.id)
+    }
+
+    func takeInitialPortfolioAsset(for tabID: UUID) -> PortfolioAsset? {
+        pendingPortfolioAssets.removeValue(forKey: tabID)
+    }
+
     // MARK: - Restore
 
     private var didRestore = false
@@ -319,4 +344,8 @@ final class WindowCoordinator {
         captureGrouping()
         TabsStore.shared.persist()
     }
+}
+
+extension Notification.Name {
+    static let portfolioAddTransaction = Notification.Name("portfolioAddTransaction")
 }

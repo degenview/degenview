@@ -1,5 +1,10 @@
 import Foundation
 
+enum ChartTabKind: String, Codable {
+    case charts
+    case portfolio
+}
+
 /// One tab's worth of chart state — the unit `TabsStore` persists and
 /// `ContentViewModel` hydrates from.
 ///
@@ -18,6 +23,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
     var layoutMode: LayoutMode
     var candleCount: Int
     var replaySession: ReplaySession?
+    var kind: ChartTabKind
 
     init(
         id: UUID = UUID(),
@@ -27,7 +33,8 @@ struct ChartTab: Identifiable, Codable, Equatable {
         timeRange: TimeRange = .oneDay,
         layoutMode: LayoutMode = .vertical,
         candleCount: Int? = nil,
-        replaySession: ReplaySession? = nil
+        replaySession: ReplaySession? = nil,
+        kind: ChartTabKind = .charts
     ) {
         self.id = id
         self.name = name
@@ -37,6 +44,24 @@ struct ChartTab: Identifiable, Codable, Equatable {
         self.layoutMode = layoutMode
         self.candleCount = candleCount ?? timeRange.dataPointLimit
         self.replaySession = replaySession
+        self.kind = kind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, savedViewID, tickerConfigs, timeRange, layoutMode, candleCount, replaySession, kind
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        savedViewID = try values.decodeIfPresent(UUID.self, forKey: .savedViewID)
+        tickerConfigs = try values.decode([TickerConfig].self, forKey: .tickerConfigs)
+        timeRange = try values.decode(TimeRange.self, forKey: .timeRange)
+        layoutMode = try values.decode(LayoutMode.self, forKey: .layoutMode)
+        candleCount = try values.decode(Int.self, forKey: .candleCount)
+        replaySession = try values.decodeIfPresent(ReplaySession.self, forKey: .replaySession)
+        kind = try values.decodeIfPresent(ChartTabKind.self, forKey: .kind) ?? .charts
     }
 }
 

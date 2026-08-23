@@ -63,7 +63,13 @@ private struct ChartTabRoot: View {
     }
 
     var body: some View {
-        ContentView(tabID: tab.id)
+        Group {
+            if TabsStore.shared.tab(tab.id)?.kind == .portfolio {
+                PortfolioTabView(tabID: tab.id)
+            } else {
+                ContentView(tabID: tab.id)
+            }
+        }
             .task {
                 // The tab bar's + button reaches the app delegate, which has no
                 // SwiftUI environment of its own to open windows from.

@@ -36,6 +36,33 @@
 - **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
   green/red rectangle; measurements are intentionally temporary
 
+### Portfolio tracking
+
+- **Dedicated Portfolio tab** — Open Portfolio from any chart workspace into one native,
+  persistent tab type with no chart-creation controls. The same tab can be reordered,
+  detached, merged, and restored with the rest of the macOS tab session
+- **Multiple portfolios** — Create, rename, duplicate, delete, reorder, and switch between
+  independent portfolios, or use **All Portfolios** for aggregated holdings and allocation
+- **Transaction ledger** — Holdings derive from Decimal-valued Buy, Sell, Transfer In,
+  Transfer Out, reward, fee, and adjustment events instead of stored current quantities
+- **Weighted-average accounting** — Purchase fees increase cost basis; sale fees reduce net
+  proceeds; transfers remove proportional basis without realizing a market sale
+- **Live analytics** — Current value, allocation, 24-hour movement, average cost, realized
+  and unrealized P&L, best/worst performers, and unpriced-asset status update from the
+  existing market-data sources
+- **Portfolio history** — Transaction-aware value snapshots support 1D, 1W, 1M, 1Y, and
+  ALL ranges with time and value axes, profit/loss coloring, and an interactive crosshair
+- **Holdings and transactions** — Sort holdings, inspect asset-specific history, edit,
+  duplicate, delete, or remap an asset to another source-qualified instrument
+- **Privacy mode** — Globally hide balances, quantities, basis, values, P&L, chart values,
+  and their accessibility descriptions
+- **CSV workflows** — Preview and atomically import DegenView CSV files, and export
+  transactions, current holdings, or portfolio history with timezone-bearing timestamps
+- **CoinMarketCap import** — Parse CoinMarketCap transaction exports, auto-map tokens to
+  portfolio-currency pairs (Binance first, then CoinGecko and DEXScreener), override or
+  skip mappings, deduplicate reimports, and supply historical FX for foreign fees or skip
+  individual affected rows
+
 ## Paper Trading simulation model
 
 Paper Trading is a local, persistent simulator and has no exchange-order endpoint or
@@ -155,6 +182,9 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 9. Open the toolbar **Replay** menu and choose **Select bar**. Move over a chart to snap
    the orange marker to a historical candle, then click to begin. Use the replay strip to
    step, play, change speed/resolution, choose a new start, or return to latest.
+10. Open the toolbar **Portfolio** menu to create a dedicated Portfolio tab. Create a
+    portfolio, add transactions manually, or choose **Import from CoinMarketCap**. Review
+    automatic asset mappings and historical FX issues before committing the atomic import.
 
 ### Replay data support
 
@@ -183,6 +213,7 @@ DegenView/
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
 │   ├── DataSourceType.swift           # Sources and persisted ticker configuration
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
+│   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
@@ -203,6 +234,8 @@ DegenView/
 │   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket search
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
+│   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
+│   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
 │   └── AppSettingsView.swift          # Theme and Alpaca credentials
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
@@ -213,6 +246,11 @@ DegenView/
     ├── AlpacaAPIService.swift         # Alpaca search and historical bars
     ├── AlpacaWebSocketService.swift   # Alpaca live stock bars
     ├── ReplayEngine.swift             # Deterministic replay state machine and aggregation
+    ├── PortfolioAccountingEngine.swift # Weighted-average basis and P&L calculations
+    ├── PortfolioLedger.swift          # Actor-serialized atomic transaction ledger
+    ├── PortfolioStore.swift           # Published portfolio state, quotes, history cache
+    ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
+    ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PolymarketService.swift        # Event search and probability history
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs, saved views, and session persistence
@@ -242,12 +280,20 @@ DegenView/
 8. Binance and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
    lower-timeframe bars are aggregated against the provider-returned displayed-bar
    boundaries, preserving stock sessions, market gaps, and DST alignment.
+9. Portfolio mutations are serialized by `PortfolioLedger`, persisted atomically in
+   `portfolios.json`, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
+   valuation without replaying static accounting; historical edits invalidate only the
+   affected snapshot suffix.
 
 ## Tests
 
 The `DegenViewTests` target covers replay selection, stepping, seeking, completion,
 restoration, duplicate/missing timestamps, deterministic OHLCV aggregation, granular
-partial candles, source-close-time progression, and future-data leakage.
+partial candles, source-close-time progression, and future-data leakage. Portfolio tests
+cover weighted-average basis, fees, buys/sells/transfers, realized and unrealized P&L,
+multi-portfolio aggregation, history invalidation, asset remapping, privacy redaction,
+CoinMarketCap parsing/mapping/FX handling, chronological import, deduplication, and
+duplicate-safe quote refresh.
 
 ```bash
 xcodebuild test \

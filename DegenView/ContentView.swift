@@ -312,6 +312,27 @@ struct ContentView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .automatic) {
             Menu {
+                Button("Open Portfolio Tracker") {
+                    WindowCoordinator.shared.openPortfolio(beside: contentViewModel.tabID)
+                }
+                if let vm = contentViewModel.chartViewModels.first {
+                    Divider()
+                    Button("Add \(vm.title) Transaction…") {
+                        let asset = PortfolioAsset(
+                            key: "\(vm.source.rawValue):\(vm.apiSymbol)", symbol: vm.title,
+                            name: vm.title, source: vm.source
+                        )
+                        WindowCoordinator.shared.openPortfolio(
+                            beside: contentViewModel.tabID,
+                            initialAsset: asset
+                        )
+                    }
+                }
+            } label: { Label("Portfolio", systemImage: "briefcase") }
+            .help("Portfolio Tracker")
+        }
+        ToolbarItem(placement: .automatic) {
+            Menu {
                 if paperTrading.isConnected {
                     Button(showTradingPanel ? "Hide Account Manager" : "Open Account Manager") {
                         if showTradingPanel {
