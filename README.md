@@ -1,37 +1,5 @@
 # DegenView
 
-## Paper Trading simulation model
-
-Paper Trading is a local, persistent simulator and has no exchange-order endpoint or
-credential-bearing execution adapter. The UI holds a `PaperTradingExecutionService`
-directly; paper orders never route through Alpaca, Binance, or another live service.
-
-- Market buys execute at ask and market sells at bid when both sides are available.
-  The current chart feeds expose only last/bar prices, so those integrations use an
-  audited `lastPriceFallback` fill source and never invent a spread.
-- Quotes older than 30 seconds cannot execute market orders. Closed-market events keep
-  working orders pending. The app currently has no exchange calendar, so chart sources
-  only emit the open state they can establish; historical candles are never treated as
-  proof that a market is open.
-- Limit and stop conditions are evaluated from executable quote/trade events, not from
-  pixels on the chart. There is no OHLC-touch fill path. Stop-limit orders activate at
-  the stop and subsequently obey limit semantics.
-- Positions use one net position per account and instrument with weighted-average cost.
-  Reductions realize P&L against that average; reversals close the old side before
-  opening the residual quantity on the new side. Fill records remain immutable.
-- Long liquidation value uses bid and short liquidation value uses ask, falling back to
-  last only when the feed has no bid/ask. P&L applies the instrument point value.
-- Account-currency conversion is rejected when no reliable FX conversion is available.
-  USD accounts may treat USDT/USDC quotes as USD for this simulator; this limitation is
-  explicit rather than a general-purpose FX assumption.
-- Fills are deterministic and complete because no connected source exposes reliable
-  depth. The schema retains original, filled, and remaining quantities plus fill-level
-  records so a future liquidity model can generate partial fills without migration.
-
-A native macOS market dashboard for watching crypto, stocks, and prediction markets in
-customizable candlestick and line charts. Built with SwiftUI and an AppKit `Canvas`, with
-no external dependencies.
-
 ![DegenView showing crypto, stock, and prediction-market charts](resources/screenshot.png)
 
 ## Features
@@ -67,6 +35,38 @@ no external dependencies.
   anchored to time and price and shared by every chart of the same instrument
 - **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
   green/red rectangle; measurements are intentionally temporary
+
+## Paper Trading simulation model
+
+Paper Trading is a local, persistent simulator and has no exchange-order endpoint or
+credential-bearing execution adapter. The UI holds a `PaperTradingExecutionService`
+directly; paper orders never route through Alpaca, Binance, or another live service.
+
+- Market buys execute at ask and market sells at bid when both sides are available.
+  The current chart feeds expose only last/bar prices, so those integrations use an
+  audited `lastPriceFallback` fill source and never invent a spread.
+- Quotes older than 30 seconds cannot execute market orders. Closed-market events keep
+  working orders pending. The app currently has no exchange calendar, so chart sources
+  only emit the open state they can establish; historical candles are never treated as
+  proof that a market is open.
+- Limit and stop conditions are evaluated from executable quote/trade events, not from
+  pixels on the chart. There is no OHLC-touch fill path. Stop-limit orders activate at
+  the stop and subsequently obey limit semantics.
+- Positions use one net position per account and instrument with weighted-average cost.
+  Reductions realize P&L against that average; reversals close the old side before
+  opening the residual quantity on the new side. Fill records remain immutable.
+- Long liquidation value uses bid and short liquidation value uses ask, falling back to
+  last only when the feed has no bid/ask. P&L applies the instrument point value.
+- Account-currency conversion is rejected when no reliable FX conversion is available.
+  USD accounts may treat USDT/USDC quotes as USD for this simulator; this limitation is
+  explicit rather than a general-purpose FX assumption.
+- Fills are deterministic and complete because no connected source exposes reliable
+  depth. The schema retains original, filled, and remaining quantities plus fill-level
+  records so a future liquidity model can generate partial fills without migration.
+
+A native macOS market dashboard for watching crypto, stocks, and prediction markets in
+customizable candlestick and line charts. Built with SwiftUI and an AppKit `Canvas`, with
+no external dependencies.
 
 ### Historical bar replay
 
