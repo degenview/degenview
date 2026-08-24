@@ -313,24 +313,11 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .automatic) {
-            Menu {
-                Button("Open Portfolio Tracker") {
-                    WindowCoordinator.shared.openPortfolio(beside: contentViewModel.tabID)
-                }
-                if let vm = contentViewModel.marketChartViewModels.first {
-                    Divider()
-                    Button("Add \(vm.title) Transaction…") {
-                        let asset = PortfolioAsset(
-                            key: "\(vm.source.rawValue):\(vm.apiSymbol)", symbol: vm.title,
-                            name: vm.title, source: vm.source
-                        )
-                        WindowCoordinator.shared.openPortfolio(
-                            beside: contentViewModel.tabID,
-                            initialAsset: asset
-                        )
-                    }
-                }
-            } label: { Label("Portfolio", systemImage: "briefcase") }
+            Button {
+                WindowCoordinator.shared.openPortfolio(beside: contentViewModel.tabID)
+            } label: {
+                Label("Portfolio", systemImage: "briefcase")
+            }
             .help("Portfolio Tracker")
         }
         ToolbarItem(placement: .automatic) {
