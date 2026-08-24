@@ -48,7 +48,7 @@ struct ToolSidebar<BottomControls: View>: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("View Price Alerts")
-                .help("View Price Alerts")
+                .sidebarTooltip("View Price Alerts")
             }
             .padding(.vertical, 6)
             .frame(width: UI.toolSidebarWidth)
@@ -78,7 +78,58 @@ private struct ToolButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
-        .help(label)
+        .accessibilityLabel(label)
+        .sidebarTooltip(label)
+    }
+}
+
+private struct SidebarTooltip: ViewModifier {
+    let text: String
+    @State private var isPresented = false
+    @State private var presentationTask: Task<Void, Never>?
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovering in
+                presentationTask?.cancel()
+                if isHovering {
+                    presentationTask = Task {
+                        try? await Task.sleep(for: .milliseconds(250))
+                        guard !Task.isCancelled else { return }
+                        await MainActor.run { isPresented = true }
+                    }
+                } else {
+                    isPresented = false
+                }
+            }
+            .overlay(alignment: .leading) {
+                if isPresented {
+                    Text(text)
+                        .font(.callout)
+                        .fixedSize()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(.separator.opacity(0.35), lineWidth: 0.5)
+                        }
+                        .shadow(color: .black.opacity(0.14), radius: 7, y: 3)
+                        .offset(x: 34)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .zIndex(isPresented ? 1 : 0)
+            .onDisappear {
+                presentationTask?.cancel()
+            }
+    }
+}
+
+extension View {
+    func sidebarTooltip(_ text: String) -> some View {
+        modifier(SidebarTooltip(text: text))
     }
 }
 

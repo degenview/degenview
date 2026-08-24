@@ -6,6 +6,7 @@ enum PaperManagerTab: String, CaseIterable, Identifiable { case positions = "Pos
 struct PaperAccountManagerView: View {
     @ObservedObject var store: PaperTradingStore
     @Binding var selectedTab: PaperManagerTab
+    @Binding var showTradingOnCharts: Bool
     let onClose: () -> Void
     @State private var showCreate = false
     @State private var showReset = false
@@ -38,6 +39,14 @@ struct PaperAccountManagerView: View {
             }.labelsHidden().frame(maxWidth: 260)
             Button { showCreate = true } label: { Image(systemName: "plus") }.help("Create paper account")
             Spacer()
+            Button {
+                showTradingOnCharts.toggle()
+            } label: {
+                Image(systemName: showTradingOnCharts ? "eye" : "eye.slash")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showTradingOnCharts ? "Hide trading controls on charts" : "Show trading controls on charts")
+            .help(showTradingOnCharts ? "Hide Trading on Charts" : "Show Trading on Charts")
             Menu {
                 Button("Export trading data…") { exportCSV() }
                 Divider(); Button("Reset account…", role: .destructive) { showReset = true }

@@ -41,7 +41,6 @@ struct ContentView: View {
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @StateObject private var paperTrading = PaperTradingStore.shared
     @AppStorage("showPaperTradingOnCharts") private var showPaperTradingOnCharts = true
-    @AppStorage("hasChosenPaperTradingChartVisibility") private var hasChosenPaperTradingChartVisibility = false
     @State private var showTradingPanel = false
     @State private var paperManagerTab: PaperManagerTab = .positions
     @State private var orderTicket: PaperOrderTicketContext?
@@ -61,6 +60,7 @@ struct ContentView: View {
                 ) {
                     sidebarTradingControls
                 }
+                .zIndex(1)
 
                 chartColumn
 
@@ -176,7 +176,11 @@ struct ContentView: View {
             VSplitView {
                 chartsOnly
                     .frame(minHeight: 260)
-                PaperAccountManagerView(store: paperTrading, selectedTab: $paperManagerTab) {
+                PaperAccountManagerView(
+                    store: paperTrading,
+                    selectedTab: $paperManagerTab,
+                    showTradingOnCharts: $showPaperTradingOnCharts
+                ) {
                     showTradingPanel = false
                 }
                 .frame(minHeight: 180, idealHeight: 280)
@@ -306,11 +310,11 @@ struct ContentView: View {
     private var sidebarTradingControls: some View {
         Button {
             if paperTrading.isConnected {
-                showTradingPanelWithChartControlsDefault()
+                showTradingPanel = true
             } else {
                 Task {
                     await paperTrading.connect()
-                    showTradingPanelWithChartControlsDefault()
+                    showTradingPanel = true
                 }
             }
         } label: {
@@ -321,7 +325,7 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
-        .help("Paper Trading")
+        .sidebarTooltip("Paper Trading")
 
         Menu {
             Button("Select bar") { contentViewModel.beginReplaySelection() }
@@ -345,7 +349,7 @@ struct ContentView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Historical bar replay")
-        .help("Start or control historical replay")
+        .sidebarTooltip("Historical Replay")
     }
 
     /// Commit the tab's edits back to its saved view, prompting for a name the
@@ -512,7 +516,7 @@ struct ContentView: View {
             },
             onPaperBuy: { openTicket(for: vm, side: .buy) },
             onPaperSell: { openTicket(for: vm, side: .sell) },
-            paperConnected: paperTrading.isConnected && showPaperTradingOnCharts,
+            paperConnected: paperTrading.isConnected && showTradingPanel && showPaperTradingOnCharts,
             paperPositions: paperTrading.positions.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
             paperOrders: paperTrading.workingOrders.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
             paperAccountCurrency: paperTrading.selectedAccount?.baseCurrency ?? .USD,
@@ -559,14 +563,6 @@ struct ContentView: View {
         orderTicket = .init(instrument: instrument, price: vm.displayedPrice.map { Decimal($0) }, side: side)
     }
 
-    /// Existing installs may carry a hidden value from the retired eye button. Treat
-    /// visibility as default-on until the user makes a choice in the PAPER menu.
-    private func showTradingPanelWithChartControlsDefault() {
-        if !hasChosenPaperTradingChartVisibility {
-            showPaperTradingOnCharts = true
-        }
-        showTradingPanel = true
-    }
 }
 
 private struct PaperOrderTicketContext: Identifiable {
