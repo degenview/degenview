@@ -30,6 +30,17 @@ no external dependencies.
   change readout; no SwiftUI Charts or third-party chart library
 - **Indicators** — Per-chart volume, RSI (14), configurable EMA, Bollinger Bands, and
   confirmed bullish/bearish Supertrend flip markers
+- **Local Pine v6-style indicators** — Write and run a useful Pine Script v6 subset
+  directly on each market chart. The independent engine lexes, parses, validates, and
+  evaluates scripts locally over OHLCV bars; source code is never sent to TradingView
+- **Script plots and inputs** — Pine plots, horizontal levels, shapes, characters,
+  backgrounds, and candle colors render through the native Canvas. Generated integer,
+  float, boolean, and string controls reevaluate a script without recompiling it
+- **Realtime series semantics** — Script state advances bar by bar with history references,
+  persistent `var`, intrabar-persistent `varip`, realtime rollback, and `barstate.*`
+- **Safe script editing** — Each chart persists its draft, last successfully applied
+  source, and typed input values. Invalid drafts show line/column diagnostics while the
+  last valid plot remains active
 - **Per-chart appearance** — Custom bullish and bearish colors plus automatic or fixed
   Y-axis decimal precision
 - **Independent price zoom** — Drag a chart's Y-axis to adjust its vertical scale
@@ -192,7 +203,8 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 2. Pick a timeframe in the toolbar and scroll over a chart to zoom its history. Drag the
    price axis to zoom vertically.
 3. Open a chart's gear menu to change its instrument, colors, decimal precision, and
-   technical indicators, or remove it.
+   technical indicators. Use its **Scripts** tab to edit and apply a Pine v6-style
+   indicator or change the generated inputs. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines, and
    temporary ruler measurements.
 5. Switch between the vertical and two-column layouts, then drag cards to reorder them.
@@ -212,6 +224,36 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
     adjacent bell—or the Portfolio toolbar bell—to manage rules and history in the Alerts
     window. Notification behavior is under **Settings → Notifications**.
 
+### Example Pine indicator
+
+Paste this into a market chart's **Settings → Scripts** tab and click **Apply**. After it
+compiles, the Fast EMA and Slow EMA controls appear below the editor and can be changed
+without recompiling the source.
+
+```pinescript
+//@version=6
+indicator("EMA Momentum", overlay=true)
+
+fastLength = input.int(12, "Fast EMA", minval=1)
+slowLength = input.int(26, "Slow EMA", minval=2)
+
+fast = ta.ema(close, fastLength)
+slow = ta.ema(close, slowLength)
+
+bullish = ta.crossover(fast, slow)
+bearish = ta.crossunder(fast, slow)
+
+plot(fast, color=color.orange, linewidth=2)
+plot(slow, color=color.blue, linewidth=2)
+
+plotshape(bullish, color=color.green)
+plotshape(bearish, color=color.red)
+```
+
+The current engine intentionally supports an indicator-focused subset rather than every
+Pine feature. See the compatibility document for exact syntax, built-ins, limits, and
+known differences.
+
 ### Replay data support
 
 | Provider | Granular replay | Available behavior |
@@ -229,7 +271,9 @@ non-blocking notice and safely falls back to complete bars.
 
 ## Documentation
 
-See [Architecture](ARCHITECTURE.md) for the project structure and data flow.
+See [Architecture](ARCHITECTURE.md) for the project structure and data flow, and
+[Pine compatibility](docs/pine-compatibility.md) for the supported language subset,
+execution model, resource limits, and known incompatibilities.
 
 ## Tests
 
@@ -240,6 +284,9 @@ cover weighted-average basis, fees, buys/sells/transfers, realized and unrealize
 multi-portfolio aggregation, history invalidation, asset remapping, privacy redaction,
 CoinMarketCap parsing/mapping/FX handling, chronological import, deduplication, and
 duplicate-safe quote refresh.
+Pine tests compile and execute the required plot, SMA, history, EMA crossover, RSI, and
+persistent-state scripts over deterministic OHLCV fixtures. They also cover v6
+diagnostics, named visual arguments, realtime rollback, and `varip` behavior.
 
 ```bash
 xcodebuild test \
