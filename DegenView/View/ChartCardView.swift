@@ -25,6 +25,7 @@ struct ChartCardView: View {
     let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
+    var onLineEditorPresented: ((Bool) -> Void)? = nil
     var onPaperBuy: () -> Void = {}
     var onPaperSell: () -> Void = {}
     var paperConnected = false
@@ -88,7 +89,7 @@ struct ChartCardView: View {
             onSettingsPresented?(new)
         }
         .onChange(of: viewModel.editingLineID) { old, new in
-            if (old == nil) != (new == nil) { onSettingsPresented?(new != nil) }
+            if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
     }
 
@@ -729,6 +730,17 @@ private struct TrendLineEditor: View {
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
             .accessibilityLabel("Line thickness")
+
+            Button {
+                _ = viewModel.removeLine(id: lineID)
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption.bold())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
+            .accessibilityLabel("Delete trend line")
+            .help("Delete trend line")
 
             Button(action: onDismiss) {
                 Image(systemName: "xmark")

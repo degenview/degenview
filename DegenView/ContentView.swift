@@ -514,6 +514,9 @@ struct ContentView: View {
             onSettingsPresented: { shown in
                 contentViewModel.isShowingSheet = shown
             },
+            onLineEditorPresented: { shown in
+                contentViewModel.isShowingLineEditor = shown
+            },
             onPaperBuy: { openTicket(for: vm, side: .buy) },
             onPaperSell: { openTicket(for: vm, side: .sell) },
             paperConnected: paperTrading.isConnected && showTradingPanel && showPaperTradingOnCharts,

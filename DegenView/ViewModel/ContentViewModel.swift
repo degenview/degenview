@@ -139,6 +139,8 @@ final class ContentViewModel: ObservableObject {
 
     /// Suppress scroll-zoom when sheets or popovers are presented.
     var isShowingSheet = false
+    /// The inline trend-line editor blocks chart gestures, but still accepts deletion keys.
+    var isShowingLineEditor = false
 
     // MARK: - Window binding
 
@@ -468,7 +470,14 @@ final class ContentViewModel: ObservableObject {
     /// before AppKit offers them to any child view. Returning nil for a press inside a
     /// plot is what keeps a reorder drag from starting under the pointer.
     private func handleDrawing(_ event: NSEvent) -> NSEvent? {
-        guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
+        guard let own = ownWindow, event.window === own else { return event }
+        if event.type == .keyDown,
+           event.keyCode == 51 || event.keyCode == 117,
+           !isShowingSheet,
+           isShowingLineEditor {
+            return handleDrawingKey(event)
+        }
+        guard !isShowingSheet, !isShowingLineEditor else { return event }
         if activeTool == .crosshair { return handleCrosshair(event) }
         if activeTool == .ruler { return handleRuler(event) }
         guard activeTool == .trendLine else { return event }

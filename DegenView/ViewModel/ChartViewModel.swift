@@ -606,14 +606,19 @@ final class ChartViewModel: ObservableObject {
     }
 
     @discardableResult
-    func removeSelectedLine() -> Bool {
-        guard let id = selectedLineID,
-              let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
+    func removeLine(id: UUID) -> Bool {
+        guard let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
         trendLines.remove(at: index)
-        selectedLineID = nil
-        editingLineID = nil
+        if selectedLineID == id { selectedLineID = nil }
+        if editingLineID == id { editingLineID = nil }
         persistTrendLines()
         return true
+    }
+
+    @discardableResult
+    func removeSelectedLine() -> Bool {
+        guard let id = selectedLineID else { return false }
+        return removeLine(id: id)
     }
 
     // MARK: - Drawing a ruler
