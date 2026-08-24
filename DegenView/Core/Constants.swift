@@ -241,8 +241,10 @@ enum UI {
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.
-    static let chartSettingsSheetWidth: CGFloat = 420
-    static let chartSettingsSheetHeight: CGFloat = 420
+    static let chartSettingsSheetWidth: CGFloat = 760
+    static let chartSettingsSheetHeight: CGFloat = 680
+    static let chartSettingsSheetMinWidth: CGFloat = 600
+    static let chartSettingsSheetMinHeight: CGFloat = 520
     /// Search results max height in Add Ticker sheet.
     static let addTickerResultsMaxHeight: CGFloat = 300
     /// Search results min height in Add Ticker sheet.

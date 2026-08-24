@@ -109,15 +109,27 @@ struct ChartSettingsSheet: View {
         VStack(spacing: 0) {
             // Title row with native-style close button
             HStack(spacing: 0) {
-                Button {
-                    cancelSearches()
-                    dismiss()
-                } label: {
+                HStack(spacing: 8) {
+                    Button {
+                        cancelSearches()
+                        dismiss()
+                    } label: {
+                        Circle()
+                            .fill(Color(nsColor: .systemRed))
+                            .frame(width: 12, height: 12)
+                    }
+                    .buttonStyle(.plain)
+
                     Circle()
-                        .fill(Color(nsColor: .systemRed))
+                        .fill(Color(nsColor: .systemYellow).opacity(0.35))
                         .frame(width: 12, height: 12)
+                        .help("Minimize unavailable for settings")
+
+                    Circle()
+                        .fill(Color(nsColor: .systemGreen).opacity(0.35))
+                        .frame(width: 12, height: 12)
+                        .help("Zoom unavailable for settings")
                 }
-                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -129,7 +141,12 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 // Balance the close button so the title stays centered.
-                Circle().frame(width: 12, height: 12).opacity(0)
+                HStack(spacing: 8) {
+                    Circle().frame(width: 12, height: 12)
+                    Circle().frame(width: 12, height: 12)
+                    Circle().frame(width: 12, height: 12)
+                }
+                .opacity(0)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -183,7 +200,23 @@ struct ChartSettingsSheet: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: UI.chartSettingsSheetWidth, height: UI.chartSettingsSheetHeight)
+        .frame(
+            minWidth: UI.chartSettingsSheetMinWidth,
+            idealWidth: UI.chartSettingsSheetWidth,
+            minHeight: UI.chartSettingsSheetMinHeight,
+            idealHeight: UI.chartSettingsSheetHeight
+        )
+        .background {
+            WindowAccessor { window in
+                window.styleMask.insert(.resizable)
+                window.minSize = NSSize(
+                    width: UI.chartSettingsSheetMinWidth,
+                    height: UI.chartSettingsSheetMinHeight
+                )
+                window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+                window.standardWindowButton(.zoomButton)?.isEnabled = false
+            }
+        }
         .onDisappear {
             cancelSearches()
         }
