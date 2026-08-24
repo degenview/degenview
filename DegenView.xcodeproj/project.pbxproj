@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */; };
+		B90000000000000000000001 /* PriceAlertModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000101 /* PriceAlertModels.swift */; };
+		B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000102 /* LocalPriceAlertEngine.swift */; };
+		B90000000000000000000003 /* FXRateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000103 /* FXRateService.swift */; };
+		B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000104 /* MarketQuoteCoordinator.swift */; };
+		B90000000000000000000005 /* AlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000105 /* AlertStore.swift */; };
+		B90000000000000000000006 /* PriceAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000106 /* PriceAlertEditor.swift */; };
+		B90000000000000000000007 /* AlertsCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000107 /* AlertsCenterView.swift */; };
 		AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */; };
 		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
 		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
@@ -106,6 +114,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngineTests.swift; sourceTree = "<group>"; };
+		B90000000000000000000101 /* PriceAlertModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertModels.swift; sourceTree = "<group>"; };
+		B90000000000000000000102 /* LocalPriceAlertEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngine.swift; sourceTree = "<group>"; };
+		B90000000000000000000103 /* FXRateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FXRateService.swift; sourceTree = "<group>"; };
+		B90000000000000000000104 /* MarketQuoteCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketQuoteCoordinator.swift; sourceTree = "<group>"; };
+		B90000000000000000000105 /* AlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertStore.swift; sourceTree = "<group>"; };
+		B90000000000000000000106 /* PriceAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertEditor.swift; sourceTree = "<group>"; };
+		B90000000000000000000107 /* AlertsCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsCenterView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngineTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000000108 /* PortfolioTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetAutoMapper.swift; sourceTree = "<group>"; };
@@ -260,6 +276,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
@@ -282,6 +299,9 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				B90000000000000000000102 /* LocalPriceAlertEngine.swift */,
+				B90000000000000000000103 /* FXRateService.swift */,
+				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
 				AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */,
 				AA1000000000000000000102 /* PortfolioAccountingEngine.swift */,
 				AA1000000000000000000103 /* PortfolioLedger.swift */,
@@ -317,6 +337,7 @@
 		A00000000000000000000312 /* ViewModel */ = {
 			isa = PBXGroup;
 			children = (
+				B90000000000000000000105 /* AlertStore.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
 				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
@@ -328,6 +349,8 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				B90000000000000000000106 /* PriceAlertEditor.swift */,
+				B90000000000000000000107 /* AlertsCenterView.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
@@ -381,6 +404,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
@@ -475,6 +499,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
@@ -485,6 +510,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B90000000000000000000001 /* PriceAlertModels.swift in Sources */,
+				B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */,
+				B90000000000000000000003 /* FXRateService.swift in Sources */,
+				B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */,
+				B90000000000000000000005 /* AlertStore.swift in Sources */,
+				B90000000000000000000006 /* PriceAlertEditor.swift in Sources */,
+				B90000000000000000000007 /* AlertsCenterView.swift in Sources */,
 				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UserNotifications
 
 @main
 struct DegenViewApp: App {
@@ -21,6 +22,11 @@ struct DegenViewApp: App {
         Settings {
             AppSettingsView()
         }
+
+        Window("Alerts", id: "alerts") {
+            AlertsCenterView()
+        }
+        .defaultSize(width: 780, height: 520)
     }
 }
 
@@ -70,6 +76,7 @@ private struct ChartTabRoot: View {
                 ContentView(tabID: tab.id)
             }
         }
+            .overlay(alignment: .top) { GlobalAlertBanner() }
             .task {
                 // The tab bar's + button reaches the app delegate, which has no
                 // SwiftUI environment of its own to open windows from.
@@ -110,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = true
+        UNUserNotificationCenter.current().delegate = AlertNotificationDelegate.shared
+        _ = AlertStore.shared
     }
 
     /// The tab bar's `+` button.
@@ -146,5 +155,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             done.signal()
         }
         _ = done.wait(timeout: .now() + 1.0)
+    }
+}
+
+final class AlertNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = AlertNotificationDelegate()
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+        let settings = await MainActor.run { AlertStore.shared.settings }
+        guard settings.deliveryEnabled && settings.macOSNotificationsEnabled else { return [] }
+        return settings.soundEnabled ? [.banner, .sound] : [.banner]
+    }
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+        await MainActor.run { NSApp.activate(ignoringOtherApps: true) }
     }
 }

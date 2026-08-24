@@ -3,6 +3,7 @@ import SwiftUI
 enum SettingsTab: String {
     case appearance
     case alpaca
+    case notifications
 }
 
 struct AppSettingsView: View {
@@ -16,9 +17,29 @@ struct AppSettingsView: View {
             AlpacaSettingsView()
                 .tabItem { Label("Alpaca", systemImage: "chart.xyaxis.line") }
                 .tag(SettingsTab.alpaca)
+            NotificationSettingsView()
+                .tabItem { Label("Notifications", systemImage: "bell") }
+                .tag(SettingsTab.notifications)
         }
         .frame(width: 520, height: 330)
         .padding(20)
+    }
+}
+
+private struct NotificationSettingsView: View {
+    @StateObject private var store = AlertStore.shared
+    var body: some View {
+        Form {
+            Toggle("Price alert delivery", isOn: setting(\.deliveryEnabled))
+            Toggle("Sound", isOn: setting(\.soundEnabled))
+            Toggle("In-app banners", isOn: setting(\.inAppBannersEnabled))
+            Toggle("macOS notifications", isOn: setting(\.macOSNotificationsEnabled))
+            Text("Evaluation and trigger history continue when delivery is off. Alerts run locally while DegenView is open.").font(.caption).foregroundStyle(.secondary)
+            Button("Open System Notification Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!) }
+        }.padding(.top, 12)
+    }
+    private func setting(_ path: WritableKeyPath<AlertNotificationSettings, Bool>) -> Binding<Bool> {
+        Binding(get: { store.settings[keyPath: path] }, set: { value in var settings = store.settings; settings[keyPath: path] = value; Task { await store.updateSettings(settings) } })
     }
 }
 

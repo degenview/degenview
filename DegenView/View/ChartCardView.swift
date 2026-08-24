@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 struct ChartCardView: View {
+    @Environment(\.openWindow) private var openWindow
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat
     let onRemove: () -> Void
@@ -36,6 +37,7 @@ struct ChartCardView: View {
 
     @State private var showSettings = false
     @State private var iconURL: URL?
+    @State private var showAlertEditor = false
     @StateObject private var portfolioStore = PortfolioStore.shared
 
     @ViewBuilder
@@ -80,6 +82,7 @@ struct ChartCardView: View {
                 onStyleChanged: onStyleChanged
             )
         }
+        .sheet(isPresented: $showAlertEditor) { PriceAlertEditor(asset: alertAsset) }
         .onChange(of: showSettings) { _, new in
             onSettingsPresented?(new)
         }
@@ -129,6 +132,13 @@ struct ChartCardView: View {
 
             Spacer()
 
+            if viewModel.source != .polymarket {
+                Button { showAlertEditor = true } label: { Image(systemName: "bell.badge") }
+                    .buttonStyle(.plain).help("Create Price Alert")
+                Button { openWindow(id: "alerts") } label: { Image(systemName: "bell") }
+                    .buttonStyle(.plain).help("View Price Alerts")
+            }
+
             if paperConnected, let price = viewModel.displayedPrice {
                 HStack(spacing: 4) {
                     Button(action: onPaperSell) {
@@ -154,6 +164,11 @@ struct ChartCardView: View {
                 .foregroundStyle(viewModel.priceChangeIsPositive ? .green : .red)
             }
         }
+    }
+
+    private var alertAsset: PortfolioAsset {
+        PortfolioAsset(key: viewModel.iconKey, symbol: viewModel.baseSymbol, name: viewModel.title,
+            source: viewModel.source, quoteCurrency: .USD, metadata: ["apiSymbol": viewModel.apiSymbol])
     }
 
     // MARK: - PM Series Legend

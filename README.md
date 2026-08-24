@@ -63,6 +63,29 @@
   skip mappings, deduplicate reimports, and supply historical FX for foreign fees or skip
   individual affected rows
 
+### Local price alerts
+
+- **Four alert conditions** — Create absolute crosses-above/below alerts or percentage
+  rise/fall alerts with a fixed reference price and materialized target
+- **Once or repeating** — One-shot alerts move to Triggered after firing; repeating
+  alerts re-arm only after the market moves strictly back across the target
+- **Source-qualified assets** — Binance, CoinGecko, DEXScreener, and Alpaca alerts use the
+  same stable provider-qualified identity as portfolio assets. Polymarket is excluded
+- **Multi-currency targets** — Evaluate alerts in USD, EUR, GBP, JPY, or CHF using current
+  daily Frankfurter reference rates cached locally for weekends and holidays
+- **Alerts center** — Open the app-wide Alerts window from a chart bell or the Portfolio
+  toolbar to search and filter Active, Triggered, Paused, All, and History records
+- **Local delivery** — Trigger events can show an in-app banner and a macOS notification;
+  delivery, sound, banners, and system notifications are independently configurable
+- **Persistent local history** — Rules, crossing baselines, re-arm state, processed quote
+  fingerprints, settings, and trigger history are stored in local JSON only
+
+Alerts evaluate while DegenView is running, including when chart windows are hidden or
+occluded. They cannot evaluate while the app is quit, the Mac is asleep, or fresh market
+or FX data is unavailable. Turning delivery off suppresses banners and notifications but
+does not stop evaluation or history recording. No account, CloudKit, remote alert API,
+push service, login item, or background helper is used.
+
 ## Paper Trading simulation model
 
 Paper Trading is a local, persistent simulator and has no exchange-order endpoint or
@@ -185,6 +208,9 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 10. Open the toolbar **Portfolio** menu to create a dedicated Portfolio tab. Create a
     portfolio, add transactions manually, or choose **Import from CoinMarketCap**. Review
     automatic asset mappings and historical FX issues before committing the atomic import.
+11. Use a chart card's bell to create an absolute or percentage price alert. Open the
+    adjacent bell—or the Portfolio toolbar bell—to manage rules and history in the Alerts
+    window. Notification behavior is under **Settings → Notifications**.
 
 ### Replay data support
 
@@ -214,6 +240,7 @@ DegenView/
 │   ├── DataSourceType.swift           # Sources and persisted ticker configuration
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
 │   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
+│   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
@@ -222,6 +249,7 @@ DegenView/
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
+│   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
 │   └── PolymarketSearchViewModel.swift
 ├── View/
@@ -229,6 +257,8 @@ DegenView/
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── ChartCardView.swift            # Card header, chart, editor, errors
+│   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
+│   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
 │   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket search
@@ -245,6 +275,9 @@ DegenView/
     ├── GeckoTerminalService.swift     # DEX-pair historical OHLCV
     ├── AlpacaAPIService.swift         # Alpaca search and historical bars
     ├── AlpacaWebSocketService.swift   # Alpaca live stock bars
+    ├── LocalPriceAlertEngine.swift    # Serialized crossing state machine and persistence
+    ├── MarketQuoteCoordinator.swift   # App-wide owner-based alert quote polling/deduplication
+    ├── FXRateService.swift            # Frankfurter daily FX rates and disk cache
     ├── ReplayEngine.swift             # Deterministic replay state machine and aggregation
     ├── PortfolioAccountingEngine.swift # Weighted-average basis and P&L calculations
     ├── PortfolioLedger.swift          # Actor-serialized atomic transaction ledger

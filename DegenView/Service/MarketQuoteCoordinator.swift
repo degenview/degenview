@@ -1,0 +1,56 @@
+import Foundation
+
+actor MarketQuoteCoordinator {
+    static let shared = MarketQuoteCoordinator()
+    private var owners: [String: [String: PortfolioAsset]] = [:]
+    private var latest: [String: MarketQuote] = [:]
+    private var pollingTask: Task<Void, Never>?
+    var onQuote: (@Sendable (MarketQuote) async -> Void)?
+
+    func setQuoteHandler(_ handler: @escaping @Sendable (MarketQuote) async -> Void) { onQuote = handler }
+
+    func subscribe(owner: String, assets: [PortfolioAsset]) {
+        owners[owner] = Dictionary(uniqueKeysWithValues: assets.map { ($0.key, $0) })
+        ensurePolling()
+    }
+    func unsubscribe(owner: String) { owners.removeValue(forKey: owner); if owners.isEmpty { pollingTask?.cancel(); pollingTask = nil } }
+    func latestQuote(for key: String) -> MarketQuote? { latest[key] }
+
+    func ingest(_ quote: MarketQuote) async {
+        guard latest[quote.asset.key]?.fingerprint != quote.fingerprint else { return }
+        if let old = latest[quote.asset.key], quote.sourceTimestamp < old.sourceTimestamp { return }
+        latest[quote.asset.key] = quote
+        await onQuote?(quote)
+    }
+
+    private func ensurePolling() {
+        guard pollingTask == nil else { return }
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.poll()
+                try? await Task.sleep(for: .seconds(15))
+            }
+        }
+    }
+
+    private func poll() async {
+        let assets = Dictionary(uniqueKeysWithValues: owners.values.flatMap(\.values).map { ($0.key, $0) }).values
+        for asset in assets where asset.source != .polymarket {
+            do {
+                let symbol = asset.metadata["apiSymbol"] ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
+                let interval = asset.source == .alpaca ? "1h" : "1m"
+                let candles = try await DataSourceFactory.shared.service(for: asset.source).fetchKlines(symbol: symbol, interval: interval, limit: 2)
+                guard let candle = candles.last else { continue }
+                let received = Date(), sourceDate = candle.openTime
+                let quote = MarketQuote(asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
+                    sourceTimestamp: sourceDate, receivedAt: received, maximumAge: Self.maximumAge(for: asset.source),
+                    fingerprint: "\(asset.key):\(sourceDate.timeIntervalSince1970):\(candle.closePrice)")
+                await ingest(quote)
+            } catch { continue }
+        }
+    }
+
+    private static func maximumAge(for source: DataSourceType) -> TimeInterval {
+        switch source { case .binance: 180; case .alpaca: 7_200; case .coingecko, .dexscreener: 1_800; case .polymarket: 0 }
+    }
+}
