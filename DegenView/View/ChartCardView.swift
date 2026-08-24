@@ -251,6 +251,7 @@ struct ChartCardView: View {
                     yZoom: viewModel.yZoom,
                     showVolume: viewModel.showVolume,
                     indicators: indicators,
+                    pine: viewModel.pineOutput,
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,

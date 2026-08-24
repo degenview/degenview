@@ -1055,7 +1055,8 @@ final class ContentViewModel: ObservableObject {
                 trendLines: nil,
                 displayName: vm.displayName,
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
-                portfolioChart: vm.portfolioChart
+                portfolioChart: vm.portfolioChart,
+                pine: vm.pineConfiguration
             )
         }
     }

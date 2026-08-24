@@ -1,6 +1,6 @@
+import Combine
 import Foundation
 import SwiftUI
-import Combine
 
 @MainActor
 final class ChartViewModel: ObservableObject {
@@ -117,7 +117,8 @@ final class ChartViewModel: ObservableObject {
     private func syncPrimaryKlineData() {
         guard !pmSeries.isEmpty else { return }
         if let first = pmSeries.first(where: \.enabled),
-           let data = pmSeriesData[first.tokenID], !data.isEmpty {
+            let data = pmSeriesData[first.tokenID], !data.isEmpty
+        {
             klineData = data
             currentPrice = data.last?.closePrice
         }
@@ -137,8 +138,8 @@ final class ChartViewModel: ObservableObject {
     var replayKlines: [KlineData] {
         guard let replayTimestamp else { return klineData }
         guard let interval = granularReplayInterval,
-              let sourceSeconds = interval.seconds,
-              !granularReplayData.isEmpty
+            let sourceSeconds = interval.seconds,
+            !granularReplayData.isEmpty
         else { return Array(klineData.prefix(Self.upperBound(of: replayTimestamp, in: klineData))) }
         return aggregatedReplayKlines(through: replayTimestamp, sourceSeconds: sourceSeconds)
     }
@@ -177,6 +178,15 @@ final class ChartViewModel: ObservableObject {
     @Published var emaPeriod: Int = Indicator.emaDefaultPeriod
     @Published var showBollinger: Bool = false
     @Published var showTrendFlips: Bool = false
+
+    // MARK: - Pine script
+
+    @Published var pineConfiguration: PineConfiguration?
+    @Published private(set) var pineOutput: PineVisualOutput = .empty
+    @Published private(set) var pineDiagnostics: [PineDiagnostic] = []
+    @Published private(set) var pineStatus = "No script applied"
+    private var pineTask: Task<Void, Never>?
+    private var pineGeneration = 0
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -255,7 +265,9 @@ final class ChartViewModel: ObservableObject {
         visibleKlines.priceChangeAmount
     }
 
-    var displayedPrice: Double? { replayTimestamp == nil ? currentPrice : replayKlines.last?.closePrice }
+    var displayedPrice: Double? {
+        replayTimestamp == nil ? currentPrice : replayKlines.last?.closePrice
+    }
 
     func applyReplayTimestamp(_ timestamp: Date?) {
         replayTimestamp = timestamp
@@ -271,7 +283,8 @@ final class ChartViewModel: ObservableObject {
             guard let first = klineData.first, let last = klineData.last else { return 0 }
             return last.openTime.timeIntervalSince(first.openTime) + currentReplayChartSeconds
         }()
-        return source.supportedReplayIntervals(chartInterval: currentReplayChartInterval).filter { interval in
+        return source.supportedReplayIntervals(chartInterval: currentReplayChartInterval).filter {
+            interval in
             guard let seconds = interval.seconds else { return true }
             return span <= 0 || span / seconds <= 100_000
         }
@@ -281,7 +294,8 @@ final class ChartViewModel: ObservableObject {
         guard requested == .automatic else {
             return supportedReplayIntervals.contains(requested) ? requested : .chartBar
         }
-        let concrete = supportedReplayIntervals.compactMap { interval -> (ReplayInterval, TimeInterval)? in
+        let concrete = supportedReplayIntervals.compactMap {
+            interval -> (ReplayInterval, TimeInterval)? in
             guard let seconds = interval.seconds else { return nil }
             return (interval, seconds)
         }.sorted { $0.1 < $1.1 }
@@ -293,9 +307,9 @@ final class ChartViewModel: ObservableObject {
     func loadGranularReplayData(interval requested: ReplayInterval) async throws -> ReplayInterval {
         let interval = resolvedReplayInterval(requested)
         guard interval != .chartBar,
-              let source = api as? GranularReplayDataSource,
-              let first = klineData.first,
-              let last = klineData.last
+            let source = api as? GranularReplayDataSource,
+            let first = klineData.first,
+            let last = klineData.last
         else {
             granularReplayData = []
             granularReplayInterval = nil
@@ -352,14 +366,17 @@ final class ChartViewModel: ObservableObject {
         return max(60, klineData[1].openTime.timeIntervalSince(klineData[0].openTime))
     }
 
-    private func aggregatedReplayKlines(through timestamp: Date, sourceSeconds: TimeInterval) -> [KlineData] {
+    private func aggregatedReplayKlines(through timestamp: Date, sourceSeconds: TimeInterval)
+        -> [KlineData]
+    {
         var output: [KlineData] = []
         let canonicalEnd = Self.upperBound(of: timestamp, in: klineData)
         output.reserveCapacity(canonicalEnd)
 
         for index in 0..<canonicalEnd {
             let candle = klineData[index]
-            let bucketEnd = index + 1 < klineData.count
+            let bucketEnd =
+                index + 1 < klineData.count
                 ? klineData[index + 1].openTime
                 : candle.openTime.addingTimeInterval(currentReplayChartSeconds)
             let observedEnd = min(timestamp, bucketEnd)
@@ -369,10 +386,11 @@ final class ChartViewModel: ObservableObject {
                 in: granularReplayData
             )
             if startIndex < endIndex,
-               let aggregate = ReplayEngine.aggregate(
+                let aggregate = ReplayEngine.aggregate(
                     granularReplayData[startIndex..<endIndex],
                     bucketStart: candle.openTime
-               ) {
+                )
+            {
                 output.append(aggregate)
             } else if bucketEnd <= timestamp {
                 // The displayed provider already confirmed this completed bucket.
@@ -386,13 +404,15 @@ final class ChartViewModel: ObservableObject {
     func replayDate(nearestTo point: CGPoint, in plot: ChartPlot) -> Date? {
         let points = visibleKlines
         guard !points.isEmpty else { return nil }
-        let fractional = plot.fractionalIndex(forX: point.x, slotWidth: plot.slotWidth(forCount: points.count))
+        let fractional = plot.fractionalIndex(
+            forX: point.x, slotWidth: plot.slotWidth(forCount: points.count))
         let index = Int(fractional.rounded()).clamped(to: 0...(points.count - 1))
         return points[index].openTime
     }
 
     private static func upperBound(of timestamp: Date, in candles: [KlineData]) -> Int {
-        var low = 0, high = candles.count
+        var low = 0
+        var high = candles.count
         while low < high {
             let mid = (low + high) / 2
             if candles[mid].openTime <= timestamp { low = mid + 1 } else { high = mid }
@@ -401,7 +421,8 @@ final class ChartViewModel: ObservableObject {
     }
 
     private static func lowerBound(of timestamp: Date, in candles: [KlineData]) -> Int {
-        var low = 0, high = candles.count
+        var low = 0
+        var high = candles.count
         while low < high {
             let mid = (low + high) / 2
             if candles[mid].openTime < timestamp { low = mid + 1 } else { high = mid }
@@ -414,7 +435,10 @@ final class ChartViewModel: ObservableObject {
         return change >= 0
     }
 
-    init(ticker: String, source: DataSourceType = .binance, displayName: String? = nil, api: TickerDataSource? = nil) {
+    init(
+        ticker: String, source: DataSourceType = .binance, displayName: String? = nil,
+        api: TickerDataSource? = nil
+    ) {
         self.ticker = ticker
         self.source = source
         self.displayName = displayName
@@ -442,6 +466,78 @@ final class ChartViewModel: ObservableObject {
         trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
+        pineConfiguration = config.pine
+        reevaluatePine()
+    }
+
+    func updatePineDraft(_ source: String) {
+        if pineConfiguration == nil { pineConfiguration = PineConfiguration() }
+        pineConfiguration?.draftSource = source
+    }
+
+    @discardableResult func applyPineDraft() -> Bool {
+        guard var config = pineConfiguration else { return false }
+        let compiled = PineCompiler.compile(source: config.draftSource)
+        pineDiagnostics = compiled.diagnostics
+        guard compiled.isValid else {
+            pineStatus = "Compile failed — last valid output remains active"
+            return false
+        }
+        config.appliedSource = config.draftSource
+        let validIDs = Set(compiled.inputSchema.inputs.map(\.id))
+        config.inputs = config.inputs.filter { validIDs.contains($0.key) }
+        pineConfiguration = config
+        pineStatus = "Evaluating…"
+        reevaluatePine(compiled: compiled)
+        return true
+    }
+
+    func setPineInput(_ value: PineInputValue, id: String) {
+        pineConfiguration?.inputs[id] = value
+        reevaluatePine()
+    }
+
+    func reevaluatePine(compiled supplied: PineCompiledProgram? = nil) {
+        pineTask?.cancel()
+        pineGeneration += 1
+        let generation = pineGeneration
+        guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
+            pineOutput = .empty
+            return
+        }
+        let bars = replayKlines
+        let inputs = config.inputs
+        pineTask = Task { [weak self] in
+            let outcome = await Task.detached(priority: .userInitiated) {
+                () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
+                let compiled = supplied ?? PineCompiler.compile(source: source)
+                guard compiled.isValid else { return (compiled, nil, nil) }
+                do {
+                    return (
+                        compiled,
+                        try PineRuntimeSession(program: compiled, inputs: inputs).evaluate(bars: bars), nil
+                    )
+                } catch {
+                    return (
+                        compiled, nil,
+                        error as? PineDiagnostic
+                            ?? diag("PINE4999", .runtime, error.localizedDescription, .zero)
+                    )
+                }
+            }.value
+            guard let self, self.pineGeneration == generation, !Task.isCancelled else { return }
+            if let result = outcome.1 {
+                self.pineOutput = result.output
+                self.pineDiagnostics = outcome.0.diagnostics + result.diagnostics
+                self.pineStatus = "Applied \(outcome.0.declaration.title) · \(bars.count) bars"
+            } else if let runtime = outcome.2 {
+                self.pineDiagnostics = [runtime]
+                self.pineStatus = "Runtime failed — last valid output remains active"
+            } else {
+                self.pineDiagnostics = outcome.0.diagnostics
+                self.pineStatus = "Compile failed"
+            }
+        }
     }
 
     // MARK: - Vertical zoom
@@ -527,7 +623,9 @@ final class ChartViewModel: ObservableObject {
     }
 
     /// Shortest distance from a point to a line segment.
-    private static func distance(from point: CGPoint, toSegmentFrom start: CGPoint, to end: CGPoint) -> CGFloat {
+    private static func distance(from point: CGPoint, toSegmentFrom start: CGPoint, to end: CGPoint)
+        -> CGFloat
+    {
         let dx = end.x - start.x
         let dy = end.y - start.y
         let lengthSquared = dx * dx + dy * dy
@@ -668,12 +766,19 @@ final class ChartViewModel: ObservableObject {
     }
 
     /// Update ticker symbol and/or source, re-fetch data.
-    func updateTicker(symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
+    func updateTicker(
+        symbol: String, source: DataSourceType, displayName: String? = nil,
+        pmSeries: [PmSeriesConfig]? = nil
+    ) {
         clearGranularReplayData()
         ticker = symbol
         self.source = source
         self.displayName = displayName
-        if let series = pmSeries { self.pmSeries = series } else if source != .polymarket { self.pmSeries = [] }
+        if let series = pmSeries {
+            self.pmSeries = series
+        } else if source != .polymarket {
+            self.pmSeries = []
+        }
         self.pmSeriesData = [:]
         api = DataSourceFactory.shared.service(for: source)
         trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
@@ -701,12 +806,17 @@ final class ChartViewModel: ObservableObject {
             klineData[klineData.count - 1].lowPrice = kline.lowPrice
             klineData[klineData.count - 1].volume = kline.volume
             klineData[klineData.count - 1].quoteVolume = kline.quoteVolume
+            klineData[klineData.count - 1].isClosed = kline.isClosed
+        } else if last.openTime < kline.openTime {
+            // Preserve the close/new-bar transition immediately; the REST refresh later
+            // reconciles the buffer but no live execution is lost in the meantime.
+            klineData.append(kline)
         }
-        // New candle (openTime > last.openTime): skip — REST fetch adds it within 5 s
 
         if currentPrice != kline.closePrice {
             currentPrice = kline.closePrice
         }
+        reevaluatePine()
     }
 
     /// Fold a completed lower-resolution live bar into the current displayed candle.
@@ -716,7 +826,8 @@ final class ChartViewModel: ObservableObject {
         let index = klineData.count - 1
         let last = klineData[index]
         guard bar.openTime >= last.openTime,
-              bar.openTime < last.openTime.addingTimeInterval(candleDuration) else { return }
+            bar.openTime < last.openTime.addingTimeInterval(candleDuration)
+        else { return }
 
         klineData[index].highPrice = max(last.highPrice, bar.highPrice)
         klineData[index].lowPrice = min(last.lowPrice, bar.lowPrice)
@@ -783,7 +894,9 @@ final class ChartViewModel: ObservableObject {
 
         // Cache-first for slow sources: show stale data instantly.
         if !hadData, isSlowSource {
-            if let cached = await api.getCachedKlines(symbol: apiSymbol, interval: range.binanceInterval, count: count) {
+            if let cached = await api.getCachedKlines(
+                symbol: apiSymbol, interval: range.binanceInterval, count: count)
+            {
                 klineData = cached
                 currentPrice = cached.last?.closePrice
             }
@@ -799,7 +912,7 @@ final class ChartViewModel: ObservableObject {
 
             do {
                 if isSlowSource,
-                   let cgService = api as? CoinGeckoAPIService
+                    let cgService = api as? CoinGeckoAPIService
                 {
                     try await self.fetchStaged(
                         cgService: cgService,
@@ -865,6 +978,7 @@ final class ChartViewModel: ObservableObject {
 
         if fetchGeneration == generation {
             fetchTask = nil
+            reevaluatePine()
         }
     }
 
@@ -879,10 +993,12 @@ final class ChartViewModel: ObservableObject {
         generation: Int
     ) async throws {
         let series = pmSeries
-        let results: [(String, [KlineData])] = await withTaskGroup(of: (String, [KlineData]).self) { group in
+        let results: [(String, [KlineData])] = await withTaskGroup(of: (String, [KlineData]).self) {
+            group in
             for s in series {
                 group.addTask {
-                    let data = (try? await pmService.fetchPrices(tokenID: s.tokenID, range: range, count: count)) ?? []
+                    let data =
+                        (try? await pmService.fetchPrices(tokenID: s.tokenID, range: range, count: count)) ?? []
                     return (s.tokenID, data)
                 }
             }

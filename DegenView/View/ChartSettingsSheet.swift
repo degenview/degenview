@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - ChartSettingsSheet
@@ -15,7 +16,8 @@ struct ChartSettingsSheet: View {
         logPrefix: "[ChartSettings/Stocks]",
         sources: { [DataSourceFactory.shared.alpaca] }
     )
-    @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[ChartSettings/Polymarket]")
+    @StateObject private var polymarketVM = PolymarketSearchViewModel(
+        logPrefix: "[ChartSettings/Polymarket]")
 
     @State private var selectedTab: Tab
     @State private var searchText = ""
@@ -33,6 +35,8 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
+    @State private var pineDraft: String
+    @State private var copiedPineDiagnostics = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -40,6 +44,7 @@ struct ChartSettingsSheet: View {
         case ticker = "Ticker"
         case appearance = "Appearance"
         case indicators = "Indicators"
+        case scripts = "Scripts"
     }
 
     enum DecimalMode: String, CaseIterable, Identifiable {
@@ -80,10 +85,12 @@ struct ChartSettingsSheet: View {
         }
     }
 
-    init(viewModel: ChartViewModel,
-         onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
-         onRemove: @escaping () -> Void,
-         onStyleChanged: @escaping () -> Void) {
+    init(
+        viewModel: ChartViewModel,
+        onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
+        onRemove: @escaping () -> Void,
+        onStyleChanged: @escaping () -> Void
+    ) {
         self.viewModel = viewModel
         self.onUpdateTicker = onUpdateTicker
         self.onRemove = onRemove
@@ -97,24 +104,41 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
+        _pineDraft = State(
+            initialValue: viewModel.pineConfiguration?.draftSource
+                ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
-        _assetType = State(initialValue: viewModel.source == .polymarket ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
+        _assetType = State(
+            initialValue: viewModel.source == .polymarket
+                ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Title row with native-style close button
             HStack(spacing: 0) {
-                Button {
-                    cancelSearches()
-                    dismiss()
-                } label: {
+                HStack(spacing: 8) {
+                    Button {
+                        cancelSearches()
+                        dismiss()
+                    } label: {
+                        Circle()
+                            .fill(Color(nsColor: .systemRed))
+                            .frame(width: 12, height: 12)
+                    }
+                    .buttonStyle(.plain)
+
                     Circle()
-                        .fill(Color(nsColor: .systemRed))
+                        .fill(Color(nsColor: .systemYellow).opacity(0.35))
                         .frame(width: 12, height: 12)
+                        .help("Minimize unavailable for settings")
+
+                    Circle()
+                        .fill(Color(nsColor: .systemGreen).opacity(0.35))
+                        .frame(width: 12, height: 12)
+                        .help("Zoom unavailable for settings")
                 }
-                .buttonStyle(.plain)
 
                 Spacer()
 
@@ -126,7 +150,12 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 // Balance the close button so the title stays centered.
-                Circle().frame(width: 12, height: 12).opacity(0)
+                HStack(spacing: 8) {
+                    Circle().frame(width: 12, height: 12)
+                    Circle().frame(width: 12, height: 12)
+                    Circle().frame(width: 12, height: 12)
+                }
+                .opacity(0)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -151,6 +180,8 @@ struct ChartSettingsSheet: View {
                 appearanceTab
             case .indicators:
                 indicatorsTab
+            case .scripts:
+                scriptsTab
             }
 
             Divider()
@@ -167,18 +198,41 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    let selected = assetType == .crypto ? searchVM.selectedResult
-                        : assetType == .stock ? stockVM.selectedResult
-                        : polymarketVM.selectedResult
-                    if selectedTab == .ticker, let selected { apply(selected) }
-                    else { cancelSearches(); dismiss() }
+                    let selected =
+                        assetType == .crypto
+                        ? searchVM.selectedResult
+                        : assetType == .stock
+                            ? stockVM.selectedResult
+                            : polymarketVM.selectedResult
+                    if selectedTab == .ticker, let selected {
+                        apply(selected)
+                    } else {
+                        cancelSearches()
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.return)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .frame(width: UI.chartSettingsSheetWidth, height: UI.chartSettingsSheetHeight)
+        .frame(
+            minWidth: UI.chartSettingsSheetMinWidth,
+            idealWidth: UI.chartSettingsSheetWidth,
+            minHeight: UI.chartSettingsSheetMinHeight,
+            idealHeight: UI.chartSettingsSheetHeight
+        )
+        .background {
+            WindowAccessor { window in
+                window.styleMask.insert(.resizable)
+                window.minSize = NSSize(
+                    width: UI.chartSettingsSheetMinWidth,
+                    height: UI.chartSettingsSheetMinHeight
+                )
+                window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
+                window.standardWindowButton(.zoomButton)?.isEnabled = false
+            }
+        }
         .onDisappear {
             cancelSearches()
         }
@@ -216,6 +270,10 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
+            onStyleChanged()
+        }
+        .onChange(of: pineDraft) { _, source in
+            viewModel.updatePineDraft(source)
             onStyleChanged()
         }
     }
@@ -499,6 +557,157 @@ struct ChartSettingsSheet: View {
         }
     }
 
+    private var scriptsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextEditor(text: $pineDraft)
+                .font(.system(.body, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                .frame(minHeight: 220)
+
+            HStack {
+                Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Apply") {
+                    viewModel.updatePineDraft(pineDraft)
+                    if viewModel.applyPineDraft() { onStyleChanged() }
+                }.buttonStyle(.borderedProminent)
+            }
+
+            if !viewModel.pineDiagnostics.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Diagnostics").font(.caption.weight(.semibold))
+                        Spacer()
+                        Button {
+                            copyPineDiagnostics()
+                        } label: {
+                            Label(
+                                copiedPineDiagnostics ? "Copied" : "Copy Errors",
+                                systemImage: copiedPineDiagnostics ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                    }
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(viewModel.pineDiagnostics) { diagnostic in
+                                Text(formatted(diagnostic))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(diagnostic.severity == .error ? .red : .orange)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 90)
+                }
+            }
+
+            if let source = viewModel.pineConfiguration?.appliedSource {
+                let schema = PineCompiler.compile(source: source).inputSchema
+                ForEach(schema.inputs) { input in pineInput(input) }
+            }
+        }.padding(16)
+    }
+
+    private func formatted(_ diagnostic: PineDiagnostic) -> String {
+        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
+    }
+
+    private func copyPineDiagnostics() {
+        let errors = viewModel.pineDiagnostics.filter { $0.severity == .error }
+        let diagnostics = errors.isEmpty ? viewModel.pineDiagnostics : errors
+        let text = diagnostics.map(formatted).joined(separator: "\n")
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        copiedPineDiagnostics = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copiedPineDiagnostics = false
+        }
+    }
+
+    @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
+        let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
+        switch (input.type, current) {
+        case (.bool, .bool(let value)):
+            Toggle(
+                input.title ?? input.id,
+                isOn: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.bool($0), id: input.id)
+                        onStyleChanged()
+                    }))
+        case (.int, .int(let value)):
+            Stepper(
+                "\(input.title ?? input.id): \(value)",
+                value: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.int($0), id: input.id)
+                        onStyleChanged()
+                    }), in: Int(input.minValue ?? 1)...Int(input.maxValue ?? 10_000),
+                step: Int(input.step ?? 1))
+        case (.float, .float(let value)):
+            HStack {
+                Text(input.title ?? input.id)
+                TextField(
+                    "",
+                    value: Binding(
+                        get: { value },
+                        set: {
+                            viewModel.setPineInput(.float($0), id: input.id)
+                            onStyleChanged()
+                        }), format: .number
+                ).frame(width: 100)
+            }
+        case (.string, .string(let value)):
+            HStack {
+                Text(input.title ?? input.id)
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { value },
+                        set: {
+                            viewModel.setPineInput(.string($0), id: input.id)
+                            onStyleChanged()
+                        }))
+            }
+        case (.color, .color(let value)):
+            ColorPicker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { Color(pineRGBA: value) },
+                    set: {
+                        guard let rgba = $0.pineRGBA else { return }
+                        viewModel.setPineInput(.color(rgba), id: input.id)
+                        onStyleChanged()
+                    }), supportsOpacity: true)
+        case (.string, .source(let value)):
+            Picker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.source($0), id: input.id)
+                        onStyleChanged()
+                    })
+            ) {
+                ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
+                    Text($0.capitalized).tag($0)
+                }
+            }
+        default: EmptyView()
+        }
+    }
+
     /// A toggle (or toggle plus its options) above the line of explanation that
     /// belongs to it.
     private func indicatorRow<Control: View>(
@@ -516,7 +725,8 @@ struct ChartSettingsSheet: View {
 
     private var volumeHint: String {
         guard viewModel.source.providesVolume else {
-            return "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
+            return
+                "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
         }
         return "Turnover per candle, drawn along the bottom of the chart."
     }
@@ -526,9 +736,11 @@ struct ChartSettingsSheet: View {
     private var rsiHint: String {
         let loaded = viewModel.klineData.count
         if loaded > 0 && loaded <= RSI.period {
-            return "Only \(loaded) candles loaded — RSI needs more than \(RSI.period). Zoom out or pick a longer range."
+            return
+                "Only \(loaded) candles loaded — RSI needs more than \(RSI.period). Zoom out or pick a longer range."
         }
-        return "Momentum from 0–100 across the bottom, with guides at \(Int(RSI.oversold)) and \(Int(RSI.overbought))."
+        return
+            "Momentum from 0–100 across the bottom, with guides at \(Int(RSI.oversold)) and \(Int(RSI.overbought))."
     }
 
     private var emaHint: String {
@@ -550,6 +762,25 @@ struct ChartSettingsSheet: View {
         default:
             "Shows \(decimalPlacesMode.rawValue) decimal place\(decimalPlacesMode.rawValue == "1" ? "" : "s") on the Y-axis."
         }
+    }
+}
+
+private extension Color {
+    init(pineRGBA value: UInt32) {
+        self.init(
+            .sRGB,
+            red: Double((value >> 24) & 255) / 255,
+            green: Double((value >> 16) & 255) / 255,
+            blue: Double((value >> 8) & 255) / 255,
+            opacity: Double(value & 255) / 255)
+    }
+
+    var pineRGBA: UInt32? {
+        guard let color = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        return UInt32((color.redComponent * 255).rounded()) << 24
+            | UInt32((color.greenComponent * 255).rounded()) << 16
+            | UInt32((color.blueComponent * 255).rounded()) << 8
+            | UInt32((color.alphaComponent * 255).rounded())
     }
 }
 

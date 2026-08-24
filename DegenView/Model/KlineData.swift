@@ -12,10 +12,12 @@ struct KlineData: Identifiable, Codable {
     /// `volume` counts the base asset, so this is the one that plots as money.
     /// Zero for sources that don't report it — see the `init`s below.
     var quoteVolume: Double = 0
+    /// True when a live provider explicitly identifies the bar's closing update.
+    var isClosed: Bool = false
 
     /// `id` is excluded — it's a fresh per-instance identity, not persisted state.
     private enum CodingKeys: String, CodingKey {
-        case openTime, openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume
+        case openTime, openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume, isClosed
     }
 
     /// Hand-written so `quoteVolume` can be optional on the way in: it was added
@@ -30,6 +32,7 @@ struct KlineData: Identifiable, Codable {
         closePrice = try container.decode(Double.self, forKey: .closePrice)
         volume = try container.decode(Double.self, forKey: .volume)
         quoteVolume = try container.decodeIfPresent(Double.self, forKey: .quoteVolume) ?? 0
+        isClosed = try container.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
     }
 
     init(
@@ -39,7 +42,8 @@ struct KlineData: Identifiable, Codable {
         lowPrice: Double,
         closePrice: Double,
         volume: Double,
-        quoteVolume: Double = 0
+        quoteVolume: Double = 0,
+        isClosed: Bool = false
     ) {
         self.openTime = openTime
         self.openPrice = openPrice
@@ -48,6 +52,7 @@ struct KlineData: Identifiable, Codable {
         self.closePrice = closePrice
         self.volume = volume
         self.quoteVolume = quoteVolume
+        self.isClosed = isClosed
     }
 }
 

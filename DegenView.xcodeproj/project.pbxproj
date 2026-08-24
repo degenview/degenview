@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
+		P10000000000000000000001 /* PineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101 /* PineModels.swift */; };
+		P10000000000000000000002 /* PineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000102 /* PineEngine.swift */; };
+		P10000000000000000000003 /* PineRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000103 /* PineRuntime.swift */; };
 		C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */; };
 		C50000000000000000000006 /* KlineDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000106 /* KlineDataTests.swift */; };
 		C50000000000000000000001 /* JSONStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000101 /* JSONStoreTests.swift */; };
@@ -121,6 +125,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
+		P10000000000000000000101 /* PineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineModels.swift; sourceTree = "<group>"; };
+		P10000000000000000000102 /* PineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngine.swift; sourceTree = "<group>"; };
+		P10000000000000000000103 /* PineRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntime.swift; sourceTree = "<group>"; };
 		C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketServiceTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000106 /* KlineDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineDataTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000101 /* JSONStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONStoreTests.swift; sourceTree = "<group>"; };
@@ -290,6 +298,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				P10000000000000000000101 /* PineModels.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
@@ -313,6 +322,8 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				P10000000000000000000102 /* PineEngine.swift */,
+				P10000000000000000000103 /* PineRuntime.swift */,
 				B90000000000000000000102 /* LocalPriceAlertEngine.swift */,
 				B90000000000000000000103 /* FXRateService.swift */,
 				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
@@ -418,6 +429,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				P10000000000000000000104 /* PineEngineTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
 				C50000000000000000000101 /* JSONStoreTests.swift */,
@@ -520,6 +532,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
@@ -538,6 +551,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				P10000000000000000000001 /* PineModels.swift in Sources */,
+				P10000000000000000000002 /* PineEngine.swift in Sources */,
+				P10000000000000000000003 /* PineRuntime.swift in Sources */,
 				B90000000000000000000001 /* PriceAlertModels.swift in Sources */,
 				B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */,
 				B90000000000000000000003 /* FXRateService.swift in Sources */,
