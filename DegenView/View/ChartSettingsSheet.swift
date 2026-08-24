@@ -15,7 +15,8 @@ struct ChartSettingsSheet: View {
         logPrefix: "[ChartSettings/Stocks]",
         sources: { [DataSourceFactory.shared.alpaca] }
     )
-    @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[ChartSettings/Polymarket]")
+    @StateObject private var polymarketVM = PolymarketSearchViewModel(
+        logPrefix: "[ChartSettings/Polymarket]")
 
     @State private var selectedTab: Tab
     @State private var searchText = ""
@@ -82,10 +83,12 @@ struct ChartSettingsSheet: View {
         }
     }
 
-    init(viewModel: ChartViewModel,
-         onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
-         onRemove: @escaping () -> Void,
-         onStyleChanged: @escaping () -> Void) {
+    init(
+        viewModel: ChartViewModel,
+        onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
+        onRemove: @escaping () -> Void,
+        onStyleChanged: @escaping () -> Void
+    ) {
         self.viewModel = viewModel
         self.onUpdateTicker = onUpdateTicker
         self.onRemove = onRemove
@@ -99,10 +102,14 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
-        _pineDraft = State(initialValue: viewModel.pineConfiguration?.draftSource ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
+        _pineDraft = State(
+            initialValue: viewModel.pineConfiguration?.draftSource
+                ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
-        _assetType = State(initialValue: viewModel.source == .polymarket ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
+        _assetType = State(
+            initialValue: viewModel.source == .polymarket
+                ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
     }
 
     var body: some View {
@@ -189,11 +196,18 @@ struct ChartSettingsSheet: View {
                 Spacer()
 
                 Button("Save") {
-                    let selected = assetType == .crypto ? searchVM.selectedResult
-                        : assetType == .stock ? stockVM.selectedResult
-                        : polymarketVM.selectedResult
-                    if selectedTab == .ticker, let selected { apply(selected) }
-                    else { cancelSearches(); dismiss() }
+                    let selected =
+                        assetType == .crypto
+                        ? searchVM.selectedResult
+                        : assetType == .stock
+                            ? stockVM.selectedResult
+                            : polymarketVM.selectedResult
+                    if selectedTab == .ticker, let selected {
+                        apply(selected)
+                    } else {
+                        cancelSearches()
+                        dismiss()
+                    }
                 }
                 .keyboardShortcut(.return)
             }
@@ -564,32 +578,72 @@ struct ChartSettingsSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(viewModel.pineDiagnostics) { diagnostic in
-                            Text("\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)")
-                                .font(.caption.monospaced()).foregroundStyle(diagnostic.severity == .error ? .red : .orange)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(
+                                "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
+                            )
+                            .font(.caption.monospaced()).foregroundStyle(
+                                diagnostic.severity == .error ? .red : .orange
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
                 }.frame(maxHeight: 90)
             }
 
-            if let source=viewModel.pineConfiguration?.appliedSource {
-                let schema=PineCompiler.compile(source:source).inputSchema
+            if let source = viewModel.pineConfiguration?.appliedSource {
+                let schema = PineCompiler.compile(source: source).inputSchema
                 ForEach(schema.inputs) { input in pineInput(input) }
             }
         }.padding(16)
     }
 
-    @ViewBuilder private func pineInput(_ input:PineInputDefinition)->some View {
-        let current=viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
-        switch (input.type,current) {
-        case (.bool,.bool(let value)):
-            Toggle(input.title ?? input.id,isOn:Binding(get:{value},set:{viewModel.setPineInput(.bool($0),id:input.id);onStyleChanged()}))
-        case (.int,.int(let value)):
-            Stepper("\(input.title ?? input.id): \(value)",value:Binding(get:{value},set:{viewModel.setPineInput(.int($0),id:input.id);onStyleChanged()}),in:Int(input.minValue ?? 1)...Int(input.maxValue ?? 10_000),step:Int(input.step ?? 1))
-        case (.float,.float(let value)):
-            HStack { Text(input.title ?? input.id); TextField("",value:Binding(get:{value},set:{viewModel.setPineInput(.float($0),id:input.id);onStyleChanged()}),format:.number).frame(width:100) }
-        case (.string,.string(let value)):
-            HStack { Text(input.title ?? input.id); TextField("",text:Binding(get:{value},set:{viewModel.setPineInput(.string($0),id:input.id);onStyleChanged()})) }
+    @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
+        let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
+        switch (input.type, current) {
+        case (.bool, .bool(let value)):
+            Toggle(
+                input.title ?? input.id,
+                isOn: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.bool($0), id: input.id)
+                        onStyleChanged()
+                    }))
+        case (.int, .int(let value)):
+            Stepper(
+                "\(input.title ?? input.id): \(value)",
+                value: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.int($0), id: input.id)
+                        onStyleChanged()
+                    }), in: Int(input.minValue ?? 1)...Int(input.maxValue ?? 10_000),
+                step: Int(input.step ?? 1))
+        case (.float, .float(let value)):
+            HStack {
+                Text(input.title ?? input.id)
+                TextField(
+                    "",
+                    value: Binding(
+                        get: { value },
+                        set: {
+                            viewModel.setPineInput(.float($0), id: input.id)
+                            onStyleChanged()
+                        }), format: .number
+                ).frame(width: 100)
+            }
+        case (.string, .string(let value)):
+            HStack {
+                Text(input.title ?? input.id)
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { value },
+                        set: {
+                            viewModel.setPineInput(.string($0), id: input.id)
+                            onStyleChanged()
+                        }))
+            }
         default: EmptyView()
         }
     }
@@ -611,7 +665,8 @@ struct ChartSettingsSheet: View {
 
     private var volumeHint: String {
         guard viewModel.source.providesVolume else {
-            return "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
+            return
+                "\(viewModel.source.displayName) doesn't report per-candle volume, so bars aren't available for this chart."
         }
         return "Turnover per candle, drawn along the bottom of the chart."
     }
@@ -621,9 +676,11 @@ struct ChartSettingsSheet: View {
     private var rsiHint: String {
         let loaded = viewModel.klineData.count
         if loaded > 0 && loaded <= RSI.period {
-            return "Only \(loaded) candles loaded — RSI needs more than \(RSI.period). Zoom out or pick a longer range."
+            return
+                "Only \(loaded) candles loaded — RSI needs more than \(RSI.period). Zoom out or pick a longer range."
         }
-        return "Momentum from 0–100 across the bottom, with guides at \(Int(RSI.oversold)) and \(Int(RSI.overbought))."
+        return
+            "Momentum from 0–100 across the bottom, with guides at \(Int(RSI.oversold)) and \(Int(RSI.overbought))."
     }
 
     private var emaHint: String {
