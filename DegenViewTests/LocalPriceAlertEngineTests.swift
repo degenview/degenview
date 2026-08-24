@@ -80,4 +80,46 @@ final class LocalPriceAlertEngineTests: XCTestCase {
         XCTAssertEqual(values.count, 1)
         XCTAssertEqual(values[asset.key]?.symbol, asset.symbol)
     }
+
+    func testDuplicateCommandIsAppliedOnce() async {
+        let engine = await LocalPriceAlertEngine(repository: MemoryRepository())
+        let alert = PriceAlert(asset: asset, condition: .crossesAbove(target: 100))
+        let command = AlertRuntimeCommand(payload: .save(alert, baseline: 90))
+        await engine.apply(command); await engine.apply(command)
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.alerts.count, 1)
+        XCTAssertEqual(snapshot.processedCommandIDs, [command.id])
+    }
+
+    func testCatchUpIsChronologicalAndLimitedToOneEventPerAlert() async {
+        let engine = await LocalPriceAlertEngine(repository: MemoryRepository())
+        await engine.saveAlert(PriceAlert(asset: asset, condition: .crossesAbove(target: 100), frequency: .everyTime), baseline: 90)
+        let now = Date()
+        func historical(_ price: Decimal, minutes: Double, fingerprint: String) -> MarketQuote {
+            let date = now.addingTimeInterval(minutes * 60)
+            return MarketQuote(asset: asset, price: price, currency: .USD, sourceTimestamp: date, receivedAt: date, maximumAge: 86_400, fingerprint: fingerprint)
+        }
+        let events = await engine.processCatchUp([
+            historical(110, minutes: -10, fingerprint: "later"),
+            historical(90, minutes: -20, fingerprint: "earlier"),
+            historical(90, minutes: -5, fingerprint: "rearm"),
+            historical(110, minutes: -1, fingerprint: "second-crossing")
+        ], now: now)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.origin, .catchUp)
+        let snapshot = await engine.currentSnapshot()
+        XCTAssertEqual(snapshot.history.count, 1)
+    }
+
+    func testSchemaOneSnapshotDecodesWithMigrationDefaults() throws {
+        let old = AlertPersistenceSnapshot()
+        let encoded = try JSONEncoder().encode(old)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object["schemaVersion"] = 1
+        ["revision", "processedCommandIDs", "health"].forEach { object.removeValue(forKey: $0) }
+        let migrated = try JSONDecoder().decode(AlertPersistenceSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(migrated.schemaVersion, AlertPersistenceSnapshot.currentSchemaVersion)
+        XCTAssertEqual(migrated.revision, 0)
+        XCTAssertTrue(migrated.processedCommandIDs.isEmpty)
+    }
 }

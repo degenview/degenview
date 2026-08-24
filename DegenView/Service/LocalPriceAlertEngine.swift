@@ -6,9 +6,9 @@ protocol AlertSnapshotRepository: Sendable {
 }
 
 actor LocalAlertRepository: AlertSnapshotRepository {
-    private let store = JSONStore<AlertPersistenceSnapshot>(filename: "price_alerts.json")
-    func load() -> AlertPersistenceSnapshot? { store.load() }
-    func save(_ snapshot: AlertPersistenceSnapshot) { store.save(snapshot) }
+    private let persistence = AlertRuntimePersistence.shared
+    func load() -> AlertPersistenceSnapshot? { persistence.loadSnapshot() }
+    func save(_ snapshot: AlertPersistenceSnapshot) { persistence.saveSnapshot(snapshot) }
 }
 
 actor LocalPriceAlertEngine {
@@ -26,6 +26,26 @@ actor LocalPriceAlertEngine {
     }
 
     func currentSnapshot() -> AlertPersistenceSnapshot { snapshot }
+    func replaceHealth(_ health: AlertRuntimeHealth) async { snapshot.health = health; await persist() }
+    func markDelivery(eventID: UUID, record: AlertDeliveryRecord) async {
+        guard let i = snapshot.history.firstIndex(where: { $0.id == eventID }) else { return }
+        snapshot.history[i].delivery = record
+        await persist()
+    }
+    func apply(_ command: AlertRuntimeCommand) async {
+        guard !snapshot.processedCommandIDs.contains(command.id) else { return }
+        switch command.payload {
+        case .save(let alert, let baseline): await saveAlert(alert, baseline: baseline)
+        case .setState(let id, let state, let baseline): await setState(id, state: state, baseline: baseline)
+        case .delete(let id): await delete(id)
+        case .clearHistory: await clearHistory()
+        case .updateSettings(let settings): await updateSettings(settings)
+        case .requestNotificationAuthorization: break
+        }
+        snapshot.processedCommandIDs.append(command.id)
+        if snapshot.processedCommandIDs.count > 1_000 { snapshot.processedCommandIDs.removeFirst(snapshot.processedCommandIDs.count - 1_000) }
+        await persist()
+    }
     func activeAssets() -> [PortfolioAsset] {
         Array(MarketQuoteCoordinator.assetsByKey(
             snapshot.alerts.lazy.filter { $0.state == .active }.map(\.asset)
@@ -100,6 +120,31 @@ actor LocalPriceAlertEngine {
         return events
     }
 
+    /// Replays ordered quotes after wake/reconnect. A recovery intentionally emits at
+    /// most one event per alert and never invents crossings beyond the 24-hour window.
+    func processCatchUp(_ quotes: [MarketQuote], now: Date = Date()) async -> [AlertTriggerEvent] {
+        let ordered = quotes.sorted { $0.sourceTimestamp < $1.sourceTimestamp }
+            .filter { now.timeIntervalSince($0.sourceTimestamp) <= 86_400 }
+        var emittedAlertIDs: Set<UUID> = []
+        var result: [AlertTriggerEvent] = []
+        for quote in ordered {
+            let replay = MarketQuote(asset: quote.asset, price: quote.price, currency: quote.currency,
+                sourceTimestamp: quote.sourceTimestamp, receivedAt: quote.sourceTimestamp,
+                maximumAge: 86_400, fingerprint: quote.fingerprint)
+            let events = await process(replay)
+            for event in events {
+                guard emittedAlertIDs.insert(event.alertID).inserted else {
+                    snapshot.history.removeAll { $0.id == event.id }
+                    continue
+                }
+                guard let i = snapshot.history.firstIndex(where: { $0.id == event.id }) else { continue }
+                snapshot.history[i].origin = .catchUp; result.append(snapshot.history[i])
+            }
+        }
+        await persist()
+        return result
+    }
+
     func isIdentical(_ candidate: PriceAlert) -> Bool {
         snapshot.alerts.contains { $0.id != candidate.id && $0.asset.key == candidate.asset.key && $0.condition == candidate.condition && $0.currency == candidate.currency && $0.frequency == candidate.frequency }
     }
@@ -108,5 +153,5 @@ actor LocalPriceAlertEngine {
         index.removeAll()
         for alert in snapshot.alerts where alert.state == .active { index[alert.asset.key, default: []].insert(alert.id) }
     }
-    private func persist() async { await repository.save(snapshot) }
+    private func persist() async { snapshot.schemaVersion = AlertPersistenceSnapshot.currentSchemaVersion; snapshot.revision &+= 1; await repository.save(snapshot) }
 }

@@ -92,6 +92,40 @@ struct AlertTriggerEvent: Codable, Identifiable, Equatable, Sendable {
     let currency: PortfolioCurrency
     let timestamp: Date
     let quoteFingerprint: String
+    var origin: AlertEventOrigin = .live
+    var delivery: AlertDeliveryRecord = .pending
+
+    init(id: UUID = UUID(), alertID: UUID, asset: PortfolioAsset, observedValue: Decimal,
+         target: Decimal, currency: PortfolioCurrency, timestamp: Date,
+         quoteFingerprint: String, origin: AlertEventOrigin = .live,
+         delivery: AlertDeliveryRecord = .pending) {
+        self.id = id; self.alertID = alertID; self.asset = asset
+        self.observedValue = observedValue; self.target = target; self.currency = currency
+        self.timestamp = timestamp; self.quoteFingerprint = quoteFingerprint
+        self.origin = origin; self.delivery = delivery
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, alertID, asset, observedValue, target, currency, timestamp, quoteFingerprint, origin, delivery }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id); alertID = try c.decode(UUID.self, forKey: .alertID)
+        asset = try c.decode(PortfolioAsset.self, forKey: .asset); observedValue = try c.decode(Decimal.self, forKey: .observedValue)
+        target = try c.decode(Decimal.self, forKey: .target); currency = try c.decode(PortfolioCurrency.self, forKey: .currency)
+        timestamp = try c.decode(Date.self, forKey: .timestamp); quoteFingerprint = try c.decode(String.self, forKey: .quoteFingerprint)
+        origin = try c.decodeIfPresent(AlertEventOrigin.self, forKey: .origin) ?? .live
+        delivery = try c.decodeIfPresent(AlertDeliveryRecord.self, forKey: .delivery) ?? .pending
+    }
+}
+
+enum AlertEventOrigin: String, Codable, Sendable { case live, catchUp }
+enum AlertDeliveryState: String, Codable, Sendable { case pending, delivered, suppressed, failed }
+struct AlertDeliveryRecord: Codable, Equatable, Sendable {
+    var state: AlertDeliveryState
+    var attemptCount: Int
+    var lastAttemptAt: Date?
+    var nextRetryAt: Date?
+    var error: String?
+    static let pending = AlertDeliveryRecord(state: .pending, attemptCount: 0)
 }
 
 struct AlertNotificationSettings: Codable, Equatable, Sendable {
@@ -102,11 +136,66 @@ struct AlertNotificationSettings: Codable, Equatable, Sendable {
 }
 
 struct AlertPersistenceSnapshot: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 1
+    static let currentSchemaVersion = 2
     var schemaVersion = currentSchemaVersion
+    var revision: UInt64 = 0
     var alerts: [PriceAlert] = []
     var history: [AlertTriggerEvent] = []
     var settings = AlertNotificationSettings()
+    var processedCommandIDs: [UUID] = []
+    var health = AlertRuntimeHealth()
+
+    private enum CodingKeys: String, CodingKey { case schemaVersion, revision, alerts, history, settings, processedCommandIDs, health }
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        revision = try c.decodeIfPresent(UInt64.self, forKey: .revision) ?? 0
+        alerts = try c.decodeIfPresent([PriceAlert].self, forKey: .alerts) ?? []
+        history = try c.decodeIfPresent([AlertTriggerEvent].self, forKey: .history) ?? []
+        settings = try c.decodeIfPresent(AlertNotificationSettings.self, forKey: .settings) ?? .init()
+        processedCommandIDs = try c.decodeIfPresent([UUID].self, forKey: .processedCommandIDs) ?? []
+        health = try c.decodeIfPresent(AlertRuntimeHealth.self, forKey: .health) ?? .init()
+        schemaVersion = Self.currentSchemaVersion
+    }
+}
+
+enum AlertRuntimeOwner: String, Codable, Sendable { case none, app, agent }
+enum AlertServiceState: String, Codable, Sendable { case unavailable, disabled, enabled, requiresApproval, notFound, failed }
+enum AlertNotificationPermission: String, Codable, Sendable { case unknown, notDetermined, denied, authorized, provisional, ephemeral }
+struct AlertProviderHealth: Codable, Equatable, Sendable, Identifiable {
+    var id: String { source.rawValue }
+    var source: DataSourceType
+    var lastSuccessfulQuote: Date?
+    var lastError: String?
+    var retryAt: Date?
+    var hasDataGap = false
+}
+struct AlertRuntimeHealth: Codable, Equatable, Sendable {
+    var owner: AlertRuntimeOwner = .none
+    var serviceState: AlertServiceState = .unavailable
+    var heartbeat: Date?
+    var notificationPermission: AlertNotificationPermission = .unknown
+    var providers: [AlertProviderHealth] = []
+    var unreconciledGaps: [String] = []
+}
+
+enum AlertRuntimeCommandPayload: Codable, Equatable, Sendable {
+    case save(PriceAlert, baseline: Decimal?)
+    case setState(UUID, AlertState, baseline: Decimal?)
+    case delete(UUID)
+    case clearHistory
+    case updateSettings(AlertNotificationSettings)
+    case requestNotificationAuthorization
+}
+struct AlertRuntimeCommand: Codable, Identifiable, Equatable, Sendable {
+    let id: UUID
+    let createdAt: Date
+    let expectedRevision: UInt64?
+    let payload: AlertRuntimeCommandPayload
+    init(id: UUID = UUID(), createdAt: Date = Date(), expectedRevision: UInt64? = nil, payload: AlertRuntimeCommandPayload) {
+        self.id = id; self.createdAt = createdAt; self.expectedRevision = expectedRevision; self.payload = payload
+    }
 }
 
 struct MarketQuote: Codable, Equatable, Sendable {

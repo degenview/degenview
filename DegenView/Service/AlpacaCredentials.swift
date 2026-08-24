@@ -14,6 +14,12 @@ struct AlpacaCredentials: Codable, Equatable {
 enum AlpacaCredentialsStore {
     private static let service = "com.cryptocharts.alpaca"
     private static let credentialsAccount = "credentials-v1"
+    private static var accessGroup: String? {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let groups = SecTaskCopyValueForEntitlement(task, "keychain-access-groups" as CFString, nil) as? [String]
+        else { return nil }
+        return groups.first { $0.hasSuffix("com.cryptocharts.shared") }
+    }
     private static let lock = NSLock()
     private static var cachedCredentials: AlpacaCredentials?
 
@@ -23,9 +29,10 @@ enum AlpacaCredentialsStore {
 
         if let cachedCredentials { return cachedCredentials }
 
-        if let data = readData(account: credentialsAccount),
+        if let data = readData(account: credentialsAccount, shared: true) ?? readData(account: credentialsAccount, shared: false),
            let stored = try? JSONDecoder().decode(AlpacaCredentials.self, from: data) {
             cachedCredentials = stored
+            try? writeData(data, account: credentialsAccount)
             return stored
         }
 
@@ -58,14 +65,15 @@ enum AlpacaCredentialsStore {
         NotificationCenter.default.post(name: .alpacaCredentialsChanged, object: nil)
     }
 
-    private static func readData(account: String) -> Data? {
-        let query: [String: Any] = [
+    private static func readData(account: String, shared: Bool) -> Data? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne
         ]
+        if shared, let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
         var item: CFTypeRef?
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data else { return nil }
@@ -73,11 +81,12 @@ enum AlpacaCredentialsStore {
     }
 
     private static func writeData(_ data: Data, account: String) throws {
-        let key: [String: Any] = [
+        var key: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+        if let accessGroup { key[kSecAttrAccessGroup as String] = accessGroup }
         let status = SecItemUpdate(
             key as CFDictionary,
             [kSecValueData as String: data] as CFDictionary
@@ -96,11 +105,12 @@ enum AlpacaCredentialsStore {
     }
 
     private static func delete(account: String) {
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
+        if let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
         let status = SecItemDelete(query as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { return }
     }

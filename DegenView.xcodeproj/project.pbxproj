@@ -26,6 +26,43 @@
 		B90000000000000000000005 /* AlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000105 /* AlertStore.swift */; };
 		B90000000000000000000006 /* PriceAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000106 /* PriceAlertEditor.swift */; };
 		B90000000000000000000007 /* AlertsCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000107 /* AlertsCenterView.swift */; };
+		BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000101 /* AlertRuntimePersistence.swift */; };
+		BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000102 /* AlertRuntimeHost.swift */; };
+		BA0000000000000000000003 /* AlertBackgroundService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000103 /* AlertBackgroundService.swift */; };
+		BA1000000000000000000001 /* AlertAgentMain.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA1000000000000000000101 /* AlertAgentMain.swift */; };
+		BA1000000000000000000002 /* DegenViewAlertAgent.app in Embed Login Items */ = {isa = PBXBuildFile; fileRef = BA1000000000000000000102 /* DegenViewAlertAgent.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		BA1100000000000000000001 /* PriceAlertModels.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000101; };
+		BA1100000000000000000002 /* LocalPriceAlertEngine.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000102; };
+		BA1100000000000000000003 /* FXRateService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000103; };
+		BA1100000000000000000004 /* MarketQuoteCoordinator.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000104; };
+		BA1100000000000000000005 /* AlertRuntimePersistence.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000101; };
+		BA1100000000000000000006 /* AlertRuntimeHost.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000102; };
+		BA1100000000000000000007 /* PortfolioModels.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000101; };
+		BA1100000000000000000008 /* DataSourceType.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118; };
+		BA1100000000000000000009 /* KlineData.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000103; };
+		BA110000000000000000000A /* TickerDataSource.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119; };
+		BA110000000000000000000B /* BinanceAPIService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106; };
+		BA110000000000000000000C /* CoinGeckoAPIService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A; };
+		BA110000000000000000000D /* DEXScreenerService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B; };
+		BA110000000000000000000E /* AlpacaAPIService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000102; };
+		BA110000000000000000000F /* AlpacaCredentials.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000101; };
+		BA1100000000000000000010 /* PolymarketService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000102; };
+		BA1100000000000000000011 /* PolymarketModels.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000101; };
+		BA1100000000000000000012 /* ReplaySession.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000101; };
+		BA1100000000000000000013 /* AppSupport.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590; };
+		BA1100000000000000000014 /* JSONStore.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE; };
+		BA1100000000000000000015 /* KlineCache.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = E167CD7B739B528C0792D361; };
+		BA1100000000000000000016 /* CGRateLimiter.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011E; };
+		BA1100000000000000000017 /* CoinGeckoProvisionalStore.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000101; };
+		BA1100000000000000000018 /* TimeRange.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000104; };
+		BA1100000000000000000019 /* GeckoTerminalService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000902; };
+		BA110000000000000000001A /* Constants.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94; };
+		BA110000000000000000001B /* PriceFormatter.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6; };
+		BA110000000000000000001C /* TrendLine.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906; };
+		BA110000000000000000001D /* PineModels.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101; };
+		BA110000000000000000001E /* Indicators.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904; };
+		BA110000000000000000001F /* SymbolInfo.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105; };
+		BA1100000000000000000020 /* Comparable+Clamped.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208; };
 		AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */; };
 		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
 		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
@@ -115,6 +152,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		BA1000000000000000000201 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = A00000000000000000000701 /* Project object */; proxyType = 1; remoteGlobalIDString = BA1000000000000000000401; remoteInfo = DegenViewAlertAgent; };
 		E40000000000000000000201 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = A00000000000000000000701 /* Project object */;
@@ -144,6 +182,13 @@
 		B90000000000000000000105 /* AlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertStore.swift; sourceTree = "<group>"; };
 		B90000000000000000000106 /* PriceAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertEditor.swift; sourceTree = "<group>"; };
 		B90000000000000000000107 /* AlertsCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsCenterView.swift; sourceTree = "<group>"; };
+		BA0000000000000000000101 /* AlertRuntimePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRuntimePersistence.swift; sourceTree = "<group>"; };
+		BA0000000000000000000102 /* AlertRuntimeHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRuntimeHost.swift; sourceTree = "<group>"; };
+		BA0000000000000000000103 /* AlertBackgroundService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertBackgroundService.swift; sourceTree = "<group>"; };
+		BA1000000000000000000101 /* AlertAgentMain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertAgentMain.swift; sourceTree = "<group>"; };
+		BA1000000000000000000102 /* DegenViewAlertAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DegenViewAlertAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BA1000000000000000000103 /* DegenViewAlertAgent.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DegenViewAlertAgent.entitlements; sourceTree = "<group>"; };
+		BA1000000000000000000104 /* DegenView.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DegenView.entitlements; sourceTree = "<group>"; };
 		AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngineTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000000108 /* PortfolioTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetAutoMapper.swift; sourceTree = "<group>"; };
@@ -235,6 +280,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		BA1000000000000000000301 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		E40000000000000000000301 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -264,6 +310,7 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000301 /* DegenView */,
+				BA1000000000000000000304 /* DegenViewAlertAgent */,
 				E40000000000000000000401 /* DegenViewTests */,
 				A00000000000000000000302 /* Products */,
 			);
@@ -272,6 +319,7 @@
 		A00000000000000000000301 /* DegenView */ = {
 			isa = PBXGroup;
 			children = (
+				BA1000000000000000000104 /* DegenView.entitlements */,
 				A00000000000000000000101 /* DegenViewApp.swift */,
 				A00000000000000000000102 /* ContentView.swift */,
 				A0000000000000000000010F /* Assets.xcassets */,
@@ -290,11 +338,13 @@
 			isa = PBXGroup;
 			children = (
 				A00000000000000000000110 /* DegenView.app */,
+				BA1000000000000000000102 /* DegenViewAlertAgent.app */,
 				E40000000000000000000102 /* DegenViewTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
+		BA1000000000000000000304 /* DegenViewAlertAgent */ = {isa = PBXGroup; children = (BA1000000000000000000101 /* AlertAgentMain.swift */, BA1000000000000000000103 /* DegenViewAlertAgent.entitlements */, ); path = DegenViewAlertAgent; sourceTree = "<group>"; };
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
@@ -322,6 +372,9 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
+				BA0000000000000000000102 /* AlertRuntimeHost.swift */,
+				BA0000000000000000000103 /* AlertBackgroundService.swift */,
 				P10000000000000000000102 /* PineEngine.swift */,
 				P10000000000000000000103 /* PineRuntime.swift */,
 				B90000000000000000000102 /* LocalPriceAlertEngine.swift */,
@@ -448,6 +501,13 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		BA1000000000000000000401 /* DegenViewAlertAgent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BA1000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewAlertAgent" */;
+			buildPhases = (BA1000000000000000000501 /* Sources */, BA1000000000000000000301 /* Frameworks */, );
+			buildRules = (); dependencies = (); name = DegenViewAlertAgent; productName = DegenViewAlertAgent;
+			productReference = BA1000000000000000000102 /* DegenViewAlertAgent.app */; productType = "com.apple.product-type.application";
+		};
 		E40000000000000000000501 /* DegenViewTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E40000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewTests" */;
@@ -471,11 +531,11 @@
 				A00000000000000000000501 /* Sources */,
 				A00000000000000000000201 /* Frameworks */,
 				A00000000000000000000502 /* Resources */,
+				BA1000000000000000000502 /* Embed Login Items */,
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
+			dependencies = (BA1000000000000000000202 /* PBXTargetDependency */, );
 			name = DegenView;
 			productName = DegenView;
 			productReference = A00000000000000000000110 /* DegenView.app */;
@@ -491,6 +551,7 @@
 				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 1600;
 			TargetAttributes = {
+					BA1000000000000000000401 = { CreatedOnToolsVersion = 16.0; };
 					A00000000000000000000401 = {
 						CreatedOnToolsVersion = 16.0;
 					};
@@ -511,6 +572,7 @@
 			projectRoot = "";
 			targets = (
 				A00000000000000000000401 /* DegenView */,
+				BA1000000000000000000401 /* DegenViewAlertAgent */,
 				E40000000000000000000501 /* DegenViewTests */,
 			);
 		};
@@ -527,7 +589,23 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		BA1000000000000000000502 /* Embed Login Items */ = {isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = Contents/Library/LoginItems; dstSubfolderSpec = 1; files = (BA1000000000000000000002 /* DegenViewAlertAgent.app in Embed Login Items */, ); name = "Embed Login Items"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
+		BA1000000000000000000501 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
+			BA1100000000000000000001, BA1100000000000000000002, BA1100000000000000000003, BA1100000000000000000004,
+			BA1100000000000000000005, BA1100000000000000000006, BA1100000000000000000007, BA1100000000000000000008,
+			BA1100000000000000000009, BA110000000000000000000A, BA110000000000000000000B, BA110000000000000000000C,
+			BA110000000000000000000D, BA110000000000000000000E, BA110000000000000000000F, BA1100000000000000000010,
+			BA1100000000000000000011, BA1100000000000000000012, BA1100000000000000000013, BA1100000000000000000014,
+			BA1100000000000000000015, BA1100000000000000000016, BA1100000000000000000017,
+			BA1100000000000000000018, BA1100000000000000000019, BA110000000000000000001A, BA110000000000000000001B,
+			BA110000000000000000001C, BA110000000000000000001D, BA110000000000000000001E,
+			BA110000000000000000001F, BA1100000000000000000020,
+		); runOnlyForDeploymentPostprocessing = 0; };
 		E40000000000000000000302 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -551,6 +629,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */,
+				BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */,
+				BA0000000000000000000003 /* AlertBackgroundService.swift in Sources */,
 				P10000000000000000000001 /* PineModels.swift in Sources */,
 				P10000000000000000000002 /* PineEngine.swift in Sources */,
 				P10000000000000000000003 /* PineRuntime.swift in Sources */,
@@ -649,6 +730,7 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		BA1000000000000000000202 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = BA1000000000000000000401 /* DegenViewAlertAgent */; targetProxy = BA1000000000000000000201 /* PBXContainerItemProxy */; };
 		E40000000000000000000202 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = A00000000000000000000401 /* DegenView */;
@@ -657,6 +739,8 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		BA1000000000000000000801 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.cryptocharts.app.alert-agent; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Debug; };
+		BA1000000000000000000802 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { CODE_SIGN_ENTITLEMENTS = DegenViewAlertAgent/DegenViewAlertAgent.entitlements; CODE_SIGN_STYLE = Automatic; CURRENT_PROJECT_VERSION = 1; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_LSUIElement = YES; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 1.0; PRODUCT_BUNDLE_IDENTIFIER = com.cryptocharts.app.alert-agent; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; }; name = Release; };
 		E40000000000000000000801 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -766,6 +850,7 @@
 		A00000000000000000000804 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = DegenView/DegenView.entitlements;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -789,6 +874,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		BA1000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewAlertAgent" */ = {isa = XCConfigurationList; buildConfigurations = (BA1000000000000000000801 /* Debug */, BA1000000000000000000802 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 		E40000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
