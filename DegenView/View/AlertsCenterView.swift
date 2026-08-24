@@ -10,7 +10,9 @@ struct AlertsCenterView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Picker("View", selection: $filter) { ForEach(Filter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }.pickerStyle(.segmented)
+                Picker("View", selection: $filter) { ForEach(Filter.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
                 TextField("Search assets", text: $search).textFieldStyle(.roundedBorder).frame(width: 190)
             }.padding()
             Divider()

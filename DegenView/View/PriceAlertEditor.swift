@@ -18,7 +18,10 @@ struct PriceAlertEditor: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(existing == nil ? "Create Price Alert" : "Edit Price Alert").font(.title2.bold())
             Text("\(asset.name) · \(asset.source.displayName)").foregroundStyle(.secondary)
-            if let quote = store.latestQuotes[asset.key] { Text("Current: \(quote.price.description) \(quote.currency.rawValue)").monospacedDigit() }
+            if let quote = store.latestQuotes[asset.key] {
+                Text("Current: \(quote.price.formatted(.currency(code: quote.currency.rawValue)))")
+                    .monospacedDigit()
+            }
             Picker("Condition", selection: $direction) {
                 Text("Crosses Above").tag(0); Text("Crosses Below").tag(1)
                 Text("Rises By %").tag(2); Text("Falls By %").tag(3)

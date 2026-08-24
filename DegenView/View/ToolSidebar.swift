@@ -5,9 +5,12 @@ import SwiftUI
 /// Sits outside the chart column, so the card-height math in `ContentView` is
 /// unaffected and the strip spans the empty state too. The layout is a stack, so more
 /// tools can be added under the ones already here.
-struct ToolSidebar: View {
+struct ToolSidebar<BottomControls: View>: View {
+    @Environment(\.openWindow) private var openWindow
+
     let activeTool: ChartTool
     let onSelect: (ChartTool) -> Void
+    @ViewBuilder let bottomControls: () -> BottomControls
 
     var body: some View {
         HStack(spacing: 0) {
@@ -34,6 +37,18 @@ struct ToolSidebar: View {
                     onSelect(.ruler)
                 }
                 Spacer(minLength: 0)
+                bottomControls()
+                Button {
+                    openWindow(id: "alerts")
+                } label: {
+                    Image(systemName: "bell")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 26, height: 26)
+                        .contentShape(RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("View Price Alerts")
+                .help("View Price Alerts")
             }
             .padding(.vertical, 6)
             .frame(width: UI.toolSidebarWidth)
@@ -68,6 +83,8 @@ private struct ToolButton: View {
 }
 
 #Preview {
-    ToolSidebar(activeTool: .trendLine, onSelect: { _ in })
+    ToolSidebar(activeTool: .trendLine, onSelect: { _ in }) {
+        EmptyView()
+    }
         .frame(height: 300)
 }

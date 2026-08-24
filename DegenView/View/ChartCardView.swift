@@ -2,7 +2,6 @@ import SwiftUI
 import AppKit
 
 struct ChartCardView: View {
-    @Environment(\.openWindow) private var openWindow
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat
     let onRemove: () -> Void
@@ -144,8 +143,6 @@ struct ChartCardView: View {
             if viewModel.source != .polymarket {
                 Button { showAlertEditor = true } label: { Image(systemName: "bell.badge") }
                     .buttonStyle(.plain).help("Create Price Alert")
-                Button { openWindow(id: "alerts") } label: { Image(systemName: "bell") }
-                    .buttonStyle(.plain).help("View Price Alerts")
             }
 
             if paperConnected, let price = viewModel.displayedPrice {

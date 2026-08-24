@@ -55,8 +55,11 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 // Drawing tools. Outside the chart column, so the card-height math
                 // below measures only what's left and needs no adjustment.
-                ToolSidebar(activeTool: contentViewModel.activeTool) { tool in
-                    contentViewModel.toggleTool(tool)
+                ToolSidebar(
+                    activeTool: contentViewModel.activeTool,
+                    onSelect: { tool in contentViewModel.toggleTool(tool) }
+                ) {
+                    sidebarTradingControls
                 }
 
                 chartColumn
@@ -299,6 +302,52 @@ struct ContentView: View {
 
     // MARK: - Toolbar
 
+    @ViewBuilder
+    private var sidebarTradingControls: some View {
+        Button {
+            if paperTrading.isConnected {
+                showTradingPanelWithChartControlsDefault()
+            } else {
+                Task {
+                    await paperTrading.connect()
+                    showTradingPanelWithChartControlsDefault()
+                }
+            }
+        } label: {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 26, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
+        .help("Paper Trading")
+
+        Menu {
+            Button("Select bar") { contentViewModel.beginReplaySelection() }
+            Button("Select date/time…") {
+                replayDate = contentViewModel.replay.currentTimestamp ?? Date()
+                showReplayDatePicker = true
+            }
+            Button("Random bar") { contentViewModel.selectRandomReplayBar() }
+            Button("First available bar") { contentViewModel.selectFirstReplayBar() }
+            if contentViewModel.replay.isActive {
+                Divider()
+                Button("Return to Latest") { contentViewModel.returnToLive() }
+            }
+        } label: {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 13, weight: .medium))
+                .frame(width: 26, height: 26)
+                .contentShape(RoundedRectangle(cornerRadius: 5))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Historical bar replay")
+        .help("Start or control historical replay")
+    }
+
     /// Commit the tab's edits back to its saved view, prompting for a name the
     /// first time — an unnamed tab has no view to write to yet.
     private func saveChanges() {
@@ -319,63 +368,6 @@ struct ContentView: View {
                 Label("Portfolio", systemImage: "briefcase")
             }
             .help("Portfolio Tracker")
-        }
-        ToolbarItem(placement: .automatic) {
-            Menu {
-                if paperTrading.isConnected {
-                    Button(showTradingPanel ? "Hide Account Manager" : "Open Account Manager") {
-                        if showTradingPanel {
-                            showTradingPanel = false
-                        } else {
-                            showTradingPanelWithChartControlsDefault()
-                        }
-                    }
-                    Toggle("Show Trading on Charts", isOn: Binding(
-                        get: { showPaperTradingOnCharts },
-                        set: { value in
-                            showPaperTradingOnCharts = value
-                            hasChosenPaperTradingChartVisibility = true
-                        }
-                    ))
-                    if let vm = contentViewModel.marketChartViewModels.first {
-                        Divider()
-                        Button("Buy \(vm.title)…") { openTicket(for: vm, side: .buy) }
-                            .keyboardShortcut("b", modifiers: [.command, .shift])
-                        Button("Sell \(vm.title)…") { openTicket(for: vm, side: .sell) }
-                            .keyboardShortcut("s", modifiers: [.command, .shift])
-                    }
-                } else {
-                    Button("Connect Paper Trading") {
-                        Task {
-                            await paperTrading.connect()
-                            showTradingPanelWithChartControlsDefault()
-                        }
-                    }
-                }
-            } label: {
-                Label(paperTrading.isConnected ? "PAPER" : "Trade", systemImage: "arrow.left.arrow.right")
-            }
-            .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
-            .help("Paper Trading")
-        }
-        ToolbarItem(placement: .automatic) {
-            Menu {
-                Button("Select bar") { contentViewModel.beginReplaySelection() }
-                Button("Select date/time…") {
-                    replayDate = contentViewModel.replay.currentTimestamp ?? Date()
-                    showReplayDatePicker = true
-                }
-                Button("Random bar") { contentViewModel.selectRandomReplayBar() }
-                Button("First available bar") { contentViewModel.selectFirstReplayBar() }
-                if contentViewModel.replay.isActive {
-                    Divider()
-                    Button("Return to Latest") { contentViewModel.returnToLive() }
-                }
-            } label: {
-                Label("Replay", systemImage: "clock.arrow.circlepath")
-            }
-            .accessibilityLabel("Historical bar replay")
-            .help("Start or control historical replay")
         }
         ToolbarItem(placement: .automatic) {
             Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
