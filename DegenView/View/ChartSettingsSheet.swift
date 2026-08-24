@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 // MARK: - ChartSettingsSheet
@@ -35,6 +36,7 @@ struct ChartSettingsSheet: View {
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
     @State private var pineDraft: String
+    @State private var copiedPineDiagnostics = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -575,19 +577,34 @@ struct ChartSettingsSheet: View {
             }
 
             if !viewModel.pineDiagnostics.isEmpty {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(viewModel.pineDiagnostics) { diagnostic in
-                            Text(
-                                "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
-                            )
-                            .font(.caption.monospaced()).foregroundStyle(
-                                diagnostic.severity == .error ? .red : .orange
-                            )
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Diagnostics").font(.caption.weight(.semibold))
+                        Spacer()
+                        Button {
+                            copyPineDiagnostics()
+                        } label: {
+                            Label(
+                                copiedPineDiagnostics ? "Copied" : "Copy Errors",
+                                systemImage: copiedPineDiagnostics ? "checkmark" : "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.caption)
+                    }
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(viewModel.pineDiagnostics) { diagnostic in
+                                Text(formatted(diagnostic))
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(diagnostic.severity == .error ? .red : .orange)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
-                }.frame(maxHeight: 90)
+                    .frame(maxHeight: 90)
+                }
             }
 
             if let source = viewModel.pineConfiguration?.appliedSource {
@@ -595,6 +612,25 @@ struct ChartSettingsSheet: View {
                 ForEach(schema.inputs) { input in pineInput(input) }
             }
         }.padding(16)
+    }
+
+    private func formatted(_ diagnostic: PineDiagnostic) -> String {
+        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
+    }
+
+    private func copyPineDiagnostics() {
+        let errors = viewModel.pineDiagnostics.filter { $0.severity == .error }
+        let diagnostics = errors.isEmpty ? viewModel.pineDiagnostics : errors
+        let text = diagnostics.map(formatted).joined(separator: "\n")
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        copiedPineDiagnostics = true
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            copiedPineDiagnostics = false
+        }
     }
 
     @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
