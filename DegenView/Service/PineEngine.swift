@@ -142,6 +142,7 @@ struct PineParser {
         case .bool(let b): lhs = .literal(.bool(b), token.range)
         case .na: lhs = .literal(.na, token.range)
         case .identifier(let name): lhs = .identifier(name, token.range)
+        case .typeKeyword(let type): lhs = .identifier(type.rawValue, token.range)
         case .minus,.plus,.not: guard let rhs=expression(80) else{return nil}; lhs = .unary(token.kind,rhs,token.range)
         case .leftParen: guard let inner=expression() else{return nil}; lhs=inner; expect(.rightParen,"Expected ')'.")
         case .leftBracket:
@@ -150,7 +151,7 @@ struct PineParser {
         }
         while true {
             if take(.dot) { let member:String;switch current.kind{case .identifier(let value):member=value;case .typeKeyword(let type):member=type.rawValue;default:error("PINE2004","Expected member name.",current.range);return lhs}; advance(); guard case .identifier(let base, let r)=lhs else{error("PINE2005","Member access requires a namespace.",lhs.range);return lhs}; lhs = .identifier(base+"."+member,r); continue }
-            if take(.leftParen) { var args:[PineArgument]=[]; if !at(.rightParen) { repeat { var name:String?; if case .identifier(let n)=current.kind, peek(1)?.kind == .assign { name=n; advance(); advance() }; guard let value=expression() else{break}; args.append(.init(name:name,value:value)) } while take(.comma) }; expect(.rightParen,"Expected ')'."); guard case .identifier(let name,let r)=lhs else{error("PINE2006","Only named functions can be called.",lhs.range);return lhs}; callSite += 1; lhs = .call(name,args,callSite,r); continue }
+            if take(.leftParen) { var args:[PineArgument]=[]; if !at(.rightParen) { repeat { var name:String?; if peek(1)?.kind == .assign { switch current.kind { case .identifier(let n):name=n;case .typeKeyword(let type):name=type.rawValue;default:break };if name != nil { advance();advance() } }; guard let value=expression() else{break}; args.append(.init(name:name,value:value)) } while take(.comma) }; expect(.rightParen,"Expected ')'."); guard case .identifier(let name,let r)=lhs else{error("PINE2006","Only named functions can be called.",lhs.range);return lhs}; callSite += 1; lhs = .call(name,args,callSite,r); continue }
             if take(.leftBracket) { guard let offset=expression() else{return lhs}; expect(.rightBracket,"Expected ']'."); lhs = .history(lhs,offset,lhs.range); continue }
             if take(.question) { guard let yes=expression(), take(.colon), let no=expression() else{error("PINE2007","Malformed ternary expression.",current.range);return lhs}; lhs = .ternary(lhs,yes,no,lhs.range); continue }
             guard let (lbp,rbp)=binding(current.kind), lbp >= minBP else { break }; let op=current.kind; advance(); guard let rhs=expression(rbp) else{return lhs}; lhs = .binary(lhs,op,rhs,lhs.range)

@@ -39,4 +39,18 @@ final class PineEngineTests: XCTestCase {
         let p=PineCompiler.compile(source:"//@version=6\nindicator(\"x\")\nbool value = na")
         XCTAssertTrue(p.diagnostics.contains{$0.code=="PINE3021"})
     }
+
+    func testColorAndLinewidthNamedArgumentsRemainCallArguments() throws {
+        let source="""
+        //@version=6
+        indicator("EMA Momentum", overlay=true)
+        fastLength = input.int(12, "Fast EMA", minval=1)
+        fast = ta.ema(close, fastLength)
+        plot(fast, color=color.orange, linewidth=2)
+        plot(close, color=color.blue, linewidth=2)
+        """
+        let program=PineCompiler.compile(source:source)
+        XCTAssertTrue(program.isValid,"\(program.diagnostics)")
+        XCTAssertEqual(try PineRuntimeSession(program:program).evaluate(bars:bars([1,2,3])).output.plots.count,2)
+    }
 }
