@@ -178,6 +178,15 @@ final class ChartViewModel: ObservableObject {
     @Published var showBollinger: Bool = false
     @Published var showTrendFlips: Bool = false
 
+    // MARK: - Pine script
+
+    @Published var pineConfiguration: PineConfiguration?
+    @Published private(set) var pineOutput: PineVisualOutput = .empty
+    @Published private(set) var pineDiagnostics: [PineDiagnostic] = []
+    @Published private(set) var pineStatus = "No script applied"
+    private var pineTask: Task<Void, Never>?
+    private var pineGeneration = 0
+
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
     var indicators: IndicatorSeries {
@@ -442,6 +451,47 @@ final class ChartViewModel: ObservableObject {
         trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
+        pineConfiguration = config.pine
+        reevaluatePine()
+    }
+
+    func updatePineDraft(_ source: String) {
+        if pineConfiguration == nil { pineConfiguration = PineConfiguration() }
+        pineConfiguration?.draftSource = source
+    }
+
+    @discardableResult func applyPineDraft() -> Bool {
+        guard var config = pineConfiguration else { return false }
+        let compiled = PineCompiler.compile(source: config.draftSource)
+        pineDiagnostics = compiled.diagnostics
+        guard compiled.isValid else { pineStatus = "Compile failed — last valid output remains active"; return false }
+        config.appliedSource = config.draftSource
+        let validIDs = Set(compiled.inputSchema.inputs.map(\.id))
+        config.inputs = config.inputs.filter { validIDs.contains($0.key) }
+        pineConfiguration = config; pineStatus = "Evaluating…"; reevaluatePine(compiled: compiled); return true
+    }
+
+    func setPineInput(_ value: PineInputValue, id: String) {
+        pineConfiguration?.inputs[id] = value
+        reevaluatePine()
+    }
+
+    func reevaluatePine(compiled supplied: PineCompiledProgram? = nil) {
+        pineTask?.cancel(); pineGeneration += 1; let generation=pineGeneration
+        guard let config=pineConfiguration,let source=config.appliedSource,!source.isEmpty else { pineOutput = .empty; return }
+        let bars=replayKlines, inputs=config.inputs
+        pineTask=Task { [weak self] in
+            let outcome = await Task.detached(priority:.userInitiated) { () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
+                let compiled=supplied ?? PineCompiler.compile(source:source)
+                guard compiled.isValid else { return (compiled,nil,nil) }
+                do { return (compiled,try PineRuntimeSession(program:compiled,inputs:inputs).evaluate(bars:bars),nil) }
+                catch { return (compiled,nil,error as? PineDiagnostic ?? diag("PINE4999",.runtime,error.localizedDescription,.zero)) }
+            }.value
+            guard let self,self.pineGeneration==generation,!Task.isCancelled else{return}
+            if let result=outcome.1 { self.pineOutput=result.output;self.pineDiagnostics=outcome.0.diagnostics+result.diagnostics;self.pineStatus="Applied \(outcome.0.declaration.title) · \(bars.count) bars" }
+            else if let runtime=outcome.2 { self.pineDiagnostics=[runtime];self.pineStatus="Runtime failed — last valid output remains active" }
+            else { self.pineDiagnostics=outcome.0.diagnostics;self.pineStatus="Compile failed" }
+        }
     }
 
     // MARK: - Vertical zoom
@@ -701,12 +751,17 @@ final class ChartViewModel: ObservableObject {
             klineData[klineData.count - 1].lowPrice = kline.lowPrice
             klineData[klineData.count - 1].volume = kline.volume
             klineData[klineData.count - 1].quoteVolume = kline.quoteVolume
+            klineData[klineData.count - 1].isClosed = kline.isClosed
+        } else if last.openTime < kline.openTime {
+            // Preserve the close/new-bar transition immediately; the REST refresh later
+            // reconciles the buffer but no live execution is lost in the meantime.
+            klineData.append(kline)
         }
-        // New candle (openTime > last.openTime): skip — REST fetch adds it within 5 s
 
         if currentPrice != kline.closePrice {
             currentPrice = kline.closePrice
         }
+        reevaluatePine()
     }
 
     /// Fold a completed lower-resolution live bar into the current displayed candle.
@@ -865,6 +920,7 @@ final class ChartViewModel: ObservableObject {
 
         if fetchGeneration == generation {
             fetchTask = nil
+            reevaluatePine()
         }
     }
 

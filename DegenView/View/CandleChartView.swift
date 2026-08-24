@@ -18,6 +18,7 @@ struct CandleChartView: View {
     /// Precomputed by the view model over the full buffer, already trimmed to these
     /// candles — so a long-period overlay is warmed up at the left edge.
     var indicators: IndicatorSeries = .none
+    var pine: PineVisualOutput = .empty
 
     // Hand-drawn trend lines, plus the one being drawn right now.
     var trendLines: [TrendLine] = []
@@ -49,10 +50,12 @@ struct CandleChartView: View {
                 // past the plot, and the axis labels live outside it by design.
                 context.drawLayer { layer in
                     layer.clip(to: Path(plot.plotRect))
+                    drawPineBackgrounds(context: &layer, plot: plot)
                     if showVolume {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
                     drawCandles(context: &layer, plot: plot)
+                    drawPine(context: &layer, plot: plot)
 
                     // Price-scale overlays share the candles' clip: a zoomed-in
                     // domain pushes them past the plot just the same.
@@ -151,8 +154,10 @@ struct CandleChartView: View {
             let isDoji = abs(candle.closePrice - candle.openPrice) <= dojiAbsThreshold
             let isBullish = candle.closePrice > candle.openPrice
 
+            let scripted = pine.barColors.first?.colors.suffix(candles.count).dropFirst(i).first ?? nil
             let candleColor: Color
-            if isDoji { candleColor = style.dojiColor }
+            if let scripted { candleColor = pineColor(scripted) }
+            else if isDoji { candleColor = style.dojiColor }
             else if isBullish { candleColor = bullishColor }
             else { candleColor = bearishColor }
 
@@ -175,6 +180,24 @@ struct CandleChartView: View {
             }
         }
     }
+
+    private func drawPineBackgrounds(context: inout GraphicsContext, plot: ChartPlot) {
+        let slot=plot.slotWidth(forCount:candles.count)
+        for output in pine.backgrounds { for (i,color) in output.colors.suffix(candles.count).enumerated() { guard let color else{continue};let x=plot.x(forIndex:i,slotWidth:slot);context.fill(Path(CGRect(x:x-slot/2,y:plot.plotRect.minY,width:slot,height:plot.plotRect.height)),with:.color(pineColor(color))) } }
+    }
+
+    private func drawPine(context: inout GraphicsContext, plot: ChartPlot) {
+        let slot=plot.slotWidth(forCount:candles.count)
+        for output in pine.plots {
+            var path=Path(),active=false
+            for (i,value) in output.values.suffix(candles.count).enumerated(){guard let value else{active=false;continue};let p=CGPoint(x:plot.x(forIndex:i,slotWidth:slot),y:plot.y(for:value));if active{path.addLine(to:p)}else{path.move(to:p);active=true}}
+            context.stroke(path,with:.color(pineColor(output.color)),lineWidth:CGFloat(output.lineWidth))
+        }
+        for line in pine.hlines { let y=plot.y(for:line.value);var p=Path();p.move(to:CGPoint(x:plot.plotRect.minX,y:y));p.addLine(to:CGPoint(x:plot.plotRect.maxX,y:y));context.stroke(p,with:.color(pineColor(line.color).opacity(0.8)),style:StrokeStyle(lineWidth:1,dash:[4,3])) }
+        for marker in pine.markers { for (i,on) in marker.values.suffix(candles.count).enumerated() where on { let x=plot.x(forIndex:i,slotWidth:slot),y=marker.location.contains("below") ? plot.y(for:candles[i].lowPrice)+8:plot.y(for:candles[i].highPrice)-8;let text=Text(marker.character ?? (marker.style.contains("down") ? "▼":"▲")).font(.caption).foregroundColor(pineColor(marker.color));context.draw(text,at:CGPoint(x:x,y:y)) } }
+    }
+
+    private func pineColor(_ value:UInt32)->Color { Color(.sRGB,red:Double((value>>24)&255)/255,green:Double((value>>16)&255)/255,blue:Double((value>>8)&255)/255,opacity:Double(value&255)/255) }
 }
 
 #Preview {

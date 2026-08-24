@@ -8,6 +8,7 @@ DegenView/
 ├── ContentView.swift                  # Per-tab dashboard, toolbar, layouts, sidebars
 ├── Model/
 │   ├── KlineData.swift                # Shared OHLCV representation and API parsers
+│   ├── PineModels.swift               # Pine diagnostics, inputs, persistence, visual output
 │   ├── Indicators.swift               # RSI, EMA, Bollinger, and Supertrend calculations
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
 │   ├── DataSourceType.swift           # Sources and persisted ticker configuration
@@ -42,6 +43,8 @@ DegenView/
 │   └── AppSettingsView.swift          # Theme and Alpaca credentials
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
+    ├── PineEngine.swift               # Ranged lexer, AST parser, semantic compiler
+    ├── PineRuntime.swift              # Sandboxed bar VM, rollback, TA and visual builtins
     ├── BinanceWebSocketService.swift  # Binance live klines
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata
     ├── DEXScreenerService.swift       # Pair discovery and metadata
@@ -90,3 +93,8 @@ DegenView/
    `portfolios.json`, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
    valuation without replaying static accounting; historical edits invalidate only the
    affected snapshot suffix.
+10. Each market `ChartViewModel` owns an optional Pine configuration. Compilation and
+    evaluation run in a generation-checked detached task; the runtime receives only an
+    immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
+    persisted separately from last-valid applied source, so invalid edits do not remove
+    the active result. Pine outputs are never shared between tabs or cards.

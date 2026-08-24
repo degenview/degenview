@@ -161,4 +161,8 @@ struct TickerConfig: Codable, Equatable, Hashable {
 
     /// Present when this slot is a portfolio card rather than a market chart.
     var portfolioChart: PortfolioChartConfig? = nil
+
+    /// One isolated script instance for this market chart. Draft and last-valid source
+    /// are stored separately so a compiler error never blanks an already working plot.
+    var pine: PineConfiguration? = nil
 }

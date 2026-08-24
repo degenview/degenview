@@ -33,6 +33,7 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
+    @State private var pineDraft: String
 
     @Environment(\.dismiss) private var dismiss
 
@@ -40,6 +41,7 @@ struct ChartSettingsSheet: View {
         case ticker = "Ticker"
         case appearance = "Appearance"
         case indicators = "Indicators"
+        case scripts = "Scripts"
     }
 
     enum DecimalMode: String, CaseIterable, Identifiable {
@@ -97,6 +99,7 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
+        _pineDraft = State(initialValue: viewModel.pineConfiguration?.draftSource ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
         _assetType = State(initialValue: viewModel.source == .polymarket ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
@@ -151,6 +154,8 @@ struct ChartSettingsSheet: View {
                 appearanceTab
             case .indicators:
                 indicatorsTab
+            case .scripts:
+                scriptsTab
             }
 
             Divider()
@@ -216,6 +221,10 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
+            onStyleChanged()
+        }
+        .onChange(of: pineDraft) { _, source in
+            viewModel.updatePineDraft(source)
             onStyleChanged()
         }
     }
@@ -496,6 +505,59 @@ struct ChartSettingsSheet: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var scriptsTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            TextEditor(text: $pineDraft)
+                .font(.system(.body, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .padding(6)
+                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                .frame(minHeight: 220)
+
+            HStack {
+                Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Apply") {
+                    viewModel.updatePineDraft(pineDraft)
+                    if viewModel.applyPineDraft() { onStyleChanged() }
+                }.buttonStyle(.borderedProminent)
+            }
+
+            if !viewModel.pineDiagnostics.isEmpty {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(viewModel.pineDiagnostics) { diagnostic in
+                            Text("\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)")
+                                .font(.caption.monospaced()).foregroundStyle(diagnostic.severity == .error ? .red : .orange)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }.frame(maxHeight: 90)
+            }
+
+            if let source=viewModel.pineConfiguration?.appliedSource {
+                let schema=PineCompiler.compile(source:source).inputSchema
+                ForEach(schema.inputs) { input in pineInput(input) }
+            }
+        }.padding(16)
+    }
+
+    @ViewBuilder private func pineInput(_ input:PineInputDefinition)->some View {
+        let current=viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
+        switch (input.type,current) {
+        case (.bool,.bool(let value)):
+            Toggle(input.title ?? input.id,isOn:Binding(get:{value},set:{viewModel.setPineInput(.bool($0),id:input.id);onStyleChanged()}))
+        case (.int,.int(let value)):
+            Stepper("\(input.title ?? input.id): \(value)",value:Binding(get:{value},set:{viewModel.setPineInput(.int($0),id:input.id);onStyleChanged()}),in:Int(input.minValue ?? 1)...Int(input.maxValue ?? 10_000),step:Int(input.step ?? 1))
+        case (.float,.float(let value)):
+            HStack { Text(input.title ?? input.id); TextField("",value:Binding(get:{value},set:{viewModel.setPineInput(.float($0),id:input.id);onStyleChanged()}),format:.number).frame(width:100) }
+        case (.string,.string(let value)):
+            HStack { Text(input.title ?? input.id); TextField("",text:Binding(get:{value},set:{viewModel.setPineInput(.string($0),id:input.id);onStyleChanged()})) }
+        default: EmptyView()
         }
     }
 

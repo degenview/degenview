@@ -1,0 +1,107 @@
+import Foundation
+
+struct PineSourcePosition: Codable, Equatable, Sendable {
+    var line: Int
+    var column: Int
+    var offset: Int
+}
+
+struct PineSourceRange: Codable, Equatable, Sendable {
+    var start: PineSourcePosition
+    var end: PineSourcePosition
+    static let zero = PineSourceRange(start: .init(line: 1, column: 1, offset: 0), end: .init(line: 1, column: 1, offset: 0))
+}
+
+enum PineDiagnosticSeverity: String, Codable, Sendable { case error, warning }
+enum PineDiagnosticCategory: String, Codable, Sendable { case lexical, syntax, semantic, unsupported, resource, runtime, cancellation }
+
+struct PineDiagnostic: Error, Codable, Equatable, Sendable, Identifiable {
+    var id: String { "\(code):\(range.start.offset):\(message)" }
+    let code: String
+    let severity: PineDiagnosticSeverity
+    let category: PineDiagnosticCategory
+    let message: String
+    let range: PineSourceRange
+}
+
+enum PineValueType: String, Codable, Hashable, Sendable { case int, float, bool, string, color, plot, hline, void, unknown }
+enum PineQualifier: Int, Codable, Comparable, Sendable {
+    case constant, input, simple, series
+    static func < (lhs: PineQualifier, rhs: PineQualifier) -> Bool { lhs.rawValue < rhs.rawValue }
+}
+
+enum PineInputValue: Codable, Equatable, Hashable, Sendable {
+    case int(Int), float(Double), bool(Bool), string(String)
+}
+
+struct PineInputDefinition: Codable, Equatable, Hashable, Sendable, Identifiable {
+    var id: String
+    var type: PineValueType
+    var defaultValue: PineInputValue
+    var title: String?
+    var tooltip: String?
+    var group: String?
+    var inline: String?
+    var confirm: Bool
+    var minValue: Double?
+    var maxValue: Double?
+    var step: Double?
+    var options: [PineInputValue]?
+}
+
+struct PineInputSchema: Codable, Equatable, Sendable { var inputs: [PineInputDefinition] = [] }
+
+struct PineDeclarationMetadata: Codable, Equatable, Sendable {
+    var title: String
+    var shortTitle: String?
+    var overlay: Bool
+    var format: String?
+    var precision: Int?
+    var maxBarsBack: Int?
+}
+
+struct PineConfiguration: Codable, Equatable, Hashable, Sendable {
+    var draftSource: String
+    var appliedSource: String?
+    var inputs: [String: PineInputValue]
+    init(draftSource: String = "", appliedSource: String? = nil, inputs: [String: PineInputValue] = [:]) {
+        self.draftSource = draftSource; self.appliedSource = appliedSource; self.inputs = inputs
+    }
+}
+
+enum PinePlotStyle: String, Codable, Sendable { case line, stepline, histogram, columns, area, circles, cross }
+enum PineMarkerKind: String, Codable, Sendable { case shape, character }
+
+struct PinePlotOutput: Sendable, Identifiable {
+    let id: Int
+    var title: String?
+    var values: [Double?]
+    var color: UInt32
+    var lineWidth: Int
+    var style: PinePlotStyle
+}
+
+struct PineHorizontalLine: Sendable, Identifiable { let id: Int; var value: Double; var color: UInt32; var title: String? }
+struct PineMarkerOutput: Sendable, Identifiable { let id: Int; var kind: PineMarkerKind; var values: [Bool]; var character: String?; var color: UInt32; var location: String; var style: String }
+struct PineColorOutput: Sendable, Identifiable { let id: Int; var colors: [UInt32?] }
+
+struct PineVisualOutput: Sendable {
+    var overlay: Bool
+    var plots: [PinePlotOutput] = []
+    var hlines: [PineHorizontalLine] = []
+    var markers: [PineMarkerOutput] = []
+    var backgrounds: [PineColorOutput] = []
+    var barColors: [PineColorOutput] = []
+    static let empty = PineVisualOutput(overlay: true)
+}
+
+enum PineBarPhase: Sendable { case historical, realtimeTick(isNew: Bool), realtimeClose(isNew: Bool) }
+struct PineBarEvent: Sendable { var candle: KlineData; var phase: PineBarPhase }
+
+struct PineLimits: Sendable {
+    var sourceCharacters = 100_000, tokens = 50_000, astNodes = 50_000, irInstructions = 100_000
+    var instructionsPerBar = 100_000, callDepth = 64, visualOutputs = 64, historyBars = 1_000_000
+    var runtimeBytes = 256 * 1_024 * 1_024
+    var deadline: TimeInterval = 10
+    static let `default` = PineLimits()
+}
