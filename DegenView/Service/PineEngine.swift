@@ -7,6 +7,7 @@ enum PineTokenKind: Equatable, Sendable {
     case number(Double, isInteger: Bool)
     case string(String)
     case bool(Bool)
+    case color(UInt32)
     case na
     case newline, indent, dedent, eof
     case leftParen, rightParen, leftBracket, rightBracket, comma, dot, question, colon
@@ -54,7 +55,7 @@ struct PineLexer {
                 offsets += text.utf16.count + 1
                 continue
             }
-            if leading % 4 != 0 {
+            if delimiterDepth == 0 && !continued && leading % 4 != 0 {
                 diagnostics.append(
                     diag(
                         "PINE1002", .lexical, "Indentation must use multiples of four spaces.",
@@ -156,6 +157,30 @@ struct PineLexer {
                     tokens.append(
                         .init(kind: .string(value), range: range(lineNo, start + 1, offsets + start, i - start))
                     )
+                    continue
+                }
+                if c == "#" {
+                    var end = i + 1
+                    while end < chars.count, chars[end].isHexDigit, end - i <= 8 { end += 1 }
+                    let digitCount = end - i - 1
+                    guard digitCount == 6 || digitCount == 8 else {
+                        diagnostics.append(
+                            diag(
+                                "PINE1004", .lexical, "A hex color requires exactly six or eight digits.",
+                                range(lineNo, start + 1, offsets + start, max(1, digitCount + 1))))
+                        i = end
+                        continue
+                    }
+
+                    let digits = String(chars[(i + 1)..<end])
+                    let raw = UInt32(digits, radix: 16)!
+
+                    let rgba = digitCount == 6 ? (raw << 8) | 0xFF : raw
+                    tokens.append(
+                        .init(
+                            kind: .color(rgba),
+                            range: range(lineNo, start + 1, offsets + start, digitCount + 1)))
+                    i += digitCount + 1
                     continue
                 }
                 let pair = i + 1 < chars.count ? String(chars[i...i + 1]) : ""
@@ -330,6 +355,7 @@ struct PineParser {
         switch token.kind {
         case .number(let n, let integer):
             lhs = .literal(integer ? .int(Int(n)) : .float(n), token.range)
+        case .color(let value): lhs = .literal(.color(value), token.range)
         case .string(let s): lhs = .literal(.string(s), token.range)
         case .bool(let b): lhs = .literal(.bool(b), token.range)
         case .na: lhs = .literal(.na, token.range)
@@ -588,10 +614,15 @@ enum PineCompiler {
             if case .declaration(let variable, _, _, let expr, _) = statement,
                 case .call(let name, let args, _, let range) = expr, name.hasPrefix("input.")
             {
-                let type: PineValueType =
-                    name == "input.int"
-                    ? .int : name == "input.float" ? .float : name == "input.bool" ? .bool : .string
-                guard let first = args.first, let defaultValue = inputValue(first.value) else {
+                let type: PineValueType
+                switch name {
+                case "input.int": type = .int
+                case "input.float": type = .float
+                case "input.bool": type = .bool
+                case "input.color": type = .color
+                default: type = .string
+                }
+                guard let first = args.first, let defaultValue = inputValue(first.value, function: name) else {
                     diagnostics.append(
                         diag("PINE3010", .semantic, "\(name) requires a constant default value.", range))
                     continue
@@ -634,20 +665,40 @@ enum PineCompiler {
             }
         }
     }
-    private static func inputValue(_ e: PineExpression) -> PineInputValue? {
+    private static func inputValue(_ e: PineExpression, function: String) -> PineInputValue? {
+        if function == "input.source", case .identifier(let name, _) = e {
+            return .source(name)
+        }
         if case .literal(let v, _) = e {
             switch v {
             case .int(let x): return .int(x)
             case .float(let x): return .float(x)
             case .bool(let x): return .bool(x)
             case .string(let x): return .string(x)
+            case .color(let x): return .color(x)
             default: return nil
             }
+        }
+        if function == "input.color", case .call("color.new", let arguments, _, _) = e,
+            arguments.count >= 2,
+            case .literal(.color(let rgba), _) = arguments[0].value,
+            case .literal(let transparency, _) = arguments[1].value,
+            let percent = transparency.number
+        {
+            let alpha = UInt32((100 - min(100, max(0, percent))) * 2.55)
+            return .color((rgba & 0xFFFF_FF00) | alpha)
         }
         return nil
     }
     private static func validate(_ statements: [PineStatement], diagnostics: inout [PineDiagnostic]) {
-        var declared: Set<String> = []
+        validate(statements, inheritedDeclarations: [], diagnostics: &diagnostics)
+    }
+
+    private static func validate(
+        _ statements: [PineStatement], inheritedDeclarations: Set<String>,
+        diagnostics: inout [PineDiagnostic]
+    ) {
+        var declared = inheritedDeclarations
         for statement in statements {
             switch statement {
             case .declaration(let n, let type, _, let e, let r):
@@ -666,8 +717,8 @@ enum PineCompiler {
                         diag("PINE3022", .semantic, "Cannot reassign undeclared variable '\(n)'.", r))
                 }
             case .conditional(_, let a, let b, _):
-                validate(a, diagnostics: &diagnostics)
-                validate(b, diagnostics: &diagnostics)
+                validate(a, inheritedDeclarations: declared, diagnostics: &diagnostics)
+                validate(b, inheritedDeclarations: declared, diagnostics: &diagnostics)
             case .expression(let e):
                 if case .call(let n, _, _, let r) = e,
                     n.hasPrefix("request.") || ["alert", "alertcondition"].contains(n)

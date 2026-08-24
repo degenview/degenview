@@ -680,6 +680,30 @@ struct ChartSettingsSheet: View {
                             onStyleChanged()
                         }))
             }
+        case (.color, .color(let value)):
+            ColorPicker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { Color(pineRGBA: value) },
+                    set: {
+                        guard let rgba = $0.pineRGBA else { return }
+                        viewModel.setPineInput(.color(rgba), id: input.id)
+                        onStyleChanged()
+                    }), supportsOpacity: true)
+        case (.string, .source(let value)):
+            Picker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.source($0), id: input.id)
+                        onStyleChanged()
+                    })
+            ) {
+                ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
+                    Text($0.capitalized).tag($0)
+                }
+            }
         default: EmptyView()
         }
     }
@@ -738,6 +762,25 @@ struct ChartSettingsSheet: View {
         default:
             "Shows \(decimalPlacesMode.rawValue) decimal place\(decimalPlacesMode.rawValue == "1" ? "" : "s") on the Y-axis."
         }
+    }
+}
+
+private extension Color {
+    init(pineRGBA value: UInt32) {
+        self.init(
+            .sRGB,
+            red: Double((value >> 24) & 255) / 255,
+            green: Double((value >> 16) & 255) / 255,
+            blue: Double((value >> 8) & 255) / 255,
+            opacity: Double(value & 255) / 255)
+    }
+
+    var pineRGBA: UInt32? {
+        guard let color = NSColor(self).usingColorSpace(.sRGB) else { return nil }
+        return UInt32((color.redComponent * 255).rounded()) << 24
+            | UInt32((color.greenComponent * 255).rounded()) << 16
+            | UInt32((color.blueComponent * 255).rounded()) << 8
+            | UInt32((color.alphaComponent * 255).rounded())
     }
 }
 

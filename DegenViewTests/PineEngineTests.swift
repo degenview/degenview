@@ -98,4 +98,40 @@ final class PineEngineTests: XCTestCase {
             XCTAssertEqual(program.inputSchema.inputs.first?.id, "rsiLength")
         }
     }
+
+    func testRSIStepLineScriptCompilesAndEvaluates() throws {
+        let source = """
+            //@version=6
+            indicator("RSI-50 Step Line", overlay=true)
+            rsiLength = input.int(9, title="RSI Length", minval=1)
+            rsiSource = input.source(close, title="RSI Source")
+            lineWidth = input.int(2, title="Line Width", minval=1, maxval=5)
+            colorAboveRising = input.color(color.new(#00FF00, 0), title="Above + Rising")
+            colorAboveFalling = input.color(color.new(#006400, 0), title="Above + Falling")
+            colorBelowFalling = input.color(color.new(#FF0000, 0), title="Below + Falling")
+            colorBelowRising = input.color(color.new(#8B0000, 0), title="Below + Rising")
+            rsiValue = ta.rsi(rsiSource, rsiLength)
+            var float level = na
+            crossed = ta.cross(rsiValue, 50)
+            if crossed
+                level := close
+            above = close > level
+            rising = rsiValue > rsiValue[1]
+            stateColor = above and rising ? colorAboveRising :
+                         above and not rising ? colorAboveFalling :
+                         not above and not rising ? colorBelowFalling :
+                         colorBelowRising
+            plot(level, title="RSI-50 Level", style=plot.style_stepline, color=stateColor, linewidth=lineWidth)
+            plotshape(crossed ? close : na, title="RSI-50 Cross", style=shape.circle, location=location.absolute, size=size.tiny, color=stateColor)
+            """
+
+        let program = PineCompiler.compile(source: source)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertEqual(program.inputSchema.inputs.count, 7)
+
+        let result = try PineRuntimeSession(program: program).evaluate(
+            bars: bars([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 9, 8, 7]))
+        XCTAssertEqual(result.output.plots.count, 1)
+        XCTAssertEqual(result.output.markers.count, 1)
+    }
 }

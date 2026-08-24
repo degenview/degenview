@@ -40,6 +40,8 @@ enum PineInputValue: Codable, Equatable, Hashable, Sendable {
     case float(Double)
     case bool(Bool)
     case string(String)
+    case color(UInt32)
+    case source(String)
 }
 
 struct PineInputDefinition: Codable, Equatable, Hashable, Sendable, Identifiable {

@@ -249,7 +249,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             guard case .identifier(let variable, _) = findDeclarationExpression(site: site) else {
                 return try arg(0)
             }
-            if let overridden = runtimeInput(inputs[variable]) { return overridden }
+            if let overridden = runtimeInput(inputs[variable], context: context) { return overridden }
             return try arg(0)
         }
         if name == "na" { return .bool(try arg(0) == .na) }
@@ -334,14 +334,20 @@ final class PineRuntimeSession: @unchecked Sendable {
         case "ta.lowest":
             let v = values.compactMap { $0 }
             result = v.count >= length ? .float(v.suffix(length).min()!) : .na
-        case "ta.crossover", "ta.crossunder":
+        case "ta.cross", "ta.crossover", "ta.crossunder":
             // Registry history stores tuples for the two input series.
             let other = (try? argumentValueForTA(site: site, index: 1, context: context)) ?? .na
             let prior = history.last
             if case .tuple(let p)? = prior, p.count == 2, let a = source.number, let b = other.number,
                 let pa = p[0].number, let pb = p[1].number
             {
-                result = .bool(name == "ta.crossover" ? a > b && pa <= pb : a < b && pa >= pb)
+                let crossedOver = a > b && pa <= pb
+                let crossedUnder = a < b && pa >= pb
+                switch name {
+                case "ta.crossover": result = .bool(crossedOver)
+                case "ta.crossunder": result = .bool(crossedUnder)
+                default: result = .bool(crossedOver || crossedUnder)
+                }
             } else {
                 result = .bool(false)
             }
@@ -349,7 +355,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             working.callInputs[site, default: []].append(source)
             return result
         case "ta.rsi":
-            let raw = marketHistoryClose() + [context.bar.closePrice]
+            let raw = values.compactMap { $0 }
             guard raw.count > length else {
                 result = .na
                 break
@@ -459,7 +465,9 @@ final class PineRuntimeSession: @unchecked Sendable {
                             if case .string(let s) = $0 { return s }
                             return nil
                         }) : nil, color: color, location: "abovebar", style: "circle")
-            m.values.append((try value(0).bool) ?? false)
+            let markerValue = try value(0)
+            let isVisible = markerValue.bool ?? (markerValue.number != nil)
+            m.values.append(isVisible)
             working.markers[site] = m
             return .void
         }
@@ -538,13 +546,15 @@ final class PineRuntimeSession: @unchecked Sendable {
     private func marketHistoryClose() -> [Double] {
         working.histories["close", default: []].compactMap { $0.number }
     }
-    private func runtimeInput(_ v: PineInputValue?) -> PineRuntimeValue? {
+    private func runtimeInput(_ v: PineInputValue?, context: Context) -> PineRuntimeValue? {
         guard let v else { return nil }
         switch v {
         case .int(let x): return .int(x)
         case .float(let x): return .float(x)
         case .bool(let x): return .bool(x)
         case .string(let x): return .string(x)
+        case .color(let x): return .color(x)
+        case .source(let name): return market(name, context)
         }
     }
     private func budget() throws {
