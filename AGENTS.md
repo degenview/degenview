@@ -6,6 +6,8 @@ Guidance for AI coding agents working in this repo.
 
 macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST + WebSocket data from Binance/CoinGecko/DEXScreener. Zero external dependencies.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the project structure and data flow.
+
 ## Build
 
 ```bash
