@@ -7,6 +7,8 @@ struct ChartCardView: View {
     var chartHeight: CGFloat
     let onRemove: () -> Void
     let onRetry: () -> Void
+    let isFavorite: Bool
+    let onToggleFavorite: () -> Void
     /// Hands the card's backing `NSView` to the scroll-zoom monitor.
     let onZoomRegion: (NSView) -> Void
     /// Hands the Y-axis gutter's `NSView` to the price-zoom drag monitor.
@@ -131,6 +133,13 @@ struct ChartCardView: View {
             .buttonStyle(.plain)
 
             Spacer()
+
+            Button(action: onToggleFavorite) {
+                Image(systemName: isFavorite ? "star.fill" : "star")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
+            .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
 
             if viewModel.source != .polymarket {
                 Button { showAlertEditor = true } label: { Image(systemName: "bell.badge") }
@@ -914,6 +923,8 @@ private struct PriceAxisRegion: NSViewRepresentable {
         chartHeight: 220,
         onRemove: {},
         onRetry: {},
+        isFavorite: false,
+        onToggleFavorite: {},
         onZoomRegion: { _ in },
         onAxisRegion: { _ in },
         onUpdateTicker: { _, _, _, _ in },

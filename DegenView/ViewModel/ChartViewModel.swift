@@ -251,6 +251,10 @@ final class ChartViewModel: ObservableObject {
         visibleKlines.priceChangePercent
     }
 
+    var priceChangeAmount: Double? {
+        visibleKlines.priceChangeAmount
+    }
+
     var displayedPrice: Double? { replayTimestamp == nil ? currentPrice : replayKlines.last?.closePrice }
 
     func applyReplayTimestamp(_ timestamp: Date?) {

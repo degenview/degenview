@@ -489,6 +489,19 @@ struct ContentView: View {
                     )
                 }
             },
+            isFavorite: favoritesStore.contains(source: vm.source, symbol: vm.ticker),
+            onToggleFavorite: {
+                favoritesStore.toggle(
+                    config: TickerConfig(
+                        symbol: vm.ticker,
+                        source: vm.source,
+                        displayName: vm.displayName,
+                        pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
+                    ),
+                    name: vm.title,
+                    ticker: favoriteTicker(for: vm)
+                )
+            },
             onZoomRegion: { contentViewModel.registerZoomRegion($0) },
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
@@ -530,6 +543,23 @@ struct ContentView: View {
             let instrument = PaperInstrument.chart(symbol: vm.apiSymbol, displayName: vm.title, source: vm.source)
             Task { await paperTrading.process(instrument: instrument, last: Decimal(price), timestamp: Date()) }
         }
+    }
+
+    private func favoriteTicker(for vm: ChartViewModel) -> String {
+        if vm.source == .polymarket {
+            if vm.pmSeries.count > 1,
+               let outcome = vm.pmSeries.first(where: {
+                   $0.tokenID.caseInsensitiveCompare(vm.ticker) == .orderedSame
+               }) {
+                return outcome.label
+            }
+            return vm.title
+        }
+
+        if vm.source == .dexscreener {
+            return vm.baseSymbol
+        }
+        return vm.ticker.uppercased()
     }
 
     private func openTicket(for vm: ChartViewModel, side: PaperOrderSide) {

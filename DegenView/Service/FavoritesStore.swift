@@ -12,11 +12,28 @@ final class FavoritesStore: ObservableObject {
         items = store.load() ?? []
     }
 
+    func contains(source: DataSourceType, symbol: String) -> Bool {
+        items.contains {
+            $0.config.source == source &&
+            $0.config.symbol.caseInsensitiveCompare(symbol) == .orderedSame
+        }
+    }
+
+    /// Add or remove one provider-qualified instrument while preserving sidebar order.
+    func toggle(config: TickerConfig, name: String, ticker: String) {
+        if let index = items.firstIndex(where: {
+            $0.config.source == config.source &&
+            $0.config.symbol.caseInsensitiveCompare(config.symbol) == .orderedSame
+        }) {
+            items.remove(at: index)
+        } else {
+            items.append(FavoriteItem(name: name, ticker: ticker, config: config))
+        }
+        store.save(items)
+    }
+
     func add(_ result: TickerSearchResult) throws {
-        guard !items.contains(where: {
-            $0.config.source == result.source &&
-            $0.config.symbol.caseInsensitiveCompare(result.fullSymbol) == .orderedSame
-        }) else {
+        guard !contains(source: result.source, symbol: result.fullSymbol) else {
             throw TickerError.duplicate(result.symbol)
         }
 

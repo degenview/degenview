@@ -203,8 +203,14 @@ extension KlineData {
 extension Array where Element == KlineData {
     /// Percentage change from first to last close price. Nil if fewer than 2 points.
     var priceChangePercent: Double? {
-        guard let first = first, let last = last, first.closePrice != 0 else { return nil }
+        guard count >= 2, let first = first, let last = last, first.closePrice != 0 else { return nil }
         return ((last.closePrice - first.closePrice) / first.closePrice) * 100
+    }
+
+    /// Signed price movement from first to last close. Nil if fewer than 2 points.
+    var priceChangeAmount: Double? {
+        guard count >= 2, let first = first, let last = last else { return nil }
+        return last.closePrice - first.closePrice
     }
 
     /// Merge into at most `count` candles by folding contiguous runs together.

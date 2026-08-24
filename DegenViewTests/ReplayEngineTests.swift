@@ -9,6 +9,33 @@ final class ReplayEngineTests: XCTestCase {
         (0..<count).map { base.addingTimeInterval(Double($0 * 60)) }
     }
 
+    private func changeCandles(_ prices: [Double]) -> [KlineData] {
+        prices.enumerated().map { index, price in
+            KlineData(time: base.addingTimeInterval(Double(index * 60)), price: price)
+        }
+    }
+
+    func testPriceChangesUseFirstAndLastClose() {
+        XCTAssertEqual(changeCandles([100, 110, 125]).priceChangeAmount, 25)
+        XCTAssertEqual(changeCandles([100, 110, 125]).priceChangePercent, 25)
+        XCTAssertEqual(changeCandles([100, 90, 75]).priceChangeAmount, -25)
+        XCTAssertEqual(changeCandles([100, 90, 75]).priceChangePercent, -25)
+        XCTAssertEqual(changeCandles([100, 90, 100]).priceChangeAmount, 0)
+        XCTAssertEqual(changeCandles([100, 90, 100]).priceChangePercent, 0)
+    }
+
+    func testPriceChangesRequireTwoCandles() {
+        XCTAssertNil(changeCandles([]).priceChangeAmount)
+        XCTAssertNil(changeCandles([]).priceChangePercent)
+        XCTAssertNil(changeCandles([100]).priceChangeAmount)
+        XCTAssertNil(changeCandles([100]).priceChangePercent)
+    }
+
+    func testZeroStartingPriceHasAbsoluteButNotPercentageChange() {
+        XCTAssertEqual(changeCandles([0, 5]).priceChangeAmount, 5)
+        XCTAssertNil(changeCandles([0, 5]).priceChangePercent)
+    }
+
     func testStartSelectionAndInitialCursor() {
         let engine = ReplayEngine()
         let timeline = dates(100)

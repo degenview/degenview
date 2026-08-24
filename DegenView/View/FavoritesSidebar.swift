@@ -35,6 +35,13 @@ struct FavoritesSidebar: View {
                 List {
                     ForEach(store.items) { item in
                         FavoriteRow(item: item) { onSelect(item) }
+                            .padding(.bottom, 4)
+                            .overlay(alignment: .bottom) {
+                                if item.id != store.items.last?.id {
+                                    Divider()
+                                        .opacity(0.45)
+                                }
+                            }
                             .contextMenu {
                                 Button("Delete", role: .destructive) { store.remove(item) }
                             }
@@ -94,6 +101,8 @@ private struct FavoriteRow: View {
     let onSelect: () -> Void
     @StateObject private var viewModel: ChartViewModel
     @State private var iconURL: URL?
+    @State private var showTitleTooltip = false
+    @State private var titleTooltipTask: Task<Void, Never>?
 
     init(item: FavoriteItem, onSelect: @escaping () -> Void) {
         self.item = item
@@ -116,6 +125,24 @@ private struct FavoriteRow: View {
                     Text(item.name)
                         .font(.callout.weight(.medium))
                         .lineLimit(1)
+                        .onHover { isHovering in
+                            titleTooltipTask?.cancel()
+                            if isHovering {
+                                titleTooltipTask = Task {
+                                    try? await Task.sleep(for: .milliseconds(250))
+                                    guard !Task.isCancelled else { return }
+                                    await MainActor.run { showTitleTooltip = true }
+                                }
+                            } else {
+                                showTitleTooltip = false
+                            }
+                        }
+                        .popover(isPresented: $showTitleTooltip, arrowEdge: .bottom) {
+                            Text(item.name)
+                                .font(.callout)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                        }
                     Text(item.ticker)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -124,9 +151,16 @@ private struct FavoriteRow: View {
 
                 Spacer(minLength: 4)
 
-                if let change = viewModel.priceChangePercent {
-                    Text(String(format: "%+.2f%%", change))
-                        .foregroundStyle(change >= 0 ? Color.green : Color.red)
+                if let percentChange = viewModel.priceChangePercent,
+                   let amountChange = viewModel.priceChangeAmount {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(String(format: "%+.2f%%", percentChange))
+                        Text(PriceFormatter.changeAmount(amountChange, scale: viewModel.priceScale))
+                            .font(.caption)
+                    }
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(percentChange >= 0 ? Color.green : Color.red)
                 } else if viewModel.errorMessage == nil {
                     ProgressView().controlSize(.small)
                 } else {
@@ -147,6 +181,9 @@ private struct FavoriteRow: View {
                 source: viewModel.source,
                 baseSymbol: viewModel.baseSymbol
             )
+        }
+        .onDisappear {
+            titleTooltipTask?.cancel()
         }
     }
 

@@ -76,6 +76,21 @@ enum PriceFormatter {
         }
     }
 
+    /// A signed first-to-last move: currency for market prices, percentage points for probabilities.
+    static func changeAmount(_ amount: Double, scale: PriceScale) -> String {
+        let sign = amount >= 0 ? "+" : "-"
+        switch scale {
+        case .probability:
+            let points = abs(amount) * 100
+            return "\(sign)\(points.formatted(.number.precision(.fractionLength(1)))) pp"
+        case .currency:
+            let currency = abs(amount).formatted(
+                .currency(code: "USD").precision(.fractionLength(2...8))
+            )
+            return sign + currency
+        }
+    }
+
     /// 0…1 → "66.5%". Clamped, since a stale quote can overshoot slightly.
     private static func formatProbability(_ price: Double, decimalPlaces: Int?) -> String {
         let digits = decimalPlaces ?? defaultProbabilityDigits
