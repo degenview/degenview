@@ -31,7 +31,12 @@ struct PortfolioDashboardView: View {
             header
             Divider()
             Picker("Section", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
-                .pickerStyle(.segmented).padding()
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 10)
+                .fixedSize(horizontal: false, vertical: true)
             if store.activePortfolios.isEmpty { noPortfolios }
             else if store.transactions.isEmpty { emptyPortfolio }
             else { content }
@@ -126,7 +131,10 @@ struct PortfolioDashboardView: View {
             } label: { Label("Import or Export", systemImage: "arrow.up.arrow.down") }
             Button("Add Transaction", systemImage: "plus") { showAssetSearch = true }.buttonStyle(.borderedProminent)
             if !isTab { Button("Done") { dismiss() }.keyboardShortcut(.cancelAction) }
-        }.padding()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 16)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     @ViewBuilder private var content: some View {
@@ -181,22 +189,67 @@ struct PortfolioDashboardView: View {
 
     private var holdingsList: some View {
         VStack(spacing: 0) {
-            HStack { Spacer(); Menu("Sort: \(store.selectedPortfolio?.sort.rawValue ?? PortfolioHoldingsSort.currentValue.rawValue)") { ForEach(PortfolioHoldingsSort.allCases) { sort in Button(sort.rawValue) { guard var portfolio = store.selectedPortfolio else { return }; portfolio.sort = sort; store.update(portfolio) } } } }.padding(.horizontal)
-            HStack { Text("Asset").frame(maxWidth: .infinity, alignment: .leading); Text("Price").frame(width: 110); Text("24h %").frame(width: 80); Text("Holdings").frame(width: 120); Text("Avg Cost").frame(width: 110); Text("Value").frame(width: 120); Text("Allocation").frame(width: 90); Text("P&L").frame(width: 120); Color.clear.frame(width: 24) }.font(.caption).foregroundStyle(.secondary).padding(.horizontal)
-            List(sortedHoldings) { holding in
-                HStack {
-                    VStack(alignment: .leading) { Text(holding.asset.name).bold(); Text(holding.asset.symbol).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
-                    Text(holding.currentPrice.map(money) ?? "Unavailable").frame(width: 110)
-                    Text(holding.dayChangePercent.map(percent) ?? "—").foregroundStyle((holding.dayChangePercent ?? 0) >= 0 ? .green : .red).frame(width: 80)
-                    Text(verbatim: store.privacyMode ? "••••" : holding.quantity.description).frame(width: 120)
-                    Text(privateMoney(holding.averageCost)).frame(width: 110); Text(holding.currentValue.map(privateMoney) ?? "—").frame(width: 120)
-                    Text(percent(holding.allocation)).frame(width: 90); Text(holding.totalPnL.map(privateMoney) ?? "—").foregroundStyle((holding.totalPnL ?? 0) >= 0 ? .green : .red).frame(width: 120)
-                    Menu { Button("Remap Asset…") { remappingHolding = holding } } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 24)
-                }.contentShape(Rectangle()).onTapGesture { selectedHolding = holding }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(store.privacyMode ? "\(holding.asset.name), financial values hidden" : "\(holding.asset.name), allocation \(percent(holding.allocation)), value \(holding.currentValue.map(money) ?? "unavailable")")
+            HStack {
+                HStack(spacing: 4) {
+                    Text("Asset")
+                    Menu {
+                        ForEach(PortfolioHoldingsSort.allCases) { sort in
+                            Button(sort.rawValue) {
+                                guard var portfolio = store.selectedPortfolio else { return }
+                                portfolio.sort = sort
+                                store.update(portfolio)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "arrow.up.arrow.down")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .help("Sort by \(store.selectedPortfolio?.sort.rawValue ?? PortfolioHoldingsSort.currentValue.rawValue)")
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text("Price").frame(width: 110)
+                Text("24h %").frame(width: 80)
+                Text("Holdings").frame(width: 120)
+                Text("Avg Cost").frame(width: 110)
+                Text("Value").frame(width: 120)
+                Text("Allocation").frame(width: 90)
+                Text("P&L").frame(width: 120)
+                Color.clear.frame(width: 24)
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 3)
+            .fixedSize(horizontal: false, vertical: true)
+            Divider()
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(sortedHoldings) { holding in
+                        HStack {
+                            VStack(alignment: .leading) { Text(holding.asset.name).bold(); Text(holding.asset.symbol).font(.caption).foregroundStyle(.secondary) }.frame(maxWidth: .infinity, alignment: .leading)
+                            Text(holding.currentPrice.map(money) ?? "Unavailable").frame(width: 110)
+                            Text(holding.dayChangePercent.map(percent) ?? "—").foregroundStyle((holding.dayChangePercent ?? 0) >= 0 ? .green : .red).frame(width: 80)
+                            Text(verbatim: store.privacyMode ? "••••" : holding.quantity.description).frame(width: 120)
+                            Text(privateMoney(holding.averageCost)).frame(width: 110); Text(holding.currentValue.map(privateMoney) ?? "—").frame(width: 120)
+                            Text(percent(holding.allocation)).frame(width: 90); Text(holding.totalPnL.map(privateMoney) ?? "—").foregroundStyle((holding.totalPnL ?? 0) >= 0 ? .green : .red).frame(width: 120)
+                            Menu { Button("Remap Asset…") { remappingHolding = holding } } label: { Image(systemName: "ellipsis.circle") }.menuStyle(.borderlessButton).frame(width: 24)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                        .onTapGesture { selectedHolding = holding }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(store.privacyMode ? "\(holding.asset.name), financial values hidden" : "\(holding.asset.name), allocation \(percent(holding.allocation)), value \(holding.currentValue.map(money) ?? "unavailable")")
+                        Divider().padding(.leading, 16)
+                    }
+                }
+            }
+            .contentMargins(.vertical, 0, for: .scrollContent)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .layoutPriority(1)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var transactionsList: some View {
