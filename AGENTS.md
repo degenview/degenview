@@ -129,7 +129,19 @@ Three things broke when a second instance appeared — check for this shape when
 
 ## Testing
 
-No test target yet. Manual testing flow:
+The `DegenViewTests` unit test target covers market-data parsing and caching, indicators,
+chart plotting and fetching, WebSocket updates, JSON persistence, replay, local price
+alerts, portfolio accounting, and paper trading. Run it with:
+
+```bash
+xcodebuild test \
+  -project DegenView.xcodeproj \
+  -scheme DegenView \
+  -destination 'platform=macOS'
+```
+
+Use the following manual flow for native window/tab behavior and end-to-end UI checks:
+
 1. Launch app, add BTC from Binance
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
 3. Switch timeframes, toggle log scale, switch layout
@@ -141,12 +153,12 @@ No test target yet. Manual testing flow:
 9. Both ⌘T and the tab bar's `+` open an empty tab named "Unnamed" — never a second view
    onto an existing tab — with the toolbar present and every saved view listed for
    one-click loading
-9. Give the two tabs different timeframes and layouts; confirm neither follows the other,
+10. Give the two tabs different timeframes and layouts; confirm neither follows the other,
    and that scrolling one doesn't zoom the other
-10. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
+11. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab
-11. Quit and relaunch — same tabs, same order, same window grouping
-12. Arm the ruler, drag a rectangle up (green) and down (red); check the read-out's percent
+12. Quit and relaunch — same tabs, same order, same window grouping
+13. Arm the ruler, drag a rectangle up (green) and down (red); check the read-out's percent
     against the price axis and its bar count against the candles inside. One more click
     puts it away — on that chart only. Switching tool or timeframe drops it, and it never
     comes back after a relaunch
