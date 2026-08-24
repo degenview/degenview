@@ -24,6 +24,48 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         XCTAssertEqual(value.currentValue, 150_000); XCTAssertEqual(value.unrealizedPnL, 30_000); XCTAssertEqual(value.pnlPercent, Decimal(string: "0.25"))
     }
 
+    func testPortfolioQuoteDictionaryCodableRoundTrip() throws {
+        let timestamp = Date(timeIntervalSince1970: 1_735_700_123)
+        let values = [btc.key: PortfolioQuote(price: Decimal(string: "98765.4321")!,
+            previousDayPrice: Decimal(string: "95432.10"), timestamp: timestamp)]
+        let decoded = try JSONDecoder().decode([String: PortfolioQuote].self,
+            from: JSONEncoder().encode(values))
+        XCTAssertEqual(decoded, values)
+        XCTAssertEqual(decoded[btc.key]?.timestamp, timestamp)
+    }
+
+    func testInitialQuoteLoadingDecisions() {
+        let usd = Portfolio(id: p1, name: "USD", baseCurrency: .USD)
+        let eur = Portfolio(id: p2, name: "EUR", baseCurrency: .EUR)
+        let usdTransaction = tx(p1, btc, .buy, 1, 10)
+        let staleQuote = PortfolioQuote(price: 50_000,
+            timestamp: Date(timeIntervalSinceNow: -3_600))
+
+        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: .empty, quotes: [:]))
+
+        let usdSnapshot = PortfolioLedgerSnapshot(portfolios: [usd],
+            transactions: [usdTransaction], selectedPortfolioID: p1)
+        XCTAssertTrue(PortfolioStore.needsInitialQuoteLoad(snapshot: usdSnapshot, quotes: [:]))
+        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: usdSnapshot,
+            quotes: [btc.key: staleQuote]))
+
+        let partialSnapshot = PortfolioLedgerSnapshot(portfolios: [usd],
+            transactions: [usdTransaction, tx(p1, eth, .buy, 1, 10)], selectedPortfolioID: p1)
+        XCTAssertTrue(PortfolioStore.needsInitialQuoteLoad(snapshot: partialSnapshot,
+            quotes: [btc.key: staleQuote]))
+
+        var unsupportedAsset = btc
+        unsupportedAsset = PortfolioAsset(key: unsupportedAsset.key, symbol: unsupportedAsset.symbol,
+            name: unsupportedAsset.name, source: unsupportedAsset.source, quoteCurrency: .EUR)
+        let unsupportedQuoteSnapshot = PortfolioLedgerSnapshot(portfolios: [usd],
+            transactions: [tx(p1, unsupportedAsset, .buy, 1, 10)], selectedPortfolioID: p1)
+        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedQuoteSnapshot, quotes: [:]))
+
+        let unsupportedDashboard = PortfolioLedgerSnapshot(portfolios: [eur],
+            transactions: [tx(p2, btc, .buy, 1, 10)], selectedPortfolioID: p2)
+        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedDashboard, quotes: [:]))
+    }
+
     func testPartialSellRealizedAndRemainingPnL() throws {
         let transactions = [tx(p1, btc, .buy, 1, 30_000), tx(p1, btc, .buy, 2, 45_000, day: 1), tx(p1, btc, .sell, 1, 55_000, day: 2)]
         let h = try XCTUnwrap(PortfolioAccountingEngine.holdings(transactions: transactions, portfolioIDs: [p1], quotes: [btc.key: .init(price: 50_000, timestamp: Date())]).first)

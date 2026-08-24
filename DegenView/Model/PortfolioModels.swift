@@ -160,7 +160,7 @@ struct PortfolioLedgerSnapshot: Codable, Equatable, Sendable {
     static let empty = PortfolioLedgerSnapshot()
 }
 
-struct PortfolioQuote: Equatable, Sendable {
+struct PortfolioQuote: Codable, Equatable, Sendable {
     var price: Decimal
     var previousDayPrice: Decimal?
     var timestamp: Date

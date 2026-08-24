@@ -151,9 +151,23 @@ struct PortfolioDashboardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(store.selectedPortfolio?.name ?? "All Portfolios").font(.title2).bold()
-                    Text(privateMoney(store.totalValue)).font(.system(size: 38, weight: .semibold, design: .rounded))
-                        .accessibilityLabel(store.privacyMode ? "Portfolio balance hidden" : "Portfolio balance, \(money(store.totalValue))")
-                    Text(store.unpricedAssetCount == 0 ? "Live market value" : "+ \(store.unpricedAssetCount) unpriced asset\(store.unpricedAssetCount == 1 ? "" : "s")")
+                    ZStack(alignment: .leading) {
+                        Text(privateMoney(store.totalValue))
+                            .font(.system(size: 38, weight: .semibold, design: .rounded))
+                            .opacity(store.isLoadingInitialValues ? 0 : 1)
+                            .accessibilityHidden(store.isLoadingInitialValues)
+                            .accessibilityLabel(store.privacyMode ? "Portfolio balance hidden" : "Portfolio balance, \(money(store.totalValue))")
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading portfolio value…").font(.callout).foregroundStyle(.secondary)
+                        }
+                        .opacity(store.isLoadingInitialValues ? 1 : 0)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("Loading portfolio value")
+                        .accessibilityHidden(!store.isLoadingInitialValues)
+                    }
+                    .animation(.easeOut(duration: 0.25), value: store.isLoadingInitialValues)
+                    Text(store.marketValueCaption)
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack { metric("All-time P&L", store.totalPnL); metric("Realized P&L", store.totalRealizedPnL); metric("Unrealized P&L", store.totalUnrealizedPnL) }
@@ -169,7 +183,8 @@ struct PortfolioDashboardView: View {
                             currentValue: store.totalValue,
                             currency: store.selectedPortfolio?.baseCurrency ?? .USD,
                             range: historyRange,
-                            privacy: store.privacyMode
+                            privacy: store.privacyMode,
+                            isLoading: store.isLoadingInitialValues
                         )
                         .frame(height: 230)
                     }.padding(8)
@@ -380,6 +395,7 @@ private struct PortfolioHistoryChart: View {
     let currency: PortfolioCurrency
     let range: PortfolioHistoryRange
     let privacy: Bool
+    let isLoading: Bool
     @State private var hoveredIndex: Int?
 
     private let leftMargin: CGFloat = 12
@@ -392,7 +408,7 @@ private struct PortfolioHistoryChart: View {
             guard let duration = range.duration else { return true }
             return point.timestamp >= now.addingTimeInterval(-duration)
         }
-        guard let latest = ranged.last ?? snapshots.last else { return [] }
+        guard !isLoading, let latest = ranged.last ?? snapshots.last else { return ranged }
         let live = PortfolioSnapshot(
             portfolioID: latest.portfolioID, timestamp: now, value: currentValue,
             netContributions: latest.netContributions, realizedPnL: latest.realizedPnL,
@@ -407,7 +423,7 @@ private struct PortfolioHistoryChart: View {
             Canvas { context, size in draw(context: &context, size: size, points: points) }
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
-                    guard !privacy, !points.isEmpty else { hoveredIndex = nil; return }
+                    guard !isLoading, !privacy, !points.isEmpty else { hoveredIndex = nil; return }
                     switch phase {
                     case .active(let location):
                         let width = max(1, geometry.size.width - leftMargin - rightMargin)
@@ -419,17 +435,28 @@ private struct PortfolioHistoryChart: View {
                 }
         }
         .overlay {
-            if privacy {
+            if isLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading market data…").font(.callout)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Loading market data")
+            } else if privacy {
                 Text("••••••••").font(.title)
             } else if points.isEmpty {
                 Text("History builds from transaction dates and available market candles.").foregroundStyle(.secondary)
             }
         }
-        .accessibilityLabel(privacy ? "Portfolio history values hidden" : "Portfolio value history, \(points.count) observations")
+        .animation(.easeOut(duration: 0.25), value: isLoading)
+        .accessibilityLabel(isLoading ? "Loading market data" : privacy ? "Portfolio history values hidden" : "Portfolio value history, \(points.count) observations")
     }
 
     private func draw(context: inout GraphicsContext, size: CGSize, points: [PortfolioSnapshot]) {
-        guard !privacy, !points.isEmpty else { return }
+        guard !isLoading, !privacy, !points.isEmpty else { return }
         let plot = CGRect(x: leftMargin, y: topMargin,
                           width: max(1, size.width - leftMargin - rightMargin),
                           height: max(1, size.height - topMargin - bottomMargin))

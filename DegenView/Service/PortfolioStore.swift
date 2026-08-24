@@ -6,8 +6,9 @@ final class PortfolioStore: ObservableObject {
     static let shared = PortfolioStore()
 
     @Published private(set) var snapshot: PortfolioLedgerSnapshot
-    @Published private(set) var quotes: [String: PortfolioQuote] = [:]
+    @Published private(set) var quotes: [String: PortfolioQuote]
     @Published private(set) var isRefreshing = false
+    @Published private(set) var isLoadingInitialValues: Bool
     @Published var lastError: String?
     @AppStorage("portfolioPrivacyMode") var privacyMode = false
 
@@ -26,13 +27,22 @@ final class PortfolioStore: ObservableObject {
     private var historyTasks: [UUID: Task<Void, Never>] = [:]
     private var quoteTasks: [String: Task<PortfolioQuote?, Never>] = [:]
     private let quoteFreshness: TimeInterval = 5 * 60
+    private let quoteStore = JSONStore<[String: PortfolioQuote]>(filename: "portfolio_quotes.json")
 
     private init() {
         let initial = JSONStore<PortfolioLedgerSnapshot>(filename: "portfolios.json").load() ?? .empty
+        let loadedQuotes = JSONStore<[String: PortfolioQuote]>(filename: "portfolio_quotes.json").load() ?? [:]
+        let referencedKeys = Set(PortfolioAccountingEngine.uniqueAssets(in: initial.transactions).map(\.key))
+        let initialQuotes = loadedQuotes.filter { referencedKeys.contains($0.key) }
         snapshot = initial
+        quotes = initialQuotes
+        isLoadingInitialValues = Self.needsInitialQuoteLoad(snapshot: initial, quotes: initialQuotes)
         ledger = PortfolioLedger(snapshot: initial, persist: { value in
             JSONStore<PortfolioLedgerSnapshot>(filename: "portfolios.json").save(value)
         })
+        if initialQuotes != loadedQuotes {
+            JSONStore<[String: PortfolioQuote]>(filename: "portfolio_quotes.json").save(initialQuotes)
+        }
     }
 
     var selectedPortfolio: Portfolio? {
@@ -51,6 +61,16 @@ final class PortfolioStore: ObservableObject {
     var totalUnrealizedPnL: Decimal { derivedState(for: selectedPortfolioIDs).totalUnrealizedPnL }
     var totalPnL: Decimal { totalRealizedPnL + totalUnrealizedPnL }
     var unpricedAssetCount: Int { derivedState(for: selectedPortfolioIDs).unpricedAssetCount }
+    var marketValueCaption: String {
+        if unpricedAssetCount > 0 {
+            return "+ \(unpricedAssetCount) unpriced asset\(unpricedAssetCount == 1 ? "" : "s")"
+        }
+        let now = Date()
+        let assets = Self.quoteEligibleAssets(in: snapshot, portfolioIDs: selectedPortfolioIDs)
+        return assets.contains { asset in
+            quotes[asset.key].map { now.timeIntervalSince($0.timestamp) >= quoteFreshness } ?? false
+        } ? "Cached market value" : "Live market value"
+    }
 
     func portfolio(namedBy id: UUID?) -> Portfolio? {
         guard let id else { return nil }
@@ -96,6 +116,7 @@ final class PortfolioStore: ObservableObject {
     func importTransactions(_ values: [PortfolioTransaction]) async -> Bool { await result { try await self.ledger.importTransactions(values) } }
 
     func refreshQuotes() async {
+        defer { isLoadingInitialValues = false }
         await refreshQuotes(for: selectedPortfolioIDs)
     }
 
@@ -139,7 +160,11 @@ final class PortfolioStore: ObservableObject {
         if !updates.isEmpty {
             var merged = quotes
             merged.merge(updates) { _, new in new }
-            if merged != quotes { quotes = merged; derivedStates.removeAll(keepingCapacity: true) }
+            if merged != quotes {
+                quotes = merged
+                derivedStates.removeAll(keepingCapacity: true)
+                quoteStore.save(merged)
+            }
         }
         pruneQuotes()
     }
@@ -253,10 +278,33 @@ final class PortfolioStore: ObservableObject {
         }.sorted { $0.timestamp < $1.timestamp }
     }
 
+    nonisolated static func needsInitialQuoteLoad(snapshot: PortfolioLedgerSnapshot,
+                                                   quotes: [String: PortfolioQuote]) -> Bool {
+        let selectedIDs: Set<UUID>
+        if let selected = snapshot.selectedPortfolioID {
+            selectedIDs = [selected]
+        } else {
+            selectedIDs = Set(snapshot.portfolios.filter { !$0.isArchived }.map(\.id))
+        }
+        return quoteEligibleAssets(in: snapshot, portfolioIDs: selectedIDs).contains { quotes[$0.key] == nil }
+    }
+
+    nonisolated static func quoteEligibleAssets(in snapshot: PortfolioLedgerSnapshot,
+                                                portfolioIDs: Set<UUID>) -> [PortfolioAsset] {
+        let portfolios = snapshot.portfolios.filter { portfolioIDs.contains($0.id) }
+        guard !portfolios.isEmpty, portfolios.allSatisfy({ $0.baseCurrency == .USD }) else { return [] }
+        let transactions = snapshot.transactions.filter { portfolioIDs.contains($0.portfolioID) }
+        return PortfolioAccountingEngine.uniqueAssets(in: transactions).filter { $0.quoteCurrency == .USD }
+    }
+
     private func pruneQuotes() {
         let referenced = Set(PortfolioAccountingEngine.uniqueAssets(in: snapshot.transactions).map(\.key))
         let pruned = quotes.filter { referenced.contains($0.key) }
-        if pruned != quotes { quotes = pruned; derivedStates.removeAll(keepingCapacity: true) }
+        if pruned != quotes {
+            quotes = pruned
+            derivedStates.removeAll(keepingCapacity: true)
+            quoteStore.save(pruned)
+        }
     }
 
     private func perform(_ operation: @escaping () async throws -> Void) { Task { _ = await result(operation) } }
