@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 enum SettingsTab: String {
     case appearance
@@ -21,7 +22,7 @@ struct AppSettingsView: View {
                 .tabItem { Label("Notifications", systemImage: "bell") }
                 .tag(SettingsTab.notifications)
         }
-        .frame(width: 520, height: 330)
+        .frame(width: 560, height: 500)
         .padding(20)
     }
 }
@@ -34,9 +35,51 @@ private struct NotificationSettingsView: View {
             Toggle("Sound", isOn: setting(\.soundEnabled))
             Toggle("In-app banners", isOn: setting(\.inAppBannersEnabled))
             Toggle("macOS notifications", isOn: setting(\.macOSNotificationsEnabled))
-            Text("Evaluation and trigger history continue when delivery is off. Alerts run locally while DegenView is open.").font(.caption).foregroundStyle(.secondary)
+            Section("Background agent") {
+                LabeledContent("Status", value: serviceLabel)
+                LabeledContent("Notification permission", value: notificationPermissionLabel)
+                if let heartbeat = store.health.heartbeat { LabeledContent("Last heartbeat") { Text(heartbeat, style: .relative) } }
+                ForEach(store.health.providers) { provider in
+                    LabeledContent(provider.source.displayName) {
+                        Text(providerLabel(provider))
+                            .foregroundStyle(provider.lastError == nil ? Color.secondary : Color.red)
+                    }
+                }
+                if !store.health.unreconciledGaps.isEmpty {
+                    Label("\(store.health.unreconciledGaps.count) unreconciled data gap(s)", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                }
+                HStack {
+                    Button("Retry Registration") { Task { await store.retryBackgroundService() } }
+                    Button("Open Login Items Settings") { SMAppService.openSystemSettingsLoginItems() }
+                }
+            }
+            Text("If the background item is disabled or unavailable, alerts continue evaluating while DegenView is open.").font(.caption).foregroundStyle(.secondary)
             Button("Open System Notification Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!) }
         }.padding(.top, 12)
+    }
+    private var serviceLabel: String {
+        switch store.health.serviceState {
+        case .enabled: "Running in background"
+        case .requiresApproval: "Needs approval in Login Items"
+        case .disabled: "Foreground only"
+        case .notFound: "Agent not embedded"
+        case .failed: "Registration failed"
+        case .unavailable: "Unavailable"
+        }
+    }
+    private func providerLabel(_ provider: AlertProviderHealth) -> String {
+        if let error = provider.lastError { return error }
+        return provider.lastSuccessfulQuote == nil ? "Waiting for data" : "Healthy"
+    }
+    private var notificationPermissionLabel: String {
+        switch store.health.notificationPermission {
+        case .authorized: "Authorized"
+        case .provisional: "Provisional"
+        case .ephemeral: "Ephemeral"
+        case .denied: "Denied"
+        case .notDetermined: "Not requested"
+        case .unknown: "Unknown"
+        }
     }
     private func setting(_ path: WritableKeyPath<AlertNotificationSettings, Bool>) -> Binding<Bool> {
         Binding(get: { store.settings[keyPath: path] }, set: { value in var settings = store.settings; settings[keyPath: path] = value; Task { await store.updateSettings(settings) } })

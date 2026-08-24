@@ -18,7 +18,7 @@ struct AlertsCenterView: View {
             Divider()
             if filter == .history { historyList } else { alertList }
             Divider()
-            HStack { Label("Local only · Evaluates while DegenView is running", systemImage: "desktopcomputer").font(.caption).foregroundStyle(.secondary); Spacer(); if filter == .history { Button("Clear History") { Task { await store.clearHistory() } } } }.padding(10)
+            HStack { Label(store.health.serviceState == .enabled ? "Background agent active" : "Foreground evaluation only", systemImage: store.health.serviceState == .enabled ? "checkmark.circle" : "desktopcomputer").font(.caption).foregroundStyle(.secondary); Spacer(); if filter == .history { Button("Clear History") { Task { await store.clearHistory() } } } }.padding(10)
         }
         .frame(minWidth: 720, minHeight: 430)
         .sheet(item: $editing) { PriceAlertEditor(asset: $0.asset, existing: $0) }
@@ -37,7 +37,7 @@ struct AlertsCenterView: View {
             }.padding(.vertical, 5)
         }.overlay { if filtered.isEmpty { ContentUnavailableView("No Alerts", systemImage: "bell") } }
     }
-    private var historyList: some View { List(store.history.filter { search.isEmpty || $0.asset.symbol.localizedCaseInsensitiveContains(search) }) { event in HStack { Text(event.asset.symbol).font(.headline); Spacer(); Text("\(event.observedValue) \(event.currency.rawValue)").monospacedDigit(); Text(event.timestamp, style: .relative).foregroundStyle(.secondary) } }.overlay { if store.history.isEmpty { ContentUnavailableView("No Trigger History", systemImage: "clock") } } }
+    private var historyList: some View { List(store.history.filter { search.isEmpty || $0.asset.symbol.localizedCaseInsensitiveContains(search) }) { event in HStack { Text(event.asset.symbol).font(.headline); if event.origin == .catchUp { Text("Delayed").font(.caption).foregroundStyle(.orange) }; Spacer(); Text("\(event.observedValue) \(event.currency.rawValue)").monospacedDigit(); Text(event.timestamp, style: .relative).foregroundStyle(.secondary) } }.overlay { if store.history.isEmpty { ContentUnavailableView("No Trigger History", systemImage: "clock") } } }
     private func status(_ alert: PriceAlert) -> String { if alert.state == .active && !alert.armed { return "Waiting to re-arm" }; if store.latestQuotes[alert.asset.key]?.isFresh != true && alert.state == .active { return "Waiting for current market data" }; return alert.state.rawValue.capitalized }
 }
 
