@@ -789,8 +789,13 @@ final class ChartViewModel: ObservableObject {
             }
         }
 
-        fetchTask = Task { [weak self] in
+        let task = Task { [weak self] in
             guard let self else { return }
+            defer {
+                if fetchGeneration == generation {
+                    isFetching = false
+                }
+            }
 
             do {
                 if isSlowSource,
@@ -849,9 +854,17 @@ final class ChartViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
 
-            // Only touch flags if this is still the current generation.
-            guard fetchGeneration == generation else { return }
-            isFetching = false
+        }
+        fetchTask = task
+
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+
+        if fetchGeneration == generation {
+            fetchTask = nil
         }
     }
 
@@ -884,7 +897,6 @@ final class ChartViewModel: ObservableObject {
         syncPrimaryKlineData()
         lastUpdated = Date()
         errorMessage = nil
-        isFetching = false
     }
 
     /// Consume staged kline data from CoinGecko, rendering each batch as it lands

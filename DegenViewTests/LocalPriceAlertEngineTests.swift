@@ -61,4 +61,23 @@ final class LocalPriceAlertEngineTests: XCTestCase {
         await engine.clearHistory()
         let cleared = await engine.currentSnapshot(); XCTAssertTrue(cleared.history.isEmpty)
     }
+
+    func testMultipleActiveAlertsForSameAssetProduceOneSubscriptionAsset() async {
+        let engine = await LocalPriceAlertEngine(repository: MemoryRepository())
+        await engine.saveAlert(PriceAlert(asset: asset, condition: .crossesAbove(target: 100)), baseline: 90)
+        await engine.saveAlert(PriceAlert(asset: asset, condition: .crossesBelow(target: 80)), baseline: 90)
+
+        let assets = await engine.activeAssets()
+
+        XCTAssertEqual(assets.count, 1)
+        XCTAssertEqual(assets.first?.key, asset.key)
+    }
+
+    func testQuoteCoordinatorDeduplicatesAssetsAcrossOwners() {
+        let duplicate = PortfolioAsset(key: asset.key, symbol: "XBT", name: "Duplicate", source: .binance)
+        let values = MarketQuoteCoordinator.assetsByKey([asset, duplicate])
+
+        XCTAssertEqual(values.count, 1)
+        XCTAssertEqual(values[asset.key]?.symbol, asset.symbol)
+    }
 }

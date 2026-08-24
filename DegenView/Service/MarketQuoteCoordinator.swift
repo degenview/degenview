@@ -10,7 +10,12 @@ actor MarketQuoteCoordinator {
     func setQuoteHandler(_ handler: @escaping @Sendable (MarketQuote) async -> Void) { onQuote = handler }
 
     func subscribe(owner: String, assets: [PortfolioAsset]) {
-        owners[owner] = Dictionary(uniqueKeysWithValues: assets.map { ($0.key, $0) })
+        let assetsByKey = Self.assetsByKey(assets)
+        guard !assetsByKey.isEmpty else {
+            unsubscribe(owner: owner)
+            return
+        }
+        owners[owner] = assetsByKey
         ensurePolling()
     }
     func unsubscribe(owner: String) { owners.removeValue(forKey: owner); if owners.isEmpty { pollingTask?.cancel(); pollingTask = nil } }
@@ -34,7 +39,7 @@ actor MarketQuoteCoordinator {
     }
 
     private func poll() async {
-        let assets = Dictionary(uniqueKeysWithValues: owners.values.flatMap(\.values).map { ($0.key, $0) }).values
+        let assets = Self.assetsByKey(owners.values.flatMap(\.values)).values
         for asset in assets where asset.source != .polymarket {
             do {
                 let symbol = asset.metadata["apiSymbol"] ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
@@ -47,6 +52,16 @@ actor MarketQuoteCoordinator {
                     fingerprint: "\(asset.key):\(sourceDate.timeIntervalSince1970):\(candle.closePrice)")
                 await ingest(quote)
             } catch { continue }
+        }
+    }
+
+    /// Quote polling needs one descriptor per logical asset. Alerts and portfolios can
+    /// legitimately contain the same asset more than once, so duplicates are merged
+    /// instead of using `Dictionary(uniqueKeysWithValues:)`, which traps.
+    nonisolated static func assetsByKey<S: Sequence>(_ assets: S) -> [String: PortfolioAsset]
+    where S.Element == PortfolioAsset {
+        assets.reduce(into: [:]) { result, asset in
+            if result[asset.key] == nil { result[asset.key] = asset }
         }
     }
 

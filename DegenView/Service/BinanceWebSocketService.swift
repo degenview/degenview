@@ -52,6 +52,18 @@ final class BinanceWebSocketService {
     private var interval: String = ""
     private var reconnectCount = 0
     private var isShuttingDown = false
+    private var reconnectTask: Task<Void, Never>?
+    private var connectionGeneration = 0
+    private let socketOpenObserver: ((URL) -> Void)?
+    private let reconnectSleep: (UInt64) async throws -> Void
+
+    init(
+        socketOpenObserver: ((URL) -> Void)? = nil,
+        reconnectSleep: @escaping (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
+    ) {
+        self.socketOpenObserver = socketOpenObserver
+        self.reconnectSleep = reconnectSleep
+    }
 
     /// Open a combined stream for the given symbols and interval.
     /// - Parameters:
@@ -72,12 +84,16 @@ final class BinanceWebSocketService {
         self.onUpdate = onUpdate
         self.isShuttingDown = false
         self.reconnectCount = 0
+        self.connectionGeneration += 1
 
-        openSocket()
+        openSocket(generation: connectionGeneration)
     }
 
     func disconnect() {
+        connectionGeneration += 1
         isShuttingDown = true
+        reconnectTask?.cancel()
+        reconnectTask = nil
         webSocket?.cancel(with: .normalClosure, reason: nil)
         webSocket = nil
         session = nil
@@ -86,7 +102,8 @@ final class BinanceWebSocketService {
 
     // MARK: - Private
 
-    private func openSocket() {
+    private func openSocket(generation: Int) {
+        guard generation == connectionGeneration, !isShuttingDown else { return }
         let streamList = symbols
             .map { "\($0.lowercased())@kline_\(interval)" }
             .joined(separator: "/")
@@ -94,15 +111,23 @@ final class BinanceWebSocketService {
         guard let url = URL(string: "wss://stream.binance.com/stream?streams=\(streamList)")
         else { return }
 
+        if let socketOpenObserver {
+            socketOpenObserver(url)
+            return
+        }
+
         session = URLSession(configuration: .default, delegate: nil, delegateQueue: .main)
         webSocket = session?.webSocketTask(with: url)
         webSocket?.resume()
-        receiveNext()
+        receiveNext(generation: generation)
     }
 
-    private func receiveNext() {
+    private func receiveNext(generation: Int) {
         webSocket?.receive { [weak self] result in
-            guard let self, !self.isShuttingDown else { return }
+            guard let self,
+                  !self.isShuttingDown,
+                  generation == self.connectionGeneration
+            else { return }
 
             switch result {
             case .success(let message):
@@ -117,13 +142,20 @@ final class BinanceWebSocketService {
                     break
                 }
                 self.reconnectCount = 0
-                self.receiveNext()
+                self.receiveNext(generation: generation)
 
             case .failure:
-                self.scheduleReconnect()
+                self.connectionDidFail(generation: generation)
             }
         }
     }
+
+    /// Kept internal so connection lifecycle can be tested without a live socket.
+    func connectionDidFail(generation: Int) {
+        scheduleReconnect(generation: generation)
+    }
+
+    var currentConnectionGeneration: Int { connectionGeneration }
 
     private func handleMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
@@ -135,19 +167,28 @@ final class BinanceWebSocketService {
         onUpdate?(symbol, kline)
     }
 
-    private func scheduleReconnect() {
-        guard !isShuttingDown else { return }
+    private func scheduleReconnect(generation: Int) {
+        guard !isShuttingDown, generation == connectionGeneration else { return }
 
+        reconnectTask?.cancel()
         webSocket = nil
         session = nil
 
         let delay = min(pow(2.0, Double(reconnectCount)), 30.0)
         reconnectCount += 1
 
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
-            guard let self, !self.isShuttingDown else { return }
-            self.openSocket()
+        reconnectTask = Task { [weak self] in
+            do {
+                try await self?.reconnectSleep(UInt64(delay * 1_000_000_000))
+            } catch {
+                return
+            }
+            guard let self,
+                  !self.isShuttingDown,
+                  generation == self.connectionGeneration
+            else { return }
+            self.reconnectTask = nil
+            self.openSocket(generation: generation)
         }
     }
 }

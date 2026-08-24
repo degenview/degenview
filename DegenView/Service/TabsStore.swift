@@ -17,20 +17,44 @@ final class TabsStore: ObservableObject {
     /// Empty until the first `captureGrouping()`.
     private(set) var windowGroups: [[UUID]] = []
 
-    private let store = JSONStore<TabsSnapshot>(filename: "tabs.json")
+    private let store: JSONStore<TabsSnapshot>
+    private let userDefaults: UserDefaults
+    private let supportDirectory: URL
+    private var suppressWrites = false
     private var saveTask: Task<Void, Never>?
 
-    private init() {
-        if let snapshot = store.load() {
+    private convenience init() {
+        self.init(store: JSONStore<TabsSnapshot>(filename: "tabs.json"))
+    }
+
+    init(
+        store: JSONStore<TabsSnapshot>,
+        userDefaults: UserDefaults = .standard,
+        supportDirectory: URL = AppSupport.directory
+    ) {
+        self.store = store
+        self.userDefaults = userDefaults
+        self.supportDirectory = supportDirectory
+
+        switch store.loadResult() {
+        case .value(let snapshot):
             tabs = snapshot.tabs
             windowGroups = snapshot.windowGroups
-        } else {
+        case .missing, .quarantined:
             let migrated = migrateFromLegacyStorage()
             tabs = migrated.tabs
             windowGroups = migrated.windowGroups
             // Nothing has mutated yet, so no debounced write is pending — land
             // the migration on disk now rather than on the next edit.
             store.save(migrated)
+        case .unreadable(let error):
+            let migrated = migrateFromLegacyStorage()
+            tabs = migrated.tabs
+            windowGroups = migrated.windowGroups
+            suppressWrites = true
+            #if DEBUG
+            print("[TabsStore] tabs.json is unreadable; preserving it and disabling writes: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -124,6 +148,7 @@ final class TabsStore: ObservableObject {
 
     /// Coalesce the writes that a drag-zoom or a burst of ticker edits produces.
     private func scheduleSave() {
+        guard !suppressWrites else { return }
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: CacheLimit.saveDebounceNS)
@@ -134,6 +159,7 @@ final class TabsStore: ObservableObject {
 
     /// Write immediately. Called on quit, where the debounce would never fire.
     func persist() {
+        guard !suppressWrites else { return }
         saveTask?.cancel()
         saveTask = nil
         store.save(TabsSnapshot(tabs: tabs, windowGroups: windowGroups))
@@ -146,9 +172,9 @@ final class TabsStore: ObservableObject {
     /// Mirrors what launch used to do: `lastViewID` won over `tickers.json`,
     /// because restoring a saved view replaced the ticker list wholesale.
     private func migrateFromLegacyStorage() -> TabsSnapshot {
-        let savedViews = JSONStore<[SavedView]>(filename: "views.json").load() ?? []
+        let savedViews = JSONStore<[SavedView]>(filename: "views.json", directory: supportDirectory).load() ?? []
 
-        if let idString = UserDefaults.standard.string(forKey: "lastViewID"),
+        if let idString = userDefaults.string(forKey: "lastViewID"),
            let id = UUID(uuidString: idString),
            let view = savedViews.first(where: { $0.id == id }) {
             let tab = ChartTab(
@@ -162,7 +188,7 @@ final class TabsStore: ObservableObject {
             return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
         }
 
-        let configs = JSONStore<[TickerConfig]>(filename: "tickers.json").load()
+        let configs = JSONStore<[TickerConfig]>(filename: "tickers.json", directory: supportDirectory).load()
             ?? legacyStringTickers()
         let tab = ChartTab(tickerConfigs: configs)
         return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
@@ -170,7 +196,7 @@ final class TabsStore: ObservableObject {
 
     /// The oldest on-disk format: a bare `[String]` of Binance symbols.
     private func legacyStringTickers() -> [TickerConfig] {
-        guard let data = try? Data(contentsOf: AppSupport.directory.appendingPathComponent("tickers.json")),
+        guard let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("tickers.json")),
               let strings = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
 #if DEBUG

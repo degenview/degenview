@@ -44,8 +44,8 @@ struct ChartPlot {
         CGRect(
             x: insets.leading,
             y: insets.top,
-            width: size.width - insets.leading - insets.trailing,
-            height: size.height - insets.top - insets.bottom
+            width: max(0, size.width - insets.leading - insets.trailing),
+            height: max(0, size.height - insets.top - insets.bottom)
         )
     }
 
@@ -55,7 +55,10 @@ struct ChartPlot {
         guard !points.isEmpty else { return (0.01, 1) }
         let low  = points.map(\.lowPrice).min() ?? 0
         let high = points.map(\.highPrice).max() ?? 1
-        if low == high { return (low * 0.99, high * 1.01) }
+        if low == high {
+            let inset = max(abs(low) * 0.01, 0.01)
+            return (low - inset, high + inset)
+        }
         let inset = (high - low) * Double(padding)
         return (low - inset, high + inset)
     }

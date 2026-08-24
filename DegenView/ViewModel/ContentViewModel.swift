@@ -922,10 +922,19 @@ final class ContentViewModel: ObservableObject {
         await syncCoinGeckoSymbols()
         let range = self.selectedTimeRange
         let count = self.candleCount
-        for vm in self.chartViewModels {
-            guard !Task.isCancelled else { return }
-            await vm.fetchData(for: range, count: count, silent: silent)
+        let fetches = self.chartViewModels.map { vm in
+            Task { @MainActor in
+                await vm.fetchData(for: range, count: count, silent: silent)
+            }
         }
+        await withTaskCancellationHandler {
+            for fetch in fetches {
+                await fetch.value
+            }
+        } onCancel: {
+            fetches.forEach { $0.cancel() }
+        }
+        guard !Task.isCancelled else { return }
         if replay.isActive, replay.status != .selectingStart, let primary = marketChartViewModels.first {
             await prepareGranularReplay(interval: replay.session?.replayInterval ?? .automatic)
             replay.updateTimeline(primary.replayTimeline(), symbol: primary.apiSymbol, timeframe: range)

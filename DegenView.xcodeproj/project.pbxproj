@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */; };
+		C50000000000000000000006 /* KlineDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000106 /* KlineDataTests.swift */; };
+		C50000000000000000000001 /* JSONStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000101 /* JSONStoreTests.swift */; };
+		C50000000000000000000002 /* ChartViewModelFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000102 /* ChartViewModelFetchTests.swift */; };
+		C50000000000000000000003 /* ChartPlotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000103 /* ChartPlotTests.swift */; };
+		C50000000000000000000004 /* IndicatorsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000104 /* IndicatorsTests.swift */; };
+		C50000000000000000000005 /* KlineCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000105 /* KlineCacheTests.swift */; };
 		B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */; };
 		B90000000000000000000001 /* PriceAlertModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000101 /* PriceAlertModels.swift */; };
 		B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000102 /* LocalPriceAlertEngine.swift */; };
@@ -114,6 +121,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketServiceTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000106 /* KlineDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineDataTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000101 /* JSONStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONStoreTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000102 /* ChartViewModelFetchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModelFetchTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000103 /* ChartPlotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlotTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000104 /* IndicatorsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorsTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000105 /* KlineCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineCacheTests.swift; sourceTree = "<group>"; };
 		B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngineTests.swift; sourceTree = "<group>"; };
 		B90000000000000000000101 /* PriceAlertModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertModels.swift; sourceTree = "<group>"; };
 		B90000000000000000000102 /* LocalPriceAlertEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngine.swift; sourceTree = "<group>"; };
@@ -404,6 +418,13 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
+				C50000000000000000000106 /* KlineDataTests.swift */,
+				C50000000000000000000101 /* JSONStoreTests.swift */,
+				C50000000000000000000102 /* ChartViewModelFetchTests.swift */,
+				C50000000000000000000103 /* ChartPlotTests.swift */,
+				C50000000000000000000104 /* IndicatorsTests.swift */,
+				C50000000000000000000105 /* KlineCacheTests.swift */,
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
@@ -499,6 +520,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
+				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
+				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
+				C50000000000000000000002 /* ChartViewModelFetchTests.swift in Sources */,
+				C50000000000000000000003 /* ChartPlotTests.swift in Sources */,
+				C50000000000000000000004 /* IndicatorsTests.swift in Sources */,
+				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,

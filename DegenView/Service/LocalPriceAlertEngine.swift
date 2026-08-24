@@ -27,7 +27,9 @@ actor LocalPriceAlertEngine {
 
     func currentSnapshot() -> AlertPersistenceSnapshot { snapshot }
     func activeAssets() -> [PortfolioAsset] {
-        Dictionary(uniqueKeysWithValues: snapshot.alerts.filter { $0.state == .active }.map { ($0.asset.key, $0.asset) }).values.map { $0 }
+        Array(MarketQuoteCoordinator.assetsByKey(
+            snapshot.alerts.lazy.filter { $0.state == .active }.map(\.asset)
+        ).values)
     }
 
     func saveAlert(_ alert: PriceAlert, baseline: Decimal?) async {

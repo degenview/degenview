@@ -1,0 +1,44 @@
+import XCTest
+@testable import DegenView
+
+final class ChartViewModelFetchTests: XCTestCase {
+    actor SequencedSource: TickerDataSource {
+        nonisolated let type = DataSourceType.binance
+        private var call = 0
+
+        func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
+            call += 1
+            let current = call
+            try await Task.sleep(for: current == 1 ? .milliseconds(150) : .milliseconds(5))
+            return [KlineData(time: Date(timeIntervalSince1970: Double(current)), price: Double(current))]
+        }
+
+        func searchTickers(query: String) async throws -> [TickerSearchResult] { [] }
+    }
+
+    @MainActor
+    func testFetchDataWaitsForSourceCompletion() async {
+        let source = SequencedSource()
+        let viewModel = ChartViewModel(ticker: "BTC", api: source)
+        let started = ContinuousClock.now
+
+        await viewModel.fetchData(for: .oneDay, count: 1)
+
+        XCTAssertGreaterThanOrEqual(started.duration(to: .now), .milliseconds(100))
+        XCTAssertEqual(viewModel.currentPrice, 1)
+    }
+
+    @MainActor
+    func testNewerFetchCancelsAndSupersedesOlderFetch() async {
+        let source = SequencedSource()
+        let viewModel = ChartViewModel(ticker: "BTC", api: source)
+        let first = Task { @MainActor in await viewModel.fetchData(for: .oneDay, count: 1) }
+        try? await Task.sleep(for: .milliseconds(20))
+
+        await viewModel.fetchData(for: .oneWeek, count: 1)
+        await first.value
+
+        XCTAssertEqual(viewModel.currentPrice, 2)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+}

@@ -8,6 +8,7 @@ import Foundation
 actor KlineCache {
     private var entries: [String: CachedEntry] = [:]
     private let storeURL: URL?
+    private let now: @Sendable () -> Date
     private var saveTask: Task<Void, Never>?
 
     private struct CachedEntry: Codable {
@@ -20,12 +21,17 @@ actor KlineCache {
 
     /// - Parameter persistenceKey: filename stem for the on-disk store.
     ///   `nil` keeps the cache in memory only.
-    init(persistenceKey: String? = nil) {
+    init(
+        persistenceKey: String? = nil,
+        directory: URL = AppSupport.directory,
+        now: @escaping @Sendable () -> Date = Date.init
+    ) {
         let url = persistenceKey.map {
-            AppSupport.directory.appendingPathComponent("kline_cache_\($0).json")
+            directory.appendingPathComponent("kline_cache_\($0).json")
         }
         storeURL = url
-        entries = url.map(Self.loadFromDisk) ?? [:]
+        self.now = now
+        entries = url.map { Self.loadFromDisk($0, now: now()) } ?? [:]
     }
 
     private func key(symbol: String, interval: String, days: Int) -> String {
@@ -37,7 +43,7 @@ actor KlineCache {
     /// Return cached candles if fresh enough and we have at least `count` of them.
     func get(symbol: String, interval: String, days: Int, count: Int, ttl: TimeInterval) -> [KlineData]? {
         guard let entry = entries[key(symbol: symbol, interval: interval, days: days)] else { return nil }
-        guard Date().timeIntervalSince(entry.fetchedAt) < ttl else { return nil }
+        guard now().timeIntervalSince(entry.fetchedAt) < ttl else { return nil }
         guard entry.data.count >= count else { return nil }
         return Array(entry.data.suffix(count))
     }
@@ -51,7 +57,7 @@ actor KlineCache {
     /// window and slice the tail themselves.
     func getFull(symbol: String, interval: String, days: Int, ttl: TimeInterval) -> [KlineData]? {
         guard let entry = entries[key(symbol: symbol, interval: interval, days: days)] else { return nil }
-        guard Date().timeIntervalSince(entry.fetchedAt) < ttl, !entry.data.isEmpty else { return nil }
+        guard now().timeIntervalSince(entry.fetchedAt) < ttl, !entry.data.isEmpty else { return nil }
         return entry.data
     }
 
@@ -97,7 +103,7 @@ actor KlineCache {
             interval: interval,
             days: days,
             data: data,
-            fetchedAt: Date()
+            fetchedAt: now()
         )
         scheduleSave()
     }
@@ -117,12 +123,12 @@ actor KlineCache {
 
     // MARK: - Persistence
 
-    private nonisolated static func loadFromDisk(_ url: URL) -> [String: CachedEntry] {
+    private nonisolated static func loadFromDisk(_ url: URL, now: Date) -> [String: CachedEntry] {
         guard let raw = try? Data(contentsOf: url),
               let decoded = try? JSONDecoder().decode([String: CachedEntry].self, from: raw)
         else { return [:] }
 
-        let cutoff = Date().addingTimeInterval(-CacheLimit.diskStaleness)
+        let cutoff = now.addingTimeInterval(-CacheLimit.diskStaleness)
         return decoded.filter { $0.value.fetchedAt > cutoff }
     }
 
