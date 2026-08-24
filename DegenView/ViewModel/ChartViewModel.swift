@@ -10,6 +10,9 @@ final class ChartViewModel: ObservableObject {
     /// Human-readable label, for sources whose `ticker` is an opaque identifier.
     /// A Polymarket CLOB token id is 77 digits, so the market question rides along.
     @Published var displayName: String?
+    @Published var portfolioChart: PortfolioChartConfig?
+
+    var isPortfolioChart: Bool { portfolioChart != nil }
 
     /// Unique identifier — derived from initial ticker+source, stable across updates.
     let uniqueID: String
@@ -418,6 +421,7 @@ final class ChartViewModel: ObservableObject {
 
     /// Apply persisted chart settings from a TickerConfig.
     func applyConfig(_ config: TickerConfig) {
+        portfolioChart = config.portfolioChart
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
@@ -749,6 +753,7 @@ final class ChartViewModel: ObservableObject {
     }
 
     func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
+        guard !isPortfolioChart else { return }
         // Silent refresh: if a fetch is already running let it finish.
         if silent, isFetching {
             return

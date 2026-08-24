@@ -108,7 +108,9 @@ struct ContentView: View {
             Text("The tab name is also the window title.")
         }
         .sheet(isPresented: $showAddSheet) {
-            AddTickerSheet { selected in
+            AddTickerSheet(onAddPortfolio: { config in
+                contentViewModel.addPortfolioChart(config)
+            }) { selected in
                 let displayName: String? = {
                     guard selected.source == .polymarket else { return nil }
                     if let series = selected.pmSeries, series.count > 1 {
@@ -315,7 +317,7 @@ struct ContentView: View {
                 Button("Open Portfolio Tracker") {
                     WindowCoordinator.shared.openPortfolio(beside: contentViewModel.tabID)
                 }
-                if let vm = contentViewModel.chartViewModels.first {
+                if let vm = contentViewModel.marketChartViewModels.first {
                     Divider()
                     Button("Add \(vm.title) Transaction…") {
                         let asset = PortfolioAsset(
@@ -348,7 +350,7 @@ struct ContentView: View {
                             hasChosenPaperTradingChartVisibility = true
                         }
                     ))
-                    if let vm = contentViewModel.chartViewModels.first {
+                    if let vm = contentViewModel.marketChartViewModels.first {
                         Divider()
                         Button("Buy \(vm.title)…") { openTicket(for: vm, side: .buy) }
                             .keyboardShortcut("b", modifiers: [.command, .shift])

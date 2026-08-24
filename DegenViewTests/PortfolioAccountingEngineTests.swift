@@ -82,6 +82,53 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         XCTAssertEqual(try PortfolioAccountingEngine.holdings(transactions: snapshot.transactions, portfolioIDs: [id]).first?.quantity, 2)
     }
 
+    func testCompletePortfolioHistoryNeedsNoRebuild() {
+        let today = jan1.addingTimeInterval(4 * 86_400)
+        let state = PortfolioLedgerSnapshot(
+            historicalSnapshots: [snapshotPoint(portfolio: p1, day: 4)])
+        XCTAssertNil(PortfolioStore.historyRebuildStart(for: p1, in: state, today: today))
+    }
+
+    func testMissingPortfolioHistoryAppendsFromNextDay() {
+        let calendar = Calendar(identifier: .gregorian)
+        let state = PortfolioLedgerSnapshot(
+            historicalSnapshots: [snapshotPoint(portfolio: p1, day: 2)])
+        XCTAssertEqual(
+            PortfolioStore.historyRebuildStart(for: p1, in: state, today: jan1.addingTimeInterval(4 * 86_400)),
+            calendar.date(byAdding: .day, value: 1,
+                          to: calendar.startOfDay(for: jan1.addingTimeInterval(2 * 86_400)))
+        )
+    }
+
+    func testInvalidatedPortfolioHistoryRebuildsAffectedSuffix() {
+        let calendar = Calendar(identifier: .gregorian)
+        let invalidation = jan1.addingTimeInterval(2 * 86_400 + 3_600)
+        let state = PortfolioLedgerSnapshot(
+            historicalSnapshots: [snapshotPoint(portfolio: p1, day: 1)],
+            invalidatedAfter: [p1: invalidation])
+        XCTAssertEqual(
+            PortfolioStore.historyRebuildStart(for: p1, in: state, today: jan1.addingTimeInterval(4 * 86_400)),
+            calendar.startOfDay(for: invalidation)
+        )
+    }
+
+    func testAggregateHistoryHasStableIdentityAndTotals() throws {
+        let first = snapshotPoint(portfolio: p1, day: 1)
+        let second = PortfolioSnapshot(portfolioID: p2, timestamp: first.timestamp,
+            value: 2, netContributions: 2, realizedPnL: 1, unrealizedPnL: 1, isComplete: false)
+        let aggregate1 = try XCTUnwrap(PortfolioStore.aggregateHistory([first, second]).first)
+        let aggregate2 = try XCTUnwrap(PortfolioStore.aggregateHistory([first, second]).first)
+        XCTAssertEqual(aggregate1.id, aggregate2.id)
+        XCTAssertEqual(aggregate1.value, 3)
+        XCTAssertEqual(aggregate1.netContributions, 3)
+        XCTAssertFalse(aggregate1.isComplete)
+    }
+
+    private func snapshotPoint(portfolio: UUID, day: TimeInterval) -> PortfolioSnapshot {
+        PortfolioSnapshot(portfolioID: portfolio, timestamp: jan1.addingTimeInterval(day * 86_400),
+            value: 1, netContributions: 1, realizedPnL: 0, unrealizedPnL: 0, isComplete: true)
+    }
+
     func testPortfolioCreationDuplicationDeletionAndPersistenceCodable() async throws {
         let ledger = PortfolioLedger(now: { self.jan1 })
         let a = try await ledger.createPortfolio(name: "A", currency: .USD); try await ledger.add(tx(a, btc, .buy, 1, 10))
@@ -106,6 +153,30 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         XCTAssertEqual(PortfolioPrivacy.sensitive("$128,430", enabled: true), "••••••••")
         XCTAssertEqual(PortfolioPrivacy.accessibility("Portfolio balance, $128,430", enabled: true, hiddenDescription: "Portfolio balance hidden"), "Portfolio balance hidden")
         XCTAssertFalse(PortfolioPrivacy.sensitive("secret", enabled: true).contains("secret"))
+    }
+
+    func testPortfolioValueChangeCalculatesAmountPercentageAndDirection() {
+        let gain = PortfolioValueChange(from: 100, to: 125)
+        XCTAssertEqual(gain.amount, 25)
+        XCTAssertEqual(gain.percentage, Decimal(string: "0.25"))
+        XCTAssertEqual(gain.direction, .up)
+
+        let loss = PortfolioValueChange(from: 200, to: 150)
+        XCTAssertEqual(loss.amount, -50)
+        XCTAssertEqual(loss.percentage, Decimal(string: "-0.25"))
+        XCTAssertEqual(loss.direction, .down)
+
+        let unchanged = PortfolioValueChange(from: 75, to: 75)
+        XCTAssertEqual(unchanged.amount, 0)
+        XCTAssertEqual(unchanged.percentage, 0)
+        XCTAssertEqual(unchanged.direction, .unchanged)
+    }
+
+    func testPortfolioValueChangeOmitsPercentageForZeroBaseline() {
+        let change = PortfolioValueChange(from: 0, to: 100)
+        XCTAssertEqual(change.amount, 100)
+        XCTAssertNil(change.percentage)
+        XCTAssertEqual(change.direction, .up)
     }
 
     func testCoinMarketCapImportParsesTimezoneQuotedThousandsAndMissingFees() throws {

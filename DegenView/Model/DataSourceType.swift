@@ -78,6 +78,45 @@ struct PmSeriesConfig: Codable, Equatable, Hashable, Identifiable {
     var id: String { tokenID }
 }
 
+enum PortfolioChartKind: String, Codable, CaseIterable, Identifiable {
+    case valueChart = "Portfolio Value Chart"
+    case value = "Portfolio Value"
+    case allocation = "Allocation"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .valueChart: return "Portfolio Value"
+        case .value, .allocation: return rawValue
+        }
+    }
+}
+
+enum PortfolioChartRange: String, Codable, CaseIterable, Identifiable {
+    case oneDay = "1D"
+    case oneWeek = "1W"
+    case oneMonth = "1M"
+    case oneYear = "1Y"
+    case all = "ALL"
+
+    var id: String { rawValue }
+    var duration: TimeInterval? {
+        switch self {
+        case .oneDay: return 86_400
+        case .oneWeek: return 7 * 86_400
+        case .oneMonth: return 31 * 86_400
+        case .oneYear: return 365 * 86_400
+        case .all: return nil
+        }
+    }
+}
+
+struct PortfolioChartConfig: Codable, Equatable, Hashable {
+    var portfolioID: UUID?
+    var kind: PortfolioChartKind
+    var range: PortfolioChartRange = .oneMonth
+}
+
 /// Persisted config for a single ticker — symbol + which API to fetch from.
 struct TickerConfig: Codable, Equatable, Hashable {
     let symbol: String
@@ -119,4 +158,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// All tradable choices for multi-outcome Polymarket events. Nil for single-choice
     /// markets and all non-Polymarket sources.
     var pmSeries: [PmSeriesConfig]?
+
+    /// Present when this slot is a portfolio card rather than a market chart.
+    var portfolioChart: PortfolioChartConfig? = nil
 }

@@ -11,6 +11,7 @@
 		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
 		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
 		AA1000000000000000000001 /* PortfolioModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000101 /* PortfolioModels.swift */; };
+		AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000101 /* PortfolioValueChange.swift */; };
 		AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000102 /* PortfolioAccountingEngine.swift */; };
 		AA1000000000000000000003 /* PortfolioLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000103 /* PortfolioLedger.swift */; };
 		AA1000000000000000000004 /* PortfolioStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000104 /* PortfolioStore.swift */; };
@@ -109,6 +110,7 @@
 		AA1000000000000000000108 /* PortfolioTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetAutoMapper.swift; sourceTree = "<group>"; };
 		AA1000000000000000000101 /* PortfolioModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioModels.swift; sourceTree = "<group>"; };
+		AA2000000000000000000101 /* PortfolioValueChange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioValueChange.swift; sourceTree = "<group>"; };
 		AA1000000000000000000102 /* PortfolioAccountingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngine.swift; sourceTree = "<group>"; };
 		AA1000000000000000000103 /* PortfolioLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioLedger.swift; sourceTree = "<group>"; };
 		AA1000000000000000000104 /* PortfolioStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStore.swift; sourceTree = "<group>"; };
@@ -259,6 +261,7 @@
 			isa = PBXGroup;
 			children = (
 				AA1000000000000000000101 /* PortfolioModels.swift */,
+				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
@@ -485,6 +488,7 @@
 				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
+				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,
 				AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */,
 				AA1000000000000000000003 /* PortfolioLedger.swift in Sources */,
 				AA1000000000000000000004 /* PortfolioStore.swift in Sources */,

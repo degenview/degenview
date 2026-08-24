@@ -327,15 +327,14 @@ private struct PortfolioHistoryChart: View {
     let currency: PortfolioCurrency
     let range: PortfolioHistoryRange
     let privacy: Bool
-    @State private var hoverLocation: CGPoint?
+    @State private var hoveredIndex: Int?
 
     private let leftMargin: CGFloat = 12
     private let rightMargin: CGFloat = 76
     private let topMargin: CGFloat = 12
     private let bottomMargin: CGFloat = 28
 
-    private var points: [PortfolioSnapshot] {
-        let now = Date()
+    private func preparedPoints(now: Date = Date()) -> [PortfolioSnapshot] {
         let ranged = snapshots.filter { point in
             guard let duration = range.duration else { return true }
             return point.timestamp >= now.addingTimeInterval(-duration)
@@ -350,14 +349,19 @@ private struct PortfolioHistoryChart: View {
     }
 
     var body: some View {
+        let points = preparedPoints()
         GeometryReader { geometry in
-            Canvas { context, size in draw(context: &context, size: size) }
+            Canvas { context, size in draw(context: &context, size: size, points: points) }
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
-                    guard !privacy else { hoverLocation = nil; return }
+                    guard !privacy, !points.isEmpty else { hoveredIndex = nil; return }
                     switch phase {
-                    case .active(let location): hoverLocation = location
-                    case .ended: hoverLocation = nil
+                    case .active(let location):
+                        let width = max(1, geometry.size.width - leftMargin - rightMargin)
+                        let fraction = ((location.x - leftMargin) / width).clamped(to: 0...1)
+                        let index = points.count == 1 ? 0 : Int((fraction * CGFloat(points.count - 1)).rounded())
+                        if hoveredIndex != index { hoveredIndex = index }
+                    case .ended: hoveredIndex = nil
                     }
                 }
         }
@@ -371,7 +375,7 @@ private struct PortfolioHistoryChart: View {
         .accessibilityLabel(privacy ? "Portfolio history values hidden" : "Portfolio value history, \(points.count) observations")
     }
 
-    private func draw(context: inout GraphicsContext, size: CGSize) {
+    private func draw(context: inout GraphicsContext, size: CGSize, points: [PortfolioSnapshot]) {
         guard !privacy, !points.isEmpty else { return }
         let plot = CGRect(x: leftMargin, y: topMargin,
                           width: max(1, size.width - leftMargin - rightMargin),
@@ -416,9 +420,7 @@ private struct PortfolioHistoryChart: View {
                          at: CGPoint(x: position(index).x, y: plot.maxY + 8), anchor: .top)
         }
 
-        guard let hoverLocation, plot.contains(hoverLocation) else { return }
-        let fraction = ((hoverLocation.x - plot.minX) / plot.width).clamped(to: 0...1)
-        let index = points.count == 1 ? 0 : Int((fraction * CGFloat(points.count - 1)).rounded()).clamped(to: 0...(points.count - 1))
+        guard let index = hoveredIndex, points.indices.contains(index) else { return }
         let selected = points[index], selectedPosition = position(index)
         var vertical = Path(); vertical.move(to: CGPoint(x: selectedPosition.x, y: plot.minY)); vertical.addLine(to: CGPoint(x: selectedPosition.x, y: plot.maxY))
         var horizontal = Path(); horizontal.move(to: CGPoint(x: plot.minX, y: selectedPosition.y)); horizontal.addLine(to: CGPoint(x: plot.maxX, y: selectedPosition.y))

@@ -35,6 +35,7 @@ final class ContentViewModel: ObservableObject {
     private var replayPreparationTask: Task<Void, Never>?
 
     @Published var chartViewModels: [ChartViewModel] = []
+    var marketChartViewModels: [ChartViewModel] { chartViewModels.filter { !$0.isPortfolioChart } }
     @Published var selectedTimeRange: TimeRange = .oneDay {
         didSet {
             // Reset candle count to default when timeframe changes
@@ -327,7 +328,7 @@ final class ContentViewModel: ObservableObject {
     }
 
     func selectReplayStart(_ date: Date) {
-        guard let primary = chartViewModels.first, !primary.klineData.isEmpty else { return }
+        guard let primary = marketChartViewModels.first, !primary.klineData.isEmpty else { return }
         clearReplaySelectionMarkers()
         replayPreparationTask?.cancel()
         replayPreparationTask = Task { [weak self] in
@@ -336,7 +337,7 @@ final class ContentViewModel: ObservableObject {
             self.replayNotice = nil
             defer { self.isPreparingReplay = false }
             await self.prepareGranularReplay(interval: .automatic)
-            guard !Task.isCancelled, let primary = self.chartViewModels.first else { return }
+            guard !Task.isCancelled, let primary = self.marketChartViewModels.first else { return }
             let timeline = primary.replayTimeline()
             self.replay.start(
                 at: date,
@@ -351,12 +352,12 @@ final class ContentViewModel: ObservableObject {
     }
 
     func selectFirstReplayBar() {
-        guard let date = chartViewModels.first?.klineData.first?.openTime else { return }
+        guard let date = marketChartViewModels.first?.klineData.first?.openTime else { return }
         selectReplayStart(date)
     }
 
     func selectRandomReplayBar() {
-        guard let data = chartViewModels.first?.klineData, data.count > 1 else { return }
+        guard let data = marketChartViewModels.first?.klineData, data.count > 1 else { return }
         // Reserve at least 20% (and at least one bar) for useful future progression.
         let reserve = max(1, min(data.count - 1, max(5, data.count / 5)))
         selectReplayStart(data[Int.random(in: 0..<(data.count - reserve))].openTime)
@@ -374,7 +375,7 @@ final class ContentViewModel: ObservableObject {
     }
 
     var availableReplayIntervals: [ReplayInterval] {
-        chartViewModels.first?.supportedReplayIntervals ?? [.automatic, .chartBar]
+        marketChartViewModels.first?.supportedReplayIntervals ?? [.automatic, .chartBar]
     }
 
     func setReplayInterval(_ interval: ReplayInterval) {
@@ -387,7 +388,7 @@ final class ContentViewModel: ObservableObject {
             self.replayNotice = nil
             defer { self.isPreparingReplay = false }
             await self.prepareGranularReplay(interval: interval)
-            guard !Task.isCancelled, let primary = self.chartViewModels.first else { return }
+            guard !Task.isCancelled, let primary = self.marketChartViewModels.first else { return }
             self.replay.setInterval(interval)
             self.replay.updateTimeline(
                 primary.replayTimeline(),
@@ -789,7 +790,7 @@ final class ContentViewModel: ObservableObject {
             await vm.fetchData(for: selectedTimeRange, count: candleCount)
             try? await Task.sleep(nanoseconds: Timeout.fetchStaggerNS)
         }
-        if let saved = pendingReplayRestore, let primary = chartViewModels.first {
+        if let saved = pendingReplayRestore, let primary = marketChartViewModels.first {
             await prepareGranularReplay(interval: saved.replayInterval)
             replay.restore(saved, timeline: primary.replayTimeline())
             pendingReplayRestore = nil
@@ -839,7 +840,7 @@ final class ContentViewModel: ObservableObject {
             return
         }
 
-        let binanceVMs = chartViewModels.filter { $0.source == .binance }
+        let binanceVMs = marketChartViewModels.filter { $0.source == .binance }
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
 
@@ -853,7 +854,7 @@ final class ContentViewModel: ObservableObject {
             }
         }
 
-        let stockSymbols = chartViewModels.filter { $0.source == .alpaca }.map(\.apiSymbol)
+        let stockSymbols = marketChartViewModels.filter { $0.source == .alpaca }.map(\.apiSymbol)
         if stockSymbols.isEmpty || !AlpacaCredentialsStore.isConfigured {
             alpacaWSService.disconnect()
         } else {
@@ -916,10 +917,22 @@ final class ContentViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             await vm.fetchData(for: range, count: count, silent: silent)
         }
-        if replay.isActive, replay.status != .selectingStart, let primary = chartViewModels.first {
+        if replay.isActive, replay.status != .selectingStart, let primary = marketChartViewModels.first {
             await prepareGranularReplay(interval: replay.session?.replayInterval ?? .automatic)
             replay.updateTimeline(primary.replayTimeline(), symbol: primary.apiSymbol, timeframe: range)
         }
+    }
+
+    func addPortfolioChart(_ config: PortfolioChartConfig) {
+        let vm = ChartViewModel(
+            ticker: "portfolio-\(UUID().uuidString)",
+            source: .binance,
+            displayName: config.kind.rawValue
+        )
+        vm.portfolioChart = config
+        chartViewModels.append(vm)
+        persistTickers()
+        markChanged()
     }
 
     /// Add a ticker with a chosen data source.
@@ -961,7 +974,7 @@ final class ContentViewModel: ObservableObject {
         }
 
         let config = favorite.config
-        if let existing = chartViewModels.first {
+        if let existing = marketChartViewModels.first {
             updateTicker(
                 existing,
                 symbol: config.symbol,
@@ -989,7 +1002,7 @@ final class ContentViewModel: ObservableObject {
         Task {
             await syncCoinGeckoSymbols()
             await vm.fetchData(for: selectedTimeRange, count: candleCount)
-            if replay.isActive, let primary = chartViewModels.first {
+            if replay.isActive, let primary = marketChartViewModels.first {
                 await prepareGranularReplay(interval: replay.session?.replayInterval ?? .automatic)
                 replay.updateTimeline(primary.replayTimeline(), symbol: primary.apiSymbol, timeframe: selectedTimeRange)
             }
@@ -1023,7 +1036,8 @@ final class ContentViewModel: ObservableObject {
                 // field nil so tabs and saved views no longer own copies of lines.
                 trendLines: nil,
                 displayName: vm.displayName,
-                pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
+                pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
+                portfolioChart: vm.portfolioChart
             )
         }
     }

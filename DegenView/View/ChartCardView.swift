@@ -36,8 +36,26 @@ struct ChartCardView: View {
 
     @State private var showSettings = false
     @State private var iconURL: URL?
+    @StateObject private var portfolioStore = PortfolioStore.shared
 
+    @ViewBuilder
     var body: some View {
+        if let config = viewModel.portfolioChart {
+            PortfolioChartCard(
+                config: Binding(
+                    get: { viewModel.portfolioChart ?? config },
+                    set: { viewModel.portfolioChart = $0; onStyleChanged() }
+                ),
+                store: portfolioStore,
+                chartHeight: chartHeight,
+                onRemove: onRemove
+            )
+        } else {
+            marketCard
+        }
+    }
+
+    private var marketCard: some View {
         VStack(spacing: 2) {
             headerView
             chartArea
@@ -284,6 +302,319 @@ struct ChartCardView: View {
         }
     }
 
+}
+
+private struct PortfolioChartCard: View {
+    @Binding var config: PortfolioChartConfig
+    @ObservedObject var store: PortfolioStore
+    let chartHeight: CGFloat
+    let onRemove: () -> Void
+    @State private var valuesHidden = false
+
+    private var portfolio: Portfolio? { store.portfolio(namedBy: config.portfolioID) }
+    private var holdings: [PortfolioHolding] { store.holdings(for: config.portfolioID) }
+    private var totalValue: Decimal { holdings.compactMap(\.currentValue).reduce(0, +) }
+    private var currency: PortfolioCurrency { portfolio?.baseCurrency ?? .USD }
+    private var history: [PortfolioSnapshot] {
+        let all = store.history(for: config.portfolioID)
+        guard let duration = config.range.duration else { return all }
+        return all.filter { $0.timestamp >= Date().addingTimeInterval(-duration) }
+    }
+    private var timeframeChange: PortfolioValueChange? {
+        history.first.map { PortfolioValueChange(from: $0.value, to: totalValue) }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: "briefcase.fill").foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(config.kind.title).font(.headline).bold()
+                    Text(portfolio?.name ?? "All Portfolios").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if config.kind == .valueChart {
+                    Button { valuesHidden.toggle() } label: {
+                        Image(systemName: valuesHidden ? "eye.slash" : "eye")
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                    .help(valuesHidden ? "Show Y-axis values" : "Hide Y-axis values")
+                    .accessibilityLabel(valuesHidden ? "Show Y-axis values" : "Hide Y-axis values")
+                }
+                Button(role: .destructive, action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain).foregroundStyle(.secondary)
+                .accessibilityLabel("Remove portfolio chart")
+            }
+
+            switch config.kind {
+            case .valueChart:
+                Picker("History range", selection: $config.range) {
+                    ForEach(PortfolioChartRange.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 380)
+                timeframeChangeSummary
+                PortfolioValueMiniChart(
+                    snapshots: history, currentValue: totalValue,
+                    currency: currency, range: config.range,
+                    privacy: store.privacyMode, hidesYAxisValues: valuesHidden
+                )
+            case .value:
+                VStack(spacing: 8) {
+                    Text(store.privacyMode ? "••••••••" : money(totalValue))
+                        .font(.system(size: 42, weight: .semibold, design: .rounded))
+                    Text("Current portfolio value").foregroundStyle(.secondary)
+                    if holdings.contains(where: { $0.currentPrice == nil }) {
+                        Text("Some assets could not be priced").font(.caption).foregroundStyle(.orange)
+                    }
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            case .allocation:
+                PortfolioAllocationMiniChart(holdings: holdings, privacy: store.privacyMode)
+            }
+        }
+        .padding(10)
+        .frame(height: chartHeight + ChartLayout.cardChrome)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .task {
+            await store.refresh()
+            await store.refreshQuotes(forPortfolioID: config.portfolioID)
+            await store.rebuildHistory(forPortfolioID: config.portfolioID)
+        }
+    }
+
+    private func money(_ value: Decimal) -> String {
+        value.formatted(.currency(code: currency.rawValue).precision(.fractionLength(2)))
+    }
+
+    @ViewBuilder private var timeframeChangeSummary: some View {
+        HStack(spacing: 6) {
+            if store.privacyMode {
+                Text("********")
+            } else if let change = timeframeChange {
+                Image(systemName: changeIcon(change.direction))
+                Text(valuesHidden ? "*****" : money(abs(change.amount)))
+                    + Text(" · ")
+                    + Text(change.percentage.map {
+                        abs($0).formatted(.percent.precision(.fractionLength(2)))
+                    } ?? "—")
+            } else {
+                Text("Unavailable")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption.weight(.medium))
+        .monospacedDigit()
+        .foregroundStyle(changeColor)
+        .frame(maxWidth: 380)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(changeAccessibilityLabel)
+    }
+
+    private var changeColor: Color {
+        guard !store.privacyMode, let timeframeChange else { return .secondary }
+        switch timeframeChange.direction {
+        case .up: return .green
+        case .down: return .red
+        case .unchanged: return .secondary
+        }
+    }
+
+    private func changeIcon(_ direction: PortfolioValueChange.Direction) -> String {
+        switch direction {
+        case .up: return "arrow.up.right"
+        case .down: return "arrow.down.right"
+        case .unchanged: return "minus"
+        }
+    }
+
+    private var changeAccessibilityLabel: String {
+        guard !store.privacyMode else { return "Portfolio change hidden" }
+        guard let timeframeChange else { return "Portfolio change unavailable" }
+        let direction: String
+        switch timeframeChange.direction {
+        case .up: direction = "up"
+        case .down: direction = "down"
+        case .unchanged: direction = "unchanged"
+        }
+        let percentage = timeframeChange.percentage.map {
+            abs($0).formatted(.percent.precision(.fractionLength(2)))
+        } ?? "percentage unavailable"
+        let amount = valuesHidden ? "amount hidden" : money(abs(timeframeChange.amount))
+        return "\(config.range.rawValue) portfolio change, \(direction) \(amount), \(percentage)"
+    }
+}
+
+private struct PortfolioValueMiniChart: View {
+    let snapshots: [PortfolioSnapshot]
+    let currentValue: Decimal
+    let currency: PortfolioCurrency
+    let range: PortfolioChartRange
+    let privacy: Bool
+    let hidesYAxisValues: Bool
+
+    private struct Point { let date: Date; let value: Decimal }
+    private func preparedPoints(now: Date = Date()) -> [Point] {
+        snapshots.map { Point(date: $0.timestamp, value: $0.value) }
+            + [Point(date: now, value: currentValue)]
+    }
+
+    var body: some View {
+        let points = preparedPoints()
+        GeometryReader { geometry in
+            Canvas { context, size in
+                guard !privacy, !points.isEmpty else { return }
+                let values = points.map(\.value)
+                var low = values.min() ?? 0, high = values.max() ?? 1
+                if low == high { low -= 1; high += 1 }
+                let padding = (high - low) * Decimal(string: "0.08")!
+                low -= padding; high += padding
+                let spread = high - low
+                let plot = CGRect(x: 12, y: 8, width: max(1, size.width - 96), height: max(1, size.height - 34))
+
+                for tick in 0...4 {
+                    let fraction = CGFloat(tick) / 4
+                    let y = plot.maxY - plot.height * fraction
+                    var grid = Path()
+                    grid.move(to: CGPoint(x: plot.minX, y: y))
+                    grid.addLine(to: CGPoint(x: plot.maxX, y: y))
+                    context.stroke(grid, with: .color(.secondary.opacity(0.18)), lineWidth: 1)
+                    let value = low + spread * Decimal(Double(fraction))
+                    let label = hidesYAxisValues ? "*****" : shortMoney(value)
+                    context.draw(
+                        Text(label).font(.caption2).foregroundStyle(.secondary),
+                        at: CGPoint(x: plot.maxX + 7, y: y), anchor: .leading
+                    )
+                }
+
+                var path = Path()
+                for index in points.indices {
+                    let x = points.count == 1 ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
+                    let fraction = CGFloat(((points[index].value - low) / spread).doubleValue)
+                    let point = CGPoint(x: x, y: plot.maxY - plot.height * fraction)
+                    index == 0 ? path.move(to: point) : path.addLine(to: point)
+                }
+                context.stroke(path, with: .color((values.last ?? 0) >= (values.first ?? 0) ? .green : .red), lineWidth: 2.5)
+
+                let currentColor: Color = (values.last ?? 0) >= (values.first ?? 0) ? .green : .red
+                drawCurrentValueOverlay(
+                    context: &context, plot: plot, low: low, spread: spread,
+                    color: currentColor
+                )
+
+                let labelIndices = Array(Set([0, max(0, points.count / 2), max(0, points.count - 1)])).sorted()
+                for index in labelIndices {
+                    let x = points.count == 1 ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
+                    context.draw(
+                        Text(dateLabel(points[index].date)).font(.caption2).foregroundStyle(.secondary),
+                        at: CGPoint(x: x, y: plot.maxY + 7), anchor: .top
+                    )
+                }
+            }
+            .overlay {
+                if privacy { Text("••••••••").font(.title) }
+                else if snapshots.isEmpty { Text("History will appear after portfolio snapshots are built.").foregroundStyle(.secondary) }
+            }
+        }
+    }
+
+    private func shortMoney(_ value: Decimal) -> String {
+        let absolute = abs(value)
+        let formatted: String
+        if absolute >= 1_000_000 {
+            formatted = (value / 1_000_000).formatted(.number.precision(.fractionLength(0...1))) + "M"
+        } else if absolute >= 1_000 {
+            formatted = (value / 1_000).formatted(.number.precision(.fractionLength(0...1))) + "K"
+        } else {
+            formatted = value.formatted(.number.precision(.fractionLength(0...2)))
+        }
+        return "\(currency.rawValue) \(formatted)"
+    }
+
+    private func drawCurrentValueOverlay(
+        context: inout GraphicsContext,
+        plot: CGRect,
+        low: Decimal,
+        spread: Decimal,
+        color: Color
+    ) {
+        let fraction = CGFloat(((currentValue - low) / spread).doubleValue)
+        let y = plot.maxY - plot.height * fraction
+
+        var line = Path()
+        line.move(to: CGPoint(x: plot.minX, y: y))
+        line.addLine(to: CGPoint(x: plot.maxX, y: y))
+        context.stroke(
+            line,
+            with: .color(color.opacity(0.5)),
+            style: StrokeStyle(lineWidth: 1, dash: [5, 3])
+        )
+
+        let label = hidesYAxisValues ? "*****" : currentValue.formatted(
+            .number.precision(.fractionLength(2))
+        )
+        let text = Text(label).font(.caption2).bold().foregroundStyle(.white)
+        let resolved = context.resolve(text)
+        let textSize = resolved.measure(in: CGSize(width: 100, height: 20))
+        let boxSize = CGSize(width: textSize.width + 10, height: 18)
+        let boxY = (y - boxSize.height / 2).clamped(
+            to: (plot.minY + 1)...(plot.maxY - boxSize.height - 1)
+        )
+        let box = CGRect(
+            x: plot.maxX + 4, y: boxY,
+            width: boxSize.width, height: boxSize.height
+        )
+        context.fill(Path(roundedRect: box, cornerRadius: 3), with: .color(color))
+        context.draw(resolved, at: CGPoint(x: box.midX, y: box.midY))
+    }
+
+    private func dateLabel(_ date: Date) -> String {
+        switch range {
+        case .oneDay: return date.formatted(date: .omitted, time: .shortened)
+        case .oneWeek, .oneMonth: return date.formatted(.dateTime.month(.abbreviated).day())
+        case .oneYear, .all: return date.formatted(.dateTime.month(.abbreviated).year())
+        }
+    }
+}
+
+private struct PortfolioAllocationMiniChart: View {
+    let holdings: [PortfolioHolding]
+    let privacy: Bool
+    private let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .cyan]
+    private var sorted: [PortfolioHolding] { holdings.filter { $0.allocation > 0 }.sorted { $0.allocation > $1.allocation } }
+
+    var body: some View {
+        if sorted.isEmpty {
+            ContentUnavailableView("No Allocations", systemImage: "chart.pie", description: Text("Add priced holdings to this portfolio."))
+        } else {
+            HStack(spacing: 24) {
+                Canvas { context, size in
+                    var start = Angle.degrees(-90)
+                    let radius = max(1, min(size.width, size.height) / 2 - 20)
+                    for (index, holding) in sorted.enumerated() {
+                        let end = start + .degrees(holding.allocation.doubleValue * 360)
+                        var path = Path()
+                        path.addArc(center: CGPoint(x: size.width / 2, y: size.height / 2), radius: radius,
+                                    startAngle: start, endAngle: end, clockwise: false)
+                        context.stroke(path, with: .color(colors[index % colors.count]), lineWidth: 26)
+                        start = end
+                    }
+                }.frame(maxWidth: 240)
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(sorted.enumerated()), id: \.element.id) { index, holding in
+                            HStack {
+                                Circle().fill(colors[index % colors.count]).frame(width: 8, height: 8)
+                                Text(holding.asset.symbol).bold()
+                                Spacer()
+                                Text(privacy ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1))))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 private struct ReplaySelectionMarker: View {
