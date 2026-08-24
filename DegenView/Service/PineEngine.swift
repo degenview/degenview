@@ -486,9 +486,10 @@ struct PineCompiledProgram: Sendable {
 
 enum PineCompiler {
     static func compile(source: String, limits: PineLimits = .default) -> PineCompiledProgram {
+        let normalizedSource = normalizeLineEndings(in: source)
         var diagnostics: [PineDiagnostic] = []
-        let versionMatches = source.split(separator: "\n").compactMap { line -> String? in
-            let s = line.trimmingCharacters(in: .whitespaces)
+        let versionMatches = normalizedSource.split(separator: "\n").compactMap { line -> String? in
+            let s = line.trimmingCharacters(in: .whitespacesAndNewlines)
             return s.hasPrefix("//@version=") ? String(s.dropFirst(11)) : nil
         }
         if versionMatches.isEmpty {
@@ -500,7 +501,7 @@ enum PineCompiler {
                     "Pine Script version \(versionMatches.first!) is not supported; this runtime targets v6.",
                     .zero))
         }
-        let lexed = PineLexer(source: source, limits: limits).lex()
+        let lexed = PineLexer(source: normalizedSource, limits: limits).lex()
         diagnostics += lexed.diagnostics
         var parser = PineParser(
             tokens: lexed.tokens, index: 0, diagnostics: [], callSite: 0, limits: limits)
@@ -564,8 +565,19 @@ enum PineCompiler {
         collectInputs(statements, &schema, &diagnostics)
         validate(statements, diagnostics: &diagnostics)
         return .init(
-            source: source, statements: statements, declaration: metadata, inputSchema: schema,
+            source: normalizedSource, statements: statements, declaration: metadata, inputSchema: schema,
             diagnostics: diagnostics)
+    }
+
+    /// Text copied from browsers and editors can contain CR-only or Unicode line separators.
+    /// Normalize them before both annotation discovery and lexing so a leading `//` comment
+    /// cannot accidentally consume the entire script.
+    private static func normalizeLineEndings(in source: String) -> String {
+        source
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: "\u{2028}", with: "\n")
+            .replacingOccurrences(of: "\u{2029}", with: "\n")
     }
 
     private static func collectInputs(

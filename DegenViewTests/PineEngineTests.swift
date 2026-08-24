@@ -80,4 +80,22 @@ final class PineEngineTests: XCTestCase {
             try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3])).output.plots.count, 2
         )
     }
+
+    func testCopiedScriptWithCopyrightHeaderAndNonstandardLineEndings() {
+        let lines = [
+            "// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0",
+            "// © Devjames",
+            "",
+            "//@version=6",
+            "indicator(\"RSI-50 Step Line\", overlay=true)",
+            "rsiLength = input.int(9, title=\"RSI Length\", minval=1)",
+        ]
+
+        for separator in ["\r", "\r\n", "\u{2028}", "\u{2029}"] {
+            let program = PineCompiler.compile(source: lines.joined(separator: separator))
+            XCTAssertTrue(program.isValid, "Separator \(separator.debugDescription): \(program.diagnostics)")
+            XCTAssertEqual(program.declaration.title, "RSI-50 Step Line")
+            XCTAssertEqual(program.inputSchema.inputs.first?.id, "rsiLength")
+        }
+    }
 }
