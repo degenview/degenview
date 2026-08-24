@@ -432,7 +432,10 @@ struct PineParser {
                 lhs = .history(lhs, offset, lhs.range)
                 continue
             }
-            if take(.question) {
+            // Ternary has lower precedence than every binary operator. In particular,
+            // `a and b ? x : y` must parse as `(a and b) ? x : y`, not
+            // `a and (b ? x : y)`.
+            if minBP <= 5, take(.question) {
                 guard let yes = expression(), take(.colon), let no = expression() else {
                     error("PINE2007", "Malformed ternary expression.", current.range)
                     return lhs

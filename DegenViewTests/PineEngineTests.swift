@@ -134,4 +134,19 @@ final class PineEngineTests: XCTestCase {
         XCTAssertEqual(result.output.plots.count, 1)
         XCTAssertEqual(result.output.markers.count, 1)
     }
+
+    func testTernaryBindsMoreWeaklyThanLogicalOperators() throws {
+        let source = """
+            //@version=6
+            indicator("Ternary precedence", overlay=true)
+            selected = true and true ? color.red : color.green
+            bgcolor(selected)
+            """
+
+        let program = PineCompiler.compile(source: source)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+
+        let result = try PineRuntimeSession(program: program).evaluate(bars: bars([1]))
+        XCTAssertEqual(result.output.backgrounds.first?.colors.first, 0xF236_45FF)
+    }
 }
