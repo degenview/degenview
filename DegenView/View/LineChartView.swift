@@ -150,7 +150,7 @@ struct LineChartView: View {
         // Sort top-to-bottom, then spread so labels don't stack.
         positions.sort { $0.y < $1.y }
         let minGap: CGFloat = 13
-        for i in 1..<positions.count {
+        for i in positions.indices.dropFirst() {
             if positions[i].y - positions[i - 1].y < minGap {
                 positions[i].y = positions[i - 1].y + minGap
             }
