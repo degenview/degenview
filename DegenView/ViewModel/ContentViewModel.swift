@@ -1056,7 +1056,9 @@ final class ContentViewModel: ObservableObject {
                 displayName: vm.displayName,
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
                 portfolioChart: vm.portfolioChart,
-                pine: vm.pineConfiguration
+                pine: vm.pineConfiguration,
+                chartID: vm.chartID,
+                scripts: vm.scriptInstances
             )
         }
     }

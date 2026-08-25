@@ -536,32 +536,30 @@ enum PineCompiler {
             tokens: lexed.tokens, index: 0, diagnostics: [], callSite: 0, limits: limits)
         let (statements, parseDiagnostics) = parser.parse()
         diagnostics += parseDiagnostics
-        var declarations: [(PineExpression, PineSourceRange)] = []
+        var declarations: [(ScriptType, PineExpression, PineSourceRange)] = []
         for statement in statements {
             if case .expression(let e) = statement, case .call(let name, _, _, let r) = e,
                 name == "indicator"
             {
-                declarations.append((e, r))
-            }
-            if case .expression(let e) = statement, case .call(let name, _, _, let r) = e,
-                ["strategy", "library"].contains(name)
-            {
-                diagnostics.append(
-                    diag(
-                        "PINE9002", .unsupported, "\(name) scripts are not supported by the indicator engine.",
-                        r))
+                declarations.append((.indicator, e, r))
+            } else if case .expression(let e) = statement,
+                      case .call(let name, _, _, let r) = e,
+                      let type = ScriptType(rawValue: name) {
+                declarations.append((type, e, r))
             }
         }
         if declarations.count != 1 {
             diagnostics.append(
                 diag(
-                    "PINE3001", .semantic, "A script must contain exactly one indicator() declaration.",
-                    declarations.first?.1 ?? .zero))
+                    "PINE3001", .semantic, "A script must contain exactly one indicator(), strategy(), or library() declaration.",
+                    declarations.first?.2 ?? .zero))
         }
         var metadata = PineDeclarationMetadata(
+            type: declarations.first?.0 ?? .indicator,
+            pineVersion: versionMatches.first.flatMap(Int.init),
             title: "Untitled", shortTitle: nil, overlay: false, format: nil, precision: nil,
             maxBarsBack: nil)
-        if let expression = declarations.first?.0, case .call(_, let args, _, let range) = expression {
+        if let expression = declarations.first?.1, case .call(let declarationName, let args, _, let range) = expression {
             if let first = args.first, case .literal(.string(let title), _) = first.value {
                 metadata.title = title
             } else {
@@ -576,7 +574,7 @@ enum PineCompiler {
                 if !supported.contains(name) {
                     diagnostics.append(
                         diag(
-                            "PINE9001", .unsupported, "Unsupported indicator() argument '\(name)'.",
+                            "PINE9001", .unsupported, "Unsupported \(declarationName)() argument '\(name)'.",
                             arg.value.range))
                     continue
                 }

@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000106 /* ScriptStoreTests.swift */; };
+		SM0000000000000000000001 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000101 /* ScriptStore.swift */; };
+		SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000102 /* ScriptManagerViewModel.swift */; };
+		SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000103 /* ScriptEditorViewModel.swift */; };
+		SM0000000000000000000004 /* ScriptManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000104 /* ScriptManagerView.swift */; };
+		SM0000000000000000000005 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000105 /* ScriptEditorView.swift */; };
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
 		P10000000000000000000001 /* PineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101 /* PineModels.swift */; };
 		P10000000000000000000002 /* PineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000102 /* PineEngine.swift */; };
@@ -163,6 +169,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		SM0000000000000000000106 /* ScriptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStoreTests.swift; sourceTree = "<group>"; };
+		SM0000000000000000000101 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
+		SM0000000000000000000102 /* ScriptManagerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerViewModel.swift; sourceTree = "<group>"; };
+		SM0000000000000000000103 /* ScriptEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorViewModel.swift; sourceTree = "<group>"; };
+		SM0000000000000000000104 /* ScriptManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerView.swift; sourceTree = "<group>"; };
+		SM0000000000000000000105 /* ScriptEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorView.swift; sourceTree = "<group>"; };
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
 		P10000000000000000000101 /* PineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineModels.swift; sourceTree = "<group>"; };
 		P10000000000000000000102 /* PineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngine.swift; sourceTree = "<group>"; };
@@ -372,6 +384,7 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				SM0000000000000000000101 /* ScriptStore.swift */,
 				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
 				BA0000000000000000000102 /* AlertRuntimeHost.swift */,
 				BA0000000000000000000103 /* AlertBackgroundService.swift */,
@@ -415,6 +428,8 @@
 		A00000000000000000000312 /* ViewModel */ = {
 			isa = PBXGroup;
 			children = (
+				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
+				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
 				B90000000000000000000105 /* AlertStore.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
@@ -427,6 +442,8 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				SM0000000000000000000104 /* ScriptManagerView.swift */,
+				SM0000000000000000000105 /* ScriptEditorView.swift */,
 				B90000000000000000000106 /* PriceAlertEditor.swift */,
 				B90000000000000000000107 /* AlertsCenterView.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
@@ -482,6 +499,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
@@ -610,6 +628,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
@@ -629,6 +648,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				SM0000000000000000000001 /* ScriptStore.swift in Sources */,
+				SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */,
+				SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */,
+				SM0000000000000000000004 /* ScriptManagerView.swift in Sources */,
+				SM0000000000000000000005 /* ScriptEditorView.swift in Sources */,
 				BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */,
 				BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */,
 				BA0000000000000000000003 /* AlertBackgroundService.swift in Sources */,

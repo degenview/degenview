@@ -119,6 +119,8 @@ struct PortfolioChartConfig: Codable, Equatable, Hashable {
 
 /// Persisted config for a single ticker — symbol + which API to fetch from.
 struct TickerConfig: Codable, Equatable, Hashable {
+    /// Stable identity for script attachment and migration. Older documents synthesize one.
+    var chartID: UUID = UUID()
     let symbol: String
     let source: DataSourceType
 
@@ -165,4 +167,54 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// One isolated script instance for this market chart. Draft and last-valid source
     /// are stored separately so a compiler error never blanks an already working plot.
     var pine: PineConfiguration? = nil
+
+    /// Canonical local-script instances. `pine` is read only by the migration coordinator.
+    var scripts: [ChartScriptInstance] = []
+
+    init(symbol: String, source: DataSourceType, bullishColorHex: String? = nil,
+         bearishColorHex: String? = nil, yAxisDecimalPlaces: Int? = nil, yZoom: Double? = nil,
+         showVolume: Bool? = nil, showRSI: Bool? = nil, showEMA: Bool? = nil,
+         emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
+         trendLines: [TrendLine]? = nil, displayName: String? = nil,
+         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
+         pine: PineConfiguration? = nil, chartID: UUID = UUID(),
+         scripts: [ChartScriptInstance] = []) {
+        self.chartID = chartID; self.symbol = symbol; self.source = source
+        self.bullishColorHex = bullishColorHex; self.bearishColorHex = bearishColorHex
+        self.yAxisDecimalPlaces = yAxisDecimalPlaces; self.yZoom = yZoom
+        self.showVolume = showVolume; self.showRSI = showRSI; self.showEMA = showEMA
+        self.emaPeriod = emaPeriod; self.showBollinger = showBollinger
+        self.showTrendFlips = showTrendFlips; self.trendLines = trendLines
+        self.displayName = displayName; self.pmSeries = pmSeries; self.portfolioChart = portfolioChart
+        self.pine = pine; self.scripts = scripts
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
+             yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
+             trendLines, displayName, pmSeries, portfolioChart, pine, scripts
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        chartID = try c.decodeIfPresent(UUID.self, forKey: .chartID) ?? UUID()
+        symbol = try c.decode(String.self, forKey: .symbol)
+        source = try c.decode(DataSourceType.self, forKey: .source)
+        bullishColorHex = try c.decodeIfPresent(String.self, forKey: .bullishColorHex)
+        bearishColorHex = try c.decodeIfPresent(String.self, forKey: .bearishColorHex)
+        yAxisDecimalPlaces = try c.decodeIfPresent(Int.self, forKey: .yAxisDecimalPlaces)
+        yZoom = try c.decodeIfPresent(Double.self, forKey: .yZoom)
+        showVolume = try c.decodeIfPresent(Bool.self, forKey: .showVolume)
+        showRSI = try c.decodeIfPresent(Bool.self, forKey: .showRSI)
+        showEMA = try c.decodeIfPresent(Bool.self, forKey: .showEMA)
+        emaPeriod = try c.decodeIfPresent(Int.self, forKey: .emaPeriod)
+        showBollinger = try c.decodeIfPresent(Bool.self, forKey: .showBollinger)
+        showTrendFlips = try c.decodeIfPresent(Bool.self, forKey: .showTrendFlips)
+        trendLines = try c.decodeIfPresent([TrendLine].self, forKey: .trendLines)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        pmSeries = try c.decodeIfPresent([PmSeriesConfig].self, forKey: .pmSeries)
+        portfolioChart = try c.decodeIfPresent(PortfolioChartConfig.self, forKey: .portfolioChart)
+        pine = try c.decodeIfPresent(PineConfiguration.self, forKey: .pine)
+        scripts = try c.decodeIfPresent([ChartScriptInstance].self, forKey: .scripts) ?? []
+    }
 }
