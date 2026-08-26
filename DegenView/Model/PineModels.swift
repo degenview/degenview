@@ -1,5 +1,89 @@
 import Foundation
 
+enum ScriptType: String, Codable, CaseIterable, Sendable, Identifiable {
+    case indicator, strategy, library
+    var id: String { rawValue }
+    var displayName: String { rawValue.capitalized }
+}
+
+/// A distinct scene value prevents script editor requests from being routed to the
+/// chart `WindowGroup`, which is also keyed by raw UUID values.
+struct ScriptEditorWindowID: Codable, Hashable, Sendable {
+    /// Unique even for unsaved editors, so several new scripts can be composed at once.
+    var windowID: UUID
+    var scriptID: UUID?
+
+    init(scriptID: UUID?) {
+        self.windowID = scriptID ?? UUID()
+        self.scriptID = scriptID
+    }
+}
+
+extension Notification.Name {
+    static let localScriptsDidChange = Notification.Name("DegenView.localScriptsDidChange")
+}
+
+enum CompileStatus: String, Codable, CaseIterable, Sendable {
+    case notCompiled, valid, warning, error
+}
+
+struct ScriptVersion: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var scriptID: UUID
+    var createdAt: Date
+    var source: String
+    var compileStatus: CompileStatus
+}
+
+struct ScriptDraft: Codable, Equatable, Sendable {
+    var scriptID: UUID
+    var source: String
+    var modifiedAt: Date
+    var basedOnRevisionID: UUID?
+}
+
+struct ScriptCompileRecord: Codable, Equatable, Sendable {
+    var sourceHash: String
+    var compilerVersion: String
+    var pineVersion: Int?
+    var status: CompileStatus
+    var diagnostics: [PineDiagnostic]
+    var declaration: PineDeclarationMetadata?
+    var compiledAt: Date
+}
+
+struct LocalScript: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID
+    var name: String
+    var type: ScriptType
+    var source: String
+    var latestRevisionID: UUID?
+    var createdAt: Date
+    var modifiedAt: Date
+    var lastOpenedAt: Date?
+    var isFavorite: Bool
+    var compileRecord: ScriptCompileRecord?
+}
+
+struct ChartScriptInstance: Codable, Equatable, Hashable, Identifiable, Sendable {
+    enum UpdateStatus: String, Codable, Sendable { case current, available, missing }
+    var id: UUID
+    var scriptID: UUID
+    var loadedRevisionID: UUID
+    var inputs: [String: PineInputValue]
+    var isVisible: Bool
+    var styleOverrides: [String: String]
+    var updateStatus: UpdateStatus
+
+    init(id: UUID = UUID(), scriptID: UUID, loadedRevisionID: UUID,
+         inputs: [String: PineInputValue] = [:], isVisible: Bool = true,
+         styleOverrides: [String: String] = [:], updateStatus: UpdateStatus = .current) {
+        self.id = id; self.scriptID = scriptID; self.loadedRevisionID = loadedRevisionID
+        self.inputs = inputs; self.isVisible = isVisible; self.styleOverrides = styleOverrides
+        self.updateStatus = updateStatus
+    }
+}
+
 struct PineSourcePosition: Codable, Equatable, Sendable {
     var line: Int
     var column: Int
@@ -62,6 +146,8 @@ struct PineInputDefinition: Codable, Equatable, Hashable, Sendable, Identifiable
 struct PineInputSchema: Codable, Equatable, Sendable { var inputs: [PineInputDefinition] = [] }
 
 struct PineDeclarationMetadata: Codable, Equatable, Sendable {
+    var type: ScriptType = .indicator
+    var pineVersion: Int? = nil
     var title: String
     var shortTitle: String?
     var overlay: Bool

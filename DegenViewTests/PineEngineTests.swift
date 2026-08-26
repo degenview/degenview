@@ -65,6 +65,37 @@ final class PineEngineTests: XCTestCase {
         XCTAssertTrue(p.diagnostics.contains { $0.code == "PINE3021" })
     }
 
+    func testUnexpectedEndDiagnosticPointsAtEndOfSource() {
+        let source = "//@version=6\nindicator(\"x\")\nplot("
+        let diagnostic = PineCompiler.compile(source: source).diagnostics.first { $0.code == "PINE2008" }
+        XCTAssertEqual(diagnostic?.range.start.line, 3)
+        XCTAssertEqual(diagnostic?.range.start.offset, source.utf16.count)
+    }
+
+    func testEditorDiagnosticRangeMapsThroughCRLFLineEndings() throws {
+        let source = [
+            "//@version=6",
+            "indicator(\"RSI\")",
+            "rsiSource = input.source(close)",
+            "rsiLength = input.int(9)",
+            "rsiValue = ta.rsi(rsiSource, rsiLength)!!",
+        ].joined(separator: "\r\n")
+        let diagnostic = try XCTUnwrap(
+            PineCompiler.compile(source: source).diagnostics.first { $0.code == "PINE1001" }
+        )
+        let range = try XCTUnwrap(PineDiagnosticRangeMapper.nsRange(for: diagnostic.range, in: source))
+        XCTAssertEqual((source as NSString).substring(with: range), "!")
+    }
+
+    func testEditorDiagnosticRangeHandlesUnicodeBeforeToken() throws {
+        let source = "//@version=6\n// 🪙 café\nindicator(\"x\")\nplot(close)!"
+        let diagnostic = try XCTUnwrap(
+            PineCompiler.compile(source: source).diagnostics.first { $0.code == "PINE1001" }
+        )
+        let range = try XCTUnwrap(PineDiagnosticRangeMapper.nsRange(for: diagnostic.range, in: source))
+        XCTAssertEqual((source as NSString).substring(with: range), "!")
+    }
+
     func testColorAndLinewidthNamedArgumentsRemainCallArguments() throws {
         let source = """
             //@version=6

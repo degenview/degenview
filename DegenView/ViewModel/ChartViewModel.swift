@@ -182,6 +182,8 @@ final class ChartViewModel: ObservableObject {
     // MARK: - Pine script
 
     @Published var pineConfiguration: PineConfiguration?
+    @Published var scriptInstances: [ChartScriptInstance] = []
+    var chartID = UUID()
     @Published private(set) var pineOutput: PineVisualOutput = .empty
     @Published private(set) var pineDiagnostics: [PineDiagnostic] = []
     @Published private(set) var pineStatus = "No script applied"
@@ -449,6 +451,8 @@ final class ChartViewModel: ObservableObject {
 
     /// Apply persisted chart settings from a TickerConfig.
     func applyConfig(_ config: TickerConfig) {
+        chartID = config.chartID
+        scriptInstances = config.scripts
         portfolioChart = config.portfolioChart
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }

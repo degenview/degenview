@@ -27,6 +27,13 @@ struct DegenViewApp: App {
             AlertsCenterView()
         }
         .defaultSize(width: 780, height: 520)
+
+        Window("Script Manager", id: "script-manager") { ScriptManagerView() }
+            .defaultSize(width: 900, height: 600)
+
+        WindowGroup("Script Editor", for: ScriptEditorWindowID.self) { $windowID in
+            if let windowID { ScriptEditorView(scriptID: windowID.scriptID) }
+        }.defaultSize(width: 850, height: 700)
     }
 }
 
@@ -44,6 +51,12 @@ private struct TabCommands: Commands {
 
             Button("Merge All Windows") {
                 WindowCoordinator.shared.mergeAllWindows()
+            }
+        }
+        CommandGroup(after: .windowArrangement) {
+            Button("Script Manager") {
+                WindowCoordinator.shared.prepareAuxiliaryTab()
+                openWindow(id: "script-manager")
             }
         }
     }

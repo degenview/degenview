@@ -49,6 +49,18 @@ struct ToolSidebar<BottomControls: View>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("View Price Alerts")
                 .sidebarTooltip("View Price Alerts")
+                Button {
+                    WindowCoordinator.shared.prepareAuxiliaryTab()
+                    openWindow(id: "script-manager")
+                } label: {
+                    Image(systemName: "curlybraces")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(width: 26, height: 26)
+                        .contentShape(RoundedRectangle(cornerRadius: 5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Script Manager")
+                .sidebarTooltip("Open Script Manager")
             }
             .padding(.vertical, 6)
             .frame(width: UI.toolSidebarWidth)

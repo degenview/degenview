@@ -26,6 +26,7 @@ final class WindowCoordinator {
     /// steals key status from the window we want to anchor on.
     private var pendingJoins: [UUID: UUID] = [:]
     private var pendingPortfolioAssets: [UUID: PortfolioAsset] = [:]
+    private weak var pendingAuxiliaryAnchor: NSWindow?
 
     /// Whether the launch window has already claimed the persisted session.
     /// Everything opened afterwards without a tab id — the tab bar's `+`,
@@ -65,6 +66,28 @@ final class WindowCoordinator {
     }
 
     // MARK: - Registration
+
+    /// Capture the current chart window before opening an auxiliary SwiftUI scene,
+    /// because the new scene may become key before its `WindowAccessor` resolves.
+    func prepareAuxiliaryTab() {
+        if let id = frontmostTabID() { pendingAuxiliaryAnchor = window(for: id) }
+    }
+
+    /// Join a manager/editor-style scene to the native chart tab group without
+    /// registering it as a persisted chart tab.
+    func registerAuxiliaryTab(_ window: NSWindow) {
+        window.tabbingIdentifier = Self.tabbingIdentifier
+        window.tabbingMode = .preferred
+        window.isRestorable = false
+        let anchor = pendingAuxiliaryAnchor
+            ?? NSApp.windows.first(where: { tabID(for: $0) != nil && $0 !== window })
+        pendingAuxiliaryAnchor = nil
+        if let anchor, anchor.tabGroup?.windows.contains(window) != true {
+            anchor.addTabbedWindow(window, ordered: .above)
+            window.makeKeyAndOrderFront(nil)
+        }
+        ensureTabBarVisible(window)
+    }
 
     func register(_ window: NSWindow, for tabID: UUID) {
         window.tabbingIdentifier = Self.tabbingIdentifier
