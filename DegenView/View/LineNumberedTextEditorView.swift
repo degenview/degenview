@@ -27,6 +27,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
+            PineSyntaxHighlighter.apply(to: textView)
             text.wrappedValue = textView.string
             gutter?.needsDisplay = true
         }
@@ -110,6 +111,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                     .foregroundColor: NSColor.labelColor
                 ]
             ))
+            PineSyntaxHighlighter.apply(to: textView)
             gutter.needsDisplay = true
         }
     }
@@ -161,5 +163,68 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 )
             }
         }
+    }
+}
+
+/// Lightweight, editor-only highlighting. The compiler remains the authority on whether
+/// source is valid; this deliberately also colors incomplete tokens while they are typed.
+private enum PineSyntaxHighlighter {
+    private struct Rule {
+        let expression: NSRegularExpression
+        let color: NSColor
+
+        init(_ pattern: String, color: NSColor) {
+            expression = try! NSRegularExpression(pattern: pattern)
+            self.color = color
+        }
+    }
+
+    // Rules are ordered from general to specific. Later matches win, except that strings
+    // and comments are applied last so text inside them never receives token coloring.
+    private static let tokenRules = [
+        Rule(#"\b(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\b"#, color: .systemOrange),
+        Rule(
+            #"\b(?:indicator|strategy|library|plot|plotshape|plotchar|hline|bgcolor|barcolor|input|color|ta)\b"#,
+            color: .systemTeal
+        ),
+        Rule(
+            #"\b(?:and|or|not|if|else|var|varip|int|float|bool|string|true|false|na)\b"#,
+            color: .systemPurple
+        ),
+        Rule(#"#[0-9A-Fa-f]{6}(?:[0-9A-Fa-f]{2})?\b"#, color: .systemPink),
+    ]
+    // One expression is important here: alternation makes a whole string win before a
+    // `//` inside it can look like a comment, and a whole comment wins before quoted text
+    // inside the comment can look like a string.
+    private static let protectedExpression = try! NSRegularExpression(
+        pattern: #"(\"(?:\\.|[^\"\\])*\"?)|(//[^\n]*)"#
+    )
+
+    static func apply(to textView: NSTextView) {
+        guard let storage = textView.textStorage else { return }
+        let range = NSRange(location: 0, length: storage.length)
+        let source = storage.string
+        let font = textView.font
+            ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
+        storage.beginEditing()
+        storage.setAttributes([.font: font, .foregroundColor: NSColor.labelColor], range: range)
+        for rule in tokenRules {
+            rule.expression.enumerateMatches(in: source, range: range) { match, _, _ in
+                guard let match else { return }
+                storage.addAttribute(.foregroundColor, value: rule.color, range: match.range)
+            }
+        }
+        protectedExpression.enumerateMatches(in: source, range: range) { match, _, _ in
+            guard let match else { return }
+            let isString = match.range(at: 1).location != NSNotFound
+            storage.addAttribute(
+                .foregroundColor,
+                value: isString ? NSColor.systemRed : NSColor.secondaryLabelColor,
+                range: match.range
+            )
+        }
+        storage.endEditing()
+        textView.typingAttributes = [.font: font, .foregroundColor: NSColor.labelColor]
     }
 }
