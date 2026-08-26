@@ -79,7 +79,8 @@ final class WindowCoordinator {
         window.tabbingIdentifier = Self.tabbingIdentifier
         window.tabbingMode = .preferred
         window.isRestorable = false
-        let anchor = pendingAuxiliaryAnchor
+        let anchor =
+            pendingAuxiliaryAnchor
             ?? NSApp.windows.first(where: { tabID(for: $0) != nil && $0 !== window })
         pendingAuxiliaryAnchor = nil
         if let anchor, anchor.tabGroup?.windows.contains(window) != true {
@@ -99,9 +100,10 @@ final class WindowCoordinator {
 
         var joinedTabGroup = false
         if let anchorID = pendingJoins.removeValue(forKey: tabID),
-           let anchor = self.window(for: anchorID),
-           anchor !== window,
-           anchor.tabGroup?.windows.contains(window) != true {
+            let anchor = self.window(for: anchorID),
+            anchor !== window,
+            anchor.tabGroup?.windows.contains(window) != true
+        {
             anchor.addTabbedWindow(window, ordered: .above)
             window.makeKeyAndOrderFront(nil)
             joinedTabGroup = true
@@ -156,8 +158,9 @@ final class WindowCoordinator {
     /// wants the app to open at.
     private func rememberFrame(of window: NSWindow) {
         guard !window.styleMask.contains(.fullScreen), !window.isZoomed else { return }
-        UserDefaults.standard.set(NSStringFromRect(window.frame),
-                                  forKey: UI.windowFrameDefaultsKey)
+        UserDefaults.standard.set(
+            NSStringFromRect(window.frame),
+            forKey: UI.windowFrameDefaultsKey)
     }
 
     private func savedFrame() -> NSRect? {
@@ -308,7 +311,8 @@ final class WindowCoordinator {
             // Anchor on whichever member of this tab's window group is already
             // on screen. None means it was a standalone window — leave it loose.
             if let groupIndex = store.windowIndex(of: id),
-               let anchor = store.windowGroups[groupIndex].first(where: { window(for: $0) != nil }) {
+                let anchor = store.windowGroups[groupIndex].first(where: { window(for: $0) != nil })
+            {
                 pendingJoins[id] = anchor
             }
             openWindow(value: id)
@@ -321,7 +325,7 @@ final class WindowCoordinator {
 
     /// The next tab may need to anchor on this one, so it has to exist first.
     private func awaitRegistration(of tabID: UUID) async {
-        for _ in 0..<40 {   // ~2 s ceiling
+        for _ in 0..<40 {  // ~2 s ceiling
             if window(for: tabID) != nil { return }
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -340,7 +344,7 @@ final class WindowCoordinator {
 
         for window in NSApp.windows {
             guard tabID(for: window) != nil,
-                  visited.insert(ObjectIdentifier(window)).inserted
+                visited.insert(ObjectIdentifier(window)).inserted
             else { continue }
 
             let members = window.tabGroup?.windows ?? [window]
@@ -353,9 +357,10 @@ final class WindowCoordinator {
         // Put the group the user was last in first, so the next launch adopts a
         // tab from it into the initial window.
         if let main = NSApp.mainWindow ?? NSApp.keyWindow,
-           let mainID = tabID(for: main),
-           let index = groups.firstIndex(where: { $0.contains(mainID) }),
-           index != 0 {
+            let mainID = tabID(for: main),
+            let index = groups.firstIndex(where: { $0.contains(mainID) }),
+            index != 0
+        {
             groups.swapAt(0, index)
         }
 

@@ -19,7 +19,7 @@ struct LineChartView: View {
     var bearishColor: Color = .red
     var yAxisDecimalPlaces: Int? = nil  // nil = auto-detect
     var scale: PriceScale = .currency
-    var yZoom: Double = 1               // 1 = auto-fit; >1 = taller series
+    var yZoom: Double = 1  // 1 = auto-fit; >1 = taller series
     /// Precomputed by the view model over the full buffer, already trimmed to these
     /// points — so a long-period overlay is warmed up at the left edge.
     var indicators: IndicatorSeries = .none
@@ -139,7 +139,11 @@ struct LineChartView: View {
 
     /// Draw short inline labels at the right edge of each series line.
     private func drawSeriesLabels(context: inout GraphicsContext, plot: ChartPlot) {
-        struct LabelPos { var y: CGFloat; let color: Color; let label: String }
+        struct LabelPos {
+            var y: CGFloat
+            let color: Color
+            let label: String
+        }
 
         var positions: [LabelPos] = extraSeries.compactMap { series in
             guard let last = series.data.last else { return nil }
@@ -169,7 +173,9 @@ struct LineChartView: View {
         }
     }
 
-    private func drawLine(context: inout GraphicsContext, plot: ChartPlot, pts: [KlineData], color: Color, withGradient: Bool) {
+    private func drawLine(
+        context: inout GraphicsContext, plot: ChartPlot, pts: [KlineData], color: Color, withGradient: Bool
+    ) {
         guard pts.count >= 2 else {
             if pts.count == 1 { drawSinglePoint(context: &context, plot: plot, pts: pts, color: color) }
             return
@@ -219,8 +225,10 @@ struct LineChartView: View {
         let center = CGPoint(x: plot.x(forIndex: 0, slotWidth: slotWidth), y: plot.y(for: only.closePrice))
         let radius = style.lineWidth
         context.fill(
-            Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius,
-                                   width: radius * 2, height: radius * 2)),
+            Path(
+                ellipseIn: CGRect(
+                    x: center.x - radius, y: center.y - radius,
+                    width: radius * 2, height: radius * 2)),
             with: .color(color)
         )
     }

@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// A coin icon that always occupies the same slot.
 ///
@@ -34,7 +34,10 @@ struct TickerIconView: View {
         .frame(width: size, height: size)
         .clipShape(Circle())
         .task(id: url) {
-            guard let url else { loadedImage = nil; return }
+            guard let url else {
+                loadedImage = nil
+                return
+            }
             loadedImage = await ImageCache.shared.image(for: url)
         }
     }

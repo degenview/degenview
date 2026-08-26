@@ -68,7 +68,7 @@ struct ChartPlot {
     /// frame. Uses high/low, which equal the close on flat (line) points.
     static func priceRange(for points: [KlineData], padding: CGFloat) -> (min: Double, max: Double) {
         guard !points.isEmpty else { return (0.01, 1) }
-        let low  = points.map(\.lowPrice).min() ?? 0
+        let low = points.map(\.lowPrice).min() ?? 0
         let high = points.map(\.highPrice).max() ?? 1
         if low == high {
             let inset = max(abs(low) * 0.01, 0.01)
@@ -118,8 +118,9 @@ struct ChartPlot {
     /// sharing space the series rarely reaches.
     func bottomPane(fraction: CGFloat) -> CGRect {
         let height = plotRect.height * fraction
-        return CGRect(x: plotRect.minX, y: plotRect.maxY - height,
-                      width: plotRect.width, height: height)
+        return CGRect(
+            x: plotRect.minX, y: plotRect.maxY - height,
+            width: plotRect.width, height: height)
     }
 
     func y(for price: Double) -> CGFloat {
@@ -267,18 +268,24 @@ struct ChartPlot {
             )
             let groupHeight = size + style.trendFlipLabelGap + labelSize.height
             let priceY = y(for: isBullish ? point.lowPrice : point.highPrice)
-            let rawGroupCenter = priceY + (isBullish
-                ? style.trendFlipMarkerGap + groupHeight / 2
-                : -(style.trendFlipMarkerGap + groupHeight / 2))
+            let rawGroupCenter =
+                priceY
+                + (isBullish
+                    ? style.trendFlipMarkerGap + groupHeight / 2
+                    : -(style.trendFlipMarkerGap + groupHeight / 2))
             let groupCenter = rawGroupCenter.clamped(
                 to: (plotRect.minY + groupHeight / 2)...(plotRect.maxY - groupHeight / 2)
             )
-            let triangleCenterY = groupCenter + (isBullish
-                ? -(groupHeight - size) / 2
-                : (groupHeight - size) / 2)
-            let labelCenterY = groupCenter + (isBullish
-                ? (groupHeight - labelSize.height) / 2
-                : -(groupHeight - labelSize.height) / 2)
+            let triangleCenterY =
+                groupCenter
+                + (isBullish
+                    ? -(groupHeight - size) / 2
+                    : (groupHeight - size) / 2)
+            let labelCenterY =
+                groupCenter
+                + (isBullish
+                    ? (groupHeight - labelSize.height) / 2
+                    : -(groupHeight - labelSize.height) / 2)
             let labelCenterX = xPosition.clamped(
                 to: (plotRect.minX + labelSize.width / 2)...(plotRect.maxX - labelSize.width / 2)
             )
@@ -433,8 +440,9 @@ struct ChartPlot {
         guard handles else { return }
         let radius = style.trendHandleRadius
         for point in [start, end] {
-            let box = CGRect(x: point.x - radius, y: point.y - radius,
-                             width: radius * 2, height: radius * 2)
+            let box = CGRect(
+                x: point.x - radius, y: point.y - radius,
+                width: radius * 2, height: radius * 2)
             context.fill(Path(ellipseIn: box), with: .color(color))
             context.stroke(Path(ellipseIn: box), with: .color(.white.opacity(0.9)), lineWidth: 1)
         }
@@ -459,14 +467,16 @@ struct ChartPlot {
         let slot = slotWidth(forCount: points.count)
 
         for rect in rects {
-            drawRulerBox(&context, rect: rect, points: points, slotWidth: slot,
-                         bullish: bullish, bearish: bearish, dashed: false)
+            drawRulerBox(
+                &context, rect: rect, points: points, slotWidth: slot,
+                bullish: bullish, bearish: bearish, dashed: false)
         }
 
         if let draft {
-            drawRulerBox(&context, rect: RulerRect(start: draft.start, end: draft.end),
-                         points: points, slotWidth: slot,
-                         bullish: bullish, bearish: bearish, dashed: true)
+            drawRulerBox(
+                &context, rect: RulerRect(start: draft.start, end: draft.end),
+                points: points, slotWidth: slot,
+                bullish: bullish, bearish: bearish, dashed: true)
         }
     }
 
@@ -536,10 +546,10 @@ struct ChartPlot {
         let coverage = span.isEmpty ? barsText : "\(barsText), \(span)"
 
         return """
-        \(sign)\(abs(percent).formatted(.number.precision(.fractionLength(2))))%
-        \(sign)\(priceText)
-        \(coverage)
-        """
+            \(sign)\(abs(percent).formatted(.number.precision(.fractionLength(2))))%
+            \(sign)\(priceText)
+            \(coverage)
+            """
     }
 
     // MARK: - Current price marker
@@ -574,9 +584,11 @@ struct ChartPlot {
         let boxHeight: CGFloat = 18
 
         let boxX = plotRect.maxX + 4
-        guard let boxY = Self.overlayOriginY(
-            centeredAt: y, in: plotRect, labelHeight: boxHeight
-        ) else { return }
+        guard
+            let boxY = Self.overlayOriginY(
+                centeredAt: y, in: plotRect, labelHeight: boxHeight
+            )
+        else { return }
 
         let boxRect = CGRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
         context.fill(Path(roundedRect: boxRect, cornerRadius: 3), with: .color(color))
@@ -655,9 +667,11 @@ struct ChartPlot {
             context,
             PriceFormatter.format(crosshair.price, decimalPlaces: yAxisDecimalPlaces, scale: scale)
         )
-        guard let originY = Self.overlayOriginY(
-            centeredAt: y, in: plotRect, labelHeight: label.size.height
-        ) else { return }
+        guard
+            let originY = Self.overlayOriginY(
+                centeredAt: y, in: plotRect, labelHeight: label.size.height
+            )
+        else { return }
         draw(
             label,
             in: CGRect(origin: CGPoint(x: plotRect.maxX + 4, y: originY), size: label.size),
@@ -740,9 +754,11 @@ struct ChartPlot {
     // MARK: - Time boundary generation
 
     /// Natural time boundaries (month starts, hour marks) between the first and last point.
-    private static func timeBoundaries(first: Date, last: Date, pointInterval: TimeInterval, calendar: Calendar) -> [Date] {
+    private static func timeBoundaries(first: Date, last: Date, pointInterval: TimeInterval, calendar: Calendar)
+        -> [Date]
+    {
         switch pointInterval {
-        case ..<7200:   // sub-2h points (1h, 30m, 15m, …)
+        case ..<7200:  // sub-2h points (1h, 30m, 15m, …)
             // Boundaries at 00:00 each day, or every 6h if the span is short
             let span = last.timeIntervalSince(first)
             let hourStep = span < 172800 ? 6 : 24
@@ -814,7 +830,8 @@ struct ChartPlot {
         guard points.count > 1 else { return 0 }
         let last = points.count - 1
 
-        var lo = 0, hi = last
+        var lo = 0
+        var hi = last
         while lo < hi {
             let mid = (lo + hi + 1) / 2
             if points[mid].openTime <= date {

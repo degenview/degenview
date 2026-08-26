@@ -15,13 +15,19 @@ struct ReplayControlBar: View {
                 .accessibilityLabel("Select replay starting point")
                 .help("Change starting point")
 
-            Button { engine.stepForward() } label: { Image(systemName: "forward.frame.fill") }
-                .keyboardShortcut(.rightArrow, modifiers: .shift)
-                .disabled(!engine.canAdvance)
-                .accessibilityLabel("Advance replay one step")
-                .help("Step Forward (Shift–Right Arrow)")
+            Button {
+                engine.stepForward()
+            } label: {
+                Image(systemName: "forward.frame.fill")
+            }
+            .keyboardShortcut(.rightArrow, modifiers: .shift)
+            .disabled(!engine.canAdvance)
+            .accessibilityLabel("Advance replay one step")
+            .help("Step Forward (Shift–Right Arrow)")
 
-            Button { engine.togglePlayback() } label: {
+            Button {
+                engine.togglePlayback()
+            } label: {
                 Image(systemName: engine.status == .playing ? "pause.fill" : "play.fill")
             }
             .keyboardShortcut(.downArrow, modifiers: .shift)

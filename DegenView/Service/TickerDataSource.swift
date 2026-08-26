@@ -91,11 +91,11 @@ final class DataSourceFactory {
 
     func service(for type: DataSourceType) -> TickerDataSource {
         switch type {
-        case .binance:     return binanceService
-        case .coingecko:   return coinGeckoService
+        case .binance: return binanceService
+        case .coingecko: return coinGeckoService
         case .dexscreener: return dexScreenerService
-        case .alpaca:      return alpacaService
-        case .polymarket:  return polymarketService
+        case .alpaca: return alpacaService
+        case .polymarket: return polymarketService
         }
     }
 

@@ -1,5 +1,5 @@
-import SwiftUI
 import ServiceManagement
+import SwiftUI
 
 enum SettingsTab: String {
     case appearance
@@ -38,7 +38,9 @@ private struct NotificationSettingsView: View {
             Section("Background agent") {
                 LabeledContent("Status", value: serviceLabel)
                 LabeledContent("Notification permission", value: notificationPermissionLabel)
-                if let heartbeat = store.health.heartbeat { LabeledContent("Last heartbeat") { Text(heartbeat, style: .relative) } }
+                if let heartbeat = store.health.heartbeat {
+                    LabeledContent("Last heartbeat") { Text(heartbeat, style: .relative) }
+                }
                 ForEach(store.health.providers) { provider in
                     LabeledContent(provider.source.displayName) {
                         Text(providerLabel(provider))
@@ -46,15 +48,23 @@ private struct NotificationSettingsView: View {
                     }
                 }
                 if !store.health.unreconciledGaps.isEmpty {
-                    Label("\(store.health.unreconciledGaps.count) unreconciled data gap(s)", systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+                    Label(
+                        "\(store.health.unreconciledGaps.count) unreconciled data gap(s)",
+                        systemImage: "exclamationmark.triangle"
+                    ).foregroundStyle(.orange)
                 }
                 HStack {
                     Button("Retry Registration") { Task { await store.retryBackgroundService() } }
                     Button("Open Login Items Settings") { SMAppService.openSystemSettingsLoginItems() }
                 }
             }
-            Text("If the background item is disabled or unavailable, alerts continue evaluating while DegenView is open.").font(.caption).foregroundStyle(.secondary)
-            Button("Open System Notification Settings") { NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!) }
+            Text(
+                "If the background item is disabled or unavailable, alerts continue evaluating while DegenView is open."
+            ).font(.caption).foregroundStyle(.secondary)
+            Button("Open System Notification Settings") {
+                NSWorkspace.shared.open(
+                    URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension")!)
+            }
         }.padding(.top, 12)
     }
     private var serviceLabel: String {
@@ -82,7 +92,13 @@ private struct NotificationSettingsView: View {
         }
     }
     private func setting(_ path: WritableKeyPath<AlertNotificationSettings, Bool>) -> Binding<Bool> {
-        Binding(get: { store.settings[keyPath: path] }, set: { value in var settings = store.settings; settings[keyPath: path] = value; Task { await store.updateSettings(settings) } })
+        Binding(
+            get: { store.settings[keyPath: path] },
+            set: { value in
+                var settings = store.settings
+                settings[keyPath: path] = value
+                Task { await store.updateSettings(settings) }
+            })
     }
 }
 
@@ -114,8 +130,10 @@ private struct AlpacaSettingsView: View {
                 SecureField("Secret Key", text: $secretKey)
             }
             Section {
-                Text("Create a free Alpaca account, open the API Keys section in the dashboard, then generate or regenerate a key. Copy both values here; Alpaca only shows the secret once.")
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Create a free Alpaca account, open the API Keys section in the dashboard, then generate or regenerate a key. Copy both values here; Alpaca only shows the secret once."
+                )
+                .foregroundStyle(.secondary)
                 Link("Open the Alpaca dashboard", destination: URL(string: "https://app.alpaca.markets/")!)
             }
             HStack {

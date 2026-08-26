@@ -32,14 +32,15 @@ final class AlpacaAPIService: GranularReplayDataSource {
             URLQueryItem(name: "limit", value: String(min(limit, 10_000))),
             URLQueryItem(name: "adjustment", value: "all"),
             URLQueryItem(name: "feed", value: "iex"),
-            URLQueryItem(name: "sort", value: "desc")
+            URLQueryItem(name: "sort", value: "desc"),
         ]
         let data = try await request(components.url!, credentials: credentials)
         let response = try JSONDecoder.alpaca.decode(BarsResponse.self, from: data)
         guard !response.bars.isEmpty else { throw AlpacaError.noData(symbol.uppercased()) }
         return response.bars.reversed().map { bar in
-            KlineData(openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
-                      closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
+            KlineData(
+                openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
+                closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
         }
     }
 
@@ -82,38 +83,42 @@ final class AlpacaAPIService: GranularReplayDataSource {
                 URLQueryItem(name: "limit", value: String(min(10_000, maximumCount - result.count))),
                 URLQueryItem(name: "adjustment", value: "all"),
                 URLQueryItem(name: "feed", value: "iex"),
-                URLQueryItem(name: "sort", value: "asc")
+                URLQueryItem(name: "sort", value: "asc"),
             ]
             if let pageToken { items.append(URLQueryItem(name: "page_token", value: pageToken)) }
             components.queryItems = items
             let data = try await request(components.url!, credentials: credentials)
             let response = try JSONDecoder.alpaca.decode(BarsResponse.self, from: data)
-            result.append(contentsOf: response.bars.map { bar in
-                KlineData(openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
-                          closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
-            })
+            result.append(
+                contentsOf: response.bars.map { bar in
+                    KlineData(
+                        openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
+                        closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
+                })
             pageToken = result.count < maximumCount ? response.nextPageToken : nil
         } while pageToken != nil
 
         var seen = Set<Date>()
         return result.filter { candle in
-            candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite &&
-            candle.closePrice.isFinite && candle.highPrice >= candle.lowPrice &&
-            seen.insert(candle.openTime).inserted
+            candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite
+                && candle.closePrice.isFinite && candle.highPrice >= candle.lowPrice
+                && seen.insert(candle.openTime).inserted
         }.sorted { $0.openTime < $1.openTime }
     }
 
     func searchTickers(query: String) async throws -> [TickerSearchResult] {
         let credentials = try configuredCredentials()
         let assets: [Asset]
-        if let assetCache { assets = assetCache } else {
+        if let assetCache {
+            assets = assetCache
+        } else {
             // The app asks users for Paper Trading credentials. Alpaca's trading
             // endpoints (including the asset directory) require those keys to use
             // the paper host; the same keys still authenticate against Market Data.
             var components = URLComponents(string: "https://paper-api.alpaca.markets/v2/assets")!
             components.queryItems = [
                 URLQueryItem(name: "status", value: "active"),
-                URLQueryItem(name: "asset_class", value: "us_equity")
+                URLQueryItem(name: "asset_class", value: "us_equity"),
             ]
             let data = try await request(components.url!, credentials: credentials)
             assets = try JSONDecoder().decode([Asset].self, from: data)
@@ -140,7 +145,8 @@ final class AlpacaAPIService: GranularReplayDataSource {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw AlpacaError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            let message = (try? JSONDecoder().decode(APIError.self, from: data).message)
+            let message =
+                (try? JSONDecoder().decode(APIError.self, from: data).message)
                 ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
             throw AlpacaError.api(message)
         }
@@ -177,11 +183,21 @@ final class AlpacaAPIService: GranularReplayDataSource {
         let secondsPerCandle: TimeInterval
         let marketGapFactor: Double
         switch interval {
-        case "1h": secondsPerCandle = 3_600; marketGapFactor = 6
-        case "1d": secondsPerCandle = 86_400; marketGapFactor = 2
-        case "1w": secondsPerCandle = 604_800; marketGapFactor = 1.6
-        case "1M": secondsPerCandle = 2_592_000; marketGapFactor = 1.5
-        default: secondsPerCandle = 86_400; marketGapFactor = 2
+        case "1h":
+            secondsPerCandle = 3_600
+            marketGapFactor = 6
+        case "1d":
+            secondsPerCandle = 86_400
+            marketGapFactor = 2
+        case "1w":
+            secondsPerCandle = 604_800
+            marketGapFactor = 1.6
+        case "1M":
+            secondsPerCandle = 2_592_000
+            marketGapFactor = 1.5
+        default:
+            secondsPerCandle = 86_400
+            marketGapFactor = 2
         }
         let lookback = secondsPerCandle * Double(max(limit, 1)) * marketGapFactor
         return ISO8601DateFormatter().string(from: Date().addingTimeInterval(-lookback))
@@ -191,7 +207,10 @@ final class AlpacaAPIService: GranularReplayDataSource {
         let bars: [Bar]
         let nextPageToken: String?
 
-        private enum CodingKeys: String, CodingKey { case bars; case nextPageToken = "next_page_token" }
+        private enum CodingKeys: String, CodingKey {
+            case bars
+            case nextPageToken = "next_page_token"
+        }
 
         init(from decoder: Decoder) throws {
             let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -202,10 +221,19 @@ final class AlpacaAPIService: GranularReplayDataSource {
         }
     }
     private struct Bar: Decodable {
-        let t: Date; let o: Double; let h: Double; let l: Double; let c: Double
-        let v: Double; let vw: Double?
+        let t: Date
+        let o: Double
+        let h: Double
+        let l: Double
+        let c: Double
+        let v: Double
+        let vw: Double?
     }
-    private struct Asset: Decodable { let symbol: String; let name: String; let tradable: Bool }
+    private struct Asset: Decodable {
+        let symbol: String
+        let name: String
+        let tradable: Bool
+    }
     private struct APIError: Decodable { let message: String }
 }
 

@@ -8,12 +8,12 @@ enum TrendLineColor: String, Codable, CaseIterable, Hashable {
 
     var color: Color {
         switch self {
-        case .blue:   return .blue
-        case .green:  return .green
-        case .red:    return .red
+        case .blue: return .blue
+        case .green: return .green
+        case .red: return .red
         case .orange: return .orange
         case .purple: return .purple
-        case .gray:   return .gray
+        case .gray: return .gray
         }
     }
 }
@@ -26,9 +26,9 @@ enum TrendLineThickness: Double, Codable, CaseIterable, Hashable {
 
     var title: String {
         switch self {
-        case .thin:       return "Thin"
-        case .medium:     return "Medium"
-        case .thick:      return "Thick"
+        case .thin: return "Thin"
+        case .medium: return "Medium"
+        case .thick: return "Thick"
         case .extraThick: return "Extra Thick"
         }
     }

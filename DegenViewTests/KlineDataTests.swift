@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import DegenView
 
 final class KlineDataTests: XCTestCase {
@@ -20,7 +21,7 @@ final class KlineDataTests: XCTestCase {
         let samples = [
             (base.addingTimeInterval(10), 10.0),
             (base.addingTimeInterval(20), 12.0),
-            (base.addingTimeInterval(3_610), 9.0)
+            (base.addingTimeInterval(3_610), 9.0),
         ]
         let candles = KlineData.candles(from: samples, interval: 3_600)
 
@@ -33,8 +34,11 @@ final class KlineDataTests: XCTestCase {
 
     func testAggregationPreservesOHLCAndVolumes() {
         let values = [
-            KlineData(openTime: .distantPast, openPrice: 10, highPrice: 15, lowPrice: 8, closePrice: 12, volume: 2, quoteVolume: 20),
-            KlineData(openTime: .now, openPrice: 12, highPrice: 14, lowPrice: 7, closePrice: 9, volume: 3, quoteVolume: 30)
+            KlineData(
+                openTime: .distantPast, openPrice: 10, highPrice: 15, lowPrice: 8, closePrice: 12, volume: 2,
+                quoteVolume: 20),
+            KlineData(
+                openTime: .now, openPrice: 12, highPrice: 14, lowPrice: 7, closePrice: 9, volume: 3, quoteVolume: 30),
         ]
         let merged = values.aggregated(into: 1)
 

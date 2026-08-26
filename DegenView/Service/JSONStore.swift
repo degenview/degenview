@@ -41,12 +41,16 @@ final class JSONStore<T: Codable> {
                 let backupURL = try quarantineURL()
                 try FileManager.default.moveItem(at: storageURL, to: backupURL)
                 #if DEBUG
-                print("[JSONStore] Quarantined invalid \(storageURL.lastPathComponent) at \(backupURL.lastPathComponent)")
+                    print(
+                        "[JSONStore] Quarantined invalid \(storageURL.lastPathComponent) at \(backupURL.lastPathComponent)"
+                    )
                 #endif
                 return .quarantined(backupURL: backupURL)
             } catch {
                 #if DEBUG
-                print("[JSONStore] Could not quarantine \(storageURL.lastPathComponent): \(error.localizedDescription)")
+                    print(
+                        "[JSONStore] Could not quarantine \(storageURL.lastPathComponent): \(error.localizedDescription)"
+                    )
                 #endif
                 return .unreadable(error)
             }
@@ -70,7 +74,7 @@ final class JSONStore<T: Codable> {
             try saveThrowing(value)
         } catch {
             #if DEBUG
-            print("[JSONStore] Failed to save \(storageURL.lastPathComponent): \(error.localizedDescription)")
+                print("[JSONStore] Failed to save \(storageURL.lastPathComponent): \(error.localizedDescription)")
             #endif
         }
     }
@@ -90,7 +94,8 @@ final class JSONStore<T: Codable> {
 
         while true {
             let collisionSuffix = suffix == 0 ? "" : "-\(suffix)"
-            let filename = "\(stem).corrupt-\(timestamp)\(collisionSuffix)"
+            let filename =
+                "\(stem).corrupt-\(timestamp)\(collisionSuffix)"
                 + (extensionName.isEmpty ? "" : ".\(extensionName)")
             let candidate = directory.appendingPathComponent(filename)
             if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }

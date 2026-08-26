@@ -14,16 +14,14 @@ final class FavoritesStore: ObservableObject {
 
     func contains(source: DataSourceType, symbol: String) -> Bool {
         items.contains {
-            $0.config.source == source &&
-            $0.config.symbol.caseInsensitiveCompare(symbol) == .orderedSame
+            $0.config.source == source && $0.config.symbol.caseInsensitiveCompare(symbol) == .orderedSame
         }
     }
 
     /// Add or remove one provider-qualified instrument while preserving sidebar order.
     func toggle(config: TickerConfig, name: String, ticker: String) {
         if let index = items.firstIndex(where: {
-            $0.config.source == config.source &&
-            $0.config.symbol.caseInsensitiveCompare(config.symbol) == .orderedSame
+            $0.config.source == config.source && $0.config.symbol.caseInsensitiveCompare(config.symbol) == .orderedSame
         }) {
             items.remove(at: index)
         } else {
@@ -84,8 +82,8 @@ final class FavoritesStore: ObservableObject {
     /// drop delegate uses stable IDs and funnels the mutation through here.
     func move(_ draggedID: UUID, to targetID: UUID) {
         guard let source = items.firstIndex(where: { $0.id == draggedID }),
-              let target = items.firstIndex(where: { $0.id == targetID }),
-              source != target
+            let target = items.firstIndex(where: { $0.id == targetID }),
+            source != target
         else { return }
 
         move(
@@ -101,8 +99,10 @@ final class FavoritesStore: ObservableObject {
 
         if result.source == .alpaca {
             let parts = result.symbol.components(separatedBy: " — ")
-            return (parts.count > 1 ? parts.dropFirst().joined(separator: " — ") : result.symbol,
-                    result.fullSymbol.uppercased())
+            return (
+                parts.count > 1 ? parts.dropFirst().joined(separator: " — ") : result.symbol,
+                result.fullSymbol.uppercased()
+            )
         }
 
         if result.source == .coingecko {

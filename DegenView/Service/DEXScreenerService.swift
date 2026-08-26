@@ -82,9 +82,9 @@ final class DEXScreenerService: TickerDataSource {
             throw DEXScreenerError.invalidURL
         }
 
-#if DEBUG
-        print("[DEXScreener] Search: \(q)")
-#endif
+        #if DEBUG
+            print("[DEXScreener] Search: \(q)")
+        #endif
 
         let (data, response) = try await session.data(from: url)
 
@@ -112,7 +112,7 @@ final class DEXScreenerService: TickerDataSource {
 
         return filtered.compactMap { pair in
             guard let baseSymbol = pair.baseToken?.symbol,
-                  let quoteSymbol = pair.quoteToken?.symbol
+                let quoteSymbol = pair.quoteToken?.symbol
             else { return nil }
 
             let price = Double(pair.priceUsd ?? "")
@@ -150,7 +150,7 @@ final class DEXScreenerService: TickerDataSource {
     static func pairIcon(forPair address: String) async -> PairIcon? {
         let q = address.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty,
-              var components = URLComponents(string: "\(apiBase)/search")
+            var components = URLComponents(string: "\(apiBase)/search")
         else { return nil }
 
         components.queryItems = [URLQueryItem(name: "q", value: q)]
@@ -171,9 +171,9 @@ final class DEXScreenerService: TickerDataSource {
                 baseSymbol: pairs.first?.baseToken?.symbol
             )
         } catch {
-#if DEBUG
-            print("[DEXScreener] Icon lookup failed for \(q): \(error.localizedDescription)")
-#endif
+            #if DEBUG
+                print("[DEXScreener] Icon lookup failed for \(q): \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -187,7 +187,7 @@ enum DEXScreenerError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:      return "Invalid URL"
+        case .invalidURL: return "Invalid URL"
         case .invalidResponse: return "Unexpected response from DEXScreener"
         }
     }

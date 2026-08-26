@@ -24,8 +24,10 @@ final class AlpacaWebSocketService {
     }
 
     func disconnect() {
-        receiveTask?.cancel(); receiveTask = nil
-        socket?.cancel(with: .goingAway, reason: nil); socket = nil
+        receiveTask?.cancel()
+        receiveTask = nil
+        socket?.cancel(with: .goingAway, reason: nil)
+        socket = nil
         callback = nil
     }
 
@@ -38,20 +40,26 @@ final class AlpacaWebSocketService {
         guard let socket else { return }
         let message = try await socket.receive()
         let data: Data
-        switch message { case .data(let value): data = value; case .string(let value): data = Data(value.utf8); @unknown default: return }
+        switch message {
+        case .data(let value): data = value
+        case .string(let value): data = Data(value.utf8)
+        @unknown default: return
+        }
         guard let events = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
         for event in events where event["T"] as? String == "b" {
             guard let symbol = event["S"] as? String,
-                  let timestamp = event["t"] as? String,
-                  let date = ISO8601DateFormatter.alpaca.date(from: timestamp),
-                  let open = (event["o"] as? NSNumber)?.doubleValue,
-                  let high = (event["h"] as? NSNumber)?.doubleValue,
-                  let low = (event["l"] as? NSNumber)?.doubleValue,
-                  let close = (event["c"] as? NSNumber)?.doubleValue else { continue }
+                let timestamp = event["t"] as? String,
+                let date = ISO8601DateFormatter.alpaca.date(from: timestamp),
+                let open = (event["o"] as? NSNumber)?.doubleValue,
+                let high = (event["h"] as? NSNumber)?.doubleValue,
+                let low = (event["l"] as? NSNumber)?.doubleValue,
+                let close = (event["c"] as? NSNumber)?.doubleValue
+            else { continue }
             let volume = (event["v"] as? NSNumber)?.doubleValue ?? 0
             let average = (event["vw"] as? NSNumber)?.doubleValue ?? 0
-            let bar = KlineData(openTime: date, openPrice: open, highPrice: high, lowPrice: low,
-                                closePrice: close, volume: volume, quoteVolume: average * volume)
+            let bar = KlineData(
+                openTime: date, openPrice: open, highPrice: high, lowPrice: low,
+                closePrice: close, volume: volume, quoteVolume: average * volume)
             Task { @MainActor [weak self] in self?.callback?(symbol, bar) }
         }
     }

@@ -549,15 +549,17 @@ enum PineCompiler {
             {
                 declarations.append((.indicator, e, r))
             } else if case .expression(let e) = statement,
-                      case .call(let name, _, _, let r) = e,
-                      let type = ScriptType(rawValue: name) {
+                case .call(let name, _, _, let r) = e,
+                let type = ScriptType(rawValue: name)
+            {
                 declarations.append((type, e, r))
             }
         }
         if declarations.count != 1 {
             diagnostics.append(
                 diag(
-                    "PINE3001", .semantic, "A script must contain exactly one indicator(), strategy(), or library() declaration.",
+                    "PINE3001", .semantic,
+                    "A script must contain exactly one indicator(), strategy(), or library() declaration.",
                     declarations.first?.2 ?? .zero))
         }
         var metadata = PineDeclarationMetadata(
@@ -565,7 +567,8 @@ enum PineCompiler {
             pineVersion: versionMatches.first.flatMap(Int.init),
             title: "Untitled", shortTitle: nil, overlay: false, format: nil, precision: nil,
             maxBarsBack: nil)
-        if let expression = declarations.first?.1, case .call(let declarationName, let args, _, let range) = expression {
+        if let expression = declarations.first?.1, case .call(let declarationName, let args, _, let range) = expression
+        {
             if let first = args.first, case .literal(.string(let title), _) = first.value {
                 metadata.title = title
             } else {

@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 /// Zero-size bridge that hands the hosting `NSWindow` to SwiftUI.
 ///

@@ -101,7 +101,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 scrollView.leadingAnchor.constraint(equalTo: gutter.trailingAnchor),
                 scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
                 scrollView.topAnchor.constraint(equalTo: topAnchor),
-                scrollView.bottomAnchor.constraint(equalTo: bottomAnchor)
+                scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
             ])
 
             scrollView.contentView.postsBoundsChangedNotifications = true
@@ -122,13 +122,15 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         func setText(_ text: String) {
-            textView.textStorage?.setAttributedString(NSAttributedString(
-                string: text,
-                attributes: [
-                    .font: textView.font ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
-                    .foregroundColor: NSColor.labelColor
-                ]
-            ))
+            textView.textStorage?.setAttributedString(
+                NSAttributedString(
+                    string: text,
+                    attributes: [
+                        .font: textView.font
+                            ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
+                        .foregroundColor: NSColor.labelColor,
+                    ]
+                ))
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnosticOverlay.diagnostics)
             gutter.needsDisplay = true
         }
@@ -143,7 +145,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         weak var textView: NSTextView?
         private let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.smallSystemFontSize, weight: .regular),
-            .foregroundColor: NSColor.secondaryLabelColor
+            .foregroundColor: NSColor.secondaryLabelColor,
         ]
 
         override var isFlipped: Bool { true }
@@ -154,8 +156,9 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             NSColor.windowBackgroundColor.setFill()
             dirtyRect.fill()
             guard let textView,
-                  let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
+                let layoutManager = textView.layoutManager,
+                let textContainer = textView.textContainer
+            else { return }
 
             let visibleRect = textView.visibleRect
             let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
@@ -198,7 +201,8 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
 
         override func draw(_ dirtyRect: NSRect) {
             guard let textView, let layoutManager = textView.layoutManager,
-                  let textContainer = textView.textContainer else { return }
+                let textContainer = textView.textContainer
+            else { return }
             let grouped = Dictionary(grouping: diagnostics, by: { $0.range.start.line })
             let source = textView.string as NSString
 
@@ -279,7 +283,8 @@ private enum PineSyntaxHighlighter {
         guard let storage = textView.textStorage else { return }
         let range = NSRange(location: 0, length: storage.length)
         let source = storage.string
-        let font = textView.font
+        let font =
+            textView.font
             ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
 
         storage.beginEditing()
@@ -300,13 +305,16 @@ private enum PineSyntaxHighlighter {
             )
         }
         for diagnostic in diagnostics {
-            guard let diagnosticRange = PineDiagnosticRangeMapper.nsRange(
-                for: diagnostic.range, in: source
-            ) else { continue }
-            storage.addAttributes([
-                .underlineStyle: NSUnderlineStyle.single.rawValue,
-                .underlineColor: diagnostic.severity == .error ? NSColor.systemRed : NSColor.systemOrange,
-            ], range: diagnosticRange)
+            guard
+                let diagnosticRange = PineDiagnosticRangeMapper.nsRange(
+                    for: diagnostic.range, in: source
+                )
+            else { continue }
+            storage.addAttributes(
+                [
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .underlineColor: diagnostic.severity == .error ? NSColor.systemRed : NSColor.systemOrange,
+                ], range: diagnosticRange)
         }
         storage.endEditing()
         textView.typingAttributes = [.font: font, .foregroundColor: NSColor.labelColor]

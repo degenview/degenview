@@ -51,10 +51,10 @@ struct AddTickerSheet: View {
     /// Whichever pane is showing owns the selection the Add button commits.
     private var activeSelection: TickerSearchResult? {
         switch selectedTab {
-        case .crypto:     return searchVM.selectedResult
-        case .stocks:     return stockVM.selectedResult
+        case .crypto: return searchVM.selectedResult
+        case .stocks: return stockVM.selectedResult
         case .polymarket: return polymarketVM.selectedResult
-        case .portfolio:  return nil
+        case .portfolio: return nil
         }
     }
 
@@ -157,8 +157,10 @@ struct AddTickerSheet: View {
                     ForEach(PortfolioChartKind.allCases) { kind in Text(kind.rawValue).tag(kind) }
                 }
                 .pickerStyle(.radioGroup)
-                Text("Portfolio value charts include their own 1D, 1W, 1M, 1Y, and all-time range control. Portfolio cards do not support market indicators.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text(
+                    "Portfolio value charts include their own 1D, 1W, 1M, 1Y, and all-time range control. Portfolio cards do not support market indicators."
+                )
+                .font(.caption).foregroundStyle(.secondary)
                 Spacer(minLength: 30)
             }
         }
@@ -188,7 +190,9 @@ struct AddTickerSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Popular US stocks and ETFs · free IEX feed")
                         .font(.caption).foregroundStyle(.secondary)
-                    LazyVGrid(columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8) {
+                    LazyVGrid(
+                        columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
+                    ) {
                         ForEach(stockSuggestions, id: \.self) { symbol in
                             Button(symbol) {
                                 stockText = symbol
@@ -242,7 +246,9 @@ struct AddTickerSheet: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    LazyVGrid(columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8) {
+                    LazyVGrid(
+                        columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
+                    ) {
                         ForEach(suggestions, id: \.self) { ticker in
                             Button(ticker) {
                                 inputText = ticker
@@ -282,7 +288,8 @@ struct AddTickerSheet: View {
 
             // No results
             if !searchVM.isSearching && !inputText.trimmingCharacters(in: .whitespaces).isEmpty
-                && searchVM.searchResults.isEmpty {
+                && searchVM.searchResults.isEmpty
+            {
                 Text("No results found")
                     .font(.caption)
                     .foregroundStyle(.secondary)

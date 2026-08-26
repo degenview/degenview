@@ -64,7 +64,8 @@ private actor ActiveSymbols {
     /// Deduped union across every tab, order-stable so the request URL is cacheable.
     var current: [String] {
         var seen = Set<String>()
-        return byOwner
+        return
+            byOwner
             .sorted { $0.key.uuidString < $1.key.uuidString }
             .flatMap(\.value)
             .filter { seen.insert($0).inserted }
@@ -82,7 +83,7 @@ private actor ActiveSymbols {
 // MARK: - Symbol → ID Cache
 
 private struct CoinIDCache: Codable {
-    var idMap: [String: String]   // "btc" → "bitcoin"
+    var idMap: [String: String]  // "btc" → "bitcoin"
     var updatedAt: Date
 }
 
@@ -117,7 +118,8 @@ final class CoinGeckoAPIService: TickerDataSource {
         cacheURL = AppSupport.directory.appendingPathComponent("coingecko_coin_ids.json")
 
         if let data = try? Data(contentsOf: cacheURL),
-           let cached = try? JSONDecoder().decode(CoinIDCache.self, from: data) {
+            let cached = try? JSONDecoder().decode(CoinIDCache.self, from: data)
+        {
             coinIDCache = cached
         } else {
             coinIDCache = CoinIDCache(idMap: [:], updatedAt: .distantPast)
@@ -148,29 +150,33 @@ final class CoinGeckoAPIService: TickerDataSource {
         let coinID = symbol.lowercased()
         let days = Self.marketChartDays(interval: interval, requiredCount: limit)
 
-        if let cached = await cache.getFull(symbol: coinID, interval: interval, days: days,
-                                            ttl: Timeout.coingeckoCacheTTL) {
+        if let cached = await cache.getFull(
+            symbol: coinID, interval: interval, days: days,
+            ttl: Timeout.coingeckoCacheTTL)
+        {
             return Array(cached.suffix(limit))
         }
 
-#if DEBUG
-        print("[CoinGecko] Fetching market chart for \(coinID) days=\(days) limit=\(limit)")
-#endif
+        #if DEBUG
+            print("[CoinGecko] Fetching market chart for \(coinID) days=\(days) limit=\(limit)")
+        #endif
 
         let candles = try await fetchCandles(coinID: coinID, interval: interval, days: days)
         let result = Array(candles.suffix(limit))
 
-#if DEBUG
-        print("[CoinGecko] \(coinID) candles=\(result.count) (built \(candles.count), limit \(limit))")
-#endif
+        #if DEBUG
+            print("[CoinGecko] \(coinID) candles=\(result.count) (built \(candles.count), limit \(limit))")
+        #endif
 
         await cache.set(symbol: coinID, interval: interval, days: days, data: candles)
         return result
     }
 
     /// One rate-limited price-series request, folded into candles of `interval`.
-    private func fetchCandles(coinID: String, interval: String, days: Int,
-                              attempts: Int = 2) async throws -> [KlineData] {
+    private func fetchCandles(
+        coinID: String, interval: String, days: Int,
+        attempts: Int = 2
+    ) async throws -> [KlineData] {
         guard let url = buildMarketChartURL(coinID: coinID, days: days) else {
             throw CoinGeckoError.invalidURL
         }
@@ -233,7 +239,7 @@ final class CoinGeckoAPIService: TickerDataSource {
     /// One `/coins/markets` call returning 7 days of hourly prices per coin.
     private func fetchSparklines(coinIDs: [String]) async -> [String: [CoinGeckoProvisionalStore.PricePoint]] {
         guard !coinIDs.isEmpty,
-              var components = URLComponents(string: "\(baseURL)/coins/markets")
+            var components = URLComponents(string: "\(baseURL)/coins/markets")
         else { return [:] }
 
         components.queryItems = [
@@ -248,9 +254,9 @@ final class CoinGeckoAPIService: TickerDataSource {
         guard !Task.isCancelled else { return [:] }
 
         do {
-#if DEBUG
-            print("[CoinGecko] Priming sparklines for \(coinIDs.count) coins")
-#endif
+            #if DEBUG
+                print("[CoinGecko] Priming sparklines for \(coinIDs.count) coins")
+            #endif
             let (data, response) = try await session.data(from: url)
             try await checkHTTPResponse(data: data, response: response, url: url)
             await rateLimiter.noteSuccess()
@@ -258,9 +264,9 @@ final class CoinGeckoAPIService: TickerDataSource {
             let coins = try JSONDecoder().decode([MarketSparkline].self, from: data)
             return Self.pricePoints(from: coins)
         } catch {
-#if DEBUG
-            print("[CoinGecko] Sparkline prime failed: \(error.localizedDescription)")
-#endif
+            #if DEBUG
+                print("[CoinGecko] Sparkline prime failed: \(error.localizedDescription)")
+            #endif
             return [:]
         }
     }
@@ -363,17 +369,17 @@ final class CoinGeckoAPIService: TickerDataSource {
                             for: coinID, granularity: granularity, limit: limit
                         )
                         if let approximate, !approximate.isEmpty {
-                        #if DEBUG
-                            print("[CoinGecko] Provisional: \(approximate.count) candles for \(coinID)")
-                        #endif
+                            #if DEBUG
+                                print("[CoinGecko] Provisional: \(approximate.count) candles for \(coinID)")
+                            #endif
                             continuation.yield(approximate)
                         }
                     }
 
                     // The window actually requested.
-                #if DEBUG
-                    print("[CoinGecko] Fetching \(fullDays)d for \(coinID)")
-                #endif
+                    #if DEBUG
+                        print("[CoinGecko] Fetching \(fullDays)d for \(coinID)")
+                    #endif
                     let candles = try await fetchCandles(
                         coinID: coinID, interval: interval, days: fullDays
                     )
@@ -382,9 +388,9 @@ final class CoinGeckoAPIService: TickerDataSource {
                     await cache.set(symbol: coinID, interval: interval, days: fullDays, data: candles)
                     continuation.yield(result)
 
-                #if DEBUG
-                    print("[CoinGecko] \(coinID) candles=\(result.count) (built \(candles.count), limit \(limit))")
-                #endif
+                    #if DEBUG
+                        print("[CoinGecko] \(coinID) candles=\(result.count) (built \(candles.count), limit \(limit))")
+                    #endif
 
                     continuation.finish()
                 } catch {
@@ -426,19 +432,19 @@ final class CoinGeckoAPIService: TickerDataSource {
         case 429:
             let retryAfter = httpResponse.value(forHTTPHeaderField: "Retry-After")
             let waitSeconds = retryAfter.flatMap(Int.init) ?? 30
-#if DEBUG
-            print("[CoinGecko] 429 rate limited. Backing off \(waitSeconds)s…")
-#endif
+            #if DEBUG
+                print("[CoinGecko] 429 rate limited. Backing off \(waitSeconds)s…")
+            #endif
             await rateLimiter.backoff(seconds: waitSeconds)
             throw CoinGeckoError.rateLimited
         case 404:
             throw CoinGeckoError.coinNotFound(url.lastPathComponent)
         case 400:
             let body = String(data: data, encoding: .utf8) ?? ""
-#if DEBUG
-            print("[CoinGecko] 400 Bad Request for URL: \(url.absoluteString)")
-            print("[CoinGecko] Response: \(body)")
-#endif
+            #if DEBUG
+                print("[CoinGecko] 400 Bad Request for URL: \(url.absoluteString)")
+                print("[CoinGecko] Response: \(body)")
+            #endif
             throw CoinGeckoError.httpError(400)
         default:
             throw CoinGeckoError.httpError(httpResponse.statusCode)
@@ -451,15 +457,15 @@ final class CoinGeckoAPIService: TickerDataSource {
     /// Layout: `{"prices": [[timestamp_ms, price], …], …}`, oldest first.
     private static func parsePriceSeries(_ data: Data) throws -> [(time: Date, price: Double)] {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let prices = json["prices"] as? [[Any]]
+            let prices = json["prices"] as? [[Any]]
         else {
             throw CoinGeckoError.parseError("Expected a prices array")
         }
 
         let points: [(time: Date, price: Double)] = prices.compactMap { row in
             guard row.count >= 2,
-                  let ts = KlineData.extractTimestamp(row[0]),
-                  let price = KlineData.extractDouble(row[1])
+                let ts = KlineData.extractTimestamp(row[0]),
+                let price = KlineData.extractDouble(row[1])
             else { return nil }
             return (Date(timeIntervalSince1970: ts / 1000), price)
         }
@@ -489,9 +495,9 @@ final class CoinGeckoAPIService: TickerDataSource {
         /// Seconds between the samples this span comes back at.
         var sampleStep: TimeInterval {
             switch days {
-            case ...1:  return 300      // 5-minute
-            case ...90: return 3_600    // hourly
-            default:    return 86_400   // daily
+            case ...1: return 300  // 5-minute
+            case ...90: return 3_600  // hourly
+            default: return 86_400  // daily
             }
         }
 
@@ -589,9 +595,9 @@ final class CoinGeckoAPIService: TickerDataSource {
             throw CoinGeckoError.invalidURL
         }
 
-#if DEBUG
-        print("[CoinGecko] Search: \(query)")
-#endif
+        #if DEBUG
+            print("[CoinGecko] Search: \(query)")
+        #endif
 
         let (data, response) = try await AppSupport.defaultSession.data(from: url)
 
@@ -635,9 +641,9 @@ final class CoinGeckoAPIService: TickerDataSource {
             guard let image = best?.large ?? best?.thumb else { return nil }
             return URL(string: image)
         } catch {
-#if DEBUG
-            print("[CoinGecko] Icon search failed for \(q): \(error.localizedDescription)")
-#endif
+            #if DEBUG
+                print("[CoinGecko] Icon search failed for \(q): \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -664,13 +670,13 @@ final class CoinGeckoAPIService: TickerDataSource {
                 }
                 self.coinIDCache = CoinIDCache(idMap: map, updatedAt: Date())
                 self.saveCoinIDCache()
-#if DEBUG
-                print("[CoinGecko] Coin list refreshed: \(map.count) symbols")
-#endif
+                #if DEBUG
+                    print("[CoinGecko] Coin list refreshed: \(map.count) symbols")
+                #endif
             } catch {
-#if DEBUG
-                print("[CoinGecko] Coin list refresh failed: \(error.localizedDescription)")
-#endif
+                #if DEBUG
+                    print("[CoinGecko] Coin list refresh failed: \(error.localizedDescription)")
+                #endif
             }
         }
     }
@@ -693,12 +699,12 @@ enum CoinGeckoError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:           return "Invalid URL"
-        case .invalidResponse:      return "Unexpected response from CoinGecko"
-        case .httpError(let code):  return "CoinGecko server error (HTTP \(code))"
+        case .invalidURL: return "Invalid URL"
+        case .invalidResponse: return "Unexpected response from CoinGecko"
+        case .httpError(let code): return "CoinGecko server error (HTTP \(code))"
         case .coinNotFound(let id): return "Coin \"\(id)\" not found on CoinGecko"
-        case .rateLimited:          return "CoinGecko rate limited. Wait and retry."
-        case .parseError(let d):    return "CoinGecko data error: \(d)"
+        case .rateLimited: return "CoinGecko rate limited. Wait and retry."
+        case .parseError(let d): return "CoinGecko data error: \(d)"
         }
     }
 }

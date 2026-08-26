@@ -23,8 +23,9 @@ enum WindowFrame {
         // placement `NSWindow.center()` uses.
         let x = visible.midX - width / 2
         let y = visible.maxY - height - (visible.height - height) * 0.35
-        return CGRect(x: x.rounded(), y: y.rounded(),
-                      width: width.rounded(), height: height.rounded())
+        return CGRect(
+            x: x.rounded(), y: y.rounded(),
+            width: width.rounded(), height: height.rounded())
     }
 
     /// Whether a remembered frame still lands on one of `screens` — the display it

@@ -92,7 +92,8 @@ final class PolymarketSearchViewModel: ObservableObject {
         let checked = group.results.filter { checkedChoices[$0.fullSymbol] == true }
         guard let primary = checked.first else { return nil }
         var result = primary
-        result.pmSeries = checked.count > 1
+        result.pmSeries =
+            checked.count > 1
             ? checked.map { PmSeriesConfig(tokenID: $0.fullSymbol, label: $0.symbol, enabled: true) }
             : nil
         return result
@@ -101,10 +102,11 @@ final class PolymarketSearchViewModel: ObservableObject {
     // MARK: - Post-search init
 
     private func updateAfterSearch() {
-        let allMultiIDs = Set(groups.flatMap { g -> [String] in
-            guard g.results.count > 1 else { return [] }
-            return g.results.map { $0.fullSymbol }
-        })
+        let allMultiIDs = Set(
+            groups.flatMap { g -> [String] in
+                guard g.results.count > 1 else { return [] }
+                return g.results.map { $0.fullSymbol }
+            })
         // Remove stale entries; new IDs start unchecked.
         checkedChoices = checkedChoices.filter { allMultiIDs.contains($0.key) }
         for id in allMultiIDs where checkedChoices[id] == nil {
@@ -112,7 +114,8 @@ final class PolymarketSearchViewModel: ObservableObject {
         }
         // Clear selectedResult if it no longer exists in the new results.
         if let sel = selectedResult,
-           !groups.flatMap(\.results).contains(where: { $0.fullSymbol == sel.fullSymbol }) {
+            !groups.flatMap(\.results).contains(where: { $0.fullSymbol == sel.fullSymbol })
+        {
             selectedResult = nil
         }
     }
@@ -156,7 +159,7 @@ final class PolymarketSearchViewModel: ObservableObject {
         } catch {
             guard !Task.isCancelled else { return }
             #if DEBUG
-            print("\(logPrefix) search failed: \(error.localizedDescription)")
+                print("\(logPrefix) search failed: \(error.localizedDescription)")
             #endif
             groups = []
             errorMessage = error.localizedDescription

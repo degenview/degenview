@@ -39,7 +39,8 @@ struct SelectedResultBanner: View {
     /// Event title for multi-choice PM; symbol for everything else.
     private var displayLabel: String {
         if let series = result.pmSeries, series.count > 1,
-           let title = result.eventTitle, !title.isEmpty {
+            let title = result.eventTitle, !title.isEmpty
+        {
             return title
         }
         return result.symbol
@@ -138,8 +139,9 @@ struct PolymarketSearchPane: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if !searchVM.isSearching,
-                      !searchText.trimmingCharacters(in: .whitespaces).isEmpty,
-                      !searchVM.hasResults {
+                !searchText.trimmingCharacters(in: .whitespaces).isEmpty,
+                !searchVM.hasResults
+            {
                 Text("No markets found")
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -151,7 +153,8 @@ struct PolymarketSearchPane: View {
     private func groupHeader(for group: PolymarketResultGroup) -> some View {
         let allChecked = searchVM.isGroupChecked(group)
         let anyChecked = searchVM.isGroupAnyChecked(group)
-        let iconName = allChecked
+        let iconName =
+            allChecked
             ? "checkmark.square.fill"
             : anyChecked ? "minus.square.fill" : "square"
 

@@ -66,9 +66,9 @@ extension KlineData {
         self.openTime = Date(timeIntervalSince1970: ts / 1000.0)
 
         guard let open = Self.extractDouble(raw[1]),
-              let high = Self.extractDouble(raw[2]),
-              let low  = Self.extractDouble(raw[3]),
-              let close = Self.extractDouble(raw[4])
+            let high = Self.extractDouble(raw[2]),
+            let low = Self.extractDouble(raw[3]),
+            let close = Self.extractDouble(raw[4])
         else { return nil }
 
         self.openPrice = open
@@ -118,8 +118,10 @@ extension KlineData {
     /// reports a rolling 24h figure, which is not this candle's.
     ///
     /// Expects ascending `time`.
-    static func candles(from samples: [(time: Date, price: Double)],
-                        interval: TimeInterval) -> [KlineData] {
+    static func candles(
+        from samples: [(time: Date, price: Double)],
+        interval: TimeInterval
+    ) -> [KlineData] {
         guard interval > 0, !samples.isEmpty else { return [] }
 
         var candles: [KlineData] = []
@@ -167,8 +169,7 @@ extension KlineData {
         switch interval {
         case ..<604_800:
             return Date(
-                timeIntervalSince1970:
-                    (date.timeIntervalSince1970 / interval).rounded(.down) * interval
+                timeIntervalSince1970: (date.timeIntervalSince1970 / interval).rounded(.down) * interval
             )
         case ..<2_419_200:  // a week, up to the shortest month
             return utcCalendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date

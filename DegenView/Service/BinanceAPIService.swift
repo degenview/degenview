@@ -49,7 +49,9 @@ final class BinanceAPIService: GranularReplayDataSource {
     /// Fetch candlestick data from Binance. Uses in-memory cache.
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         // Check cache first
-        if let cached = await cache.get(symbol: symbol, interval: interval, days: 0, count: limit, ttl: Timeout.binanceCacheTTL) {
+        if let cached = await cache.get(
+            symbol: symbol, interval: interval, days: 0, count: limit, ttl: Timeout.binanceCacheTTL)
+        {
             return cached
         }
 
@@ -97,16 +99,18 @@ final class BinanceAPIService: GranularReplayDataSource {
 
         let sorted = klines.sorted { $0.openTime < $1.openTime }
 
-#if DEBUG
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        formatter.timeZone = TimeZone(identifier: "UTC")!
-        print("[API] \(symbol.uppercased()) interval=\(interval) limit=\(limit) candles=\(sorted.count)")
-        for k in sorted.suffix(3) {
-            let bullish = k.closePrice > k.openPrice ? "🟢" : "🔴"
-            print("[API]   \(formatter.string(from: k.openTime)) O=\(k.openPrice) H=\(k.highPrice) L=\(k.lowPrice) C=\(k.closePrice) \(bullish)")
-        }
-#endif
+        #if DEBUG
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            formatter.timeZone = TimeZone(identifier: "UTC")!
+            print("[API] \(symbol.uppercased()) interval=\(interval) limit=\(limit) candles=\(sorted.count)")
+            for k in sorted.suffix(3) {
+                let bullish = k.closePrice > k.openPrice ? "🟢" : "🔴"
+                print(
+                    "[API]   \(formatter.string(from: k.openTime)) O=\(k.openPrice) H=\(k.highPrice) L=\(k.lowPrice) C=\(k.closePrice) \(bullish)"
+                )
+            }
+        #endif
 
         // Cache the result
         await cache.set(symbol: symbol, interval: interval, days: 0, data: sorted)
@@ -144,7 +148,7 @@ final class BinanceAPIService: GranularReplayDataSource {
                 URLQueryItem(name: "interval", value: token),
                 URLQueryItem(name: "startTime", value: String(Int64(cursor.timeIntervalSince1970 * 1_000))),
                 URLQueryItem(name: "endTime", value: String(Int64(end.timeIntervalSince1970 * 1_000))),
-                URLQueryItem(name: "limit", value: String(pageLimit))
+                URLQueryItem(name: "limit", value: String(pageLimit)),
             ]
             guard let url = components.url else { throw BinanceAPIError.invalidURL }
             let (data, response) = try await session.data(from: url)
@@ -183,11 +187,12 @@ final class BinanceAPIService: GranularReplayDataSource {
 
     private static func sanitized(_ candles: [KlineData], maximumCount: Int) -> [KlineData] {
         var seen = Set<Date>()
-        return candles
+        return
+            candles
             .filter { candle in
-                candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite &&
-                candle.closePrice.isFinite && candle.volume.isFinite && candle.highPrice >= candle.lowPrice &&
-                seen.insert(candle.openTime).inserted
+                candle.openPrice.isFinite && candle.highPrice.isFinite && candle.lowPrice.isFinite
+                    && candle.closePrice.isFinite && candle.volume.isFinite && candle.highPrice >= candle.lowPrice
+                    && seen.insert(candle.openTime).inserted
             }
             .sorted { $0.openTime < $1.openTime }
             .prefix(maximumCount)
@@ -207,9 +212,9 @@ final class BinanceAPIService: GranularReplayDataSource {
             throw BinanceAPIError.invalidURL
         }
 
-#if DEBUG
-        print("[Binance] Searching exchangeInfo for: \(q)")
-#endif
+        #if DEBUG
+            print("[Binance] Searching exchangeInfo for: \(q)")
+        #endif
 
         let (data, response) = try await session.data(from: url)
 

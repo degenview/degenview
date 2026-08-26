@@ -658,11 +658,13 @@ struct ChartSettingsSheet: View {
         guard let script = savedScripts.first(where: { $0.id == id }) else { return }
         pineDraft = script.source
         if let revisionID = script.latestRevisionID {
-            viewModel.scriptInstances = [ChartScriptInstance(
-                scriptID: script.id,
-                loadedRevisionID: revisionID,
-                inputs: viewModel.pineConfiguration?.inputs ?? [:]
-            )]
+            viewModel.scriptInstances = [
+                ChartScriptInstance(
+                    scriptID: script.id,
+                    loadedRevisionID: revisionID,
+                    inputs: viewModel.pineConfiguration?.inputs ?? [:]
+                )
+            ]
         }
         onStyleChanged()
     }

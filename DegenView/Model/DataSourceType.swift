@@ -1,11 +1,11 @@
 import Foundation
 
 enum DataSourceType: String, CaseIterable, Codable {
-    case binance     = "Binance"
-    case coingecko   = "CoinGecko"
+    case binance = "Binance"
+    case coingecko = "CoinGecko"
     case dexscreener = "DEXScreener"
-    case alpaca      = "Alpaca (IEX)"
-    case polymarket  = "Polymarket"
+    case alpaca = "Alpaca (IEX)"
+    case polymarket = "Polymarket"
 
     /// Crypto price sources — the set the multi-source ticker search fans out to.
     /// Polymarket is excluded: prediction markets get their own search pane.
@@ -30,7 +30,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     var providesVolume: Bool {
         switch self {
         case .binance, .dexscreener, .alpaca: return true
-        case .coingecko, .polymarket:         return false
+        case .coingecko, .polymarket: return false
         }
     }
 
@@ -46,17 +46,17 @@ enum DataSourceType: String, CaseIterable, Codable {
     var fetchesByCount: Bool {
         switch self {
         case .binance, .dexscreener, .coingecko, .alpaca: return true
-        case .polymarket:                        return false
+        case .polymarket: return false
         }
     }
 
     var icon: String {
         switch self {
-        case .binance:     return "building.columns.fill"
-        case .coingecko:   return "chart.line.uptrend.xyaxis"
+        case .binance: return "building.columns.fill"
+        case .coingecko: return "chart.line.uptrend.xyaxis"
         case .dexscreener: return "arrow.triangle.swap"
-        case .alpaca:      return "chart.xyaxis.line"
-        case .polymarket:  return "chart.line.flattrend.xyaxis"
+        case .alpaca: return "chart.xyaxis.line"
+        case .polymarket: return "chart.line.flattrend.xyaxis"
         }
     }
 }
@@ -171,28 +171,41 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Canonical local-script instances. `pine` is read only by the migration coordinator.
     var scripts: [ChartScriptInstance] = []
 
-    init(symbol: String, source: DataSourceType, bullishColorHex: String? = nil,
-         bearishColorHex: String? = nil, yAxisDecimalPlaces: Int? = nil, yZoom: Double? = nil,
-         showVolume: Bool? = nil, showRSI: Bool? = nil, showEMA: Bool? = nil,
-         emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
-         trendLines: [TrendLine]? = nil, displayName: String? = nil,
-         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
-         pine: PineConfiguration? = nil, chartID: UUID = UUID(),
-         scripts: [ChartScriptInstance] = []) {
-        self.chartID = chartID; self.symbol = symbol; self.source = source
-        self.bullishColorHex = bullishColorHex; self.bearishColorHex = bearishColorHex
-        self.yAxisDecimalPlaces = yAxisDecimalPlaces; self.yZoom = yZoom
-        self.showVolume = showVolume; self.showRSI = showRSI; self.showEMA = showEMA
-        self.emaPeriod = emaPeriod; self.showBollinger = showBollinger
-        self.showTrendFlips = showTrendFlips; self.trendLines = trendLines
-        self.displayName = displayName; self.pmSeries = pmSeries; self.portfolioChart = portfolioChart
-        self.pine = pine; self.scripts = scripts
+    init(
+        symbol: String, source: DataSourceType, bullishColorHex: String? = nil,
+        bearishColorHex: String? = nil, yAxisDecimalPlaces: Int? = nil, yZoom: Double? = nil,
+        showVolume: Bool? = nil, showRSI: Bool? = nil, showEMA: Bool? = nil,
+        emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
+        trendLines: [TrendLine]? = nil, displayName: String? = nil,
+        pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
+        pine: PineConfiguration? = nil, chartID: UUID = UUID(),
+        scripts: [ChartScriptInstance] = []
+    ) {
+        self.chartID = chartID
+        self.symbol = symbol
+        self.source = source
+        self.bullishColorHex = bullishColorHex
+        self.bearishColorHex = bearishColorHex
+        self.yAxisDecimalPlaces = yAxisDecimalPlaces
+        self.yZoom = yZoom
+        self.showVolume = showVolume
+        self.showRSI = showRSI
+        self.showEMA = showEMA
+        self.emaPeriod = emaPeriod
+        self.showBollinger = showBollinger
+        self.showTrendFlips = showTrendFlips
+        self.trendLines = trendLines
+        self.displayName = displayName
+        self.pmSeries = pmSeries
+        self.portfolioChart = portfolioChart
+        self.pine = pine
+        self.scripts = scripts
     }
 
     private enum CodingKeys: String, CodingKey {
         case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
-             yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
-             trendLines, displayName, pmSeries, portfolioChart, pine, scripts
+            yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
+            trendLines, displayName, pmSeries, portfolioChart, pine, scripts
     }
 
     init(from decoder: Decoder) throws {

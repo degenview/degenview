@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// App-wide trend-line persistence, keyed by the instrument rather than a chart card.
 /// Every chart showing the same source+ticker observes the same entry.

@@ -22,7 +22,9 @@ private final class AlertAgentDelegate: NSObject, NSApplicationDelegate, UNUserN
     }
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.cryptocharts.app") else { return }
+        guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.cryptocharts.app") else {
+            return
+        }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         _ = try? await NSWorkspace.shared.openApplication(at: url, configuration: configuration)

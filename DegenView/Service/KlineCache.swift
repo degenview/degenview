@@ -24,7 +24,7 @@ actor KlineCache {
     init(
         persistenceKey: String? = nil,
         directory: URL = AppSupport.directory,
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         let url = persistenceKey.map {
             directory.appendingPathComponent("kline_cache_\($0).json")
@@ -87,7 +87,8 @@ actor KlineCache {
         // take whichever holds the most candles.
         let covering = candidates.filter { $0.data.count >= count }
         let pool = covering.isEmpty ? candidates : covering
-        let best = covering.isEmpty
+        let best =
+            covering.isEmpty
             ? pool.max(by: { $0.data.count < $1.data.count })
             : pool.min(by: { $0.data.count < $1.data.count })
 
@@ -125,7 +126,7 @@ actor KlineCache {
 
     private nonisolated static func loadFromDisk(_ url: URL, now: Date) -> [String: CachedEntry] {
         guard let raw = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([String: CachedEntry].self, from: raw)
+            let decoded = try? JSONDecoder().decode([String: CachedEntry].self, from: raw)
         else { return [:] }
 
         let cutoff = now.addingTimeInterval(-CacheLimit.diskStaleness)

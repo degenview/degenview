@@ -37,9 +37,11 @@ final class PortfolioStore: ObservableObject {
         snapshot = initial
         quotes = initialQuotes
         isLoadingInitialValues = Self.needsInitialQuoteLoad(snapshot: initial, quotes: initialQuotes)
-        ledger = PortfolioLedger(snapshot: initial, persist: { value in
-            JSONStore<PortfolioLedgerSnapshot>(filename: "portfolios.json").save(value)
-        })
+        ledger = PortfolioLedger(
+            snapshot: initial,
+            persist: { value in
+                JSONStore<PortfolioLedgerSnapshot>(filename: "portfolios.json").save(value)
+            })
         if initialQuotes != loadedQuotes {
             JSONStore<[String: PortfolioQuote]>(filename: "portfolio_quotes.json").save(initialQuotes)
         }
@@ -95,16 +97,24 @@ final class PortfolioStore: ObservableObject {
         pruneQuotes()
     }
     func select(_ selection: PortfolioSelection) { perform { try await self.ledger.select(selection.id) } }
-    func create(name: String, currency: PortfolioCurrency) { perform { _ = try await self.ledger.createPortfolio(name: name, currency: currency) } }
+    func create(name: String, currency: PortfolioCurrency) {
+        perform { _ = try await self.ledger.createPortfolio(name: name, currency: currency) }
+    }
     func update(_ portfolio: Portfolio) { perform { try await self.ledger.updatePortfolio(portfolio) } }
     func duplicate(_ id: UUID) { perform { _ = try await self.ledger.duplicatePortfolio(id) } }
     func delete(_ id: UUID) { perform { try await self.ledger.deletePortfolio(id) } }
     func reorder(from: IndexSet, to: Int) { perform { try await self.ledger.reorder(from: from, to: to) } }
-    func add(_ transaction: PortfolioTransaction) async -> Bool { await result { try await self.ledger.add(transaction) } }
-    func update(_ transaction: PortfolioTransaction) async -> Bool { await result { try await self.ledger.update(transaction) } }
+    func add(_ transaction: PortfolioTransaction) async -> Bool {
+        await result { try await self.ledger.add(transaction) }
+    }
+    func update(_ transaction: PortfolioTransaction) async -> Bool {
+        await result { try await self.ledger.update(transaction) }
+    }
     func deleteTransaction(_ id: UUID) { perform { try await self.ledger.deleteTransaction(id) } }
-    func remapAsset(from sourceKey: String, to destination: PortfolioAsset,
-                    portfolioIDs: Set<UUID>) async throws {
+    func remapAsset(
+        from sourceKey: String, to destination: PortfolioAsset,
+        portfolioIDs: Set<UUID>
+    ) async throws {
         do {
             try await ledger.remapAsset(from: sourceKey, to: destination, portfolioIDs: portfolioIDs)
             await refresh()
@@ -113,7 +123,9 @@ final class PortfolioStore: ObservableObject {
             throw error
         }
     }
-    func importTransactions(_ values: [PortfolioTransaction]) async -> Bool { await result { try await self.ledger.importTransactions(values) } }
+    func importTransactions(_ values: [PortfolioTransaction]) async -> Bool {
+        await result { try await self.ledger.importTransactions(values) }
+    }
 
     func refreshQuotes() async {
         defer { isLoadingInitialValues = false }
@@ -128,8 +140,12 @@ final class PortfolioStore: ObservableObject {
     private func refreshQuotes(for portfolioIDs: Set<UUID>) async {
         let relevantTransactions = snapshot.transactions.filter { portfolioIDs.contains($0.portfolioID) }
         let assets = PortfolioAccountingEngine.uniqueAssets(in: relevantTransactions)
-        guard !assets.isEmpty else { pruneQuotes(); return }
-        isRefreshing = true; defer { isRefreshing = false }
+        guard !assets.isEmpty else {
+            pruneQuotes()
+            return
+        }
+        isRefreshing = true
+        defer { isRefreshing = false }
         let now = Date()
         var updates: [String: PortfolioQuote] = [:]
         await withTaskGroup(of: (String, PortfolioQuote?).self) { group in
@@ -142,10 +158,15 @@ final class PortfolioStore: ObservableObject {
                     task = Task {
                         guard asset.quoteCurrency == .USD else { return nil }
                         let service = DataSourceFactory.shared.service(for: asset.source)
-                        guard let data = try? await service.fetchKlines(symbol: asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":"), interval: "1h", limit: 25),
-                              let latest = data.last else { return nil }
+                        guard
+                            let data = try? await service.fetchKlines(
+                                symbol: asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":"),
+                                interval: "1h", limit: 25),
+                            let latest = data.last
+                        else { return nil }
                         let prior = data.last(where: { latest.openTime.timeIntervalSince($0.openTime) >= 23 * 3600 })
-                        return PortfolioQuote(price: Decimal(latest.closePrice),
+                        return PortfolioQuote(
+                            price: Decimal(latest.closePrice),
                             previousDayPrice: prior.map { Decimal($0.closePrice) }, timestamp: Date())
                     }
                     quoteTasks[asset.key] = task
@@ -177,12 +198,16 @@ final class PortfolioStore: ObservableObject {
     }
 
     func rebuildHistory(forPortfolioID id: UUID?) async {
-        let portfolios = id.flatMap { target in activePortfolios.first { $0.id == target } }.map { [$0] } ?? activePortfolios
+        let portfolios =
+            id.flatMap { target in activePortfolios.first { $0.id == target } }.map { [$0] } ?? activePortfolios
         for portfolio in portfolios { await rebuildHistory(for: portfolio) }
     }
 
     private func rebuildHistory(for portfolio: Portfolio) async {
-        if let task = historyTasks[portfolio.id] { await task.value; return }
+        if let task = historyTasks[portfolio.id] {
+            await task.value
+            return
+        }
         guard let start = Self.historyRebuildStart(for: portfolio.id, in: snapshot, today: Date()) else { return }
         let task = Task { [weak self] in
             guard let self else { return }
@@ -200,35 +225,55 @@ final class PortfolioStore: ObservableObject {
             in: snapshot.transactions.filter { $0.portfolioID == portfolio.id }
         )
         var histories: [String: [KlineData]] = [:]
-        if portfolio.baseCurrency == .USD { await withTaskGroup(of: (String, [KlineData]).self) { group in
-            for asset in assets { group.addTask {
-                let symbol = asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":")
-                let bars = (try? await DataSourceFactory.shared.service(for: asset.source).fetchKlines(symbol: symbol, interval: "1d", limit: 2000)) ?? []
-                return (asset.key, bars)
-            } }
-            for await (key, bars) in group { histories[key] = bars }
-        } }
-        var points: [PortfolioSnapshot] = [], cursor = calendar.startOfDay(for: start)
+        if portfolio.baseCurrency == .USD {
+            await withTaskGroup(of: (String, [KlineData]).self) { group in
+                for asset in assets {
+                    group.addTask {
+                        let symbol = asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":")
+                        let bars =
+                            (try? await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
+                                symbol: symbol, interval: "1d", limit: 2000)) ?? []
+                        return (asset.key, bars)
+                    }
+                }
+                for await (key, bars) in group { histories[key] = bars }
+            }
+        }
+        var points: [PortfolioSnapshot] = []
+        var cursor = calendar.startOfDay(for: start)
         while cursor <= end {
-            let historicalQuotes = Dictionary(assets.compactMap { asset -> (String, PortfolioQuote)? in
-                guard let bar = histories[asset.key]?.last(where: { $0.openTime <= cursor }), cursor.timeIntervalSince(bar.openTime) <= 3 * 86_400 else { return nil }
-                return (asset.key, PortfolioQuote(price: Decimal(bar.closePrice), timestamp: bar.openTime))
-            }, uniquingKeysWith: { existing, _ in existing })
-            let holdingValues = try? PortfolioAccountingEngine.holdings(transactions: snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor, quotes: historicalQuotes)
+            let historicalQuotes = Dictionary(
+                assets.compactMap { asset -> (String, PortfolioQuote)? in
+                    guard let bar = histories[asset.key]?.last(where: { $0.openTime <= cursor }),
+                        cursor.timeIntervalSince(bar.openTime) <= 3 * 86_400
+                    else { return nil }
+                    return (asset.key, PortfolioQuote(price: Decimal(bar.closePrice), timestamp: bar.openTime))
+                }, uniquingKeysWith: { existing, _ in existing })
+            let holdingValues = try? PortfolioAccountingEngine.holdings(
+                transactions: snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor,
+                quotes: historicalQuotes)
             let incomplete = holdingValues?.contains { $0.currentPrice == nil } ?? true
             let value = holdingValues?.compactMap(\.currentValue).reduce(0, +) ?? 0
             let cost = holdingValues?.reduce(0) { $0 + $1.costBasis } ?? 0
             let realized = holdingValues?.reduce(0) { $0 + $1.realizedPnL } ?? 0
-            points.append(.init(portfolioID: portfolio.id, timestamp: cursor, value: value,
-                netContributions: PortfolioAccountingEngine.netContributions(snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor),
-                realizedPnL: realized, unrealizedPnL: value - cost, isComplete: !incomplete))
+            points.append(
+                .init(
+                    portfolioID: portfolio.id, timestamp: cursor, value: value,
+                    netContributions: PortfolioAccountingEngine.netContributions(
+                        snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor),
+                    realizedPnL: realized, unrealizedPnL: value - cost, isComplete: !incomplete))
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
-        do { try await ledger.storeSnapshots(points, for: portfolio.id, from: start); await refresh() } catch { lastError = error.localizedDescription }
+        do {
+            try await ledger.storeSnapshots(points, for: portfolio.id, from: start)
+            await refresh()
+        } catch { lastError = error.localizedDescription }
     }
 
-    nonisolated static func historyRebuildStart(for portfolioID: UUID, in snapshot: PortfolioLedgerSnapshot,
-                                                today: Date, calendar: Calendar = Calendar(identifier: .gregorian)) -> Date? {
+    nonisolated static func historyRebuildStart(
+        for portfolioID: UUID, in snapshot: PortfolioLedgerSnapshot,
+        today: Date, calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> Date? {
         let today = calendar.startOfDay(for: today)
         if let invalidated = snapshot.invalidatedAfter[portfolioID] {
             return min(calendar.startOfDay(for: invalidated), today)
@@ -247,8 +292,9 @@ final class PortfolioStore: ObservableObject {
         let transactions = snapshot.transactions.filter { ids.contains($0.portfolioID) }
         let reportingCurrencies = Set(activePortfolios.filter { ids.contains($0.id) }.map(\.baseCurrency))
         let usableQuotes = reportingCurrencies == [.USD] ? quotes : [:]
-        let holdings = (try? PortfolioAccountingEngine.holdings(
-            transactions: snapshot.transactions, portfolioIDs: ids, quotes: usableQuotes)) ?? []
+        let holdings =
+            (try? PortfolioAccountingEngine.holdings(
+                transactions: snapshot.transactions, portfolioIDs: ids, quotes: usableQuotes)) ?? []
         let values = snapshot.historicalSnapshots.filter { ids.contains($0.portfolioID) }
         let history: [PortfolioSnapshot]
         if ids.count == 1 {
@@ -256,7 +302,8 @@ final class PortfolioStore: ObservableObject {
         } else {
             history = Self.aggregateHistory(values)
         }
-        let state = DerivedState(transactions: transactions, holdings: holdings, history: history,
+        let state = DerivedState(
+            transactions: transactions, holdings: holdings, history: history,
             totalValue: holdings.compactMap(\.currentValue).reduce(0, +),
             totalRealizedPnL: holdings.reduce(0) { $0 + $1.realizedPnL },
             totalUnrealizedPnL: holdings.compactMap(\.unrealizedPnL).reduce(0, +),
@@ -265,11 +312,14 @@ final class PortfolioStore: ObservableObject {
         return state
     }
 
-    nonisolated static func aggregateHistory(_ values: [PortfolioSnapshot],
-                                              calendar: Calendar = Calendar(identifier: .gregorian)) -> [PortfolioSnapshot] {
+    nonisolated static func aggregateHistory(
+        _ values: [PortfolioSnapshot],
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> [PortfolioSnapshot] {
         let aggregateID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
         return Dictionary(grouping: values, by: { calendar.startOfDay(for: $0.timestamp) }).map { date, points in
-            PortfolioSnapshot(portfolioID: aggregateID, timestamp: date,
+            PortfolioSnapshot(
+                portfolioID: aggregateID, timestamp: date,
                 value: points.reduce(0) { $0 + $1.value },
                 netContributions: points.reduce(0) { $0 + $1.netContributions },
                 realizedPnL: points.reduce(0) { $0 + $1.realizedPnL },
@@ -278,8 +328,10 @@ final class PortfolioStore: ObservableObject {
         }.sorted { $0.timestamp < $1.timestamp }
     }
 
-    nonisolated static func needsInitialQuoteLoad(snapshot: PortfolioLedgerSnapshot,
-                                                   quotes: [String: PortfolioQuote]) -> Bool {
+    nonisolated static func needsInitialQuoteLoad(
+        snapshot: PortfolioLedgerSnapshot,
+        quotes: [String: PortfolioQuote]
+    ) -> Bool {
         let selectedIDs: Set<UUID>
         if let selected = snapshot.selectedPortfolioID {
             selectedIDs = [selected]
@@ -289,8 +341,10 @@ final class PortfolioStore: ObservableObject {
         return quoteEligibleAssets(in: snapshot, portfolioIDs: selectedIDs).contains { quotes[$0.key] == nil }
     }
 
-    nonisolated static func quoteEligibleAssets(in snapshot: PortfolioLedgerSnapshot,
-                                                portfolioIDs: Set<UUID>) -> [PortfolioAsset] {
+    nonisolated static func quoteEligibleAssets(
+        in snapshot: PortfolioLedgerSnapshot,
+        portfolioIDs: Set<UUID>
+    ) -> [PortfolioAsset] {
         let portfolios = snapshot.portfolios.filter { portfolioIDs.contains($0.id) }
         guard !portfolios.isEmpty, portfolios.allSatisfy({ $0.baseCurrency == .USD }) else { return [] }
         let transactions = snapshot.transactions.filter { portfolioIDs.contains($0.portfolioID) }
@@ -309,8 +363,20 @@ final class PortfolioStore: ObservableObject {
 
     private func perform(_ operation: @escaping () async throws -> Void) { Task { _ = await result(operation) } }
     private func result(_ operation: () async throws -> Void) async -> Bool {
-        do { try await operation(); await refresh(); return true } catch { lastError = error.localizedDescription; return false }
+        do {
+            try await operation()
+            await refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
     }
 }
 
-private extension PortfolioSelection { var id: UUID? { if case .portfolio(let id) = self { return id }; return nil } }
+private extension PortfolioSelection {
+    var id: UUID? {
+        if case .portfolio(let id) = self { return id }
+        return nil
+    }
+}

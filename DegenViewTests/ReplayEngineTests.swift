@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import DegenView
 
 @MainActor
@@ -88,8 +89,12 @@ final class ReplayEngineTests: XCTestCase {
     func testPartialCandleAggregation() throws {
         let candles = [
             KlineData(openTime: base, openPrice: 100, highPrice: 102, lowPrice: 99, closePrice: 101, volume: 10),
-            KlineData(openTime: base.addingTimeInterval(60), openPrice: 101, highPrice: 103, lowPrice: 100, closePrice: 102, volume: 20),
-            KlineData(openTime: base.addingTimeInterval(120), openPrice: 102, highPrice: 104, lowPrice: 98, closePrice: 99, volume: 30)
+            KlineData(
+                openTime: base.addingTimeInterval(60), openPrice: 101, highPrice: 103, lowPrice: 100, closePrice: 102,
+                volume: 20),
+            KlineData(
+                openTime: base.addingTimeInterval(120), openPrice: 102, highPrice: 104, lowPrice: 98, closePrice: 99,
+                volume: 30),
         ]
         let result = try XCTUnwrap(ReplayEngine.aggregate(candles[...], bucketStart: base))
         XCTAssertEqual(result.openPrice, 100)
@@ -102,15 +107,23 @@ final class ReplayEngineTests: XCTestCase {
     func testGranularSourceBuildsOnlyObservedPartialChartCandle() async throws {
         let minuteBars = [
             KlineData(openTime: base, openPrice: 100, highPrice: 102, lowPrice: 99, closePrice: 101, volume: 10),
-            KlineData(openTime: base.addingTimeInterval(60), openPrice: 101, highPrice: 103, lowPrice: 100, closePrice: 102, volume: 20),
-            KlineData(openTime: base.addingTimeInterval(120), openPrice: 102, highPrice: 104, lowPrice: 98, closePrice: 99, volume: 30),
-            KlineData(openTime: base.addingTimeInterval(180), openPrice: 99, highPrice: 200, lowPrice: 1, closePrice: 150, volume: 1)
+            KlineData(
+                openTime: base.addingTimeInterval(60), openPrice: 101, highPrice: 103, lowPrice: 100, closePrice: 102,
+                volume: 20),
+            KlineData(
+                openTime: base.addingTimeInterval(120), openPrice: 102, highPrice: 104, lowPrice: 98, closePrice: 99,
+                volume: 30),
+            KlineData(
+                openTime: base.addingTimeInterval(180), openPrice: 99, highPrice: 200, lowPrice: 1, closePrice: 150,
+                volume: 1),
         ]
         let source = MockGranularSource(candles: minuteBars)
         let vm = ChartViewModel(ticker: "BTC", api: source)
         vm.klineData = [
             KlineData(openTime: base, openPrice: 100, highPrice: 200, lowPrice: 1, closePrice: 150, volume: 61),
-            KlineData(openTime: base.addingTimeInterval(300), openPrice: 150, highPrice: 151, lowPrice: 149, closePrice: 150, volume: 1)
+            KlineData(
+                openTime: base.addingTimeInterval(300), openPrice: 150, highPrice: 151, lowPrice: 149, closePrice: 150,
+                volume: 1),
         ]
         _ = try await vm.loadGranularReplayData(interval: .oneMinute)
         vm.applyReplayTimestamp(base.addingTimeInterval(180))
@@ -130,7 +143,9 @@ final class ReplayEngineTests: XCTestCase {
         let vm = ChartViewModel(ticker: "BTC", api: source)
         vm.klineData = [
             KlineData(openTime: base, openPrice: 1, highPrice: 1, lowPrice: 1, closePrice: 1, volume: 1),
-            KlineData(openTime: base.addingTimeInterval(3_600), openPrice: 1, highPrice: 1, lowPrice: 1, closePrice: 1, volume: 1)
+            KlineData(
+                openTime: base.addingTimeInterval(3_600), openPrice: 1, highPrice: 1, lowPrice: 1, closePrice: 1,
+                volume: 1),
         ]
         _ = try await vm.loadGranularReplayData(interval: .oneMinute)
         XCTAssertEqual(vm.replayTimeline(), [base.addingTimeInterval(60)])
@@ -139,7 +154,9 @@ final class ReplayEngineTests: XCTestCase {
     func testNoFutureDataLeakageAtChartBoundary() {
         let vm = ChartViewModel(ticker: "BTC")
         vm.klineData = dates(100).enumerated().map { index, date in
-            KlineData(openTime: date, openPrice: Double(index), highPrice: Double(index), lowPrice: Double(index), closePrice: Double(index), volume: 1)
+            KlineData(
+                openTime: date, openPrice: Double(index), highPrice: Double(index), lowPrice: Double(index),
+                closePrice: Double(index), volume: 1)
         }
         vm.setVisibleCount(100)
         vm.showEMA = true
@@ -162,7 +179,9 @@ private final class MockGranularSource: GranularReplayDataSource {
         [.automatic, .oneMinute, .chartBar]
     }
 
-    func fetchReplayKlines(symbol: String, interval: ReplayInterval, start: Date, end: Date, maximumCount: Int) async throws -> [KlineData] {
+    func fetchReplayKlines(symbol: String, interval: ReplayInterval, start: Date, end: Date, maximumCount: Int)
+        async throws -> [KlineData]
+    {
         Array(candles.prefix(maximumCount))
     }
 

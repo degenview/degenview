@@ -10,7 +10,10 @@ extension Color {
             self = .gray
             return
         }
-        let r, g, b, a: Double
+        let r: Double
+        let g: Double
+        let b: Double
+        let a: Double
         switch trimmed.count {
         case 6:
             r = Double((hexValue & 0xFF0000) >> 16) / 255.0
@@ -32,8 +35,8 @@ extension Color {
     /// Returns hex string like "#FF0000". Returns nil if color can't be resolved.
     var hexString: String? {
         guard let cgColor = NSColor(self).usingColorSpace(.sRGB)?.cgColor,
-              let components = cgColor.components,
-              components.count >= 3
+            let components = cgColor.components,
+            components.count >= 3
         else { return nil }
 
         let r = UInt8((components[0] * 255).rounded().clamped(to: 0...255))
