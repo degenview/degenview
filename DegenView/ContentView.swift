@@ -231,19 +231,22 @@ struct ContentView: View {
                 VStack(spacing: 0) {
                     // Chart list (vertical) or grid — fills remaining height, scrolls if needed
                     GeometryReader { geometry in
-                        let n = max(1, contentViewModel.chartViewModels.count)
                         let available = geometry.size.height
+                        let cardChromes = contentViewModel.chartViewModels.map {
+                            ChartLayout.cardChrome(
+                                isPortfolioValue: $0.portfolioChart?.kind == .valueChart
+                            )
+                        }
 
                         let naturalHeight: CGFloat = {
                             if contentViewModel.layoutMode == .vertical {
-                                let gaps = CGFloat(max(0, n - 1)) * ChartLayout.cardGap
-                                let chrome = CGFloat(n) * ChartLayout.cardChrome
-                                return (available - gaps - chrome) / CGFloat(n)
+                                return ChartLayout.verticalPlotHeight(
+                                    available: available, cardChromes: cardChromes
+                                )
                             } else {
-                                let rows = max(1, Int(ceil(Double(n) / ChartLayout.gridColumnFraction)))
-                                let gaps = CGFloat(max(0, rows - 1)) * ChartLayout.cardGap
-                                let chrome = CGFloat(rows) * ChartLayout.cardChrome
-                                return (available - gaps - chrome) / CGFloat(rows)
+                                return ChartLayout.gridPlotHeight(
+                                    available: available, cardChromes: cardChromes
+                                )
                             }
                         }()
 

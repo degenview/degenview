@@ -7,12 +7,36 @@ enum ChartLayout {
     static let cardGap: CGFloat = 8
     /// Estimated non-chart chrome per card (header + padding + spacing).
     static let cardChrome: CGFloat = 55
+    /// Portfolio value cards also contain a range picker and change summary.
+    static let portfolioValueCardChrome: CGFloat = 105
     /// Grid layout column count.
     static let gridColumns = 2
     /// Grid layout column width fraction.
     static let gridColumnFraction: Double = 2.0
     /// Chart area minimum height.
     static let chartMinHeight: CGFloat = 50
+
+    static func cardChrome(isPortfolioValue: Bool) -> CGFloat {
+        isPortfolioValue ? portfolioValueCardChrome : cardChrome
+    }
+
+    /// Common plot height that lets all vertically stacked cards fit when possible.
+    static func verticalPlotHeight(available: CGFloat, cardChromes: [CGFloat]) -> CGFloat {
+        guard !cardChromes.isEmpty else { return available }
+        let gaps = CGFloat(max(0, cardChromes.count - 1)) * cardGap
+        return (available - gaps - cardChromes.reduce(0, +)) / CGFloat(cardChromes.count)
+    }
+
+    /// Common plot height for a two-column grid. Each row must reserve enough chrome
+    /// for its tallest card; a short card simply has spare vertical room in that row.
+    static func gridPlotHeight(available: CGFloat, cardChromes: [CGFloat]) -> CGFloat {
+        guard !cardChromes.isEmpty else { return available }
+        let rowChromes = stride(from: 0, to: cardChromes.count, by: gridColumns).map { start in
+            cardChromes[start..<min(start + gridColumns, cardChromes.count)].max() ?? 0
+        }
+        let gaps = CGFloat(max(0, rowChromes.count - 1)) * cardGap
+        return (available - gaps - rowChromes.reduce(0, +)) / CGFloat(rowChromes.count)
+    }
 }
 
 // MARK: - Timeout Constants

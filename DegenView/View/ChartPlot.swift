@@ -49,6 +49,21 @@ struct ChartPlot {
         )
     }
 
+    /// Top edge for a label centered on `centerY`, kept inside the plot. Tiny canvases
+    /// cannot contain the label and return nil instead of forming an invalid range.
+    static func overlayOriginY(
+        centeredAt centerY: CGFloat,
+        in plotRect: CGRect,
+        labelHeight: CGFloat,
+        inset: CGFloat = 1
+    ) -> CGFloat? {
+        guard labelHeight >= 0 else { return nil }
+        let lower = plotRect.minY + inset
+        let upper = plotRect.maxY - labelHeight - inset
+        guard lower <= upper else { return nil }
+        return (centerY - labelHeight / 2).clamped(to: lower...upper)
+    }
+
     /// Vertical domain covering every point, padded so the series never touches the
     /// frame. Uses high/low, which equal the close on flat (line) points.
     static func priceRange(for points: [KlineData], padding: CGFloat) -> (min: Double, max: Double) {
@@ -559,7 +574,9 @@ struct ChartPlot {
         let boxHeight: CGFloat = 18
 
         let boxX = plotRect.maxX + 4
-        let boxY = (y - boxHeight / 2).clamped(to: (plotRect.minY + 1)...(plotRect.maxY - boxHeight - 1))
+        guard let boxY = Self.overlayOriginY(
+            centeredAt: y, in: plotRect, labelHeight: boxHeight
+        ) else { return }
 
         let boxRect = CGRect(x: boxX, y: boxY, width: boxWidth, height: boxHeight)
         context.fill(Path(roundedRect: boxRect, cornerRadius: 3), with: .color(color))
@@ -638,8 +655,9 @@ struct ChartPlot {
             context,
             PriceFormatter.format(crosshair.price, decimalPlaces: yAxisDecimalPlaces, scale: scale)
         )
-        let originY = (y - label.size.height / 2)
-            .clamped(to: (plotRect.minY + 1)...(plotRect.maxY - label.size.height - 1))
+        guard let originY = Self.overlayOriginY(
+            centeredAt: y, in: plotRect, labelHeight: label.size.height
+        ) else { return }
         draw(
             label,
             in: CGRect(origin: CGPoint(x: plotRect.maxX + 4, y: originY), size: label.size),

@@ -30,7 +30,11 @@ struct ScriptManagerView: View {
                     TableColumn("Name") { script in Text(script.name) }
                     TableColumn("Type") { script in Text(script.type.displayName) }
                     TableColumn("Status") { script in Label(statusText(script), systemImage: statusIcon(script)) }
-                    TableColumn("Modified") { script in Text(script.modifiedAt, style: .relative) }
+                    TableColumn("Modified") { script in
+                        TimelineView(.periodic(from: .now, by: 60)) { context in
+                            Text(modifiedText(for: script.modifiedAt, relativeTo: context.date))
+                        }
+                    }
                     TableColumn("Favorite") { script in Image(systemName: script.isFavorite ? "star.fill" : "star") }
                 }
                 .contextMenu(forSelectionType: UUID.self) { ids in
@@ -69,4 +73,13 @@ struct ScriptManagerView: View {
     private func statusIcon(_ script: LocalScript) -> String {
         switch script.compileRecord?.status ?? .notCompiled { case .notCompiled: "circle.dashed"; case .valid: "checkmark.circle"; case .warning: "exclamationmark.triangle"; case .error: "xmark.circle" }
     }
+    private func modifiedText(for date: Date, relativeTo now: Date) -> String {
+        guard now.timeIntervalSince(date) >= 60 else { return "Just now" }
+        return Self.relativeDateFormatter.localizedString(for: date, relativeTo: now)
+    }
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return formatter
+    }()
 }

@@ -397,7 +397,11 @@ private struct PortfolioChartCard: View {
             }
         }
         .padding(10)
-        .frame(height: chartHeight + ChartLayout.cardChrome)
+        .frame(
+            height: chartHeight + ChartLayout.cardChrome(
+                isPortfolioValue: config.kind == .valueChart
+            )
+        )
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
             await store.refresh()
@@ -580,9 +584,9 @@ private struct PortfolioValueMiniChart: View {
         let resolved = context.resolve(text)
         let textSize = resolved.measure(in: CGSize(width: 100, height: 20))
         let boxSize = CGSize(width: textSize.width + 10, height: 18)
-        let boxY = (y - boxSize.height / 2).clamped(
-            to: (plot.minY + 1)...(plot.maxY - boxSize.height - 1)
-        )
+        guard let boxY = ChartPlot.overlayOriginY(
+            centeredAt: y, in: plot, labelHeight: boxSize.height
+        ) else { return }
         let box = CGRect(
             x: plot.maxX + 4, y: boxY,
             width: boxSize.width, height: boxSize.height
