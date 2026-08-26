@@ -11,7 +11,9 @@ enum PortfolioAssetAutoMapper {
         for quote in preferredQuotes {
             let requestedPair = "\(token)\(quote)"
             if let results = try? await binance.searchTickers(query: requestedPair),
-               let match = results.first(where: { $0.fullSymbol.caseInsensitiveCompare(requestedPair) == .orderedSame }) {
+                let match = results.first(where: { $0.fullSymbol.caseInsensitiveCompare(requestedPair) == .orderedSame }
+                )
+            {
                 return PortfolioAsset(searchResult: match)
             }
         }
@@ -19,19 +21,23 @@ enum PortfolioAssetAutoMapper {
         // CoinGecko is the next safest identity source because its fullSymbol is
         // a stable coin id rather than a ticker. DEX pairs are the final fallback.
         if let results = try? await DataSourceFactory.shared.service(for: .coingecko).searchTickers(query: token),
-           let exact = results.first(where: { $0.symbol.caseInsensitiveCompare(token) == .orderedSame }) {
+            let exact = results.first(where: { $0.symbol.caseInsensitiveCompare(token) == .orderedSame })
+        {
             return PortfolioAsset(searchResult: exact)
         }
         if let results = try? await DataSourceFactory.shared.service(for: .dexscreener).searchTickers(query: token),
-           let match = bestPair(in: results, token: token, preferredQuotes: preferredQuotes)
-                ?? results.first(where: { baseSymbol(of: $0.symbol) == token }) {
+            let match = bestPair(in: results, token: token, preferredQuotes: preferredQuotes)
+                ?? results.first(where: { baseSymbol(of: $0.symbol) == token })
+        {
             return PortfolioAsset(searchResult: match)
         }
         return nil
     }
 
-    static func bestPair(in results: [TickerSearchResult], token: String,
-                         preferredQuotes: [String]) -> TickerSearchResult? {
+    static func bestPair(
+        in results: [TickerSearchResult], token: String,
+        preferredQuotes: [String]
+    ) -> TickerSearchResult? {
         let exactBase = results.filter { baseSymbol(of: $0.symbol) == token.uppercased() }
         for quote in preferredQuotes {
             if let result = exactBase.first(where: { quoteSymbol(of: $0.symbol) == quote }) { return result }

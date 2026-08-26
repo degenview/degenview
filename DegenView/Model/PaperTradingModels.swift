@@ -18,7 +18,8 @@ enum PaperOrderType: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 enum PaperTimeInForce: String, Codable, CaseIterable, Identifiable {
-    case day = "DAY", goodTilCanceled = "GTC"
+    case day = "DAY"
+    case goodTilCanceled = "GTC"
     var id: String { rawValue }
 }
 enum PaperOrderStatus: String, Codable {
@@ -113,11 +114,18 @@ struct PaperAccount: Codable, Identifiable, Equatable {
     var settings: PaperAccountSettings
     var createdAt: Date
 
-    init(id: UUID = UUID(), name: String = "Paper Trading", baseCurrency: PaperCurrency = .USD,
-         initialBalance: Decimal = 100_000, settings: PaperAccountSettings = .init(), createdAt: Date = Date()) {
-        self.id = id; self.name = name; self.baseCurrency = baseCurrency
-        self.initialBalance = initialBalance; self.cashBalance = initialBalance
-        self.realizedPnL = 0; self.settings = settings; self.createdAt = createdAt
+    init(
+        id: UUID = UUID(), name: String = "Paper Trading", baseCurrency: PaperCurrency = .USD,
+        initialBalance: Decimal = 100_000, settings: PaperAccountSettings = .init(), createdAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.baseCurrency = baseCurrency
+        self.initialBalance = initialBalance
+        self.cashBalance = initialBalance
+        self.realizedPnL = 0
+        self.settings = settings
+        self.createdAt = createdAt
     }
 }
 
@@ -212,7 +220,9 @@ struct PaperQuote: Codable, Equatable {
     }
 }
 
-enum PaperOrderEventKind: String, Codable { case placed, accepted, partiallyFilled, filled, modified, canceled, rejected, expired }
+enum PaperOrderEventKind: String, Codable {
+    case placed, accepted, partiallyFilled, filled, modified, canceled, rejected, expired
+}
 struct PaperOrderEvent: Codable, Identifiable, Equatable {
     let id: UUID
     let orderID: UUID
@@ -271,9 +281,13 @@ struct PaperTradingSnapshot: Codable, Equatable {
 }
 
 enum PaperTradingError: LocalizedError, Equatable {
-    case accountNotFound, orderNotFound, invalidTransition, invalidQuantity(String), invalidPrice(String)
-    case staleMarketData, marketClosed, noMarketData, unsupportedCurrencyConversion(PaperCurrency, PaperCurrency)
-    case insufficientFunds(required: Decimal, available: Decimal), unsupportedSymbol
+    case accountNotFound, orderNotFound, invalidTransition
+    case invalidQuantity(String)
+    case invalidPrice(String)
+    case staleMarketData, marketClosed, noMarketData
+    case unsupportedCurrencyConversion(PaperCurrency, PaperCurrency)
+    case insufficientFunds(required: Decimal, available: Decimal)
+    case unsupportedSymbol
 
     var errorDescription: String? {
         switch self {
@@ -285,8 +299,10 @@ enum PaperTradingError: LocalizedError, Equatable {
         case .staleMarketData: "Order cannot be simulated reliably because market data is stale."
         case .marketClosed: "The market is closed; the paper order remains pending."
         case .noMarketData: "No executable market price is available."
-        case .unsupportedCurrencyConversion(let from, let to): "FX conversion from \(from.rawValue) to \(to.rawValue) is unavailable."
-        case .insufficientFunds(let required, let available): "Order rejected: insufficient available funds. Required margin: \(required); available funds: \(available)."
+        case .unsupportedCurrencyConversion(let from, let to):
+            "FX conversion from \(from.rawValue) to \(to.rawValue) is unavailable."
+        case .insufficientFunds(let required, let available):
+            "Order rejected: insufficient available funds. Required margin: \(required); available funds: \(available)."
         case .unsupportedSymbol: "This symbol is not supported by Paper Trading."
         }
     }
@@ -295,7 +311,8 @@ enum PaperTradingError: LocalizedError, Equatable {
 extension Decimal {
     var doubleValue: Double { NSDecimalNumber(decimal: self).doubleValue }
     static func rounded(_ value: Decimal, scale: Int = 8) -> Decimal {
-        var source = value, result = Decimal()
+        var source = value
+        var result = Decimal()
         NSDecimalRound(&result, &source, scale, .bankers)
         return result
     }

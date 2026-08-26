@@ -10,12 +10,12 @@ enum TimeAxisFormatter {
     /// resolve — the minutes of an hourly candle are always :00, and a label that ever
     /// said 22:37 would be naming a moment no candle stands for.
     static func format(for interval: TimeInterval) -> String {
-        if interval < 86400 { return "EEE HH:mm" }      // sub-daily (1m … 4h)
-        if interval < 604800 { return "EEE, MMM d" }    // daily
+        if interval < 86400 { return "EEE HH:mm" }  // sub-daily (1m … 4h)
+        if interval < 604800 { return "EEE, MMM d" }  // daily
         // Split weekly from monthly at two weeks rather than at a month: calendar months
         // are 28–31 days, and a threshold at 30 would format February as a week.
         if interval < 1209600 { return "MMM d, yyyy" }  // weekly
-        return "MMM yyyy"                               // monthly and coarser
+        return "MMM yyyy"  // monthly and coarser
     }
 
     /// A candle's open time, rendered at the granularity that candle resolves.

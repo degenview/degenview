@@ -13,12 +13,12 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
     /// Binance kline interval string — directly matches the picker label.
     var binanceInterval: String {
         switch self {
-        case .oneHour:      return "1h"
-        case .oneDay:       return "1d"
-        case .oneWeek:      return "1w"
-        case .oneMonth:     return "1M"
-        case .threeMonths:  return "1d"    // no "3M" on Binance; daily bars for 3 months
-        case .oneYear:      return "1w"    // no "1Y" on Binance; weekly bars for 1 year
+        case .oneHour: return "1h"
+        case .oneDay: return "1d"
+        case .oneWeek: return "1w"
+        case .oneMonth: return "1M"
+        case .threeMonths: return "1d"  // no "3M" on Binance; daily bars for 3 months
+        case .oneYear: return "1w"  // no "1Y" on Binance; weekly bars for 1 year
         }
     }
 
@@ -27,12 +27,12 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
     /// Used to compute the effective span a Binance chart covers at this range.
     var binanceIntervalSeconds: TimeInterval {
         switch self {
-        case .oneHour:      return 3_600       // 1h
-        case .oneDay:       return 86_400      // 1d
-        case .oneWeek:      return 604_800     // 1w
-        case .oneMonth:     return 2_592_000   // 1M (30d)
-        case .threeMonths:  return 86_400      // 1d (Binance fallback)
-        case .oneYear:      return 604_800     // 1w (Binance fallback)
+        case .oneHour: return 3_600  // 1h
+        case .oneDay: return 86_400  // 1d
+        case .oneWeek: return 604_800  // 1w
+        case .oneMonth: return 2_592_000  // 1M (30d)
+        case .threeMonths: return 86_400  // 1d (Binance fallback)
+        case .oneYear: return 604_800  // 1w (Binance fallback)
         }
     }
 
@@ -63,17 +63,28 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         let needed = dataPointLimit * 2
 
         let interval: String
-        if span <= 1      { interval = "1h" }
-        else if span <= 2 { interval = "1d" }
-        else if span <= 8 { interval = "1w" }
-        else if span <= 31{ interval = "1m" }
-        else              { interval = "max" }
+        if span <= 1 {
+            interval = "1h"
+        } else if span <= 2 {
+            interval = "1d"
+        } else if span <= 8 {
+            interval = "1w"
+        } else if span <= 31 {
+            interval = "1m"
+        } else {
+            interval = "max"
+        }
 
-        let intervalMinutes: Double = interval == "max" ? 43_200   // ~30 days
-                                       : interval == "1m" ? 43_200
-                                       : interval == "1w" ? 10_080
-                                       : interval == "1d" ? 1_440
-                                       : 60                       // "1h"
+        let intervalMinutes: Double =
+            interval == "max"
+            ? 43_200  // ~30 days
+            : interval == "1m"
+                ? 43_200
+                : interval == "1w"
+                    ? 10_080
+                    : interval == "1d"
+                        ? 1_440
+                        : 60  // "1h"
 
         let fidelity = max(1, Int(intervalMinutes / Double(needed)))
 
@@ -83,12 +94,12 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
     /// Number of candles to fetch from the API.
     var dataPointLimit: Int {
         switch self {
-        case .oneHour:      return 48     // 2 days of 1h candles
-        case .oneDay:       return 60     // ~2 months of 1d candles
-        case .oneWeek:      return 26     // ~6 months of 1w candles
-        case .oneMonth:     return 12     // 1 year of 1M candles
-        case .threeMonths:  return 90     // 3 months of 1d candles
-        case .oneYear:      return 52     // 1 year of 1w candles
+        case .oneHour: return 48  // 2 days of 1h candles
+        case .oneDay: return 60  // ~2 months of 1d candles
+        case .oneWeek: return 26  // ~6 months of 1w candles
+        case .oneMonth: return 12  // 1 year of 1M candles
+        case .threeMonths: return 90  // 3 months of 1d candles
+        case .oneYear: return 52  // 1 year of 1w candles
         }
     }
 

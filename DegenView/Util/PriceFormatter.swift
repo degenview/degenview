@@ -61,8 +61,8 @@ enum PriceFormatter {
 
         return price.formatted(
             .number
-            .precision(.fractionLength(digits))
-            .grouping(.automatic)
+                .precision(.fractionLength(digits))
+                .grouping(.automatic)
         )
     }
 
@@ -111,7 +111,8 @@ extension Int {
     var subscriptUnicode: String {
         String(self).map { char -> String in
             guard let digit = char.wholeNumberValue,
-                  let scalar = UnicodeScalar(0x2080 + digit) else {
+                let scalar = UnicodeScalar(0x2080 + digit)
+            else {
                 return String(char)
             }
             return String(scalar)

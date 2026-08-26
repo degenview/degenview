@@ -47,9 +47,9 @@ actor CGRateLimiter {
         let resume = Date().addingTimeInterval(Double(seconds))
         if resume > nextSlot { nextSlot = resume }
 
-#if DEBUG
-        print("[CoinGecko] Rate limiter gap → \(String(format: "%.1f", gap))s")
-#endif
+        #if DEBUG
+            print("[CoinGecko] Rate limiter gap → \(String(format: "%.1f", gap))s")
+        #endif
     }
 
     /// Narrow the gap gradually while the API is keeping up.

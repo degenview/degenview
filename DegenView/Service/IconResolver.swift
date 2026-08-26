@@ -271,7 +271,7 @@ actor IconResolver {
         coinIDBatch = nil
 
         guard !ids.isEmpty,
-              var components = URLComponents(string: "\(baseURL)/coins/markets")
+            var components = URLComponents(string: "\(baseURL)/coins/markets")
         else { return [:] }
 
         components.queryItems = [
@@ -281,7 +281,7 @@ actor IconResolver {
             URLQueryItem(name: "sparkline", value: "false"),
         ]
         guard let url = components.url,
-              let coins = await fetchMarketCoins(url: url, describedAs: "\(ids.count) coin id(s)")
+            let coins = await fetchMarketCoins(url: url, describedAs: "\(ids.count) coin id(s)")
         else { return [:] }
 
         var images: [String: String] = [:]
@@ -301,9 +301,9 @@ actor IconResolver {
         guard !Task.isCancelled else { return nil }
 
         do {
-#if DEBUG
-            print("[Icon] Fetching market \(label)")
-#endif
+            #if DEBUG
+                print("[Icon] Fetching market \(label)")
+            #endif
             let (data, response) = try await session.data(from: url)
 
             guard let httpResponse = response as? HTTPURLResponse else { return nil }
@@ -317,9 +317,9 @@ actor IconResolver {
             await CGRateLimiter.shared.noteSuccess()
             return try JSONDecoder().decode([MarketCoin].self, from: data)
         } catch {
-#if DEBUG
-            print("[Icon] Market fetch failed (\(label)): \(error.localizedDescription)")
-#endif
+            #if DEBUG
+                print("[Icon] Market fetch failed (\(label)): \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -331,17 +331,17 @@ actor IconResolver {
     private func stockIcon(symbol: String) async -> URL? {
         let ticker = symbol.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         guard isPlausibleSymbol(ticker),
-              let encoded = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-              let url = URL(string: "\(Icon.stockCDNBase)/\(encoded).png")
+            let encoded = ticker.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+            let url = URL(string: "\(Icon.stockCDNBase)/\(encoded).png")
         else { return nil }
 
         var request = URLRequest(url: url)
         request.httpMethod = "HEAD"
 
         guard let (_, response) = try? await session.data(for: request),
-              let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200,
-              httpResponse.mimeType?.hasPrefix("image/") == true
+            let httpResponse = response as? HTTPURLResponse,
+            httpResponse.statusCode == 200,
+            httpResponse.mimeType?.hasPrefix("image/") == true
         else { return nil }
 
         return url
@@ -359,8 +359,8 @@ actor IconResolver {
         request.httpMethod = "HEAD"
 
         guard let (_, response) = try? await session.data(for: request),
-              let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200
+            let httpResponse = response as? HTTPURLResponse,
+            httpResponse.statusCode == 200
         else { return nil }
 
         return url

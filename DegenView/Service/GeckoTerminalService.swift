@@ -95,9 +95,11 @@ actor GeckoTerminalService {
     // MARK: - OHLCV request
 
     private func fetchOHLCV(network: String, pool: String, window: Window) async throws -> [KlineData] {
-        guard var components = URLComponents(
-            string: "\(Self.apiBase)/networks/\(network)/pools/\(pool)/ohlcv/\(window.timeframe)"
-        ) else {
+        guard
+            var components = URLComponents(
+                string: "\(Self.apiBase)/networks/\(network)/pools/\(pool)/ohlcv/\(window.timeframe)"
+            )
+        else {
             throw GeckoTerminalError.invalidURL
         }
         components.queryItems = [
@@ -107,9 +109,11 @@ actor GeckoTerminalService {
         ]
         guard let url = components.url else { throw GeckoTerminalError.invalidURL }
 
-#if DEBUG
-        print("[GeckoTerminal] OHLCV \(network)/\(pool) \(window.timeframe)x\(window.aggregate) limit=\(window.fetchLimit)")
-#endif
+        #if DEBUG
+            print(
+                "[GeckoTerminal] OHLCV \(network)/\(pool) \(window.timeframe)x\(window.aggregate) limit=\(window.fetchLimit)"
+            )
+        #endif
 
         await rateLimiter.waitForSlot()
         try Task.checkCancellation()
@@ -163,9 +167,11 @@ actor GeckoTerminalService {
         // Match on the address rather than taking the first row: a search can return
         // sibling pools of the same token pair on other chains.
         let suffix = "_\(key)"
-        guard let pool = decoded.data.first(where: {
-            $0.attributes.address.lowercased() == key || $0.id.lowercased().hasSuffix(suffix)
-        }) else {
+        guard
+            let pool = decoded.data.first(where: {
+                $0.attributes.address.lowercased() == key || $0.id.lowercased().hasSuffix(suffix)
+            })
+        else {
             throw GeckoTerminalError.unknownPool
         }
 
@@ -232,15 +238,15 @@ actor GeckoTerminalService {
 
     private static func intervalSeconds(_ interval: String) -> Int {
         switch interval {
-        case "1m":  return 60
-        case "5m":  return 300
+        case "1m": return 60
+        case "5m": return 300
         case "15m": return 900
-        case "1h":  return 3_600
-        case "4h":  return 14_400
-        case "1d":  return 86_400
-        case "1w":  return 604_800
-        case "1M":  return 2_592_000
-        default:    return 3_600
+        case "1h": return 3_600
+        case "4h": return 14_400
+        case "1d": return 86_400
+        case "1w": return 604_800
+        case "1M": return 2_592_000
+        default: return 3_600
         }
     }
 }
@@ -256,11 +262,11 @@ enum GeckoTerminalError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:      return "Invalid GeckoTerminal URL"
+        case .invalidURL: return "Invalid GeckoTerminal URL"
         case .invalidResponse: return "GeckoTerminal request failed"
-        case .rateLimited:     return "GeckoTerminal rate limit reached"
-        case .unknownPool:     return "Pool not indexed by GeckoTerminal"
-        case .noChartData:     return "No chart data for this pool"
+        case .rateLimited: return "GeckoTerminal rate limit reached"
+        case .unknownPool: return "Pool not indexed by GeckoTerminal"
+        case .noChartData: return "No chart data for this pool"
         }
     }
 }
@@ -276,11 +282,11 @@ extension KlineData {
     /// zero, which is the reverse of the Binance layout.
     init?(rawGeckoTerminal row: [Double?]) {
         guard row.count >= 6,
-              let ts = row[0],
-              let open = row[1],
-              let high = row[2],
-              let low = row[3],
-              let close = row[4]
+            let ts = row[0],
+            let open = row[1],
+            let high = row[2],
+            let low = row[3],
+            let close = row[4]
         else { return nil }
 
         self.init(

@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// One deterministic replay clock for a tab. Charts may have different symbols,
 /// but are always gated by this single timestamp rather than independent indices.
@@ -70,8 +70,11 @@ final class ReplayEngine: ObservableObject {
     func restore(_ saved: ReplaySession, timeline rawTimeline: [Date]) {
         let valid = Self.normalized(rawTimeline)
         guard !valid.isEmpty,
-              let index = Self.index(atOrBefore: saved.currentTimestamp, in: valid)
-        else { stop(); return }
+            let index = Self.index(atOrBefore: saved.currentTimestamp, in: valid)
+        else {
+            stop()
+            return
+        }
         timeline = valid
         var restored = saved.restoredPaused
         restored.currentBarIndex = index
@@ -171,7 +174,12 @@ final class ReplayEngine: ObservableObject {
         guard var session else { return }
         session.playbackSpeed = speed
         self.session = session
-        if status == .playing { pause(); play() } else { changed() }
+        if status == .playing {
+            pause()
+            play()
+        } else {
+            changed()
+        }
     }
 
     func setInterval(_ interval: ReplayInterval) {
@@ -204,7 +212,8 @@ final class ReplayEngine: ObservableObject {
 
     static func index(atOrBefore date: Date, in dates: [Date]) -> Int? {
         guard !dates.isEmpty, date >= dates[0] else { return nil }
-        var low = 0, high = dates.count
+        var low = 0
+        var high = dates.count
         while low < high {
             let mid = (low + high) / 2
             if dates[mid] <= date { low = mid + 1 } else { high = mid }

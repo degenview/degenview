@@ -14,7 +14,9 @@ struct ScriptManagerView: View {
                     .frame(width: 260)
                 Button {
                     openWindow(value: ScriptEditorWindowID(scriptID: nil))
-                } label: { Label("New Script", systemImage: "plus") }
+                } label: {
+                    Label("New Script", systemImage: "plus")
+                }
             }
             .padding(10)
             Divider()
@@ -41,7 +43,8 @@ struct ScriptManagerView: View {
                     if let id = ids.first, let script = model.scripts.first(where: { $0.id == id }) {
                         Button("Open") { openWindow(value: ScriptEditorWindowID(scriptID: id)) }
                         Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
-                        Divider(); Button("Delete", role: .destructive) { model.delete(script) }
+                        Divider()
+                        Button("Delete", role: .destructive) { model.delete(script) }
                     }
                 } primaryAction: { ids in
                     if let id = ids.first { openWindow(value: ScriptEditorWindowID(scriptID: id)) }
@@ -64,14 +67,30 @@ struct ScriptManagerView: View {
         .background(WindowAccessor { WindowCoordinator.shared.registerAuxiliaryTab($0) })
         .alert("Script Manager", isPresented: .constant(model.errorMessage != nil)) {
             Button("OK") { model.errorMessage = nil }
-        } message: { Text(model.errorMessage ?? "") }
+        } message: {
+            Text(model.errorMessage ?? "")
+        }
     }
     private func icon(_ section: ScriptManagerViewModel.Section) -> String {
-        switch section { case .all: "doc.text"; case .favorites: "star"; case .recent: "clock"; case .indicators: "waveform.path.ecg"; case .strategies: "chart.xyaxis.line"; case .libraries: "books.vertical" }
+        switch section {
+        case .all: "doc.text"
+        case .favorites: "star"
+        case .recent: "clock"
+        case .indicators: "waveform.path.ecg"
+        case .strategies: "chart.xyaxis.line"
+        case .libraries: "books.vertical"
+        }
     }
-    private func statusText(_ script: LocalScript) -> String { script.compileRecord?.status.rawValue.capitalized ?? "Not Compiled" }
+    private func statusText(_ script: LocalScript) -> String {
+        script.compileRecord?.status.rawValue.capitalized ?? "Not Compiled"
+    }
     private func statusIcon(_ script: LocalScript) -> String {
-        switch script.compileRecord?.status ?? .notCompiled { case .notCompiled: "circle.dashed"; case .valid: "checkmark.circle"; case .warning: "exclamationmark.triangle"; case .error: "xmark.circle" }
+        switch script.compileRecord?.status ?? .notCompiled {
+        case .notCompiled: "circle.dashed"
+        case .valid: "checkmark.circle"
+        case .warning: "exclamationmark.triangle"
+        case .error: "xmark.circle"
+        }
     }
     private func modifiedText(for date: Date, relativeTo now: Date) -> String {
         guard now.timeIntervalSince(date) >= 60 else { return "Just now" }

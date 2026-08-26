@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
@@ -48,7 +48,10 @@ struct ChartCardView: View {
             PortfolioChartCard(
                 config: Binding(
                     get: { viewModel.portfolioChart ?? config },
-                    set: { viewModel.portfolioChart = $0; onStyleChanged() }
+                    set: {
+                        viewModel.portfolioChart = $0
+                        onStyleChanged()
+                    }
                 ),
                 store: portfolioStore,
                 chartHeight: chartHeight,
@@ -142,19 +145,31 @@ struct ChartCardView: View {
             .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
 
             if viewModel.source != .polymarket {
-                Button { showAlertEditor = true } label: { Image(systemName: "bell.badge") }
-                    .buttonStyle(.plain).help("Create Price Alert")
+                Button {
+                    showAlertEditor = true
+                } label: {
+                    Image(systemName: "bell.badge")
+                }
+                .buttonStyle(.plain).help("Create Price Alert")
             }
 
             if paperConnected, let price = viewModel.displayedPrice {
                 HStack(spacing: 4) {
                     Button(action: onPaperSell) {
-                        VStack(spacing: 0) { Text("SELL").font(.caption2.bold()); Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(.caption2.monospacedDigit()) }
+                        VStack(spacing: 0) {
+                            Text("SELL").font(.caption2.bold())
+                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
+                                .caption2.monospacedDigit())
+                        }
                     }
                     .buttonStyle(.bordered).tint(.red)
                     .accessibilityLabel("Sell \(viewModel.title), paper order at last price \(price)")
                     Button(action: onPaperBuy) {
-                        VStack(spacing: 0) { Text("BUY").font(.caption2.bold()); Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(.caption2.monospacedDigit()) }
+                        VStack(spacing: 0) {
+                            Text("BUY").font(.caption2.bold())
+                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
+                                .caption2.monospacedDigit())
+                        }
                     }
                     .buttonStyle(.borderedProminent).tint(.blue)
                     .accessibilityLabel("Buy \(viewModel.title), paper order at last price \(price)")
@@ -174,7 +189,8 @@ struct ChartCardView: View {
     }
 
     private var alertAsset: PortfolioAsset {
-        PortfolioAsset(key: viewModel.iconKey, symbol: viewModel.baseSymbol, name: viewModel.title,
+        PortfolioAsset(
+            key: viewModel.iconKey, symbol: viewModel.baseSymbol, name: viewModel.title,
             source: viewModel.source, quoteCurrency: .USD, metadata: ["apiSymbol": viewModel.apiSymbol])
     }
 
@@ -222,7 +238,7 @@ struct ChartCardView: View {
         let indicators = viewModel.indicators
         let multiSeries = viewModel.pmVisibleSeries.map { (data: $0.data, color: $0.color, label: $0.label) }
 
-        return Group {
+        Group {
             if viewModel.usesLineChart {
                 LineChartView(
                     points: viewModel.visibleKlines,
@@ -278,7 +294,8 @@ struct ChartCardView: View {
         }
         .overlay {
             if paperConnected && viewModel.replayTimestamp == nil {
-                PaperChartTradingOverlay(candles: viewModel.visibleKlines, positions: paperPositions,
+                PaperChartTradingOverlay(
+                    candles: viewModel.visibleKlines, positions: paperPositions,
                     orders: paperOrders, accountCurrency: paperAccountCurrency, unrealizedPnL: paperUnrealizedPnL,
                     onModify: onPaperModify, onCancel: onPaperCancel, onClose: onPaperClose)
             }
@@ -357,7 +374,9 @@ private struct PortfolioChartCard: View {
                 }
                 Spacer()
                 if config.kind == .valueChart {
-                    Button { valuesHidden.toggle() } label: {
+                    Button {
+                        valuesHidden.toggle()
+                    } label: {
                         Image(systemName: valuesHidden ? "eye.slash" : "eye")
                     }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -398,9 +417,10 @@ private struct PortfolioChartCard: View {
         }
         .padding(10)
         .frame(
-            height: chartHeight + ChartLayout.cardChrome(
-                isPortfolioValue: config.kind == .valueChart
-            )
+            height: chartHeight
+                + ChartLayout.cardChrome(
+                    isPortfolioValue: config.kind == .valueChart
+                )
         )
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
@@ -422,9 +442,10 @@ private struct PortfolioChartCard: View {
                 Image(systemName: changeIcon(change.direction))
                 Text(valuesHidden ? "*****" : money(abs(change.amount)))
                     + Text(" · ")
-                    + Text(change.percentage.map {
-                        abs($0).formatted(.percent.precision(.fractionLength(2)))
-                    } ?? "—")
+                    + Text(
+                        change.percentage.map {
+                            abs($0).formatted(.percent.precision(.fractionLength(2)))
+                        } ?? "—")
             } else {
                 Text("Unavailable")
                     .foregroundStyle(.secondary)
@@ -464,9 +485,10 @@ private struct PortfolioChartCard: View {
         case .down: direction = "down"
         case .unchanged: direction = "unchanged"
         }
-        let percentage = timeframeChange.percentage.map {
-            abs($0).formatted(.percent.precision(.fractionLength(2)))
-        } ?? "percentage unavailable"
+        let percentage =
+            timeframeChange.percentage.map {
+                abs($0).formatted(.percent.precision(.fractionLength(2)))
+            } ?? "percentage unavailable"
         let amount = valuesHidden ? "amount hidden" : money(abs(timeframeChange.amount))
         return "\(config.range.rawValue) portfolio change, \(direction) \(amount), \(percentage)"
     }
@@ -480,7 +502,10 @@ private struct PortfolioValueMiniChart: View {
     let privacy: Bool
     let hidesYAxisValues: Bool
 
-    private struct Point { let date: Date; let value: Decimal }
+    private struct Point {
+        let date: Date
+        let value: Decimal
+    }
     private func preparedPoints(now: Date = Date()) -> [Point] {
         snapshots.map { Point(date: $0.timestamp, value: $0.value) }
             + [Point(date: now, value: currentValue)]
@@ -492,10 +517,15 @@ private struct PortfolioValueMiniChart: View {
             Canvas { context, size in
                 guard !privacy, !points.isEmpty else { return }
                 let values = points.map(\.value)
-                var low = values.min() ?? 0, high = values.max() ?? 1
-                if low == high { low -= 1; high += 1 }
+                var low = values.min() ?? 0
+                var high = values.max() ?? 1
+                if low == high {
+                    low -= 1
+                    high += 1
+                }
                 let padding = (high - low) * Decimal(string: "0.08")!
-                low -= padding; high += padding
+                low -= padding
+                high += padding
                 let spread = high - low
                 let plot = CGRect(x: 12, y: 8, width: max(1, size.width - 96), height: max(1, size.height - 34))
 
@@ -516,12 +546,15 @@ private struct PortfolioValueMiniChart: View {
 
                 var path = Path()
                 for index in points.indices {
-                    let x = points.count == 1 ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
+                    let x =
+                        points.count == 1
+                        ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
                     let fraction = CGFloat(((points[index].value - low) / spread).doubleValue)
                     let point = CGPoint(x: x, y: plot.maxY - plot.height * fraction)
                     index == 0 ? path.move(to: point) : path.addLine(to: point)
                 }
-                context.stroke(path, with: .color((values.last ?? 0) >= (values.first ?? 0) ? .green : .red), lineWidth: 2.5)
+                context.stroke(
+                    path, with: .color((values.last ?? 0) >= (values.first ?? 0) ? .green : .red), lineWidth: 2.5)
 
                 let currentColor: Color = (values.last ?? 0) >= (values.first ?? 0) ? .green : .red
                 drawCurrentValueOverlay(
@@ -531,7 +564,9 @@ private struct PortfolioValueMiniChart: View {
 
                 let labelIndices = Array(Set([0, max(0, points.count / 2), max(0, points.count - 1)])).sorted()
                 for index in labelIndices {
-                    let x = points.count == 1 ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
+                    let x =
+                        points.count == 1
+                        ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
                     context.draw(
                         Text(dateLabel(points[index].date)).font(.caption2).foregroundStyle(.secondary),
                         at: CGPoint(x: x, y: plot.maxY + 7), anchor: .top
@@ -539,8 +574,11 @@ private struct PortfolioValueMiniChart: View {
                 }
             }
             .overlay {
-                if privacy { Text("••••••••").font(.title) }
-                else if snapshots.isEmpty { Text("History will appear after portfolio snapshots are built.").foregroundStyle(.secondary) }
+                if privacy {
+                    Text("••••••••").font(.title)
+                } else if snapshots.isEmpty {
+                    Text("History will appear after portfolio snapshots are built.").foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -577,16 +615,21 @@ private struct PortfolioValueMiniChart: View {
             style: StrokeStyle(lineWidth: 1, dash: [5, 3])
         )
 
-        let label = hidesYAxisValues ? "*****" : currentValue.formatted(
-            .number.precision(.fractionLength(2))
-        )
+        let label =
+            hidesYAxisValues
+            ? "*****"
+            : currentValue.formatted(
+                .number.precision(.fractionLength(2))
+            )
         let text = Text(label).font(.caption2).bold().foregroundStyle(.white)
         let resolved = context.resolve(text)
         let textSize = resolved.measure(in: CGSize(width: 100, height: 20))
         let boxSize = CGSize(width: textSize.width + 10, height: 18)
-        guard let boxY = ChartPlot.overlayOriginY(
-            centeredAt: y, in: plot, labelHeight: boxSize.height
-        ) else { return }
+        guard
+            let boxY = ChartPlot.overlayOriginY(
+                centeredAt: y, in: plot, labelHeight: boxSize.height
+            )
+        else { return }
         let box = CGRect(
             x: plot.maxX + 4, y: boxY,
             width: boxSize.width, height: boxSize.height
@@ -608,11 +651,14 @@ private struct PortfolioAllocationMiniChart: View {
     let holdings: [PortfolioHolding]
     let privacy: Bool
     private let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .cyan]
-    private var sorted: [PortfolioHolding] { holdings.filter { $0.allocation > 0 }.sorted { $0.allocation > $1.allocation } }
+    private var sorted: [PortfolioHolding] {
+        holdings.filter { $0.allocation > 0 }.sorted { $0.allocation > $1.allocation }
+    }
 
     var body: some View {
         if sorted.isEmpty {
-            ContentUnavailableView("No Allocations", systemImage: "chart.pie", description: Text("Add priced holdings to this portfolio."))
+            ContentUnavailableView(
+                "No Allocations", systemImage: "chart.pie", description: Text("Add priced holdings to this portfolio."))
         } else {
             HStack(spacing: 24) {
                 Canvas { context, size in
@@ -621,8 +667,9 @@ private struct PortfolioAllocationMiniChart: View {
                     for (index, holding) in sorted.enumerated() {
                         let end = start + .degrees(holding.allocation.doubleValue * 360)
                         var path = Path()
-                        path.addArc(center: CGPoint(x: size.width / 2, y: size.height / 2), radius: radius,
-                                    startAngle: start, endAngle: end, clockwise: false)
+                        path.addArc(
+                            center: CGPoint(x: size.width / 2, y: size.height / 2), radius: radius,
+                            startAngle: start, endAngle: end, clockwise: false)
                         context.stroke(path, with: .color(colors[index % colors.count]), lineWidth: 26)
                         start = end
                     }
@@ -634,7 +681,9 @@ private struct PortfolioAllocationMiniChart: View {
                                 Circle().fill(colors[index % colors.count]).frame(width: 8, height: 8)
                                 Text(holding.asset.symbol).bold()
                                 Spacer()
-                                Text(privacy ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1))))
+                                Text(
+                                    privacy
+                                        ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1))))
                             }
                         }
                     }

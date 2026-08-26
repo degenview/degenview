@@ -13,20 +13,20 @@ struct ChartStyle {
 
     // Candle geometry — widths scale with slot (plot width ÷ candle count)
     var candleBodyFraction: CGFloat = 0.75  // body width as fraction of slot width
-    var candleBodyMin: CGFloat = 1          // minimum body width in points
-    var candleBodyMax: CGFloat = 15         // maximum body width in points
-    var wickFraction: CGFloat = 0.12        // wick width as fraction of slot width
-    var wickMin: CGFloat = 0.5              // minimum wick width in points
-    var wickMax: CGFloat = 2                // maximum wick width in points
-    var minBodyHeight: CGFloat = 1          // minimum body height in points (doji)
-    var dojiThreshold: Double = 0.00001     // relative to price range; abs(close-open)/range < this → doji
+    var candleBodyMin: CGFloat = 1  // minimum body width in points
+    var candleBodyMax: CGFloat = 15  // maximum body width in points
+    var wickFraction: CGFloat = 0.12  // wick width as fraction of slot width
+    var wickMin: CGFloat = 0.5  // minimum wick width in points
+    var wickMax: CGFloat = 2  // maximum wick width in points
+    var minBodyHeight: CGFloat = 1  // minimum body height in points (doji)
+    var dojiThreshold: Double = 0.00001  // relative to price range; abs(close-open)/range < this → doji
 
     // Volume bars — off unless enabled per chart
     var volumePaneFraction: CGFloat = 0.22  // share of plot height the bars rise into
-    var volumeOpacity: Double = 0.35        // kept low: candles draw on top of them
+    var volumeOpacity: Double = 0.35  // kept low: candles draw on top of them
 
     // RSI — off unless enabled per chart
-    var rsiPaneFraction: CGFloat = 0.28     // share of plot height the 0–100 scale maps to
+    var rsiPaneFraction: CGFloat = 0.28  // share of plot height the 0–100 scale maps to
     var rsiColor: Color = .purple
     var rsiLineWidth: CGFloat = 1.2
     var rsiGuideColor: Color = .purple.opacity(0.25)
@@ -54,7 +54,7 @@ struct ChartStyle {
     var areaFillOpacity: Double = 0.18
 
     // Price axis
-    var pricePadding: CGFloat = 0.05        // vertical padding fraction
+    var pricePadding: CGFloat = 0.05  // vertical padding fraction
     var priceLabelCount: Int = 5
 
     // Time axis

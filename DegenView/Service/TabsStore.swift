@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 /// Single source of truth for every tab's chart state.
 ///
@@ -53,7 +53,9 @@ final class TabsStore: ObservableObject {
             windowGroups = migrated.windowGroups
             suppressWrites = true
             #if DEBUG
-            print("[TabsStore] tabs.json is unreadable; preserving it and disabling writes: \(error.localizedDescription)")
+                print(
+                    "[TabsStore] tabs.json is unreadable; preserving it and disabling writes: \(error.localizedDescription)"
+                )
             #endif
         }
     }
@@ -133,7 +135,8 @@ final class TabsStore: ObservableObject {
 
     func removeTab(_ id: UUID) {
         tabs.removeAll { $0.id == id }
-        windowGroups = windowGroups
+        windowGroups =
+            windowGroups
             .map { $0.filter { $0 != id } }
             .filter { !$0.isEmpty }
         scheduleSave()
@@ -175,8 +178,9 @@ final class TabsStore: ObservableObject {
         let savedViews = JSONStore<[SavedView]>(filename: "views.json", directory: supportDirectory).load() ?? []
 
         if let idString = userDefaults.string(forKey: "lastViewID"),
-           let id = UUID(uuidString: idString),
-           let view = savedViews.first(where: { $0.id == id }) {
+            let id = UUID(uuidString: idString),
+            let view = savedViews.first(where: { $0.id == id })
+        {
             let tab = ChartTab(
                 name: view.name,
                 savedViewID: view.id,
@@ -188,7 +192,8 @@ final class TabsStore: ObservableObject {
             return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
         }
 
-        let configs = JSONStore<[TickerConfig]>(filename: "tickers.json", directory: supportDirectory).load()
+        let configs =
+            JSONStore<[TickerConfig]>(filename: "tickers.json", directory: supportDirectory).load()
             ?? legacyStringTickers()
         let tab = ChartTab(tickerConfigs: configs)
         return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
@@ -197,11 +202,11 @@ final class TabsStore: ObservableObject {
     /// The oldest on-disk format: a bare `[String]` of Binance symbols.
     private func legacyStringTickers() -> [TickerConfig] {
         guard let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("tickers.json")),
-              let strings = try? JSONDecoder().decode([String].self, from: data)
+            let strings = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
-#if DEBUG
-        print("[TabsStore] Migrated \(strings.count) legacy tickers to .binance")
-#endif
+        #if DEBUG
+            print("[TabsStore] Migrated \(strings.count) legacy tickers to .binance")
+        #endif
         return strings.map { TickerConfig(symbol: $0, source: .binance) }
     }
 }

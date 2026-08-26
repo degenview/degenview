@@ -1,5 +1,6 @@
-import XCTest
 import SwiftUI
+import XCTest
+
 @testable import DegenView
 
 final class ChartPlotTests: XCTestCase {
@@ -13,15 +14,20 @@ final class ChartPlotTests: XCTestCase {
     }
 
     func testTinyCanvasNeverCreatesNegativePlotDimensions() {
-        let rect = ChartPlot.rect(in: CGSize(width: 1, height: 1), insets: EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
+        let rect = ChartPlot.rect(
+            in: CGSize(width: 1, height: 1), insets: EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
         XCTAssertEqual(rect.width, 0)
         XCTAssertEqual(rect.height, 0)
     }
 
     func testCoordinateConversionsRoundTrip() {
-        let plot = ChartPlot.make(points: [KlineData(time: .distantPast, price: 10), KlineData(time: .now, price: 20)], size: CGSize(width: 400, height: 240), yZoom: 1, scale: .currency, yAxisDecimalPlaces: nil)
+        let plot = ChartPlot.make(
+            points: [KlineData(time: .distantPast, price: 10), KlineData(time: .now, price: 20)],
+            size: CGSize(width: 400, height: 240), yZoom: 1, scale: .currency, yAxisDecimalPlaces: nil)
         let slot = plot.slotWidth(forCount: 2)
-        XCTAssertEqual(plot.fractionalIndex(forX: plot.x(forFractionalIndex: 0.75, slotWidth: slot), slotWidth: slot), 0.75, accuracy: 0.0001)
+        XCTAssertEqual(
+            plot.fractionalIndex(forX: plot.x(forFractionalIndex: 0.75, slotWidth: slot), slotWidth: slot), 0.75,
+            accuracy: 0.0001)
         XCTAssertEqual(plot.price(forY: plot.y(for: 15)), 15, accuracy: 0.0001)
     }
 
@@ -48,11 +54,13 @@ final class ChartPlotTests: XCTestCase {
     }
 
     func testOverlayPlacementRejectsTinyPlots() {
-        XCTAssertNil(ChartPlot.overlayOriginY(
-            centeredAt: 0.5, in: CGRect(x: 0, y: 0, width: 10, height: 1), labelHeight: 18
-        ))
-        XCTAssertNil(ChartPlot.overlayOriginY(
-            centeredAt: 0, in: CGRect(x: 0, y: 0, width: 10, height: 0), labelHeight: 18
-        ))
+        XCTAssertNil(
+            ChartPlot.overlayOriginY(
+                centeredAt: 0.5, in: CGRect(x: 0, y: 0, width: 10, height: 1), labelHeight: 18
+            ))
+        XCTAssertNil(
+            ChartPlot.overlayOriginY(
+                centeredAt: 0, in: CGRect(x: 0, y: 0, width: 10, height: 0), labelHeight: 18
+            ))
     }
 }

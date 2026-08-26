@@ -1,5 +1,5 @@
-import SwiftUI
 import AppKit
+import SwiftUI
 import UserNotifications
 
 @main
@@ -89,14 +89,14 @@ private struct ChartTabRoot: View {
                 ContentView(tabID: tab.id)
             }
         }
-            .overlay(alignment: .top) { GlobalAlertBanner() }
-            .task {
-                // The tab bar's + button reaches the app delegate, which has no
-                // SwiftUI environment of its own to open windows from.
-                WindowCoordinator.shared.useOpenWindowAction(openWindow)
-                guard tab.adoptedSession else { return }
-                await WindowCoordinator.shared.restoreWindows(adopted: tab.id, using: openWindow)
-            }
+        .overlay(alignment: .top) { GlobalAlertBanner() }
+        .task {
+            // The tab bar's + button reaches the app delegate, which has no
+            // SwiftUI environment of its own to open windows from.
+            WindowCoordinator.shared.useOpenWindowAction(openWindow)
+            guard tab.adoptedSession else { return }
+            await WindowCoordinator.shared.restoreWindows(adopted: tab.id, using: openWindow)
+        }
     }
 }
 
@@ -157,9 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Persist rate-limited sources' candles on quit so the next launch draws
     /// from disk instead of the request queue.
     private func flushCaches() {
-        guard let cg = MainActor.assumeIsolated({
-            DataSourceFactory.shared.service(for: .coingecko) as? CoinGeckoAPIService
-        }) else { return }
+        guard
+            let cg = MainActor.assumeIsolated({
+                DataSourceFactory.shared.service(for: .coingecko) as? CoinGeckoAPIService
+            })
+        else { return }
         // willTerminate gives us the run loop, not an async context — block
         // briefly so the write lands before the process goes away.
         let done = DispatchSemaphore(value: 0)
@@ -173,7 +175,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 final class AlertNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AlertNotificationDelegate()
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async
+        -> UNNotificationPresentationOptions
+    {
         let settings = await MainActor.run { AlertStore.shared.settings }
         guard settings.deliveryEnabled && settings.macOSNotificationsEnabled else { return [] }
         return settings.soundEnabled ? [.banner, .sound] : [.banner]

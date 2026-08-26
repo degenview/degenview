@@ -27,7 +27,9 @@ enum PortfolioTransactionType: String, Codable, CaseIterable, Identifiable, Send
     case adjustment = "Adjustment"
 
     var id: String { rawValue }
-    var addsQuantity: Bool { [.buy, .transferIn, .reward, .stakingReward, .airdrop, .mining, .interest].contains(self) }
+    var addsQuantity: Bool {
+        [.buy, .transferIn, .reward, .stakingReward, .airdrop, .mining, .interest].contains(self)
+    }
     var removesQuantity: Bool { [.sell, .transferOut, .fee].contains(self) }
 }
 
@@ -41,10 +43,16 @@ struct PortfolioAsset: Codable, Hashable, Identifiable, Sendable {
     var quoteCurrency: PortfolioCurrency
     var metadata: [String: String]
 
-    init(key: String, symbol: String, name: String, source: DataSourceType,
-         quoteCurrency: PortfolioCurrency = .USD, metadata: [String: String] = [:]) {
-        self.key = key; self.symbol = symbol; self.name = name; self.source = source
-        self.quoteCurrency = quoteCurrency; self.metadata = metadata
+    init(
+        key: String, symbol: String, name: String, source: DataSourceType,
+        quoteCurrency: PortfolioCurrency = .USD, metadata: [String: String] = [:]
+    ) {
+        self.key = key
+        self.symbol = symbol
+        self.name = name
+        self.source = source
+        self.quoteCurrency = quoteCurrency
+        self.metadata = metadata
     }
 
     init(searchResult: TickerSearchResult) {
@@ -53,10 +61,11 @@ struct PortfolioAsset: Codable, Hashable, Identifiable, Sendable {
             if quote == "USDT" || quote == "USDC" { return .USD }
             return quote.flatMap(PortfolioCurrency.init(rawValue:)) ?? .USD
         }()
-        self.init(key: "\(searchResult.source.rawValue):\(searchResult.fullSymbol)",
-                  symbol: searchResult.symbol, name: searchResult.symbol,
-                  source: searchResult.source, quoteCurrency: currency,
-                  metadata: searchResult.metadata)
+        self.init(
+            key: "\(searchResult.source.rawValue):\(searchResult.fullSymbol)",
+            symbol: searchResult.symbol, name: searchResult.symbol,
+            source: searchResult.source, quoteCurrency: currency,
+            metadata: searchResult.metadata)
     }
 }
 
@@ -69,11 +78,18 @@ struct Portfolio: Codable, Identifiable, Equatable, Sendable {
     var isArchived: Bool
     var sort: PortfolioHoldingsSort
 
-    init(id: UUID = UUID(), name: String, baseCurrency: PortfolioCurrency = .USD,
-         createdAt: Date = Date(), updatedAt: Date = Date(), isArchived: Bool = false,
-         sort: PortfolioHoldingsSort = .currentValue) {
-        self.id = id; self.name = name; self.baseCurrency = baseCurrency
-        self.createdAt = createdAt; self.updatedAt = updatedAt; self.isArchived = isArchived; self.sort = sort
+    init(
+        id: UUID = UUID(), name: String, baseCurrency: PortfolioCurrency = .USD,
+        createdAt: Date = Date(), updatedAt: Date = Date(), isArchived: Bool = false,
+        sort: PortfolioHoldingsSort = .currentValue
+    ) {
+        self.id = id
+        self.name = name
+        self.baseCurrency = baseCurrency
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.isArchived = isArchived
+        self.sort = sort
     }
 }
 
@@ -104,17 +120,29 @@ struct PortfolioTransaction: Codable, Identifiable, Equatable, Sendable {
     var createdAt: Date
     var updatedAt: Date
 
-    init(id: UUID = UUID(), portfolioID: UUID, asset: PortfolioAsset,
-         type: PortfolioTransactionType, quantity: Decimal, price: Decimal? = nil,
-         priceCurrency: PortfolioCurrency = .USD, fee: Decimal = 0,
-         feeCurrency: PortfolioCurrency = .USD, timestamp: Date = Date(), notes: String = "",
-         source: PortfolioSource = .manual, externalTransactionID: String? = nil,
-         createdAt: Date = Date(), updatedAt: Date = Date()) {
-        self.id = id; self.portfolioID = portfolioID; self.asset = asset; self.type = type
-        self.quantity = quantity; self.price = price; self.priceCurrency = priceCurrency
-        self.fee = fee; self.feeCurrency = feeCurrency; self.timestamp = timestamp
-        self.notes = notes; self.source = source; self.externalTransactionID = externalTransactionID
-        self.createdAt = createdAt; self.updatedAt = updatedAt
+    init(
+        id: UUID = UUID(), portfolioID: UUID, asset: PortfolioAsset,
+        type: PortfolioTransactionType, quantity: Decimal, price: Decimal? = nil,
+        priceCurrency: PortfolioCurrency = .USD, fee: Decimal = 0,
+        feeCurrency: PortfolioCurrency = .USD, timestamp: Date = Date(), notes: String = "",
+        source: PortfolioSource = .manual, externalTransactionID: String? = nil,
+        createdAt: Date = Date(), updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.portfolioID = portfolioID
+        self.asset = asset
+        self.type = type
+        self.quantity = quantity
+        self.price = price
+        self.priceCurrency = priceCurrency
+        self.fee = fee
+        self.feeCurrency = feeCurrency
+        self.timestamp = timestamp
+        self.notes = notes
+        self.source = source
+        self.externalTransactionID = externalTransactionID
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -166,12 +194,17 @@ struct PortfolioQuote: Codable, Equatable, Sendable {
     var timestamp: Date
 }
 
-enum PortfolioSelection: Hashable { case all, portfolio(UUID) }
+enum PortfolioSelection: Hashable {
+    case all
+    case portfolio(UUID)
+}
 
 enum PortfolioError: LocalizedError, Equatable {
     case portfolioNotFound, transactionNotFound, invalidQuantity, missingPrice
-    case insufficientHoldings(available: Decimal), unsupportedCurrency(PortfolioCurrency, PortfolioCurrency)
-    case duplicateExternalTransaction, invalidCSV(String)
+    case insufficientHoldings(available: Decimal)
+    case unsupportedCurrency(PortfolioCurrency, PortfolioCurrency)
+    case duplicateExternalTransaction
+    case invalidCSV(String)
 
     var errorDescription: String? {
         switch self {
@@ -180,7 +213,8 @@ enum PortfolioError: LocalizedError, Equatable {
         case .invalidQuantity: "Quantity must be greater than zero."
         case .missingPrice: "A price is required for this transaction type."
         case .insufficientHoldings(let available): "Insufficient holdings at that date (available: \(available))."
-        case .unsupportedCurrency(let from, let to): "Historical conversion from \(from.rawValue) to \(to.rawValue) is unavailable."
+        case .unsupportedCurrency(let from, let to):
+            "Historical conversion from \(from.rawValue) to \(to.rawValue) is unavailable."
         case .duplicateExternalTransaction: "This imported transaction already exists."
         case .invalidCSV(let message): message
         }

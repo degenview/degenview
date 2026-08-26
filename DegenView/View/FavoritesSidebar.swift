@@ -152,7 +152,8 @@ private struct FavoriteRow: View {
                 Spacer(minLength: 4)
 
                 if let percentChange = viewModel.priceChangePercent,
-                   let amountChange = viewModel.priceChangeAmount {
+                    let amountChange = viewModel.priceChangeAmount
+                {
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(String(format: "%+.2f%%", percentChange))
                         Text(PriceFormatter.changeAmount(amountChange, scale: viewModel.priceScale))

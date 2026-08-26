@@ -149,5 +149,5 @@ extension View {
     ToolSidebar(activeTool: .trendLine, onSelect: { _ in }) {
         EmptyView()
     }
-        .frame(height: 300)
+    .frame(height: 300)
 }

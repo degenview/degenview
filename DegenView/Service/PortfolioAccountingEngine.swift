@@ -10,20 +10,25 @@ enum PortfolioAccountingEngine {
         var realizedPnL: Decimal = 0
     }
 
-    static func holdings(transactions: [PortfolioTransaction], portfolioIDs: Set<UUID>,
-                         through date: Date = .distantFuture,
-                         quotes: [String: PortfolioQuote] = [:]) throws -> [PortfolioHolding] {
+    static func holdings(
+        transactions: [PortfolioTransaction], portfolioIDs: Set<UUID>,
+        through date: Date = .distantFuture,
+        quotes: [String: PortfolioQuote] = [:]
+    ) throws -> [PortfolioHolding] {
         var positions: [String: Position] = [:]
-        for transaction in transactions
+        for transaction
+            in transactions
             .filter({ portfolioIDs.contains($0.portfolioID) && $0.timestamp <= date })
-            .sorted(by: transactionOrder) {
+            .sorted(by: transactionOrder)
+        {
             try apply(transaction, to: &positions)
         }
         var holdings = positions.values.filter { $0.quantity != 0 }.map { position -> PortfolioHolding in
             let quote = quotes[position.asset.key]
             let value = quote.map { position.quantity * $0.price }
             let unrealized = value.map { $0 - position.costBasis }
-            return PortfolioHolding(asset: position.asset, quantity: position.quantity,
+            return PortfolioHolding(
+                asset: position.asset, quantity: position.quantity,
                 costBasis: position.costBasis,
                 averageCost: position.quantity == 0 ? 0 : position.costBasis / position.quantity,
                 realizedPnL: position.realizedPnL, currentPrice: quote?.price,
@@ -42,14 +47,17 @@ enum PortfolioAccountingEngine {
     /// lookup with an explicit merge policy rather than
     /// `Dictionary(uniqueKeysWithValues:)`, which traps on the second buy.
     static func uniqueAssets(in transactions: [PortfolioTransaction]) -> [PortfolioAsset] {
-        Array(Dictionary(
-            transactions.map { ($0.asset.key, $0.asset) },
-            uniquingKeysWith: { existing, _ in existing }
-        ).values)
+        Array(
+            Dictionary(
+                transactions.map { ($0.asset.key, $0.asset) },
+                uniquingKeysWith: { existing, _ in existing }
+            ).values)
     }
 
-    static func validate(_ transaction: PortfolioTransaction, replacing id: UUID? = nil,
-                         in transactions: [PortfolioTransaction]) throws {
+    static func validate(
+        _ transaction: PortfolioTransaction, replacing id: UUID? = nil,
+        in transactions: [PortfolioTransaction]
+    ) throws {
         guard transaction.quantity > 0 else { throw PortfolioError.invalidQuantity }
         if [.buy, .sell].contains(transaction.type), transaction.price == nil { throw PortfolioError.missingPrice }
         guard transaction.fee >= 0 else { throw PortfolioError.invalidQuantity }
@@ -57,8 +65,11 @@ enum PortfolioAccountingEngine {
             throw PortfolioError.unsupportedCurrency(transaction.feeCurrency, transaction.priceCurrency)
         }
         if transaction.source != .manual, let external = transaction.externalTransactionID,
-           transactions.contains(where: { $0.id != id && $0.portfolioID == transaction.portfolioID &&
-               $0.source == transaction.source && $0.externalTransactionID == external }) {
+            transactions.contains(where: {
+                $0.id != id && $0.portfolioID == transaction.portfolioID && $0.source == transaction.source
+                    && $0.externalTransactionID == external
+            })
+        {
             throw PortfolioError.duplicateExternalTransaction
         }
         var prospective = transactions.filter { $0.id != id && $0.portfolioID == transaction.portfolioID }
@@ -66,7 +77,9 @@ enum PortfolioAccountingEngine {
         _ = try holdings(transactions: prospective, portfolioIDs: [transaction.portfolioID])
     }
 
-    static func netContributions(_ transactions: [PortfolioTransaction], portfolioIDs: Set<UUID>, through date: Date) -> Decimal {
+    static func netContributions(_ transactions: [PortfolioTransaction], portfolioIDs: Set<UUID>, through date: Date)
+        -> Decimal
+    {
         transactions.filter { portfolioIDs.contains($0.portfolioID) && $0.timestamp <= date }.reduce(0) { result, tx in
             let gross = tx.quantity * (tx.price ?? 0)
             switch tx.type {
@@ -99,14 +112,19 @@ enum PortfolioAccountingEngine {
             let disposedBasis = try remove(tx.quantity, from: &position)
             position.realizedPnL -= disposedBasis + tx.fee
         case .adjustment:
-            if tx.quantity >= 0 { position.quantity += tx.quantity; position.costBasis += tx.quantity * price + tx.fee }
+            if tx.quantity >= 0 {
+                position.quantity += tx.quantity
+                position.costBasis += tx.quantity * price + tx.fee
+            }
         }
         if position.quantity == 0 { position.costBasis = 0 }
         positions[tx.asset.key] = position
     }
 
     private static func remove(_ quantity: Decimal, from position: inout Position) throws -> Decimal {
-        guard position.quantity >= quantity else { throw PortfolioError.insufficientHoldings(available: position.quantity) }
+        guard position.quantity >= quantity else {
+            throw PortfolioError.insufficientHoldings(available: position.quantity)
+        }
         let average = position.quantity == 0 ? 0 : position.costBasis / position.quantity
         let removedBasis = average * quantity
         position.quantity -= quantity

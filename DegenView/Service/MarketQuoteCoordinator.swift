@@ -18,7 +18,13 @@ actor MarketQuoteCoordinator {
         owners[owner] = assetsByKey
         ensurePolling()
     }
-    func unsubscribe(owner: String) { owners.removeValue(forKey: owner); if owners.isEmpty { pollingTask?.cancel(); pollingTask = nil } }
+    func unsubscribe(owner: String) {
+        owners.removeValue(forKey: owner)
+        if owners.isEmpty {
+            pollingTask?.cancel()
+            pollingTask = nil
+        }
+    }
     func latestQuote(for key: String) -> MarketQuote? { latest[key] }
 
     func ingest(_ quote: MarketQuote) async {
@@ -44,19 +50,27 @@ actor MarketQuoteCoordinator {
         for chunkStart in stride(from: 0, to: values.count, by: 4) {
             let chunk = values[chunkStart..<min(chunkStart + 4, values.count)]
             await withTaskGroup(of: MarketQuote?.self) { group in
-                for asset in chunk { group.addTask {
-                    do {
-                let symbol = asset.metadata["apiSymbol"] ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
-                let interval = asset.source == .alpaca ? "1h" : "1m"
-                let candles = try await DataSourceFactory.shared.service(for: asset.source).fetchKlines(symbol: symbol, interval: interval, limit: 2)
-                guard let candle = candles.last else { return nil }
-                let received = Date(), sourceDate = candle.openTime
-                let quote = MarketQuote(asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
-                    sourceTimestamp: sourceDate, receivedAt: received, maximumAge: Self.maximumAge(for: asset.source),
-                    fingerprint: "\(asset.key):\(sourceDate.timeIntervalSince1970):\(candle.closePrice)")
-                        return quote
-                    } catch { return nil }
-                } }
+                for asset in chunk {
+                    group.addTask {
+                        do {
+                            let symbol =
+                                asset.metadata["apiSymbol"]
+                                ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
+                            let interval = asset.source == .alpaca ? "1h" : "1m"
+                            let candles = try await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
+                                symbol: symbol, interval: interval, limit: 2)
+                            guard let candle = candles.last else { return nil }
+                            let received = Date()
+                            let sourceDate = candle.openTime
+                            let quote = MarketQuote(
+                                asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
+                                sourceTimestamp: sourceDate, receivedAt: received,
+                                maximumAge: Self.maximumAge(for: asset.source),
+                                fingerprint: "\(asset.key):\(sourceDate.timeIntervalSince1970):\(candle.closePrice)")
+                            return quote
+                        } catch { return nil }
+                    }
+                }
                 for await quote in group { if let quote { await ingest(quote) } }
             }
         }
@@ -73,6 +87,11 @@ actor MarketQuoteCoordinator {
     }
 
     private static func maximumAge(for source: DataSourceType) -> TimeInterval {
-        switch source { case .binance: 180; case .alpaca: 7_200; case .coingecko, .dexscreener: 1_800; case .polymarket: 0 }
+        switch source {
+        case .binance: 180
+        case .alpaca: 7_200
+        case .coingecko, .dexscreener: 1_800
+        case .polymarket: 0
+        }
     }
 }

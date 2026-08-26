@@ -22,7 +22,15 @@ struct PortfolioTabView: View {
             isTab: true
         )
         .navigationTitle("Portfolio")
-        .toolbar { ToolbarItem { Button { openWindow(id: "alerts") } label: { Label("Price Alerts", systemImage: "bell") } } }
+        .toolbar {
+            ToolbarItem {
+                Button {
+                    openWindow(id: "alerts")
+                } label: {
+                    Label("Price Alerts", systemImage: "bell")
+                }
+            }
+        }
         .background(
             WindowAccessor { window in lifecycle.attach(to: window) }
                 .frame(width: 0, height: 0)

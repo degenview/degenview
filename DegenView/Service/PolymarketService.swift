@@ -35,9 +35,9 @@ final class PolymarketService: TickerDataSource {
 
         guard let url = components.url else { throw PolymarketError.invalidURL }
 
-#if DEBUG
-        print("[Polymarket] Search: \(q)")
-#endif
+        #if DEBUG
+            print("[Polymarket] Search: \(q)")
+        #endif
 
         let (data, response) = try await session.data(from: url)
         try Self.validate(response)
@@ -52,15 +52,17 @@ final class PolymarketService: TickerDataSource {
 
             // Collect all tradable choices upfront so multi-choice events can carry the
             // full list on every result row (selecting any row picks all choices).
-            let tradable = (event.markets ?? []).compactMap { market -> (tokenID: String, label: String, market: PolymarketMarket)? in
+            let tradable = (event.markets ?? []).compactMap {
+                market -> (tokenID: String, label: String, market: PolymarketMarket)? in
                 guard market.isTradable,
-                      let tokenID = market.yesTokenID,
-                      let label = market.shortTitle, !label.isEmpty
+                    let tokenID = market.yesTokenID,
+                    let label = market.shortTitle, !label.isEmpty
                 else { return nil }
                 return (tokenID, label, market)
             }
 
-            let allSeries: [PmSeriesConfig]? = tradable.count > 1
+            let allSeries: [PmSeriesConfig]? =
+                tradable.count > 1
                 ? tradable.map { PmSeriesConfig(tokenID: $0.tokenID, label: $0.label, enabled: true) }
                 : nil
 
@@ -151,7 +153,7 @@ final class PolymarketService: TickerDataSource {
     static func marketInfo(tokenID: String) async -> (title: String, imageURL: URL?)? {
         let id = tokenID.trimmingCharacters(in: .whitespaces)
         guard !id.isEmpty,
-              var components = URLComponents(string: "\(gammaBase)/markets")
+            var components = URLComponents(string: "\(gammaBase)/markets")
         else { return nil }
 
         components.queryItems = [URLQueryItem(name: "clob_token_ids", value: id)]
@@ -166,9 +168,9 @@ final class PolymarketService: TickerDataSource {
 
             return (title: title, imageURL: market.artworkURL)
         } catch {
-#if DEBUG
-            print("[Polymarket] Market lookup failed for \(id): \(error.localizedDescription)")
-#endif
+            #if DEBUG
+                print("[Polymarket] Market lookup failed for \(id): \(error.localizedDescription)")
+            #endif
             return nil
         }
     }
@@ -180,9 +182,9 @@ final class PolymarketService: TickerDataSource {
             throw PolymarketError.invalidResponse
         }
         switch http.statusCode {
-        case 200:  return
-        case 429:  throw PolymarketError.rateLimited
-        default:   throw PolymarketError.httpError(http.statusCode)
+        case 200: return
+        case 429: throw PolymarketError.rateLimited
+        default: throw PolymarketError.httpError(http.statusCode)
         }
     }
 }
@@ -198,11 +200,11 @@ enum PolymarketError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL:            return "Invalid Polymarket URL"
-        case .invalidResponse:       return "Unexpected response from Polymarket"
-        case .rateLimited:           return "Polymarket rate limit reached — retrying shortly"
-        case .noHistory:             return "No price history for this market in this range"
-        case .httpError(let code):   return "Polymarket error (HTTP \(code))"
+        case .invalidURL: return "Invalid Polymarket URL"
+        case .invalidResponse: return "Unexpected response from Polymarket"
+        case .rateLimited: return "Polymarket rate limit reached — retrying shortly"
+        case .noHistory: return "No price history for this market in this range"
+        case .httpError(let code): return "Polymarket error (HTTP \(code))"
         }
     }
 }

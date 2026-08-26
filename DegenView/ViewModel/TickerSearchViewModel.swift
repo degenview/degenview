@@ -14,7 +14,10 @@ final class TickerSearchViewModel: ObservableObject {
     private let logPrefix: String
     private let sources: () -> [TickerDataSource]
 
-    init(logPrefix: String = "[Search]", sources: @escaping () -> [TickerDataSource] = { DataSourceFactory.shared.allSources }) {
+    init(
+        logPrefix: String = "[Search]",
+        sources: @escaping () -> [TickerDataSource] = { DataSourceFactory.shared.allSources }
+    ) {
         self.logPrefix = logPrefix
         self.sources = sources
     }
@@ -78,7 +81,8 @@ final class TickerSearchViewModel: ObservableObject {
                         return (source.type, results)
                     } catch {
                         #if DEBUG
-                        print("\(logPrefix) \(source.type.displayName) search failed: \(error.localizedDescription)")
+                            print(
+                                "\(logPrefix) \(source.type.displayName) search failed: \(error.localizedDescription)")
                         #endif
                         return (source.type, nil)
                     }
@@ -96,7 +100,8 @@ final class TickerSearchViewModel: ObservableObject {
         searchResults = newResults
 
         if let selected = selectedResult,
-           !newResults.values.flatMap({ $0 }).contains(selected) {
+            !newResults.values.flatMap({ $0 }).contains(selected)
+        {
             selectedResult = nil
         }
     }

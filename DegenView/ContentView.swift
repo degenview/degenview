@@ -3,24 +3,24 @@ import UniformTypeIdentifiers
 
 enum AppTheme: String, CaseIterable, Identifiable {
     case system = "System"
-    case light  = "Light"
-    case dark   = "Dark"
+    case light = "Light"
+    case dark = "Dark"
 
     var id: String { rawValue }
 
     var colorScheme: ColorScheme? {
         switch self {
         case .system: return nil
-        case .light:  return .light
-        case .dark:   return .dark
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 
     var icon: String {
         switch self {
         case .system: return "circle.lefthalf.filled"
-        case .light:  return "sun.max.fill"
-        case .dark:   return "moon.fill"
+        case .light: return "sun.max.fill"
+        case .dark: return "moon.fill"
         }
     }
 }
@@ -153,12 +153,20 @@ struct ContentView: View {
             .frame(width: 380)
         }
         .sheet(item: $orderTicket) { ticket in
-            PaperOrderTicketSheet(store: paperTrading, instrument: ticket.instrument,
-                                  referencePrice: ticket.price, initialSide: ticket.side)
+            PaperOrderTicketSheet(
+                store: paperTrading, instrument: ticket.instrument,
+                referencePrice: ticket.price, initialSide: ticket.side)
         }
-        .alert("Paper Trading", isPresented: Binding(get: { paperTrading.lastError != nil && orderTicket == nil }, set: { if !$0 { paperTrading.clearError() } })) {
+        .alert(
+            "Paper Trading",
+            isPresented: Binding(
+                get: { paperTrading.lastError != nil && orderTicket == nil },
+                set: { if !$0 { paperTrading.clearError() } })
+        ) {
             Button("OK") { paperTrading.clearError() }
-        } message: { Text(paperTrading.lastError ?? "") }
+        } message: {
+            Text(paperTrading.lastError ?? "")
+        }
         .onChange(of: showAddSheet) { _, _ in
             contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
         }
@@ -394,15 +402,17 @@ struct ContentView: View {
             } label: {
                 Image(systemName: contentViewModel.layoutMode.icon)
             }
-            .accessibilityLabel(contentViewModel.layoutMode == .vertical
-                ? "Grid layout" : "Vertical layout")
+            .accessibilityLabel(
+                contentViewModel.layoutMode == .vertical
+                    ? "Grid layout" : "Vertical layout")
         }
         ToolbarItem(placement: .automatic) {
             Menu {
                 // The name bar used to be the rename affordance; with it gone
                 // this menu is the only place left to reach it.
                 Button("Rename Tab…") {
-                    renameText = contentViewModel.tabName == UI.unnamedView
+                    renameText =
+                        contentViewModel.tabName == UI.unnamedView
                         ? "" : contentViewModel.tabName
                     showRenameAlert = true
                 }
@@ -442,7 +452,8 @@ struct ContentView: View {
         }
         ToolbarItem(placement: .automatic) {
             Button {
-                saveViewName = contentViewModel.tabName == UI.unnamedView
+                saveViewName =
+                    contentViewModel.tabName == UI.unnamedView
                     ? "" : contentViewModel.tabName
                 showSaveAlert = true
             } label: {
@@ -509,7 +520,8 @@ struct ContentView: View {
             crosshair: contentViewModel.crosshair,
             onCrosshairExit: { contentViewModel.crosshair.clear(owner: vm.uniqueID) },
             onUpdateTicker: { symbol, source, displayName, pmSeries in
-                contentViewModel.updateTicker(vm, symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
+                contentViewModel.updateTicker(
+                    vm, symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
             },
             onStyleChanged: {
                 contentViewModel.persistChartSettings()
@@ -523,17 +535,25 @@ struct ContentView: View {
             onPaperBuy: { openTicket(for: vm, side: .buy) },
             onPaperSell: { openTicket(for: vm, side: .sell) },
             paperConnected: paperTrading.isConnected && showTradingPanel && showPaperTradingOnCharts,
-            paperPositions: paperTrading.positions.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
-            paperOrders: paperTrading.workingOrders.filter { $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)" },
+            paperPositions: paperTrading.positions.filter {
+                $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)"
+            },
+            paperOrders: paperTrading.workingOrders.filter {
+                $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)"
+            },
             paperAccountCurrency: paperTrading.selectedAccount?.baseCurrency ?? .USD,
             paperUnrealizedPnL: { position in
                 guard let quote = paperTrading.snapshot.quotes[position.instrument.key],
-                      let mark = position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
+                    let mark = position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
                 else { return 0 }
-                return (position.signedQuantity >= 0 ? mark - position.averageEntryPrice : position.averageEntryPrice - mark) * position.quantity * position.instrument.pointValue
+                return
+                    (position.signedQuantity >= 0
+                    ? mark - position.averageEntryPrice : position.averageEntryPrice - mark) * position.quantity
+                    * position.instrument.pointValue
             },
             onPaperModify: { order, price in
-                let changes = order.type == .stop || (order.type == .stopLimit && !order.stopTriggered)
+                let changes =
+                    order.type == .stop || (order.type == .stopLimit && !order.stopTriggered)
                     ? PaperOrderChanges(stopPrice: price) : PaperOrderChanges(limitPrice: price)
                 Task { await paperTrading.modify(order.id, changes: changes) }
             },
@@ -550,9 +570,10 @@ struct ContentView: View {
     private func favoriteTicker(for vm: ChartViewModel) -> String {
         if vm.source == .polymarket {
             if vm.pmSeries.count > 1,
-               let outcome = vm.pmSeries.first(where: {
-                   $0.tokenID.caseInsensitiveCompare(vm.ticker) == .orderedSame
-               }) {
+                let outcome = vm.pmSeries.first(where: {
+                    $0.tokenID.caseInsensitiveCompare(vm.ticker) == .orderedSame
+                })
+            {
                 return outcome.label
             }
             return vm.title

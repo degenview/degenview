@@ -38,9 +38,10 @@ struct SearchResultRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
-        .background(isSelected
-            ? Color.accentColor.opacity(0.15)
-            : Color.clear
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.15)
+                : Color.clear
         )
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }

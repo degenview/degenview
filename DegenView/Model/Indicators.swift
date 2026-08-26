@@ -215,7 +215,9 @@ extension Array where Element == KlineData {
         let blank = [Double?](repeating: nil, count: count)
         guard period > 1, count >= period else { return (blank, blank, blank) }
 
-        var upper = blank, middle = blank, lower = blank
+        var upper = blank
+        var middle = blank
+        var lower = blank
         let window = Double(period)
 
         // Rolling sums, so the cost doesn't grow with the period.

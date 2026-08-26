@@ -14,10 +14,16 @@ actor AlertRuntimeHost {
     private var providerHealth: [DataSourceType: AlertProviderHealth] = [:]
 
     init(role: Role, persistence: AlertRuntimePersistence = .shared) {
-        self.role = role; self.persistence = persistence
+        self.role = role
+        self.persistence = persistence
     }
 
-    deinit { if lockFD >= 0 { flock(lockFD, LOCK_UN); close(lockFD) } }
+    deinit {
+        if lockFD >= 0 {
+            flock(lockFD, LOCK_UN)
+            close(lockFD)
+        }
+    }
 
     /// Nonblocking ownership prevents double polling during registration and handoff.
     func start() async -> Bool {
@@ -37,16 +43,25 @@ actor AlertRuntimeHost {
     }
 
     func stop() async {
-        task?.cancel(); task = nil
+        task?.cancel()
+        task = nil
         await MarketQuoteCoordinator.shared.unsubscribe(owner: "price-alert-runtime")
-        if lockFD >= 0 { flock(lockFD, LOCK_UN); close(lockFD); lockFD = -1 }
+        if lockFD >= 0 {
+            flock(lockFD, LOCK_UN)
+            close(lockFD)
+            lockFD = -1
+        }
     }
 
     private func acquireOwnership() -> Bool {
         let path = persistence.directory.appendingPathComponent("alert_runtime.lock").path
         let fd = open(path, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR)
-        guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else { if fd >= 0 { close(fd) }; return false }
-        lockFD = fd; return true
+        guard fd >= 0, flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            if fd >= 0 { close(fd) }
+            return false
+        }
+        lockFD = fd
+        return true
     }
 
     private func tick() async {
@@ -54,7 +69,9 @@ actor AlertRuntimeHost {
         var changed = false
         for (url, command) in persistence.pendingCommands() {
             if case .requestNotificationAuthorization = command.payload { await requestNotificationAuthorization() }
-            await engine.apply(command); persistence.acknowledge(url); changed = true
+            await engine.apply(command)
+            persistence.acknowledge(url)
+            changed = true
         }
         if changed { await refreshSubscriptions() }
         await deliverPending()
@@ -92,7 +109,9 @@ actor AlertRuntimeHost {
     private func receive(_ quote: MarketQuote) async {
         guard let engine else { return }
         var health = providerHealth[quote.asset.source] ?? AlertProviderHealth(source: quote.asset.source)
-        health.lastSuccessfulQuote = Date(); health.lastError = nil; health.retryAt = nil
+        health.lastSuccessfulQuote = Date()
+        health.lastError = nil
+        health.retryAt = nil
         providerHealth[quote.asset.source] = health
         let snapshot = await engine.currentSnapshot()
         for currency in Set(snapshot.alerts.filter { $0.asset.key == quote.asset.key }.map(\.currency)) {
@@ -106,20 +125,31 @@ actor AlertRuntimeHost {
     private func deliverPending() async {
         guard let engine else { return }
         let snapshot = await engine.currentSnapshot()
-        for event in snapshot.history where event.delivery.state == .pending || (event.delivery.state == .failed && (event.delivery.nextRetryAt ?? .distantPast) <= Date()) {
+        for event in snapshot.history
+        where event.delivery.state == .pending
+            || (event.delivery.state == .failed && (event.delivery.nextRetryAt ?? .distantPast) <= Date())
+        {
             var record = event.delivery
             guard snapshot.settings.deliveryEnabled && snapshot.settings.macOSNotificationsEnabled else {
-                record.state = .suppressed; await engine.markDelivery(eventID: event.id, record: record); continue
+                record.state = .suppressed
+                await engine.markDelivery(eventID: event.id, record: record)
+                continue
             }
-            record.attemptCount += 1; record.lastAttemptAt = Date()
+            record.attemptCount += 1
+            record.lastAttemptAt = Date()
             let content = UNMutableNotificationContent()
-            content.title = event.origin == .catchUp ? "Delayed \(event.asset.symbol) price alert" : "\(event.asset.symbol) price alert"
+            content.title =
+                event.origin == .catchUp
+                ? "Delayed \(event.asset.symbol) price alert" : "\(event.asset.symbol) price alert"
             content.body = "Reached \(event.target) \(event.currency.rawValue)"
             content.userInfo = ["alertID": event.alertID.uuidString, "eventID": event.id.uuidString]
             if snapshot.settings.soundEnabled { content.sound = .default }
             do {
-                try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: event.id.uuidString, content: content, trigger: nil))
-                record.state = .delivered; record.error = nil; record.nextRetryAt = nil
+                try await UNUserNotificationCenter.current().add(
+                    UNNotificationRequest(identifier: event.id.uuidString, content: content, trigger: nil))
+                record.state = .delivered
+                record.error = nil
+                record.nextRetryAt = nil
             } catch {
                 record.state = record.attemptCount >= 5 ? .suppressed : .failed
                 record.error = String(describing: error)
@@ -137,6 +167,7 @@ actor AlertRuntimeClient {
     func snapshot() -> AlertPersistenceSnapshot { persistence.loadSnapshot() ?? AlertPersistenceSnapshot() }
     func send(_ payload: AlertRuntimeCommandPayload, expectedRevision: UInt64? = nil) throws -> UUID {
         let command = AlertRuntimeCommand(expectedRevision: expectedRevision, payload: payload)
-        try persistence.enqueue(command); return command.id
+        try persistence.enqueue(command)
+        return command.id
     }
 }

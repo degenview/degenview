@@ -1,6 +1,6 @@
+import AppKit
 import Foundation
 import SwiftUI
-import AppKit
 
 enum LayoutMode: String, CaseIterable, Codable {
     case vertical
@@ -9,14 +9,14 @@ enum LayoutMode: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .vertical: return "rectangle.stack"
-        case .grid:     return "rectangle.grid.1x2"
+        case .grid: return "rectangle.grid.1x2"
         }
     }
 
     var next: LayoutMode {
         switch self {
         case .vertical: return .grid
-        case .grid:     return .vertical
+        case .grid: return .vertical
         }
     }
 }
@@ -187,7 +187,7 @@ final class ContentViewModel: ObservableObject {
             }
             self.zoomDebounceTask?.cancel()
             self.zoomDebounceTask = Task { [weak self] in
-                try? await Task.sleep(nanoseconds: 150_000_000) // 150 ms
+                try? await Task.sleep(nanoseconds: 150_000_000)  // 150 ms
                 guard let self else { return }
                 let delta = self.pendingZoomDelta
                 self.pendingZoomDelta = 0
@@ -415,7 +415,8 @@ final class ContentViewModel: ObservableObject {
             }
         }
         if !failures.isEmpty {
-            replayNotice = "Granular history unavailable for \(failures.joined(separator: ", ")); replaying complete chart bars."
+            replayNotice =
+                "Granular history unavailable for \(failures.joined(separator: ", ")); replaying complete chart bars."
         }
     }
 
@@ -439,7 +440,7 @@ final class ContentViewModel: ObservableObject {
             return nil
         }
         guard let hit = plotHit(at: event),
-              let date = hit.vm.replayDate(nearestTo: hit.point, in: hit.plot)
+            let date = hit.vm.replayDate(nearestTo: hit.point, in: hit.plot)
         else {
             if event.type == .mouseMoved { clearReplaySelectionMarkers() }
             return event
@@ -472,9 +473,10 @@ final class ContentViewModel: ObservableObject {
     private func handleDrawing(_ event: NSEvent) -> NSEvent? {
         guard let own = ownWindow, event.window === own else { return event }
         if event.type == .keyDown,
-           event.keyCode == 51 || event.keyCode == 117,
-           !isShowingSheet,
-           isShowingLineEditor {
+            event.keyCode == 51 || event.keyCode == 117,
+            !isShowingSheet,
+            isShowingLineEditor
+        {
             return handleDrawingKey(event)
         }
         guard !isShowingSheet, !isShowingLineEditor else { return event }
@@ -834,7 +836,8 @@ final class ContentViewModel: ObservableObject {
     /// Must complete before the charts fetch — the list is what the prime covers.
     private func syncCoinGeckoSymbols() async {
         guard let cg = DataSourceFactory.shared.service(for: .coingecko) as? CoinGeckoAPIService else { return }
-        let symbols = chartViewModels
+        let symbols =
+            chartViewModels
             .filter { $0.source == .coingecko }
             .map { $0.apiSymbol }
         await cg.setActiveSymbols(symbols, for: tabID)
@@ -957,11 +960,15 @@ final class ContentViewModel: ObservableObject {
     /// - Parameter displayName: label to show instead of the raw symbol, for sources
     ///   whose symbol is an opaque id (Polymarket CLOB token ids).
     /// - Parameter pmSeries: all tradable choices for multi-outcome Polymarket events.
-    func addTicker(symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) async throws {
+    func addTicker(
+        symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil
+    ) async throws {
         // Duplicate check: same symbol + same source
-        guard !chartViewModels.contains(where: {
-            $0.ticker.uppercased() == symbol.uppercased() && $0.source == source
-        }) else {
+        guard
+            !chartViewModels.contains(where: {
+                $0.ticker.uppercased() == symbol.uppercased() && $0.source == source
+            })
+        else {
             throw TickerError.duplicate(displayName ?? symbol)
         }
 
@@ -1013,7 +1020,10 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Update a chart's ticker symbol and/or source, then refetch.
-    func updateTicker(_ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil) {
+    func updateTicker(
+        _ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil,
+        pmSeries: [PmSeriesConfig]? = nil
+    ) {
         vm.updateTicker(symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
         persistTickers()
         markChanged()

@@ -37,10 +37,11 @@ final class ImageCache: @unchecked Sendable {
         if let hit = cachedImage(for: url) { return hit }
 
         guard let (data, response) = try? await AppSupport.defaultSession.data(from: url),
-              let http = response as? HTTPURLResponse,
-              http.statusCode == 200,
-              http.mimeType?.hasPrefix("image/") == true,
-              let image = NSImage(data: data) else { return nil }
+            let http = response as? HTTPURLResponse,
+            http.statusCode == 200,
+            http.mimeType?.hasPrefix("image/") == true,
+            let image = NSImage(data: data)
+        else { return nil }
 
         withDiskLock {
             try? data.write(to: diskURL(for: url), options: .atomic)

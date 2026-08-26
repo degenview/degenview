@@ -28,7 +28,10 @@ enum AlertCondition: Equatable, Sendable {
     }
 
     var crossesAbove: Bool {
-        switch self { case .crossesAbove, .risesBy: true; default: false }
+        switch self {
+        case .crossesAbove, .risesBy: true
+        default: false
+        }
     }
 }
 
@@ -40,18 +43,38 @@ extension AlertCondition: Codable {
         switch tag {
         case "crossesAbove": self = .crossesAbove(target: try box.decode(Decimal.self, forKey: .target))
         case "crossesBelow": self = .crossesBelow(target: try box.decode(Decimal.self, forKey: .target))
-        case "risesBy": self = .risesBy(percent: try box.decode(Decimal.self, forKey: .percent), reference: try box.decode(Decimal.self, forKey: .reference), target: try box.decode(Decimal.self, forKey: .target))
-        case "fallsBy": self = .fallsBy(percent: try box.decode(Decimal.self, forKey: .percent), reference: try box.decode(Decimal.self, forKey: .reference), target: try box.decode(Decimal.self, forKey: .target))
+        case "risesBy":
+            self = .risesBy(
+                percent: try box.decode(Decimal.self, forKey: .percent),
+                reference: try box.decode(Decimal.self, forKey: .reference),
+                target: try box.decode(Decimal.self, forKey: .target))
+        case "fallsBy":
+            self = .fallsBy(
+                percent: try box.decode(Decimal.self, forKey: .percent),
+                reference: try box.decode(Decimal.self, forKey: .reference),
+                target: try box.decode(Decimal.self, forKey: .target))
         default: self = .unsupported(tag: tag)
         }
     }
     func encode(to encoder: Encoder) throws {
         var box = encoder.container(keyedBy: Keys.self)
         switch self {
-        case .crossesAbove(let target): try box.encode("crossesAbove", forKey: .tag); try box.encode(target, forKey: .target)
-        case .crossesBelow(let target): try box.encode("crossesBelow", forKey: .tag); try box.encode(target, forKey: .target)
-        case .risesBy(let percent, let reference, let target): try box.encode("risesBy", forKey: .tag); try box.encode(percent, forKey: .percent); try box.encode(reference, forKey: .reference); try box.encode(target, forKey: .target)
-        case .fallsBy(let percent, let reference, let target): try box.encode("fallsBy", forKey: .tag); try box.encode(percent, forKey: .percent); try box.encode(reference, forKey: .reference); try box.encode(target, forKey: .target)
+        case .crossesAbove(let target):
+            try box.encode("crossesAbove", forKey: .tag)
+            try box.encode(target, forKey: .target)
+        case .crossesBelow(let target):
+            try box.encode("crossesBelow", forKey: .tag)
+            try box.encode(target, forKey: .target)
+        case .risesBy(let percent, let reference, let target):
+            try box.encode("risesBy", forKey: .tag)
+            try box.encode(percent, forKey: .percent)
+            try box.encode(reference, forKey: .reference)
+            try box.encode(target, forKey: .target)
+        case .fallsBy(let percent, let reference, let target):
+            try box.encode("fallsBy", forKey: .tag)
+            try box.encode(percent, forKey: .percent)
+            try box.encode(reference, forKey: .reference)
+            try box.encode(target, forKey: .target)
         case .unsupported(let tag): try box.encode(tag, forKey: .tag)
         }
     }
@@ -71,15 +94,25 @@ struct PriceAlert: Codable, Identifiable, Equatable, Sendable {
     var createdAt: Date
     var updatedAt: Date
 
-    init(id: UUID = UUID(), asset: PortfolioAsset, condition: AlertCondition,
-         currency: PortfolioCurrency = .USD, frequency: AlertFrequency = .once,
-         state: AlertState = .active, note: String = "", armed: Bool = true,
-         previousValue: Decimal? = nil, lastFingerprint: String? = nil,
-         createdAt: Date = Date(), updatedAt: Date = Date()) {
-        self.id = id; self.asset = asset; self.condition = condition; self.currency = currency
-        self.frequency = frequency; self.state = state; self.note = note; self.armed = armed
-        self.previousValue = previousValue; self.lastFingerprint = lastFingerprint
-        self.createdAt = createdAt; self.updatedAt = updatedAt
+    init(
+        id: UUID = UUID(), asset: PortfolioAsset, condition: AlertCondition,
+        currency: PortfolioCurrency = .USD, frequency: AlertFrequency = .once,
+        state: AlertState = .active, note: String = "", armed: Bool = true,
+        previousValue: Decimal? = nil, lastFingerprint: String? = nil,
+        createdAt: Date = Date(), updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.asset = asset
+        self.condition = condition
+        self.currency = currency
+        self.frequency = frequency
+        self.state = state
+        self.note = note
+        self.armed = armed
+        self.previousValue = previousValue
+        self.lastFingerprint = lastFingerprint
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
     }
 }
 
@@ -95,23 +128,37 @@ struct AlertTriggerEvent: Codable, Identifiable, Equatable, Sendable {
     var origin: AlertEventOrigin = .live
     var delivery: AlertDeliveryRecord = .pending
 
-    init(id: UUID = UUID(), alertID: UUID, asset: PortfolioAsset, observedValue: Decimal,
-         target: Decimal, currency: PortfolioCurrency, timestamp: Date,
-         quoteFingerprint: String, origin: AlertEventOrigin = .live,
-         delivery: AlertDeliveryRecord = .pending) {
-        self.id = id; self.alertID = alertID; self.asset = asset
-        self.observedValue = observedValue; self.target = target; self.currency = currency
-        self.timestamp = timestamp; self.quoteFingerprint = quoteFingerprint
-        self.origin = origin; self.delivery = delivery
+    init(
+        id: UUID = UUID(), alertID: UUID, asset: PortfolioAsset, observedValue: Decimal,
+        target: Decimal, currency: PortfolioCurrency, timestamp: Date,
+        quoteFingerprint: String, origin: AlertEventOrigin = .live,
+        delivery: AlertDeliveryRecord = .pending
+    ) {
+        self.id = id
+        self.alertID = alertID
+        self.asset = asset
+        self.observedValue = observedValue
+        self.target = target
+        self.currency = currency
+        self.timestamp = timestamp
+        self.quoteFingerprint = quoteFingerprint
+        self.origin = origin
+        self.delivery = delivery
     }
 
-    private enum CodingKeys: String, CodingKey { case id, alertID, asset, observedValue, target, currency, timestamp, quoteFingerprint, origin, delivery }
+    private enum CodingKeys: String, CodingKey {
+        case id, alertID, asset, observedValue, target, currency, timestamp, quoteFingerprint, origin, delivery
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(UUID.self, forKey: .id); alertID = try c.decode(UUID.self, forKey: .alertID)
-        asset = try c.decode(PortfolioAsset.self, forKey: .asset); observedValue = try c.decode(Decimal.self, forKey: .observedValue)
-        target = try c.decode(Decimal.self, forKey: .target); currency = try c.decode(PortfolioCurrency.self, forKey: .currency)
-        timestamp = try c.decode(Date.self, forKey: .timestamp); quoteFingerprint = try c.decode(String.self, forKey: .quoteFingerprint)
+        id = try c.decode(UUID.self, forKey: .id)
+        alertID = try c.decode(UUID.self, forKey: .alertID)
+        asset = try c.decode(PortfolioAsset.self, forKey: .asset)
+        observedValue = try c.decode(Decimal.self, forKey: .observedValue)
+        target = try c.decode(Decimal.self, forKey: .target)
+        currency = try c.decode(PortfolioCurrency.self, forKey: .currency)
+        timestamp = try c.decode(Date.self, forKey: .timestamp)
+        quoteFingerprint = try c.decode(String.self, forKey: .quoteFingerprint)
         origin = try c.decodeIfPresent(AlertEventOrigin.self, forKey: .origin) ?? .live
         delivery = try c.decodeIfPresent(AlertDeliveryRecord.self, forKey: .delivery) ?? .pending
     }
@@ -145,7 +192,9 @@ struct AlertPersistenceSnapshot: Codable, Equatable, Sendable {
     var processedCommandIDs: [UUID] = []
     var health = AlertRuntimeHealth()
 
-    private enum CodingKeys: String, CodingKey { case schemaVersion, revision, alerts, history, settings, processedCommandIDs, health }
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion, revision, alerts, history, settings, processedCommandIDs, health
+    }
     init() {}
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -161,8 +210,12 @@ struct AlertPersistenceSnapshot: Codable, Equatable, Sendable {
 }
 
 enum AlertRuntimeOwner: String, Codable, Sendable { case none, app, agent }
-enum AlertServiceState: String, Codable, Sendable { case unavailable, disabled, enabled, requiresApproval, notFound, failed }
-enum AlertNotificationPermission: String, Codable, Sendable { case unknown, notDetermined, denied, authorized, provisional, ephemeral }
+enum AlertServiceState: String, Codable, Sendable {
+    case unavailable, disabled, enabled, requiresApproval, notFound, failed
+}
+enum AlertNotificationPermission: String, Codable, Sendable {
+    case unknown, notDetermined, denied, authorized, provisional, ephemeral
+}
 struct AlertProviderHealth: Codable, Equatable, Sendable, Identifiable {
     var id: String { source.rawValue }
     var source: DataSourceType
@@ -193,8 +246,14 @@ struct AlertRuntimeCommand: Codable, Identifiable, Equatable, Sendable {
     let createdAt: Date
     let expectedRevision: UInt64?
     let payload: AlertRuntimeCommandPayload
-    init(id: UUID = UUID(), createdAt: Date = Date(), expectedRevision: UInt64? = nil, payload: AlertRuntimeCommandPayload) {
-        self.id = id; self.createdAt = createdAt; self.expectedRevision = expectedRevision; self.payload = payload
+    init(
+        id: UUID = UUID(), createdAt: Date = Date(), expectedRevision: UInt64? = nil,
+        payload: AlertRuntimeCommandPayload
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.expectedRevision = expectedRevision
+        self.payload = payload
     }
 }
 

@@ -12,21 +12,22 @@ private struct WSKlineEvent: Decodable {
 }
 
 private struct WSKlinePayload: Decodable {
-    let t: Int64   // Kline start time (ms)
+    let t: Int64  // Kline start time (ms)
     let o: String  // Open
     let h: String  // High
     let l: String  // Low
     let c: String  // Close
     let v: String  // Volume (base asset)
     let q: String  // Quote asset volume — turnover in USDT
-    let x: Bool    // Is this kline closed?
+    let x: Bool  // Is this kline closed?
 
     func toKlineData() -> KlineData? {
         guard let open = Double(o),
-              let high = Double(h),
-              let low = Double(l),
-              let close = Double(c),
-              let volume = Double(v) else { return nil }
+            let high = Double(h),
+            let low = Double(l),
+            let close = Double(c),
+            let volume = Double(v)
+        else { return nil }
         return KlineData(
             openTime: Date(timeIntervalSince1970: Double(t) / 1000.0),
             openPrice: open,
@@ -105,7 +106,8 @@ final class BinanceWebSocketService {
 
     private func openSocket(generation: Int) {
         guard generation == connectionGeneration, !isShuttingDown else { return }
-        let streamList = symbols
+        let streamList =
+            symbols
             .map { "\($0.lowercased())@kline_\(interval)" }
             .joined(separator: "/")
 
@@ -126,8 +128,8 @@ final class BinanceWebSocketService {
     private func receiveNext(generation: Int) {
         webSocket?.receive { [weak self] result in
             guard let self,
-                  !self.isShuttingDown,
-                  generation == self.connectionGeneration
+                !self.isShuttingDown,
+                generation == self.connectionGeneration
             else { return }
 
             switch result {
@@ -160,8 +162,8 @@ final class BinanceWebSocketService {
 
     private func handleMessage(_ text: String) {
         guard let data = text.data(using: .utf8),
-              let message = try? JSONDecoder().decode(WSKlineMessage.self, from: data),
-              let kline = message.data.k.toKlineData()
+            let message = try? JSONDecoder().decode(WSKlineMessage.self, from: data),
+            let kline = message.data.k.toKlineData()
         else { return }
 
         let symbol = message.stream.components(separatedBy: "@").first?.uppercased() ?? ""
@@ -185,8 +187,8 @@ final class BinanceWebSocketService {
                 return
             }
             guard let self,
-                  !self.isShuttingDown,
-                  generation == self.connectionGeneration
+                !self.isShuttingDown,
+                generation == self.connectionGeneration
             else { return }
             self.reconnectTask = nil
             self.openSocket(generation: generation)

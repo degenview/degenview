@@ -43,12 +43,12 @@ struct PolymarketResultRow: View {
         .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onTapGesture {
-            if isChecked != nil { onToggle?() }
-            else { onSelect() }
+            if isChecked != nil { onToggle?() } else { onSelect() }
         }
-        .background(isSelected
-            ? Color.accentColor.opacity(0.15)
-            : Color.clear
+        .background(
+            isSelected
+                ? Color.accentColor.opacity(0.15)
+                : Color.clear
         )
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }

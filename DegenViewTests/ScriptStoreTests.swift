@@ -1,4 +1,5 @@
 import XCTest
+
 @testable import DegenView
 
 final class ScriptStoreTests: XCTestCase {
@@ -41,7 +42,8 @@ final class ScriptStoreTests: XCTestCase {
     func testDraftDoesNotOverwriteSavedSource() async throws {
         let store = ScriptStore(rootDirectory: try temporaryDirectory())
         let script = try await store.create(name: "Draft", type: .indicator)
-        try await store.saveDraft(.init(scriptID: script.id, source: "unsaved", modifiedAt: Date(), basedOnRevisionID: nil))
+        try await store.saveDraft(
+            .init(scriptID: script.id, source: "unsaved", modifiedAt: Date(), basedOnRevisionID: nil))
         let persisted = try await store.script(id: script.id)
         let draft = try await store.draft(id: script.id)
         XCTAssertEqual(persisted?.source, script.source)

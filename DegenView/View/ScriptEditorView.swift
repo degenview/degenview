@@ -11,7 +11,8 @@ struct ScriptEditorView: View {
                 TextField("Script Name", text: $model.name)
                     .textFieldStyle(.roundedBorder)
                     .frame(minWidth: 220)
-                Picker("Type", selection: $model.type) { ForEach(ScriptType.allCases) { Text($0.displayName).tag($0) } }.frame(width: 130)
+                Picker("Type", selection: $model.type) { ForEach(ScriptType.allCases) { Text($0.displayName).tag($0) } }
+                    .frame(width: 130)
                 Text(model.status.rawValue.capitalized).foregroundStyle(.secondary)
             }
             .padding()

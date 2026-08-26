@@ -2,8 +2,15 @@ import Foundation
 
 actor FXRateService {
     static let shared = FXRateService()
-    private struct Cache: Codable { var fetchedAt: Date; var rates: [String: Decimal] }
-    private struct Response: Decodable { let base: String; let date: String; let rates: [String: Decimal] }
+    private struct Cache: Codable {
+        var fetchedAt: Date
+        var rates: [String: Decimal]
+    }
+    private struct Response: Decodable {
+        let base: String
+        let date: String
+        let rates: [String: Decimal]
+    }
     private let store = JSONStore<Cache>(filename: "alert_fx_rates.json")
     private var cache: Cache?
 
@@ -21,13 +28,20 @@ actor FXRateService {
     }
 
     func refresh() async {
-        guard let url = URL(string: "https://api.frankfurter.dev/v2/rates?base=USD&quotes=EUR,GBP,JPY,CHF") else { return }
+        guard let url = URL(string: "https://api.frankfurter.dev/v2/rates?base=USD&quotes=EUR,GBP,JPY,CHF") else {
+            return
+        }
         do {
             let (data, _) = try await URLSession.shared.data(from: url)
-            struct Rate: Decodable { let quote: String; let rate: Decimal }
+            struct Rate: Decodable {
+                let quote: String
+                let rate: Decimal
+            }
             let values = try JSONDecoder().decode([Rate].self, from: data)
-            let next = Cache(fetchedAt: Date(), rates: Dictionary(uniqueKeysWithValues: values.map { ($0.quote, $0.rate) }))
-            cache = next; store.save(next)
-        } catch { /* retain a still-valid disk value across network failures */ }
+            let next = Cache(
+                fetchedAt: Date(), rates: Dictionary(uniqueKeysWithValues: values.map { ($0.quote, $0.rate) }))
+            cache = next
+            store.save(next)
+        } catch { /* retain a still-valid disk value across network failures */  }
     }
 }
