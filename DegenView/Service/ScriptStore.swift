@@ -2,13 +2,14 @@ import CryptoKit
 import Foundation
 
 enum ScriptStoreError: LocalizedError {
-    case missingScript, missingRevision, nameConflict, invalidName
+    case missingScript, missingRevision, nameConflict, invalidName, invalidSource
     var errorDescription: String? {
         switch self {
         case .missingScript: return "The script no longer exists."
         case .missingRevision: return "The script revision no longer exists."
         case .nameConflict: return "A script with that name already exists."
         case .invalidName: return "Script names cannot be empty."
+        case .invalidSource: return "The script contains errors and cannot be saved."
         }
     }
 }
@@ -65,6 +66,9 @@ actor ScriptStore {
             throw ScriptStoreError.nameConflict
         }
         let compiled = PineCompiler.compile(source: source)
+        guard !compiled.diagnostics.contains(where: { $0.severity == .error }) else {
+            throw ScriptStoreError.invalidSource
+        }
         let status = Self.status(for: compiled.diagnostics)
         let now = Date()
         if source != script.source || script.latestRevisionID == nil {

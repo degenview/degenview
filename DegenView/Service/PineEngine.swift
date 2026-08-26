@@ -228,11 +228,17 @@ struct PineLexer {
                 break
             }
         }
+        let eofRange = range(
+            lines.count,
+            (lines.last?.count ?? 0) + 1,
+            source.utf16.count,
+            0
+        )
         while indents.count > 1 {
             indents.removeLast()
-            tokens.append(.init(kind: .dedent, range: .zero))
+            tokens.append(.init(kind: .dedent, range: eofRange))
         }
-        tokens.append(.init(kind: .eof, range: .zero))
+        tokens.append(.init(kind: .eof, range: eofRange))
         return (tokens, diagnostics)
     }
 

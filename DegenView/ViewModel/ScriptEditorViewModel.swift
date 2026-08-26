@@ -36,6 +36,7 @@ final class ScriptEditorViewModel: ObservableObject {
     }
     func changed() {
         isDirty = source != savedSource
+        compile()
         guard let scriptID else { return }
         draftTask?.cancel(); let draft = ScriptDraft(scriptID: scriptID, source: source, modifiedAt: Date(), basedOnRevisionID: nil)
         draftTask = Task { try? await Task.sleep(for: .seconds(1)); guard !Task.isCancelled else { return }; try? await ScriptStore.shared.saveDraft(draft) }
@@ -46,6 +47,8 @@ final class ScriptEditorViewModel: ObservableObject {
             (result.diagnostics.contains { $0.severity == .warning } ? .warning : .valid)
     }
     func save() {
+        compile()
+        guard !diagnostics.contains(where: { $0.severity == .error }) else { return }
         let requestedType = type
         Task { do {
             let id: UUID

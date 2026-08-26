@@ -19,17 +19,12 @@ struct ScriptEditorView: View {
             .layoutPriority(2)
             .zIndex(1)
             Divider()
-            LineNumberedTextEditorView(text: $model.source)
+            LineNumberedTextEditorView(text: $model.source, diagnostics: model.diagnostics)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: 200)
                 .clipped()
                 .layoutPriority(1)
                 .onChange(of: model.source) { model.changed() }
-            if !model.diagnostics.isEmpty {
-                Divider(); List(model.diagnostics) { diagnostic in
-                    Label("Line \(diagnostic.range.start.line): \(diagnostic.message)", systemImage: diagnostic.severity == .error ? "xmark.circle" : "exclamationmark.triangle")
-                }.frame(minHeight: 90, maxHeight: 180)
-            }
             Divider()
             HStack {
                 Spacer()

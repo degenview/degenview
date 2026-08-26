@@ -22,18 +22,20 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertNil(indicator.latestRevisionID)
     }
 
-    func testBrokenSourceIsSavedExactlyAndRevisionIsNotDuplicated() async throws {
+    func testBrokenSourceIsRejectedWithoutChangingSavedScript() async throws {
         let store = ScriptStore(rootDirectory: try temporaryDirectory())
         let script = try await store.create(name: "Broken", type: .indicator)
         let source = "//@version=6\nindicator(\"Broken\")\nplot("
-        let saved = try await store.save(id: script.id, name: script.name, type: .indicator, source: source)
-        XCTAssertEqual(saved.source, source)
-        XCTAssertEqual(saved.compileRecord?.status, .error)
-        var revisions = try await store.revisions(id: script.id)
-        XCTAssertEqual(revisions.count, 1)
-        _ = try await store.save(id: script.id, name: script.name, type: .indicator, source: source)
-        revisions = try await store.revisions(id: script.id)
-        XCTAssertEqual(revisions.count, 1)
+        do {
+            _ = try await store.save(id: script.id, name: script.name, type: .indicator, source: source)
+            XCTFail("Expected invalid source to be rejected")
+        } catch let error as ScriptStoreError {
+            guard case .invalidSource = error else { return XCTFail("Unexpected error: \(error)") }
+        }
+        let persisted = try await store.script(id: script.id)
+        let revisions = try await store.revisions(id: script.id)
+        XCTAssertEqual(persisted?.source, script.source)
+        XCTAssertTrue(revisions.isEmpty)
     }
 
     func testDraftDoesNotOverwriteSavedSource() async throws {
