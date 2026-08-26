@@ -13,6 +13,7 @@
 		SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000103 /* ScriptEditorViewModel.swift */; };
 		SM0000000000000000000004 /* ScriptManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000104 /* ScriptManagerView.swift */; };
 		SM0000000000000000000005 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000105 /* ScriptEditorView.swift */; };
+		SM0000000000000000000007 /* LineNumberedTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000107 /* LineNumberedTextEditorView.swift */; };
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
 		P10000000000000000000001 /* PineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101 /* PineModels.swift */; };
 		P10000000000000000000002 /* PineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000102 /* PineEngine.swift */; };
@@ -175,6 +176,7 @@
 		SM0000000000000000000103 /* ScriptEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorViewModel.swift; sourceTree = "<group>"; };
 		SM0000000000000000000104 /* ScriptManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerView.swift; sourceTree = "<group>"; };
 		SM0000000000000000000105 /* ScriptEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorView.swift; sourceTree = "<group>"; };
+		SM0000000000000000000107 /* LineNumberedTextEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineNumberedTextEditorView.swift; sourceTree = "<group>"; };
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
 		P10000000000000000000101 /* PineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineModels.swift; sourceTree = "<group>"; };
 		P10000000000000000000102 /* PineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngine.swift; sourceTree = "<group>"; };
@@ -444,6 +446,7 @@
 			children = (
 				SM0000000000000000000104 /* ScriptManagerView.swift */,
 				SM0000000000000000000105 /* ScriptEditorView.swift */,
+				SM0000000000000000000107 /* LineNumberedTextEditorView.swift */,
 				B90000000000000000000106 /* PriceAlertEditor.swift */,
 				B90000000000000000000107 /* AlertsCenterView.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
@@ -653,6 +656,7 @@
 				SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */,
 				SM0000000000000000000004 /* ScriptManagerView.swift in Sources */,
 				SM0000000000000000000005 /* ScriptEditorView.swift in Sources */,
+				SM0000000000000000000007 /* LineNumberedTextEditorView.swift in Sources */,
 				BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */,
 				BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */,
 				BA0000000000000000000003 /* AlertBackgroundService.swift in Sources */,
