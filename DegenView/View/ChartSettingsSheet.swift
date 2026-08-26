@@ -36,6 +36,9 @@ struct ChartSettingsSheet: View {
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
     @State private var pineDraft: String
+    @State private var savedScripts: [LocalScript] = []
+    @State private var selectedScriptID: UUID?
+    @State private var scriptLoadError: String?
     @State private var copiedPineDiagnostics = false
 
     @Environment(\.dismiss) private var dismiss
@@ -107,6 +110,7 @@ struct ChartSettingsSheet: View {
         _pineDraft = State(
             initialValue: viewModel.pineConfiguration?.draftSource
                 ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
+        _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
         _assetType = State(
@@ -275,6 +279,10 @@ struct ChartSettingsSheet: View {
         .onChange(of: pineDraft) { _, source in
             viewModel.updatePineDraft(source)
             onStyleChanged()
+        }
+        .task { await loadSavedScripts() }
+        .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in
+            Task { await loadSavedScripts() }
         }
     }
 
@@ -559,12 +567,23 @@ struct ChartSettingsSheet: View {
 
     private var scriptsTab: some View {
         VStack(alignment: .leading, spacing: 10) {
-            TextEditor(text: $pineDraft)
-                .font(.system(.body, design: .monospaced))
-                .scrollContentBackground(.hidden)
-                .padding(6)
-                .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+            HStack {
+                Picker("Saved script", selection: $selectedScriptID) {
+                    Text("Custom draft").tag(nil as UUID?)
+                    ForEach(savedScripts) { script in
+                        Text(script.name).tag(script.id as UUID?)
+                    }
+                }
+                .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
+
+                if let scriptLoadError {
+                    Text(scriptLoadError).font(.caption).foregroundStyle(.red)
+                }
+            }
+
+            LineNumberedTextEditorView(text: $pineDraft, diagnostics: viewModel.pineDiagnostics)
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
                 .frame(minHeight: 220)
 
             HStack {
@@ -612,6 +631,40 @@ struct ChartSettingsSheet: View {
                 ForEach(schema.inputs) { input in pineInput(input) }
             }
         }.padding(16)
+    }
+
+    @MainActor private func loadSavedScripts() async {
+        do {
+            savedScripts = try await ScriptStore.shared.allScripts()
+            scriptLoadError = nil
+            guard let selectedScriptID else { return }
+            if !savedScripts.contains(where: { $0.id == selectedScriptID }) {
+                self.selectedScriptID = nil
+                viewModel.scriptInstances = []
+            } else if viewModel.scriptInstances.first?.scriptID == selectedScriptID {
+                selectSavedScript(selectedScriptID)
+            }
+        } catch {
+            scriptLoadError = error.localizedDescription
+        }
+    }
+
+    private func selectSavedScript(_ id: UUID?) {
+        guard let id else {
+            viewModel.scriptInstances = []
+            onStyleChanged()
+            return
+        }
+        guard let script = savedScripts.first(where: { $0.id == id }) else { return }
+        pineDraft = script.source
+        if let revisionID = script.latestRevisionID {
+            viewModel.scriptInstances = [ChartScriptInstance(
+                scriptID: script.id,
+                loadedRevisionID: revisionID,
+                inputs: viewModel.pineConfiguration?.inputs ?? [:]
+            )]
+        }
+        onStyleChanged()
     }
 
     private func formatted(_ diagnostic: PineDiagnostic) -> String {
