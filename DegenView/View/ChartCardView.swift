@@ -416,12 +416,7 @@ private struct PortfolioChartCard: View {
             }
         }
         .padding(10)
-        .frame(
-            height: chartHeight
-                + ChartLayout.cardChrome(
-                    isPortfolioValue: config.kind == .valueChart
-                )
-        )
+        .frame(height: chartHeight + ChartLayout.cardChrome)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
             await store.refresh()

@@ -31,18 +31,18 @@ final class ChartPlotTests: XCTestCase {
         XCTAssertEqual(plot.price(forY: plot.y(for: 15)), 15, accuracy: 0.0001)
     }
 
-    func testChartHeightBudgetingAccountsForPerCardChrome() {
+    func testChartHeightBudgetingUsesEqualCardHeights() {
         XCTAssertEqual(
-            ChartLayout.verticalPlotHeight(available: 500, cardChromes: [55, 55, 55]),
+            ChartLayout.verticalPlotHeight(available: 500, cardCount: 3),
             106.3333333333, accuracy: 0.0001
         )
         XCTAssertEqual(
-            ChartLayout.verticalPlotHeight(available: 500, cardChromes: [55, 105, 55]),
-            89.6666666667, accuracy: 0.0001
+            ChartLayout.gridPlotHeight(available: 500, cardCount: 3),
+            191, accuracy: 0.0001
         )
         XCTAssertEqual(
-            ChartLayout.gridPlotHeight(available: 500, cardChromes: [55, 105, 55]),
-            166, accuracy: 0.0001
+            ChartLayout.gridPlotHeight(available: 500, cardCount: 4),
+            191, accuracy: 0.0001
         )
     }
 

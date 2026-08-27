@@ -240,20 +240,16 @@ struct ContentView: View {
                     // Chart list (vertical) or grid — fills remaining height, scrolls if needed
                     GeometryReader { geometry in
                         let available = geometry.size.height
-                        let cardChromes = contentViewModel.chartViewModels.map {
-                            ChartLayout.cardChrome(
-                                isPortfolioValue: $0.portfolioChart?.kind == .valueChart
-                            )
-                        }
+                        let cardCount = contentViewModel.chartViewModels.count
 
                         let naturalHeight: CGFloat = {
                             if contentViewModel.layoutMode == .vertical {
                                 return ChartLayout.verticalPlotHeight(
-                                    available: available, cardChromes: cardChromes
+                                    available: available, cardCount: cardCount
                                 )
                             } else {
                                 return ChartLayout.gridPlotHeight(
-                                    available: available, cardChromes: cardChromes
+                                    available: available, cardCount: cardCount
                                 )
                             }
                         }()
