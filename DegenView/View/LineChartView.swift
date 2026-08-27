@@ -118,7 +118,7 @@ struct LineChartView: View {
                 plot.drawTimeGrid(&context, points: points)
             }
         }
-        .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
+        .frame(height: max(0, chartHeight))
         .clipped()
     }
 

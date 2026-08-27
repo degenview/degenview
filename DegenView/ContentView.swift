@@ -254,9 +254,11 @@ struct ContentView: View {
                             }
                         }()
 
-                        // Charts fill available window height. Floor at chartMinHeight
-                        // (the canvas won't render below 50 pt anyway).
-                        let chartHeight = max(ChartLayout.chartMinHeight, naturalHeight)
+                        // Vertical cards retain their readable minimum and scroll.
+                        // Grid cards may shrink further so every row remains visible.
+                        let chartHeight = contentViewModel.layoutMode == .vertical
+                            ? max(ChartLayout.chartMinHeight, naturalHeight)
+                            : naturalHeight
 
                         if contentViewModel.layoutMode == .vertical {
                             ScrollView {
@@ -280,30 +282,37 @@ struct ContentView: View {
                             .frame(height: available)
                             .scrollIndicators(.never)
                         } else {
-                            ScrollView {
-                                LazyVGrid(
-                                    columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-                                    spacing: 0
-                                ) {
-                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                        chartCard(vm, height: chartHeight)
-                                            .padding(4)
-                                            .onDrag {
-                                                NSItemProvider(object: vm.uniqueID as NSString)
-                                            }
-                                            .onDrop(
-                                                of: [.utf8PlainText],
-                                                delegate: ReorderDropDelegate(
-                                                    targetTicker: vm.uniqueID,
-                                                    viewModel: contentViewModel
-                                                )
-                                            )
+                            LazyVGrid(
+                                columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
+                                spacing: 0
+                            ) {
+                                ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
+                                    chartCard(
+                                        vm,
+                                        height: chartHeight,
+                                        cardHeight: ChartLayout.gridCardHeight(
+                                            available: available, cardCount: cardCount
+                                        )
+                                    )
+                                    .padding(ChartLayout.gridCardInset(
+                                        available: available, cardCount: cardCount
+                                    ))
+                                    .onDrag {
+                                        NSItemProvider(object: vm.uniqueID as NSString)
                                     }
+                                    .onDrop(
+                                        of: [.utf8PlainText],
+                                        delegate: ReorderDropDelegate(
+                                            targetTicker: vm.uniqueID,
+                                            viewModel: contentViewModel
+                                        )
+                                    )
                                 }
-                                .padding(4)
                             }
+                            .padding(ChartLayout.gridOuterInset(
+                                available: available, cardCount: cardCount
+                            ))
                             .frame(height: available)
-                            .scrollIndicators(.never)
                         }
                     }
                 }
@@ -478,10 +487,11 @@ struct ContentView: View {
 
     // MARK: - Chart Card Builder
 
-    private func chartCard(_ vm: ChartViewModel, height: CGFloat) -> some View {
+    private func chartCard(_ vm: ChartViewModel, height: CGFloat, cardHeight: CGFloat? = nil) -> some View {
         ChartCardView(
             viewModel: vm,
             chartHeight: height,
+            cardHeight: cardHeight,
             onRemove: {
                 withAnimation {
                     contentViewModel.removeTicker(vm)

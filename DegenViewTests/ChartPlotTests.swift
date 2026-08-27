@@ -38,12 +38,25 @@ final class ChartPlotTests: XCTestCase {
         )
         XCTAssertEqual(
             ChartLayout.gridPlotHeight(available: 500, cardCount: 3),
-            191, accuracy: 0.0001
+            183, accuracy: 0.0001
         )
         XCTAssertEqual(
             ChartLayout.gridPlotHeight(available: 500, cardCount: 4),
-            191, accuracy: 0.0001
+            183, accuracy: 0.0001
         )
+    }
+
+    func testGridSizingFitsOddEvenAndConstrainedHeights() {
+        for count in [2, 3, 4, 6] {
+            for available: CGFloat in [500, 160, 20, 0] {
+                XCTAssertLessThanOrEqual(
+                    ChartLayout.gridOccupancy(available: available, cardCount: count), available
+                )
+                XCTAssertGreaterThanOrEqual(
+                    ChartLayout.gridPlotHeight(available: available, cardCount: count), 0
+                )
+            }
+        }
     }
 
     func testOverlayPlacementCentersAndClampsAtEdges() {

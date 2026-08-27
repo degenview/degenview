@@ -13,6 +13,9 @@ enum ChartLayout {
     static let gridColumnFraction: Double = 2.0
     /// Chart area minimum height.
     static let chartMinHeight: CGFloat = 50
+    /// Normal outer and per-card padding in the fixed-height grid.
+    static let gridOuterPadding: CGFloat = 4
+    static let gridCardPadding: CGFloat = 4
 
     /// Common plot height that lets all vertically stacked cards fit when possible.
     static func verticalPlotHeight(available: CGFloat, cardCount: Int) -> CGFloat {
@@ -23,10 +26,43 @@ enum ChartLayout {
 
     /// Common plot height for a two-column grid.
     static func gridPlotHeight(available: CGFloat, cardCount: Int) -> CGFloat {
-        guard cardCount > 0 else { return available }
+        max(0, gridCardHeight(available: available, cardCount: cardCount) - cardChrome)
+    }
+
+    /// Equal card height after accounting for all grid and item padding.
+    static func gridCardHeight(available: CGFloat, cardCount: Int) -> CGFloat {
+        guard cardCount > 0 else { return max(0, available) }
         let rowCount = (cardCount + gridColumns - 1) / gridColumns
-        let gaps = CGFloat(max(0, rowCount - 1)) * cardGap
-        return (available - gaps) / CGFloat(rowCount) - cardChrome
+        let padding = gridOuterInset(available: available, cardCount: cardCount) * 2
+            + CGFloat(rowCount) * gridCardInset(available: available, cardCount: cardCount) * 2
+        return max(0, (available - padding) / CGFloat(rowCount))
+    }
+
+    static func gridOuterInset(available: CGFloat, cardCount: Int) -> CGFloat {
+        gridOuterPadding * gridPaddingScale(available: available, cardCount: cardCount)
+    }
+
+    static func gridCardInset(available: CGFloat, cardCount: Int) -> CGFloat {
+        gridCardPadding * gridPaddingScale(available: available, cardCount: cardCount)
+    }
+
+    private static func gridPaddingScale(available: CGFloat, cardCount: Int) -> CGFloat {
+        guard cardCount > 0 else { return 1 }
+        let rowCount = (cardCount + gridColumns - 1) / gridColumns
+        let nominal = gridOuterPadding * 2 + CGFloat(rowCount) * gridCardPadding * 2
+        guard nominal > 0 else { return 1 }
+        return min(1, max(0, available) / nominal)
+    }
+
+    /// Total height occupied by the rows and their padding.
+    static func gridOccupancy(available: CGFloat, cardCount: Int) -> CGFloat {
+        guard cardCount > 0 else { return 0 }
+        let rowCount = (cardCount + gridColumns - 1) / gridColumns
+        return gridOuterInset(available: available, cardCount: cardCount) * 2
+            + CGFloat(rowCount) * (
+                gridCardInset(available: available, cardCount: cardCount) * 2
+                    + gridCardHeight(available: available, cardCount: cardCount)
+            )
     }
 }
 

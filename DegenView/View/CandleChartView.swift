@@ -105,7 +105,7 @@ struct CandleChartView: View {
                 plot.drawTimeGrid(&context, points: candles)
             }
         }
-        .frame(height: max(ChartLayout.chartMinHeight, chartHeight))
+        .frame(height: max(0, chartHeight))
         .clipped()
     }
 

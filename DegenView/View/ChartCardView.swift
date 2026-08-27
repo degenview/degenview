@@ -4,6 +4,7 @@ import SwiftUI
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat
+    var cardHeight: CGFloat? = nil
     let onRemove: () -> Void
     let onRetry: () -> Void
     let isFavorite: Bool
@@ -55,6 +56,7 @@ struct ChartCardView: View {
                 ),
                 store: portfolioStore,
                 chartHeight: chartHeight,
+                cardHeight: cardHeight,
                 onRemove: onRemove
             )
         } else {
@@ -68,7 +70,8 @@ struct ChartCardView: View {
             chartArea
         }
         .padding(6)
-        .frame(height: chartHeight + ChartLayout.cardChrome)
+        .frame(height: cardHeight ?? chartHeight + ChartLayout.cardChrome)
+        .clipped()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .background(ZoomHitRegion(onResolve: onZoomRegion))
         .task(id: viewModel.iconKey) {
@@ -348,6 +351,7 @@ private struct PortfolioChartCard: View {
     @Binding var config: PortfolioChartConfig
     @ObservedObject var store: PortfolioStore
     let chartHeight: CGFloat
+    let cardHeight: CGFloat?
     let onRemove: () -> Void
     @State private var valuesHidden = false
 
@@ -416,7 +420,8 @@ private struct PortfolioChartCard: View {
             }
         }
         .padding(10)
-        .frame(height: chartHeight + ChartLayout.cardChrome)
+        .frame(height: cardHeight ?? chartHeight + ChartLayout.cardChrome)
+        .clipped()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .task {
             await store.refresh()
