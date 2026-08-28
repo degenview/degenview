@@ -42,6 +42,40 @@ struct TickerSearchResult: Identifiable, Hashable {
     }
 }
 
+// MARK: - Search Relevance
+
+extension Array where Element == TickerSearchResult {
+    /// Stable, provider-local ordering that favors the asset a ticker query most
+    /// likely refers to. Equal-ranked results retain the source's original order.
+    func ranked(for query: String) -> [TickerSearchResult] {
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        guard !needle.isEmpty else { return self }
+
+        return enumerated().sorted { lhs, rhs in
+            let leftRank = lhs.element.searchRank(for: needle)
+            let rightRank = rhs.element.searchRank(for: needle)
+            return leftRank == rightRank ? lhs.offset < rhs.offset : leftRank < rightRank
+        }.map(\.element)
+    }
+}
+
+private extension TickerSearchResult {
+    func searchRank(for needle: String) -> Int {
+        let display = symbol.uppercased()
+        let full = fullSymbol.uppercased()
+        let pair = display.split(separator: "/", maxSplits: 1).map(String.init)
+        let base = pair.first ?? display.components(separatedBy: " — ").first ?? display
+        let quote = pair.count == 2 ? pair[1] : nil
+
+        if display == needle || full == needle || base == needle && quote == nil { return 0 }
+        if base == needle && quote == "USDT" { return 1 }
+        if base == needle && quote != nil { return 2 }
+        if display.hasPrefix(needle) || full.hasPrefix(needle) || base.hasPrefix(needle) { return 3 }
+        if display.contains(needle) || full.contains(needle) { return 4 }
+        return 5
+    }
+}
+
 // MARK: - Protocol
 
 protocol TickerDataSource: AnyObject {

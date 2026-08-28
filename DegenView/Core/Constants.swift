@@ -288,7 +288,7 @@ enum UI {
     static let windowRestoreMinVisibleWidth: CGFloat = 160
     static let windowRestoreMinVisibleHeight: CGFloat = 80
     /// Sheet frame width for Add Ticker.
-    static let addTickerSheetWidth: CGFloat = 440
+    static let addTickerSheetWidth: CGFloat = 600
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.
@@ -297,9 +297,24 @@ enum UI {
     static let chartSettingsSheetMinWidth: CGFloat = 600
     static let chartSettingsSheetMinHeight: CGFloat = 520
     /// Search results max height in Add Ticker sheet.
-    static let addTickerResultsMaxHeight: CGFloat = 300
+    static let addTickerResultsMaxHeight: CGFloat = 420
     /// Search results min height in Add Ticker sheet.
     static let addTickerResultsMinHeight: CGFloat = 100
+    static let searchResultRowHeight: CGFloat = 38
+    static let searchResultSectionHeight: CGFloat = 28
+    static let searchResultListInsets: CGFloat = 12
+
+    static func searchResultsHeight(rowCount: Int, sectionCount: Int) -> CGFloat {
+        min(
+            addTickerResultsMaxHeight,
+            max(
+                addTickerResultsMinHeight,
+                CGFloat(rowCount) * searchResultRowHeight
+                    + CGFloat(sectionCount) * searchResultSectionHeight
+                    + searchResultListInsets
+            )
+        )
+    }
     /// Search results height range in Chart Settings sheet.
     static let chartSettingsResultsMinHeight: CGFloat = 80
     static let chartSettingsResultsMaxHeight: CGFloat = 180

@@ -59,3 +59,53 @@ final class KlineDataTests: XCTestCase {
         XCTAssertEqual(result.last?.closePrice, 9)
     }
 }
+
+final class TickerSearchRelevanceTests: XCTestCase {
+    func testExactCryptoBasePrefersUSDTThenOtherQuotes() {
+        let results = [
+            result("WBTC/BTC", "WBTCBTC"),
+            result("BTC/EUR", "BTCEUR"),
+            result("BTC/USDC", "BTCUSDC"),
+            result("BTC/USDT", "BTCUSDT"),
+        ].ranked(for: "BTC")
+
+        XCTAssertEqual(results.map(\.symbol), ["BTC/USDT", "BTC/EUR", "BTC/USDC", "WBTC/BTC"])
+    }
+
+    func testExactStockTickerPrecedesSymbolAndCompanyNameMatches() {
+        let results = [
+            result("PAAPL — Sample Holdings", "PAAPL", source: .alpaca),
+            result("XYZ — AAPL Technologies", "XYZ", source: .alpaca),
+            result("AAPL — Apple Inc.", "AAPL", source: .alpaca),
+        ].ranked(for: "AAPL")
+
+        XCTAssertEqual(results.first?.fullSymbol, "AAPL")
+        XCTAssertEqual(results.map(\.fullSymbol), ["AAPL", "PAAPL", "XYZ"])
+    }
+
+    func testExactDisplayedAndFullSymbolQueriesRankFirst() {
+        let results = [
+            result("BTC/USDC", "BTCUSDC"),
+            result("BTC/USDT", "BTCUSDT"),
+        ]
+
+        XCTAssertEqual(results.ranked(for: "BTC/USDT").first?.fullSymbol, "BTCUSDT")
+        XCTAssertEqual(results.ranked(for: "BTCUSDC").first?.fullSymbol, "BTCUSDC")
+    }
+
+    func testEqualRanksPreserveProviderOrder() {
+        let results = [
+            result("BTC/EUR", "BTCEUR"),
+            result("BTC/USDC", "BTCUSDC"),
+            result("BTC/FDUSD", "BTCFDUSD"),
+        ]
+
+        XCTAssertEqual(results.ranked(for: "BTC").map(\.fullSymbol), results.map(\.fullSymbol))
+    }
+
+    private func result(
+        _ symbol: String, _ fullSymbol: String, source: DataSourceType = .binance
+    ) -> TickerSearchResult {
+        TickerSearchResult(symbol: symbol, fullSymbol: fullSymbol, source: source, price: nil)
+    }
+}

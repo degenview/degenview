@@ -125,11 +125,11 @@ final class AlpacaAPIService: GranularReplayDataSource {
             assetCache = assets
         }
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        return assets.lazy.filter {
+        return assets.filter {
             $0.tradable && ($0.symbol.uppercased().contains(needle) || $0.name.uppercased().contains(needle))
-        }.prefix(30).map {
+        }.map {
             TickerSearchResult(symbol: "\($0.symbol) — \($0.name)", fullSymbol: $0.symbol, source: .alpaca, price: nil)
-        }
+        }.ranked(for: needle).prefix(30).map { $0 }
     }
 
     private func configuredCredentials() throws -> AlpacaCredentials {

@@ -108,7 +108,6 @@ final class DEXScreenerService: TickerDataSource {
         }
         .values
         .sorted { ($0.liquidity?.usd ?? 0) > ($1.liquidity?.usd ?? 0) }
-        .prefix(Timeout.dexSearchLimit)
 
         return filtered.compactMap { pair in
             guard let baseSymbol = pair.baseToken?.symbol,
@@ -128,7 +127,7 @@ final class DEXScreenerService: TickerDataSource {
                     "pairAddress": pair.pairAddress ?? "",
                 ]
             )
-        }
+        }.ranked(for: q).prefix(Timeout.dexSearchLimit).map { $0 }
     }
 
     // MARK: - Icon Lookup

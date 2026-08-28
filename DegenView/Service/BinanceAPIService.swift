@@ -228,16 +228,15 @@ final class BinanceAPIService: GranularReplayDataSource {
         let matching = info.symbols
             .filter { $0.status == "TRADING" }
             .filter { $0.symbol.contains(q) }
-            .prefix(20)
 
-        return matching.map { info in
+        return Array(matching).map { info in
             TickerSearchResult(
                 symbol: "\(info.baseAsset)/\(info.quoteAsset)",
                 fullSymbol: info.symbol,
                 source: .binance,
                 price: nil
             )
-        }
+        }.ranked(for: q).prefix(20).map { $0 }
     }
 
 }

@@ -12,6 +12,7 @@ struct PolymarketResultRow: View {
     /// Non-nil enables checkbox mode — shows a toggle instead of row-selection highlight.
     var isChecked: Bool? = nil
     var onToggle: (() -> Void)? = nil
+    var onCommit: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -39,17 +40,49 @@ struct PolymarketResultRow: View {
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+                    .accessibilityLabel("Selected")
+            }
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .onTapGesture {
-            if isChecked != nil { onToggle?() } else { onSelect() }
-        }
+        .modifier(PolymarketRowTapModifier(
+            onSelect: { if isChecked != nil { onToggle?() } else { onSelect() } },
+            onCommit: onCommit
+        ))
         .background(
             isSelected
                 ? Color.accentColor.opacity(0.15)
                 : Color.clear
         )
         .clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+private struct PolymarketRowTapModifier: ViewModifier {
+    let onSelect: () -> Void
+    let onCommit: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let onCommit {
+            content.gesture(
+                TapGesture(count: 2)
+                    .exclusively(before: TapGesture(count: 1))
+                    .onEnded { value in
+                        switch value {
+                        case .first:
+                            onCommit()
+                        case .second:
+                            onSelect()
+                        }
+                    }
+            )
+        } else {
+            content.onTapGesture(perform: onSelect)
+        }
     }
 }

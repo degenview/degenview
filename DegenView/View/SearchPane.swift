@@ -12,11 +12,27 @@ struct SearchFieldRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.roundedBorder)
-                .font(.body)
-                .onChange(of: text) { onChange(text) }
-                .onSubmit { onSubmit() }
+            ZStack(alignment: .trailing) {
+                TextField(placeholder, text: $text)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body)
+                    .padding(.trailing, text.isEmpty ? 0 : 28)
+                    .onChange(of: text) { onChange(text) }
+                    .onSubmit { onSubmit() }
+
+                if !text.isEmpty {
+                    Button {
+                        text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 6)
+                    .help("Clear search")
+                    .accessibilityLabel("Clear search")
+                }
+            }
 
             if isSearching {
                 ProgressView()
@@ -84,6 +100,17 @@ struct PolymarketSearchPane: View {
     /// content it collapses to nothing without a floor.
     var resultsMinHeight: CGFloat = UI.addTickerResultsMinHeight
     var resultsMaxHeight: CGFloat
+    var usesAdaptiveResultHeight = false
+    var showsStatus = true
+    var onCommitResult: ((TickerSearchResult) -> Void)? = nil
+
+    private var resultHeight: CGFloat {
+        let rows = searchVM.groups.reduce(0) { $0 + $1.results.count }
+        let calculated = CGFloat(rows) * UI.searchResultRowHeight
+            + CGFloat(searchVM.groups.count) * UI.searchResultSectionHeight
+            + UI.searchResultListInsets
+        return min(resultsMaxHeight, max(resultsMinHeight, calculated))
+    }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -108,13 +135,15 @@ struct PolymarketSearchPane: View {
                                     PolymarketResultRow(
                                         result: result,
                                         isChecked: searchVM.checkedChoices[result.fullSymbol] ?? false,
-                                        onToggle: { searchVM.toggleChoice(result.fullSymbol) }
+                                        onToggle: { searchVM.toggleChoice(result.fullSymbol) },
+                                        onCommit: onCommitResult.map { commit in { commit(result) } }
                                     )
                                 } else {
                                     PolymarketResultRow(
                                         result: result,
                                         isSelected: searchVM.selectedResult == result,
-                                        onSelect: { searchVM.selectedResult = result }
+                                        onSelect: { searchVM.selectedResult = result },
+                                        onCommit: onCommitResult.map { commit in { commit(result) } }
                                     )
                                 }
                             }
@@ -131,14 +160,16 @@ struct PolymarketSearchPane: View {
                     }
                 }
                 .listStyle(.inset)
-                .frame(minHeight: resultsMinHeight, maxHeight: resultsMaxHeight)
+                .frame(height: usesAdaptiveResultHeight ? resultHeight : nil)
+                .frame(minHeight: usesAdaptiveResultHeight ? nil : resultsMinHeight,
+                       maxHeight: usesAdaptiveResultHeight ? nil : resultsMaxHeight)
             }
 
-            if let error = searchVM.errorMessage {
+            if showsStatus, let error = searchVM.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-            } else if !searchVM.isSearching,
+            } else if showsStatus, !searchVM.isSearching,
                 !searchText.trimmingCharacters(in: .whitespaces).isEmpty,
                 !searchVM.hasResults
             {

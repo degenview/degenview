@@ -59,8 +59,7 @@ struct AddTickerSheet: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Header
+        VStack(alignment: .leading, spacing: 14) {
             Text(title)
                 .font(.headline)
 
@@ -80,59 +79,52 @@ struct AddTickerSheet: View {
                 PolymarketSearchPane(
                     searchVM: polymarketVM,
                     searchText: $polymarketText,
-                    resultsMaxHeight: UI.addTickerResultsMaxHeight
+                    resultsMaxHeight: UI.addTickerResultsMaxHeight,
+                    usesAdaptiveResultHeight: true,
+                    showsStatus: false,
+                    onCommitResult: { addTicker($0) }
                 )
             case .portfolio:
                 portfolioTab
             }
 
-            // Error from add attempt
-            if let error = addError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+            statusRows
 
-            if needsAlpacaSetup {
-                HStack {
-                    Text("Set up Alpaca before adding a stock chart.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Open Settings") {
-                        UserDefaults.standard.set(SettingsTab.alpaca.rawValue, forKey: "settingsTab")
-                        openSettings()
-                    }
-                }
-                .padding(10)
-                .background(.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-            }
+            Divider()
 
-            // Action buttons
             HStack(spacing: 12) {
+                if let selected = activeSelection {
+                    SelectedResultBanner(prefix: "Selected", result: selected)
+                        .frame(maxWidth: 340)
+                }
+                Spacer(minLength: 0)
                 Button("Cancel") {
                     cancelSearches()
                     dismiss()
                 }
-                .buttonStyle(.plain)
                 .keyboardShortcut(.escape)
 
                 Button(actionLabel) {
-                    if selectedTab == .portfolio { addPortfolio() } else { addTicker() }
+                    if selectedTab == .portfolio { addPortfolio() } else if let selected = activeSelection {
+                        addTicker(selected)
+                    }
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(selectedTab == .portfolio ? portfolioStore.activePortfolios.isEmpty : activeSelection == nil)
                 .keyboardShortcut(.return)
             }
-            .padding(.top, 8)
         }
         .padding(24)
         .frame(width: UI.addTickerSheetWidth)
-        .onChange(of: selectedTab) { addError = nil }
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(.easeInOut(duration: 0.18), value: selectedTab)
+        .animation(.easeInOut(duration: 0.18), value: searchVM.searchResults.values.reduce(0) { $0 + $1.count })
+        .animation(.easeInOut(duration: 0.18), value: stockVM.searchResults.values.reduce(0) { $0 + $1.count })
+        .animation(.easeInOut(duration: 0.18), value: polymarketVM.groups.reduce(0) { $0 + $1.results.count })
+        .onChange(of: selectedTab) {
+            addError = nil
+            needsAlpacaSetup = false
+        }
         .onDisappear {
             cancelSearches()
         }
@@ -145,7 +137,7 @@ struct AddTickerSheet: View {
                     "No Portfolios", systemImage: "briefcase",
                     description: Text("Create a portfolio in the Portfolio Tracker first.")
                 )
-                .frame(maxWidth: .infinity, minHeight: 220)
+                .frame(maxWidth: .infinity, minHeight: 150)
             } else {
                 Picker("Portfolio", selection: $portfolioID) {
                     Text("All Portfolios").tag(UUID?.none)
@@ -161,10 +153,8 @@ struct AddTickerSheet: View {
                     "Portfolio value charts include their own 1D, 1W, 1M, 1Y, and all-time range control. Portfolio cards do not support market indicators."
                 )
                 .font(.caption).foregroundStyle(.secondary)
-                Spacer(minLength: 30)
             }
         }
-        .frame(minHeight: 260)
         .task { await portfolioStore.refresh() }
     }
 
@@ -208,17 +198,24 @@ struct AddTickerSheet: View {
             }
 
             if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
-                List(results) { result in
-                    SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
-                        stockVM.selectedResult = result
+                List {
+                    Section {
+                        ForEach(results) { result in
+                            SearchResultRow(
+                                result: result,
+                                isSelected: stockVM.selectedResult == result,
+                                onSelect: { stockVM.selectedResult = result },
+                                onCommit: { addTicker(result) }
+                            )
+                        }
+                    } header: {
+                        Label(DataSourceType.alpaca.displayName, systemImage: DataSourceType.alpaca.icon)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .listStyle(.inset)
-                .frame(minHeight: UI.addTickerResultsMinHeight, maxHeight: UI.addTickerResultsMaxHeight)
-            }
-
-            if let selected = stockVM.selectedResult {
-                SelectedResultBanner(prefix: "Selected", result: selected)
+                .frame(height: UI.searchResultsHeight(rowCount: results.count, sectionCount: 1))
             }
         }
     }
@@ -271,7 +268,8 @@ struct AddTickerSheet: View {
                                     SearchResultRow(
                                         result: result,
                                         isSelected: searchVM.selectedResult == result,
-                                        onSelect: { searchVM.selectedResult = result }
+                                        onSelect: { searchVM.selectedResult = result },
+                                        onCommit: { addTicker(result) }
                                     )
                                 }
                             } header: {
@@ -283,7 +281,10 @@ struct AddTickerSheet: View {
                     }
                 }
                 .listStyle(.inset)
-                .frame(minHeight: UI.addTickerResultsMinHeight, maxHeight: UI.addTickerResultsMaxHeight)
+                .frame(height: UI.searchResultsHeight(
+                    rowCount: searchVM.searchResults.values.reduce(0) { $0 + $1.count },
+                    sectionCount: searchVM.searchResults.values.filter { !$0.isEmpty }.count
+                ))
             }
 
             // No results
@@ -295,9 +296,34 @@ struct AddTickerSheet: View {
                     .foregroundStyle(.secondary)
             }
 
-            // Selected result
-            if let selected = searchVM.selectedResult {
-                SelectedResultBanner(prefix: "Selected", result: selected)
+        }
+    }
+
+    @ViewBuilder
+    private var statusRows: some View {
+        if let error = addError ?? (selectedTab == .polymarket ? polymarketVM.errorMessage : nil) {
+            Label(error, systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if selectedTab == .polymarket, !polymarketVM.isSearching,
+                  !polymarketText.trimmingCharacters(in: .whitespaces).isEmpty,
+                  !polymarketVM.hasResults {
+            Text("No markets found")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
+        if needsAlpacaSetup {
+            HStack {
+                Label("Set up Alpaca before adding a stock chart.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Open Settings") {
+                    UserDefaults.standard.set(SettingsTab.alpaca.rawValue, forKey: "settingsTab")
+                    openSettings()
+                }
+                .controlSize(.small)
             }
         }
     }
@@ -310,9 +336,7 @@ struct AddTickerSheet: View {
         polymarketVM.cancelSearch()
     }
 
-    private func addTicker() {
-        guard let selected = activeSelection else { return }
-
+    private func addTicker(_ selected: TickerSearchResult) {
         if selected.source == .alpaca, !AlpacaCredentialsStore.isConfigured {
             needsAlpacaSetup = true
             return

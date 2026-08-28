@@ -378,9 +378,17 @@ struct ChartSettingsSheet: View {
             }
 
             if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
-                List(results) { result in
-                    SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
-                        stockVM.selectedResult = result
+                List {
+                    Section {
+                        ForEach(results) { result in
+                            SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
+                                stockVM.selectedResult = result
+                            }
+                        }
+                    } header: {
+                        Label(DataSourceType.alpaca.displayName, systemImage: DataSourceType.alpaca.icon)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
                 .listStyle(.inset).frame(maxHeight: UI.chartSettingsResultsMaxHeight)

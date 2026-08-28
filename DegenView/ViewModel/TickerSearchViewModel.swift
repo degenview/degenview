@@ -77,7 +77,7 @@ final class TickerSearchViewModel: ObservableObject {
             for source in sources {
                 group.addTask { [logPrefix] in
                     do {
-                        let results = try await source.searchTickers(query: query)
+                        let results = try await source.searchTickers(query: query).ranked(for: query)
                         return (source.type, results)
                     } catch {
                         #if DEBUG
