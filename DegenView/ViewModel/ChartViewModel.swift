@@ -11,6 +11,7 @@ final class ChartViewModel: ObservableObject {
     /// A Polymarket CLOB token id is 77 digits, so the market question rides along.
     @Published var displayName: String?
     @Published var portfolioChart: PortfolioChartConfig?
+    @Published var coinMarketCapChart: CoinMarketCapChartConfig?
 
     var isPortfolioChart: Bool { portfolioChart != nil }
 
@@ -34,7 +35,7 @@ final class ChartViewModel: ObservableObject {
                 return upper
             }
             return "\(upper)USDT"
-        case .coingecko, .dexscreener, .alpaca, .polymarket:
+        case .coingecko, .dexscreener, .alpaca, .polymarket, .coinMarketCap:
             // ticker IS the fullSymbol (coin ID, pair address, or CLOB token id)
             return ticker
         }
@@ -59,6 +60,8 @@ final class ChartViewModel: ObservableObject {
             return title
         case .alpaca:
             return ticker.uppercased()
+        case .coinMarketCap:
+            return "CMC"
         }
     }
 
@@ -158,6 +161,10 @@ final class ChartViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
+    @Published private(set) var cmcAltcoinLatest: AltcoinSeasonLatest?
+    @Published private(set) var cmcAltcoinHistory: [AltcoinSeasonHistoricalPoint] = []
+    @Published private(set) var cmcFearGreedLatest: FearAndGreedLatest?
+    @Published private(set) var cmcFearGreedHistory: [FearAndGreedHistoricalPoint] = []
 
     // MARK: - Chart appearance settings
 
@@ -255,7 +262,7 @@ final class ChartViewModel: ObservableObject {
 
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
-    private var isFetching = false
+    @Published private(set) var isFetching = false
 
     /// Change across the *visible* window — the warm-up candles are off screen, so
     /// counting them would report a move the user can't see.
@@ -454,6 +461,7 @@ final class ChartViewModel: ObservableObject {
         chartID = config.chartID
         scriptInstances = config.scripts
         portfolioChart = config.portfolioChart
+        coinMarketCapChart = config.coinMarketCapChart
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
@@ -878,6 +886,7 @@ final class ChartViewModel: ObservableObject {
 
     func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
         guard !isPortfolioChart else { return }
+        if coinMarketCapChart != nil { await fetchCoinMarketCap(force: !silent); return }
         // Silent refresh: if a fetch is already running let it finish.
         if silent, isFetching {
             return
@@ -984,6 +993,49 @@ final class ChartViewModel: ObservableObject {
             fetchTask = nil
             reevaluatePine()
         }
+    }
+
+    func fetchCoinMarketCap(force: Bool = false) async {
+        guard let config = coinMarketCapChart else { return }
+        fetchTask?.cancel()
+        fetchGeneration += 1
+        let generation = fetchGeneration
+        errorMessage = nil
+        isFetching = true
+        let task = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.fetchGeneration == generation { self.isFetching = false } }
+            do {
+                switch config.type {
+                case .altcoinSeasonLatest:
+                    let value = try await CoinMarketCapDataProvider.shared.altcoinLatest(force: force)
+                    guard self.fetchGeneration == generation else { return }
+                    self.cmcAltcoinLatest = value; self.lastUpdated = CMCDateParser.parse(value.snapshotTime)
+                case .altcoinSeasonHistorical:
+                    let value = try await CoinMarketCapDataProvider.shared.altcoinHistorical(config.altcoinRange, force: force)
+                    guard self.fetchGeneration == generation, self.coinMarketCapChart?.altcoinRange == config.altcoinRange else { return }
+                    self.cmcAltcoinHistory = value.points.sorted { (CMCDateParser.parse($0.timestamp) ?? .distantPast) < (CMCDateParser.parse($1.timestamp) ?? .distantPast) }
+                    self.lastUpdated = self.cmcAltcoinHistory.last.flatMap { CMCDateParser.parse($0.timestamp) }
+                case .fearAndGreedLatest:
+                    let value = try await CoinMarketCapDataProvider.shared.fearGreedLatest(force: force)
+                    guard self.fetchGeneration == generation else { return }
+                    self.cmcFearGreedLatest = value; self.lastUpdated = CMCDateParser.parse(value.updateTime)
+                case .fearAndGreedHistorical:
+                    let value = try await CoinMarketCapDataProvider.shared.fearGreedHistorical(config.fearGreedRange, force: force)
+                    guard self.fetchGeneration == generation, self.coinMarketCapChart?.fearGreedRange == config.fearGreedRange else { return }
+                    self.cmcFearGreedHistory = value; self.lastUpdated = value.last.flatMap { CMCDateParser.parse($0.timestamp) }
+                }
+            } catch is CancellationError { return }
+            catch { if self.fetchGeneration == generation { self.errorMessage = error.localizedDescription } }
+        }
+        fetchTask = task
+        await task.value
+    }
+
+    func updateCMCConfig(_ update: (inout CoinMarketCapChartConfig) -> Void) {
+        guard var config = coinMarketCapChart else { return }
+        update(&config); coinMarketCapChart = config
+        Task { await fetchCoinMarketCap(force: false) }
     }
 
     /// Fetch all Polymarket series in parallel and update `pmSeriesData`.

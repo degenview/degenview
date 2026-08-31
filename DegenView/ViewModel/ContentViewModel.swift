@@ -35,7 +35,7 @@ final class ContentViewModel: ObservableObject {
     private var replayPreparationTask: Task<Void, Never>?
 
     @Published var chartViewModels: [ChartViewModel] = []
-    var marketChartViewModels: [ChartViewModel] { chartViewModels.filter { !$0.isPortfolioChart } }
+    var marketChartViewModels: [ChartViewModel] { chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil } }
     @Published var selectedTimeRange: TimeRange = .oneDay {
         didSet {
             // Reset candle count to default when timeframe changes
@@ -956,6 +956,14 @@ final class ContentViewModel: ObservableObject {
         markChanged()
     }
 
+    func addCoinMarketCapChart(_ config: CoinMarketCapChartConfig) {
+        let vm = ChartViewModel(ticker: config.type.rawValue, source: .coinMarketCap, displayName: config.type.title)
+        vm.coinMarketCapChart = config
+        chartViewModels.append(vm)
+        persistTickers(); markChanged()
+        if isWindowVisible { Task { await vm.fetchCoinMarketCap() } }
+    }
+
     /// Add a ticker with a chosen data source.
     /// - Parameter displayName: label to show instead of the raw symbol, for sources
     ///   whose symbol is an opaque id (Polymarket CLOB token ids).
@@ -1066,6 +1074,7 @@ final class ContentViewModel: ObservableObject {
                 displayName: vm.displayName,
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
                 portfolioChart: vm.portfolioChart,
+                coinMarketCapChart: vm.coinMarketCapChart,
                 pine: vm.pineConfiguration,
                 chartID: vm.chartID,
                 scripts: vm.scriptInstances

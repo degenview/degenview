@@ -5,6 +5,7 @@ struct AddTickerSheet: View {
     let actionLabel: String
     let onAdd: @MainActor (TickerSearchResult) async throws -> Void
     let onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)?
+    let onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)?
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
     @StateObject private var stockVM = TickerSearchViewModel(
@@ -22,6 +23,7 @@ struct AddTickerSheet: View {
     @StateObject private var portfolioStore = PortfolioStore.shared
     @State private var portfolioID: UUID?
     @State private var portfolioKind: PortfolioChartKind = .valueChart
+    @State private var cmcType: CoinMarketCapChartType = .altcoinSeasonHistorical
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openSettings) private var openSettings
@@ -30,11 +32,13 @@ struct AddTickerSheet: View {
         title: String = "Add Chart",
         actionLabel: String = "Add",
         onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)? = nil,
+        onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)? = nil,
         onAdd: @escaping @MainActor (TickerSearchResult) async throws -> Void
     ) {
         self.title = title
         self.actionLabel = actionLabel
         self.onAddPortfolio = onAddPortfolio
+        self.onAddCoinMarketCap = onAddCoinMarketCap
         self.onAdd = onAdd
     }
 
@@ -45,6 +49,7 @@ struct AddTickerSheet: View {
         case crypto = "Crypto"
         case stocks = "Stocks"
         case polymarket = "Polymarket"
+        case coinMarketCap = "CoinMarketCap"
         case portfolio = "Portfolio"
     }
 
@@ -54,7 +59,7 @@ struct AddTickerSheet: View {
         case .crypto: return searchVM.selectedResult
         case .stocks: return stockVM.selectedResult
         case .polymarket: return polymarketVM.selectedResult
-        case .portfolio: return nil
+        case .coinMarketCap, .portfolio: return nil
         }
     }
 
@@ -64,7 +69,9 @@ struct AddTickerSheet: View {
                 .font(.headline)
 
             Picker("", selection: $selectedTab) {
-                ForEach(Tab.allCases.filter { $0 != .portfolio || onAddPortfolio != nil }, id: \.self) { tab in
+                ForEach(Tab.allCases.filter {
+                    ($0 != .portfolio || onAddPortfolio != nil) && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
+                }, id: \.self) { tab in
                     Text(tab.rawValue).tag(tab)
                 }
             }
@@ -84,6 +91,8 @@ struct AddTickerSheet: View {
                     showsStatus: false,
                     onCommitResult: { addTicker($0) }
                 )
+            case .coinMarketCap:
+                coinMarketCapTab
             case .portfolio:
                 portfolioTab
             }
@@ -105,12 +114,15 @@ struct AddTickerSheet: View {
                 .keyboardShortcut(.escape)
 
                 Button(actionLabel) {
-                    if selectedTab == .portfolio { addPortfolio() } else if let selected = activeSelection {
+                    if selectedTab == .portfolio { addPortfolio() }
+                    else if selectedTab == .coinMarketCap { addCoinMarketCap() }
+                    else if let selected = activeSelection {
                         addTicker(selected)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedTab == .portfolio ? portfolioStore.activePortfolios.isEmpty : activeSelection == nil)
+                .disabled(selectedTab == .portfolio ? portfolioStore.activePortfolios.isEmpty :
+                    selectedTab == .coinMarketCap ? false : activeSelection == nil)
                 .keyboardShortcut(.return)
             }
         }
@@ -162,6 +174,39 @@ struct AddTickerSheet: View {
         guard let onAddPortfolio else { return }
         onAddPortfolio(.init(portfolioID: portfolioID, kind: portfolioKind))
         dismiss()
+    }
+
+    private func addCoinMarketCap() {
+        onAddCoinMarketCap?(CoinMarketCapChartConfig(type: cmcType))
+        dismiss()
+    }
+
+    private var coinMarketCapTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Market-wide CoinMarketCap indices").font(.caption).foregroundStyle(.secondary)
+            ForEach(CoinMarketCapChartType.allCases) { type in
+                Button { cmcType = type } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(type.title).fontWeight(.semibold)
+                            Text(cmcDescription(type)).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: cmcType == type ? "checkmark.circle.fill" : "circle")
+                            .foregroundStyle(cmcType == type ? .blue : .secondary)
+                    }.padding(10).background(cmcType == type ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                }.buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func cmcDescription(_ type: CoinMarketCapChartType) -> String {
+        switch type {
+        case .altcoinSeasonHistorical: "Historical 0–100 index chart"
+        case .altcoinSeasonLatest: "Current Bitcoin/Altcoin season reading"
+        case .fearAndGreedHistorical: "Historical market-sentiment chart"
+        case .fearAndGreedLatest: "Current sentiment gauge"
+        }
     }
 
     // MARK: - Stocks Tab

@@ -113,6 +113,8 @@ struct ContentView: View {
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(onAddPortfolio: { config in
                 contentViewModel.addPortfolioChart(config)
+            }, onAddCoinMarketCap: { config in
+                contentViewModel.addCoinMarketCapChart(config)
             }) { selected in
                 let displayName: String? = {
                     guard selected.source == .polymarket else { return nil }

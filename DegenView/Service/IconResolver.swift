@@ -155,7 +155,7 @@ actor IconResolver {
                 }
             }
 
-        case .binance, .alpaca, .polymarket:
+        case .binance, .alpaca, .polymarket, .coinMarketCap:
             break
         }
 
@@ -185,7 +185,7 @@ actor IconResolver {
             image = cache.idMap[ticker.lowercased()] ?? cache.symbolMap[symbol.lowercased()]
         case .binance, .dexscreener, .alpaca:
             image = cache.symbolMap[symbol.lowercased()]
-        case .polymarket:
+        case .polymarket, .coinMarketCap:
             // Market questions never key into a coin symbol map.
             image = nil
         }

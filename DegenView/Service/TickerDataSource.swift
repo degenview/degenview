@@ -112,6 +112,12 @@ extension TickerDataSource {
     }
 }
 
+final class CoinMarketCapTickerDataSource: TickerDataSource {
+    let type: DataSourceType = .coinMarketCap
+    func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] { [] }
+    func searchTickers(query: String) async throws -> [TickerSearchResult] { [] }
+}
+
 // MARK: - Factory
 
 final class DataSourceFactory {
@@ -122,6 +128,7 @@ final class DataSourceFactory {
     private lazy var dexScreenerService = DEXScreenerService()
     private lazy var alpacaService = AlpacaAPIService()
     private lazy var polymarketService = PolymarketService()
+    private lazy var coinMarketCapService = CoinMarketCapTickerDataSource()
 
     func service(for type: DataSourceType) -> TickerDataSource {
         switch type {
@@ -130,6 +137,7 @@ final class DataSourceFactory {
         case .dexscreener: return dexScreenerService
         case .alpaca: return alpacaService
         case .polymarket: return polymarketService
+        case .coinMarketCap: return coinMarketCapService
         }
     }
 

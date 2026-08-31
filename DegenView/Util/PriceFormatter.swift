@@ -10,6 +10,13 @@ enum PriceScale {
 
 /// Formatting utilities for chart price labels.
 enum PriceFormatter {
+    static func compact(_ value: Double) -> String {
+        let units: [(Double, String)] = [(1_000_000_000_000, "T"), (1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")]
+        for (divisor, suffix) in units where abs(value) >= divisor {
+            return "$" + (value / divisor).formatted(.number.precision(.fractionLength(0...2))) + suffix
+        }
+        return value.formatted(.currency(code: "USD").precision(.fractionLength(0...2)))
+    }
 
     /// Fraction digits used for probabilities when the chart hasn't pinned a count.
     private static let defaultProbabilityDigits = 1

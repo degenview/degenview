@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsTab: String {
     case appearance
     case alpaca
+    case coinMarketCap
     case notifications
 }
 
@@ -18,12 +19,53 @@ struct AppSettingsView: View {
             AlpacaSettingsView()
                 .tabItem { Label("Alpaca", systemImage: "chart.xyaxis.line") }
                 .tag(SettingsTab.alpaca)
+            CoinMarketCapSettingsView()
+                .tabItem { Label("CoinMarketCap", systemImage: "gauge.with.dots.needle.50percent") }
+                .tag(SettingsTab.coinMarketCap)
             NotificationSettingsView()
                 .tabItem { Label("Notifications", systemImage: "bell") }
                 .tag(SettingsTab.notifications)
         }
         .frame(width: 560, height: 500)
         .padding(20)
+    }
+}
+
+private struct CoinMarketCapSettingsView: View {
+    @State private var apiKey = ""
+    @State private var configured = CoinMarketCapCredentialStore.isConfigured
+    @State private var status: String?
+    @State private var isTesting = false
+
+    var body: some View {
+        Form {
+            Section("CoinMarketCap") {
+                SecureField("API Key", text: $apiKey)
+                LabeledContent("Status", value: configured ? "API key configured" : "Not configured")
+            }
+            Section {
+                Text("CoinMarketCap can be used without an API key. Adding a CoinMarketCap API key gives this app access to higher API rate limits.")
+                    .foregroundStyle(.secondary)
+                Link("Get API Key", destination: URL(string: "https://pro.coinmarketcap.com/signup/")!)
+            }
+            HStack {
+                if let status { Text(status).font(.caption).foregroundStyle(.secondary) }
+                Spacer()
+                Button("Remove API Key", role: .destructive) {
+                    do { try CoinMarketCapCredentialStore.remove(); apiKey = ""; configured = false; status = "Removed. Public API mode is active." }
+                    catch { status = "Could not remove the key: \(error.localizedDescription)" }
+                }.disabled(!configured)
+                Button("Test Connection") {
+                    isTesting = true
+                    Task { do { _ = try await CoinMarketCapDataProvider.shared.fearGreedLatest(force: true); status = "Connection successful." }
+                        catch { status = error.localizedDescription }; isTesting = false }
+                }.disabled(isTesting)
+                Button("Save") {
+                    do { try CoinMarketCapCredentialStore.save(apiKey); configured = true; apiKey = ""; status = "Saved securely in Keychain." }
+                    catch { status = "Could not save: \(error.localizedDescription)" }
+                }.buttonStyle(.borderedProminent).disabled(apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }.padding(.top, 12)
     }
 }
 

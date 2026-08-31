@@ -25,6 +25,7 @@
 		C50000000000000000000003 /* ChartPlotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000103 /* ChartPlotTests.swift */; };
 		C50000000000000000000004 /* IndicatorsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000104 /* IndicatorsTests.swift */; };
 		C50000000000000000000005 /* KlineCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000105 /* KlineCacheTests.swift */; };
+		CMC000000000000000000003 /* CoinMarketCapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000103 /* CoinMarketCapTests.swift */; };
 		B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */; };
 		B90000000000000000000001 /* PriceAlertModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000101 /* PriceAlertModels.swift */; };
 		B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000102 /* LocalPriceAlertEngine.swift */; };
@@ -113,6 +114,8 @@
 		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
 		C10000000000000000000005 /* ChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000105 /* ChartStyle.swift */; };
 		C10000000000000000000006 /* LineChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000106 /* LineChartView.swift */; };
+		CMC000000000000000000001 /* CoinMarketCapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000101 /* CoinMarketCapService.swift */; };
+		CMC000000000000000000002 /* CoinMarketCapChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000102 /* CoinMarketCapChartView.swift */; };
 		C10000000000000000000007 /* PolymarketResultRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000107 /* PolymarketResultRow.swift */; };
 		C10000000000000000000008 /* SearchPane.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000108 /* SearchPane.swift */; };
 		C10000000000000000000009 /* SearchDebouncer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000109 /* SearchDebouncer.swift */; };
@@ -188,6 +191,7 @@
 		C50000000000000000000103 /* ChartPlotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlotTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000104 /* IndicatorsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorsTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000105 /* KlineCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineCacheTests.swift; sourceTree = "<group>"; };
+		CMC000000000000000000103 /* CoinMarketCapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapTests.swift; sourceTree = "<group>"; };
 		B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngineTests.swift; sourceTree = "<group>"; };
 		B90000000000000000000101 /* PriceAlertModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertModels.swift; sourceTree = "<group>"; };
 		B90000000000000000000102 /* LocalPriceAlertEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPriceAlertEngine.swift; sourceTree = "<group>"; };
@@ -246,6 +250,8 @@
 		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
 		C10000000000000000000105 /* ChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStyle.swift; sourceTree = "<group>"; };
 		C10000000000000000000106 /* LineChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineChartView.swift; sourceTree = "<group>"; };
+		CMC000000000000000000101 /* CoinMarketCapService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapService.swift; sourceTree = "<group>"; };
+		CMC000000000000000000102 /* CoinMarketCapChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapChartView.swift; sourceTree = "<group>"; };
 		C10000000000000000000107 /* PolymarketResultRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketResultRow.swift; sourceTree = "<group>"; };
 		C10000000000000000000108 /* SearchPane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchPane.swift; sourceTree = "<group>"; };
 		C10000000000000000000109 /* SearchDebouncer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchDebouncer.swift; sourceTree = "<group>"; };
@@ -417,6 +423,7 @@
 				B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */,
 				A0000000000000000000011B /* DEXScreenerService.swift */,
 				C10000000000000000000102 /* PolymarketService.swift */,
+				CMC000000000000000000101 /* CoinMarketCapService.swift */,
 				E167CD7B739B528C0792D361 /* KlineCache.swift */,
 				62da476d2ea14915af7cffe9 /* ImageCache.swift */,
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
@@ -465,6 +472,7 @@
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
 				A00000000000000000000112 /* CandleChartView.swift */,
 				C10000000000000000000106 /* LineChartView.swift */,
+				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
@@ -511,6 +519,7 @@
 				C50000000000000000000103 /* ChartPlotTests.swift */,
 				C50000000000000000000104 /* IndicatorsTests.swift */,
 				C50000000000000000000105 /* KlineCacheTests.swift */,
+				CMC000000000000000000103 /* CoinMarketCapTests.swift */,
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
@@ -640,6 +649,7 @@
 				C50000000000000000000003 /* ChartPlotTests.swift in Sources */,
 				C50000000000000000000004 /* IndicatorsTests.swift in Sources */,
 				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
+				CMC000000000000000000003 /* CoinMarketCapTests.swift in Sources */,
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
@@ -720,6 +730,8 @@
 				C10000000000000000000004 /* ChartPlot.swift in Sources */,
 				C10000000000000000000005 /* ChartStyle.swift in Sources */,
 				C10000000000000000000006 /* LineChartView.swift in Sources */,
+				CMC000000000000000000001 /* CoinMarketCapService.swift in Sources */,
+				CMC000000000000000000002 /* CoinMarketCapChartView.swift in Sources */,
 				C10000000000000000000007 /* PolymarketResultRow.swift in Sources */,
 				C10000000000000000000008 /* SearchPane.swift in Sources */,
 				C10000000000000000000009 /* SearchDebouncer.swift in Sources */,
