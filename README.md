@@ -2,9 +2,9 @@
 
 ![DegenView showing crypto, stock, and prediction-market charts](resources/screenshot.png)
 
-A native macOS market dashboard for watching crypto, stocks, and prediction markets in
-customizable candlestick and line charts. Built with SwiftUI and an AppKit `Canvas`, with
-no external dependencies.
+A native macOS market dashboard for watching crypto, stocks, prediction markets, and
+CoinMarketCap market-wide indices in customizable charts and metric widgets. Built with
+SwiftUI and an AppKit `Canvas`, with no external dependencies.
 
 ## Features
 
@@ -16,6 +16,9 @@ no external dependencies.
   are stored securely in Keychain)
 - **Prediction markets** — Search Polymarket events, chart probabilities as percentages,
   and toggle the outcome series shown for multi-outcome markets
+- **CoinMarketCap indices** — Add historical or latest Altcoin Season and CMC Crypto Fear
+  and Greed charts. The official Public API works without a key; an optional key stored in
+  Keychain enables higher authenticated rate limits
 - **Live updates** — Binance crypto and Alpaca stock charts receive WebSocket updates;
   other sources refresh automatically
 - **Six timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y, with scroll-wheel zoom to change the
@@ -24,6 +27,16 @@ no external dependencies.
   being treated as a duplicate
 
 ### Charts and analysis
+
+- **Market-wide index widgets** — Altcoin Season historical charts use API-supported 7D,
+  30D, and 90D ranges with Bitcoin/neutral/altcoin regime context. Fear and Greed history
+  supports 7D, 1M, 3M, 1Y, and paginated ALL views
+- **Current index dashboards** — Altcoin Season Latest presents the current value,
+  classification, yearly high/low, and altcoin market cap; Fear and Greed Latest uses a
+  responsive semicircular sentiment gauge
+- **Fixed index scale** — CoinMarketCap historical charts retain a meaningful 0–100 Y-axis
+  with right-side labels, optional threshold zones and area fill, and classification-aware
+  hover details
 
 - **Native chart renderer** — Hand-drawn OHLC candlesticks, wicks, doji candles, line
   series, grid, time axis, adaptive price precision, current-price overlay, and price
@@ -162,7 +175,8 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
 - **Two layouts** — A vertical chart stack or responsive two-column grid, both with
   drag-and-drop ticker reordering
 - **Saved views** — Save and reload named ticker sets with their timeframe, layout, zoom,
-  source, indicator, and appearance settings. Saved views are shared across tabs
+  source, indicator, appearance, and CoinMarketCap chart/range settings. Saved views are
+  shared across tabs
 - **Unsaved-change tracking** — A contextual toolbar action appears when a loaded view has
   changed
 - **Favorites sidebar** — Keep an app-wide, persistent, reorderable watchlist and open any
@@ -171,7 +185,8 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
   fallback, so every card header remains aligned
 - **Appearance** — System, Light, and Dark themes
 - **Efficient background behavior** — Hidden tabs suspend polling and live streams;
-  responses and rate-limited CoinGecko data are cached
+  responses and rate-limited CoinGecko data are cached. CoinMarketCap requests use shared
+  in-flight coalescing and freshness-aware caches rather than polling at dashboard speed
 
 ## Requirements
 
@@ -179,6 +194,7 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
 - Xcode 16 or later
 - Swift 6
 - A free Alpaca account and API keys only if you want stock data
+- No CoinMarketCap API key is required; adding one in Settings is optional
 
 ## Build and run
 
@@ -197,9 +213,10 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 
 ## Usage
 
-1. Click the toolbar **+** and choose Crypto, Stocks, or Polymarket. Crypto search fans
-   out across Binance, CoinGecko, and DEXScreener; stock search requires Alpaca keys in
-   **Settings → Alpaca**.
+1. Click the toolbar **+** and choose Crypto, Stocks, Polymarket, CoinMarketCap, or
+   Portfolio. Crypto search fans out across Binance, CoinGecko, and DEXScreener; stock
+   search requires Alpaca keys in **Settings → Alpaca**. CoinMarketCap offers four
+   market-wide index charts and works keylessly.
 2. Pick a timeframe in the toolbar and scroll over a chart to zoom its history. Drag the
    price axis to zoom vertically.
 3. Open a chart's gear menu to change its instrument, colors, decimal precision, and
@@ -223,6 +240,9 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 11. Use a chart card's bell to create an absolute or percentage price alert. Open the
     adjacent bell—or the Portfolio toolbar bell—to manage rules and history in the Alerts
     window. Notification behavior is under **Settings → Notifications**.
+12. Optionally add a CoinMarketCap key under **Settings → CoinMarketCap**. Save and remove
+    operations use macOS Keychain, and open CMC charts adopt the new request mode without
+    an application restart.
 
 ### Example Pine indicator
 
@@ -263,6 +283,7 @@ known differences.
 | CoinGecko | No | Complete displayed bars |
 | DEXScreener / GeckoTerminal | No | Complete displayed bars |
 | Polymarket | No | Complete displayed observations |
+| CoinMarketCap indices | No | Dedicated index history and latest-value widgets; not OHLCV |
 
 **Auto** chooses the finest provider-supported interval that fits the loaded span within
 the 100,000-source-bar replay budget. Intervals that cannot cover the span accurately are
@@ -284,6 +305,9 @@ cover weighted-average basis, fees, buys/sells/transfers, realized and unrealize
 multi-portfolio aggregation, history invalidation, asset remapping, privacy redaction,
 CoinMarketCap parsing/mapping/FX handling, chronological import, deduplication, and
 duplicate-safe quote refresh.
+CoinMarketCap tests cover keyless and authenticated request construction, response
+decoding, mixed timestamp formats, Altcoin Season regime boundaries, live API status
+variations, and persistence without credential leakage.
 Pine tests compile and execute the required plot, SMA, history, EMA crossover, RSI, and
 persistent-state scripts over deterministic OHLCV fixtures. They also cover v6
 diagnostics, named visual arguments, realtime rollback, and `varip` behavior.

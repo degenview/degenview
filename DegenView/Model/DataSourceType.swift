@@ -6,6 +6,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     case dexscreener = "DEXScreener"
     case alpaca = "Alpaca (IEX)"
     case polymarket = "Polymarket"
+    case coinMarketCap = "CoinMarketCap"
 
     /// Crypto price sources — the set the multi-source ticker search fans out to.
     /// Polymarket is excluded: prediction markets get their own search pane.
@@ -30,7 +31,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     var providesVolume: Bool {
         switch self {
         case .binance, .dexscreener, .alpaca: return true
-        case .coingecko, .polymarket: return false
+        case .coingecko, .polymarket, .coinMarketCap: return false
         }
     }
 
@@ -46,7 +47,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     var fetchesByCount: Bool {
         switch self {
         case .binance, .dexscreener, .coingecko, .alpaca: return true
-        case .polymarket: return false
+        case .polymarket, .coinMarketCap: return false
         }
     }
 
@@ -57,6 +58,7 @@ enum DataSourceType: String, CaseIterable, Codable {
         case .dexscreener: return "arrow.triangle.swap"
         case .alpaca: return "chart.xyaxis.line"
         case .polymarket: return "chart.line.flattrend.xyaxis"
+        case .coinMarketCap: return "gauge.with.dots.needle.50percent"
         }
     }
 }
@@ -117,6 +119,47 @@ struct PortfolioChartConfig: Codable, Equatable, Hashable {
     var range: PortfolioChartRange = .oneMonth
 }
 
+enum CoinMarketCapChartType: String, Codable, CaseIterable, Identifiable {
+    case altcoinSeasonHistorical = "coinmarketcap.altcoinSeasonHistorical"
+    case altcoinSeasonLatest = "coinmarketcap.altcoinSeasonLatest"
+    case fearAndGreedHistorical = "coinmarketcap.fearAndGreedHistorical"
+    case fearAndGreedLatest = "coinmarketcap.fearAndGreedLatest"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .altcoinSeasonHistorical: "Altcoin Season Index Historical"
+        case .altcoinSeasonLatest: "Altcoin Season Index Latest"
+        case .fearAndGreedHistorical: "CMC Crypto Fear and Greed Historical"
+        case .fearAndGreedLatest: "CMC Crypto Fear and Greed Latest"
+        }
+    }
+    var isHistorical: Bool { self == .altcoinSeasonHistorical || self == .fearAndGreedHistorical }
+}
+
+enum CMCAltcoinRange: String, Codable, CaseIterable, Identifiable {
+    case sevenDays = "7d", thirtyDays = "30d", ninetyDays = "90d"
+    var id: String { rawValue }
+    var label: String { rawValue.uppercased() }
+}
+
+enum CMCFearGreedRange: String, Codable, CaseIterable, Identifiable {
+    case sevenDays = "7D", oneMonth = "1M", threeMonths = "3M", oneYear = "1Y", all = "ALL"
+    var id: String { rawValue }
+    var dayCount: Int? {
+        switch self { case .sevenDays: 7; case .oneMonth: 31; case .threeMonths: 90; case .oneYear: 365; case .all: nil }
+    }
+}
+
+struct CoinMarketCapChartConfig: Codable, Equatable, Hashable {
+    var type: CoinMarketCapChartType
+    var altcoinRange: CMCAltcoinRange = .sevenDays
+    var fearGreedRange: CMCFearGreedRange = .oneMonth
+    var showAreaFill = true
+    var showThresholdZones = true
+    var showSupportingStatistics = true
+}
+
 /// Persisted config for a single ticker — symbol + which API to fetch from.
 struct TickerConfig: Codable, Equatable, Hashable {
     /// Stable identity for script attachment and migration. Older documents synthesize one.
@@ -163,6 +206,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
 
     /// Present when this slot is a portfolio card rather than a market chart.
     var portfolioChart: PortfolioChartConfig? = nil
+    var coinMarketCapChart: CoinMarketCapChartConfig? = nil
 
     /// One isolated script instance for this market chart. Draft and last-valid source
     /// are stored separately so a compiler error never blanks an already working plot.
@@ -178,6 +222,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
         trendLines: [TrendLine]? = nil, displayName: String? = nil,
         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
+        coinMarketCapChart: CoinMarketCapChartConfig? = nil,
         pine: PineConfiguration? = nil, chartID: UUID = UUID(),
         scripts: [ChartScriptInstance] = []
     ) {
@@ -198,6 +243,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         self.displayName = displayName
         self.pmSeries = pmSeries
         self.portfolioChart = portfolioChart
+        self.coinMarketCapChart = coinMarketCapChart
         self.pine = pine
         self.scripts = scripts
     }
@@ -205,7 +251,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
             yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
-            trendLines, displayName, pmSeries, portfolioChart, pine, scripts
+            trendLines, displayName, pmSeries, portfolioChart, coinMarketCapChart, pine, scripts
     }
 
     init(from decoder: Decoder) throws {
@@ -227,6 +273,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
         pmSeries = try c.decodeIfPresent([PmSeriesConfig].self, forKey: .pmSeries)
         portfolioChart = try c.decodeIfPresent(PortfolioChartConfig.self, forKey: .portfolioChart)
+        coinMarketCapChart = try c.decodeIfPresent(CoinMarketCapChartConfig.self, forKey: .coinMarketCapChart)
         pine = try c.decodeIfPresent(PineConfiguration.self, forKey: .pine)
         scripts = try c.decodeIfPresent([ChartScriptInstance].self, forKey: .scripts) ?? []
     }

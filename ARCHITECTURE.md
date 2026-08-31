@@ -11,7 +11,7 @@ DegenView/
 │   ├── PineModels.swift               # Pine diagnostics, inputs, persistence, visual output
 │   ├── Indicators.swift               # RSI, EMA, Bollinger, and Supertrend calculations
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
-│   ├── DataSourceType.swift           # Sources and persisted ticker configuration
+│   ├── DataSourceType.swift           # Sources, CMC chart identity, persisted card config
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
 │   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
 │   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
@@ -29,18 +29,19 @@ DegenView/
 ├── View/
 │   ├── CandleChartView.swift          # AppKit Canvas candlestick renderer
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
+│   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── ChartCardView.swift            # Card header, chart, editor, errors
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
-│   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket search
+│   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
-│   └── AppSettingsView.swift          # Theme and Alpaca credentials
+│   └── AppSettingsView.swift          # Theme, provider credentials, notifications
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
     ├── PineEngine.swift               # Ranged lexer, AST parser, semantic compiler
@@ -61,6 +62,7 @@ DegenView/
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PolymarketService.swift        # Event search and probability history
+    ├── CoinMarketCapService.swift     # Keychain, typed API client/provider, cache and retry
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs, saved views, and session persistence
     ├── FavoritesStore.swift           # Shared watchlist persistence
@@ -73,16 +75,20 @@ DegenView/
 
 1. Each native window/tab renders one `ContentView` backed by its own
    `ContentViewModel`; `NSWindow.tabGroup` remains the authority for tab layout.
-2. Each card owns a `ChartViewModel`, which fetches a shared `KlineData` representation
-   through the `TickerDataSource` selected by `DataSourceFactory`.
+2. Each card owns a `ChartViewModel`. Tradable market charts fetch `KlineData` through the
+   `TickerDataSource` selected by `DataSourceFactory`; CoinMarketCap cards retain typed
+   index models and never force non-price metrics into OHLCV.
 3. Indicator values are calculated from a warm-up buffer and trimmed to the visible
    candles before the custom Canvas renderer draws them.
 4. Binance and Alpaca streams update the latest matching candle in place. The five-second
    refresh path covers other sources and recovery, while hidden tabs suspend both paths.
 5. Candle responses are cached by symbol, interval, and limit. CoinGecko requests share a
-   rate limiter, and its cache is flushed to disk when the app quits.
+   rate limiter, and its cache is flushed to disk when the app quits. The shared
+   `CoinMarketCapClient` coalesces identical in-flight requests and uses a 15-minute cache
+   for latest/Altcoin data and a six-hour cache for daily Fear and Greed history.
 6. `TabsStore`, `FavoritesStore`, and `DrawingStore` persist independent JSON documents in
-   Application Support; Alpaca secrets live in Keychain rather than JSON.
+   Application Support. Alpaca and optional CoinMarketCap secrets live in Keychain rather
+   than JSON; only CMC chart type, range, and display settings enter workspace state.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
    timestamp and one cancellable playback task.
@@ -98,3 +104,54 @@ DegenView/
     immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
     persisted separately from last-valid applied source, so invalid edits do not remove
     the active result. Pine outputs are never shared between tabs or cards.
+11. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
+    `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
+    stale range response cannot replace a newer selection. CMC cards are excluded from
+    replay, price alerts, WebSockets, Pine evaluation, and OHLCV-specific controls.
+
+## CoinMarketCap data flow
+
+```text
+AppSettingsView
+       │
+       ▼
+CoinMarketCapCredentialStore (macOS Keychain)
+       │ read when constructing each network request
+       ▼
+CoinMarketCapClient
+  ├── public `/public-api` root when no key exists
+  ├── Pro root + `X-CMC_PRO_API_KEY` when configured
+  ├── standardized status-envelope validation
+  ├── bounded exponential retry with jitter for 429 and 5xx
+  ├── URLSession protocol-cache support
+  └── shared response cache and in-flight request coalescing
+       │
+       ▼
+CoinMarketCapDataProvider
+  ├── Altcoin Season latest
+  ├── Altcoin Season historical (7d/30d/90d)
+  ├── Fear and Greed latest
+  └── Fear and Greed historical (`start`/`limit`, max 500 per page)
+       │
+       ▼
+ChartViewModel (MainActor, cancellation/generation guarded)
+       │
+       ▼
+CoinMarketCapChartView
+  ├── fixed 0–100 historical plot and tooltip
+  ├── Altcoin Season regime scale and supporting statistics
+  └── responsive Fear and Greed speedometer
+```
+
+The client resolves Keychain state when constructing a request, so saving or removing a
+key changes the next network request without restarting or rebuilding open chart models.
+Keyed and keyless endpoints share response models and cache identity; authentication
+affects access and rate limits, not the represented data product. HTTP 200 responses are
+still rejected when CMC's embedded `status.error_code` is nonzero. The decoder accepts
+both numeric and numeric-string status codes observed from the live API.
+
+The existing five-second visible-tab refresh coordinator may ask CMC cards to refresh,
+but client TTLs suppress network traffic until upstream data is stale. Hidden or occluded
+tabs cancel refresh work. Manual refresh bypasses freshness while still participating in
+in-flight coalescing. Fear and Greed ALL history requests sequential 500-record pages until
+the API returns a short page; all historical points are normalized oldest to newest.

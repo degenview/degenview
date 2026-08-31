@@ -59,6 +59,11 @@ struct ChartCardView: View {
                 cardHeight: cardHeight,
                 onRemove: onRemove
             )
+        } else if viewModel.coinMarketCapChart != nil {
+            CoinMarketCapChartView(
+                viewModel: viewModel, chartHeight: chartHeight, cardHeight: cardHeight,
+                onRemove: onRemove, onChanged: onStyleChanged
+            )
         } else {
             marketCard
         }

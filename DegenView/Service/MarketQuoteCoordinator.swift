@@ -91,7 +91,7 @@ actor MarketQuoteCoordinator {
         case .binance: 180
         case .alpaca: 7_200
         case .coingecko, .dexscreener: 1_800
-        case .polymarket: 0
+        case .polymarket, .coinMarketCap: 0
         }
     }
 }
