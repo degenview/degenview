@@ -44,6 +44,9 @@ struct ContentView: View {
     @State private var showTradingPanel = false
     @State private var paperManagerTab: PaperManagerTab = .positions
     @State private var orderTicket: PaperOrderTicketContext?
+    @State private var draggedChartID: UUID?
+    @State private var gridDropTarget: ChartGridDropTarget?
+    @State private var previewedNewColumnChartID: UUID?
 
     init(tabID: UUID) {
         _contentViewModel = StateObject(wrappedValue: ContentViewModel(tabID: tabID))
@@ -111,11 +114,14 @@ struct ContentView: View {
             Text("The tab name is also the window title.")
         }
         .sheet(isPresented: $showAddSheet) {
-            AddTickerSheet(onAddPortfolio: { config in
-                contentViewModel.addPortfolioChart(config)
-            }, onAddCoinMarketCap: { config in
-                contentViewModel.addCoinMarketCapChart(config)
-            }) { selected in
+            AddTickerSheet(
+                onAddPortfolio: { config in
+                    contentViewModel.addPortfolioChart(config)
+                },
+                onAddCoinMarketCap: { config in
+                    contentViewModel.addCoinMarketCapChart(config)
+                }
+            ) { selected in
                 let displayName: String? = {
                     guard selected.source == .polymarket else { return nil }
                     if let series = selected.pmSeries, series.count > 1 {
@@ -243,6 +249,11 @@ struct ContentView: View {
                     GeometryReader { geometry in
                         let available = geometry.size.height
                         let cardCount = contentViewModel.chartViewModels.count
+                        let gridColumnCount =
+                            contentViewModel.chartColumns.count
+                            + (previewedNewColumnChartID == nil ? 0 : 1)
+                        let maxGridRows = contentViewModel.chartColumns.map(\.chartIDs.count).max() ?? 0
+                        let gridSizingCount = maxGridRows * max(1, gridColumnCount)
 
                         let naturalHeight: CGFloat = {
                             if contentViewModel.layoutMode == .vertical {
@@ -251,14 +262,17 @@ struct ContentView: View {
                                 )
                             } else {
                                 return ChartLayout.gridPlotHeight(
-                                    available: available, cardCount: cardCount
+                                    available: available,
+                                    cardCount: gridSizingCount,
+                                    columnCount: max(1, gridColumnCount)
                                 )
                             }
                         }()
 
                         // Vertical cards retain their readable minimum and scroll.
                         // Grid cards may shrink further so every row remains visible.
-                        let chartHeight = contentViewModel.layoutMode == .vertical
+                        let chartHeight =
+                            contentViewModel.layoutMode == .vertical
                             ? max(ChartLayout.chartMinHeight, naturalHeight)
                             : naturalHeight
 
@@ -284,37 +298,13 @@ struct ContentView: View {
                             .frame(height: available)
                             .scrollIndicators(.never)
                         } else {
-                            LazyVGrid(
-                                columns: [GridItem(.flexible(), spacing: 0), GridItem(.flexible(), spacing: 0)],
-                                spacing: 0
-                            ) {
-                                ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                    chartCard(
-                                        vm,
-                                        height: chartHeight,
-                                        cardHeight: ChartLayout.gridCardHeight(
-                                            available: available, cardCount: cardCount
-                                        )
-                                    )
-                                    .padding(ChartLayout.gridCardInset(
-                                        available: available, cardCount: cardCount
-                                    ))
-                                    .onDrag {
-                                        NSItemProvider(object: vm.uniqueID as NSString)
-                                    }
-                                    .onDrop(
-                                        of: [.utf8PlainText],
-                                        delegate: ReorderDropDelegate(
-                                            targetTicker: vm.uniqueID,
-                                            viewModel: contentViewModel
-                                        )
-                                    )
-                                }
-                            }
-                            .padding(ChartLayout.gridOuterInset(
-                                available: available, cardCount: cardCount
-                            ))
-                            .frame(height: available)
+                            chartGrid(
+                                availableHeight: available,
+                                availableWidth: geometry.size.width,
+                                chartHeight: chartHeight,
+                                sizingCardCount: gridSizingCount,
+                                columnCount: max(1, gridColumnCount)
+                            )
                         }
                     }
                 }
@@ -485,6 +475,205 @@ struct ContentView: View {
             }
             .accessibilityLabel("Add Ticker")
         }
+    }
+
+    // MARK: - Chart Grid
+
+    @ViewBuilder
+    private func chartGrid(
+        availableHeight: CGFloat,
+        availableWidth: CGFloat,
+        chartHeight: CGFloat,
+        sizingCardCount: Int,
+        columnCount: Int
+    ) -> some View {
+        let cardHeight = ChartLayout.gridCardHeight(
+            available: availableHeight,
+            cardCount: sizingCardCount,
+            columnCount: columnCount
+        )
+        let cardInset = ChartLayout.gridCardInset(
+            available: availableHeight,
+            cardCount: sizingCardCount,
+            columnCount: columnCount
+        )
+        let canAddColumn = ChartLayout.canAddColumn(
+            availableWidth: availableWidth,
+            currentColumnCount: contentViewModel.chartColumns.count
+        )
+
+        ZStack(alignment: .trailing) {
+            HStack(alignment: .top, spacing: 0) {
+                ForEach(contentViewModel.chartColumns) { column in
+                    VStack(spacing: 0) {
+                        ForEach(contentViewModel.charts(in: column), id: \.chartID) { vm in
+                            chartCard(vm, height: chartHeight, cardHeight: cardHeight)
+                                .opacity(previewedNewColumnChartID == vm.chartID ? 0.35 : 1)
+                                .padding(cardInset)
+                                .overlay(alignment: .top) {
+                                    if gridDropTarget
+                                        == .existing(columnID: column.id, before: vm.chartID)
+                                    {
+                                        Capsule()
+                                            .fill(Color.accentColor)
+                                            .frame(height: 3)
+                                            .padding(.horizontal, 8)
+                                            .offset(y: -1.5)
+                                    }
+                                }
+                                .onDrag {
+                                    draggedChartID = vm.chartID
+                                    return NSItemProvider(object: vm.chartID.uuidString as NSString)
+                                }
+                                .onDrop(
+                                    of: [.utf8PlainText],
+                                    delegate: ChartGridDropDelegate(
+                                        destination: .existing(columnID: column.id, before: vm.chartID),
+                                        viewModel: contentViewModel,
+                                        draggedChartID: $draggedChartID,
+                                        activeTarget: $gridDropTarget,
+                                        previewedChartID: $previewedNewColumnChartID
+                                    )
+                                )
+                        }
+
+                        Color.clear
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minHeight: 20)
+                            .contentShape(Rectangle())
+                            .overlay(alignment: .top) {
+                                if gridDropTarget == .existing(columnID: column.id, before: nil) {
+                                    Capsule()
+                                        .fill(Color.accentColor)
+                                        .frame(height: 3)
+                                        .padding(.horizontal, 8)
+                                }
+                            }
+                            .onDrop(
+                                of: [.utf8PlainText],
+                                delegate: ChartGridDropDelegate(
+                                    destination: .existing(columnID: column.id, before: nil),
+                                    viewModel: contentViewModel,
+                                    draggedChartID: $draggedChartID,
+                                    activeTarget: $gridDropTarget,
+                                    previewedChartID: $previewedNewColumnChartID
+                                )
+                            )
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                }
+
+                if let previewID = previewedNewColumnChartID {
+                    VStack {
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.accentColor.opacity(0.08))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .strokeBorder(
+                                        Color.accentColor,
+                                        style: StrokeStyle(lineWidth: 2, dash: [7, 5])
+                                    )
+                            }
+                            .overlay(alignment: .top) {
+                                Canvas { context, size in
+                                    var line = Path()
+                                    line.move(to: CGPoint(x: 10, y: 5))
+                                    line.addLine(to: CGPoint(x: max(10, size.width - 10), y: 5))
+                                    context.stroke(
+                                        line,
+                                        with: .color(Color.accentColor),
+                                        style: StrokeStyle(lineWidth: 2, dash: [7, 5])
+                                    )
+                                }
+                                .frame(height: 10)
+                            }
+                            .overlay {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "rectangle.split.3x1")
+                                        .font(.title2)
+                                    Text("New column")
+                                        .font(.headline)
+                                }
+                                .foregroundStyle(Color.accentColor)
+                            }
+                            .frame(height: cardHeight)
+                            // Keep the dashed stroke inside the grid's clipping
+                            // boundary even when constrained-height padding scales to zero.
+                            .padding(.horizontal, cardInset)
+                            .padding(.bottom, cardInset)
+                            .padding(.top, max(4, cardInset))
+                            .accessibilityLabel("Drop chart into new column")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .onDrop(
+                        of: [.utf8PlainText],
+                        delegate: ChartGridDropDelegate(
+                            destination: .newColumn,
+                            viewModel: contentViewModel,
+                            draggedChartID: $draggedChartID,
+                            activeTarget: $gridDropTarget,
+                            previewedChartID: $previewedNewColumnChartID
+                        )
+                    )
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .id(previewID)
+                }
+            }
+            .padding(
+                ChartLayout.gridOuterInset(
+                    available: availableHeight,
+                    cardCount: sizingCardCount,
+                    columnCount: columnCount
+                )
+            )
+            .animation(.easeInOut(duration: 0.2), value: previewedNewColumnChartID)
+
+            if draggedChartID != nil, canAddColumn {
+                VStack(spacing: 6) {
+                    if previewedNewColumnChartID == nil {
+                        Image(systemName: "plus")
+                            .font(.headline)
+                        Image(systemName: "rectangle.split.3x1")
+                            .font(.title3)
+                    }
+                }
+                .foregroundStyle(Color.accentColor)
+                .frame(
+                    width: previewedNewColumnChartID == nil
+                        ? ChartLayout.gridNewColumnDropWidth
+                        : availableWidth / CGFloat(contentViewModel.chartColumns.count + 1)
+                )
+                .frame(maxHeight: .infinity)
+                .background(
+                    Color.accentColor.opacity(
+                        previewedNewColumnChartID == nil
+                            ? (gridDropTarget == .newColumn ? 0.16 : 0.07)
+                            : 0
+                    )
+                )
+                .overlay(alignment: .leading) {
+                    if previewedNewColumnChartID == nil {
+                        Rectangle()
+                            .fill(Color.accentColor.opacity(0.75))
+                            .frame(width: gridDropTarget == .newColumn ? 3 : 1)
+                    }
+                }
+                .contentShape(Rectangle())
+                .accessibilityLabel("Add chart column")
+                .onDrop(
+                    of: [.utf8PlainText],
+                    delegate: ChartGridDropDelegate(
+                        destination: .newColumn,
+                        viewModel: contentViewModel,
+                        draggedChartID: $draggedChartID,
+                        activeTarget: $gridDropTarget,
+                        previewedChartID: $previewedNewColumnChartID
+                    )
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .frame(height: availableHeight)
     }
 
     // MARK: - Chart Card Builder

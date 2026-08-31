@@ -12,6 +12,7 @@ DegenView/
 │   ├── Indicators.swift               # RSI, EMA, Bollinger, and Supertrend calculations
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
 │   ├── DataSourceType.swift           # Sources, CMC chart identity, persisted card config
+│   ├── ChartColumn.swift              # Persisted grid columns and legacy layout repair
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
 │   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
 │   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
@@ -32,6 +33,7 @@ DegenView/
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── ChartCardView.swift            # Card header, chart, editor, errors
+│   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
@@ -89,6 +91,9 @@ DegenView/
 6. `TabsStore`, `FavoritesStore`, and `DrawingStore` persist independent JSON documents in
    Application Support. Alpaca and optional CoinMarketCap secrets live in Keychain rather
    than JSON; only CMC chart type, range, and display settings enter workspace state.
+   Each tab and named saved view also stores ordered `ChartColumn` membership by the
+   stable `TickerConfig.chartID`. Older documents without columns are repaired into the
+   former two-column row-major arrangement when loaded.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
    timestamp and one cancellable playback task.
@@ -108,6 +113,19 @@ DegenView/
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
     stale range response cannot replace a newer selection. CMC cards are excluded from
     replay, price alerts, WebSockets, Pine evaluation, and OHLCV-specific controls.
+
+## Dashboard layout and drag flow
+
+- Vertical mode continues to use the tab's flat chart order. Grid mode renders explicit,
+  equal-width `ChartColumn` stacks; switching modes preserves the grid arrangement.
+- A chart drag exposes column insertion positions and, when enough width remains, a
+  trailing add-column rail. Holding over that rail expands a temporary outlined column
+  and shrinks the existing columns without changing model or persisted state.
+- Dropping commits through `ContentViewModel`, keyed by the chart's stable `chartID`.
+  Charts can move within or between columns, and a column is removed as soon as its last
+  chart moves away or is deleted. New charts are assigned to the shortest column.
+- Additional columns require approximately 280 points per resulting column. Existing
+  columns are never removed merely because the window or Favorites sidebar narrows.
 
 ## CoinMarketCap data flow
 

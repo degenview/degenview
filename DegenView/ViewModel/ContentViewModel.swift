@@ -35,7 +35,10 @@ final class ContentViewModel: ObservableObject {
     private var replayPreparationTask: Task<Void, Never>?
 
     @Published var chartViewModels: [ChartViewModel] = []
-    var marketChartViewModels: [ChartViewModel] { chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil } }
+    @Published private(set) var chartColumns: [ChartColumn] = []
+    var marketChartViewModels: [ChartViewModel] {
+        chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil }
+    }
     @Published var selectedTimeRange: TimeRange = .oneDay {
         didSet {
             // Reset candle count to default when timeframe changes
@@ -168,6 +171,7 @@ final class ContentViewModel: ObservableObject {
             vm.applyConfig(config)
             return vm
         }
+        chartColumns = ChartColumn.resolved(tab.chartColumns, chartIDs: chartViewModels.map(\.chartID))
         hasUnsavedChanges = false
         isHydrating = false
 
@@ -952,6 +956,7 @@ final class ContentViewModel: ObservableObject {
         )
         vm.portfolioChart = config
         chartViewModels.append(vm)
+        placeChartInGrid(vm.chartID)
         persistTickers()
         markChanged()
     }
@@ -960,7 +965,9 @@ final class ContentViewModel: ObservableObject {
         let vm = ChartViewModel(ticker: config.type.rawValue, source: .coinMarketCap, displayName: config.type.title)
         vm.coinMarketCapChart = config
         chartViewModels.append(vm)
-        persistTickers(); markChanged()
+        placeChartInGrid(vm.chartID)
+        persistTickers()
+        markChanged()
         if isWindowVisible { Task { await vm.fetchCoinMarketCap() } }
     }
 
@@ -983,6 +990,7 @@ final class ContentViewModel: ObservableObject {
         let vm = ChartViewModel(ticker: symbol, source: source, displayName: displayName)
         if let series = pmSeries, !series.isEmpty { vm.pmSeries = series }
         chartViewModels.append(vm)
+        placeChartInGrid(vm.chartID)
         persistTickers()
 
         await syncCoinGeckoSymbols()
@@ -994,6 +1002,11 @@ final class ContentViewModel: ObservableObject {
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
         chartViewModels.removeAll { $0.uniqueID == vm.uniqueID }
+        chartColumns = chartColumns.compactMap { column in
+            var updated = column
+            updated.chartIDs.removeAll { $0 == vm.chartID }
+            return updated.chartIDs.isEmpty ? nil : updated
+        }
         persistTickers()
         markChanged()
         connectWebSocket()
@@ -1053,6 +1066,63 @@ final class ContentViewModel: ObservableObject {
         markChanged()
     }
 
+    /// Charts in a persisted column, in their explicit vertical order.
+    func charts(in column: ChartColumn) -> [ChartViewModel] {
+        let byID = Dictionary(uniqueKeysWithValues: chartViewModels.map { ($0.chartID, $0) })
+        return column.chartIDs.compactMap { byID[$0] }
+    }
+
+    /// Move a chart to an existing column. A nil target appends to the column.
+    func moveChart(_ chartID: UUID, toColumn columnID: UUID, before targetID: UUID?) {
+        guard chartID != targetID, chartColumns.contains(where: { $0.id == columnID }) else { return }
+        let original = chartColumns
+
+        for index in chartColumns.indices {
+            chartColumns[index].chartIDs.removeAll { $0 == chartID }
+        }
+        chartColumns.removeAll { $0.chartIDs.isEmpty && $0.id != columnID }
+
+        guard let columnIndex = chartColumns.firstIndex(where: { $0.id == columnID }) else {
+            chartColumns = original
+            return
+        }
+        let insertionIndex =
+            targetID.flatMap {
+                chartColumns[columnIndex].chartIDs.firstIndex(of: $0)
+            } ?? chartColumns[columnIndex].chartIDs.endIndex
+        chartColumns[columnIndex].chartIDs.insert(chartID, at: insertionIndex)
+
+        guard chartColumns != original else { return }
+        persistTickers()
+        markChanged()
+    }
+
+    /// Commit the right-edge gesture by moving a chart into a new last column.
+    func moveChartToNewTrailingColumn(_ chartID: UUID) {
+        guard chartViewModels.contains(where: { $0.chartID == chartID }) else { return }
+        for index in chartColumns.indices {
+            chartColumns[index].chartIDs.removeAll { $0 == chartID }
+        }
+        chartColumns.removeAll { $0.chartIDs.isEmpty }
+        chartColumns.append(ChartColumn(chartIDs: [chartID]))
+        persistTickers()
+        markChanged()
+    }
+
+    private func placeChartInGrid(_ chartID: UUID) {
+        if chartColumns.isEmpty {
+            chartColumns = [ChartColumn(chartIDs: [chartID])]
+        } else if chartColumns.count < 2 {
+            chartColumns.append(ChartColumn(chartIDs: [chartID]))
+        } else if let shortest = chartColumns.indices.min(by: { lhs, rhs in
+            let left = chartColumns[lhs].chartIDs.count
+            let right = chartColumns[rhs].chartIDs.count
+            return left == right ? lhs < rhs : left < right
+        }) {
+            chartColumns[shortest].chartIDs.append(chartID)
+        }
+    }
+
     private func makeTickerConfigs() -> [TickerConfig] {
         chartViewModels.map { vm in
             TickerConfig(
@@ -1094,6 +1164,7 @@ final class ContentViewModel: ObservableObject {
             tab.name = tabName
             tab.savedViewID = currentViewID
             tab.tickerConfigs = configs
+            tab.chartColumns = chartColumns
             tab.timeRange = selectedTimeRange
             tab.layoutMode = layoutMode
             tab.candleCount = candleCount
@@ -1124,6 +1195,7 @@ final class ContentViewModel: ObservableObject {
             layoutMode: layoutMode,
             createdAt: Date(),
             tickerConfigs: configs,
+            chartColumns: chartColumns,
             candleCount: candleCount
         )
         savedViews.removeAll { $0.id == view.id }
@@ -1162,6 +1234,7 @@ final class ContentViewModel: ObservableObject {
             vm.applyConfig(config)
             return vm
         }
+        chartColumns = ChartColumn.resolved(view.chartColumns, chartIDs: chartViewModels.map(\.chartID))
 
         tabName = view.name
         currentViewID = view.id
