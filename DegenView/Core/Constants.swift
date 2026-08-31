@@ -9,6 +9,10 @@ enum ChartLayout {
     static let cardChrome: CGFloat = 55
     /// Grid layout column count.
     static let gridColumns = 2
+    /// A trailing column may be created only while every column remains usable.
+    static let gridMinimumColumnWidth: CGFloat = 280
+    /// Width of the right-edge affordance shown during a chart drag.
+    static let gridNewColumnDropWidth: CGFloat = 56
     /// Grid layout column width fraction.
     static let gridColumnFraction: Double = 2.0
     /// Chart area minimum height.
@@ -25,44 +29,68 @@ enum ChartLayout {
     }
 
     /// Common plot height for a two-column grid.
-    static func gridPlotHeight(available: CGFloat, cardCount: Int) -> CGFloat {
-        max(0, gridCardHeight(available: available, cardCount: cardCount) - cardChrome)
+    static func gridPlotHeight(
+        available: CGFloat, cardCount: Int, columnCount: Int = gridColumns
+    ) -> CGFloat {
+        max(
+            0,
+            gridCardHeight(available: available, cardCount: cardCount, columnCount: columnCount) - cardChrome
+        )
     }
 
     /// Equal card height after accounting for all grid and item padding.
-    static func gridCardHeight(available: CGFloat, cardCount: Int) -> CGFloat {
+    static func gridCardHeight(
+        available: CGFloat, cardCount: Int, columnCount: Int = gridColumns
+    ) -> CGFloat {
         guard cardCount > 0 else { return max(0, available) }
-        let rowCount = (cardCount + gridColumns - 1) / gridColumns
-        let padding = gridOuterInset(available: available, cardCount: cardCount) * 2
-            + CGFloat(rowCount) * gridCardInset(available: available, cardCount: cardCount) * 2
+        let rowCount = (cardCount + max(1, columnCount) - 1) / max(1, columnCount)
+        let padding =
+            gridOuterInset(available: available, cardCount: cardCount, columnCount: columnCount) * 2
+            + CGFloat(rowCount)
+            * gridCardInset(available: available, cardCount: cardCount, columnCount: columnCount) * 2
         return max(0, (available - padding) / CGFloat(rowCount))
     }
 
-    static func gridOuterInset(available: CGFloat, cardCount: Int) -> CGFloat {
-        gridOuterPadding * gridPaddingScale(available: available, cardCount: cardCount)
+    static func gridOuterInset(
+        available: CGFloat, cardCount: Int, columnCount: Int = gridColumns
+    ) -> CGFloat {
+        gridOuterPadding * gridPaddingScale(available: available, cardCount: cardCount, columnCount: columnCount)
     }
 
-    static func gridCardInset(available: CGFloat, cardCount: Int) -> CGFloat {
-        gridCardPadding * gridPaddingScale(available: available, cardCount: cardCount)
+    static func gridCardInset(
+        available: CGFloat, cardCount: Int, columnCount: Int = gridColumns
+    ) -> CGFloat {
+        gridCardPadding * gridPaddingScale(available: available, cardCount: cardCount, columnCount: columnCount)
     }
 
-    private static func gridPaddingScale(available: CGFloat, cardCount: Int) -> CGFloat {
+    private static func gridPaddingScale(
+        available: CGFloat, cardCount: Int, columnCount: Int
+    ) -> CGFloat {
         guard cardCount > 0 else { return 1 }
-        let rowCount = (cardCount + gridColumns - 1) / gridColumns
+        let rowCount = (cardCount + max(1, columnCount) - 1) / max(1, columnCount)
         let nominal = gridOuterPadding * 2 + CGFloat(rowCount) * gridCardPadding * 2
         guard nominal > 0 else { return 1 }
         return min(1, max(0, available) / nominal)
     }
 
     /// Total height occupied by the rows and their padding.
-    static func gridOccupancy(available: CGFloat, cardCount: Int) -> CGFloat {
+    static func gridOccupancy(
+        available: CGFloat, cardCount: Int, columnCount: Int = gridColumns
+    ) -> CGFloat {
         guard cardCount > 0 else { return 0 }
-        let rowCount = (cardCount + gridColumns - 1) / gridColumns
-        return gridOuterInset(available: available, cardCount: cardCount) * 2
-            + CGFloat(rowCount) * (
-                gridCardInset(available: available, cardCount: cardCount) * 2
-                    + gridCardHeight(available: available, cardCount: cardCount)
-            )
+        let rowCount = (cardCount + max(1, columnCount) - 1) / max(1, columnCount)
+        return
+            gridOuterInset(available: available, cardCount: cardCount, columnCount: columnCount) * 2
+            + CGFloat(rowCount)
+            * (gridCardInset(available: available, cardCount: cardCount, columnCount: columnCount) * 2
+                + gridCardHeight(available: available, cardCount: cardCount, columnCount: columnCount))
+    }
+
+    static func canAddColumn(availableWidth: CGFloat, currentColumnCount: Int) -> Bool {
+        let candidateCount = currentColumnCount + 1
+        guard candidateCount > 0 else { return false }
+        let usable = max(0, availableWidth - gridOuterPadding * 2)
+        return usable / CGFloat(candidateCount) >= gridMinimumColumnWidth
     }
 }
 

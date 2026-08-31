@@ -19,6 +19,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
     /// The saved view this tab was last loaded from, if any.
     var savedViewID: UUID?
     var tickerConfigs: [TickerConfig]
+    var chartColumns: [ChartColumn]?
     var timeRange: TimeRange
     var layoutMode: LayoutMode
     var candleCount: Int
@@ -30,6 +31,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
         name: String = UI.unnamedView,
         savedViewID: UUID? = nil,
         tickerConfigs: [TickerConfig] = [],
+        chartColumns: [ChartColumn]? = nil,
         timeRange: TimeRange = .oneDay,
         layoutMode: LayoutMode = .vertical,
         candleCount: Int? = nil,
@@ -40,6 +42,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
         self.name = name
         self.savedViewID = savedViewID
         self.tickerConfigs = tickerConfigs
+        self.chartColumns = chartColumns
         self.timeRange = timeRange
         self.layoutMode = layoutMode
         self.candleCount = candleCount ?? timeRange.dataPointLimit
@@ -48,7 +51,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, savedViewID, tickerConfigs, timeRange, layoutMode, candleCount, replaySession, kind
+        case id, name, savedViewID, tickerConfigs, chartColumns, timeRange, layoutMode, candleCount, replaySession, kind
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +60,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
         name = try values.decode(String.self, forKey: .name)
         savedViewID = try values.decodeIfPresent(UUID.self, forKey: .savedViewID)
         tickerConfigs = try values.decode([TickerConfig].self, forKey: .tickerConfigs)
+        chartColumns = try values.decodeIfPresent([ChartColumn].self, forKey: .chartColumns)
         timeRange = try values.decode(TimeRange.self, forKey: .timeRange)
         layoutMode = try values.decode(LayoutMode.self, forKey: .layoutMode)
         candleCount = try values.decode(Int.self, forKey: .candleCount)

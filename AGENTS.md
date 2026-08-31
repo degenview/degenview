@@ -140,6 +140,15 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
+### Linting
+
+- Every Swift file created or modified in a task must be linted before handoff, including
+  new files that are still untracked by Git.
+- Use Xcode's bundled formatter in non-mutating strict lint mode:
+  `xcrun swift-format lint --strict <changed Swift files>`.
+- Fix every diagnostic in the changed files. Do not run a repository-wide in-place
+  formatter, which can rewrite unrelated user code.
+
 Use the following manual flow for native window/tab behavior and end-to-end UI checks:
 
 1. Launch app, add BTC from Binance

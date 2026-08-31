@@ -9,6 +9,8 @@ struct SavedView: Identifiable, Codable, Equatable {
     var createdAt: Date
     /// Per-ticker data source configs. When nil (legacy data), tickers map to .binance.
     var tickerConfigs: [TickerConfig]?
+    /// Explicit grid membership and ordering. Nil means a legacy two-column layout.
+    var chartColumns: [ChartColumn]? = nil
     /// Zoom level — candle count at time of save. Nil for legacy views (falls back to timeRange default).
     var candleCount: Int?
 

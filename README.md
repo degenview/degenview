@@ -172,11 +172,12 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
   drag windows onto a tab bar to merge, or use **File → Merge All Windows**
 - **Restored sessions** — Tabs, ordering, names, window grouping, and window frames return
   on relaunch. The tab bar and its **+** remain visible even with one tab
-- **Two layouts** — A vertical chart stack or responsive two-column grid, both with
-  drag-and-drop ticker reordering
-- **Saved views** — Save and reload named ticker sets with their timeframe, layout, zoom,
-  source, indicator, appearance, and CoinMarketCap chart/range settings. Saved views are
-  shared across tabs
+- **Two layouts** — A vertical chart stack or responsive multi-column grid. Reorder cards
+  within or across columns, or hold a dragged chart against the right edge to preview and
+  create another column; empty columns disappear automatically
+- **Saved views** — Save and reload named ticker sets with their timeframe, column and
+  chart arrangement, layout, zoom, source, indicator, appearance, and CoinMarketCap
+  chart/range settings. Saved views are shared across tabs
 - **Unsaved-change tracking** — A contextual toolbar action appears when a loaded view has
   changed
 - **Favorites sidebar** — Keep an app-wide, persistent, reorderable watchlist and open any
@@ -224,7 +225,10 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
    indicator or change the generated inputs. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines, and
    temporary ruler measurements.
-5. Switch between the vertical and two-column layouts, then drag cards to reorder them.
+5. Switch between the vertical and grid layouts, then drag cards to reorder them within
+   or across columns. Hold a card at the grid's right edge until the outlined preview
+   column appears, then release it to create that column. The option appears only when
+   the window is wide enough to keep every resulting column readable.
 6. Save the dashboard as a named view. Use the folder menu to load or delete views and to
    rename the current tab.
 7. Toggle the Favorites sidebar, add instruments with its **+**, reorder them by dragging,

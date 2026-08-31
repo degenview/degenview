@@ -185,6 +185,7 @@ final class TabsStore: ObservableObject {
                 name: view.name,
                 savedViewID: view.id,
                 tickerConfigs: view.resolvedConfigs,
+                chartColumns: view.chartColumns,
                 timeRange: view.timeRange,
                 layoutMode: view.layoutMode,
                 candleCount: view.candleCount ?? view.timeRange.dataPointLimit
