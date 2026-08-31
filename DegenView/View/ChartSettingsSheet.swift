@@ -520,11 +520,26 @@ struct ChartSettingsSheet: View {
 
     private var indicatorsTab: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Chart Indicators")
+                        .font(.title3.weight(.semibold))
+
+                    Text("Add context to the chart without changing its underlying data.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.bottom, 4)
+
                 // Line sources report one price per timestamp and no turnover at all.
                 if !viewModel.usesLineChart {
-                    indicatorRow(hint: volumeHint) {
+                    indicatorRow(
+                        title: "Volume Bars",
+                        icon: "chart.bar.fill",
+                        hint: volumeHint
+                    ) {
                         Toggle("Volume Bars", isOn: $showVolume)
+                            .labelsHidden()
                             .toggleStyle(.switch)
                             // Left visible rather than hidden: a greyed-out switch with a
                             // reason reads better than a setting that silently does nothing.
@@ -534,16 +549,14 @@ struct ChartSettingsSheet: View {
 
                 // Every source shares KlineData. Line sources carry flat OHLC points,
                 // whose point-to-point gaps still provide Supertrend's true range.
-                indicatorRow(hint: rsiHint) {
+                indicatorRow(title: "RSI (\(RSI.period))", icon: "waveform.path.ecg", hint: rsiHint) {
                     Toggle("RSI (\(RSI.period))", isOn: $showRSI)
+                        .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(hint: emaHint) {
-                    HStack {
-                        Toggle("EMA", isOn: $showEMA)
-                            .toggleStyle(.switch)
-
+                indicatorRow(title: "EMA", icon: "chart.line.uptrend.xyaxis", hint: emaHint) {
+                    HStack(spacing: 10) {
                         Picker("Period", selection: $emaPeriod) {
                             ForEach(Indicator.emaPeriods, id: \.self) { period in
                                 Text("\(period)").tag(period)
@@ -551,24 +564,32 @@ struct ChartSettingsSheet: View {
                         }
                         .pickerStyle(.menu)
                         .labelsHidden()
-                        .frame(width: 80)
+                        .frame(width: 72)
                         .disabled(!showEMA)
+
+                        Toggle("EMA", isOn: $showEMA)
+                            .labelsHidden()
+                            .toggleStyle(.switch)
                     }
                 }
 
-                indicatorRow(hint: bollingerHint) {
+                indicatorRow(title: "Bollinger Bands", icon: "lines.measurement.horizontal", hint: bollingerHint) {
                     Toggle("Bollinger Bands", isOn: $showBollinger)
+                        .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(hint: trendFlipsHint) {
+                indicatorRow(
+                    title: "Trend Flips",
+                    icon: "arrow.triangle.2.circlepath",
+                    hint: trendFlipsHint
+                ) {
                     Toggle("Trend Flips (Supertrend)", isOn: $showTrendFlips)
+                        .labelsHidden()
                         .toggleStyle(.switch)
                 }
-
-                Spacer(minLength: 0)
             }
-            .padding(16)
+            .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -771,18 +792,42 @@ struct ChartSettingsSheet: View {
         }
     }
 
-    /// A toggle (or toggle plus its options) above the line of explanation that
-    /// belongs to it.
+    /// A consistently aligned indicator card with its controls anchored to the right.
     private func indicatorRow<Control: View>(
+        title: String,
+        icon: String,
         hint: String,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.tint)
+                .frame(width: 30, height: 30)
+                .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+
+                Text(hint)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 16)
+
             control()
-            Text(hint)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                .fixedSize()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.separator.opacity(0.45), lineWidth: 1)
         }
     }
 
