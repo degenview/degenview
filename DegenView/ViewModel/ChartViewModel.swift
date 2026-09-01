@@ -234,6 +234,9 @@ final class ChartViewModel: ObservableObject {
     /// Lines drawn by hand on this chart, anchored to time and price.
     @Published var trendLines: [TrendLine] = []
     @Published var fibonacciRetracements: [FibonacciRetracementDrawing] = []
+    var drawingUndoCoordinator: DrawingUndoCoordinator?
+    private let drawingStore: DrawingStore
+    private var fibonacciSettingsOriginal: FibonacciRetracementDrawing?
     private var drawingStoreSubscription: AnyCancellable?
     private var fibonacciStoreSubscription: AnyCancellable?
 
@@ -469,13 +472,14 @@ final class ChartViewModel: ObservableObject {
 
     init(
         ticker: String, source: DataSourceType = .binance, displayName: String? = nil,
-        api: TickerDataSource? = nil
+        api: TickerDataSource? = nil, drawingStore: DrawingStore? = nil
     ) {
         self.ticker = ticker
         self.source = source
         self.displayName = displayName
         self.uniqueID = "\(ticker)_\(source.rawValue)"
         self.api = api ?? DataSourceFactory.shared.service(for: source)
+        self.drawingStore = drawingStore ?? .shared
         observeDrawings()
     }
 
@@ -497,10 +501,10 @@ final class ChartViewModel: ObservableObject {
         showBollinger = config.showBollinger ?? false
         showTrendFlips = config.showTrendFlips ?? false
         if let legacyLines = config.trendLines {
-            DrawingStore.shared.importLegacy(legacyLines, ticker: ticker, source: source)
+            drawingStore.importLegacy(legacyLines, ticker: ticker, source: source)
         }
-        trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
-        fibonacciRetracements = DrawingStore.shared.fibs(ticker: ticker, source: source)
+        trendLines = drawingStore.lines(ticker: ticker, source: source)
+        fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
         pineConfiguration = config.pine
@@ -757,8 +761,13 @@ final class ChartViewModel: ObservableObject {
         let to = plot.position(of: anchor, points: points, slotWidth: slot)
         guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
 
-        trendLines.append(TrendLine(start: start, end: anchor))
+        let line = TrendLine(start: start, end: anchor)
+        let index = trendLines.count
+        trendLines.append(line)
         persistTrendLines()
+        drawingUndoCoordinator?.recordLine(
+            instrument: drawingInstrument, before: nil, beforeIndex: index, after: line,
+            afterIndex: index, actionName: "Add Trend Line")
         draftStart = nil
         draftEnd = nil
         return true
@@ -787,9 +796,14 @@ final class ChartViewModel: ObservableObject {
         let from = plot.position(of: start, points: visibleKlines, slotWidth: slot)
         let to = plot.position(of: anchor, points: visibleKlines, slotWidth: slot)
         guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
-        fibonacciRetracements.append(FibonacciRetracementDrawing(point1: start, point2: anchor))
+        let drawing = FibonacciRetracementDrawing(point1: start, point2: anchor)
+        let index = fibonacciRetracements.count
+        fibonacciRetracements.append(drawing)
         cancelFibonacciDraft()
         persistFibonacciRetracements()
+        drawingUndoCoordinator?.recordFibonacci(
+            instrument: drawingInstrument, before: nil, beforeIndex: index, after: drawing,
+            afterIndex: index, actionName: "Add Fibonacci Retracement")
         return true
     }
 
@@ -823,16 +837,45 @@ final class ChartViewModel: ObservableObject {
         fibonacciRetracements[index].updatedAt = Date()
     }
 
-    func updateFibonacci(_ drawing: FibonacciRetracementDrawing) {
+    func updateFibonacci(_ drawing: FibonacciRetracementDrawing, recordUndo: Bool = true) {
         guard drawing.levels.count <= FibonacciDefaults.maximumLevelCount,
             let index = fibonacciRetracements.firstIndex(where: { $0.id == drawing.id })
         else { return }
+        let previous = fibonacciRetracements[index]
         fibonacciRetracements[index] = drawing
         persistFibonacciRetracements()
+        if recordUndo {
+            drawingUndoCoordinator?.recordFibonacci(
+                instrument: drawingInstrument, before: previous, beforeIndex: index, after: drawing,
+                afterIndex: index, actionName: "Edit Fibonacci Retracement")
+        }
     }
 
     func persistFibonacciRetracements() {
-        DrawingStore.shared.save(fibonacciRetracements, ticker: ticker, source: source)
+        drawingStore.save(fibonacciRetracements, ticker: ticker, source: source)
+    }
+
+    func beginFibonacciSettingsEdit(id: UUID) {
+        fibonacciSettingsOriginal = fibonacciRetracements.first { $0.id == id }
+    }
+
+    func endFibonacciSettingsEdit(id: UUID) {
+        defer { fibonacciSettingsOriginal = nil }
+        guard let before = fibonacciSettingsOriginal,
+            let index = fibonacciRetracements.firstIndex(where: { $0.id == id })
+        else { return }
+        drawingUndoCoordinator?.recordFibonacci(
+            instrument: drawingInstrument, before: before, beforeIndex: index,
+            after: fibonacciRetracements[index], afterIndex: index,
+            actionName: "Edit Fibonacci Retracement")
+    }
+
+    func commitFibonacciDrag(original: FibonacciRetracementDrawing, actionName: String) {
+        guard let index = fibonacciRetracements.firstIndex(where: { $0.id == original.id }) else { return }
+        persistFibonacciRetracements()
+        drawingUndoCoordinator?.recordFibonacci(
+            instrument: drawingInstrument, before: original, beforeIndex: index,
+            after: fibonacciRetracements[index], afterIndex: index, actionName: actionName)
     }
 
     @discardableResult
@@ -844,10 +887,13 @@ final class ChartViewModel: ObservableObject {
     @discardableResult
     func removeFibonacci(id: UUID) -> Bool {
         guard let index = fibonacciRetracements.firstIndex(where: { $0.id == id }) else { return false }
-        fibonacciRetracements.remove(at: index)
+        let drawing = fibonacciRetracements.remove(at: index)
         if selectedFibonacciID == id { selectedFibonacciID = nil }
         if editingFibonacciID == id { editingFibonacciID = nil }
         persistFibonacciRetracements()
+        drawingUndoCoordinator?.recordFibonacci(
+            instrument: drawingInstrument, before: drawing, beforeIndex: index, after: nil,
+            afterIndex: index, actionName: "Delete Fibonacci Retracement")
         return true
     }
 
@@ -864,28 +910,47 @@ final class ChartViewModel: ObservableObject {
     /// Flush endpoint movement once the drag finishes. Keeping this separate avoids
     /// an atomic disk write for every mouse-move event.
     func persistTrendLines() {
-        DrawingStore.shared.save(trendLines, ticker: ticker, source: source)
+        drawingStore.save(trendLines, ticker: ticker, source: source)
+    }
+
+    func commitTrendLineDrag(original: TrendLine) {
+        guard let index = trendLines.firstIndex(where: { $0.id == original.id }) else { return }
+        persistTrendLines()
+        drawingUndoCoordinator?.recordLine(
+            instrument: drawingInstrument, before: original, beforeIndex: index,
+            after: trendLines[index], afterIndex: index, actionName: "Move Trend Line")
     }
 
     func setColor(_ color: TrendLineColor, for lineID: UUID) {
         guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
+        let previous = trendLines[index]
         trendLines[index].color = color
         persistTrendLines()
+        drawingUndoCoordinator?.recordLine(
+            instrument: drawingInstrument, before: previous, beforeIndex: index,
+            after: trendLines[index], afterIndex: index, actionName: "Change Trend Line Color")
     }
 
     func setThickness(_ thickness: TrendLineThickness, for lineID: UUID) {
         guard let index = trendLines.firstIndex(where: { $0.id == lineID }) else { return }
+        let previous = trendLines[index]
         trendLines[index].thickness = thickness
         persistTrendLines()
+        drawingUndoCoordinator?.recordLine(
+            instrument: drawingInstrument, before: previous, beforeIndex: index,
+            after: trendLines[index], afterIndex: index, actionName: "Change Trend Line Thickness")
     }
 
     @discardableResult
     func removeLine(id: UUID) -> Bool {
         guard let index = trendLines.firstIndex(where: { $0.id == id }) else { return false }
-        trendLines.remove(at: index)
+        let line = trendLines.remove(at: index)
         if selectedLineID == id { selectedLineID = nil }
         if editingLineID == id { editingLineID = nil }
         persistTrendLines()
+        drawingUndoCoordinator?.recordLine(
+            instrument: drawingInstrument, before: line, beforeIndex: index, after: nil,
+            afterIndex: index, actionName: "Delete Trend Line")
         return true
     }
 
@@ -957,24 +1022,36 @@ final class ChartViewModel: ObservableObject {
         }
         self.pmSeriesData = [:]
         api = DataSourceFactory.shared.service(for: source)
-        trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
+        trendLines = drawingStore.lines(ticker: ticker, source: source)
     }
 
     private func observeDrawings() {
-        drawingStoreSubscription = DrawingStore.shared.$linesByInstrument
+        drawingStoreSubscription = drawingStore.$linesByInstrument
             .sink { [weak self] allLines in
                 guard let self else { return }
-                let key = DrawingStore.shared.key(ticker: self.ticker, source: self.source)
+                let key = self.drawingStore.key(ticker: self.ticker, source: self.source)
                 let sharedLines = allLines[key] ?? []
                 if self.trendLines != sharedLines { self.trendLines = sharedLines }
+                if let id = self.selectedLineID, !sharedLines.contains(where: { $0.id == id }) {
+                    self.selectedLineID = nil
+                    self.editingLineID = nil
+                }
             }
-        fibonacciStoreSubscription = DrawingStore.shared.$fibsByInstrument
+        fibonacciStoreSubscription = drawingStore.$fibsByInstrument
             .sink { [weak self] allFibs in
                 guard let self else { return }
-                let key = DrawingStore.shared.key(ticker: self.ticker, source: self.source)
+                let key = self.drawingStore.key(ticker: self.ticker, source: self.source)
                 let sharedFibs = allFibs[key] ?? []
                 if self.fibonacciRetracements != sharedFibs { self.fibonacciRetracements = sharedFibs }
+                if let id = self.selectedFibonacciID, !sharedFibs.contains(where: { $0.id == id }) {
+                    self.selectedFibonacciID = nil
+                    self.editingFibonacciID = nil
+                }
             }
+    }
+
+    private var drawingInstrument: String {
+        drawingStore.key(ticker: ticker, source: source)
     }
 
     /// Merge a WebSocket kline tick into the current dataset.

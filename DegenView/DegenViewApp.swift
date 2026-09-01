@@ -53,6 +53,12 @@ private struct TabCommands: Commands {
                 WindowCoordinator.shared.mergeAllWindows()
             }
         }
+        CommandGroup(after: .undoRedo) {
+            Button("Redo") {
+                NSApp.sendAction(Selector(("redo:")), to: nil, from: nil)
+            }
+            .keyboardShortcut("y", modifiers: .command)
+        }
         CommandGroup(after: .windowArrangement) {
             Button("Script Manager") {
                 WindowCoordinator.shared.prepareAuxiliaryTab()

@@ -70,6 +70,7 @@ DegenView/
     ├── TabsStore.swift                # Tabs, saved views, and session persistence
     ├── FavoritesStore.swift           # Shared watchlist persistence
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
+    ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
     └── JSONStore.swift                # Generic Codable JSON persistence
 ```
@@ -119,6 +120,34 @@ DegenView/
     financial coordinates through the current `ChartPlot` on every layout pass, so
     timeframe changes, horizontal zoom, vertical scaling, resizing, and replay do not
     rewrite canonical drawing state.
+13. Each chart window connects its `ChartViewModel` instances to one
+    `DrawingUndoCoordinator` backed by the window's native `UndoManager`. Undo and redo
+    apply targeted, instrument-keyed replacements through `DrawingStore`, preserving
+    unrelated drawing changes made by another window while immediately updating every
+    chart observing the same instrument.
+
+## Drawing undo and redo
+
+Drawing history is session-only and scoped to the native window/tab where an edit
+originated. `ContentViewModel` attaches a coordinator to every chart it owns, including
+charts added or restored after the window has opened. AppKit supplies the Edit-menu state,
+descriptive Undo/Redo titles, and the standard Command-Z and Shift-Command-Z shortcuts;
+Command-Y forwards `redo:` through the focused responder chain.
+
+The coordinator records the drawing before and after each committed mutation together
+with its source-qualified instrument key and array position. Applying an inverse operation
+removes or restores only that drawing ID through `DrawingStore`; it never replaces an
+entire historical snapshot. This matters when separate windows show the same instrument:
+undoing an older action in one window cannot erase a newer, unrelated drawing created in
+another.
+
+Pointer movement remains lightweight. Trend-line endpoint drags and Fibonacci body or
+anchor drags update published geometry continuously, then register one action on
+mouse-up; unchanged drags register nothing. Live changes during one Fibonacci settings
+sheet presentation are similarly collapsed into one edit when the sheet closes. Drafts,
+crosshairs, and ruler measurements never enter drawing history because they are transient.
+Store observation clears selected or edited IDs when an undo, redo, or another window
+removes the corresponding drawing.
 
 ## Fibonacci retracement flow
 
@@ -174,15 +203,17 @@ immediately. Coordinates edit the same canonical dates/prices used by pointer ge
 Visibility filters rendering by `TimeRange` and stores lock/hide state without deleting
 the drawing.
 
-The current repository has no shared drawing undo stack, clipboard/template manager,
-global Strong/Weak Magnet state, logarithmic chart scale, or drawing-linked alert model.
-Fib does not introduce private parallel versions of those app-wide systems. The reusable
-calculator, level/style models, stable drawing/level IDs, and current-geometry lookup are
-structured so those integrations can be added when their shared infrastructure exists.
+The current repository has no drawing clipboard/template manager, global Strong/Weak
+Magnet state, logarithmic chart scale, or drawing-linked alert model. Fib does not
+introduce private parallel versions of those app-wide systems. The reusable calculator,
+level/style models, stable drawing/level IDs, and current-geometry lookup are structured
+so those integrations can be added when their shared infrastructure exists.
 
 `FibonacciRetracementTests` covers deterministic low-to-high and high-to-low linear
 fixtures, reverse reflection/restoration, logarithmic interpolation, invalid log anchors,
 the 24-level limit, arbitrary extensions, and Codable persistence round trips.
+`DrawingUndoCoordinatorTests` covers exact-ID and ordering restoration, native action
+titles, redo invalidation, persistence, and isolated window histories over a shared store.
 
 ## Dashboard layout and drag flow
 

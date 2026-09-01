@@ -10,10 +10,12 @@ final class DrawingStore: ObservableObject {
     @Published private(set) var linesByInstrument: [String: [TrendLine]]
     @Published private(set) var fibsByInstrument: [String: [FibonacciRetracementDrawing]]
 
-    private let store = JSONStore<[String: [TrendLine]]>(filename: "drawings.json")
-    private let fibStore = JSONStore<[String: [FibonacciRetracementDrawing]]>(filename: "fib-drawings.json")
+    private let store: JSONStore<[String: [TrendLine]]>
+    private let fibStore: JSONStore<[String: [FibonacciRetracementDrawing]]>
 
-    private init() {
+    init(directory: URL = AppSupport.directory) {
+        store = JSONStore(filename: "drawings.json", directory: directory)
+        fibStore = JSONStore(filename: "fib-drawings.json", directory: directory)
         linesByInstrument = store.load() ?? [:]
         fibsByInstrument = fibStore.load() ?? [:]
     }
@@ -49,5 +51,23 @@ final class DrawingStore: ObservableObject {
         let instrument = key(ticker: ticker, source: source)
         guard !lines.isEmpty, linesByInstrument[instrument] == nil else { return }
         save(lines, ticker: ticker, source: source)
+    }
+
+    func setLine(_ line: TrendLine?, at preferredIndex: Int, instrument: String, id: UUID) {
+        var lines = linesByInstrument[instrument] ?? []
+        lines.removeAll { $0.id == id }
+        if let line { lines.insert(line, at: min(max(0, preferredIndex), lines.count)) }
+        linesByInstrument[instrument] = lines
+        store.save(linesByInstrument)
+    }
+
+    func setFibonacci(
+        _ drawing: FibonacciRetracementDrawing?, at preferredIndex: Int, instrument: String, id: UUID
+    ) {
+        var drawings = fibsByInstrument[instrument] ?? []
+        drawings.removeAll { $0.id == id }
+        if let drawing { drawings.insert(drawing, at: min(max(0, preferredIndex), drawings.count)) }
+        fibsByInstrument[instrument] = drawings
+        fibStore.save(fibsByInstrument)
     }
 }
