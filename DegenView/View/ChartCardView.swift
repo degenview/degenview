@@ -4,6 +4,7 @@ import SwiftUI
 struct ChartCardView: View {
     @ObservedObject var viewModel: ChartViewModel
     var chartHeight: CGFloat
+    var timeRange: TimeRange = .oneDay
     var cardHeight: CGFloat? = nil
     let onRemove: () -> Void
     let onRetry: () -> Void
@@ -106,6 +107,9 @@ struct ChartCardView: View {
             onSettingsPresented?(new)
         }
         .onChange(of: viewModel.editingLineID) { old, new in
+            if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
+        }
+        .onChange(of: viewModel.editingFibonacciID) { old, new in
             if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
     }
@@ -268,6 +272,9 @@ struct ChartCardView: View {
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
                     showTrendHandles: showTrendHandles,
+                    fibonacciRetracements: visibleFibonacciRetracements,
+                    fibonacciDraft: viewModel.fibonacciDraft,
+                    selectedFibonacciID: viewModel.selectedFibonacciID,
                     rulers: viewModel.rulers,
                     rulerDraft: viewModel.rulerDraft
                 )
@@ -286,6 +293,9 @@ struct ChartCardView: View {
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
                     showTrendHandles: showTrendHandles,
+                    fibonacciRetracements: visibleFibonacciRetracements,
+                    fibonacciDraft: viewModel.fibonacciDraft,
+                    selectedFibonacciID: viewModel.selectedFibonacciID,
                     rulers: viewModel.rulers,
                     rulerDraft: viewModel.rulerDraft
                 )
@@ -352,8 +362,15 @@ struct ChartCardView: View {
                     onDismiss: { viewModel.editingLineID = nil }
                 )
                 .padding(.top, 8)
+            } else if let fibID = viewModel.editingFibonacciID {
+                FibonacciEditor(viewModel: viewModel, drawingID: fibID, onChange: onStyleChanged)
+                    .padding(.top, 8)
             }
         }
+    }
+
+    private var visibleFibonacciRetracements: [FibonacciRetracementDrawing] {
+        viewModel.fibonacciRetracements.filter { $0.timeframeVisibility.includes(timeRange) }
     }
 
 }
@@ -823,6 +840,404 @@ private struct TrendLineEditor: View {
                 .stroke(.secondary.opacity(0.25), lineWidth: 1)
         }
         .shadow(radius: 4, y: 2)
+    }
+}
+
+private struct FibonacciEditor: View {
+    @ObservedObject var viewModel: ChartViewModel
+    let drawingID: UUID
+    let onChange: () -> Void
+    @State private var showSettings = false
+
+    private var drawing: FibonacciRetracementDrawing? {
+        viewModel.fibonacciRetracements.first { $0.id == drawingID }
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                mutate { $0.style.reverse.toggle() }
+            } label: {
+                Label("Reverse", systemImage: "arrow.up.arrow.down")
+            }
+            Button {
+                mutate { $0.style.extendRight.toggle() }
+            } label: {
+                Label("Extend Right", systemImage: "arrow.right.to.line")
+            }
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .accessibilityLabel("Fibonacci Retracement settings")
+            Button(role: .destructive) {
+                _ = viewModel.removeFibonacci(id: drawingID)
+            } label: {
+                Image(systemName: "trash")
+            }
+            .accessibilityLabel("Delete Fibonacci Retracement")
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .sheet(isPresented: $showSettings) {
+            if let drawing {
+                FibonacciSettingsView(
+                    drawing: binding(for: drawing),
+                    onCommit: {
+                        viewModel.persistFibonacciRetracements()
+                        onChange()
+                    })
+            }
+        }
+    }
+
+    private func binding(for fallback: FibonacciRetracementDrawing) -> Binding<FibonacciRetracementDrawing> {
+        Binding(
+            get: { drawing ?? fallback },
+            set: { viewModel.updateFibonacci($0) }
+        )
+    }
+
+    private func mutate(_ change: (inout FibonacciRetracementDrawing) -> Void) {
+        guard var drawing else { return }
+        change(&drawing)
+        drawing.updatedAt = Date()
+        viewModel.updateFibonacci(drawing)
+        onChange()
+    }
+}
+
+private struct FibonacciSettingsView: View {
+    @Binding var drawing: FibonacciRetracementDrawing
+    let onCommit: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedPage: Page = .style
+
+    private enum Page: String, CaseIterable, Identifiable {
+        case style = "Style"
+        case coordinates = "Coordinates"
+        case visibility = "Visibility"
+
+        var id: Self { self }
+
+        var icon: String {
+            switch self {
+            case .style: return "paintbrush"
+            case .coordinates: return "scope"
+            case .visibility: return "eye"
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .style: return "Customize levels, lines, labels, and fills."
+            case .coordinates: return "Place both anchors precisely in chart space."
+            case .visibility: return "Control when the drawing appears and whether it can move."
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                List(Page.allCases, selection: $selectedPage) { page in
+                    Label(page.rawValue, systemImage: page.icon).tag(page)
+                }
+                .listStyle(.sidebar)
+                .frame(width: 176)
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    settingsHeader
+                    Divider()
+                    selectedContent
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+
+            Divider()
+
+            HStack {
+                Text("Changes update the drawing immediately.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Done") {
+                    onCommit()
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .frame(width: 760, height: 620)
+    }
+
+    private var settingsHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(selectedPage.rawValue)
+                .font(.title3.weight(.semibold))
+            Text(selectedPage.subtitle)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+
+    @ViewBuilder private var selectedContent: some View {
+        switch selectedPage {
+        case .style: stylePage
+        case .coordinates: coordinatesPage
+        case .visibility: visibilityPage
+        }
+    }
+
+    private var stylePage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                settingsSection("Lines", icon: "line.diagonal") {
+                    settingsToggle(
+                        "Trend Line", subtitle: "Show the line connecting both anchors.",
+                        isOn: $drawing.style.showTrendLine)
+                    Divider()
+                    HStack {
+                        Picker("Trend style", selection: $drawing.style.trendLineStyle) {
+                            ForEach(DrawingLineStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        Picker("Level style", selection: $drawing.style.levelLineStyle) {
+                            ForEach(DrawingLineStyle.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                    }
+                    HStack(spacing: 18) {
+                        Toggle("Extend left", isOn: $drawing.style.extendLeft)
+                        Toggle("Extend right", isOn: $drawing.style.extendRight)
+                        Spacer()
+                    }
+                    .toggleStyle(.switch)
+                }
+
+                settingsSection("Labels & Fill", icon: "textformat") {
+                    settingsToggle(
+                        "Background", subtitle: "Tint the regions between visible levels.",
+                        isOn: $drawing.style.backgroundVisible)
+                    if drawing.style.backgroundVisible {
+                        HStack {
+                            Text("Opacity").foregroundStyle(.secondary)
+                            Slider(value: $drawing.style.backgroundOpacity, in: 0...1)
+                            Text(drawing.style.backgroundOpacity, format: .percent.precision(.fractionLength(0)))
+                                .monospacedDigit().frame(width: 38, alignment: .trailing)
+                        }
+                    }
+                    Divider()
+                    HStack(spacing: 18) {
+                        Toggle("Prices", isOn: $drawing.style.showPrices)
+                        Toggle("Levels", isOn: $drawing.style.showLevels)
+                        Toggle("One color", isOn: $drawing.style.useOneColor)
+                        Spacer()
+                    }
+                    .toggleStyle(.switch)
+                    HStack {
+                        Picker("Format", selection: $drawing.style.labelFormat) {
+                            ForEach(FibonacciLabelFormat.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        Picker("Position", selection: $drawing.style.labelPosition) {
+                            ForEach(FibonacciLabelPosition.allCases, id: \.self) { Text($0.title).tag($0) }
+                        }
+                        TextField("Font size", value: $drawing.style.fontSize, format: .number)
+                            .frame(width: 110)
+                    }
+                    Divider()
+                    settingsToggle(
+                        "Reverse", subtitle: "Reflect ratio mapping while keeping both anchors fixed.",
+                        isOn: $drawing.style.reverse)
+                    settingsToggle(
+                        "Logarithmic levels", subtitle: "Available when the chart uses a logarithmic price scale.",
+                        isOn: $drawing.style.useLogCalculation
+                    )
+                    .disabled(true)
+                }
+
+                levelsSection
+            }
+            .padding(20)
+        }
+    }
+
+    private var levelsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Label("Levels", systemImage: "line.3.horizontal")
+                    .font(.subheadline.weight(.semibold))
+                Text("\(drawing.levels.count) of \(FibonacciDefaults.maximumLevelCount)")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Add Level", systemImage: "plus") {
+                    _ = drawing.addLevel(FibonacciLevel(ratio: 1))
+                }
+                .buttonStyle(.borderless)
+                .disabled(drawing.levels.count >= FibonacciDefaults.maximumLevelCount)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            HStack(spacing: 10) {
+                Text("On").frame(width: 28)
+                Text("Ratio").frame(width: 76, alignment: .leading)
+                Text("Color").frame(width: 90, alignment: .leading)
+                Text("Custom text")
+                Spacer()
+            }
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+
+            ForEach($drawing.levels) { $level in
+                Divider().padding(.leading, 14)
+                HStack(spacing: 10) {
+                    Toggle("", isOn: $level.isVisible).labelsHidden().frame(width: 28)
+                    TextField("Ratio", value: $level.ratio, format: .number)
+                        .textFieldStyle(.roundedBorder).frame(width: 76)
+                    Picker("Color", selection: $level.color) {
+                        ForEach(TrendLineColor.allCases, id: \.self) { option in
+                            Text(option.title).tag(option)
+                        }
+                    }
+                    .labelsHidden().frame(width: 90)
+                    TextField("Optional label", text: $level.customText)
+                        .textFieldStyle(.roundedBorder)
+                    Button(role: .destructive) {
+                        removeLevel(level.id)
+                    } label: {
+                        Image(systemName: "minus.circle.fill")
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(.secondary)
+                    .help("Remove level")
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+            }
+        }
+        .fibSettingsCard()
+    }
+
+    private var coordinatesPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                coordinateCard(
+                    title: "Point 1", icon: "1.circle.fill",
+                    date: $drawing.point1.date, price: $drawing.point1.price)
+                coordinateCard(
+                    title: "Point 2", icon: "2.circle.fill",
+                    date: $drawing.point2.date, price: $drawing.point2.price)
+            }
+            .padding(20)
+        }
+    }
+
+    private var visibilityPage: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                settingsSection("Timeframes", icon: "clock") {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Show drawing on")
+                                .font(.subheadline.weight(.medium))
+                            Text("The anchors remain unchanged when the chart timeframe changes.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("Show drawing on", selection: $drawing.timeframeVisibility) {
+                            ForEach(DrawingTimeframeVisibility.allCases, id: \.self) {
+                                Text($0.title).tag($0)
+                            }
+                        }
+                        .labelsHidden().frame(width: 170)
+                    }
+                }
+
+                settingsSection("Drawing", icon: "lock.shield") {
+                    settingsToggle(
+                        "Lock Drawing", subtitle: "Prevent anchor and whole-drawing movement.", isOn: $drawing.isLocked)
+                    Divider()
+                    settingsToggle(
+                        "Hide Drawing", subtitle: "Keep the drawing saved without showing it on the chart.",
+                        isOn: $drawing.isHidden)
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private func settingsSection<Content: View>(
+        _ title: String, icon: String, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+            content()
+        }
+        .fibSettingsCard()
+    }
+
+    private func settingsToggle(
+        _ title: String, subtitle: String, isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.subheadline.weight(.medium))
+                Text(subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 16)
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
+        }
+    }
+
+    private func coordinateCard(
+        title: String, icon: String, date: Binding<Date>, price: Binding<Double>
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: icon)
+                .font(.subheadline.weight(.semibold))
+            Divider()
+            LabeledContent("Date / Time") {
+                DatePicker("Date / Time", selection: date)
+                    .labelsHidden()
+            }
+            LabeledContent("Price") {
+                TextField("Price", value: price, format: .number)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 180)
+            }
+        }
+        .fibSettingsCard()
+    }
+
+    private func removeLevel(_ id: UUID) {
+        drawing.levels.removeAll { $0.id == id }
+    }
+}
+
+private extension View {
+    func fibSettingsCard() -> some View {
+        padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.separator.opacity(0.45), lineWidth: 1)
+            }
     }
 }
 

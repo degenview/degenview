@@ -30,6 +30,13 @@ struct ToolSidebar<BottomControls: View>: View {
                     onSelect(.trendLine)
                 }
                 ToolButton(
+                    icon: "point.3.connected.trianglepath.dotted",
+                    label: "Fib Retracement",
+                    isActive: activeTool == .fibonacciRetracement
+                ) {
+                    onSelect(.fibonacciRetracement)
+                }
+                ToolButton(
                     icon: "ruler",
                     label: "Ruler",
                     isActive: activeTool == .ruler

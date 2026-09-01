@@ -111,6 +111,11 @@ final class ContentViewModel: ObservableObject {
     private let plotRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
     /// The endpoint being dragged right now, and the chart it belongs to.
     private var lineDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
+    private var fibonacciDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
+    private var fibonacciMoveTarget:
+        (
+            vm: ChartViewModel, original: FibonacciRetracementDrawing, pointerStart: TrendAnchor
+        )?
 
     /// The tab's crosshair. Its own observable object rather than a `@Published` here —
     /// see `CrosshairTracker`.
@@ -135,8 +140,11 @@ final class ContentViewModel: ObservableObject {
             guard activeTool == .none else { return }
             for vm in chartViewModels {
                 vm.cancelDraft()
+                vm.cancelFibonacciDraft()
                 vm.selectedLineID = nil
                 vm.editingLineID = nil
+                vm.selectedFibonacciID = nil
+                vm.editingFibonacciID = nil
             }
         }
     }
@@ -508,6 +516,7 @@ final class ContentViewModel: ObservableObject {
         guard !isShowingSheet, !isShowingLineEditor else { return event }
         if activeTool == .crosshair { return handleCrosshair(event) }
         if activeTool == .ruler { return handleRuler(event) }
+        if activeTool == .fibonacciRetracement { return handleFibonacci(event) }
         guard activeTool == .trendLine else { return event }
 
         if event.type == .keyDown { return handleDrawingKey(event) }
@@ -569,6 +578,83 @@ final class ContentViewModel: ObservableObject {
         default:
             return event
         }
+    }
+
+    private func handleFibonacci(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown { return handleDrawingKey(event) }
+        if let target = fibonacciMoveTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    target.vm.translateFibonacci(
+                        id: target.original.id, original: target.original, from: target.pointerStart,
+                        to: fibonacciAnchor(for: event, hit: hit))
+                }
+                return nil
+            case .leftMouseUp:
+                target.vm.persistFibonacciRetracements()
+                fibonacciMoveTarget = nil
+                return nil
+            default: break
+            }
+        }
+        if let target = fibonacciDragTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    target.vm.moveFibonacciAnchor(
+                        id: target.id, isStart: target.isStart,
+                        to: fibonacciAnchor(for: event, hit: hit))
+                }
+                return nil
+            case .leftMouseUp:
+                target.vm.persistFibonacciRetracements()
+                fibonacciDragTarget = nil
+                return nil
+            default: break
+            }
+        }
+        guard let hit = plotHit(at: event) else { return event }
+        let anchor = fibonacciAnchor(for: event, hit: hit)
+        switch event.type {
+        case .mouseMoved:
+            hit.vm.updateFibonacciDraft(to: anchor)
+            return event
+        case .leftMouseDown:
+            clearDrawingState(except: hit.vm)
+            if hit.vm.hasFibonacciDraft {
+                if hit.vm.commitFibonacciDraft(at: anchor, in: hit.plot) { activeTool = .crosshair }
+            } else if let handle = hit.vm.fibonacciHandleHit(at: hit.point, in: hit.plot) {
+                fibonacciDragTarget = (hit.vm, handle.id, handle.isStart)
+                hit.vm.selectedFibonacciID = handle.id
+                hit.vm.editingFibonacciID = nil
+            } else if let id = hit.vm.fibonacciHit(at: hit.point, in: hit.plot) {
+                hit.vm.selectedFibonacciID = id
+                hit.vm.editingFibonacciID = id
+                if let original = hit.vm.fibonacciRetracements.first(where: { $0.id == id }), !original.isLocked {
+                    fibonacciMoveTarget = (hit.vm, original, anchor)
+                }
+            } else {
+                hit.vm.selectedFibonacciID = nil
+                hit.vm.editingFibonacciID = nil
+                hit.vm.beginFibonacciDraft(at: anchor)
+            }
+            return nil
+        case .leftMouseUp: return nil
+        default: return event
+        }
+    }
+
+    private func fibonacciAnchor(
+        for event: NSEvent, hit: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)
+    ) -> TrendAnchor {
+        // Command temporarily enables weak OHLC magnet snapping. This mirrors the
+        // modifier behavior without introducing app-global magnet state that the
+        // current drawing toolbar does not yet expose.
+        guard event.modifierFlags.contains(.command) else {
+            return hit.vm.anchor(at: hit.point, in: hit.plot)
+        }
+        return hit.vm.snappedAnchor(at: hit.point, in: hit.plot, strong: false)
     }
 
     /// Click once to pin a corner, again to finish the rectangle, a third time to put it
@@ -679,7 +765,9 @@ final class ContentViewModel: ObservableObject {
     private func handleDrawingKey(_ event: NSEvent) -> NSEvent? {
         switch event.keyCode {
         case 53:  // Esc
-            if let drafting = chartViewModels.first(where: { $0.hasDraft }) {
+            if let drafting = chartViewModels.first(where: { $0.hasFibonacciDraft }) {
+                drafting.cancelFibonacciDraft()
+            } else if let drafting = chartViewModels.first(where: { $0.hasDraft }) {
                 drafting.cancelDraft()
             } else {
                 activeTool = .none
@@ -687,6 +775,10 @@ final class ContentViewModel: ObservableObject {
             return nil
 
         case 51, 117:  // Delete, forward delete
+            if let target = chartViewModels.first(where: { $0.selectedFibonacciID != nil }) {
+                _ = target.removeSelectedFibonacci()
+                return nil
+            }
             guard let target = chartViewModels.first(where: { $0.selectedLineID != nil }) else {
                 return event
             }
@@ -724,9 +816,12 @@ final class ContentViewModel: ObservableObject {
     private func clearDrawingState(except keep: ChartViewModel) {
         for vm in chartViewModels where vm !== keep {
             vm.cancelDraft()
+            vm.cancelFibonacciDraft()
             vm.cancelRulerDraft()
             vm.selectedLineID = nil
             vm.editingLineID = nil
+            vm.selectedFibonacciID = nil
+            vm.editingFibonacciID = nil
         }
     }
 

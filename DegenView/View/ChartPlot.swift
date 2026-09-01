@@ -448,6 +448,130 @@ struct ChartPlot {
         }
     }
 
+    // MARK: - Fibonacci retracements
+
+    func drawFibonacciRetracements(
+        _ context: inout GraphicsContext,
+        drawings: [FibonacciRetracementDrawing],
+        draft: (start: TrendAnchor, end: TrendAnchor)?,
+        selectedID: UUID?,
+        showHandles: Bool,
+        points: [KlineData],
+        decimalPlaces: Int?
+    ) {
+        guard !points.isEmpty else { return }
+        for drawing in drawings where !drawing.isHidden {
+            drawFibonacci(
+                &context, drawing: drawing, selected: drawing.id == selectedID,
+                showHandles: showHandles, points: points, decimalPlaces: decimalPlaces)
+        }
+        if let draft {
+            var drawing = FibonacciRetracementDrawing(point1: draft.start, point2: draft.end)
+            drawing.style.trendLineStyle = .dashed
+            drawFibonacci(
+                &context, drawing: drawing, selected: true, showHandles: true,
+                points: points, decimalPlaces: decimalPlaces)
+        }
+    }
+
+    private func drawFibonacci(
+        _ context: inout GraphicsContext,
+        drawing: FibonacciRetracementDrawing,
+        selected: Bool,
+        showHandles: Bool,
+        points: [KlineData],
+        decimalPlaces: Int?
+    ) {
+        let slot = slotWidth(forCount: points.count)
+        let first = position(of: drawing.point1, points: points, slotWidth: slot)
+        let second = position(of: drawing.point2, points: points, slotWidth: slot)
+        let normalLeft = min(first.x, second.x)
+        let normalRight = max(first.x, second.x)
+        let left = drawing.style.extendLeft ? plotRect.minX : normalLeft
+        let right = drawing.style.extendRight ? plotRect.maxX : normalRight
+        let priced = FibonacciCalculator.prices(for: drawing).filter { $0.0.isVisible }
+        let geometry = priced.map { (level: $0.0, price: $0.1, y: y(for: $0.1)) }.sorted { $0.y < $1.y }
+
+        if drawing.style.backgroundVisible, geometry.count > 1 {
+            for index in 0..<(geometry.count - 1) {
+                let upper = geometry[index]
+                let lower = geometry[index + 1]
+                let color = drawing.style.useOneColor ? drawing.style.oneColor : upper.level.color
+                context.fill(
+                    Path(CGRect(x: left, y: upper.y, width: max(0, right - left), height: lower.y - upper.y)),
+                    with: .color(color.color.opacity(drawing.style.backgroundOpacity)))
+            }
+        }
+
+        for item in geometry {
+            let color = drawing.style.useOneColor ? drawing.style.oneColor : item.level.color
+            var path = Path()
+            path.move(to: CGPoint(x: left, y: item.y))
+            path.addLine(to: CGPoint(x: right, y: item.y))
+            context.stroke(
+                path, with: .color(color.color.opacity(item.level.opacity)),
+                style: strokeStyle(
+                    drawing.style.levelLineStyle,
+                    width: CGFloat(drawing.style.levelLineThickness.rawValue) + (selected ? 0.5 : 0)))
+
+            let label = fibonacciLabel(
+                item.level, price: item.price, style: drawing.style, decimalPlaces: decimalPlaces)
+            if !label.isEmpty {
+                let x = drawing.style.labelPosition == .left ? left + 3 : right - 3
+                context.draw(
+                    Text(label).font(.system(size: drawing.style.fontSize)).foregroundStyle(color.color),
+                    at: CGPoint(x: x, y: item.y - 2),
+                    anchor: drawing.style.labelPosition == .left ? .bottomLeading : .bottomTrailing)
+            }
+        }
+
+        if drawing.style.showTrendLine {
+            var path = Path()
+            path.move(to: first)
+            path.addLine(to: second)
+            context.stroke(
+                path, with: .color(drawing.style.trendLineColor.color.opacity(drawing.style.trendLineOpacity)),
+                style: strokeStyle(
+                    drawing.style.trendLineStyle,
+                    width: CGFloat(drawing.style.trendLineThickness.rawValue)))
+        }
+        guard showHandles || selected else { return }
+        for point in [first, second] {
+            let radius = style.trendHandleRadius
+            let rect = CGRect(x: point.x - radius, y: point.y - radius, width: radius * 2, height: radius * 2)
+            context.fill(Path(ellipseIn: rect), with: .color(.white))
+            context.stroke(Path(ellipseIn: rect), with: .color(.blue), lineWidth: 2)
+        }
+    }
+
+    private func strokeStyle(_ lineStyle: DrawingLineStyle, width: CGFloat) -> StrokeStyle {
+        let dash: [CGFloat]
+        switch lineStyle {
+        case .solid: dash = []
+        case .dashed: dash = [6, 4]
+        case .dotted: dash = [1, 3]
+        }
+        return StrokeStyle(lineWidth: width, lineCap: lineStyle == .dotted ? .round : .butt, dash: dash)
+    }
+
+    private func fibonacciLabel(
+        _ level: FibonacciLevel, price: Double, style: FibonacciStyle, decimalPlaces: Int?
+    ) -> String {
+        var components: [String] = []
+        if style.showLevels {
+            switch style.labelFormat {
+            case .absolute: components.append(NSDecimalNumber(decimal: level.ratio).stringValue)
+            case .percentage:
+                components.append("\(NSDecimalNumber(decimal: level.ratio * 100).stringValue)%")
+            }
+        }
+        if style.showPrices {
+            components.append(PriceFormatter.format(price, decimalPlaces: decimalPlaces, scale: scale))
+        }
+        if style.showCustomText, !level.customText.isEmpty { components.append(level.customText) }
+        return components.joined(separator: "  ")
+    }
+
     // MARK: - Ruler
 
     /// Measuring rectangles, plus the one being dragged out right now.

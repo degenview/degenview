@@ -685,6 +685,7 @@ struct ContentView: View {
         ChartCardView(
             viewModel: vm,
             chartHeight: height,
+            timeRange: contentViewModel.selectedTimeRange,
             cardHeight: cardHeight,
             onRemove: {
                 withAnimation {
@@ -722,7 +723,8 @@ struct ContentView: View {
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
             isToolArmed: contentViewModel.activeTool != .none,
-            showTrendHandles: contentViewModel.activeTool == .trendLine,
+            showTrendHandles: contentViewModel.activeTool == .trendLine
+                || contentViewModel.activeTool == .fibonacciRetracement,
             crosshair: contentViewModel.crosshair,
             onCrosshairExit: { contentViewModel.crosshair.clear(owner: vm.uniqueID) },
             onUpdateTicker: { symbol, source, displayName, pmSeries in
