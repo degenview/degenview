@@ -61,6 +61,11 @@ SwiftUI and an AppKit `Canvas`, with no external dependencies.
   hovered chart's price and time readout
 - **Trend lines** — Draw, select, move, recolor, resize, and delete lines. Drawings are
   anchored to time and price and shared by every chart of the same instrument
+- **Fibonacci retracements** — Draw, move, resize, reverse, extend, lock, hide, and
+  customize retracements with configurable levels, labels, colors, and visibility
+- **Native drawing undo and redo** — Trend-line and Fibonacci edits participate in each
+  window's Edit menu with descriptive action names. Use **⌘Z** to undo and **⇧⌘Z** or
+  **⌘Y** to redo; history lasts for the current app session
 - **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
   green/red rectangle; measurements are intentionally temporary
 

@@ -34,7 +34,12 @@ final class ContentViewModel: ObservableObject {
     @Published var replayNotice: String?
     private var replayPreparationTask: Task<Void, Never>?
 
-    @Published var chartViewModels: [ChartViewModel] = []
+    @Published var chartViewModels: [ChartViewModel] = [] {
+        didSet {
+            guard let drawingUndoCoordinator else { return }
+            chartViewModels.forEach { $0.drawingUndoCoordinator = drawingUndoCoordinator }
+        }
+    }
     @Published private(set) var chartColumns: [ChartColumn] = []
     var marketChartViewModels: [ChartViewModel] {
         chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil && !$0.isBitcoinPowerLaw }
@@ -110,8 +115,8 @@ final class ContentViewModel: ObservableObject {
     /// removed card drops out on its own.
     private let plotRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
     /// The endpoint being dragged right now, and the chart it belongs to.
-    private var lineDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
-    private var fibonacciDragTarget: (vm: ChartViewModel, id: UUID, isStart: Bool)?
+    private var lineDragTarget: (vm: ChartViewModel, original: TrendLine, isStart: Bool)?
+    private var fibonacciDragTarget: (vm: ChartViewModel, original: FibonacciRetracementDrawing, isStart: Bool)?
     private var fibonacciMoveTarget:
         (
             vm: ChartViewModel, original: FibonacciRetracementDrawing, pointerStart: TrendAnchor
@@ -157,6 +162,7 @@ final class ContentViewModel: ObservableObject {
     // MARK: - Window binding
 
     private weak var ownWindow: NSWindow?
+    private var drawingUndoCoordinator: DrawingUndoCoordinator?
     private var observers: [NSObjectProtocol] = []
     /// Hidden tabs don't poll — see `updateVisibility(_:)`.
     private var isWindowVisible = false
@@ -527,14 +533,14 @@ final class ContentViewModel: ObservableObject {
             case .leftMouseDragged:
                 if let hit = plotHit(at: event) {
                     target.vm.moveAnchor(
-                        lineID: target.id,
+                        lineID: target.original.id,
                         isStart: target.isStart,
                         to: target.vm.anchor(at: hit.point, in: hit.plot)
                     )
                 }
                 return nil
             case .leftMouseUp:
-                target.vm.persistTrendLines()
+                target.vm.commitTrendLineDrag(original: target.original)
                 lineDragTarget = nil
                 return nil
             default:
@@ -559,7 +565,8 @@ final class ContentViewModel: ObservableObject {
             if hit.vm.hasDraft {
                 _ = hit.vm.commitDraft(at: anchor, in: hit.plot)
             } else if let handle = hit.vm.handleHit(at: hit.point, in: hit.plot) {
-                lineDragTarget = (hit.vm, handle.id, handle.isStart)
+                guard let original = hit.vm.trendLines.first(where: { $0.id == handle.id }) else { return nil }
+                lineDragTarget = (hit.vm, original, handle.isStart)
                 hit.vm.selectedLineID = handle.id
                 hit.vm.editingLineID = nil
             } else if let line = hit.vm.lineHit(at: hit.point, in: hit.plot) {
@@ -592,7 +599,8 @@ final class ContentViewModel: ObservableObject {
                 }
                 return nil
             case .leftMouseUp:
-                target.vm.persistFibonacciRetracements()
+                target.vm.commitFibonacciDrag(
+                    original: target.original, actionName: "Move Fibonacci Retracement")
                 fibonacciMoveTarget = nil
                 return nil
             default: break
@@ -603,12 +611,13 @@ final class ContentViewModel: ObservableObject {
             case .leftMouseDragged:
                 if let hit = plotHit(at: event) {
                     target.vm.moveFibonacciAnchor(
-                        id: target.id, isStart: target.isStart,
+                        id: target.original.id, isStart: target.isStart,
                         to: fibonacciAnchor(for: event, hit: hit))
                 }
                 return nil
             case .leftMouseUp:
-                target.vm.persistFibonacciRetracements()
+                target.vm.commitFibonacciDrag(
+                    original: target.original, actionName: "Resize Fibonacci Retracement")
                 fibonacciDragTarget = nil
                 return nil
             default: break
@@ -625,7 +634,10 @@ final class ContentViewModel: ObservableObject {
             if hit.vm.hasFibonacciDraft {
                 if hit.vm.commitFibonacciDraft(at: anchor, in: hit.plot) { activeTool = .crosshair }
             } else if let handle = hit.vm.fibonacciHandleHit(at: hit.point, in: hit.plot) {
-                fibonacciDragTarget = (hit.vm, handle.id, handle.isStart)
+                guard let original = hit.vm.fibonacciRetracements.first(where: { $0.id == handle.id }) else {
+                    return nil
+                }
+                fibonacciDragTarget = (hit.vm, original, handle.isStart)
                 hit.vm.selectedFibonacciID = handle.id
                 hit.vm.editingFibonacciID = nil
             } else if let id = hit.vm.fibonacciHit(at: hit.point, in: hit.plot) {
@@ -830,6 +842,11 @@ final class ContentViewModel: ObservableObject {
     func attach(to window: NSWindow) {
         guard ownWindow !== window else { return }
         ownWindow = window
+        if let undoManager = window.undoManager {
+            let coordinator = DrawingUndoCoordinator(undoManager: undoManager)
+            drawingUndoCoordinator = coordinator
+            chartViewModels.forEach { $0.drawingUndoCoordinator = coordinator }
+        }
         // `activeTool`'s observer can't do this for the tool armed at launch — there was
         // no window to ask when it was assigned.
         window.acceptsMouseMovedEvents = activeTool != .none

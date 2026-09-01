@@ -866,6 +866,7 @@ private struct FibonacciEditor: View {
                 Label("Extend Right", systemImage: "arrow.right.to.line")
             }
             Button {
+                viewModel.beginFibonacciSettingsEdit(id: drawingID)
                 showSettings = true
             } label: {
                 Image(systemName: "gearshape")
@@ -887,9 +888,13 @@ private struct FibonacciEditor: View {
                 FibonacciSettingsView(
                     drawing: binding(for: drawing),
                     onCommit: {
-                        viewModel.persistFibonacciRetracements()
                         onChange()
                     })
+            }
+        }
+        .onChange(of: showSettings) { wasShowing, isShowing in
+            if wasShowing, !isShowing {
+                viewModel.endFibonacciSettingsEdit(id: drawingID)
             }
         }
     }
@@ -897,7 +902,7 @@ private struct FibonacciEditor: View {
     private func binding(for fallback: FibonacciRetracementDrawing) -> Binding<FibonacciRetracementDrawing> {
         Binding(
             get: { drawing ?? fallback },
-            set: { viewModel.updateFibonacci($0) }
+            set: { viewModel.updateFibonacci($0, recordUndo: false) }
         )
     }
 

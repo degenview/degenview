@@ -90,6 +90,7 @@
 		AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000106 /* PortfolioDashboardView.swift */; };
 		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
 		FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000102 /* FibonacciRetracementTests.swift */; };
+		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
@@ -161,6 +162,7 @@
 		E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000103 /* AlpacaWebSocketService.swift */; };
 		E20000000000000000000004 /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000104 /* AppSettingsView.swift */; };
 		F20000000000000000000001 /* DrawingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000101 /* DrawingStore.swift */; };
+		F20000000000000000000002 /* DrawingUndoCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000102 /* DrawingUndoCoordinator.swift */; };
 		E30000000000000000000001 /* ReplaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000101 /* ReplaySession.swift */; };
 		E30000000000000000000002 /* ReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000102 /* ReplayEngine.swift */; };
 		E30000000000000000000003 /* ReplayControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000103 /* ReplayControlBar.swift */; };
@@ -285,6 +287,7 @@
 		A00000000000000000000906 /* TrendLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendLine.swift; sourceTree = "<group>"; };
 		FB0000000000000000000101 /* FibonacciRetracement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracement.swift; sourceTree = "<group>"; };
 		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
+		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
@@ -309,6 +312,7 @@
 		E20000000000000000000103 /* AlpacaWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaWebSocketService.swift; sourceTree = "<group>"; };
 		E20000000000000000000104 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
 		F20000000000000000000101 /* DrawingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingStore.swift; sourceTree = "<group>"; };
+		F20000000000000000000102 /* DrawingUndoCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinator.swift; sourceTree = "<group>"; };
 		E30000000000000000000101 /* ReplaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySession.swift; sourceTree = "<group>"; };
 		E30000000000000000000102 /* ReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngine.swift; sourceTree = "<group>"; };
 		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
@@ -455,6 +459,7 @@
 				D10000000000000000000102 /* TabsStore.swift */,
 				D10000000000000000000103 /* WindowCoordinator.swift */,
 				F20000000000000000000101 /* DrawingStore.swift */,
+				F20000000000000000000102 /* DrawingUndoCoordinator.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -555,6 +560,7 @@
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
 				FB0000000000000000000102 /* FibonacciRetracementTests.swift */,
+				F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */,
 			);
 			path = DegenViewTests;
 			sourceTree = "<group>";
@@ -689,6 +695,7 @@
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
+				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -791,6 +798,7 @@
 				d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */,
 				E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */,
 				F20000000000000000000001 /* DrawingStore.swift in Sources */,
+				F20000000000000000000002 /* DrawingUndoCoordinator.swift in Sources */,
 				210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */,
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
 				A0000000000000000000041A /* WindowFrame.swift in Sources */,
