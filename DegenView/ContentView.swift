@@ -120,6 +120,9 @@ struct ContentView: View {
                 },
                 onAddCoinMarketCap: { config in
                     contentViewModel.addCoinMarketCapChart(config)
+                },
+                onAddBitcoinPowerLaw: {
+                    contentViewModel.addBitcoinPowerLawChart()
                 }
             ) { selected in
                 let displayName: String? = {
@@ -709,7 +712,13 @@ struct ContentView: View {
                     ticker: favoriteTicker(for: vm)
                 )
             },
-            onZoomRegion: { contentViewModel.registerZoomRegion($0) },
+            onZoomRegion: {
+                if vm.isBitcoinPowerLaw {
+                    contentViewModel.registerPowerLawZoomRegion($0, for: vm)
+                } else {
+                    contentViewModel.registerZoomRegion($0)
+                }
+            },
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
             isToolArmed: contentViewModel.activeTool != .none,

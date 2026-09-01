@@ -37,7 +37,7 @@ final class ContentViewModel: ObservableObject {
     @Published var chartViewModels: [ChartViewModel] = []
     @Published private(set) var chartColumns: [ChartColumn] = []
     var marketChartViewModels: [ChartViewModel] {
-        chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil }
+        chartViewModels.filter { !$0.isPortfolioChart && $0.coinMarketCapChart == nil && !$0.isBitcoinPowerLaw }
     }
     @Published var selectedTimeRange: TimeRange = .oneDay {
         didSet {
@@ -95,6 +95,7 @@ final class ContentViewModel: ObservableObject {
     /// Card rectangles a scroll has to land in to count as a zoom. Weak, so a
     /// removed card's marker view takes its entry with it.
     private let zoomRegions = NSHashTable<NSView>.weakObjects()
+    private let powerLawZoomRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
 
     private var mouseMonitor: Any?
     /// Y-axis gutters, each mapped to the chart it scales. Weak on both sides, so a
@@ -180,6 +181,11 @@ final class ContentViewModel: ObservableObject {
             // A local monitor sees every scroll in the app, so without this each
             // open tab would zoom on a scroll aimed at one of the others.
             guard let own = self.ownWindow, event.window === own else { return event }
+            if let powerLaw = self.powerLawZoomRegion(at: event) {
+                guard event.scrollingDeltaY != 0 else { return event }
+                powerLaw.adjustPowerLawXZoom(scrollingUp: event.scrollingDeltaY > 0)
+                return event
+            }
             guard self.pointerIsOverChart(event) else { return event }
             let step = max(1, Int(Double(self.candleCount) * Candle.zoomStepFraction))
             if event.scrollingDeltaY > 0 {
@@ -230,6 +236,22 @@ final class ContentViewModel: ObservableObject {
     /// monitor can tell a zoom from a scroll aimed anywhere else.
     func registerZoomRegion(_ view: NSView) {
         zoomRegions.add(view)
+    }
+
+    func registerPowerLawZoomRegion(_ view: NSView, for viewModel: ChartViewModel) {
+        powerLawZoomRegions.setObject(viewModel, forKey: view)
+    }
+
+    private func powerLawZoomRegion(at event: NSEvent) -> ChartViewModel? {
+        guard let window = event.window else { return nil }
+        let point = event.locationInWindow
+        guard let views = powerLawZoomRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
+        for view in views where view.window === window && !view.isHiddenOrHasHiddenAncestor {
+            if view.bounds.contains(view.convert(point, from: nil)) {
+                return powerLawZoomRegions.object(forKey: view)
+            }
+        }
+        return nil
     }
 
     /// `bounds`, not `visibleRect`: SwiftUI's superviews don't clip their
@@ -971,6 +993,18 @@ final class ContentViewModel: ObservableObject {
         if isWindowVisible { Task { await vm.fetchCoinMarketCap() } }
     }
 
+    func addBitcoinPowerLawChart() {
+        let vm = ChartViewModel(
+            ticker: "bitcoin-power-law-\(UUID().uuidString)", source: .binance,
+            displayName: "Bitcoin Power Law")
+        vm.bitcoinPowerLaw = .default
+        chartViewModels.append(vm)
+        placeChartInGrid(vm.chartID)
+        persistTickers()
+        markChanged()
+        if isWindowVisible { Task { await vm.fetchPowerLaw() } }
+    }
+
     /// Add a ticker with a chosen data source.
     /// - Parameter displayName: label to show instead of the raw symbol, for sources
     ///   whose symbol is an opaque id (Polymarket CLOB token ids).
@@ -1145,6 +1179,7 @@ final class ContentViewModel: ObservableObject {
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
                 portfolioChart: vm.portfolioChart,
                 coinMarketCapChart: vm.coinMarketCapChart,
+                bitcoinPowerLaw: vm.bitcoinPowerLaw,
                 pine: vm.pineConfiguration,
                 chartID: vm.chartID,
                 scripts: vm.scriptInstances

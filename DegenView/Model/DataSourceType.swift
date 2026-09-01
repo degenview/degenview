@@ -138,16 +138,28 @@ enum CoinMarketCapChartType: String, Codable, CaseIterable, Identifiable {
 }
 
 enum CMCAltcoinRange: String, Codable, CaseIterable, Identifiable {
-    case sevenDays = "7d", thirtyDays = "30d", ninetyDays = "90d"
+    case sevenDays = "7d"
+    case thirtyDays = "30d"
+    case ninetyDays = "90d"
     var id: String { rawValue }
     var label: String { rawValue.uppercased() }
 }
 
 enum CMCFearGreedRange: String, Codable, CaseIterable, Identifiable {
-    case sevenDays = "7D", oneMonth = "1M", threeMonths = "3M", oneYear = "1Y", all = "ALL"
+    case sevenDays = "7D"
+    case oneMonth = "1M"
+    case threeMonths = "3M"
+    case oneYear = "1Y"
+    case all = "ALL"
     var id: String { rawValue }
     var dayCount: Int? {
-        switch self { case .sevenDays: 7; case .oneMonth: 31; case .threeMonths: 90; case .oneYear: 365; case .all: nil }
+        switch self {
+        case .sevenDays: 7
+        case .oneMonth: 31
+        case .threeMonths: 90
+        case .oneYear: 365
+        case .all: nil
+        }
     }
 }
 
@@ -207,6 +219,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Present when this slot is a portfolio card rather than a market chart.
     var portfolioChart: PortfolioChartConfig? = nil
     var coinMarketCapChart: CoinMarketCapChartConfig? = nil
+    var bitcoinPowerLaw: BitcoinPowerLawConfig? = nil
 
     /// One isolated script instance for this market chart. Draft and last-valid source
     /// are stored separately so a compiler error never blanks an already working plot.
@@ -223,6 +236,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         trendLines: [TrendLine]? = nil, displayName: String? = nil,
         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
         coinMarketCapChart: CoinMarketCapChartConfig? = nil,
+        bitcoinPowerLaw: BitcoinPowerLawConfig? = nil,
         pine: PineConfiguration? = nil, chartID: UUID = UUID(),
         scripts: [ChartScriptInstance] = []
     ) {
@@ -244,6 +258,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         self.pmSeries = pmSeries
         self.portfolioChart = portfolioChart
         self.coinMarketCapChart = coinMarketCapChart
+        self.bitcoinPowerLaw = bitcoinPowerLaw
         self.pine = pine
         self.scripts = scripts
     }
@@ -251,7 +266,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
             yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
-            trendLines, displayName, pmSeries, portfolioChart, coinMarketCapChart, pine, scripts
+            trendLines, displayName, pmSeries, portfolioChart, coinMarketCapChart, bitcoinPowerLaw, pine, scripts
     }
 
     init(from decoder: Decoder) throws {
@@ -274,6 +289,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         pmSeries = try c.decodeIfPresent([PmSeriesConfig].self, forKey: .pmSeries)
         portfolioChart = try c.decodeIfPresent(PortfolioChartConfig.self, forKey: .portfolioChart)
         coinMarketCapChart = try c.decodeIfPresent(CoinMarketCapChartConfig.self, forKey: .coinMarketCapChart)
+        bitcoinPowerLaw = try c.decodeIfPresent(BitcoinPowerLawConfig.self, forKey: .bitcoinPowerLaw)
         pine = try c.decodeIfPresent(PineConfiguration.self, forKey: .pine)
         scripts = try c.decodeIfPresent([ChartScriptInstance].self, forKey: .scripts) ?? []
     }
