@@ -12,8 +12,18 @@ final class ChartViewModel: ObservableObject {
     @Published var displayName: String?
     @Published var portfolioChart: PortfolioChartConfig?
     @Published var coinMarketCapChart: CoinMarketCapChartConfig?
+    @Published var bitcoinPowerLaw: BitcoinPowerLawConfig?
+    @Published private(set) var powerLawHistory: [BitcoinDailyClose] = []
+    @Published private(set) var powerLawWarning: String?
+    @Published private(set) var powerLawXZoom = 1.0
 
     var isPortfolioChart: Bool { portfolioChart != nil }
+    var isBitcoinPowerLaw: Bool { bitcoinPowerLaw != nil }
+
+    func adjustPowerLawXZoom(scrollingUp: Bool) {
+        let factor = scrollingUp ? 1.12 : 1 / 1.12
+        powerLawXZoom = (powerLawXZoom * factor).clamped(to: 1...20)
+    }
 
     /// Unique identifier — derived from initial ticker+source, stable across updates.
     let uniqueID: String
@@ -462,6 +472,7 @@ final class ChartViewModel: ObservableObject {
         scriptInstances = config.scripts
         portfolioChart = config.portfolioChart
         coinMarketCapChart = config.coinMarketCapChart
+        bitcoinPowerLaw = config.bitcoinPowerLaw
         if let hex = config.bullishColorHex { bullishColor = Color(hex: hex) }
         if let hex = config.bearishColorHex { bearishColor = Color(hex: hex) }
         yAxisDecimalPlaces = config.yAxisDecimalPlaces
@@ -886,7 +897,11 @@ final class ChartViewModel: ObservableObject {
 
     func fetchData(for range: TimeRange, count: Int, silent: Bool = false) async {
         guard !isPortfolioChart else { return }
-        if coinMarketCapChart != nil { await fetchCoinMarketCap(force: !silent); return }
+        if isBitcoinPowerLaw { return }
+        if coinMarketCapChart != nil {
+            await fetchCoinMarketCap(force: !silent)
+            return
+        }
         // Silent refresh: if a fetch is already running let it finish.
         if silent, isFetching {
             return
@@ -995,6 +1010,31 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    func fetchPowerLaw(force: Bool = false) async {
+        guard isBitcoinPowerLaw else { return }
+        if let cached = await BitcoinHistoryService.shared.cachedHistory() {
+            powerLawHistory = cached.closes
+        }
+        isFetching = powerLawHistory.isEmpty
+        errorMessage = nil
+        powerLawWarning = nil
+        do {
+            let refreshed = try await BitcoinHistoryService.shared.refresh(force: force)
+            powerLawHistory = refreshed.closes
+            lastUpdated = refreshed.fetchedAt
+            if Date().timeIntervalSince(refreshed.fetchedAt) >= BitcoinHistoryService.cacheLifetime {
+                powerLawWarning = "Showing cached data; refresh failed."
+            }
+        } catch {
+            if powerLawHistory.isEmpty {
+                errorMessage = error.localizedDescription
+            } else {
+                powerLawWarning = "Showing cached data; refresh failed: \(error.localizedDescription)"
+            }
+        }
+        isFetching = false
+    }
+
     func fetchCoinMarketCap(force: Bool = false) async {
         guard let config = coinMarketCapChart else { return }
         fetchTask?.cancel()
@@ -1010,23 +1050,36 @@ final class ChartViewModel: ObservableObject {
                 case .altcoinSeasonLatest:
                     let value = try await CoinMarketCapDataProvider.shared.altcoinLatest(force: force)
                     guard self.fetchGeneration == generation else { return }
-                    self.cmcAltcoinLatest = value; self.lastUpdated = CMCDateParser.parse(value.snapshotTime)
+                    self.cmcAltcoinLatest = value
+                    self.lastUpdated = CMCDateParser.parse(value.snapshotTime)
                 case .altcoinSeasonHistorical:
-                    let value = try await CoinMarketCapDataProvider.shared.altcoinHistorical(config.altcoinRange, force: force)
-                    guard self.fetchGeneration == generation, self.coinMarketCapChart?.altcoinRange == config.altcoinRange else { return }
-                    self.cmcAltcoinHistory = value.points.sorted { (CMCDateParser.parse($0.timestamp) ?? .distantPast) < (CMCDateParser.parse($1.timestamp) ?? .distantPast) }
+                    let value = try await CoinMarketCapDataProvider.shared.altcoinHistorical(
+                        config.altcoinRange, force: force)
+                    guard self.fetchGeneration == generation,
+                        self.coinMarketCapChart?.altcoinRange == config.altcoinRange
+                    else { return }
+                    self.cmcAltcoinHistory = value.points.sorted {
+                        (CMCDateParser.parse($0.timestamp) ?? .distantPast)
+                            < (CMCDateParser.parse($1.timestamp) ?? .distantPast)
+                    }
                     self.lastUpdated = self.cmcAltcoinHistory.last.flatMap { CMCDateParser.parse($0.timestamp) }
                 case .fearAndGreedLatest:
                     let value = try await CoinMarketCapDataProvider.shared.fearGreedLatest(force: force)
                     guard self.fetchGeneration == generation else { return }
-                    self.cmcFearGreedLatest = value; self.lastUpdated = CMCDateParser.parse(value.updateTime)
+                    self.cmcFearGreedLatest = value
+                    self.lastUpdated = CMCDateParser.parse(value.updateTime)
                 case .fearAndGreedHistorical:
-                    let value = try await CoinMarketCapDataProvider.shared.fearGreedHistorical(config.fearGreedRange, force: force)
-                    guard self.fetchGeneration == generation, self.coinMarketCapChart?.fearGreedRange == config.fearGreedRange else { return }
-                    self.cmcFearGreedHistory = value; self.lastUpdated = value.last.flatMap { CMCDateParser.parse($0.timestamp) }
+                    let value = try await CoinMarketCapDataProvider.shared.fearGreedHistorical(
+                        config.fearGreedRange, force: force)
+                    guard self.fetchGeneration == generation,
+                        self.coinMarketCapChart?.fearGreedRange == config.fearGreedRange
+                    else { return }
+                    self.cmcFearGreedHistory = value
+                    self.lastUpdated = value.last.flatMap { CMCDateParser.parse($0.timestamp) }
                 }
-            } catch is CancellationError { return }
-            catch { if self.fetchGeneration == generation { self.errorMessage = error.localizedDescription } }
+            } catch is CancellationError { return } catch {
+                if self.fetchGeneration == generation { self.errorMessage = error.localizedDescription }
+            }
         }
         fetchTask = task
         await task.value
@@ -1034,7 +1087,8 @@ final class ChartViewModel: ObservableObject {
 
     func updateCMCConfig(_ update: (inout CoinMarketCapChartConfig) -> Void) {
         guard var config = coinMarketCapChart else { return }
-        update(&config); coinMarketCapChart = config
+        update(&config)
+        coinMarketCapChart = config
         Task { await fetchCoinMarketCap(force: false) }
     }
 

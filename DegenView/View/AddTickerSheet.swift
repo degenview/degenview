@@ -6,6 +6,7 @@ struct AddTickerSheet: View {
     let onAdd: @MainActor (TickerSearchResult) async throws -> Void
     let onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)?
     let onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)?
+    let onAddBitcoinPowerLaw: (@MainActor () -> Void)?
 
     @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[AddTicker]")
     @StateObject private var stockVM = TickerSearchViewModel(
@@ -33,12 +34,14 @@ struct AddTickerSheet: View {
         actionLabel: String = "Add",
         onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)? = nil,
         onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)? = nil,
+        onAddBitcoinPowerLaw: (@MainActor () -> Void)? = nil,
         onAdd: @escaping @MainActor (TickerSearchResult) async throws -> Void
     ) {
         self.title = title
         self.actionLabel = actionLabel
         self.onAddPortfolio = onAddPortfolio
         self.onAddCoinMarketCap = onAddCoinMarketCap
+        self.onAddBitcoinPowerLaw = onAddBitcoinPowerLaw
         self.onAdd = onAdd
     }
 
@@ -51,6 +54,7 @@ struct AddTickerSheet: View {
         case polymarket = "Polymarket"
         case coinMarketCap = "CoinMarketCap"
         case portfolio = "Portfolio"
+        case models = "Models"
     }
 
     /// Whichever pane is showing owns the selection the Add button commits.
@@ -59,7 +63,7 @@ struct AddTickerSheet: View {
         case .crypto: return searchVM.selectedResult
         case .stocks: return stockVM.selectedResult
         case .polymarket: return polymarketVM.selectedResult
-        case .coinMarketCap, .portfolio: return nil
+        case .coinMarketCap, .portfolio, .models: return nil
         }
     }
 
@@ -69,9 +73,13 @@ struct AddTickerSheet: View {
                 .font(.headline)
 
             Picker("", selection: $selectedTab) {
-                ForEach(Tab.allCases.filter {
-                    ($0 != .portfolio || onAddPortfolio != nil) && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
-                }, id: \.self) { tab in
+                ForEach(
+                    Tab.allCases.filter {
+                        ($0 != .portfolio || onAddPortfolio != nil)
+                            && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
+                            && ($0 != .models || onAddBitcoinPowerLaw != nil)
+                    }, id: \.self
+                ) { tab in
                     Text(tab.rawValue).tag(tab)
                 }
             }
@@ -95,6 +103,8 @@ struct AddTickerSheet: View {
                 coinMarketCapTab
             case .portfolio:
                 portfolioTab
+            case .models:
+                modelsTab
             }
 
             statusRows
@@ -114,15 +124,22 @@ struct AddTickerSheet: View {
                 .keyboardShortcut(.escape)
 
                 Button(actionLabel) {
-                    if selectedTab == .portfolio { addPortfolio() }
-                    else if selectedTab == .coinMarketCap { addCoinMarketCap() }
-                    else if let selected = activeSelection {
+                    if selectedTab == .portfolio {
+                        addPortfolio()
+                    } else if selectedTab == .coinMarketCap {
+                        addCoinMarketCap()
+                    } else if selectedTab == .models {
+                        addBitcoinPowerLaw()
+                    } else if let selected = activeSelection {
                         addTicker(selected)
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(selectedTab == .portfolio ? portfolioStore.activePortfolios.isEmpty :
-                    selectedTab == .coinMarketCap ? false : activeSelection == nil)
+                .disabled(
+                    selectedTab == .portfolio
+                        ? portfolioStore.activePortfolios.isEmpty
+                        : selectedTab == .coinMarketCap || selectedTab == .models ? false : activeSelection == nil
+                )
                 .keyboardShortcut(.return)
             }
         }
@@ -140,6 +157,23 @@ struct AddTickerSheet: View {
         .onDisappear {
             cancelSearches()
         }
+    }
+
+    private var modelsTab: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Bitcoin Power Law", systemImage: "chart.xyaxis.line").font(.headline)
+            Text(
+                "Bitstamp BTC/USD history on logarithmic time and price axes, with an editable power-law corridor and ten-year projection."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(12).frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func addBitcoinPowerLaw() {
+        onAddBitcoinPowerLaw?()
+        dismiss()
     }
 
     private var portfolioTab: some View {
@@ -185,7 +219,9 @@ struct AddTickerSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Market-wide CoinMarketCap indices").font(.caption).foregroundStyle(.secondary)
             ForEach(CoinMarketCapChartType.allCases) { type in
-                Button { cmcType = type } label: {
+                Button {
+                    cmcType = type
+                } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(type.title).fontWeight(.semibold)
@@ -194,7 +230,9 @@ struct AddTickerSheet: View {
                         Spacer()
                         Image(systemName: cmcType == type ? "checkmark.circle.fill" : "circle")
                             .foregroundStyle(cmcType == type ? .blue : .secondary)
-                    }.padding(10).background(cmcType == type ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+                    }.padding(10).background(
+                        cmcType == type ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.06),
+                        in: RoundedRectangle(cornerRadius: 8))
                 }.buttonStyle(.plain)
             }
         }
@@ -326,10 +364,11 @@ struct AddTickerSheet: View {
                     }
                 }
                 .listStyle(.inset)
-                .frame(height: UI.searchResultsHeight(
-                    rowCount: searchVM.searchResults.values.reduce(0) { $0 + $1.count },
-                    sectionCount: searchVM.searchResults.values.filter { !$0.isEmpty }.count
-                ))
+                .frame(
+                    height: UI.searchResultsHeight(
+                        rowCount: searchVM.searchResults.values.reduce(0) { $0 + $1.count },
+                        sectionCount: searchVM.searchResults.values.filter { !$0.isEmpty }.count
+                    ))
             }
 
             // No results
@@ -351,8 +390,9 @@ struct AddTickerSheet: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if selectedTab == .polymarket, !polymarketVM.isSearching,
-                  !polymarketText.trimmingCharacters(in: .whitespaces).isEmpty,
-                  !polymarketVM.hasResults {
+            !polymarketText.trimmingCharacters(in: .whitespaces).isEmpty,
+            !polymarketVM.hasResults
+        {
             Text("No markets found")
                 .font(.caption)
                 .foregroundStyle(.secondary)

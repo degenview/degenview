@@ -7,6 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BPL000000000000000000001 /* BitcoinPowerLaw.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000101 /* BitcoinPowerLaw.swift */; };
+		BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000101 /* BitcoinPowerLaw.swift */; };
+		BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000106 /* BitcoinPowerLawTests.swift */; };
+		BPL000000000000000000002 /* BitcoinHistoryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000102 /* BitcoinHistoryService.swift */; };
+		BPL000000000000000000003 /* BitcoinPowerLawChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */; };
+		BPL000000000000000000004 /* BitcoinPowerLawSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */; };
 		SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000106 /* ScriptStoreTests.swift */; };
 		SM0000000000000000000001 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000101 /* ScriptStore.swift */; };
 		SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000102 /* ScriptManagerViewModel.swift */; };
@@ -176,6 +182,11 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		BPL000000000000000000101 /* BitcoinPowerLaw.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLaw.swift; sourceTree = "<group>"; };
+		BPL000000000000000000102 /* BitcoinHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinHistoryService.swift; sourceTree = "<group>"; };
+		BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawChartView.swift; sourceTree = "<group>"; };
+		BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawSettingsSheet.swift; sourceTree = "<group>"; };
+		BPL000000000000000000106 /* BitcoinPowerLawTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000106 /* ScriptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStoreTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000101 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
 		SM0000000000000000000102 /* ScriptManagerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerViewModel.swift; sourceTree = "<group>"; };
@@ -374,6 +385,7 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				P10000000000000000000101 /* PineModels.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
@@ -399,6 +411,7 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				BPL000000000000000000102 /* BitcoinHistoryService.swift */,
 				SM0000000000000000000101 /* ScriptStore.swift */,
 				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
 				BA0000000000000000000102 /* AlertRuntimeHost.swift */,
@@ -458,6 +471,8 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */,
+				BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */,
 				SM0000000000000000000104 /* ScriptManagerView.swift */,
 				SM0000000000000000000105 /* ScriptEditorView.swift */,
 				SM0000000000000000000107 /* LineNumberedTextEditorView.swift */,
@@ -518,6 +533,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				BPL000000000000000000106 /* BitcoinPowerLawTests.swift */,
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
@@ -634,6 +650,7 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		BA1000000000000000000501 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+			BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */,
 			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
 			BA1100000000000000000001, BA1100000000000000000002, BA1100000000000000000003, BA1100000000000000000004,
 			BA1100000000000000000005, BA1100000000000000000006, BA1100000000000000000007, BA1100000000000000000008,
@@ -649,6 +666,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */,
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
@@ -671,6 +689,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BPL000000000000000000001 /* BitcoinPowerLaw.swift in Sources */,
+				BPL000000000000000000002 /* BitcoinHistoryService.swift in Sources */,
+				BPL000000000000000000003 /* BitcoinPowerLawChartView.swift in Sources */,
+				BPL000000000000000000004 /* BitcoinPowerLawSettingsSheet.swift in Sources */,
 				SM0000000000000000000001 /* ScriptStore.swift in Sources */,
 				SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */,
 				SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */,

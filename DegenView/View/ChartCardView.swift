@@ -64,6 +64,12 @@ struct ChartCardView: View {
                 viewModel: viewModel, chartHeight: chartHeight, cardHeight: cardHeight,
                 onRemove: onRemove, onChanged: onStyleChanged
             )
+        } else if viewModel.isBitcoinPowerLaw {
+            BitcoinPowerLawChartView(
+                viewModel: viewModel, chartHeight: chartHeight, cardHeight: cardHeight,
+                onRemove: onRemove, onChanged: onStyleChanged,
+                onZoomRegion: onZoomRegion, onAxisRegion: onAxisRegion
+            )
         } else {
             marketCard
         }
@@ -890,7 +896,7 @@ private struct CrosshairOverlay: View {
 /// the scroll location against AppKit geometry instead of reconstructing
 /// SwiftUI's flipped coordinate space by hand.
 /// `hitTest` returns nil so the card's own controls keep every mouse event.
-private struct ZoomHitRegion: NSViewRepresentable {
+struct ZoomHitRegion: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
@@ -958,7 +964,7 @@ private struct PlotHitRegion: NSViewRepresentable {
     }
 }
 
-private struct PriceAxisRegion: NSViewRepresentable {
+struct PriceAxisRegion: NSViewRepresentable {
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
