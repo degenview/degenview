@@ -8,11 +8,23 @@ final class DrawingStore: ObservableObject {
     static let shared = DrawingStore()
 
     @Published private(set) var linesByInstrument: [String: [TrendLine]]
+    @Published private(set) var fibsByInstrument: [String: [FibonacciRetracementDrawing]]
 
     private let store = JSONStore<[String: [TrendLine]]>(filename: "drawings.json")
+    private let fibStore = JSONStore<[String: [FibonacciRetracementDrawing]]>(filename: "fib-drawings.json")
 
     private init() {
         linesByInstrument = store.load() ?? [:]
+        fibsByInstrument = fibStore.load() ?? [:]
+    }
+
+    func fibs(ticker: String, source: DataSourceType) -> [FibonacciRetracementDrawing] {
+        fibsByInstrument[key(ticker: ticker, source: source)] ?? []
+    }
+
+    func save(_ fibs: [FibonacciRetracementDrawing], ticker: String, source: DataSourceType) {
+        fibsByInstrument[key(ticker: ticker, source: source)] = fibs
+        fibStore.save(fibsByInstrument)
     }
 
     func key(ticker: String, source: DataSourceType) -> String {

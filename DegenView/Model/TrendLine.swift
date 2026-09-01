@@ -86,5 +86,6 @@ enum ChartTool {
     case none
     case crosshair
     case trendLine
+    case fibonacciRetracement
     case ruler
 }

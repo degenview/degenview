@@ -61,6 +61,14 @@ SwiftUI and an AppKit `Canvas`, with no external dependencies.
   hovered chart's price and time readout
 - **Trend lines** — Draw, select, move, recolor, resize, and delete lines. Drawings are
   anchored to time and price and shared by every chart of the same instrument
+- **Fibonacci Retracement** — Place two price/time anchors with a live preview, then move
+  either anchor or translate the complete drawing. Configure up to 24 arbitrary internal
+  or extension ratios, reverse their orientation, extend levels to either viewport edge,
+  and show colored fills, ratio labels, formatted prices, and custom level text
+- **Precise Fib editing** — A native settings panel provides Style, Coordinates, and
+  Visibility pages for line styles, labels, fills, exact anchor dates/prices, timeframe
+  filtering, locking, and hiding. Hold Command while placing or moving an anchor for
+  nearby OHLC snapping; replay mode limits snapping candidates to revealed candles
 - **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
   green/red rectangle; measurements are intentionally temporary
 
@@ -223,8 +231,11 @@ CocoaPods, Swift Package Manager, or Carthage dependencies.
 3. Open a chart's gear menu to change its instrument, colors, decimal precision, and
    technical indicators. Use its **Scripts** tab to edit and apply a Pine v6-style
    indicator or change the generated inputs. The settings window can be resized.
-4. Use the left tool strip for the synchronized crosshair, persistent trend lines, and
-   temporary ruler measurements.
+4. Use the left tool strip for the synchronized crosshair, persistent trend lines,
+   **Fib Retracement**, and temporary ruler measurements. For a Fib, click once for Point
+   1, move to preview its levels, and click again for Point 2. Select a completed Fib to
+   drag its handles or body, open its settings, or delete it. Press Escape to cancel an
+   incomplete drawing and Delete/Backspace to remove a selected drawing.
 5. Switch between the vertical and grid layouts, then drag cards to reorder them within
    or across columns. Hold a card at the grid's right edge until the outlined preview
    column appears, then release it to create that column. The option appears only when

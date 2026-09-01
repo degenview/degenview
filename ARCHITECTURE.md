@@ -20,7 +20,8 @@ DegenView/
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
-│   └── TrendLine.swift                # Trend-line and ruler models
+│   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
+│   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
@@ -32,14 +33,14 @@ DegenView/
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
-│   ├── ChartCardView.swift            # Card header, chart, editor, errors
+│   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
 │   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket/CMC/Portfolio picker
-│   ├── ToolSidebar.swift              # Crosshair, trend-line, and ruler tools
+│   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
@@ -68,7 +69,7 @@ DegenView/
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs, saved views, and session persistence
     ├── FavoritesStore.swift           # Shared watchlist persistence
-    ├── DrawingStore.swift             # Instrument-keyed trend-line persistence
+    ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
     └── JSONStore.swift                # Generic Codable JSON persistence
 ```
@@ -113,6 +114,75 @@ DegenView/
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
     stale range response cannot replace a newer selection. CMC cards are excluded from
     replay, price alerts, WebSockets, Pine evaluation, and OHLCV-specific controls.
+12. Trend lines and Fibonacci retracements retain timestamp/price anchors in
+    `DrawingStore`, keyed by source-qualified instrument. Rendering projects those
+    financial coordinates through the current `ChartPlot` on every layout pass, so
+    timeframe changes, horizontal zoom, vertical scaling, resizing, and replay do not
+    rewrite canonical drawing state.
+
+## Fibonacci retracement flow
+
+```text
+ToolSidebar
+    │ arm Fib Retracement
+    ▼
+ContentViewModel mouse monitor
+    ├── pointer → ChartPlot inverse transform → TrendAnchor(date, price)
+    ├── Command modifier → replay-visible candle → nearest OHLC candidate
+    ├── first click → draft Point 1
+    ├── move → live draft Point 2
+    └── second click → committed FibonacciRetracementDrawing
+             │
+             ▼
+FibonacciCalculator
+    ├── linear: P1 + r × (P2 − P1)
+    ├── reverse: use (1 − r), without swapping stored anchors
+    └── logarithmic: exp(log(P1) + r × (log(P2) − log(P1)))
+             │
+             ▼
+ChartPlot.drawFibonacciRetracements
+    ├── project anchor times and calculated prices into pixels
+    ├── sort calculated prices before building adjacent fill regions
+    ├── draw extensions to current viewport edges
+    ├── draw level/trend lines, labels, prices, and custom text
+    └── draw selection handles
+```
+
+`FibonacciRetracementDrawing` is a versioned, Codable, first-class drawing model. Each
+level owns a stable UUID, Decimal ratio, visibility, color, opacity, and custom text.
+Canonical ratios are not restricted to `0...1`; negative ratios and ratios above one
+remain ordinary levels. `FibonacciRetracementDrawing.addLevel` enforces the documented
+24-level maximum at the domain boundary, and the settings UI disables its Add Level
+action at the same limit.
+
+The renderer receives computed financial prices rather than embedding ratio math in the
+Canvas loop. It converts to `Double` only at the calculation/render boundary; persisted
+ratios remain Decimal. Invalid logarithmic anchors return no level geometry rather than
+forming NaN or infinite paths. DegenView does not currently expose a logarithmic chart
+price scale, so the log-Fib setting is disabled in the UI while its calculator and tests
+remain available for that future scale mode.
+
+Completed drawings are stored separately in `fib-drawings.json`; existing trend-line
+storage remains in `drawings.json`, avoiding a migration of existing installations.
+Continuous anchor/body drags update published in-memory geometry at pointer frequency and
+perform one disk write on mouse-up. Both candlestick and probability line charts reuse
+the same immediate-mode Fib renderer and hit-testing geometry.
+
+The Fib settings sheet follows the main DegenView Settings layout: sidebar navigation,
+page headers, material cards, and a bottom action bar. Style edits update the drawing
+immediately. Coordinates edit the same canonical dates/prices used by pointer gestures;
+Visibility filters rendering by `TimeRange` and stores lock/hide state without deleting
+the drawing.
+
+The current repository has no shared drawing undo stack, clipboard/template manager,
+global Strong/Weak Magnet state, logarithmic chart scale, or drawing-linked alert model.
+Fib does not introduce private parallel versions of those app-wide systems. The reusable
+calculator, level/style models, stable drawing/level IDs, and current-geometry lookup are
+structured so those integrations can be added when their shared infrastructure exists.
+
+`FibonacciRetracementTests` covers deterministic low-to-high and high-to-low linear
+fixtures, reverse reflection/restoration, logarithmic interpolation, invalid log anchors,
+the 24-level limit, arbitrary extensions, and Codable persistence round trips.
 
 ## Dashboard layout and drag flow
 

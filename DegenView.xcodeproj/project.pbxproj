@@ -89,6 +89,7 @@
 		AA1000000000000000000005 /* PortfolioCSVService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000105 /* PortfolioCSVService.swift */; };
 		AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000106 /* PortfolioDashboardView.swift */; };
 		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
+		FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000102 /* FibonacciRetracementTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
@@ -137,6 +138,7 @@
 		A00000000000000000000901 /* GeckoTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000902 /* GeckoTerminalService.swift */; };
 		A00000000000000000000903 /* Indicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904 /* Indicators.swift */; };
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
+		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
 		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
@@ -281,6 +283,8 @@
 		A00000000000000000000902 /* GeckoTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoTerminalService.swift; sourceTree = "<group>"; };
 		A00000000000000000000904 /* Indicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Indicators.swift; sourceTree = "<group>"; };
 		A00000000000000000000906 /* TrendLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendLine.swift; sourceTree = "<group>"; };
+		FB0000000000000000000101 /* FibonacciRetracement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracement.swift; sourceTree = "<group>"; };
+		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
@@ -396,6 +400,7 @@
 				A00000000000000000000103 /* KlineData.swift */,
 				A00000000000000000000904 /* Indicators.swift */,
 				A00000000000000000000906 /* TrendLine.swift */,
+				FB0000000000000000000101 /* FibonacciRetracement.swift */,
 				A0000000000000000000090A /* Crosshair.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
@@ -549,6 +554,7 @@
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
+				FB0000000000000000000102 /* FibonacciRetracementTests.swift */,
 			);
 			path = DegenViewTests;
 			sourceTree = "<group>";
@@ -682,6 +688,7 @@
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
+				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -743,6 +750,7 @@
 				A00000000000000000000003 /* KlineData.swift in Sources */,
 				A00000000000000000000903 /* Indicators.swift in Sources */,
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
+				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
 				A00000000000000000000909 /* Crosshair.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,

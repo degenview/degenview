@@ -233,7 +233,9 @@ final class ChartViewModel: ObservableObject {
 
     /// Lines drawn by hand on this chart, anchored to time and price.
     @Published var trendLines: [TrendLine] = []
+    @Published var fibonacciRetracements: [FibonacciRetracementDrawing] = []
     private var drawingStoreSubscription: AnyCancellable?
+    private var fibonacciStoreSubscription: AnyCancellable?
 
     /// First click of a line in progress, and the rubber-band end that follows the
     /// pointer until the second click lands.
@@ -244,6 +246,17 @@ final class ChartViewModel: ObservableObject {
     /// The selected line whose appearance popover is open. Kept separate from
     /// selection so grabbing an endpoint does not open a popover under the drag.
     @Published var editingLineID: UUID?
+    @Published var selectedFibonacciID: UUID?
+    @Published var editingFibonacciID: UUID?
+    @Published private(set) var fibonacciDraftStart: TrendAnchor?
+    @Published private(set) var fibonacciDraftEnd: TrendAnchor?
+
+    var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? {
+        guard let fibonacciDraftStart, let fibonacciDraftEnd else { return nil }
+        return (fibonacciDraftStart, fibonacciDraftEnd)
+    }
+
+    var hasFibonacciDraft: Bool { fibonacciDraftStart != nil }
 
     var trendDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let draftStart, let draftEnd else { return nil }
@@ -487,6 +500,7 @@ final class ChartViewModel: ObservableObject {
             DrawingStore.shared.importLegacy(legacyLines, ticker: ticker, source: source)
         }
         trendLines = DrawingStore.shared.lines(ticker: ticker, source: source)
+        fibonacciRetracements = DrawingStore.shared.fibs(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
         pineConfiguration = config.pine
@@ -610,6 +624,63 @@ final class ChartViewModel: ObservableObject {
         )
     }
 
+    func snappedAnchor(at point: CGPoint, in plot: ChartPlot, strong: Bool) -> TrendAnchor {
+        var result = anchor(at: point, in: plot)
+        let points = replayKlines.suffix(visibleKlines.count)
+        guard !points.isEmpty else { return result }
+        let index = Int(
+            plot.fractionalIndex(forX: point.x, slotWidth: plot.slotWidth(forCount: points.count)).rounded()
+        ).clamped(to: 0...(points.count - 1))
+        let candle = points[points.index(points.startIndex, offsetBy: index)]
+        let candidates = [candle.openPrice, candle.highPrice, candle.lowPrice, candle.closePrice]
+        guard let nearest = candidates.min(by: { abs(plot.y(for: $0) - point.y) < abs(plot.y(for: $1) - point.y) })
+        else { return result }
+        if strong || abs(plot.y(for: nearest) - point.y) <= Drawing.hitTolerance {
+            result.date = candle.openTime
+            result.price = nearest
+        }
+        return result
+    }
+
+    func fibonacciHandleHit(at point: CGPoint, in plot: ChartPlot) -> (id: UUID, isStart: Bool)? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+        for fib in fibonacciRetracements.reversed() where !fib.isHidden {
+            for (anchor, isStart) in [(fib.point1, true), (fib.point2, false)] {
+                let position = plot.position(of: anchor, points: points, slotWidth: slot)
+                if hypot(position.x - point.x, position.y - point.y) <= Drawing.hitTolerance {
+                    return (fib.id, isStart)
+                }
+            }
+        }
+        return nil
+    }
+
+    func fibonacciHit(at point: CGPoint, in plot: ChartPlot) -> UUID? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+        for fib in fibonacciRetracements.reversed() where !fib.isHidden {
+            let first = plot.position(of: fib.point1, points: points, slotWidth: slot)
+            let second = plot.position(of: fib.point2, points: points, slotWidth: slot)
+            let left = fib.style.extendLeft ? plot.plotRect.minX : min(first.x, second.x)
+            let right = fib.style.extendRight ? plot.plotRect.maxX : max(first.x, second.x)
+            for (_, price) in FibonacciCalculator.prices(for: fib) {
+                let y = plot.y(for: price)
+                if point.x >= left - Drawing.hitTolerance, point.x <= right + Drawing.hitTolerance,
+                    abs(point.y - y) <= Drawing.hitTolerance
+                {
+                    return fib.id
+                }
+            }
+            if Self.distance(from: point, toSegmentFrom: first, to: second) <= Drawing.hitTolerance {
+                return fib.id
+            }
+        }
+        return nil
+    }
+
     /// The endpoint circle under `point`. Ends are reported separately so a drag
     /// knows which one it moves; lines are searched newest first, matching what the
     /// renderer draws on top.
@@ -696,6 +767,88 @@ final class ChartViewModel: ObservableObject {
     func cancelDraft() {
         draftStart = nil
         draftEnd = nil
+    }
+
+    func beginFibonacciDraft(at anchor: TrendAnchor) {
+        fibonacciDraftStart = anchor
+        fibonacciDraftEnd = anchor
+        selectedFibonacciID = nil
+    }
+
+    func updateFibonacciDraft(to anchor: TrendAnchor) {
+        guard fibonacciDraftStart != nil else { return }
+        fibonacciDraftEnd = anchor
+    }
+
+    @discardableResult
+    func commitFibonacciDraft(at anchor: TrendAnchor, in plot: ChartPlot) -> Bool {
+        guard let start = fibonacciDraftStart else { return false }
+        let slot = plot.slotWidth(forCount: visibleKlines.count)
+        let from = plot.position(of: start, points: visibleKlines, slotWidth: slot)
+        let to = plot.position(of: anchor, points: visibleKlines, slotWidth: slot)
+        guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
+        fibonacciRetracements.append(FibonacciRetracementDrawing(point1: start, point2: anchor))
+        cancelFibonacciDraft()
+        persistFibonacciRetracements()
+        return true
+    }
+
+    func cancelFibonacciDraft() {
+        fibonacciDraftStart = nil
+        fibonacciDraftEnd = nil
+    }
+
+    func moveFibonacciAnchor(id: UUID, isStart: Bool, to anchor: TrendAnchor) {
+        guard let index = fibonacciRetracements.firstIndex(where: { $0.id == id }),
+            !fibonacciRetracements[index].isLocked
+        else { return }
+        if isStart {
+            fibonacciRetracements[index].point1 = anchor
+        } else {
+            fibonacciRetracements[index].point2 = anchor
+        }
+        fibonacciRetracements[index].updatedAt = Date()
+    }
+
+    func translateFibonacci(
+        id: UUID, original: FibonacciRetracementDrawing, from start: TrendAnchor, to current: TrendAnchor
+    ) {
+        guard let index = fibonacciRetracements.firstIndex(where: { $0.id == id }), !original.isLocked else { return }
+        let timeDelta = current.date.timeIntervalSince(start.date)
+        let priceDelta = current.price - start.price
+        fibonacciRetracements[index].point1 = TrendAnchor(
+            date: original.point1.date.addingTimeInterval(timeDelta), price: original.point1.price + priceDelta)
+        fibonacciRetracements[index].point2 = TrendAnchor(
+            date: original.point2.date.addingTimeInterval(timeDelta), price: original.point2.price + priceDelta)
+        fibonacciRetracements[index].updatedAt = Date()
+    }
+
+    func updateFibonacci(_ drawing: FibonacciRetracementDrawing) {
+        guard drawing.levels.count <= FibonacciDefaults.maximumLevelCount,
+            let index = fibonacciRetracements.firstIndex(where: { $0.id == drawing.id })
+        else { return }
+        fibonacciRetracements[index] = drawing
+        persistFibonacciRetracements()
+    }
+
+    func persistFibonacciRetracements() {
+        DrawingStore.shared.save(fibonacciRetracements, ticker: ticker, source: source)
+    }
+
+    @discardableResult
+    func removeSelectedFibonacci() -> Bool {
+        guard let id = selectedFibonacciID else { return false }
+        return removeFibonacci(id: id)
+    }
+
+    @discardableResult
+    func removeFibonacci(id: UUID) -> Bool {
+        guard let index = fibonacciRetracements.firstIndex(where: { $0.id == id }) else { return false }
+        fibonacciRetracements.remove(at: index)
+        if selectedFibonacciID == id { selectedFibonacciID = nil }
+        if editingFibonacciID == id { editingFibonacciID = nil }
+        persistFibonacciRetracements()
+        return true
     }
 
     /// Move one end of a line — called per mouse-move while a handle is dragged.
@@ -814,6 +967,13 @@ final class ChartViewModel: ObservableObject {
                 let key = DrawingStore.shared.key(ticker: self.ticker, source: self.source)
                 let sharedLines = allLines[key] ?? []
                 if self.trendLines != sharedLines { self.trendLines = sharedLines }
+            }
+        fibonacciStoreSubscription = DrawingStore.shared.$fibsByInstrument
+            .sink { [weak self] allFibs in
+                guard let self else { return }
+                let key = DrawingStore.shared.key(ticker: self.ticker, source: self.source)
+                let sharedFibs = allFibs[key] ?? []
+                if self.fibonacciRetracements != sharedFibs { self.fibonacciRetracements = sharedFibs }
             }
     }
 

@@ -26,6 +26,9 @@ struct CandleChartView: View {
     var selectedTrendLineID: UUID? = nil
     /// Endpoint circles show only while the line tool is armed.
     var showTrendHandles: Bool = false
+    var fibonacciRetracements: [FibonacciRetracementDrawing] = []
+    var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+    var selectedFibonacciID: UUID? = nil
 
     // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
     // so there is no armed flag to gate them on.
@@ -83,6 +86,10 @@ struct CandleChartView: View {
                         showHandles: showTrendHandles,
                         points: candles
                     )
+                    plot.drawFibonacciRetracements(
+                        &layer, drawings: fibonacciRetracements, draft: fibonacciDraft,
+                        selectedID: selectedFibonacciID, showHandles: showTrendHandles,
+                        points: candles, decimalPlaces: yAxisDecimalPlaces)
 
                     plot.drawRulers(
                         &layer,
