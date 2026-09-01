@@ -195,6 +195,7 @@ struct ContentView: View {
             VSplitView {
                 chartsOnly
                     .frame(minHeight: 260)
+                    .layoutPriority(1)
                 PaperAccountManagerView(
                     store: paperTrading,
                     selectedTab: $paperManagerTab,
@@ -202,7 +203,7 @@ struct ContentView: View {
                 ) {
                     showTradingPanel = false
                 }
-                .frame(minHeight: 180, idealHeight: 280)
+                .frame(minHeight: 270, idealHeight: 270)
             }
         } else {
             chartsOnly

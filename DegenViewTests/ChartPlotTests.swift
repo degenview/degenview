@@ -76,4 +76,14 @@ final class ChartPlotTests: XCTestCase {
                 centeredAt: 0, in: CGRect(x: 0, y: 0, width: 10, height: 0), labelHeight: 18
             ))
     }
+
+    func testContainedCenterRejectsItemLargerThanAvailableBounds() {
+        XCTAssertNil(
+            ChartPlot.containedCenter(10, lowerBound: 0, upperBound: 20, itemLength: 21)
+        )
+        XCTAssertEqual(
+            ChartPlot.containedCenter(100, lowerBound: 0, upperBound: 20, itemLength: 10),
+            15
+        )
+    }
 }

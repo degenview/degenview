@@ -57,11 +57,27 @@ struct ChartPlot {
         labelHeight: CGFloat,
         inset: CGFloat = 1
     ) -> CGFloat? {
-        guard labelHeight >= 0 else { return nil }
-        let lower = plotRect.minY + inset
-        let upper = plotRect.maxY - labelHeight - inset
+        containedCenter(
+            centerY,
+            lowerBound: plotRect.minY + inset,
+            upperBound: plotRect.maxY - inset,
+            itemLength: labelHeight
+        ).map { $0 - labelHeight / 2 }
+    }
+
+    /// Clamps an item's center while keeping the whole item inside the supplied bounds.
+    /// Returns nil when the item cannot fit, avoiding construction of a reversed range.
+    static func containedCenter(
+        _ center: CGFloat,
+        lowerBound: CGFloat,
+        upperBound: CGFloat,
+        itemLength: CGFloat
+    ) -> CGFloat? {
+        guard itemLength >= 0 else { return nil }
+        let lower = lowerBound + itemLength / 2
+        let upper = upperBound - itemLength / 2
         guard lower <= upper else { return nil }
-        return (centerY - labelHeight / 2).clamped(to: lower...upper)
+        return center.clamped(to: lower...upper)
     }
 
     /// Vertical domain covering every point, padded so the series never touches the
@@ -273,9 +289,20 @@ struct ChartPlot {
                 + (isBullish
                     ? style.trendFlipMarkerGap + groupHeight / 2
                     : -(style.trendFlipMarkerGap + groupHeight / 2))
-            let groupCenter = rawGroupCenter.clamped(
-                to: (plotRect.minY + groupHeight / 2)...(plotRect.maxY - groupHeight / 2)
-            )
+            guard
+                let groupCenter = Self.containedCenter(
+                    rawGroupCenter,
+                    lowerBound: plotRect.minY,
+                    upperBound: plotRect.maxY,
+                    itemLength: groupHeight
+                ),
+                let labelCenterX = Self.containedCenter(
+                    xPosition,
+                    lowerBound: plotRect.minX,
+                    upperBound: plotRect.maxX,
+                    itemLength: labelSize.width
+                )
+            else { continue }
             let triangleCenterY =
                 groupCenter
                 + (isBullish
@@ -286,10 +313,6 @@ struct ChartPlot {
                 + (isBullish
                     ? (groupHeight - labelSize.height) / 2
                     : -(groupHeight - labelSize.height) / 2)
-            let labelCenterX = xPosition.clamped(
-                to: (plotRect.minX + labelSize.width / 2)...(plotRect.maxX - labelSize.width / 2)
-            )
-
             var marker = Path()
             if isBullish {
                 marker.move(to: CGPoint(x: xPosition, y: triangleCenterY - half))
