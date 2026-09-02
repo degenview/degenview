@@ -72,7 +72,7 @@ final class PolymarketService: TickerDataSource {
                     symbol: label,
                     fullSymbol: tokenID,
                     source: .polymarket,
-                    price: market.yesPrice,
+                    price: market.displayedYesPrice,
                     metadata: [
                         "eventTitle": eventTitle,
                         "question": market.question ?? label,
@@ -102,7 +102,7 @@ final class PolymarketService: TickerDataSource {
             count: count,
             ttl: Polymarket.cacheTTL
         ) {
-            return cached
+            return await applyingCurrentYesAsk(to: cached, tokenID: tokenID)
         }
 
         guard var components = URLComponents(string: "\(Self.clobBase)/prices-history") else {
@@ -129,8 +129,9 @@ final class PolymarketService: TickerDataSource {
         guard !points.isEmpty else { throw PolymarketError.noHistory }
 
         let thinned = points.downsampled(to: count)
-        await cache.set(symbol: tokenID, interval: window.interval, days: window.fidelity, data: thinned)
-        return thinned
+        let current = await applyingCurrentYesAsk(to: thinned, tokenID: tokenID)
+        await cache.set(symbol: tokenID, interval: window.interval, days: window.fidelity, data: current)
+        return current
     }
 
     // MARK: - TickerDataSource
@@ -142,6 +143,42 @@ final class PolymarketService: TickerDataSource {
 
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
         await cache.getAnyStale(symbol: symbol, count: count)
+    }
+
+    /// Overlay the executable YES ask on the final history sample so the chart's
+    /// endpoint, current-price line, and headline match Polymarket's market page.
+    private func applyingCurrentYesAsk(to data: [KlineData], tokenID: String) async -> [KlineData] {
+        guard let price = try? await fetchCurrentYesAsk(tokenID: tokenID) else { return data }
+        return Self.replacingLastPrice(in: data, with: price)
+    }
+
+    private func fetchCurrentYesAsk(tokenID: String) async throws -> Double {
+        guard var components = URLComponents(string: "\(Self.clobBase)/price") else {
+            throw PolymarketError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "token_id", value: tokenID),
+            // CLOB names the resting ask side SELL; this returns the price a YES
+            // buyer can currently execute, matching Gamma's `bestAsk`.
+            URLQueryItem(name: "side", value: "SELL"),
+        ]
+        guard let url = components.url else { throw PolymarketError.invalidURL }
+
+        let (data, response) = try await session.data(from: url)
+        try Self.validate(response)
+        guard let price = try JSONDecoder().decode(PolymarketCurrentPrice.self, from: data).value else {
+            throw PolymarketError.invalidResponse
+        }
+        return price
+    }
+
+    static func replacingLastPrice(in data: [KlineData], with price: Double) -> [KlineData] {
+        guard !data.isEmpty, price.isFinite, (0...1).contains(price) else { return data }
+        var result = data
+        result[result.count - 1].closePrice = price
+        result[result.count - 1].highPrice = price
+        result[result.count - 1].lowPrice = price
+        return result
     }
 
     // MARK: - Market metadata

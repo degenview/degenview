@@ -119,6 +119,18 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
+    /// Highest currently visible Polymarket choice, used by the card subtitle.
+    var leadingPolymarketChoice: (label: String, price: Double)? {
+        guard source == .polymarket else { return nil }
+        if pmSeries.count > 1 {
+            return pmVisibleSeries.compactMap { series in
+                series.data.last.map { (label: series.label, price: $0.closePrice) }
+            }.max { $0.price < $1.price }
+        }
+        guard let label = pmSeries.first?.label, let price = displayedPrice else { return nil }
+        return (label, price)
+    }
+
     /// Toggle a Polymarket series on/off by its token id and refresh the primary data.
     func togglePmSeries(_ tokenID: String) {
         guard let i = pmSeries.firstIndex(where: { $0.tokenID == tokenID }) else { return }
@@ -1015,12 +1027,10 @@ final class ChartViewModel: ObservableObject {
         ticker = symbol
         self.source = source
         self.displayName = displayName
-        if let series = pmSeries {
-            self.pmSeries = series
-        } else if source != .polymarket {
-            self.pmSeries = []
-        }
+        self.pmSeries = pmSeries ?? []
         self.pmSeriesData = [:]
+        klineData = []
+        currentPrice = nil
         api = DataSourceFactory.shared.service(for: source)
         trendLines = drawingStore.lines(ticker: ticker, source: source)
     }

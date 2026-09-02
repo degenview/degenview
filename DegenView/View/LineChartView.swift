@@ -10,6 +10,8 @@ import SwiftUI
 /// `bearishColor` from the series' overall direction, so the same two persisted
 /// per-chart colors cover both renderers.
 struct LineChartView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let points: [KlineData]
     var chartHeight: CGFloat
     var style: ChartStyle = .default
@@ -39,6 +41,8 @@ struct LineChartView: View {
     var fibonacciRetracements: [FibonacciRetracementDrawing] = []
     var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
     var selectedFibonacciID: UUID? = nil
+
+    @State private var hoveredSeriesIndex: Int?
 
     // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
     // so there is no armed flag to gate them on.
@@ -124,6 +128,14 @@ struct LineChartView: View {
 
                 plot.drawTimeGrid(&context, points: points)
             }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoveredSeriesIndex = seriesIndex(near: location, plot: plot)
+                case .ended:
+                    hoveredSeriesIndex = nil
+                }
+            }
         }
         .frame(height: max(0, chartHeight))
         .clipped()
@@ -147,15 +159,16 @@ struct LineChartView: View {
     /// Draw short inline labels at the right edge of each series line.
     private func drawSeriesLabels(context: inout GraphicsContext, plot: ChartPlot) {
         struct LabelPos {
+            let seriesIndex: Int
             var y: CGFloat
             let color: Color
             let label: String
         }
 
-        var positions: [LabelPos] = extraSeries.compactMap { series in
+        var positions: [LabelPos] = extraSeries.enumerated().compactMap { index, series in
             guard let last = series.data.last else { return nil }
             let y = plot.y(for: last.closePrice)
-            return LabelPos(y: y, color: series.color, label: series.label)
+            return LabelPos(seriesIndex: index, y: y, color: series.color, label: series.label)
         }
 
         // Sort top-to-bottom, then spread so labels don't stack.
@@ -173,11 +186,76 @@ struct LineChartView: View {
 
         let rightX = plot.plotRect.maxX - 4
         for pos in positions {
-            let text = Text(pos.label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(pos.color)
-            context.draw(text, at: CGPoint(x: rightX, y: pos.y), anchor: .trailing)
+            let isHovered = hoveredSeriesIndex == pos.seriesIndex
+            let text = context.resolve(
+                Text(pos.label)
+                    .font(.caption2)
+                    .foregroundColor(isHovered || colorScheme == .dark ? .white : .black)
+            )
+            let size = text.measure(in: CGSize(width: 180, height: 24))
+            let background = CGRect(
+                x: rightX - size.width - 7,
+                y: pos.y - size.height / 2 - 3,
+                width: size.width + 7,
+                height: size.height + 6
+            )
+            if isHovered {
+                context.fill(
+                    Path(roundedRect: background, cornerRadius: 4),
+                    with: .color(.black.opacity(0.72))
+                )
+                context.fill(
+                    Path(
+                        roundedRect: CGRect(
+                            x: background.minX, y: background.minY, width: 3, height: background.height),
+                        cornerRadius: 1.5
+                    ),
+                    with: .color(pos.color)
+                )
+            }
+            context.draw(text, at: CGPoint(x: rightX - 3, y: pos.y), anchor: .trailing)
         }
+    }
+
+    /// Find the closest plotted series within a comfortable pointer target.
+    private func seriesIndex(near location: CGPoint, plot: ChartPlot) -> Int? {
+        guard plot.plotRect.insetBy(dx: -6, dy: -6).contains(location) else { return nil }
+        var nearest: (index: Int, distance: CGFloat)?
+
+        for (index, series) in extraSeries.enumerated() where !series.data.isEmpty {
+            let slotWidth = plot.slotWidth(forCount: series.data.count)
+            let points = series.data.enumerated().map { pointIndex, point in
+                CGPoint(
+                    x: plot.x(forIndex: pointIndex, slotWidth: slotWidth),
+                    y: plot.y(for: point.closePrice)
+                )
+            }
+            for pointIndex in points.indices {
+                let distance: CGFloat
+                if pointIndex == points.startIndex {
+                    distance = hypot(location.x - points[pointIndex].x, location.y - points[pointIndex].y)
+                } else {
+                    distance = Self.distance(
+                        from: location, toSegmentFrom: points[pointIndex - 1], to: points[pointIndex])
+                }
+                if distance < (nearest?.distance ?? .infinity) {
+                    nearest = (index, distance)
+                }
+            }
+        }
+
+        guard let nearest, nearest.distance <= 7 else { return nil }
+        return nearest.index
+    }
+
+    private static func distance(from point: CGPoint, toSegmentFrom start: CGPoint, to end: CGPoint) -> CGFloat {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(point.x - start.x, point.y - start.y) }
+        let projection = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared
+        let t = max(0, min(1, projection))
+        return hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy))
     }
 
     private func drawLine(

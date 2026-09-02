@@ -38,10 +38,7 @@ final class FavoritesStore: ObservableObject {
         let labels = Self.labels(for: result)
         let displayName: String? = {
             guard result.source == .polymarket else { return nil }
-            if let series = result.pmSeries, series.count > 1 {
-                return result.eventTitle ?? result.symbol
-            }
-            return result.symbol
+            return result.eventTitle ?? result.question ?? result.symbol
         }()
         let config = TickerConfig(
             symbol: result.fullSymbol,

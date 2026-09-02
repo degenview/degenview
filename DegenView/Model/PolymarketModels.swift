@@ -41,6 +41,7 @@ struct PolymarketMarket: Decodable {
     let outcomes: String?
     let outcomePrices: String?
     let clobTokenIds: String?
+    let bestAsk: Double?
 
     /// CLOB token id for the YES outcome. NO is just `1 − YES`, so it isn't charted.
     var yesTokenID: String? {
@@ -50,6 +51,13 @@ struct PolymarketMarket: Decodable {
     /// Current YES probability, 0…1.
     var yesPrice: Double? {
         Self.decodeJSONStringArray(outcomePrices).first.flatMap(Double.init)
+    }
+
+    /// Price currently offered to a YES buyer. This is the probability Polymarket's
+    /// market page displays when an ask is available; `outcomePrices` can instead be
+    /// a midpoint and substantially understate a one-sided or wide order book.
+    var displayedYesPrice: Double? {
+        bestAsk ?? yesPrice
     }
 
     /// Short label for this market within its event ("↑ 100,000", "2 cuts"), falling
@@ -101,5 +109,15 @@ struct PolymarketPricePoint: Decodable {
 
     var kline: KlineData {
         KlineData(time: Date(timeIntervalSince1970: t), price: p)
+    }
+}
+
+/// `GET clob.polymarket.com/price` response.
+struct PolymarketCurrentPrice: Decodable {
+    let price: String
+
+    var value: Double? {
+        guard let value = Double(price), (0...1).contains(value) else { return nil }
+        return value
     }
 }

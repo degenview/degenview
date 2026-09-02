@@ -127,10 +127,7 @@ struct ContentView: View {
             ) { selected in
                 let displayName: String? = {
                     guard selected.source == .polymarket else { return nil }
-                    if let series = selected.pmSeries, series.count > 1 {
-                        return selected.eventTitle ?? selected.symbol
-                    }
-                    return selected.symbol
+                    return selected.eventTitle ?? selected.question ?? selected.symbol
                 }()
                 try await contentViewModel.addTicker(
                     symbol: selected.fullSymbol,

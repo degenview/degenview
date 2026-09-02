@@ -332,9 +332,11 @@ enum UI {
     static let searchResultSectionHeight: CGFloat = 28
     static let searchResultListInsets: CGFloat = 12
 
-    static func searchResultsHeight(rowCount: Int, sectionCount: Int) -> CGFloat {
+    static func searchResultsHeight(
+        rowCount: Int, sectionCount: Int, maxHeight: CGFloat = addTickerResultsMaxHeight
+    ) -> CGFloat {
         min(
-            addTickerResultsMaxHeight,
+            maxHeight,
             max(
                 addTickerResultsMinHeight,
                 CGFloat(rowCount) * searchResultRowHeight
@@ -343,9 +345,6 @@ enum UI {
             )
         )
     }
-    /// Search results height range in Chart Settings sheet.
-    static let chartSettingsResultsMinHeight: CGFloat = 80
-    static let chartSettingsResultsMaxHeight: CGFloat = 180
     /// Suggestion grid columns.
     static let suggestionGridColumns = 5
     /// Market artwork edge length in a Polymarket search row.
