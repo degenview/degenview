@@ -201,6 +201,11 @@ struct ChartSettingsSheet: View {
 
                 Spacer()
 
+                if selectedTab == .ticker, let selected = pendingTickerSelection {
+                    SelectedResultBanner(prefix: "New", result: selected)
+                        .frame(maxWidth: 320)
+                }
+
                 Button("Save") {
                     let selected =
                         assetType == .crypto
@@ -289,13 +294,22 @@ struct ChartSettingsSheet: View {
     // MARK: - Ticker Tab
 
     private var tickerTab: some View {
-        VStack(spacing: 12) {
-            Picker("Chart type", selection: $assetType) {
-                ForEach(ChartAssetType.allCases) { type in Text(type.rawValue).tag(type) }
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Choose a ticker")
+                    .font(.title3.weight(.semibold))
+                Text("Search for the market that should replace the current chart, then Save your selection.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 16)
 
             currentChartRow
+
+            Picker("Chart type", selection: $assetType) {
+                ForEach(ChartAssetType.allCases) { type in Text(type.rawValue).tag(type) }
+            }
+            .padding(.horizontal, 16)
 
             switch assetType {
             case .crypto: cryptoTickerSearch
@@ -303,7 +317,8 @@ struct ChartSettingsSheet: View {
             case .polymarket: polymarketTab
             }
         }
-        .padding(.top, 8)
+        .padding(.top, 16)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var cryptoTickerSearch: some View {
@@ -323,42 +338,15 @@ struct ChartSettingsSheet: View {
 
             // Search results
             if !searchVM.searchResults.isEmpty {
-                List {
-                    ForEach(searchVM.orderedSources, id: \.self) { source in
-                        if let results = searchVM.searchResults[source], !results.isEmpty {
-                            Section {
-                                ForEach(results) { result in
-                                    SearchResultRow(
-                                        result: result,
-                                        isSelected: searchVM.selectedResult == result,
-                                        onSelect: { searchVM.selectedResult = result }
-                                    )
-                                }
-                            } header: {
-                                Label(source.displayName, systemImage: source.icon)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.inset)
-                .frame(maxHeight: UI.chartSettingsResultsMaxHeight)
+                TickerSearchResultList(
+                    searchVM: searchVM,
+                    sources: searchVM.orderedSources,
+                    sizing: .fillAvailable
+                )
+                .padding(.horizontal, 16)
             }
-
-            // Selected result
-            if let selected = searchVM.selectedResult {
-                SelectedResultBanner(prefix: "New", result: selected)
-                    .padding(.horizontal, 16)
-
-                Button("Change Ticker") {
-                    apply(selected)
-                }
-                .buttonStyle(.borderedProminent)
-            }
-
-            Spacer()
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var stockTickerSearch: some View {
@@ -378,27 +366,15 @@ struct ChartSettingsSheet: View {
             }
 
             if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
-                List {
-                    Section {
-                        ForEach(results) { result in
-                            SearchResultRow(result: result, isSelected: stockVM.selectedResult == result) {
-                                stockVM.selectedResult = result
-                            }
-                        }
-                    } header: {
-                        Label(DataSourceType.alpaca.displayName, systemImage: DataSourceType.alpaca.icon)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .listStyle(.inset).frame(maxHeight: UI.chartSettingsResultsMaxHeight)
+                TickerSearchResultList(
+                    searchVM: stockVM,
+                    sources: [.alpaca],
+                    sizing: .fillAvailable
+                )
+                .padding(.horizontal, 16)
             }
-            if let selected = stockVM.selectedResult {
-                SelectedResultBanner(prefix: "New", result: selected).padding(.horizontal, 16)
-                Button("Change Ticker") { apply(selected) }.buttonStyle(.borderedProminent)
-            }
-            Spacer()
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     // MARK: - Polymarket Tab
@@ -408,29 +384,43 @@ struct ChartSettingsSheet: View {
             PolymarketSearchPane(
                 searchVM: polymarketVM,
                 searchText: $polymarketText,
-                resultsMinHeight: UI.chartSettingsResultsMinHeight,
-                resultsMaxHeight: UI.chartSettingsResultsMaxHeight
+                sizing: .fillAvailable
             )
             .padding(.horizontal, 16)
 
-            Spacer()
         }
-        .padding(.top, 8)
+        .frame(maxHeight: .infinity)
     }
 
     /// What this chart currently tracks — shown above both search panes.
     private var currentChartRow: some View {
-        HStack {
-            Text("Current:")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Label(viewModel.title, systemImage: viewModel.source.icon)
-                .font(.body.weight(.medium))
-                .lineLimit(1)
-                .truncationMode(.tail)
-            Spacer()
+        HStack(spacing: 12) {
+            Image(systemName: viewModel.source.icon)
+                .font(.title3)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Current chart")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(viewModel.title)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
         }
+        .padding(12)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
         .padding(.horizontal, 16)
+    }
+
+    private var pendingTickerSelection: TickerSearchResult? {
+        switch assetType {
+        case .crypto: searchVM.selectedResult
+        case .stock: stockVM.selectedResult
+        case .polymarket: polymarketVM.selectedResult
+        }
     }
 
     // MARK: - Apply
@@ -455,10 +445,7 @@ struct ChartSettingsSheet: View {
 
         let displayName: String? = {
             guard selected.source == .polymarket else { return nil }
-            if let series = selected.pmSeries, series.count > 1 {
-                return selected.eventTitle ?? selected.symbol
-            }
-            return selected.symbol
+            return selected.eventTitle ?? selected.question ?? selected.symbol
         }()
 
         onUpdateTicker(selected.fullSymbol, selected.source, displayName, selected.pmSeries)

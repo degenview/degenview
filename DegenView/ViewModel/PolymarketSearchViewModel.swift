@@ -21,6 +21,8 @@ final class PolymarketSearchViewModel: ObservableObject {
     @Published var errorMessage: String?
     /// Per-tokenID checked state for multi-choice groups. False by default — user opts in.
     @Published var checkedChoices: [String: Bool] = [:]
+    @Published private(set) var expandedGroupIDs: Set<String> = []
+    private var resultSetID = ""
 
     private let debouncer = SearchDebouncer()
     private let logPrefix: String
@@ -34,6 +36,18 @@ final class PolymarketSearchViewModel: ObservableObject {
     /// First result across all groups (for Enter-key quick-select).
     var firstAvailableResult: TickerSearchResult? {
         groups.first?.results.first
+    }
+
+    func isExpanded(_ group: PolymarketResultGroup) -> Bool {
+        expandedGroupIDs.contains(group.id)
+    }
+
+    func toggleExpansion(_ group: PolymarketResultGroup) {
+        if isExpanded(group) {
+            expandedGroupIDs.remove(group.id)
+        } else {
+            expandedGroupIDs.insert(group.id)
+        }
     }
 
     // MARK: - Group-level selection
@@ -92,16 +106,22 @@ final class PolymarketSearchViewModel: ObservableObject {
         let checked = group.results.filter { checkedChoices[$0.fullSymbol] == true }
         guard let primary = checked.first else { return nil }
         var result = primary
-        result.pmSeries =
-            checked.count > 1
-            ? checked.map { PmSeriesConfig(tokenID: $0.fullSymbol, label: $0.symbol, enabled: true) }
-            : nil
+        result.pmSeries = checked.map {
+            PmSeriesConfig(tokenID: $0.fullSymbol, label: $0.symbol, enabled: true)
+        }
         return result
     }
 
     // MARK: - Post-search init
 
     private func updateAfterSearch() {
+        let newResultSetID = groups.map { group in
+            "\(group.id):\(group.results.map(\.fullSymbol).joined(separator: ","))"
+        }.joined(separator: "|")
+        if newResultSetID != resultSetID {
+            resultSetID = newResultSetID
+            expandedGroupIDs = groups.count == 1 ? Set(groups.map(\.id)) : []
+        }
         let allMultiIDs = Set(
             groups.flatMap { g -> [String] in
                 guard g.results.count > 1 else { return [] }
@@ -130,6 +150,8 @@ final class PolymarketSearchViewModel: ObservableObject {
             groups = []
             selectedResult = nil
             checkedChoices = [:]
+            expandedGroupIDs = []
+            resultSetID = ""
             errorMessage = nil
             return
         }
@@ -166,9 +188,9 @@ final class PolymarketSearchViewModel: ObservableObject {
         }
     }
 
-    /// Bucket results by event title, preserving the API's relevance order for both
-    /// the events and the markets inside each one.
-    private static func group(_ results: [TickerSearchResult]) -> [PolymarketResultGroup] {
+    /// Bucket results without changing event relevance, then stably sort choices by
+    /// descending current YES probability. Missing probabilities appear last.
+    static func group(_ results: [TickerSearchResult]) -> [PolymarketResultGroup] {
         var order: [String] = []
         var buckets: [String: [TickerSearchResult]] = [:]
 
@@ -183,7 +205,29 @@ final class PolymarketSearchViewModel: ObservableObject {
 
         return order.compactMap { title in
             guard let results = buckets[title], !results.isEmpty else { return nil }
-            return PolymarketResultGroup(eventTitle: title, results: results)
+            let sorted = results.enumerated().sorted { lhs, rhs in
+                switch (lhs.element.price, rhs.element.price) {
+                case let (left?, right?) where left != right: return left > right
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: return lhs.offset < rhs.offset
+                }
+            }.map(\.element)
+            let sortedSeries = sorted.map {
+                PmSeriesConfig(tokenID: $0.fullSymbol, label: $0.symbol, enabled: true)
+            }
+            let normalized = sorted.map { item in
+                var item = item
+                item.pmSeries = sortedSeries
+                return item
+            }
+            return PolymarketResultGroup(eventTitle: title, results: normalized)
         }
+    }
+
+    /// Testable entry point for applying a completed provider result set.
+    func applyResults(_ results: [TickerSearchResult]) {
+        groups = Self.group(results)
+        updateAfterSearch()
     }
 }

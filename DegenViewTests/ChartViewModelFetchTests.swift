@@ -42,4 +42,38 @@ final class ChartViewModelFetchTests: XCTestCase {
         XCTAssertEqual(viewModel.currentPrice, 2)
         XCTAssertNil(viewModel.errorMessage)
     }
+
+    @MainActor
+    func testReplacingPolymarketTickerClearsOldSeriesAndPlottedData() {
+        let viewModel = ChartViewModel(ticker: "old", source: .polymarket)
+        viewModel.pmSeries = [
+            PmSeriesConfig(tokenID: "old-a", label: "Old A", enabled: true),
+            PmSeriesConfig(tokenID: "old-b", label: "Old B", enabled: true),
+        ]
+        viewModel.klineData = [KlineData(time: .now, price: 0.75)]
+        viewModel.currentPrice = 0.75
+
+        viewModel.updateTicker(
+            symbol: "new", source: .polymarket, displayName: "New Market", pmSeries: nil)
+
+        XCTAssertEqual(viewModel.ticker, "new")
+        XCTAssertEqual(viewModel.title, "New Market")
+        XCTAssertTrue(viewModel.pmSeries.isEmpty)
+        XCTAssertTrue(viewModel.klineData.isEmpty)
+        XCTAssertNil(viewModel.currentPrice)
+    }
+
+    @MainActor
+    func testSinglePolymarketChoiceDrivesSubtitleWithoutReplacingEventTitle() {
+        let viewModel = ChartViewModel(
+            ticker: "bird", source: .polymarket, displayName: "AGT Winner")
+        viewModel.pmSeries = [
+            PmSeriesConfig(tokenID: "bird", label: "Bird & Byron", enabled: true)
+        ]
+        viewModel.currentPrice = 0.51
+
+        XCTAssertEqual(viewModel.title, "AGT Winner")
+        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Bird & Byron")
+        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.51)
+    }
 }

@@ -144,7 +144,14 @@ struct ChartCardView: View {
                         }
                     }
 
-                    if let price = viewModel.displayedPrice {
+                    if let choice = viewModel.leadingPolymarketChoice {
+                        Text(
+                            "\(choice.label) · \(PriceFormatter.headline(choice.price, scale: viewModel.priceScale))"
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    } else if let price = viewModel.displayedPrice {
                         Text(PriceFormatter.headline(price, scale: viewModel.priceScale))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)

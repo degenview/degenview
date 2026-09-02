@@ -94,8 +94,7 @@ struct AddTickerSheet: View {
                 PolymarketSearchPane(
                     searchVM: polymarketVM,
                     searchText: $polymarketText,
-                    resultsMaxHeight: UI.addTickerResultsMaxHeight,
-                    usesAdaptiveResultHeight: true,
+                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
                     showsStatus: false,
                     onCommitResult: { addTicker($0) }
                 )
@@ -281,24 +280,12 @@ struct AddTickerSheet: View {
             }
 
             if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
-                List {
-                    Section {
-                        ForEach(results) { result in
-                            SearchResultRow(
-                                result: result,
-                                isSelected: stockVM.selectedResult == result,
-                                onSelect: { stockVM.selectedResult = result },
-                                onCommit: { addTicker(result) }
-                            )
-                        }
-                    } header: {
-                        Label(DataSourceType.alpaca.displayName, systemImage: DataSourceType.alpaca.icon)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .listStyle(.inset)
-                .frame(height: UI.searchResultsHeight(rowCount: results.count, sectionCount: 1))
+                TickerSearchResultList(
+                    searchVM: stockVM,
+                    sources: [.alpaca],
+                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
+                    onCommitResult: { addTicker($0) }
+                )
             }
         }
     }
@@ -343,32 +330,12 @@ struct AddTickerSheet: View {
 
             // Search results grouped by source
             if !searchVM.searchResults.isEmpty {
-                List {
-                    ForEach(searchVM.orderedSources, id: \.self) { source in
-                        if let results = searchVM.searchResults[source], !results.isEmpty {
-                            Section {
-                                ForEach(results) { result in
-                                    SearchResultRow(
-                                        result: result,
-                                        isSelected: searchVM.selectedResult == result,
-                                        onSelect: { searchVM.selectedResult = result },
-                                        onCommit: { addTicker(result) }
-                                    )
-                                }
-                            } header: {
-                                Label(source.displayName, systemImage: source.icon)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.inset)
-                .frame(
-                    height: UI.searchResultsHeight(
-                        rowCount: searchVM.searchResults.values.reduce(0) { $0 + $1.count },
-                        sectionCount: searchVM.searchResults.values.filter { !$0.isEmpty }.count
-                    ))
+                TickerSearchResultList(
+                    searchVM: searchVM,
+                    sources: searchVM.orderedSources,
+                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
+                    onCommitResult: { addTicker($0) }
+                )
             }
 
             // No results
