@@ -13,10 +13,12 @@ final class PolymarketService: TickerDataSource {
     /// Order book — the only source of historical prices.
     static let clobBase = "https://clob.polymarket.com"
 
-    private let session = AppSupport.defaultSession
+    private let session: URLSession
     private let cache = KlineCache(persistenceKey: "polymarket")
 
-    init() {}
+    init(session: URLSession = AppSupport.defaultSession) {
+        self.session = session
+    }
 
     // MARK: - Search
 
@@ -164,7 +166,9 @@ final class PolymarketService: TickerDataSource {
         ]
         guard let url = components.url else { throw PolymarketError.invalidURL }
 
-        let (data, response) = try await session.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, response) = try await session.data(for: request)
         try Self.validate(response)
         guard let price = try JSONDecoder().decode(PolymarketCurrentPrice.self, from: data).value else {
             throw PolymarketError.invalidResponse
