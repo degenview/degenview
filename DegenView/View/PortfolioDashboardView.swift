@@ -34,6 +34,7 @@ struct PortfolioDashboardView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
+            if store.isChangingReportingCurrency || store.isLoadingInitialValues { reportingProgress }
             Divider()
             Picker("Section", selection: $tab) { ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) } }
                 .pickerStyle(.segmented)
@@ -52,9 +53,7 @@ struct PortfolioDashboardView: View {
         }
         .frame(minWidth: 980, idealWidth: 1180, minHeight: 680, idealHeight: 800)
         .task {
-            await store.refresh()
-            await store.refreshQuotes()
-            await store.rebuildHistory()
+            await store.initialize()
             openInitialAssetIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .portfolioAddTransaction)) { notification in
@@ -149,6 +148,27 @@ struct PortfolioDashboardView: View {
                 Label(store.selectedPortfolio?.name ?? "All Portfolios", systemImage: "chevron.down")
             }
             .accessibilityLabel("Portfolio selector, \(store.selectedPortfolio?.name ?? "All Portfolios")")
+            Menu {
+                ForEach(PortfolioCurrency.allCases) { currency in
+                    Button {
+                        Task { await store.selectReportingCurrency(currency) }
+                    } label: {
+                        if currency == store.reportingCurrency {
+                            Label(currency.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(currency.rawValue)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    if store.isChangingReportingCurrency { ProgressView().controlSize(.small) }
+                    Text(store.reportingCurrency.rawValue)
+                    Image(systemName: "chevron.down")
+                }
+            }
+            .disabled(store.isChangingReportingCurrency)
+            .accessibilityLabel("Reporting currency, \(store.reportingCurrency.rawValue)")
             Spacer()
             Button {
                 store.privacyMode.toggle()
@@ -170,17 +190,17 @@ struct PortfolioDashboardView: View {
                 Button("Export Transactions…") {
                     exportDocument = .init(
                         text: PortfolioCSVService.exportTransactions(
-                            store.transactions, portfolios: store.snapshot.portfolios))
+                            store.ledgerTransactions, portfolios: store.snapshot.portfolios))
                     showExporter = true
                 }
                 Button("Export Current Holdings…") {
                     exportDocument = .init(
                         text: PortfolioCSVService.exportHoldings(
-                            store.holdings, portfolioName: store.selectedPortfolio?.name ?? "All Portfolios"))
+                            store.ledgerHoldings, portfolioName: store.selectedPortfolio?.name ?? "All Portfolios"))
                     showExporter = true
                 }
                 Button("Export Portfolio History…") {
-                    exportDocument = .init(text: PortfolioCSVService.exportHistory(history))
+                    exportDocument = .init(text: PortfolioCSVService.exportHistory(store.ledgerHistory))
                     showExporter = true
                 }
             } label: {
@@ -192,6 +212,26 @@ struct PortfolioDashboardView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 16)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var reportingProgress: some View {
+        HStack(spacing: 10) {
+            ProgressView(value: store.reportingConversionProgress ?? 0)
+                .progressViewStyle(.linear)
+                .frame(maxWidth: 260)
+            Text(store.isLoadingInitialValues ? "Loading values and charts…" : "Updating values and charts…")
+            Spacer()
+            Text("\(Int(((store.reportingConversionProgress ?? 0) * 100).rounded()))%")
+                .monospacedDigit()
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "Updating portfolio values and charts, \(Int(((store.reportingConversionProgress ?? 0) * 100).rounded())) percent"
+        )
     }
 
     @ViewBuilder private var content: some View {
@@ -234,32 +274,50 @@ struct PortfolioDashboardView: View {
                     metric("Realized P&L", store.totalRealizedPnL)
                     metric("Unrealized P&L", store.totalUnrealizedPnL)
                 }
-                GroupBox("Portfolio Value") {
-                    VStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Portfolio Value")
+                            .font(.headline)
+                            .fontWeight(.bold)
+                        Spacer()
                         Picker("History range", selection: $historyRange) {
                             ForEach(PortfolioHistoryRange.allCases) { range in Text(range.rawValue).tag(range) }
                         }
                         .pickerStyle(.segmented)
-                        .frame(maxWidth: 430)
-                        PortfolioHistoryChart(
-                            snapshots: history,
-                            currentValue: store.totalValue,
-                            currency: store.selectedPortfolio?.baseCurrency ?? .USD,
-                            range: historyRange,
-                            privacy: store.privacyMode,
-                            isLoading: store.isLoadingInitialValues
-                        )
-                        .frame(height: 230)
-                    }.padding(8)
+                        .labelsHidden()
+                        .fixedSize()
+                    }
+                    PortfolioHistoryChart(
+                        snapshots: history,
+                        currentValue: store.totalValue,
+                        currency: store.reportingCurrency,
+                        range: historyRange,
+                        privacy: store.privacyMode,
+                        isLoading: store.isLoadingInitialValues || store.isChangingReportingCurrency
+                    )
+                    .frame(height: 230)
                 }
-                HStack(alignment: .top) {
-                    GroupBox("Allocation") {
-                        PortfolioAllocationChart(holdings: store.holdings, privacy: store.privacyMode)
-                            .frame(height: 220).padding(8)
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                HStack(alignment: .top, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Allocation").font(.headline).fontWeight(.bold)
+                        PortfolioAllocationChart(
+                            holdings: store.holdings, privacy: store.privacyMode, currency: store.reportingCurrency
+                        )
+                        .frame(height: 220)
                     }
-                    GroupBox("Largest Holdings") {
-                        holdingRows(sortedHoldings).frame(height: 220).padding(8)
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Largest Holdings").font(.headline).fontWeight(.bold)
+                        holdingRows(sortedHoldings).frame(height: 220)
                     }
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .frame(maxWidth: .infinity)
                 }
             }.padding()
         }
@@ -363,7 +421,8 @@ struct PortfolioDashboardView: View {
                     Text(tx.asset.symbol).bold().frame(width: 100, alignment: .leading)
                     Text(tx.type.rawValue).frame(width: 110, alignment: .leading)
                     Text(store.privacyMode ? "••••" : tx.quantity.description).frame(width: 110)
-                    Text(tx.price.map { store.privacyMode ? "••••" : money($0) } ?? "—").frame(width: 110)
+                    Text(store.reportingPrice(for: tx).map { store.privacyMode ? "••••" : money($0) } ?? "—")
+                        .frame(width: 110)
                     Text(tx.timestamp.formatted(date: .abbreviated, time: .shortened)).frame(width: 170)
                     Text(tx.notes).frame(maxWidth: .infinity, alignment: .leading)
                     Text(tx.source.rawValue).foregroundStyle(.secondary)
@@ -433,19 +492,10 @@ struct PortfolioDashboardView: View {
         }
     }
     private var history: [PortfolioSnapshot] {
-        let values = store.snapshot.historicalSnapshots.filter { store.selectedPortfolioIDs.contains($0.portfolioID) }
-        guard store.selectedPortfolio == nil else { return values.sorted { $0.timestamp < $1.timestamp } }
-        let calendar = Calendar(identifier: .gregorian)
-        return Dictionary(grouping: values, by: { calendar.startOfDay(for: $0.timestamp) }).map { date, points in
-            PortfolioSnapshot(
-                portfolioID: UUID(), timestamp: date, value: points.reduce(0) { $0 + $1.value },
-                netContributions: points.reduce(0) { $0 + $1.netContributions },
-                realizedPnL: points.reduce(0) { $0 + $1.realizedPnL },
-                unrealizedPnL: points.reduce(0) { $0 + $1.unrealizedPnL }, isComplete: points.allSatisfy(\.isComplete))
-        }.sorted { $0.timestamp < $1.timestamp }
+        store.history(for: store.snapshot.selectedPortfolioID)
     }
     private var filteredTransactions: [PortfolioTransaction] {
-        store.transactions.filter { tx in
+        store.ledgerTransactions.filter { tx in
             (transactionFilter == nil || tx.type == transactionFilter)
                 && (transactionSearch.isEmpty
                     || [tx.asset.name, tx.asset.symbol, tx.notes, tx.source.rawValue].contains {
@@ -465,8 +515,7 @@ struct PortfolioDashboardView: View {
         PortfolioPrivacy.sensitive(money(value), enabled: store.privacyMode)
     }
     private func money(_ value: Decimal) -> String {
-        let code = store.selectedPortfolio?.baseCurrency.rawValue ?? "USD"
-        return value.formatted(.currency(code: code).precision(.fractionLength(2)))
+        store.reportingCurrency.format(value)
     }
     private func percent(_ value: Decimal) -> String { value.formatted(.percent.precision(.fractionLength(2))) }
     private func metric(_ title: String, _ value: Decimal) -> some View {
@@ -482,14 +531,23 @@ struct PortfolioDashboardView: View {
     }
     private func holdingRows(_ holdings: [PortfolioHolding]) -> some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
+            LazyVStack(spacing: 0) {
                 ForEach(holdings) { holding in
                     HStack {
-                        Text(holding.asset.symbol).bold()
+                        Text(holding.asset.symbol).font(.subheadline.weight(.semibold))
                         Spacer()
                         Text(percent(holding.allocation))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                         Text(holding.currentValue.map(privateMoney) ?? "—")
+                            .font(.subheadline)
+                            .monospacedDigit()
                             .frame(width: 110, alignment: .trailing)
+                    }
+                    .padding(.vertical, 6)
+                    if holding.id != holdings.last?.id {
+                        Divider()
                     }
                 }
             }
@@ -858,36 +916,44 @@ private struct PortfolioHistoryChart: View {
 private struct PortfolioAllocationChart: View {
     let holdings: [PortfolioHolding]
     let privacy: Bool
+    let currency: PortfolioCurrency
+    @State private var hoveredIndex: Int?
+
+    private let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .cyan]
     private var sortedHoldings: [PortfolioHolding] { holdings.sorted { $0.allocation > $1.allocation } }
+    private var totalValue: Decimal { holdings.compactMap(\.currentValue).reduce(0, +) }
 
     var body: some View {
         HStack {
-            Canvas { context, size in
-                var start = Angle.degrees(-90)
-                let colors: [Color] = [.blue, .orange, .green, .purple, .pink, .cyan]
-                for (index, holding) in sortedHoldings.enumerated() {
-                    let end = start + .degrees(holding.allocation.doubleValue * 360)
-                    var path = Path()
-                    let rect = CGRect(origin: .zero, size: size).insetBy(dx: 20, dy: 20)
-                    path.addArc(
-                        center: CGPoint(x: size.width / 2, y: size.height / 2),
-                        radius: min(rect.width, rect.height) / 2,
-                        startAngle: start, endAngle: end, clockwise: false)
-                    context.stroke(path, with: .color(colors[index % colors.count]), lineWidth: 28)
-                    start = end
-                }
+            GeometryReader { geometry in
+                Canvas { context, size in draw(context: &context, size: size) }
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location): hoveredIndex = index(at: location, in: geometry.size)
+                        case .ended: hoveredIndex = nil
+                        }
+                    }
             }
             .frame(width: 200)
+            .overlay { legend }
+            .animation(.easeOut(duration: 0.15), value: hoveredIndex)
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(sortedHoldings) { holding in
-                        HStack {
-                            Text(holding.asset.symbol)
+                    ForEach(Array(sortedHoldings.enumerated()), id: \.element.id) { index, holding in
+                        HStack(spacing: 6) {
+                            Circle().fill(colors[index % colors.count]).frame(width: 7, height: 7)
+                            Text(holding.asset.symbol).font(.subheadline.weight(.medium))
                             Spacer()
                             Text(
-                                privacy ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1))))
+                                privacy ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1)))
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
                         }
+                        .opacity(hoveredIndex == nil || hoveredIndex == index ? 1 : 0.4)
                         .accessibilityLabel(
                             privacy
                                 ? "\(holding.asset.name), allocation hidden"
@@ -895,6 +961,67 @@ private struct PortfolioAllocationChart: View {
                     }
                 }
             }
+        }
+    }
+
+    private func draw(context: inout GraphicsContext, size: CGSize) {
+        var startDegrees = -90.0
+        let rect = CGRect(origin: .zero, size: size).insetBy(dx: 20, dy: 20)
+        let radius = min(rect.width, rect.height) / 2
+        let gapDegrees = sortedHoldings.count > 1 ? 1.5 : 0.0
+        for (index, holding) in sortedHoldings.enumerated() {
+            let endDegrees = startDegrees + holding.allocation.doubleValue * 360
+            let drawEndDegrees = max(startDegrees, endDegrees - gapDegrees)
+            var path = Path()
+            path.addArc(
+                center: CGPoint(x: size.width / 2, y: size.height / 2),
+                radius: radius, startAngle: .degrees(startDegrees), endAngle: .degrees(drawEndDegrees),
+                clockwise: false)
+            let isDimmed = hoveredIndex != nil && hoveredIndex != index
+            context.stroke(
+                path, with: .color(colors[index % colors.count].opacity(isDimmed ? 0.35 : 1)),
+                lineWidth: hoveredIndex == index ? 32 : 28)
+            startDegrees = endDegrees
+        }
+    }
+
+    private func index(at location: CGPoint, in size: CGSize) -> Int? {
+        let center = CGPoint(x: size.width / 2, y: size.height / 2)
+        let rect = CGRect(origin: .zero, size: size).insetBy(dx: 20, dy: 20)
+        let radius = min(rect.width, rect.height) / 2
+        let distance = hypot(location.x - center.x, location.y - center.y)
+        guard abs(distance - radius) <= 20 else { return nil }
+        var degrees = atan2(location.y - center.y, location.x - center.x) * 180 / .pi
+        if degrees < -90 { degrees += 360 }
+        var start = -90.0
+        for (index, holding) in sortedHoldings.enumerated() {
+            let end = start + holding.allocation.doubleValue * 360
+            if degrees >= start && degrees < end { return index }
+            start = end
+        }
+        return nil
+    }
+
+    @ViewBuilder private var legend: some View {
+        if let hoveredIndex, sortedHoldings.indices.contains(hoveredIndex) {
+            let holding = sortedHoldings[hoveredIndex]
+            VStack(spacing: 3) {
+                HStack(spacing: 4) {
+                    Circle().fill(colors[hoveredIndex % colors.count]).frame(width: 7, height: 7)
+                    Text(holding.asset.symbol).font(.subheadline.weight(.bold))
+                }
+                Text(privacy ? "••••" : holding.allocation.formatted(.percent.precision(.fractionLength(1))))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(privacy ? "••••" : (holding.currentValue.map(currency.format) ?? "—"))
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .allowsHitTesting(false)
+        } else {
+            VStack(spacing: 2) {
+                Text("Total").font(.caption2).foregroundStyle(.secondary)
+                Text(privacy ? "••••" : currency.format(totalValue)).font(.subheadline.weight(.semibold))
+            }
+            .allowsHitTesting(false)
         }
     }
 }
@@ -1068,7 +1195,10 @@ private struct CoinMarketCapImportSheet: View {
     @State private var resolvingSymbols: Set<String> = []
     @State private var autoMappedSymbols: Set<String> = []
     @State private var didAutoMap = false
-    @State private var feeFXRateText: [String: String] = [:]
+    @State private var feeFXRates: [String: Decimal] = [:]
+    @State private var feeFXErrors: [String: String] = [:]
+    @State private var isResolvingFeeFX = false
+    @State private var feeFXProgress = 0.0
     @State private var skippedRowIDs: Set<String> = []
 
     private var mappedRows: Int {
@@ -1145,26 +1275,28 @@ private struct CoinMarketCapImportSheet: View {
             if !foreignFeeRows.isEmpty {
                 GroupBox("Missing Historical FX") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(
-                            "Enter the fee-currency value in USD at the transaction time. For example, if €1 equaled $1.08, enter 1.08. You can skip an individual transaction instead."
-                        )
-                        .font(.caption).foregroundStyle(.secondary)
+                        if isResolvingFeeFX {
+                            HStack {
+                                ProgressView(value: feeFXProgress).progressViewStyle(.linear)
+                                Text("\(Int((feeFXProgress * 100).rounded()))%").monospacedDigit()
+                            }
+                            Text("Fetching historical exchange rates…")
+                                .font(.caption).foregroundStyle(.secondary)
+                        } else if feeFXErrors.isEmpty {
+                            Label("Historical exchange rates loaded", systemImage: "checkmark.circle.fill")
+                                .font(.caption).foregroundStyle(.green)
+                        }
                         ScrollView {
                             VStack(spacing: 8) {
-                                ForEach(foreignFeeRows) { row in
+                                ForEach(foreignFeeRows.filter { feeFXErrors[$0.id] != nil }) { row in
                                     HStack {
                                         Text(
                                             verbatim:
                                                 "Line \(row.line) · \(row.token) · \(row.fee) \(row.feeCurrency?.rawValue ?? "")"
                                         )
                                         .frame(maxWidth: .infinity, alignment: .leading)
-                                        TextField(
-                                            "USD per \(row.feeCurrency?.rawValue ?? "unit")",
-                                            text: Binding(
-                                                get: { feeFXRateText[row.id] ?? "" },
-                                                set: { feeFXRateText[row.id] = $0 }
-                                            )
-                                        ).frame(width: 145)
+                                        Text(feeFXErrors[row.id] ?? "Rate unavailable")
+                                            .font(.caption).foregroundStyle(.red)
                                         Button("Skip Item") { skippedRowIDs.insert(row.id) }
                                     }
                                 }
@@ -1199,16 +1331,15 @@ private struct CoinMarketCapImportSheet: View {
                 Spacer()
                 Button("Cancel") { dismiss() }
                 Button("Continue to Preview") {
-                    let rates = feeFXRateText.reduce(into: [String: Decimal]()) { result, item in
-                        if let rate = Decimal(string: item.value), rate > 0 { result[item.key] = rate }
-                    }
                     onReady(
                         preview.transactions(
                             portfolioID: portfolioID, mappings: mappings,
-                            feeFXRates: rates, skippedRowIDs: skippedRowIDs))
+                            feeFXRates: feeFXRates, skippedRowIDs: skippedRowIDs))
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(!preview.isValid || mappedRows == 0 || !didAutoMap)
+                .disabled(
+                    !preview.isValid || mappedRows == 0 || !didAutoMap || isResolvingFeeFX
+                        || foreignFeeRows.contains { feeFXRates[$0.id] == nil && !skippedRowIDs.contains($0.id) })
             }
         }
         .padding(24).frame(width: 650, height: 560)
@@ -1223,7 +1354,29 @@ private struct CoinMarketCapImportSheet: View {
         }
         .task {
             applyExistingMappings()
-            await autoMapRemainingSymbols()
+            async let mapping: Void = autoMapRemainingSymbols()
+            async let rates: Void = resolveHistoricalFeeRates()
+            _ = await (mapping, rates)
+        }
+    }
+
+    private func resolveHistoricalFeeRates() async {
+        let rows = preview.rows.filter { $0.fee != 0 && ($0.feeCurrency ?? .USD) != .USD }
+        guard !rows.isEmpty else { return }
+        isResolvingFeeFX = true
+        feeFXProgress = 0
+        defer { isResolvingFeeFX = false }
+        for (index, row) in rows.enumerated() {
+            let currency = row.feeCurrency ?? .USD
+            do {
+                feeFXRates[row.id] = try await FXRateService.shared.conversion(
+                    from: currency, to: .USD, on: row.timestamp
+                ).rate
+                feeFXErrors[row.id] = nil
+            } catch {
+                feeFXErrors[row.id] = error.localizedDescription
+            }
+            feeFXProgress = Double(index + 1) / Double(rows.count)
         }
     }
 

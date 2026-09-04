@@ -2,6 +2,63 @@ import XCTest
 
 @testable import DegenView
 
+private final class FXURLProtocol: URLProtocol {
+    static var handler: ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        do {
+            let (response, data) = try Self.handler!(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+    override func stopLoading() {}
+}
+
+private actor CountingFXService: FXRateProviding {
+    private var requestCount = 0
+    private let fails: Bool
+
+    init(fails: Bool = false) { self.fails = fails }
+
+    func conversion(from: PortfolioCurrency, to: PortfolioCurrency, on date: Date?) async throws
+        -> FXRateService.Conversion
+    {
+        requestCount += 1
+        if fails { throw FXRateService.ServiceError.rateUnavailable(from, to, date) }
+        return .init(rate: from == to ? 1 : 2, observationDate: date ?? Date(), isCached: false)
+    }
+
+    func conversions(from: PortfolioCurrency, to: PortfolioCurrency, on dates: [Date]) async
+        -> [Date: Result<FXRateService.Conversion, Error>]
+    {
+        requestCount += Set(dates).count
+        if fails {
+            return Dictionary(
+                uniqueKeysWithValues: dates.map {
+                    ($0, .failure(FXRateService.ServiceError.rateUnavailable(from, to, $0)))
+                })
+        }
+        return Dictionary(
+            uniqueKeysWithValues: dates.map {
+                ($0, .success(.init(rate: from == to ? 1 : 2, observationDate: $0, isCached: false)))
+            })
+    }
+
+    func count() -> Int { requestCount }
+}
+
+private actor RetryDelayRecorder {
+    private var values: [TimeInterval] = []
+    func record(_ value: TimeInterval) { values.append(value) }
+    func recordedValues() -> [TimeInterval] { values }
+}
+
 final class PortfolioAccountingEngineTests: XCTestCase {
     private let p1 = UUID(), p2 = UUID()
     private let btc = PortfolioAsset(key: "Binance:BTCUSDT", symbol: "BTC", name: "Bitcoin", source: .binance)
@@ -81,12 +138,12 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         let unsupportedQuoteSnapshot = PortfolioLedgerSnapshot(
             portfolios: [usd],
             transactions: [tx(p1, unsupportedAsset, .buy, 1, 10)], selectedPortfolioID: p1)
-        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedQuoteSnapshot, quotes: [:]))
+        XCTAssertTrue(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedQuoteSnapshot, quotes: [:]))
 
         let unsupportedDashboard = PortfolioLedgerSnapshot(
             portfolios: [eur],
             transactions: [tx(p2, btc, .buy, 1, 10)], selectedPortfolioID: p2)
-        XCTAssertFalse(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedDashboard, quotes: [:]))
+        XCTAssertTrue(PortfolioStore.needsInitialQuoteLoad(snapshot: unsupportedDashboard, quotes: [:]))
     }
 
     func testPartialSellRealizedAndRemainingPnL() throws {
@@ -404,5 +461,218 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         XCTAssertEqual(holding.quantity, 1)
         XCTAssertEqual(holding.realizedPnL, 10_000)
         XCTAssertEqual(state.invalidatedAfter[p1], jan1)
+    }
+
+    func testFXCrossRatesAndBitcoinDirections() throws {
+        let fiat: [String: Decimal] = ["EUR": 0.8, "GBP": 0.5]
+        XCTAssertEqual(FXRateService.crossRate(from: .USD, to: .EUR, fiatUSD: fiat, btcUSD: nil), 0.8)
+        XCTAssertEqual(FXRateService.crossRate(from: .EUR, to: .GBP, fiatUSD: fiat, btcUSD: nil), 0.625)
+        XCTAssertEqual(FXRateService.crossRate(from: .BTC, to: .USD, fiatUSD: fiat, btcUSD: 50_000), 50_000)
+        XCTAssertEqual(
+            FXRateService.crossRate(from: .USD, to: .BTC, fiatUSD: fiat, btcUSD: 50_000),
+            Decimal(string: "0.00002"))
+        XCTAssertNil(FXRateService.crossRate(from: .BTC, to: .EUR, fiatUSD: fiat, btcUSD: nil))
+    }
+
+    func testReportingCurrencyPrecision() {
+        XCTAssertFalse(PortfolioCurrency.JPY.format(Decimal(string: "123.45")!).contains(".45"))
+        XCTAssertTrue(PortfolioCurrency.BTC.format(Decimal(string: "0.12345678")!).contains("12345678"))
+    }
+
+    func testHistoricalFXBatchDeduplicatesDatesAndPersistsObservations() async throws {
+        let lock = NSLock()
+        var requests = 0
+        FXURLProtocol.handler = { request in
+            lock.lock()
+            requests += 1
+            lock.unlock()
+            let url = try XCTUnwrap(request.url)
+            let data = Data(
+                "[{\"date\":\"2025-01-02\",\"base\":\"USD\",\"quote\":\"EUR\",\"rate\":0.8}]".utf8)
+            return (
+                try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil)),
+                data
+            )
+        }
+        defer { FXURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FXURLProtocol.self]
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let service = FXRateService(session: URLSession(configuration: configuration), cacheDirectory: directory)
+        let date = Date(timeIntervalSince1970: 1_736_035_200)
+
+        let first = await service.conversions(from: .USD, to: .EUR, on: [date, date])
+        XCTAssertEqual(try first[date]?.get().rate, 0.8)
+        XCTAssertEqual(requests, 1)
+
+        let second = await service.conversions(from: .USD, to: .EUR, on: [date])
+        XCTAssertEqual(try second[date]?.get().rate, 0.8)
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testHistoricalFXRetriesTransientResponsesThenSucceeds() async throws {
+        let lock = NSLock()
+        var requests = 0
+        FXURLProtocol.handler = { request in
+            lock.lock()
+            requests += 1
+            let currentRequest = requests
+            lock.unlock()
+            let url = try XCTUnwrap(request.url)
+            let status = currentRequest < 3 ? 503 : 200
+            let data = Data(
+                "[{\"date\":\"2025-01-02\",\"base\":\"USD\",\"quote\":\"GBP\",\"rate\":0.8}]".utf8)
+            return (
+                try XCTUnwrap(HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)),
+                data
+            )
+        }
+        defer { FXURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FXURLProtocol.self]
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let delays = RetryDelayRecorder()
+        let service = FXRateService(
+            session: URLSession(configuration: configuration), cacheDirectory: directory,
+            retrySleep: { await delays.record($0) })
+        let date = Date(timeIntervalSince1970: 1_736_035_200)
+
+        let conversion = try await service.conversion(from: .USD, to: .GBP, on: date)
+        XCTAssertEqual(conversion.rate, 0.8)
+        XCTAssertEqual(requests, 3)
+        let recordedDelays = await delays.recordedValues()
+        XCTAssertEqual(recordedDelays, [0.5, 1])
+    }
+
+    func testHistoricalFXDoesNotRetryPermanentHTTPFailure() async throws {
+        let lock = NSLock()
+        var requests = 0
+        FXURLProtocol.handler = { request in
+            lock.lock()
+            requests += 1
+            lock.unlock()
+            let url = try XCTUnwrap(request.url)
+            return (
+                try XCTUnwrap(HTTPURLResponse(url: url, statusCode: 404, httpVersion: nil, headerFields: nil)),
+                Data()
+            )
+        }
+        defer { FXURLProtocol.handler = nil }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FXURLProtocol.self]
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let service = FXRateService(
+            session: URLSession(configuration: configuration), cacheDirectory: directory,
+            retrySleep: { _ in XCTFail("A permanent response must not be retried") })
+
+        do {
+            _ = try await service.conversion(from: .USD, to: .GBP, on: jan1)
+            XCTFail("Expected the request to fail")
+        } catch {}
+        XCTAssertEqual(requests, 1)
+    }
+
+    func testHistoricalUSDBTCBatchUsesBitcoinHistoryWithoutFiatObservation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let historyURL = directory.appendingPathComponent("bitcoin-history.json")
+        let date = Date(timeIntervalSinceReferenceDate: 718_149_600)
+        let priorUTCDate = Date(timeIntervalSinceReferenceDate: 718_070_400)
+        let history = BitcoinHistoryService.Cache(
+            fetchedAt: Date(), closes: [BitcoinDailyClose(date: priorUTCDate, close: 27_790)])
+        try JSONEncoder().encode(history).write(to: historyURL)
+        let bitcoinHistory = BitcoinHistoryService(cacheURL: historyURL)
+        let service = FXRateService(bitcoinHistory: bitcoinHistory, cacheDirectory: directory)
+
+        let conversions = await service.conversions(from: .USD, to: .BTC, on: [date])
+
+        XCTAssertEqual(try conversions[date]?.get().rate, Decimal(1) / Decimal(27_790))
+    }
+
+    @MainActor
+    func testSwitchingBackToReportingCurrencyUsesSessionProjection() async throws {
+        let portfolio = Portfolio(id: p1, name: "Main", baseCurrency: .USD)
+        let snapshot = PortfolioLedgerSnapshot(portfolios: [portfolio], selectedPortfolioID: p1)
+        let service = CountingFXService()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+
+        await store.selectReportingCurrency(.EUR)
+        await store.selectReportingCurrency(.GBP)
+        let countBeforeReturn = await service.count()
+        XCTAssertEqual(countBeforeReturn, 2)
+
+        await store.selectReportingCurrency(.EUR)
+        XCTAssertEqual(store.reportingCurrency, .EUR)
+        XCTAssertFalse(store.isChangingReportingCurrency)
+        XCTAssertNil(store.reportingConversionProgress)
+        let countAfterReturn = await service.count()
+        XCTAssertEqual(countAfterReturn, 2)
+    }
+
+    @MainActor
+    func testIdentityProjectionBypassesFXAndPreservesIncompleteHistoryState() async throws {
+        let portfolio = Portfolio(id: p1, name: "Main", baseCurrency: .USD)
+        let point = PortfolioSnapshot(
+            portfolioID: p1, timestamp: jan1, value: 100, netContributions: 100,
+            realizedPnL: 0, unrealizedPnL: 0, isComplete: false)
+        let snapshot = PortfolioLedgerSnapshot(
+            portfolios: [portfolio], historicalSnapshots: [point], selectedPortfolioID: p1)
+        let service = CountingFXService()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+
+        await store.refreshQuotes()
+
+        let requestCount = await service.count()
+        XCTAssertEqual(requestCount, 0)
+        XCTAssertNil(store.lastError)
+        XCTAssertEqual(store.history(for: p1), [point])
+    }
+
+    @MainActor
+    func testStartupBuildsPersistedProjectionBeforeExposingItsCurrency() async throws {
+        let portfolio = Portfolio(id: p1, name: "Main", baseCurrency: .USD)
+        let snapshot = PortfolioLedgerSnapshot(portfolios: [portfolio], selectedPortfolioID: p1)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let preference = "{\"currencies\":{\"\(p1.uuidString)\":\"BTC\"}}"
+        try Data(preference.utf8).write(
+            to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
+        let service = CountingFXService()
+        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+
+        XCTAssertEqual(store.reportingCurrency, .USD)
+        XCTAssertTrue(store.isLoadingInitialValues)
+
+        await store.initialize()
+
+        XCTAssertEqual(store.reportingCurrency, .BTC)
+        XCTAssertFalse(store.isLoadingInitialValues)
+        let requestCount = await service.count()
+        XCTAssertEqual(requestCount, 1)
+    }
+
+    @MainActor
+    func testFailedStartupProjectionKeepsNativeCurrencyForRetry() async throws {
+        let portfolio = Portfolio(id: p1, name: "Main", baseCurrency: .USD)
+        let snapshot = PortfolioLedgerSnapshot(portfolios: [portfolio], selectedPortfolioID: p1)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let preference = "{\"currencies\":{\"\(p1.uuidString)\":\"BTC\"}}"
+        try Data(preference.utf8).write(
+            to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
+        let store = PortfolioStore(
+            initialSnapshot: snapshot, fxService: CountingFXService(fails: true), storageDirectory: directory)
+
+        await store.initialize()
+
+        XCTAssertEqual(store.reportingCurrency, .USD)
+        XCTAssertNotNil(store.lastError)
     }
 }
