@@ -189,7 +189,7 @@ struct LineChartView: View {
             let isHovered = hoveredSeriesIndex == pos.seriesIndex
             let text = context.resolve(
                 Text(pos.label)
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundColor(isHovered || colorScheme == .dark ? .white : .black)
             )
             let size = text.measure(in: CGSize(width: 180, height: 24))
