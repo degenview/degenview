@@ -3,6 +3,14 @@ import Foundation
 enum PortfolioCurrency: String, Codable, CaseIterable, Identifiable, Sendable {
     case USD, EUR, GBP, JPY, CHF, BTC
     var id: String { rawValue }
+
+    func format(_ value: Decimal) -> String {
+        switch self {
+        case .JPY: value.formatted(.currency(code: rawValue).precision(.fractionLength(0)))
+        case .BTC: "BTC " + value.formatted(.number.precision(.fractionLength(0...8)))
+        default: value.formatted(.currency(code: rawValue).precision(.fractionLength(2)))
+        }
+    }
 }
 
 enum PortfolioSource: String, Codable, CaseIterable, Sendable {

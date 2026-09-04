@@ -78,6 +78,7 @@
 		BA110000000000000000001E /* Indicators.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904; };
 		BA110000000000000000001F /* SymbolInfo.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105; };
 		BA1100000000000000000020 /* Comparable+Clamped.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208; };
+		BA1100000000000000000021 /* BitcoinHistoryService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000102; };
 		AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */; };
 		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
 		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
@@ -663,6 +664,7 @@
 /* Begin PBXSourcesBuildPhase section */
 		BA1000000000000000000501 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
 			BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */,
+			BA1100000000000000000021 /* BitcoinHistoryService.swift in Agent Sources */,
 			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
 			BA1100000000000000000001, BA1100000000000000000002, BA1100000000000000000003, BA1100000000000000000004,
 			BA1100000000000000000005, BA1100000000000000000006, BA1100000000000000000007, BA1100000000000000000008,
