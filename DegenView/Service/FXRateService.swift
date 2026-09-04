@@ -115,6 +115,7 @@ actor FXRateService: FXRateProviding {
         }
 
         let needsFiat = ![from, to].allSatisfy { $0 == .BTC || $0 == .USD }
+        var freshlyFetchedDays: Set<String> = []
         if needsFiat {
             let missing = requestedDays.filter {
                 cachedHistorical(from: from, to: to, requested: $0, btcUSD: bitcoinUSD[Self.dayKey($0)]) == nil
@@ -127,6 +128,7 @@ actor FXRateService: FXRateProviding {
                         try await fetchHistoricalFiat(from: start, through: rangeEnd)
                         start = calendar.date(byAdding: .day, value: 1, to: rangeEnd)!
                     }
+                    freshlyFetchedDays = Set(missing.map(Self.dayKey))
                 } catch {
                     // Preserve per-date fallback behavior: cached days may still succeed.
                 }
@@ -137,16 +139,19 @@ actor FXRateService: FXRateProviding {
         for date in dates {
             let day = calendar.startOfDay(for: date)
             if from == to {
-                result[date] = .success(Conversion(rate: 1, observationDate: day, isCached: true))
+                result[date] = .success(Conversion(rate: 1, observationDate: day, isCached: false))
             } else if [from, to].allSatisfy({ $0 == .BTC || $0 == .USD }),
                 let rate = Self.crossRate(
                     from: from, to: to, fiatUSD: [:], btcUSD: bitcoinUSD[Self.dayKey(day)])
             {
-                result[date] = .success(Conversion(rate: rate, observationDate: day, isCached: true))
+                result[date] = .success(Conversion(rate: rate, observationDate: day, isCached: false))
             } else if let conversion = cachedHistorical(
                 from: from, to: to, requested: day, btcUSD: bitcoinUSD[Self.dayKey(day)])
             {
-                result[date] = .success(conversion)
+                let isCached = !freshlyFetchedDays.contains(Self.dayKey(day))
+                result[date] = .success(
+                    Conversion(rate: conversion.rate, observationDate: conversion.observationDate, isCached: isCached)
+                )
             } else {
                 result[date] = .failure(ServiceError.rateUnavailable(from, to, date))
             }
@@ -196,7 +201,7 @@ actor FXRateService: FXRateProviding {
             let value = Self.crossRate(from: from, to: to, fiatUSD: [:], btcUSD: btcUSD),
             [from, to].allSatisfy({ $0 == .BTC || $0 == .USD })
         {
-            return Conversion(rate: value, observationDate: requested, isCached: true)
+            return Conversion(rate: value, observationDate: requested, isCached: false)
         }
         if let result = cachedHistorical(from: from, to: to, requested: requested, btcUSD: btcUSD) {
             return result

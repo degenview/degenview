@@ -895,9 +895,7 @@ private struct PortfolioHistoryChart: View {
             at: CGPoint(x: tooltipX, y: max(plot.minY + 20, selectedPosition.y - 24)), anchor: .bottom)
     }
 
-    private func money(_ value: Decimal) -> String {
-        value.formatted(.currency(code: currency.rawValue).precision(.fractionLength(2)))
-    }
+    private func money(_ value: Decimal) -> String { currency.format(value) }
     private func shortMoney(_ value: Decimal) -> String {
         let absolute = abs(value)
         if absolute >= 1_000_000 { return "\(money(value / 1_000_000))M" }
@@ -1034,7 +1032,7 @@ private struct PortfolioAssetDetailView: View {
     @State private var deleting: PortfolioTransaction?
 
     private var transactions: [PortfolioTransaction] {
-        store.transactions.filter { $0.asset.key == holding.asset.key }.sorted { $0.timestamp > $1.timestamp }
+        store.ledgerTransactions.filter { $0.asset.key == holding.asset.key }.sorted { $0.timestamp > $1.timestamp }
     }
     private func hidden(_ value: String) -> String { PortfolioPrivacy.sensitive(value, enabled: store.privacyMode) }
 

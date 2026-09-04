@@ -85,7 +85,7 @@ final class PortfolioStore: ObservableObject {
                 portfolioStore.save(value)
             })
         if initialQuotes != loadedQuotes {
-            JSONStore<[String: PortfolioQuote]>(filename: "portfolio_quotes.json").save(initialQuotes)
+            quoteStore.save(initialQuotes)
         }
     }
 
@@ -175,7 +175,9 @@ final class PortfolioStore: ObservableObject {
         }
         await refresh()
         await refreshQuotes(for: selectedPortfolioIDs)
-        await reloadReportingProjection()
+        if initialReportingCurrency == reportingCurrency {
+            await reloadReportingProjection()
+        }
         await rebuildHistory()
         if initialReportingCurrency != reportingCurrency {
             await selectReportingCurrency(initialReportingCurrency)
@@ -423,13 +425,11 @@ final class PortfolioStore: ObservableObject {
         if let cached = derivedStates[ids] { return cached }
         let rawTransactions = snapshot.transactions.filter { ids.contains($0.portfolioID) }
         let transactions = rawTransactions.map { convertedTransactions[$0.id] ?? $0 }
-        var holdings: [PortfolioHolding] = []
-        for id in ids {
-            let portfolioTransactions = transactions.filter { $0.portfolioID == id }
-            holdings +=
-                (try? PortfolioAccountingEngine.holdings(
-                    transactions: portfolioTransactions, portfolioIDs: [id], quotes: convertedQuotes[id] ?? [:])) ?? []
-        }
+        var mergedQuotes: [String: PortfolioQuote] = [:]
+        for id in ids { mergedQuotes.merge(convertedQuotes[id] ?? [:]) { existing, _ in existing } }
+        let holdings =
+            (try? PortfolioAccountingEngine.holdings(
+                transactions: transactions, portfolioIDs: ids, quotes: mergedQuotes)) ?? []
         let values = snapshot.historicalSnapshots.filter { ids.contains($0.portfolioID) }.map {
             convertedHistory[$0.id] ?? $0
         }
@@ -549,11 +549,11 @@ final class PortfolioStore: ObservableObject {
         }
         var datesByPair: [HistoricalPair: [Date]] = [:]
         for transaction in snapshot.transactions where selectedPortfolioIDs.contains(transaction.portfolioID) {
-            if transaction.priceCurrency != reportingCurrency {
+            if transaction.price != nil, transaction.priceCurrency != reportingCurrency {
                 datesByPair[HistoricalPair(from: transaction.priceCurrency, to: reportingCurrency), default: []]
                     .append(transaction.timestamp)
             }
-            if transaction.feeCurrency != reportingCurrency {
+            if transaction.fee != 0, transaction.feeCurrency != reportingCurrency {
                 datesByPair[HistoricalPair(from: transaction.feeCurrency, to: reportingCurrency), default: []]
                     .append(transaction.timestamp)
             }
@@ -594,7 +594,7 @@ final class PortfolioStore: ObservableObject {
             for transaction in snapshot.transactions where transaction.portfolioID == portfolio.id {
                 let pair = HistoricalPair(from: transaction.priceCurrency, to: reportingCurrency)
                 let priceConversion: FXRateService.Conversion
-                if transaction.priceCurrency == reportingCurrency {
+                if transaction.price == nil || transaction.priceCurrency == reportingCurrency {
                     priceConversion = .init(rate: 1, observationDate: transaction.timestamp, isCached: false)
                 } else {
                     guard let result = historicalConversions[pair]?[transaction.timestamp] else {
@@ -605,7 +605,7 @@ final class PortfolioStore: ObservableObject {
                 }
                 let feePair = HistoricalPair(from: transaction.feeCurrency, to: reportingCurrency)
                 let feeConversion: FXRateService.Conversion
-                if transaction.feeCurrency == reportingCurrency {
+                if transaction.fee == 0 || transaction.feeCurrency == reportingCurrency {
                     feeConversion = .init(rate: 1, observationDate: transaction.timestamp, isCached: false)
                 } else {
                     guard let feeResult = historicalConversions[feePair]?[transaction.timestamp] else {
