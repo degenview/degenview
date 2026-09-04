@@ -57,11 +57,12 @@ DegenView/
     ├── AlpacaWebSocketService.swift   # Alpaca live stock bars
     ├── LocalPriceAlertEngine.swift    # Serialized crossing state machine and persistence
     ├── MarketQuoteCoordinator.swift   # App-wide owner-based alert quote polling/deduplication
-    ├── FXRateService.swift            # Frankfurter daily FX rates and disk cache
+    ├── FXRateService.swift            # Frankfurter current/historical FX + BTC cross-rates, disk cache
+    ├── BitcoinHistoryService.swift    # Bitstamp daily BTC/USD closes, disk-cached
     ├── ReplayEngine.swift             # Deterministic replay state machine and aggregation
     ├── PortfolioAccountingEngine.swift # Weighted-average basis and P&L calculations
     ├── PortfolioLedger.swift          # Actor-serialized atomic transaction ledger
-    ├── PortfolioStore.swift           # Published portfolio state, quotes, history cache
+    ├── PortfolioStore.swift           # Published portfolio state, quotes, history, currency projections
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PolymarketService.swift        # Event search and probability history
@@ -106,21 +107,26 @@ DegenView/
    `portfolios.json`, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
    valuation without replaying static accounting; historical edits invalidate only the
    affected snapshot suffix.
-10. Each market `ChartViewModel` owns an optional Pine configuration. Compilation and
+10. Selecting a reporting currency asks `FXRateService` for current or historical
+    conversions—fiat rates from Frankfurter, BTC cross-rates from `BitcoinHistoryService`—
+    and `PortfolioStore` converts transactions, quotes, and history into that currency once
+    and caches the result as a projection. Switching back to an already-computed currency
+    reuses its cached projection instead of re-converting or re-fetching rates.
+11. Each market `ChartViewModel` owns an optional Pine configuration. Compilation and
     evaluation run in a generation-checked detached task; the runtime receives only an
     immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
     persisted separately from last-valid applied source, so invalid edits do not remove
     the active result. Pine outputs are never shared between tabs or cards.
-11. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
+12. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
     stale range response cannot replace a newer selection. CMC cards are excluded from
     replay, price alerts, WebSockets, Pine evaluation, and OHLCV-specific controls.
-12. Trend lines and Fibonacci retracements retain timestamp/price anchors in
+13. Trend lines and Fibonacci retracements retain timestamp/price anchors in
     `DrawingStore`, keyed by source-qualified instrument. Rendering projects those
     financial coordinates through the current `ChartPlot` on every layout pass, so
     timeframe changes, horizontal zoom, vertical scaling, resizing, and replay do not
     rewrite canonical drawing state.
-13. Each chart window connects its `ChartViewModel` instances to one
+14. Each chart window connects its `ChartViewModel` instances to one
     `DrawingUndoCoordinator` backed by the window's native `UndoManager`. Undo and redo
     apply targeted, instrument-keyed replacements through `DrawingStore`, preserving
     unrelated drawing changes made by another window while immediately updating every

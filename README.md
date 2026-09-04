@@ -80,9 +80,13 @@ SwiftUI and an AppKit `Canvas`, with no external dependencies.
   Transfer Out, reward, fee, and adjustment events instead of stored current quantities
 - **Weighted-average accounting** — Purchase fees increase cost basis; sale fees reduce net
   proceeds; transfers remove proportional basis without realizing a market sale
-- **Live analytics** — Current value, allocation, 24-hour movement, average cost, realized
-  and unrealized P&L, best/worst performers, and unpriced-asset status update from the
-  existing market-data sources
+- **Live analytics** — Current value, allocation (hover the donut for a per-holding
+  breakdown), 24-hour movement, average cost, realized and unrealized P&L, best/worst
+  performers, and unpriced-asset status update from the existing market-data sources
+- **Multi-currency reporting** — View portfolio value, holdings, and history converted
+  into USD, EUR, GBP, JPY, CHF, or BTC. Current and historical FX rates (with Bitcoin
+  cross-rates) are fetched and cached locally, and each currency's converted projection is
+  cached so switching back to one you've already viewed is instant
 - **Portfolio history** — Transaction-aware value snapshots support 1D, 1W, 1M, 1Y, and
   ALL ranges with time and value axes, profit/loss coloring, and an interactive crosshair
 - **Holdings and transactions** — Sort holdings, inspect asset-specific history, edit,
