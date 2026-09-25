@@ -9,7 +9,6 @@ final class ScriptEditorViewModel: ObservableObject {
     @Published var status: CompileStatus = .notCompiled
     @Published var diagnostics: [PineDiagnostic] = []
     @Published var isDirty = false
-    @Published var didSave = false
     @Published var errorMessage: String?
     private var savedSource = ""
     private var draftTask: Task<Void, Never>?
@@ -82,7 +81,6 @@ final class ScriptEditorViewModel: ObservableObject {
                 status = result.compileRecord?.status ?? .notCompiled
                 diagnostics = result.compileRecord?.diagnostics ?? []
                 NotificationCenter.default.post(name: .localScriptsDidChange, object: result.id)
-                didSave = true
             } catch { errorMessage = error.localizedDescription }
         }
     }
