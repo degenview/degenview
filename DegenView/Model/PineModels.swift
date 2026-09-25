@@ -6,19 +6,6 @@ enum ScriptType: String, Codable, CaseIterable, Sendable, Identifiable {
     var displayName: String { rawValue.capitalized }
 }
 
-/// A distinct scene value prevents script editor requests from being routed to the
-/// chart `WindowGroup`, which is also keyed by raw UUID values.
-struct ScriptEditorWindowID: Codable, Hashable, Sendable {
-    /// Unique even for unsaved editors, so several new scripts can be composed at once.
-    var windowID: UUID
-    var scriptID: UUID?
-
-    init(scriptID: UUID?) {
-        self.windowID = scriptID ?? UUID()
-        self.scriptID = scriptID
-    }
-}
-
 extension Notification.Name {
     static let localScriptsDidChange = Notification.Name("DegenView.localScriptsDidChange")
 }

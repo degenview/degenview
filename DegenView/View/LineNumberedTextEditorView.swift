@@ -1,6 +1,10 @@
 import AppKit
 import SwiftUI
 
+extension Character {
+    fileprivate var isWordCharacter: Bool { isLetter || isNumber || self == "_" }
+}
+
 struct LineNumberedTextEditorView: NSViewRepresentable {
     @Binding var text: String
     var diagnostics: [PineDiagnostic] = []
@@ -28,6 +32,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         private var text: Binding<String>
         var diagnostics: [PineDiagnostic] = []
         weak var gutter: LineNumberGutterView?
+        private var lastEditWasWordCharacter: Bool?
 
         init(text: Binding<String>) { self.text = text }
 
@@ -36,6 +41,32 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
             text.wrappedValue = textView.string
             gutter?.needsDisplay = true
+        }
+
+        /// Groups typing into per-word undo steps, the way Xcode/Sublime/VS Code do,
+        /// by closing the current undo group whenever an edit crosses a word boundary
+        /// (word character <-> whitespace/punctuation) or is a multi-character paste.
+        func textView(
+            _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+            replacementString: String?
+        ) -> Bool {
+            defer {
+                if let last = replacementString?.last {
+                    lastEditWasWordCharacter = last.isWordCharacter
+                } else {
+                    lastEditWasWordCharacter = nil
+                }
+            }
+            guard let replacementString else { return true }
+
+            let isPaste = replacementString.count > 1
+            let isWordCharacterEdit = replacementString.first?.isWordCharacter ?? false
+            let crossedBoundary = lastEditWasWordCharacter != nil && lastEditWasWordCharacter != isWordCharacterEdit
+
+            if isPaste || crossedBoundary {
+                textView.breakUndoCoalescing()
+            }
+            return true
         }
     }
 
@@ -67,6 +98,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             textView.isEditable = true
             textView.isSelectable = true
             textView.isRichText = false
+            textView.allowsUndo = true
             textView.isAutomaticQuoteSubstitutionEnabled = false
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticTextReplacementEnabled = false
@@ -122,6 +154,8 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
         func setText(_ text: String) {
+            let undoManager = textView.undoManager
+            undoManager?.disableUndoRegistration()
             textView.textStorage?.setAttributedString(
                 NSAttributedString(
                     string: text,
@@ -132,6 +166,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                     ]
                 ))
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnosticOverlay.diagnostics)
+            undoManager?.enableUndoRegistration()
             gutter.needsDisplay = true
         }
 
@@ -286,6 +321,13 @@ private enum PineSyntaxHighlighter {
         let font =
             textView.font
             ?? NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+
+        // Attribute-only edits made here happen outside the normal typing edit path;
+        // left alone they reset NSTextView's typing-coalescing on every keystroke and
+        // turn cmd-Z into per-character undo instead of per-word.
+        let undoManager = textView.undoManager
+        undoManager?.disableUndoRegistration()
+        defer { undoManager?.enableUndoRegistration() }
 
         storage.beginEditing()
         storage.setAttributes([.font: font, .foregroundColor: NSColor.labelColor], range: range)

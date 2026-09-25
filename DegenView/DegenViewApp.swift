@@ -30,10 +30,6 @@ struct DegenViewApp: App {
 
         Window("Script Manager", id: "script-manager") { ScriptManagerView() }
             .defaultSize(width: 900, height: 600)
-
-        WindowGroup("Script Editor", for: ScriptEditorWindowID.self) { $windowID in
-            if let windowID { ScriptEditorView(scriptID: windowID.scriptID) }
-        }.defaultSize(width: 850, height: 700)
     }
 }
 

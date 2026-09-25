@@ -2,19 +2,14 @@ import SwiftUI
 
 struct ScriptManagerView: View {
     @StateObject private var model = ScriptManagerViewModel()
-    @Environment(\.openWindow) private var openWindow
+    @State private var pendingDelete: LocalScript?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 Text("Script Manager").font(.headline)
                 Spacer()
-                TextField("Search name or source", text: $model.query)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 260)
-                Button {
-                    openWindow(value: ScriptEditorWindowID(scriptID: nil))
-                } label: {
+                Button { model.create() } label: {
                     Label("New Script", systemImage: "plus")
                 }
             }
@@ -22,32 +17,40 @@ struct ScriptManagerView: View {
             Divider()
 
             HSplitView {
-                List(ScriptManagerViewModel.Section.allCases, selection: $model.section) { section in
-                    Label(section.rawValue, systemImage: icon(section)).tag(section)
-                }
-                .listStyle(.inset)
-                .frame(minWidth: 180, idealWidth: 210, maxWidth: 280)
-
-                Table(model.filtered, selection: $model.selection) {
-                    TableColumn("Name") { script in Text(script.name) }
-                    TableColumn("Type") { script in Text(script.type.displayName) }
-                    TableColumn("Status") { script in Label(statusText(script), systemImage: statusIcon(script)) }
-                    TableColumn("Modified") { script in
-                        TimelineView(.periodic(from: .now, by: 60)) { context in
-                            Text(modifiedText(for: script.modifiedAt, relativeTo: context.date))
+                VStack(spacing: 0) {
+                    List(selection: $model.selection) {
+                        ForEach(model.groups) { group in
+                            Section(isExpanded: model.isExpanded(group.id)) {
+                                ForEach(group.rows) { row in
+                                    ScriptRow(script: row.script, rowID: row.id, model: model, onDelete: { pendingDelete = $0 })
+                                        .tag(row.script.id)
+                                }
+                            } header: {
+                                Text(group.title)
+                            }
                         }
                     }
-                    TableColumn("Favorite") { script in Image(systemName: script.isFavorite ? "star.fill" : "star") }
-                }
-                .contextMenu(forSelectionType: UUID.self) { ids in
-                    if let id = ids.first, let script = model.scripts.first(where: { $0.id == id }) {
-                        Button("Open") { openWindow(value: ScriptEditorWindowID(scriptID: id)) }
-                        Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
-                        Divider()
-                        Button("Delete", role: .destructive) { model.delete(script) }
+                    .listStyle(.sidebar)
+                    .frame(maxHeight: .infinity)
+
+                    Divider()
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search name or source", text: $model.query)
+                            .textFieldStyle(.plain)
                     }
-                } primaryAction: { ids in
-                    if let id = ids.first { openWindow(value: ScriptEditorWindowID(scriptID: id)) }
+                    .padding(8)
+                }
+                .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
+
+                if let id = model.selection {
+                    ScriptEditorView(scriptID: id)
+                        .id(id)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Text("Select a script")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
@@ -70,21 +73,65 @@ struct ScriptManagerView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
-    }
-    private func icon(_ section: ScriptManagerViewModel.Section) -> String {
-        switch section {
-        case .all: "doc.text"
-        case .favorites: "star"
-        case .recent: "clock"
-        case .indicators: "waveform.path.ecg"
-        case .strategies: "chart.xyaxis.line"
-        case .libraries: "books.vertical"
+        .confirmationDialog(
+            "Delete Script",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { script in
+            Button("Delete \"\(script.name)\"", role: .destructive) {
+                model.delete(script)
+                pendingDelete = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { script in
+            Text("This can't be undone.")
         }
     }
-    private func statusText(_ script: LocalScript) -> String {
-        script.compileRecord?.status.rawValue.capitalized ?? "Not Compiled"
+}
+
+private struct ScriptRow: View {
+    let script: LocalScript
+    let rowID: String
+    @ObservedObject var model: ScriptManagerViewModel
+    let onDelete: (LocalScript) -> Void
+
+    @State private var draftName = ""
+    @FocusState private var isRenameFocused: Bool
+
+    var body: some View {
+        HStack {
+            Image(systemName: statusIcon).foregroundStyle(.secondary)
+            if model.renamingRowID == rowID {
+                TextField("Name", text: $draftName)
+                    .textFieldStyle(.plain)
+                    .focused($isRenameFocused)
+                    .onSubmit { model.commitRename(script, newName: draftName) }
+                    .onExitCommand { model.renamingRowID = nil }
+                    .onAppear {
+                        draftName = script.name
+                        isRenameFocused = true
+                    }
+            } else {
+                Text(script.name)
+            }
+            Spacer()
+            Button {
+                model.toggleFavorite(script)
+            } label: {
+                Image(systemName: script.isFavorite ? "star.fill" : "star")
+                    .foregroundStyle(script.isFavorite ? .yellow : .secondary)
+            }
+            .buttonStyle(.plain)
+        }
+        .contentShape(Rectangle())
+        .simultaneousGesture(TapGesture().onEnded { model.handleRowClick(rowID: rowID, scriptID: script.id) })
+        .contextMenu {
+            Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
+            Divider()
+            Button("Delete", role: .destructive) { onDelete(script) }
+        }
     }
-    private func statusIcon(_ script: LocalScript) -> String {
+    private var statusIcon: String {
         switch script.compileRecord?.status ?? .notCompiled {
         case .notCompiled: "circle.dashed"
         case .valid: "checkmark.circle"
@@ -92,13 +139,4 @@ struct ScriptManagerView: View {
         case .error: "xmark.circle"
         }
     }
-    private func modifiedText(for date: Date, relativeTo now: Date) -> String {
-        guard now.timeIntervalSince(date) >= 60 else { return "Just now" }
-        return Self.relativeDateFormatter.localizedString(for: date, relativeTo: now)
-    }
-    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return formatter
-    }()
 }

@@ -1,37 +1,91 @@
 import Foundation
+import SwiftUI
 
 @MainActor
 final class ScriptManagerViewModel: ObservableObject {
-    enum Section: String, CaseIterable, Identifiable {
-        case all = "All Scripts"
-        case favorites = "Favorites"
-        case recent = "Recent"
-        case indicators = "Indicators"
-        case strategies = "Strategies"
-        case libraries = "Libraries"
-        var id: String { rawValue }
+    struct Group: Identifiable {
+        /// A script favorited within an "Indicators" group (say) appears in both the
+        /// Favorites group and its type group. Each row therefore needs an id unique
+        /// across the whole sidebar (group + script), not just the script's own id —
+        /// otherwise List/ForEach conflate the two rows and rename state, focus, etc.
+        /// land on whichever row SwiftUI decides is "the" row for that duplicated id.
+        struct Row: Identifiable {
+            let id: String
+            let script: LocalScript
+        }
+        let id: String
+        let title: String
+        let rows: [Row]
     }
     @Published var scripts: [LocalScript] = []
     @Published var selection: UUID?
-    @Published var section: Section = .all
     @Published var query = ""
     @Published var errorMessage: String?
+    @Published private var collapsedGroups: Set<String> = []
+    /// Keyed by `Group.Row.id`, not the script's own id — a favorited script has a row
+    /// in two groups sharing one script id, and only the row actually clicked should
+    /// enter rename mode.
+    @Published var renamingRowID: String?
+    private var lastRowClick: (rowID: String, date: Date)?
 
-    var filtered: [LocalScript] {
-        scripts.filter { script in
-            let sectionMatch: Bool
-            switch section {
-            case .all: sectionMatch = true
-            case .favorites: sectionMatch = script.isFavorite
-            case .recent: sectionMatch = script.lastOpenedAt != nil
-            case .indicators: sectionMatch = script.type == .indicator
-            case .strategies: sectionMatch = script.type == .strategy
-            case .libraries: sectionMatch = script.type == .library
+    /// Finder-style "slow double click" rename: a second click on an already-selected
+    /// row, spaced out enough that AppKit wouldn't treat it as a real double click.
+    func handleRowClick(rowID: String, scriptID: UUID) {
+        let now = Date()
+        defer { lastRowClick = (rowID, now) }
+        guard selection == scriptID, let last = lastRowClick, last.rowID == rowID else { return }
+        let interval = now.timeIntervalSince(last.date)
+        if interval > 0.4 && interval < 1.5 { renamingRowID = rowID }
+    }
+
+    func commitRename(_ script: LocalScript, newName: String) {
+        renamingRowID = nil
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != script.name else { return }
+        Task {
+            do {
+                _ = try await ScriptStore.shared.save(
+                    id: script.id, name: trimmed, type: script.type, source: script.source)
+                NotificationCenter.default.post(name: .localScriptsDidChange, object: script.id)
+                await refresh()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+
+    func isExpanded(_ groupID: String) -> Binding<Bool> {
+        Binding(
+            get: { !self.collapsedGroups.contains(groupID) },
+            set: { expanded in
+                if expanded { self.collapsedGroups.remove(groupID) } else { self.collapsedGroups.insert(groupID) }
             }
-            return sectionMatch
-                && (query.isEmpty || script.name.localizedCaseInsensitiveContains(query)
-                    || script.source.localizedCaseInsensitiveContains(query))
-        }.sorted { $0.modifiedAt > $1.modifiedAt }
+        )
+    }
+
+    /// Scripts grouped for the sidebar: Favorites first (only when non-empty), then by type.
+    var groups: [Group] {
+        let matches = scripts.filter {
+            query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)
+                || $0.source.localizedCaseInsensitiveContains(query)
+        }
+        func sorted(_ scripts: [LocalScript]) -> [LocalScript] { scripts.sorted { $0.modifiedAt > $1.modifiedAt } }
+        func rows(for scripts: [LocalScript], groupID: String) -> [Group.Row] {
+            scripts.map { Group.Row(id: "\(groupID)#\($0.id)", script: $0) }
+        }
+        let favorites = sorted(matches.filter(\.isFavorite))
+        let byType: [(ScriptType, String)] = [
+            (.indicator, "Indicators"), (.strategy, "Strategies"), (.library, "Libraries"),
+        ]
+        var result: [Group] = []
+        if !favorites.isEmpty {
+            result.append(Group(id: "favorites", title: "Favorites", rows: rows(for: favorites, groupID: "favorites")))
+        }
+        for (type, title) in byType {
+            let scripts = sorted(matches.filter { $0.type == type })
+            if !scripts.isEmpty {
+                result.append(Group(id: type.rawValue, title: title, rows: rows(for: scripts, groupID: type.rawValue)))
+            }
+        }
+        return result
     }
 
     func load() {
@@ -61,6 +115,7 @@ final class ScriptManagerViewModel: ObservableObject {
         Task {
             do {
                 try await ScriptStore.shared.delete(id: script.id)
+                if selection == script.id { selection = nil }
                 await refresh()
             } catch { errorMessage = error.localizedDescription }
         }
