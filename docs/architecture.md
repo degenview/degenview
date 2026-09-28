@@ -75,7 +75,7 @@ DegenView/
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
-    ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database and legacy JSON import
+    ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database
     ├── AppDatabase+Schema.swift       # Append-only migrations, document and setting helpers
     ├── AppDatabase+Workspace.swift    # Tabs, saved views, and drawings tables
     ├── AppDatabase+Portfolio.swift    # Portfolio ledger tables
@@ -104,10 +104,8 @@ DegenView/
    `FavoritesStore`, `DrawingStore`, `PortfolioStore`, `PaperTradingStore`, and alert
    persistence each own their tables and keep their public API; nested chart configuration
    stays a JSON payload column so it evolves through Codable defaults rather than schema
-   migrations. Schema changes are new, append-only `registerMigration` entries. On first
-   launch each store imports its pre-SQLite JSON file once and renames it to
-   `*.migrated.json`; state that fails to load disables writes instead of being replaced
-   by an empty value. Caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
+   migrations. Schema changes are new, append-only `registerMigration` entries. State that
+   fails to load disables writes instead of being replaced by an empty value. Caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
    files. Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
    database; only CMC chart type, range, and display settings enter workspace state.
    Each tab and named saved view also stores ordered `ChartColumn` membership by the

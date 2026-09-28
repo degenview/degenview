@@ -12,13 +12,8 @@ final class DrawingStore: ObservableObject {
 
     private let database: AppDatabase
 
-    init(database: AppDatabase = .shared, legacyDirectory: URL = AppSupport.directory) {
+    init(database: AppDatabase = .shared) {
         self.database = database
-        database.importLegacyDrawings(
-            TrendLine.self, filename: "drawings.json", kind: .trendLine, directory: legacyDirectory)
-        database.importLegacyDrawings(
-            FibonacciRetracementDrawing.self, filename: "fib-drawings.json", kind: .fibonacci,
-            directory: legacyDirectory)
         linesByInstrument = database.drawings(TrendLine.self, kind: .trendLine)
         fibsByInstrument = database.drawings(FibonacciRetracementDrawing.self, kind: .fibonacci)
     }

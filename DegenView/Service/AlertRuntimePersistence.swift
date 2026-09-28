@@ -22,7 +22,6 @@ struct AlertRuntimePersistence: Sendable {
     init(database: AppDatabase = .shared, directory: URL = AppSupport.directory) {
         self.database = database
         self.directory = directory
-        importLegacyFiles()
     }
 
     /// Nil until a runtime has saved once, so the engine can start from defaults.
@@ -111,32 +110,5 @@ struct AlertRuntimePersistence: Sendable {
             arguments: [
                 command.id.uuidString, command.createdAt.timeIntervalSince1970, try AppDatabase.json(command),
             ])
-    }
-
-    /// Both processes run this; every step is idempotent, so racing imports are harmless.
-    private func importLegacyFiles() {
-        database.importLegacyJSON(AlertPersistenceSnapshot.self, filename: "price_alerts.json", directory: directory) {
-            try Self.replaceSnapshot($1, db: $0)
-        }
-
-        let fm = FileManager.default
-        let commandsURL = directory.appendingPathComponent("alert_commands", isDirectory: true)
-        guard let urls = try? fm.contentsOfDirectory(at: commandsURL, includingPropertiesForKeys: nil) else { return }
-        for url in urls where url.pathExtension == "json" {
-            guard let data = try? Data(contentsOf: url),
-                let command = try? AppDatabase.decoder.decode(AlertRuntimeCommand.self, from: data)
-            else { continue }
-            do {
-                try database.writer.write { try Self.insert(command, db: $0) }
-                try fm.removeItem(at: url)
-            } catch {
-                #if DEBUG
-                    print("[AlertRuntimePersistence] Could not import \(url.lastPathComponent): \(error)")
-                #endif
-            }
-        }
-        if (try? fm.contentsOfDirectory(atPath: commandsURL.path))?.isEmpty == true {
-            try? fm.removeItem(at: commandsURL)
-        }
     }
 }

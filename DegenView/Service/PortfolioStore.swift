@@ -29,7 +29,7 @@ final class PortfolioStore: ObservableObject {
     }
     private var derivedStates: [Set<UUID>: DerivedState] = [:]
     private struct ReportingPreferences: Codable { var currencies: [String: PortfolioCurrency] = [:] }
-    private static let reportingPreferencesKey = "portfolio.reportingCurrencies"
+    static let reportingPreferencesKey = "portfolio.reportingCurrencies"
     private let database: AppDatabase
     private var reportingPreferences: ReportingPreferences
     private var convertedTransactions: [UUID: PortfolioTransaction] = [:]
@@ -61,11 +61,6 @@ final class PortfolioStore: ObservableObject {
         fxService: any FXRateProviding = FXRateService.shared, database: AppDatabase = .shared,
         storageDirectory: URL = AppSupport.directory
     ) {
-        database.importLegacyPortfolio(from: storageDirectory)
-        database.importLegacyJSON(
-            ReportingPreferences.self, filename: "portfolio_reporting_currencies.json", directory: storageDirectory
-        ) { try AppDatabase.setSetting($1, key: Self.reportingPreferencesKey, db: $0) }
-
         let quoteStore = JSONStore<[String: PortfolioQuote]>(
             filename: "portfolio_quotes.json", directory: storageDirectory)
         var persisted: PortfolioLedgerSnapshot?

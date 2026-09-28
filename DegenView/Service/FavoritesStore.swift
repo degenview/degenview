@@ -8,11 +8,8 @@ final class FavoritesStore: ObservableObject {
     @Published private(set) var items: [FavoriteItem]
     private let database: AppDatabase
 
-    init(database: AppDatabase = .shared, legacyDirectory: URL = AppSupport.directory) {
+    init(database: AppDatabase = .shared) {
         self.database = database
-        database.importLegacyJSON([FavoriteItem].self, filename: "favorites.json", directory: legacyDirectory) {
-            try AppDatabase.replaceDocuments($1, in: .favorite, db: $0)
-        }
         items = database.documents(FavoriteItem.self, in: .favorite)
     }
 

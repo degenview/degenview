@@ -26,8 +26,7 @@ Requires Xcode 16+, macOS 14+.
 - **Persistence**: user data (tabs, saved views, favorites, drawings, portfolios, paper
   trading, alerts) lives in SQLite (`degenview.sqlite`, WAL) through `AppDatabase`, shared
   with the alert agent. Caches stay in `JSONStore<T>`. Schema changes are new
-  `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one.
-  Legacy JSON is imported once by the owning store and renamed to `*.migrated.json`
+  `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one
 - **One `ContentViewModel` per tab** — never treat it as app-global state
 - **Caching**: `ChartViewModel.fetchData` caches results keyed by (symbol, interval, limit) in a dictionary
 - **WebSocket**: Only Binance tickers get live streams; connect/disconnect on ticker add/remove
@@ -99,7 +98,7 @@ Requires Xcode 16+, macOS 14+.
 - `WindowAccessor` is how a view gets its `NSWindow`. Three things need it: tab-group
   registration, scoping the scroll monitor, and occlusion gating
 - Restore is ours, not AppKit's: windows are `isRestorable = false` and rebuilt from
-  `tabs.json` by `restoreWindows(adopted:using:)`
+  the persisted `TabsStore` session by `restoreWindows(adopted:using:)`
 - `ContentView` keeps `.toolbar` and `.navigationTitle` outside the empty/non-empty
   branch — an empty new tab still needs both
 
@@ -117,10 +116,8 @@ Three things broke when a second instance appeared — check for this shape when
 - `isApplyingView` flag prevents false unsaved-change detection on view load
 - `isHydrating` guards `syncTab()` during `init` — `layoutMode`'s `didSet` would otherwise
   write the tab back before `chartViewModels` is populated and erase it
-- `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the file write
+- `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the database write
 - `@AppStorage("appTheme")` for theme preference
-- Legacy `tickers.json` + `UserDefaults "lastViewID"` are read once by
-  `TabsStore.migrateFromLegacyStorage()` and never written again
 
 ## File naming
 

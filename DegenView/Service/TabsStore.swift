@@ -1,11 +1,8 @@
 import Combine
 import Foundation
 
-/// Single source of truth for every tab's chart state.
-///
-/// Replaces the app-global `tickers.json` + `lastViewID` pair: those described
-/// one implicit tab, this describes N explicit ones. Saved views (`views.json`)
-/// stay global — a shared library any tab can load from. Both live in `AppDatabase`.
+/// Single source of truth for every tab's chart state, persisted in `AppDatabase`.
+/// Saved views stay global — a shared library any tab can load from.
 @MainActor
 final class TabsStore: ObservableObject {
     static let shared = TabsStore()
@@ -18,8 +15,6 @@ final class TabsStore: ObservableObject {
     private(set) var windowGroups: [[UUID]] = []
 
     private let database: AppDatabase
-    private let userDefaults: UserDefaults
-    private let supportDirectory: URL
     private var suppressWrites = false
     private var saveTask: Task<Void, Never>?
 
@@ -27,41 +22,21 @@ final class TabsStore: ObservableObject {
         self.init(database: .shared)
     }
 
-    init(
-        database: AppDatabase,
-        userDefaults: UserDefaults = .standard,
-        supportDirectory: URL = AppSupport.directory
-    ) {
+    init(database: AppDatabase) {
         self.database = database
-        self.userDefaults = userDefaults
-        self.supportDirectory = supportDirectory
-
-        database.importLegacyTabs(from: supportDirectory)
-        // A tabs.json that survived the import exists but couldn't be read. Leave it for
-        // the next launch rather than writing a recovered session the import would clobber.
-        let legacyUnreadable = FileManager.default.fileExists(
-            atPath: supportDirectory.appendingPathComponent("tabs.json").path)
 
         do {
             if let snapshot = try database.tabsSnapshot() {
                 tabs = snapshot.tabs
                 windowGroups = snapshot.windowGroups
-                return
             }
         } catch {
+            // Keep the stored session for a later launch rather than overwriting it.
             #if DEBUG
                 print("[TabsStore] Tabs are unreadable; disabling writes: \(error.localizedDescription)")
             #endif
             suppressWrites = true
         }
-
-        let migrated = migrateFromLegacyStorage()
-        tabs = migrated.tabs
-        windowGroups = migrated.windowGroups
-        if legacyUnreadable { suppressWrites = true }
-        // Nothing has mutated yet, so no debounced write is pending — land the
-        // migration now rather than on the next edit.
-        if !suppressWrites { write(migrated) }
     }
 
     // MARK: - Lookup
@@ -180,48 +155,5 @@ final class TabsStore: ObservableObject {
                 print("[TabsStore] Could not save tabs: \(error.localizedDescription)")
             #endif
         }
-    }
-
-    // MARK: - Migration
-
-    /// Fold the pre-tabs single-document state into one tab.
-    ///
-    /// Mirrors what launch used to do: `lastViewID` won over `tickers.json`,
-    /// because restoring a saved view replaced the ticker list wholesale.
-    private func migrateFromLegacyStorage() -> TabsSnapshot {
-        let savedViews = database.savedViews(legacyDirectory: supportDirectory)
-
-        if let idString = userDefaults.string(forKey: "lastViewID"),
-            let id = UUID(uuidString: idString),
-            let view = savedViews.first(where: { $0.id == id })
-        {
-            let tab = ChartTab(
-                name: view.name,
-                savedViewID: view.id,
-                tickerConfigs: view.resolvedConfigs,
-                chartColumns: view.chartColumns,
-                timeRange: view.timeRange,
-                layoutMode: view.layoutMode,
-                candleCount: view.candleCount ?? view.timeRange.dataPointLimit
-            )
-            return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
-        }
-
-        let configs =
-            JSONStore<[TickerConfig]>(filename: "tickers.json", directory: supportDirectory).load()
-            ?? legacyStringTickers()
-        let tab = ChartTab(tickerConfigs: configs)
-        return TabsSnapshot(tabs: [tab], windowGroups: [[tab.id]])
-    }
-
-    /// The oldest on-disk format: a bare `[String]` of Binance symbols.
-    private func legacyStringTickers() -> [TickerConfig] {
-        guard let data = try? Data(contentsOf: supportDirectory.appendingPathComponent("tickers.json")),
-            let strings = try? JSONDecoder().decode([String].self, from: data)
-        else { return [] }
-        #if DEBUG
-            print("[TabsStore] Migrated \(strings.count) legacy tickers to .binance")
-        #endif
-        return strings.map { TickerConfig(symbol: $0, source: .binance) }
     }
 }

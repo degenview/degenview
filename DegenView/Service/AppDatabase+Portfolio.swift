@@ -9,12 +9,6 @@ extension AppDatabase {
         static let invalidatedAfter = "portfolio.invalidatedAfter"
     }
 
-    func importLegacyPortfolio(from directory: URL) {
-        importLegacyJSON(PortfolioLedgerSnapshot.self, filename: "portfolios.json", directory: directory) {
-            try Self.replacePortfolioLedger($1, db: $0)
-        }
-    }
-
     func portfolioLedger() throws -> PortfolioLedgerSnapshot {
         try reader.read { db in
             var snapshot = PortfolioLedgerSnapshot()

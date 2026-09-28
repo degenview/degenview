@@ -6,13 +6,8 @@ extension AppDatabase {
 
     // MARK: - Saved views
 
-    /// Saved views are shared by every tab, so each reader imports the legacy file first;
-    /// after the first call that is a single `fileExists` check.
-    func savedViews(legacyDirectory: URL = AppSupport.directory) -> [SavedView] {
-        importLegacyJSON([SavedView].self, filename: "views.json", directory: legacyDirectory) {
-            try Self.replaceDocuments($1, in: .savedView, db: $0)
-        }
-        return documents(SavedView.self, in: .savedView)
+    func savedViews() -> [SavedView] {
+        documents(SavedView.self, in: .savedView)
     }
 
     func saveSavedViews(_ views: [SavedView]) {
@@ -21,13 +16,7 @@ extension AppDatabase {
 
     // MARK: - Tabs
 
-    func importLegacyTabs(from directory: URL) {
-        importLegacyJSON(TabsSnapshot.self, filename: "tabs.json", directory: directory) {
-            try Self.replaceTabs($1, db: $0)
-        }
-    }
-
-    /// Nil when no tab has ever been saved, which is what triggers the pre-tabs migration.
+    /// Nil when no tab has ever been saved.
     func tabsSnapshot() throws -> TabsSnapshot? {
         try reader.read { db in
             let tabs = try Self.documents(ChartTab.self, in: .tab, db: db)
@@ -97,18 +86,6 @@ extension AppDatabase {
             #if DEBUG
                 print("[AppDatabase] Could not write drawings: \(error.localizedDescription)")
             #endif
-        }
-    }
-
-    func importLegacyDrawings<T: Codable & Identifiable>(
-        _ type: T.Type, filename: String, kind: DrawingKind, directory: URL
-    ) where T.ID == UUID {
-        importLegacyJSON([String: [T]].self, filename: filename, directory: directory) { db, byInstrument in
-            try db.execute(sql: "DELETE FROM drawing WHERE kind = ?", arguments: [kind.rawValue])
-            try db.execute(sql: "DELETE FROM drawing_instrument WHERE kind = ?", arguments: [kind.rawValue])
-            for (instrument, items) in byInstrument {
-                try Self.replaceDrawings(items, instrument: instrument, kind: kind, db: db)
-            }
         }
     }
 

@@ -12,8 +12,7 @@ final class PaperTradingStore: ObservableObject {
     let engine: PaperTradingEngine
     let execution: PaperTradingExecutionService
 
-    init(database: AppDatabase = .shared, legacyDirectory: URL = AppSupport.directory) {
-        database.importLegacyPaperTrading(from: legacyDirectory)
+    init(database: AppDatabase = .shared) {
         var initial = PaperTradingSnapshot.empty
         var canPersist = true
         do {

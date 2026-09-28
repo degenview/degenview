@@ -9,12 +9,6 @@ extension AppDatabase {
         static let quotes = "paper.quotes"
     }
 
-    func importLegacyPaperTrading(from directory: URL) {
-        importLegacyJSON(PaperTradingSnapshot.self, filename: "paper_trading.json", directory: directory) {
-            try Self.replacePaperTrading($1, db: $0)
-        }
-    }
-
     func paperTrading() throws -> PaperTradingSnapshot {
         try reader.read { db in
             var snapshot = PaperTradingSnapshot()

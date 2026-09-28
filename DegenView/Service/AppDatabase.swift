@@ -43,34 +43,3 @@ final class AppDatabase: Sendable {
 
     var reader: any DatabaseReader { writer }
 }
-
-// MARK: - Legacy JSON import
-
-extension AppDatabase {
-    /// Moves one pre-SQLite JSON document into the database. The file's existence is the
-    /// marker: after a committed import it is renamed to `<stem>.migrated.json` and kept as
-    /// a manual rollback path. `write` must replace, not append, so an import interrupted
-    /// between commit and rename is safe to repeat on the next launch.
-    func importLegacyJSON<T: Codable>(
-        _ type: T.Type,
-        filename: String,
-        directory: URL,
-        write: (Database, T) throws -> Void
-    ) {
-        let store = JSONStore<T>(filename: filename, directory: directory)
-        guard case .value(let value) = store.loadResult() else { return }
-        do {
-            try writer.write { try write($0, value) }
-            let stem = store.storageURL.deletingPathExtension().lastPathComponent
-            var backup = directory.appendingPathComponent("\(stem).migrated.json")
-            if FileManager.default.fileExists(atPath: backup.path) {
-                backup = directory.appendingPathComponent("\(stem).migrated-\(UUID().uuidString).json")
-            }
-            try FileManager.default.moveItem(at: store.storageURL, to: backup)
-        } catch {
-            #if DEBUG
-                print("[AppDatabase] Import of \(filename) failed: \(error.localizedDescription)")
-            #endif
-        }
-    }
-}

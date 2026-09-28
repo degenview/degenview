@@ -19,100 +19,43 @@ final class AppDatabaseTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    // MARK: - Legacy import
+    // MARK: - Workspace
 
-    func testLegacyFavoritesAreImportedOnceAndKeptAsBackup() throws {
+    func testFavoritesAndSavedViewsKeepOrder() {
         let favorites = [
             FavoriteItem(name: "Bitcoin", ticker: "BTC", config: TickerConfig(symbol: "BTCUSDT", source: .binance)),
             FavoriteItem(name: "Ether", ticker: "ETH", config: TickerConfig(symbol: "ETHUSDT", source: .binance)),
         ]
-        try writeLegacy(favorites, to: "favorites.json")
+        database.replaceDocuments(favorites, in: .favorite)
+        XCTAssertEqual(FavoritesStore(database: database).items, favorites)
 
-        let store = FavoritesStore(database: database, legacyDirectory: directory)
-
-        XCTAssertEqual(store.items, favorites)
-        XCTAssertFalse(exists("favorites.json"))
-        XCTAssertTrue(exists("favorites.migrated.json"))
-        XCTAssertEqual(FavoritesStore(database: database, legacyDirectory: directory).items, favorites)
+        let views = ["B", "A"].map {
+            SavedView(name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, layoutMode: .grid, createdAt: Date())
+        }
+        database.saveSavedViews(views)
+        XCTAssertEqual(database.savedViews().map(\.name), ["B", "A"])
     }
-
-    func testCorruptLegacyFileDoesNotBlockOtherImports() throws {
-        try Data("not-json".utf8).write(to: directory.appendingPathComponent("favorites.json"))
-        let view = SavedView(
-            name: "Majors", tickers: ["BTCUSDT"], timeRange: .oneDay, layoutMode: .grid, createdAt: Date())
-        try writeLegacy([view], to: "views.json")
-
-        XCTAssertEqual(FavoritesStore(database: database, legacyDirectory: directory).items, [])
-        XCTAssertEqual(database.savedViews(legacyDirectory: directory).map(\.id), [view.id])
-        let quarantined = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-            .filter { $0.hasPrefix("favorites.corrupt-") }
-        XCTAssertEqual(quarantined.count, 1)
-    }
-
-    func testLegacyTabsKeepOrderAndWindowGroups() throws {
-        let first = ChartTab(name: "One")
-        let second = ChartTab(name: "Two")
-        try writeLegacy(
-            TabsSnapshot(tabs: [first, second], windowGroups: [[second.id], [first.id]]), to: "tabs.json")
-
-        let store = TabsStore(database: database, userDefaults: defaults(), supportDirectory: directory)
-
-        XCTAssertEqual(store.tabs, [first, second])
-        XCTAssertEqual(store.windowIndex(of: first.id), 1)
-        XCTAssertTrue(exists("tabs.migrated.json"))
-    }
-
-    func testCorruptTabsRecoverIntoOneFreshTab() throws {
-        let original = Data("broken-session".utf8)
-        try original.write(to: directory.appendingPathComponent("tabs.json"))
-
-        let store = TabsStore(database: database, userDefaults: defaults(), supportDirectory: directory)
-
-        XCTAssertEqual(store.tabs.count, 1)
-        XCTAssertEqual(try database.tabsSnapshot()?.tabs, store.tabs)
-        let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix("tabs.corrupt-") }
-        XCTAssertEqual(backups.count, 1)
-        XCTAssertEqual(try Data(contentsOf: backups[0]), original)
-    }
-
-    func testLegacyDrawingsKeepExplicitlyEmptyInstruments() throws {
-        let line = TrendLine(
-            start: TrendAnchor(date: Date(timeIntervalSince1970: 1), price: 1),
-            end: TrendAnchor(date: Date(timeIntervalSince1970: 2), price: 2))
-        let btc = "\(DataSourceType.binance.rawValue):btcusdt"
-        let eth = "\(DataSourceType.binance.rawValue):ethusdt"
-        try writeLegacy([btc: [line], eth: []], to: "drawings.json")
-
-        let store = DrawingStore(database: database, legacyDirectory: directory)
-
-        XCTAssertEqual(store.linesByInstrument, [btc: [line], eth: []])
-        store.importLegacy([line], ticker: "ETHUSDT", source: .binance)
-        XCTAssertEqual(store.lines(ticker: "ETHUSDT", source: .binance), [])
-    }
-
-    // MARK: - Round trips
 
     func testTabsPersistAcrossStores() throws {
-        let store = TabsStore(database: database, userDefaults: defaults(), supportDirectory: directory)
+        let store = TabsStore(database: database)
         let added = store.makeTab()
         store.setWindowGroups([store.tabs.map(\.id)])
         store.persist()
 
-        let reloaded = TabsStore(database: database, userDefaults: defaults(), supportDirectory: directory)
+        let reloaded = TabsStore(database: database)
         XCTAssertEqual(reloaded.tabs, store.tabs)
         XCTAssertEqual(reloaded.windowIndex(of: added.id), 0)
     }
 
     func testDeletedDrawingsStayDeleted() {
-        let store = DrawingStore(database: database, legacyDirectory: directory)
+        let store = DrawingStore(database: database)
         let line = TrendLine(
             start: TrendAnchor(date: Date(timeIntervalSince1970: 1), price: 1),
             end: TrendAnchor(date: Date(timeIntervalSince1970: 2), price: 2))
         store.save([line], ticker: "BTC", source: .binance)
         store.save([TrendLine](), ticker: "BTC", source: .binance)
 
-        let reloaded = DrawingStore(database: database, legacyDirectory: directory)
+        let reloaded = DrawingStore(database: database)
         XCTAssertEqual(reloaded.linesByInstrument[reloaded.key(ticker: "BTC", source: .binance)], [])
     }
 
@@ -146,22 +89,6 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(try database.portfolioLedger(), expected)
     }
 
-    func testLegacyPortfolioAndReportingCurrenciesImport() throws {
-        let portfolio = Portfolio(name: "Legacy", baseCurrency: .USD, createdAt: Date(), updatedAt: Date())
-        var legacy = PortfolioLedgerSnapshot()
-        legacy.portfolios = [portfolio]
-        legacy.selectedPortfolioID = portfolio.id
-        try writeLegacy(legacy, to: "portfolios.json")
-        try Data(#"{"currencies":{"all-portfolios":"EUR"}}"#.utf8)
-            .write(to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
-
-        let store = PortfolioStore(database: database, storageDirectory: directory)
-
-        XCTAssertEqual(store.snapshot, legacy)
-        XCTAssertTrue(exists("portfolios.migrated.json"))
-        XCTAssertTrue(exists("portfolio_reporting_currencies.migrated.json"))
-    }
-
     // MARK: - Paper trading
 
     func testPaperTradingRoundTripKeepsEveryCollection() async throws {
@@ -187,19 +114,6 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertFalse(expected.fills.isEmpty)
         XCTAssertFalse(expected.closedTrades.isEmpty)
         XCTAssertEqual(try database.paperTrading(), expected)
-    }
-
-    func testLegacyPaperTradingImport() throws {
-        let account = PaperAccount(name: "Legacy", initialBalance: 1_000)
-        var legacy = PaperTradingSnapshot()
-        legacy.accounts = [account]
-        legacy.selectedAccountID = account.id
-        try writeLegacy(legacy, to: "paper_trading.json")
-
-        let store = PaperTradingStore(database: database, legacyDirectory: directory)
-
-        XCTAssertEqual(store.snapshot, legacy)
-        XCTAssertTrue(exists("paper_trading.migrated.json"))
     }
 
     // MARK: - Alerts
@@ -245,40 +159,5 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(agent.pendingCommands(), [first, second])
         agent.acknowledge(first.id)
         XCTAssertEqual(gui.pendingCommands(), [second])
-    }
-
-    func testLegacyAlertFilesAndQueuedCommandsImport() throws {
-        var legacy = AlertPersistenceSnapshot()
-        legacy.revision = 7
-        legacy.alerts = [PriceAlert(asset: btc, condition: .crossesBelow(target: 50))]
-        try writeLegacy(legacy, to: "price_alerts.json")
-        let commands = directory.appendingPathComponent("alert_commands", isDirectory: true)
-        try FileManager.default.createDirectory(at: commands, withIntermediateDirectories: true)
-        let queued = AlertRuntimeCommand(payload: .clearHistory)
-        try JSONEncoder().encode(queued).write(to: commands.appendingPathComponent("1-\(queued.id).json"))
-
-        let persistence = AlertRuntimePersistence(database: database, directory: directory)
-
-        XCTAssertEqual(persistence.loadSnapshot(), legacy)
-        XCTAssertEqual(persistence.pendingCommands(), [queued])
-        XCTAssertTrue(exists("price_alerts.migrated.json"))
-        XCTAssertFalse(exists("alert_commands"))
-    }
-
-    // MARK: - Helpers
-
-    private func writeLegacy<T: Encodable>(_ value: T, to filename: String) throws {
-        try JSONEncoder().encode(value).write(to: directory.appendingPathComponent(filename))
-    }
-
-    private func exists(_ filename: String) -> Bool {
-        FileManager.default.fileExists(atPath: directory.appendingPathComponent(filename).path)
-    }
-
-    private func defaults() -> UserDefaults {
-        let suiteName = "AppDatabaseTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
-        return defaults
     }
 }
