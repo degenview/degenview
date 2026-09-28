@@ -216,6 +216,8 @@ final class ChartViewModel: ObservableObject {
     @Published private(set) var pineOutput: PineVisualOutput = .empty
     @Published private(set) var pineDiagnostics: [PineDiagnostic] = []
     @Published private(set) var pineStatus = "No script applied"
+    /// Resolves `chart.fg_color` / `chart.bg_color`; set by the card from its color scheme.
+    private(set) var pineTheme: PineChartTheme = .dark
     private var pineTask: Task<Void, Never>?
     private var pineGeneration = 0
 
@@ -550,6 +552,12 @@ final class ChartViewModel: ObservableObject {
         reevaluatePine()
     }
 
+    func setPineTheme(_ theme: PineChartTheme) {
+        guard theme != pineTheme else { return }
+        pineTheme = theme
+        reevaluatePine()
+    }
+
     func reevaluatePine(compiled supplied: PineCompiledProgram? = nil) {
         pineTask?.cancel()
         pineGeneration += 1
@@ -560,16 +568,15 @@ final class ChartViewModel: ObservableObject {
         }
         let bars = replayKlines
         let inputs = config.inputs
+        let theme = pineTheme
         pineTask = Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) {
                 () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
                 let compiled = supplied ?? PineCompiler.compile(source: source)
                 guard compiled.isValid else { return (compiled, nil, nil) }
                 do {
-                    return (
-                        compiled,
-                        try PineRuntimeSession(program: compiled, inputs: inputs).evaluate(bars: bars), nil
-                    )
+                    let session = PineRuntimeSession(program: compiled, inputs: inputs, theme: theme)
+                    return (compiled, try session.evaluate(bars: bars), nil)
                 } catch {
                     return (
                         compiled, nil,

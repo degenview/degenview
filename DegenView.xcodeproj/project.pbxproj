@@ -123,6 +123,8 @@
 		C10000000000000000000002 /* PolymarketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000102 /* PolymarketService.swift */; };
 		C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000103 /* PolymarketSearchViewModel.swift */; };
 		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
+		D20000000000000000000001 /* PineChartLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000101 /* PineChartLayer.swift */; };
+		D20000000000000000000002 /* PineScriptPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000102 /* PineScriptPaneView.swift */; };
 		C10000000000000000000005 /* ChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000105 /* ChartStyle.swift */; };
 		C10000000000000000000006 /* LineChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000106 /* LineChartView.swift */; };
 		CMC000000000000000000001 /* CoinMarketCapService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000101 /* CoinMarketCapService.swift */; };
@@ -269,6 +271,8 @@
 		C10000000000000000000102 /* PolymarketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketService.swift; sourceTree = "<group>"; };
 		C10000000000000000000103 /* PolymarketSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketSearchViewModel.swift; sourceTree = "<group>"; };
 		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
+		D20000000000000000000101 /* PineChartLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartLayer.swift; sourceTree = "<group>"; };
+		D20000000000000000000102 /* PineScriptPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineScriptPaneView.swift; sourceTree = "<group>"; };
 		C10000000000000000000105 /* ChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStyle.swift; sourceTree = "<group>"; };
 		C10000000000000000000106 /* LineChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineChartView.swift; sourceTree = "<group>"; };
 		CMC000000000000000000101 /* CoinMarketCapService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapService.swift; sourceTree = "<group>"; };
@@ -507,6 +511,8 @@
 				C10000000000000000000106 /* LineChartView.swift */,
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
+				D20000000000000000000101 /* PineChartLayer.swift */,
+				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
@@ -777,6 +783,8 @@
 				C10000000000000000000002 /* PolymarketService.swift in Sources */,
 				C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */,
 				C10000000000000000000004 /* ChartPlot.swift in Sources */,
+				D20000000000000000000001 /* PineChartLayer.swift in Sources */,
+				D20000000000000000000002 /* PineScriptPaneView.swift in Sources */,
 				C10000000000000000000005 /* ChartStyle.swift in Sources */,
 				C10000000000000000000006 /* LineChartView.swift in Sources */,
 				CMC000000000000000000001 /* CoinMarketCapService.swift in Sources */,

@@ -46,6 +46,8 @@ struct CandleChartView: View {
                 style: style
             )
 
+            let script = PineChartLayer(pine: pine, candles: candles)
+
             Canvas { context, _ in
                 plot.drawGrid(&context)
 
@@ -53,14 +55,17 @@ struct CandleChartView: View {
                 // past the plot, and the axis labels live outside it by design.
                 context.drawLayer { layer in
                     layer.clip(to: Path(plot.plotRect))
-                    drawScriptBackgroundBands(context: &layer, plot: plot)
+                    // `overlay=false` scripts draw in their own pane below the chart.
+                    if pine.overlay {
+                        script.drawBackground(&layer, plot: plot)
+                    }
                     if showVolume {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
-                    drawCandles(context: &layer, plot: plot)
-                    drawScriptPlots(context: &layer, plot: plot)
-                    drawScriptHorizontalLines(context: &layer, plot: plot)
-                    drawScriptMarkers(context: &layer, plot: plot)
+                    drawCandles(context: &layer, plot: plot, script: script)
+                    if pine.overlay {
+                        script.drawForeground(&layer, plot: plot)
+                    }
 
                     // Price-scale overlays share the candles' clip: a zoomed-in
                     // domain pushes them past the plot just the same.
@@ -99,6 +104,12 @@ struct CandleChartView: View {
                         bullish: bullishColor,
                         bearish: bearishColor
                     )
+                }
+
+                // Tables pin to the plot's corners and are never price-anchored, so they
+                // sit outside the series clip.
+                if pine.overlay {
+                    script.drawTables(&context, plot: plot)
                 }
 
                 plot.drawRSI(&context, values: indicators.rsi)
@@ -148,7 +159,8 @@ struct CandleChartView: View {
 
     // MARK: - Candles
 
-    private func drawCandles(context: inout GraphicsContext, plot: ChartPlot) {
+    /// `barcolor()` recolors candles whichever pane the script draws in, as on TradingView.
+    private func drawCandles(context: inout GraphicsContext, plot: ChartPlot, script: PineChartLayer) {
         let slotWidth = plot.slotWidth(forCount: candles.count)
         let priceRangeSpan = plot.priceRange.max - plot.priceRange.min
         let dojiAbsThreshold = priceRangeSpan * style.dojiThreshold
@@ -166,10 +178,9 @@ struct CandleChartView: View {
             let isDoji = abs(candle.closePrice - candle.openPrice) <= dojiAbsThreshold
             let isBullish = candle.closePrice > candle.openPrice
 
-            let scripted = pine.barColors.first?.colors.suffix(candles.count).dropFirst(i).first ?? nil
             let candleColor: Color
-            if let scripted {
-                candleColor = Color(pineRGBA: scripted)
+            if let scripted = script.barColor(at: i) {
+                candleColor = scripted
             } else if isDoji {
                 candleColor = style.dojiColor
             } else if isBullish {
@@ -201,98 +212,6 @@ struct CandleChartView: View {
         }
     }
 
-    /// Draws one candle-width band for each non-nil `bgcolor()` result.
-    ///
-    /// Backgrounds are separate from plots because they must sit behind both the candles
-    /// and every foreground script visual in the chart's deterministic draw order.
-    private func drawScriptBackgroundBands(context: inout GraphicsContext, plot: ChartPlot) {
-        let slot = plot.slotWidth(forCount: candles.count)
-        for output in pine.backgrounds {
-            let visibleColors = Array(output.colors.suffix(candles.count))
-            let firstCandleIndex = candles.count - visibleColors.count
-            for (offset, color) in visibleColors.enumerated() {
-                guard let color else { continue }
-                let candleIndex = firstCandleIndex + offset
-                let x = plot.x(forIndex: candleIndex, slotWidth: slot)
-                context.fill(
-                    Path(
-                        CGRect(
-                            x: x - slot / 2, y: plot.plotRect.minY, width: slot, height: plot.plotRect.height)),
-                    with: .color(Color(pineRGBA: color)))
-            }
-        }
-    }
-
-    /// Draws contiguous `plot()` segments. A nil value ends the current segment so Pine
-    /// gaps do not get bridged by a line.
-    private func drawScriptPlots(context: inout GraphicsContext, plot: ChartPlot) {
-        let slot = plot.slotWidth(forCount: candles.count)
-        for output in pine.plots {
-            var path = Path()
-            var active = false
-            let visibleValues = Array(output.values.suffix(candles.count))
-            let firstCandleIndex = candles.count - visibleValues.count
-            for (offset, value) in visibleValues.enumerated() {
-                guard let value else {
-                    active = false
-                    continue
-                }
-                let candleIndex = firstCandleIndex + offset
-                let p = CGPoint(x: plot.x(forIndex: candleIndex, slotWidth: slot), y: plot.y(for: value))
-                if active {
-                    path.addLine(to: p)
-                } else {
-                    path.move(to: p)
-                    active = true
-                }
-            }
-            context.stroke(
-                path, with: .color(Color(pineRGBA: output.color)), lineWidth: CGFloat(output.lineWidth))
-        }
-    }
-
-    private func drawScriptHorizontalLines(context: inout GraphicsContext, plot: ChartPlot) {
-        for line in pine.hlines {
-            let y = plot.y(for: line.value)
-            var p = Path()
-            p.move(to: CGPoint(x: plot.plotRect.minX, y: y))
-            p.addLine(to: CGPoint(x: plot.plotRect.maxX, y: y))
-            context.stroke(
-                p, with: .color(Color(pineRGBA: line.color).opacity(0.8)),
-                style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-        }
-    }
-
-    private func drawScriptMarkers(context: inout GraphicsContext, plot: ChartPlot) {
-        let slot = plot.slotWidth(forCount: candles.count)
-        for marker in pine.markers {
-            let visibleValues = Array(marker.values.suffix(candles.count))
-            let firstCandleIndex = candles.count - visibleValues.count
-            for (offset, isVisible) in visibleValues.enumerated() where isVisible {
-                let candleIndex = firstCandleIndex + offset
-                let x = plot.x(forIndex: candleIndex, slotWidth: slot)
-                let y =
-                    marker.location.contains("below")
-                    ? plot.y(for: candles[candleIndex].lowPrice) + 8
-                    : plot.y(for: candles[candleIndex].highPrice) - 8
-                let text = Text(marker.character ?? (marker.style.contains("down") ? "▼" : "▲")).font(
-                    .caption
-                ).foregroundColor(Color(pineRGBA: marker.color))
-                context.draw(text, at: CGPoint(x: x, y: y))
-            }
-        }
-    }
-}
-
-private extension Color {
-    init(pineRGBA value: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((value >> 24) & 255) / 255,
-            green: Double((value >> 16) & 255) / 255,
-            blue: Double((value >> 8) & 255) / 255,
-            opacity: Double(value & 255) / 255)
-    }
 }
 
 #Preview {
