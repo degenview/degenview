@@ -56,7 +56,7 @@ final class AppDatabaseTests: XCTestCase {
         store.save([TrendLine](), ticker: "BTC", source: .binance)
 
         let reloaded = DrawingStore(database: database)
-        XCTAssertEqual(reloaded.linesByInstrument[reloaded.key(ticker: "BTC", source: .binance)], [])
+        XCTAssertEqual(reloaded.lines(ticker: "BTC", source: .binance), [])
     }
 
     // MARK: - Portfolio

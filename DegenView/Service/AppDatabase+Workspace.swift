@@ -48,17 +48,11 @@ extension AppDatabase {
         case fibonacci
     }
 
-    /// Every instrument that has ever held a drawing of `kind`, including the explicit
-    /// empty entries left behind by deletion.
+    /// Drawings of `kind` for every instrument that has any.
     func drawings<T: Decodable>(_ type: T.Type, kind: DrawingKind) -> [String: [T]] {
         do {
             return try reader.read { db in
                 var result: [String: [T]] = [:]
-                for instrument in try String.fetchAll(
-                    db, sql: "SELECT instrument FROM drawing_instrument WHERE kind = ?", arguments: [kind.rawValue])
-                {
-                    result[instrument] = []
-                }
                 let rows = try Row.fetchAll(
                     db,
                     sql: "SELECT instrument, payload FROM drawing WHERE kind = ? ORDER BY instrument, position",
@@ -92,9 +86,6 @@ extension AppDatabase {
     private static func replaceDrawings<T: Encodable & Identifiable>(
         _ items: [T], instrument: String, kind: DrawingKind, db: Database
     ) throws where T.ID == UUID {
-        try db.execute(
-            sql: "INSERT OR IGNORE INTO drawing_instrument (instrument, kind) VALUES (?, ?)",
-            arguments: [instrument, kind.rawValue])
         try db.execute(
             sql: "DELETE FROM drawing WHERE instrument = ? AND kind = ?", arguments: [instrument, kind.rawValue])
         let statement = try db.makeStatement(

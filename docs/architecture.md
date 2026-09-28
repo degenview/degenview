@@ -221,7 +221,7 @@ price scale, so the log-Fib setting is disabled in the UI while its calculator a
 remain available for that future scale mode.
 
 Completed drawings are stored in the `drawing` table, distinguished from trend lines by
-`kind`; `drawing_instrument` remembers instruments whose drawings were all deleted.
+`kind`.
 Continuous anchor/body drags update published in-memory geometry at pointer frequency and
 perform one database write on mouse-up. Both candlestick and probability line charts reuse
 the same immediate-mode Fib renderer and hit-testing geometry.

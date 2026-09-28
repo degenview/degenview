@@ -38,18 +38,8 @@ final class DrawingStore: ObservableObject {
 
     func save(_ lines: [TrendLine], ticker: String, source: DataSourceType) {
         let instrument = key(ticker: ticker, source: source)
-        // Keep an explicit empty entry. Besides representing deletion, it prevents an
-        // old saved view containing legacy lines from importing them again later.
         linesByInstrument[instrument] = lines
         database.saveDrawings(lines, instrument: instrument, kind: .trendLine)
-    }
-
-    /// Moves lines persisted by older versions out of a tab/view config. An existing
-    /// instrument entry wins, since it is already the shared source of truth.
-    func importLegacy(_ lines: [TrendLine], ticker: String, source: DataSourceType) {
-        let instrument = key(ticker: ticker, source: source)
-        guard !lines.isEmpty, linesByInstrument[instrument] == nil else { return }
-        save(lines, ticker: ticker, source: source)
     }
 
     func setLine(_ line: TrendLine?, at preferredIndex: Int, instrument: String, id: UUID) {

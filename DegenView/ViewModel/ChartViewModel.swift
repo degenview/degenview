@@ -514,9 +514,6 @@ final class ChartViewModel: ObservableObject {
         emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
         showBollinger = config.showBollinger ?? false
         showTrendFlips = config.showTrendFlips ?? false
-        if let legacyLines = config.trendLines {
-            drawingStore.importLegacy(legacyLines, ticker: ticker, source: source)
-        }
         trendLines = drawingStore.lines(ticker: ticker, source: source)
         fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }

@@ -6,12 +6,19 @@ extension AppDatabase {
     static var migrator: DatabaseMigrator {
         var migrator = DatabaseMigrator()
 
-        migrator.registerMigration("v1_documents") { db in
+        migrator.registerMigration("v1") { db in
             // Ordered lists of Codable values. The payload stays JSON so nested chart
             // configuration can evolve through Codable defaults instead of migrations.
-            for table in ["favorite", "saved_view", "tab"] {
+            for table in ["favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert"] {
                 try createDocumentTable(table, db: db)
             }
+
+            try db.create(table: "setting") { t in
+                t.primaryKey("key", .text)
+                t.column("value", .text).notNull()
+            }
+
+            // MARK: Workspace
 
             try db.create(table: "window_group") { t in
                 t.primaryKey("position", .integer)
@@ -26,17 +33,8 @@ extension AppDatabase {
                 t.column("payload", .text).notNull()
                 t.primaryKey(["instrument", "kind", "id"])
             }
-            // An instrument whose drawings were all deleted still has a row here, so a
-            // legacy saved view can't re-import lines the user already removed.
-            try db.create(table: "drawing_instrument") { t in
-                t.column("instrument", .text).notNull()
-                t.column("kind", .text).notNull()
-                t.primaryKey(["instrument", "kind"])
-            }
-        }
 
-        migrator.registerMigration("v2_portfolio") { db in
-            try createDocumentTable("portfolio", db: db)
+            // MARK: Portfolio
 
             // Transaction order is significant to validation, so `position` preserves it.
             try db.create(table: "portfolio_transaction") { t in
@@ -60,14 +58,8 @@ extension AppDatabase {
                 index: "portfolio_snapshot_on_portfolio", on: "portfolio_snapshot",
                 columns: ["portfolio_id", "timestamp"])
 
-            try db.create(table: "setting") { t in
-                t.primaryKey("key", .text)
-                t.column("value", .text).notNull()
-            }
-        }
+            // MARK: Paper trading
 
-        migrator.registerMigration("v3_paper_trading") { db in
-            try createDocumentTable("paper_account", db: db)
             // Collections owned by one account, kept in engine order via the rowid.
             for table in [
                 "paper_order", "paper_fill", "paper_position", "paper_order_event",
@@ -80,10 +72,8 @@ extension AppDatabase {
                 }
                 try db.create(index: "\(table)_on_account", on: table, columns: ["account_id"])
             }
-        }
 
-        migrator.registerMigration("v4_alerts") { db in
-            try createDocumentTable("price_alert", db: db)
+            // MARK: Alerts
 
             try db.create(table: "alert_event") { t in
                 t.autoIncrementedPrimaryKey("rowid")
