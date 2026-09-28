@@ -23,9 +23,9 @@ Requires Xcode 16+, macOS 14+.
 - **@MainActor** on all ViewModels that publish UI state
 - **No SwiftUI Charts** — candles are hand-drawn via AppKit `Canvas`
 - **Protocol abstraction** for data sources: `TickerDataSource` protocol, `DataSourceFactory` singleton
-- **Persistence**: user data lives in SQLite (`degenview.sqlite`, WAL) through
-  `AppDatabase`. Tabs, saved views, favorites, drawings, portfolios, and paper trading are migrated; the rest still
-  uses `JSONStore<T>`. Caches stay in `JSONStore<T>` for good. Schema changes are new
+- **Persistence**: user data (tabs, saved views, favorites, drawings, portfolios, paper
+  trading, alerts) lives in SQLite (`degenview.sqlite`, WAL) through `AppDatabase`, shared
+  with the alert agent. Caches stay in `JSONStore<T>`. Schema changes are new
   `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one.
   Legacy JSON is imported once by the owning store and renamed to `*.migrated.json`
 - **One `ContentViewModel` per tab** — never treat it as app-global state

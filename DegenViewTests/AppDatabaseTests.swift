@@ -202,6 +202,69 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertTrue(exists("paper_trading.migrated.json"))
     }
 
+    // MARK: - Alerts
+
+    private struct PersistenceRepository: AlertSnapshotRepository {
+        let persistence: AlertRuntimePersistence
+        func load() async -> AlertPersistenceSnapshot? { persistence.loadSnapshot() }
+        func save(_ snapshot: AlertPersistenceSnapshot) async { persistence.saveSnapshot(snapshot) }
+    }
+
+    private let btc = PortfolioAsset(key: "Binance:BTCUSDT", symbol: "BTC", name: "Bitcoin", source: .binance)
+
+    func testAlertSnapshotRoundTripIncludingHistory() async throws {
+        let persistence = AlertRuntimePersistence(database: database, directory: directory)
+        XCTAssertNil(persistence.loadSnapshot())
+
+        let engine = await LocalPriceAlertEngine(repository: PersistenceRepository(persistence: persistence))
+        await engine.saveAlert(PriceAlert(asset: btc, condition: .crossesAbove(target: 100)), baseline: 90)
+        let now = Date()
+        _ = await engine.process(
+            MarketQuote(
+                asset: btc, price: 100, currency: .USD, sourceTimestamp: now, receivedAt: now, maximumAge: 60,
+                fingerprint: "q1"))
+        await engine.apply(AlertRuntimeCommand(payload: .updateSettings(AlertNotificationSettings(soundEnabled: false))))
+
+        let expected = await engine.currentSnapshot()
+        XCTAssertEqual(expected.history.count, 1)
+        XCTAssertEqual(persistence.loadSnapshot(), expected)
+    }
+
+    /// Two databases on one file stand in for the GUI and the login-item agent.
+    func testCommandsQueueAcrossConnectionsInOrder() throws {
+        let path = directory.appendingPathComponent("test.sqlite").path
+        let gui = AlertRuntimePersistence(database: database, directory: directory)
+        let agent = AlertRuntimePersistence(database: try AppDatabase(path: path), directory: directory)
+        let first = AlertRuntimeCommand(createdAt: Date(timeIntervalSince1970: 1), payload: .clearHistory)
+        let second = AlertRuntimeCommand(createdAt: Date(timeIntervalSince1970: 2), payload: .delete(UUID()))
+
+        try gui.enqueue(second)
+        try gui.enqueue(first)
+        try gui.enqueue(first)
+
+        XCTAssertEqual(agent.pendingCommands(), [first, second])
+        agent.acknowledge(first.id)
+        XCTAssertEqual(gui.pendingCommands(), [second])
+    }
+
+    func testLegacyAlertFilesAndQueuedCommandsImport() throws {
+        var legacy = AlertPersistenceSnapshot()
+        legacy.revision = 7
+        legacy.alerts = [PriceAlert(asset: btc, condition: .crossesBelow(target: 50))]
+        try writeLegacy(legacy, to: "price_alerts.json")
+        let commands = directory.appendingPathComponent("alert_commands", isDirectory: true)
+        try FileManager.default.createDirectory(at: commands, withIntermediateDirectories: true)
+        let queued = AlertRuntimeCommand(payload: .clearHistory)
+        try JSONEncoder().encode(queued).write(to: commands.appendingPathComponent("1-\(queued.id).json"))
+
+        let persistence = AlertRuntimePersistence(database: database, directory: directory)
+
+        XCTAssertEqual(persistence.loadSnapshot(), legacy)
+        XCTAssertEqual(persistence.pendingCommands(), [queued])
+        XCTAssertTrue(exists("price_alerts.migrated.json"))
+        XCTAssertFalse(exists("alert_commands"))
+    }
+
     // MARK: - Helpers
 
     private func writeLegacy<T: Encodable>(_ value: T, to filename: String) throws {

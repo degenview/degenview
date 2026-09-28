@@ -82,6 +82,26 @@ extension AppDatabase {
             }
         }
 
+        migrator.registerMigration("v4_alerts") { db in
+            try createDocumentTable("price_alert", db: db)
+
+            try db.create(table: "alert_event") { t in
+                t.autoIncrementedPrimaryKey("rowid")
+                t.column("alert_id", .text).notNull()
+                t.column("timestamp", .double).notNull()
+                t.column("payload", .text).notNull()
+            }
+            try db.create(index: "alert_event_on_alert", on: "alert_event", columns: ["alert_id"])
+
+            // GUI → runtime queue. The runtime deletes a row once the command is applied.
+            try db.create(table: "alert_command") { t in
+                t.primaryKey("id", .text)
+                t.column("created_at", .double).notNull()
+                t.column("payload", .text).notNull()
+            }
+            try db.create(index: "alert_command_on_created_at", on: "alert_command", columns: ["created_at"])
+        }
+
         return migrator
     }
 
@@ -103,6 +123,7 @@ enum DocumentTable: String {
     case tab
     case portfolio
     case paperAccount = "paper_account"
+    case priceAlert = "price_alert"
 }
 
 extension AppDatabase {
