@@ -94,30 +94,6 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertNil(outsideID)
     }
 
-    func testLegacyJSONLayoutMigratesWithSameID() async throws {
-        let (store, scripts, metadata) = try makeStore()
-        let id = UUID()
-        let legacy = LocalScript(
-            id: id, name: "Legacy", type: .indicator, source: validSource, latestRevisionID: nil,
-            createdAt: Date(timeIntervalSince1970: 0), modifiedAt: Date(timeIntervalSince1970: 0),
-            lastOpenedAt: nil, isFavorite: true, compileRecord: nil)
-        let dir = scripts.appendingPathComponent(id.uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        try encoder.encode(legacy).write(to: dir.appendingPathComponent("script.json"))
-
-        let all = try await store.allScripts()
-        XCTAssertEqual(all.map(\.id), [id])
-        XCTAssertEqual(all.first?.source, validSource)
-        XCTAssertEqual(all.first?.isFavorite, true)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: dir.path))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: scripts.appendingPathComponent("Legacy.pine").path))
-        XCTAssertTrue(
-            FileManager.default.fileExists(
-                atPath: metadata.appendingPathComponent("\(id.uuidString)/script.json").path))
-    }
-
     func testCreatesEveryTypeAndDisambiguatesNames() async throws {
         let store = try makeStore().store
         let indicator = try await store.create(name: "Alpha", type: .indicator)

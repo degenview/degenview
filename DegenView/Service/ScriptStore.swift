@@ -32,7 +32,6 @@ actor ScriptStore {
     static let idAttribute = "com.cryptocharts.script-id"
 
     /// Everything about a script except its name and source, which the `.pine` file owns.
-    /// Decodes legacy `script.json` files too: their extra `name`/`source` keys are ignored.
     private struct Record: Codable {
         var id: UUID
         var type: ScriptType
@@ -250,10 +249,7 @@ actor ScriptStore {
     private func rescan() throws {
         try fm.createDirectory(at: scriptsDirectory, withIntermediateDirectories: true)
         try fm.createDirectory(at: metadataRoot, withIntermediateDirectories: true)
-        if !loaded {
-            fileNames = (try? decodeIfPresent([UUID: String].self, at: indexURL)) ?? [:]
-            try migrateLegacyLayout()
-        }
+        if !loaded { fileNames = (try? decodeIfPresent([UUID: String].self, at: indexURL)) ?? [:] }
 
         let files = ((try? fm.contentsOfDirectory(at: scriptsDirectory, includingPropertiesForKeys: nil)) ?? [])
             .filter {
@@ -308,30 +304,6 @@ actor ScriptStore {
         fileNames = names
         loaded = true
         if indexChanged { try saveIndex() }
-    }
-
-    /// Scripts used to live in `Scripts/<id>/script.json` with the source inline. Moves each
-    /// one's metadata to `metadataDirectory/<id>/` and writes its source out as a `.pine` file,
-    /// keeping the id so charts that reference the script still resolve.
-    private func migrateLegacyLayout() throws {
-        let entries = (try? fm.contentsOfDirectory(at: scriptsDirectory, includingPropertiesForKeys: nil)) ?? []
-        for entry in entries {
-            if entry.lastPathComponent.hasPrefix(".deleting-") {
-                try? fm.removeItem(at: entry)
-                continue
-            }
-            guard UUID(uuidString: entry.lastPathComponent) != nil,
-                let legacy = try? decodeIfPresent(LocalScript.self, at: entry.appendingPathComponent("script.json"))
-            else { continue }
-            let destination = directory(legacy.id)
-            if fm.fileExists(atPath: destination.path) { try fm.removeItem(at: destination) }
-            try fm.moveItem(at: entry, to: destination)
-            let base = (try? Self.validatedName(legacy.name)) ?? "Untitled"
-            let name = disambiguatedName(base)
-            try writeFile(id: legacy.id, name: name, source: legacy.source)
-            try writeRecord(Record(legacy))
-        }
-        try saveIndex()
     }
 
     // MARK: - Files

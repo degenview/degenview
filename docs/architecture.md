@@ -101,8 +101,7 @@ DegenView/
    file can't carry (stable id, favorite, type, revisions, draft, compile cache) in
    `ScriptMetadata/<id>/`. A file finds its id through the `com.cryptocharts.script-id`
    extended attribute, falling back to `ScriptMetadata/index.json` when an editor's atomic
-   save drops it; `ScriptFolderMonitor` refreshes views when the folder changes. The older
-   `Scripts/<id>/script.json` layout migrates in place, keeping ids charts reference.
+   save drops it; `ScriptFolderMonitor` refreshes views when the folder changes.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
    timestamp and one cancellable playback task.
