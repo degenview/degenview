@@ -74,7 +74,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         let scrollView: NSScrollView
         let textView: NSTextView
         let gutter: LineNumberGutterView
-        let diagnosticOverlay: InlineDiagnosticView
+        private var diagnostics: [PineDiagnostic] = []
 
         override var intrinsicContentSize: NSSize {
             NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
@@ -84,7 +84,6 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             scrollView = NSTextView.scrollableTextView()
             textView = scrollView.documentView as! NSTextView
             gutter = LineNumberGutterView()
-            diagnosticOverlay = InlineDiagnosticView()
             super.init(frame: frameRect)
 
             wantsLayer = true
@@ -117,10 +116,6 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             scrollView.borderType = .noBorder
 
             gutter.textView = textView
-            diagnosticOverlay.textView = textView
-            diagnosticOverlay.frame = textView.bounds
-            diagnosticOverlay.autoresizingMask = [.width, .height]
-            textView.addSubview(diagnosticOverlay)
             gutter.translatesAutoresizingMaskIntoConstraints = false
             scrollView.translatesAutoresizingMaskIntoConstraints = false
             addSubview(gutter)
@@ -143,12 +138,6 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 name: NSView.boundsDidChangeNotification,
                 object: scrollView.contentView
             )
-            NotificationCenter.default.addObserver(
-                diagnosticOverlay,
-                selector: #selector(InlineDiagnosticView.editorDidScroll),
-                name: NSView.boundsDidChangeNotification,
-                object: scrollView.contentView
-            )
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -165,13 +154,13 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                         .foregroundColor: NSColor.labelColor,
                     ]
                 ))
-            PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnosticOverlay.diagnostics)
+            PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
             undoManager?.enableUndoRegistration()
             gutter.needsDisplay = true
         }
 
         func setDiagnostics(_ diagnostics: [PineDiagnostic]) {
-            diagnosticOverlay.diagnostics = diagnostics
+            self.diagnostics = diagnostics
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
         }
     }
@@ -221,59 +210,6 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 label.draw(
                     at: NSPoint(x: self.bounds.width - size.width - 8, y: y),
                     withAttributes: self.attributes
-                )
-            }
-        }
-    }
-
-    final class InlineDiagnosticView: NSView {
-        weak var textView: NSTextView?
-        var diagnostics: [PineDiagnostic] = [] { didSet { needsDisplay = true } }
-
-        override var isFlipped: Bool { true }
-        override func hitTest(_ point: NSPoint) -> NSView? { nil }
-        @objc func editorDidScroll() { needsDisplay = true }
-
-        override func draw(_ dirtyRect: NSRect) {
-            guard let textView, let layoutManager = textView.layoutManager,
-                let textContainer = textView.textContainer
-            else { return }
-            let grouped = Dictionary(grouping: diagnostics, by: { $0.range.start.line })
-            let source = textView.string as NSString
-
-            for (line, items) in grouped where line > 0 {
-                var lineStart = 0
-                for _ in 1..<line {
-                    let range = source.lineRange(for: NSRange(location: lineStart, length: 0))
-                    lineStart = NSMaxRange(range)
-                    if lineStart >= source.length { break }
-                }
-                guard lineStart <= source.length else { continue }
-                let lineRange = source.lineRange(for: NSRange(location: lineStart, length: 0))
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
-                let used = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                let isError = items.contains { $0.severity == .error }
-                let message = items.map(\.message).joined(separator: " • ") as NSString
-                let attributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
-                    .foregroundColor: isError ? NSColor.systemRed : NSColor.systemOrange,
-                ]
-                let visible = textView.visibleRect
-                let naturalWidth = message.size(withAttributes: attributes).width + 12
-                let width = min(naturalWidth, max(120, visible.width * 0.6))
-                let preferredX = used.maxX + textView.textContainerOrigin.x + 14
-                let x = max(visible.minX + 8, min(preferredX, visible.maxX - width - 8))
-                let y = used.minY + textView.textContainerOrigin.y
-                let background = NSRect(x: x - 5, y: y - 1, width: width + 10, height: used.height + 2)
-                (isError ? NSColor.systemRed : NSColor.systemOrange).withAlphaComponent(0.12).setFill()
-                NSBezierPath(roundedRect: background, xRadius: 4, yRadius: 4).fill()
-                let paragraph = NSMutableParagraphStyle()
-                paragraph.lineBreakMode = .byTruncatingTail
-                var drawingAttributes = attributes
-                drawingAttributes[.paragraphStyle] = paragraph
-                message.draw(
-                    in: NSRect(x: x, y: y, width: width, height: used.height),
-                    withAttributes: drawingAttributes
                 )
             }
         }
@@ -346,6 +282,10 @@ private enum PineSyntaxHighlighter {
                 range: match.range
             )
         }
+        // Messages surface as a native hover tooltip on the underlined text. Diagnostics
+        // sharing a range are merged, since a later `.toolTip` would replace an earlier one.
+        var messages: [NSRange: [String]] = [:]
+        var order: [NSRange] = []
         for diagnostic in diagnostics {
             guard
                 let diagnosticRange = PineDiagnosticRangeMapper.nsRange(
@@ -357,6 +297,11 @@ private enum PineSyntaxHighlighter {
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
                     .underlineColor: diagnostic.severity == .error ? NSColor.systemRed : NSColor.systemOrange,
                 ], range: diagnosticRange)
+            if messages[diagnosticRange] == nil { order.append(diagnosticRange) }
+            messages[diagnosticRange, default: []].append(diagnostic.message)
+        }
+        for range in order {
+            storage.addAttribute(.toolTip, value: messages[range]!.joined(separator: "\n"), range: range)
         }
         storage.endEditing()
         textView.typingAttributes = [.font: font, .foregroundColor: NSColor.labelColor]

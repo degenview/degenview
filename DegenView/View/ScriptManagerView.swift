@@ -67,6 +67,9 @@ struct ScriptManagerView: View {
         }
         .task { model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .selectScriptInManager)) { note in
+            if let id = note.object as? UUID { model.select(id) }
+        }
         .background(WindowAccessor { WindowCoordinator.shared.registerAuxiliaryTab($0) })
         .alert("Script Manager", isPresented: .constant(model.errorMessage != nil)) {
             Button("OK") { model.errorMessage = nil }
@@ -84,7 +87,7 @@ struct ScriptManagerView: View {
             }
             Button("Cancel", role: .cancel) { pendingDelete = nil }
         } message: { script in
-            Text("This can't be undone.")
+            Text("The script file will be moved to the Trash.")
         }
     }
 }
@@ -100,7 +103,6 @@ private struct ScriptRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: statusIcon).foregroundStyle(.secondary)
             if model.renamingRowID == rowID {
                 TextField("Name", text: $draftName)
                     .textFieldStyle(.plain)
@@ -128,15 +130,10 @@ private struct ScriptRow: View {
         .contextMenu {
             Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
             Divider()
+            Button("Show in Finder") { model.showInFinder(script) }
+            Button("Export…") { model.export(script) }
+            Divider()
             Button("Delete", role: .destructive) { onDelete(script) }
-        }
-    }
-    private var statusIcon: String {
-        switch script.compileRecord?.status ?? .notCompiled {
-        case .notCompiled: "circle.dashed"
-        case .valid: "checkmark.circle"
-        case .warning: "exclamationmark.triangle"
-        case .error: "xmark.circle"
         }
     }
 }

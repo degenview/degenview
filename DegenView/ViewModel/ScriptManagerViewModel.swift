@@ -1,5 +1,7 @@
+import AppKit
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 
 @MainActor
 final class ScriptManagerViewModel: ObservableObject {
@@ -89,11 +91,12 @@ final class ScriptManagerViewModel: ObservableObject {
     }
 
     func load() {
-        Task {
-            do { scripts = try await ScriptStore.shared.allScripts() } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
+        Task { await refresh(selecting: WindowCoordinator.shared.takePendingScriptManagerSelection()) }
+    }
+    /// Selects a script opened from outside the manager, e.g. an imported `.pine` file.
+    func select(_ id: UUID) {
+        _ = WindowCoordinator.shared.takePendingScriptManagerSelection()
+        Task { await refresh(selecting: id) }
     }
     func create(type: ScriptType = .indicator) {
         Task {
@@ -111,6 +114,34 @@ final class ScriptManagerViewModel: ObservableObject {
             } catch { errorMessage = error.localizedDescription }
         }
     }
+    func showInFinder(_ script: LocalScript) {
+        Task {
+            do {
+                guard let url = try await ScriptStore.shared.fileURL(for: script.id) else {
+                    throw ScriptStoreError.missingScript
+                }
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+    /// Saves a copy of the script's file wherever the user picks. Writes the bytes rather
+    /// than copying the file so the library's script-id attribute doesn't travel along.
+    func export(_ script: LocalScript) {
+        let panel = NSSavePanel()
+        panel.title = "Export Script"
+        panel.nameFieldStringValue = "\(script.name).\(ScriptStore.fileExtension)"
+        panel.allowedContentTypes = [UTType("com.cryptocharts.pine-script") ?? .plainText]
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        Task {
+            do {
+                guard let source = try await ScriptStore.shared.fileURL(for: script.id) else {
+                    throw ScriptStoreError.missingScript
+                }
+                try Data(contentsOf: source).write(to: destination, options: .atomic)
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
     func delete(_ script: LocalScript) {
         Task {
             do {
@@ -124,6 +155,8 @@ final class ScriptManagerViewModel: ObservableObject {
         do {
             scripts = try await ScriptStore.shared.allScripts()
             if let id { selection = id }
+            // The file may have been deleted or renamed away outside the app.
+            if let current = selection, !scripts.contains(where: { $0.id == current }) { selection = nil }
         } catch { errorMessage = error.localizedDescription }
     }
 }

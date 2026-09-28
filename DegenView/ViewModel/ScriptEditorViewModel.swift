@@ -62,7 +62,6 @@ final class ScriptEditorViewModel: ObservableObject {
     }
     func save() {
         compile()
-        guard !diagnostics.contains(where: { $0.severity == .error }) else { return }
         let requestedType = type
         Task {
             do {
