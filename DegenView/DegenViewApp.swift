@@ -134,6 +134,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = true
         UNUserNotificationCenter.current().delegate = AlertNotificationDelegate.shared
         _ = AlertStore.shared
+        ScriptFolderMonitor.shared.start()
+    }
+
+    /// `.pine` files opened from Finder. Files already in the script library open straight
+    /// into the Script Manager; any other file is offered for import (copied, never moved).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let scripts = urls.filter { $0.pathExtension.caseInsensitiveCompare(ScriptStore.fileExtension) == .orderedSame }
+        Task { @MainActor in
+            for url in scripts { await openScriptFile(url) }
+        }
+    }
+
+    @MainActor private func openScriptFile(_ url: URL) async {
+        do {
+            if let id = try await ScriptStore.shared.scriptID(forFileAt: url) {
+                WindowCoordinator.shared.openScriptManager(selecting: id)
+                return
+            }
+            let alert = NSAlert()
+            alert.messageText = "Import “\(url.lastPathComponent)”?"
+            alert.informativeText =
+                "DegenView keeps scripts in its Scripts folder. The file will be copied there and opened in the Script Manager; the original stays where it is."
+            alert.addButton(withTitle: "Import")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            let script = try await ScriptStore.shared.importFile(at: url)
+            NotificationCenter.default.post(name: .localScriptsDidChange, object: script.id)
+            WindowCoordinator.shared.openScriptManager(selecting: script.id)
+        } catch {
+            let alert = NSAlert(error: error)
+            alert.messageText = "Couldn't open “\(url.lastPathComponent)”"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     /// The tab bar's `+` button.

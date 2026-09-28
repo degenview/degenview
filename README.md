@@ -54,6 +54,11 @@ SwiftUI and an AppKit `Canvas`, with no external dependencies.
 - **Safe script editing** — Each chart persists its draft, last successfully applied
   source, and typed input values. Invalid drafts show line/column diagnostics while the
   last valid plot remains active
+- **Scripts as `.pine` files** — The Script Manager's library is a folder of plain `.pine`
+  files in `~/Library/Application Support/DegenView/Scripts/`, editable with any tool.
+  DegenView is the handler for `.pine`: opening one from elsewhere offers to copy it into
+  the library and opens it in the Script Manager. Errors are underlined in the editor;
+  hover the underline for the message
 - **Per-chart appearance** — Custom bullish and bearish colors plus automatic or fixed
   Y-axis decimal precision
 - **Independent price zoom** — Drag a chart's Y-axis to adjust its vertical scale

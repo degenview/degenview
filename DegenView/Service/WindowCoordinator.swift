@@ -249,6 +249,28 @@ final class WindowCoordinator {
     func useOpenWindowAction(_ action: OpenWindowAction) {
         guard openWindowAction == nil else { return }
         openWindowAction = action
+        let queued = pendingScriptManagerSelection
+        pendingScriptManagerSelection = nil
+        if let queued { openScriptManager(selecting: queued) }
+    }
+
+    /// Script the Script Manager should select once it loads. Also parks requests made
+    /// before any window exists (a cold launch from a `.pine` file) until one does.
+    private(set) var pendingScriptManagerSelection: UUID?
+
+    func takePendingScriptManagerSelection() -> UUID? {
+        defer { pendingScriptManagerSelection = nil }
+        return pendingScriptManagerSelection
+    }
+
+    /// Opens (or focuses) the Script Manager with `scriptID` selected.
+    func openScriptManager(selecting scriptID: UUID) {
+        pendingScriptManagerSelection = scriptID
+        guard let openWindow = openWindowAction else { return }
+        prepareAuxiliaryTab()
+        openWindow(id: "script-manager")
+        // Reaches an already-open manager; a new one reads the pending selection instead.
+        NotificationCenter.default.post(name: .selectScriptInManager, object: scriptID)
     }
 
     /// Open a new empty tab next to the one the user is on.
@@ -376,4 +398,5 @@ final class WindowCoordinator {
 
 extension Notification.Name {
     static let portfolioAddTransaction = Notification.Name("portfolioAddTransaction")
+    static let selectScriptInManager = Notification.Name("selectScriptInManager")
 }
