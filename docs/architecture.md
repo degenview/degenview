@@ -33,6 +33,8 @@ DegenView/
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
+│   ├── PineChartLayer.swift           # Pine script visuals drawn into a ChartPlot
+│   ├── PineScriptPaneView.swift       # Separate pane for overlay=false scripts
 │   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor

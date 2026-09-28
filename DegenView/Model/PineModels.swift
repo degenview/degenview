@@ -106,6 +106,7 @@ struct PineDiagnostic: Error, Codable, Equatable, Sendable, Identifiable {
 
 enum PineValueType: String, Codable, Hashable, Sendable {
     case int, float, bool, string, color, plot, hline, void, unknown
+    case line, label, box, table, array
 }
 enum PineQualifier: Int, Codable, Comparable, Sendable {
     case constant, input, simple, series
@@ -147,6 +148,9 @@ struct PineDeclarationMetadata: Codable, Equatable, Sendable {
     var format: String?
     var precision: Int?
     var maxBarsBack: Int?
+    var maxLinesCount: Int? = nil
+    var maxLabelsCount: Int? = nil
+    var maxBoxesCount: Int? = nil
 }
 
 struct PineConfiguration: Codable, Equatable, Hashable, Sendable {
@@ -174,6 +178,8 @@ struct PinePlotOutput: Sendable, Identifiable {
     var color: UInt32
     var lineWidth: Int
     var style: PinePlotStyle
+    /// Per-bar colors, parallel to `values`. `nil` falls back to `color`.
+    var colors: [UInt32?] = []
 }
 
 struct PineHorizontalLine: Sendable, Identifiable {
@@ -190,19 +196,105 @@ struct PineMarkerOutput: Sendable, Identifiable {
     var color: UInt32
     var location: String
     var style: String
+    /// Per-bar series value, parallel to `values`; used by `location.absolute`.
+    var prices: [Double?] = []
+    /// Per-bar colors, parallel to `values`.
+    var colors: [UInt32?] = []
+    var size: String = "size.auto"
 }
 struct PineColorOutput: Sendable, Identifiable {
     let id: Int
     var colors: [UInt32?]
 }
 
+/// Area between two plots; `colors` is per bar, parallel to the plots' values.
+struct PineFillOutput: Sendable, Identifiable {
+    let id: Int
+    var plotA: Int
+    var plotB: Int
+    var colors: [UInt32?]
+}
+
+/// Drawing objects anchor x coordinates to absolute `bar_index` values.
+struct PineLineOutput: Sendable, Identifiable, Equatable {
+    let id: Int
+    var x1: Int
+    var y1: Double
+    var x2: Int
+    var y2: Double
+    var color: UInt32
+    var width: Int
+    var style: String
+    var extend: String
+}
+
+struct PineLabelOutput: Sendable, Identifiable, Equatable {
+    let id: Int
+    var x: Int
+    var y: Double
+    var text: String
+    var color: UInt32?
+    var textColor: UInt32
+    var style: String
+    var size: String
+}
+
+struct PineBoxOutput: Sendable, Identifiable, Equatable {
+    let id: Int
+    var left: Int
+    var top: Double
+    var right: Int
+    var bottom: Double
+    var borderColor: UInt32?
+    var borderWidth: Int
+    var backgroundColor: UInt32?
+}
+
+struct PineTableCell: Sendable, Equatable {
+    var column: Int
+    var row: Int
+    var text: String
+    var textColor: UInt32
+    var backgroundColor: UInt32?
+    var textSize: String
+}
+
+struct PineTableOutput: Sendable, Identifiable, Equatable {
+    let id: Int
+    var position: String
+    var columns: Int
+    var rows: Int
+    var backgroundColor: UInt32?
+    var borderColor: UInt32?
+    var borderWidth: Int
+    var frameColor: UInt32?
+    var frameWidth: Int
+    var cells: [PineTableCell] = []
+}
+
+/// `chart.fg_color` / `chart.bg_color`, which follow the app's light or dark appearance.
+struct PineChartTheme: Equatable, Hashable, Sendable {
+    var foreground: UInt32
+    var background: UInt32
+    static let dark = PineChartTheme(foreground: 0xd1d4_dcff, background: 0x1317_22ff)
+    static let light = PineChartTheme(foreground: 0x1317_22ff, background: 0xffff_ffff)
+}
+
 struct PineVisualOutput: Sendable {
     var overlay: Bool
+    /// Number of bars the script ran over. Drawing objects use absolute `bar_index`
+    /// coordinates; the renderer subtracts `barCount - visibleCandles` to map them.
+    var barCount: Int = 0
     var plots: [PinePlotOutput] = []
     var hlines: [PineHorizontalLine] = []
     var markers: [PineMarkerOutput] = []
     var backgrounds: [PineColorOutput] = []
     var barColors: [PineColorOutput] = []
+    var fills: [PineFillOutput] = []
+    var lines: [PineLineOutput] = []
+    var labels: [PineLabelOutput] = []
+    var boxes: [PineBoxOutput] = []
+    var tables: [PineTableOutput] = []
     static let empty = PineVisualOutput(overlay: true)
 }
 

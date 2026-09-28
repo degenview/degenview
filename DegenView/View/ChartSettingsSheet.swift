@@ -739,6 +739,21 @@ struct ChartSettingsSheet: View {
                         }), format: .number
                 ).frame(width: 100)
             }
+        case (.string, .string(let value)) where input.options != nil:
+            Picker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { value },
+                    set: {
+                        viewModel.setPineInput(.string($0), id: input.id)
+                        onStyleChanged()
+                    })
+            ) {
+                ForEach(input.options ?? [], id: \.self) { option in
+                    if case .string(let text) = option { Text(text).tag(text) }
+                }
+            }
+            .pickerStyle(.menu)
         case (.string, .string(let value)):
             HStack {
                 Text(input.title ?? input.id)

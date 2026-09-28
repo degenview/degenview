@@ -6,6 +6,8 @@ enum PriceScale {
     case currency
     /// A probability in 0…1, shown as a percentage. Polymarket markets.
     case probability
+    /// A unitless value that can go negative — a Pine script's own pane (RSI, MACD).
+    case number
 }
 
 /// Formatting utilities for chart price labels.
@@ -28,6 +30,10 @@ enum PriceFormatter {
     static func format(_ price: Double, decimalPlaces: Int? = nil, scale: PriceScale = .currency) -> String {
         if scale == .probability {
             return formatProbability(price, decimalPlaces: decimalPlaces)
+        }
+        if scale == .number {
+            let magnitude = format(abs(price), decimalPlaces: decimalPlaces)
+            return price < 0 && magnitude != "0" ? "-" + magnitude : magnitude
         }
 
         guard price > 0 else { return "0" }
@@ -80,6 +86,8 @@ enum PriceFormatter {
             return formatProbability(price, decimalPlaces: nil)
         case .currency:
             return price.formatted(.currency(code: "USD").precision(.fractionLength(2...8)))
+        case .number:
+            return format(price, scale: .number)
         }
     }
 
@@ -95,6 +103,8 @@ enum PriceFormatter {
                 .currency(code: "USD").precision(.fractionLength(2...8))
             )
             return sign + currency
+        case .number:
+            return sign + format(abs(amount))
         }
     }
 

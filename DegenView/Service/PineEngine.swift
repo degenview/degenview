@@ -15,6 +15,7 @@ enum PineTokenKind: Equatable, Sendable {
     case plusAssign, minusAssign, starAssign, slashAssign
     case equal, notEqual, less, lessEqual, greater, greaterEqual
     case and, or, not, ifKeyword, elseKeyword, varKeyword, varipKeyword
+    case forKeyword, breakKeyword, continueKeyword
     case typeKeyword(PineValueType)
     case arrow
 }
@@ -99,6 +100,9 @@ struct PineLexer {
                     case "else": kind = .elseKeyword
                     case "var": kind = .varKeyword
                     case "varip": kind = .varipKeyword
+                    case "for": kind = .forKeyword
+                    case "break": kind = .breakKeyword
+                    case "continue": kind = .continueKeyword
                     case "int": kind = .typeKeyword(.int)
                     case "float": kind = .typeKeyword(.float)
                     case "bool": kind = .typeKeyword(.bool)
@@ -271,11 +275,24 @@ struct PineArgument: Sendable {
     var value: PineExpression
 }
 enum PineDeclarationMode: Sendable { case ordinary, variable, intrabar }
+enum PineLoopControl: Sendable { case breakLoop, continueLoop }
+struct PineParameter: Sendable {
+    var name: String
+    var type: PineValueType?
+    var defaultValue: PineExpression?
+}
 indirect enum PineStatement: Sendable {
     case declaration(String, PineValueType?, PineDeclarationMode, PineExpression, PineSourceRange)
     case assignment(String, PineTokenKind, PineExpression, PineSourceRange)
     case expression(PineExpression)
     case conditional(PineExpression, [PineStatement], [PineStatement], PineSourceRange)
+    /// `for i = from to end [by step]`
+    case forRange(String, PineExpression, PineExpression, PineExpression?, [PineStatement], PineSourceRange)
+    /// `for value in array` / `for [index, value] in array`
+    case forIn(String?, String, PineExpression, [PineStatement], PineSourceRange)
+    case loopControl(PineLoopControl, PineSourceRange)
+    /// User-defined function. The body's last statement is the return value.
+    case function(String, [PineParameter], [PineStatement], PineSourceRange)
 }
 
 struct PineParser {
@@ -297,10 +314,13 @@ struct PineParser {
                 continue
             }
             let before = index
-            if let statement = statement() { out.append(statement) }
+            let parsed = statement()
+            if let parsed { out.append(parsed) }
             if index == before {
                 error("PINE2001", "Expected a statement.", current.range)
                 advance()
+            } else {
+                endStatement(report: parsed != nil)
             }
             while take(.newline) {}
             if out.count > limits.astNodes {
@@ -311,49 +331,242 @@ struct PineParser {
         if untilDedent { _ = take(.dedent) }
         return out
     }
+    /// A statement must end the line. Block statements (`if`, `for`, block functions) end
+    /// on the dedent their body consumed, so the next line's first token follows directly.
+    /// Leftover tokens are reported once (unless the statement already failed) and skipped
+    /// to the end of the line.
+    mutating private func endStatement(report: Bool) {
+        if at(.newline) || at(.eof) || at(.dedent) || previous.kind == .dedent { return }
+        if report { error("PINE2013", "Expected end of statement; found unexpected token.", current.range) }
+        while !at(.newline) && !at(.dedent) && !at(.eof) { advance() }
+    }
+
     mutating private func statement() -> PineStatement? {
-        if take(.ifKeyword) {
-            let start = previous.range
-            guard let condition = expression() else { return nil }
-            _ = take(.newline)
-            guard take(.indent) else {
-                error("PINE2002", "Expected an indented block after if.", current.range)
-                return nil
-            }
-            let yes = block(untilDedent: true)
-            var no: [PineStatement] = []
-            if take(.elseKeyword) {
-                _ = take(.newline)
-                if take(.indent) { no = block(untilDedent: true) }
-            }
-            return .conditional(condition, yes, no, start)
-        }
-        var mode = PineDeclarationMode.ordinary
-        var type: PineValueType?
-        if take(.varKeyword) { mode = .variable } else if take(.varipKeyword) { mode = .intrabar }
-        if case .typeKeyword(let t) = current.kind {
-            type = t
+        if take(.ifKeyword) { return ifStatement() }
+        if take(.forKeyword) { return forStatement() }
+        if take(.breakKeyword) { return .loopControl(.breakLoop, previous.range) }
+        if take(.continueKeyword) { return .loopControl(.continueLoop, previous.range) }
+        if isFunctionDefinition() { return functionDefinition() }
+        if let declaration = declaration() { return declaration }
+        if case .identifier(let name) = current.kind, let next = peek(1),
+            [.reassign, .plusAssign, .minusAssign, .starAssign, .slashAssign].contains(next.kind)
+        {
+            let range = current.range
             advance()
-        }
-        if case .identifier(let name) = current.kind, let next = peek(1) {
-            if next.kind == .assign {
-                let range = current.range
-                advance()
-                advance()
-                guard let rhs = expression() else { return nil }
-                return .declaration(name, type, mode, rhs, range)
-            }
-            if [.reassign, .plusAssign, .minusAssign, .starAssign, .slashAssign].contains(next.kind) {
-                let range = current.range
-                advance()
-                let op = current.kind
-                advance()
-                guard let rhs = expression() else { return nil }
-                return .assignment(name, op, rhs, range)
-            }
+            let op = current.kind
+            advance()
+            guard let rhs = expression() else { return nil }
+            return .assignment(name, op, rhs, range)
         }
         return expression().map(PineStatement.expression)
     }
+
+    /// Called after `if` has been consumed. `else if` nests the chained `if` as the
+    /// sole statement of the else branch.
+    mutating private func ifStatement() -> PineStatement? {
+        let start = previous.range
+        guard let condition = expression() else { return nil }
+        guard let yes = indentedBlock("if") else { return nil }
+        var no: [PineStatement] = []
+        if take(.elseKeyword) {
+            if take(.ifKeyword) {
+                if let chained = ifStatement() { no = [chained] }
+            } else {
+                _ = take(.newline)
+                if take(.indent) { no = block(untilDedent: true) }
+            }
+        }
+        return .conditional(condition, yes, no, start)
+    }
+
+    mutating private func indentedBlock(_ owner: String) -> [PineStatement]? {
+        _ = take(.newline)
+        guard take(.indent) else {
+            error("PINE2002", "Expected an indented block after \(owner).", current.range)
+            return nil
+        }
+        return block(untilDedent: true)
+    }
+
+    /// Called after `for` has been consumed.
+    mutating private func forStatement() -> PineStatement? {
+        let start = previous.range
+        var indexName: String?
+        let valueName: String
+        if take(.leftBracket) {
+            guard case .identifier(let first) = current.kind else {
+                error("PINE2009", "Expected a loop variable.", current.range)
+                return nil
+            }
+            advance()
+            expect(.comma, "Expected ',' in for...in destructuring.")
+            guard case .identifier(let second) = current.kind else {
+                error("PINE2009", "Expected a loop variable.", current.range)
+                return nil
+            }
+            advance()
+            expect(.rightBracket, "Expected ']'.")
+            indexName = first
+            valueName = second
+        } else {
+            guard case .identifier(let name) = current.kind else {
+                error("PINE2009", "Expected a loop variable.", current.range)
+                return nil
+            }
+            advance()
+            valueName = name
+        }
+        if indexName == nil, take(.assign) {
+            guard let from = expression() else { return nil }
+            guard takeWord("to") else {
+                error("PINE2010", "Expected 'to' in for loop.", current.range)
+                return nil
+            }
+            guard let end = expression() else { return nil }
+            var step: PineExpression?
+            if takeWord("by") {
+                guard let value = expression() else { return nil }
+                step = value
+            }
+            guard let body = indentedBlock("for") else { return nil }
+            return .forRange(valueName, from, end, step, body, start)
+        }
+        guard takeWord("in") else {
+            error("PINE2010", "Expected '=' or 'in' in for loop.", current.range)
+            return nil
+        }
+        guard let collection = expression() else { return nil }
+        guard let body = indentedBlock("for") else { return nil }
+        return .forIn(indexName, valueName, collection, body, start)
+    }
+
+    /// `name(` … matching `)` followed by `=>`.
+    private func isFunctionDefinition() -> Bool {
+        guard case .identifier = current.kind, peek(1)?.kind == .leftParen else { return false }
+        var depth = 0
+        var i = index + 1
+        while i < tokens.count {
+            switch tokens[i].kind {
+            case .leftParen: depth += 1
+            case .rightParen:
+                depth -= 1
+                if depth == 0 { return i + 1 < tokens.count && tokens[i + 1].kind == .arrow }
+            case .newline, .eof: return false
+            default: break
+            }
+            i += 1
+        }
+        return false
+    }
+
+    mutating private func functionDefinition() -> PineStatement? {
+        guard case .identifier(let name) = current.kind else { return nil }
+        let range = current.range
+        advance()
+        expect(.leftParen, "Expected '('.")
+        var parameters: [PineParameter] = []
+        if !at(.rightParen) {
+            repeat {
+                skipQualifier()
+                let type = typeAnnotation()
+                guard case .identifier(let parameter) = current.kind else {
+                    error("PINE2011", "Expected a parameter name.", current.range)
+                    return nil
+                }
+                advance()
+                var defaultValue: PineExpression?
+                if take(.assign) { defaultValue = expression() }
+                parameters.append(.init(name: parameter, type: type, defaultValue: defaultValue))
+            } while take(.comma)
+        }
+        expect(.rightParen, "Expected ')'.")
+        expect(.arrow, "Expected '=>'.")
+        let body: [PineStatement]
+        if at(.newline) {
+            guard let block = indentedBlock("function declaration") else { return nil }
+            body = block
+        } else {
+            guard let single = statement() else { return nil }
+            body = [single]
+        }
+        return .function(name, parameters, body, range)
+    }
+
+    /// `[var|varip] [type] name = expression`. Parsed speculatively: when the tokens do
+    /// not form a declaration header the cursor is restored so they parse as an expression.
+    mutating private func declaration() -> PineStatement? {
+        let start = index
+        var mode = PineDeclarationMode.ordinary
+        if take(.varKeyword) { mode = .variable } else if take(.varipKeyword) { mode = .intrabar }
+        let type = typeAnnotation()
+        guard case .identifier(let name) = current.kind, peek(1)?.kind == .assign else {
+            index = start
+            return nil
+        }
+        let range = current.range
+        advance()
+        advance()
+        guard let rhs = expression() else { return nil }
+        return .declaration(name, type, mode, rhs, range)
+    }
+
+    private static let objectTypes: [String: PineValueType] = [
+        "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
+    ]
+
+    /// Parses `int`, `float[]`, `line`, `box[]`, `array<int>`. Only consumes tokens when
+    /// they are followed by a name (or `[]`/`<`), so `line.new(...)` and `int(x)` still
+    /// parse as expressions.
+    mutating private func typeAnnotation() -> PineValueType? {
+        var type: PineValueType
+        switch current.kind {
+        case .typeKeyword(let t): type = t
+        case .identifier(let word):
+            guard let t = Self.objectTypes[word] else { return nil }
+            type = t
+        default: return nil
+        }
+        guard let next = peek(1) else { return nil }
+        if case .identifier = next.kind {
+            advance()
+            return type
+        }
+        if next.kind == .leftBracket, peek(2)?.kind == .rightBracket {
+            advance()
+            advance()
+            advance()
+            return .array
+        }
+        if type == .array, next.kind == .less {
+            advance()
+            advance()
+            // Element type; only one-word element types are supported.
+            switch current.kind {
+            case .typeKeyword, .identifier: advance()
+            default: error("PINE2012", "Expected an element type.", current.range)
+            }
+            expect(.greater, "Expected '>'.")
+            return .array
+        }
+        return nil
+    }
+
+    mutating private func skipQualifier() {
+        guard case .identifier(let word) = current.kind,
+            ["series", "simple", "const", "input"].contains(word), let next = peek(1)
+        else { return }
+        switch next.kind {
+        case .typeKeyword, .identifier: advance()
+        default: break
+        }
+    }
+
+    mutating private func takeWord(_ word: String) -> Bool {
+        guard case .identifier(let value) = current.kind, value == word else { return false }
+        advance()
+        return true
+    }
+
     mutating private func expression(_ minBP: Int = 0) -> PineExpression? {
         var lhs: PineExpression
         let token = current
@@ -489,6 +702,8 @@ struct PineParser {
     }
 }
 
+enum PineRefKind: String, Equatable, Sendable { case array, line, label, box, table, plot }
+
 indirect enum PineRuntimeValue: Equatable, Sendable {
     case int(Int)
     case float(Double)
@@ -496,6 +711,8 @@ indirect enum PineRuntimeValue: Equatable, Sendable {
     case string(String)
     case color(UInt32)
     case tuple([PineRuntimeValue])
+    /// Handle to a runtime-owned object (array, drawing, plot).
+    case ref(PineRefKind, Int)
     case na, void
     var number: Double? {
         switch self {
@@ -577,6 +794,7 @@ enum PineCompiler {
             }
             let supported: Set<String> = [
                 "title", "shorttitle", "overlay", "format", "precision", "max_bars_back",
+                "max_lines_count", "max_labels_count", "max_boxes_count",
             ]
             for arg in args where arg.name != nil {
                 let name = arg.name!
@@ -593,6 +811,9 @@ enum PineCompiler {
                 case ("format", .literal(.string(let v), _)): metadata.format = v
                 case ("precision", .literal(.int(let v), _)): metadata.precision = v
                 case ("max_bars_back", .literal(.int(let v), _)): metadata.maxBarsBack = v
+                case ("max_lines_count", .literal(.int(let v), _)): metadata.maxLinesCount = v
+                case ("max_labels_count", .literal(.int(let v), _)): metadata.maxLabelsCount = v
+                case ("max_boxes_count", .literal(.int(let v), _)): metadata.maxBoxesCount = v
                 default: break
                 }
             }
@@ -667,7 +888,7 @@ enum PineCompiler {
                         id: variable, type: type, defaultValue: defaultValue, title: title,
                         tooltip: string("tooltip"), group: string("group"), inline: string("inline"),
                         confirm: boolean("confirm"), minValue: number("minval"), maxValue: number("maxval"),
-                        step: number("step"), options: nil))
+                        step: number("step"), options: options(args, function: name)))
             }
             if case .conditional(_, let a, let b, _) = statement {
                 collectInputs(a, &schema, &diagnostics)
@@ -675,6 +896,14 @@ enum PineCompiler {
             }
         }
     }
+    private static func options(_ args: [PineArgument], function: String) -> [PineInputValue]? {
+        guard let argument = args.first(where: { $0.name == "options" }),
+            case .tuple(let values, _) = argument.value
+        else { return nil }
+        let options = values.compactMap { inputValue($0, function: function) }
+        return options.count == values.count && !options.isEmpty ? options : nil
+    }
+
     private static func inputValue(_ e: PineExpression, function: String) -> PineInputValue? {
         if function == "input.source", case .identifier(let name, _) = e {
             return .source(name)
@@ -689,23 +918,42 @@ enum PineCompiler {
             default: return nil
             }
         }
-        if function == "input.color", case .call("color.new", let arguments, _, _) = e,
-            arguments.count >= 2,
-            case .literal(.color(let rgba), _) = arguments[0].value,
-            case .literal(let transparency, _) = arguments[1].value,
-            let percent = transparency.number
-        {
-            let alpha = UInt32((100 - min(100, max(0, percent))) * 2.55)
-            return .color((rgba & 0xFFFF_FF00) | alpha)
-        }
+        if function == "input.color", let color = constantColor(e) { return .color(color) }
         return nil
     }
+
+    /// Folds compile-time color expressions: literals, `color.*` constants, and
+    /// `color.new`/`color.rgb` with constant arguments.
+    static func constantColor(_ e: PineExpression) -> UInt32? {
+        switch e {
+        case .literal(.color(let rgba), _): return rgba
+        case .identifier(let name, _): return PineBuiltins.colors[name]
+        case .call("color.new", let arguments, _, _):
+            guard arguments.count >= 2, let base = constantColor(arguments[0].value),
+                let transparency = constantNumber(arguments[1].value)
+            else { return nil }
+            return PineBuiltins.withTransparency(base, transparency)
+        case .call("color.rgb", let arguments, _, _):
+            let numbers = arguments.map { constantNumber($0.value) }
+            guard numbers.count >= 3, !numbers.contains(where: { $0 == nil }) else { return nil }
+            return PineBuiltins.rgb(numbers[0]!, numbers[1]!, numbers[2]!, numbers.count > 3 ? numbers[3]! : 0)
+        default: return nil
+        }
+    }
+
+    private static func constantNumber(_ e: PineExpression) -> Double? {
+        switch e {
+        case .literal(let value, _): return value.number
+        case .unary(.minus, let inner, _): return constantNumber(inner).map { -$0 }
+        default: return nil
+        }
+    }
     private static func validate(_ statements: [PineStatement], diagnostics: inout [PineDiagnostic]) {
-        validate(statements, inheritedDeclarations: [], diagnostics: &diagnostics)
+        validate(statements, inheritedDeclarations: [], inLoop: false, diagnostics: &diagnostics)
     }
 
     private static func validate(
-        _ statements: [PineStatement], inheritedDeclarations: Set<String>,
+        _ statements: [PineStatement], inheritedDeclarations: Set<String>, inLoop: Bool,
         diagnostics: inout [PineDiagnostic]
     ) {
         var declared = inheritedDeclarations
@@ -727,8 +975,32 @@ enum PineCompiler {
                         diag("PINE3022", .semantic, "Cannot reassign undeclared variable '\(n)'.", r))
                 }
             case .conditional(_, let a, let b, _):
-                validate(a, inheritedDeclarations: declared, diagnostics: &diagnostics)
-                validate(b, inheritedDeclarations: declared, diagnostics: &diagnostics)
+                validate(a, inheritedDeclarations: declared, inLoop: inLoop, diagnostics: &diagnostics)
+                validate(b, inheritedDeclarations: declared, inLoop: inLoop, diagnostics: &diagnostics)
+            case .forRange(let variable, _, _, _, let body, _):
+                validate(
+                    body, inheritedDeclarations: declared.union([variable]), inLoop: true,
+                    diagnostics: &diagnostics)
+            case .forIn(let index, let value, _, let body, _):
+                validate(
+                    body, inheritedDeclarations: declared.union([index, value].compactMap { $0 }),
+                    inLoop: true, diagnostics: &diagnostics)
+            case .loopControl(_, let r):
+                if !inLoop {
+                    diagnostics.append(
+                        diag("PINE3023", .semantic, "break and continue are only allowed inside a loop.", r))
+                }
+            case .function(let n, let parameters, let body, let r):
+                if declared.contains(n) {
+                    diagnostics.append(
+                        diag("PINE3024", .semantic, "Function '\(n)' is already declared.", r))
+                }
+                declared.insert(n)
+                // Function bodies are their own scope: locals may reuse global names, and
+                // globals cannot be reassigned from inside a function.
+                validate(
+                    body, inheritedDeclarations: Set(parameters.map(\.name)), inLoop: false,
+                    diagnostics: &diagnostics)
             case .expression(let e):
                 if case .call(let n, _, _, let r) = e,
                     n.hasPrefix("request.") || ["alert", "alertcondition"].contains(n)
@@ -738,6 +1010,29 @@ enum PineCompiler {
                 }
             }
         }
+    }
+}
+
+/// Builtin constants shared by compile-time input folding and the runtime.
+enum PineBuiltins {
+    static let colors: [String: UInt32] = [
+        "color.aqua": 0x00bc_d4ff, "color.black": 0x0000_00ff, "color.blue": 0x2196_f3ff,
+        "color.fuchsia": 0xe040_fbff, "color.gray": 0x787b_86ff, "color.green": 0x4caf_50ff,
+        "color.lime": 0x00e6_76ff, "color.maroon": 0x880e_4fff, "color.navy": 0x0d47_a1ff,
+        "color.olive": 0x8277_17ff, "color.orange": 0xff98_00ff, "color.purple": 0x9c27_b0ff,
+        "color.red": 0xf236_45ff, "color.silver": 0xb2b5_beff, "color.teal": 0x0089_7bff,
+        "color.white": 0xffff_ffff, "color.yellow": 0xffeb_3bff,
+    ]
+
+    /// Pine transparency is 0 (opaque) … 100 (invisible).
+    static func withTransparency(_ rgba: UInt32, _ transparency: Double) -> UInt32 {
+        (rgba & 0xFFFF_FF00) | UInt32(((100 - min(100, max(0, transparency))) * 2.55).rounded())
+    }
+
+    static func rgb(_ r: Double, _ g: Double, _ b: Double, _ transparency: Double) -> UInt32 {
+        func channel(_ v: Double) -> UInt32 { UInt32(min(255, max(0, v.isFinite ? v : 0))) }
+        return withTransparency(
+            (channel(r) << 24) | (channel(g) << 16) | (channel(b) << 8) | 0xFF, transparency)
     }
 }
 

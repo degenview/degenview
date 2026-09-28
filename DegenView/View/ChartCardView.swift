@@ -43,6 +43,7 @@ struct ChartCardView: View {
     @State private var iconURL: URL?
     @State private var showAlertEditor = false
     @StateObject private var portfolioStore = PortfolioStore.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
     var body: some View {
@@ -79,13 +80,24 @@ struct ChartCardView: View {
     private var marketCard: some View {
         VStack(spacing: 2) {
             headerView
-            chartArea
+            VStack(spacing: 0) {
+                chartArea
+                // Below, not inside, the chart area: its overlays and hit regions must
+                // keep the price canvas's size, or `viewModel.plot(in:)` would drift.
+                if showsPinePane {
+                    PineScriptPaneView(
+                        pine: viewModel.pineOutput, candles: viewModel.visibleKlines, height: pinePaneHeight)
+                }
+            }
         }
         .padding(6)
         .frame(height: cardHeight ?? chartHeight + ChartLayout.cardChrome)
         .clipped()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .background(ZoomHitRegion(onResolve: onZoomRegion))
+        .onChange(of: colorScheme, initial: true) { _, scheme in
+            viewModel.setPineTheme(scheme == .dark ? .dark : .light)
+        }
         .task(id: viewModel.iconKey) {
             iconURL = nil
             iconURL = await IconResolver.shared.iconURL(
@@ -256,6 +268,15 @@ struct ChartCardView: View {
 
     // MARK: - Chart Area
 
+    /// `overlay=false` scripts get their own pane; the line chart draws no scripts.
+    private var showsPinePane: Bool {
+        !viewModel.usesLineChart && !viewModel.pineOutput.overlay
+    }
+
+    private var pinePaneHeight: CGFloat {
+        showsPinePane ? (chartHeight * 0.3).rounded() : 0
+    }
+
     @ViewBuilder
     private var chartArea: some View {
         // Computed once per layout pass and shared by both renderers — the warm-up
@@ -288,7 +309,7 @@ struct ChartCardView: View {
             } else {
                 CandleChartView(
                     candles: viewModel.visibleKlines,
-                    chartHeight: chartHeight,
+                    chartHeight: chartHeight - pinePaneHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
