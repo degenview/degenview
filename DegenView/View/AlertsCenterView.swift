@@ -74,7 +74,7 @@ struct AlertsCenterView: View {
                         copy = PriceAlert(
                             asset: copy.asset, condition: copy.condition, currency: copy.currency,
                             frequency: copy.frequency, note: copy.note)
-                        Task { await store.save(copy) }
+                        store.save(copy)
                     }
                     Divider()
                     Button("Delete", role: .destructive) { Task { await store.delete(alert.id) } }

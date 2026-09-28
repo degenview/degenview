@@ -23,9 +23,12 @@ final class AlertStore: ObservableObject {
         observerTask = Task { [weak self] in
             await self?.reload()
             await self?.configureRuntime()
+            var ticks = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 await self?.reload()
+                ticks += 1
+                if ticks % 5 == 0 { await self?.configureRuntime() }
             }
         }
         NotificationCenter.default.addObserver(
@@ -52,14 +55,23 @@ final class AlertStore: ObservableObject {
         return quote.price * rate
     }
 
-    func save(_ alert: PriceAlert) async {
-        let baseline = await latestPrice(for: alert.asset, currency: alert.currency)
-        _ = try? await client.send(.save(alert, baseline: baseline), expectedRevision: snapshotRevision)
-        _ = try? await client.send(.requestNotificationAuthorization)
-        if alerts.isEmpty { _ = AlertBackgroundService.shared.register() }
-        await requestNotificationAuthorizationIfNeeded()
-        await configureRuntime()
-        await awaitRevision()
+    /// Shows the alert immediately; the runtime applies the command within a tick and the
+    /// next reload replaces this optimistic copy with the persisted one.
+    func save(_ alert: PriceAlert) {
+        let isFirst = alerts.isEmpty
+        if let index = alerts.firstIndex(where: { $0.id == alert.id }) {
+            alerts[index] = alert
+        } else {
+            alerts.append(alert)
+        }
+        Task {
+            let baseline = await latestPrice(for: alert.asset, currency: alert.currency)
+            _ = try? await client.send(.save(alert, baseline: baseline), expectedRevision: snapshotRevision)
+            _ = try? await client.send(.requestNotificationAuthorization)
+            if isFirst { _ = AlertBackgroundService.shared.register() }
+            await requestNotificationAuthorizationIfNeeded()
+            await configureRuntime()
+        }
     }
     func pause(_ id: UUID) async { await changeState(id, .paused) }
     func resume(_ id: UUID) async { await changeState(id, .active) }
@@ -95,11 +107,18 @@ final class AlertStore: ObservableObject {
         await awaitRevision()
     }
 
+    /// Prefers the login-item agent, but an `.enabled` registration only means launchd knows
+    /// about it — the agent can still fail to spawn. Without a fresh agent heartbeat (after a
+    /// grace period for it to start), the app evaluates alerts itself. `alert_runtime.lock`
+    /// keeps the two from ever running at once.
     private func configureRuntime() async {
         let serviceState = AlertBackgroundService.shared.state
         if !alerts.isEmpty && serviceState == .disabled { _ = AlertBackgroundService.shared.register() }
         let currentState = AlertBackgroundService.shared.state
-        if currentState == .enabled {
+        let agentAlive =
+            health.owner == .agent && health.heartbeat.map { Date().timeIntervalSince($0) < 5 } == true
+        let agentHadTimeToStart = Date().timeIntervalSince(sessionStartedAt) > 10
+        if currentState == .enabled && (agentAlive || !agentHadTimeToStart) {
             await fallbackHost?.stop()
             fallbackHost = nil
         } else if fallbackHost == nil {
