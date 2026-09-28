@@ -162,6 +162,46 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertTrue(exists("portfolio_reporting_currencies.migrated.json"))
     }
 
+    // MARK: - Paper trading
+
+    func testPaperTradingRoundTripKeepsEveryCollection() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let instrument = PaperInstrument(
+            key: "test:XYZ", symbol: "XYZ", displayName: "XYZ", source: .alpaca, assetClass: .stock,
+            quoteCurrency: .USD, tickSize: 1, minimumQuantity: 1, quantityIncrement: 1, contractMultiplier: 1,
+            pointValue: 1)
+        let database = self.database!
+        let engine = PaperTradingEngine(
+            quoteMaximumAge: 30, now: { now }, persist: { try database.savePaperTrading($0) })
+        let account = try await engine.createAccount(name: "Paper", initialBalance: 10_000)
+        _ = try await engine.createAccount(name: "Second", initialBalance: 5_000)
+        try await engine.process(.init(instrumentKey: instrument.key, bid: 99, ask: 100, last: nil, timestamp: now))
+        for side in [PaperOrderSide.buy, .sell] {
+            _ = try await engine.submit(
+                .init(
+                    accountID: account, instrument: instrument, side: side, type: .market, quantity: 10,
+                    limitPrice: nil, stopPrice: nil, takeProfit: nil, stopLoss: nil))
+        }
+
+        let expected = await engine.snapshot()
+        XCTAssertFalse(expected.fills.isEmpty)
+        XCTAssertFalse(expected.closedTrades.isEmpty)
+        XCTAssertEqual(try database.paperTrading(), expected)
+    }
+
+    func testLegacyPaperTradingImport() throws {
+        let account = PaperAccount(name: "Legacy", initialBalance: 1_000)
+        var legacy = PaperTradingSnapshot()
+        legacy.accounts = [account]
+        legacy.selectedAccountID = account.id
+        try writeLegacy(legacy, to: "paper_trading.json")
+
+        let store = PaperTradingStore(database: database, legacyDirectory: directory)
+
+        XCTAssertEqual(store.snapshot, legacy)
+        XCTAssertTrue(exists("paper_trading.migrated.json"))
+    }
+
     // MARK: - Helpers
 
     private func writeLegacy<T: Encodable>(_ value: T, to filename: String) throws {

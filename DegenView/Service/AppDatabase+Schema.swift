@@ -66,6 +66,22 @@ extension AppDatabase {
             }
         }
 
+        migrator.registerMigration("v3_paper_trading") { db in
+            try createDocumentTable("paper_account", db: db)
+            // Collections owned by one account, kept in engine order via the rowid.
+            for table in [
+                "paper_order", "paper_fill", "paper_position", "paper_order_event",
+                "paper_closed_trade", "paper_journal",
+            ] {
+                try db.create(table: table) { t in
+                    t.autoIncrementedPrimaryKey("rowid")
+                    t.column("account_id", .text).notNull()
+                    t.column("payload", .text).notNull()
+                }
+                try db.create(index: "\(table)_on_account", on: table, columns: ["account_id"])
+            }
+        }
+
         return migrator
     }
 
@@ -86,6 +102,7 @@ enum DocumentTable: String {
     case savedView = "saved_view"
     case tab
     case portfolio
+    case paperAccount = "paper_account"
 }
 
 extension AppDatabase {
