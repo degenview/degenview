@@ -52,27 +52,4 @@ final class JSONStoreTests: XCTestCase {
         XCTAssertNotEqual(firstURL, secondURL)
         XCTAssertTrue(secondURL.deletingPathExtension().lastPathComponent.hasSuffix("-1"))
     }
-
-    @MainActor
-    func testTabsStoreQuarantinesCorruptionBeforeWritingRecoveredSession() throws {
-        let store = JSONStore<TabsSnapshot>(
-            filename: "tabs.json",
-            directory: directory,
-            now: { Date(timeIntervalSince1970: 1_777_777_777) }
-        )
-        let original = Data("broken-session".utf8)
-        try original.write(to: store.storageURL)
-        let suiteName = "JSONStoreTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-
-        let tabsStore = TabsStore(store: store, userDefaults: defaults, supportDirectory: directory)
-
-        XCTAssertEqual(tabsStore.tabs.count, 1)
-        XCTAssertNotNil(store.load())
-        let backups = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
-            .filter { $0.lastPathComponent.hasPrefix("tabs.corrupt-") }
-        XCTAssertEqual(backups.count, 1)
-        XCTAssertEqual(try Data(contentsOf: backups[0]), original)
-        defaults.removePersistentDomain(forName: suiteName)
-    }
 }

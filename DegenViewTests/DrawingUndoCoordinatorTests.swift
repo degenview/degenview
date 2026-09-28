@@ -7,11 +7,13 @@ import XCTest
 final class DrawingUndoCoordinatorTests: XCTestCase {
     private var directory: URL!
     private var store: DrawingStore!
+    private var database: AppDatabase!
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        store = DrawingStore(directory: directory)
+        database = try AppDatabase(path: directory.appendingPathComponent("test.sqlite").path)
+        store = DrawingStore(database: database, legacyDirectory: directory)
     }
 
     override func tearDownWithError() throws {
@@ -97,7 +99,7 @@ final class DrawingUndoCoordinatorTests: XCTestCase {
 
         manager.undo()
         XCTAssertEqual(store.fibs(ticker: "BTC", source: .coingecko), [original])
-        let reloaded = DrawingStore(directory: directory)
+        let reloaded = DrawingStore(database: database, legacyDirectory: directory)
         XCTAssertEqual(reloaded.fibs(ticker: "BTC", source: .coingecko), [original])
     }
 

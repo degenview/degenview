@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo.
 
 ## Project
 
-macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST + WebSocket data from Binance/CoinGecko/DEXScreener. Zero external dependencies.
+macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST + WebSocket data from Binance/CoinGecko/DEXScreener. One external dependency: [GRDB.swift](https://github.com/groue/GRDB.swift) (SQLite persistence), via SPM.
 
 See [Architecture](docs/architecture.md) for the project structure and data flow.
 
@@ -23,8 +23,11 @@ Requires Xcode 16+, macOS 14+.
 - **@MainActor** on all ViewModels that publish UI state
 - **No SwiftUI Charts** — candles are hand-drawn via AppKit `Canvas`
 - **Protocol abstraction** for data sources: `TickerDataSource` protocol, `DataSourceFactory` singleton
-- **Persistence**: `TabsStore` → `tabs.json`, saved views → `views.json`, both via the
-  generic `JSONStore<T>` in the app support dir
+- **Persistence**: user data lives in SQLite (`degenview.sqlite`, WAL) through
+  `AppDatabase`. Tabs, saved views, favorites, and drawings are migrated; the rest still
+  uses `JSONStore<T>`. Caches stay in `JSONStore<T>` for good. Schema changes are new
+  `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one.
+  Legacy JSON is imported once by the owning store and renamed to `*.migrated.json`
 - **One `ContentViewModel` per tab** — never treat it as app-global state
 - **Caching**: `ChartViewModel.fetchData` caches results keyed by (symbol, interval, limit) in a dictionary
 - **WebSocket**: Only Binance tickers get live streams; connect/disconnect on ticker add/remove

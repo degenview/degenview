@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Replaces the app-global `tickers.json` + `lastViewID` pair: those described
 /// one implicit tab, this describes N explicit ones. Saved views (`views.json`)
-/// stay global — a shared library any tab can load from.
+/// stay global — a shared library any tab can load from. Both live in `AppDatabase`.
 @MainActor
 final class TabsStore: ObservableObject {
     static let shared = TabsStore()
@@ -17,47 +17,51 @@ final class TabsStore: ObservableObject {
     /// Empty until the first `captureGrouping()`.
     private(set) var windowGroups: [[UUID]] = []
 
-    private let store: JSONStore<TabsSnapshot>
+    private let database: AppDatabase
     private let userDefaults: UserDefaults
     private let supportDirectory: URL
     private var suppressWrites = false
     private var saveTask: Task<Void, Never>?
 
     private convenience init() {
-        self.init(store: JSONStore<TabsSnapshot>(filename: "tabs.json"))
+        self.init(database: .shared)
     }
 
     init(
-        store: JSONStore<TabsSnapshot>,
+        database: AppDatabase,
         userDefaults: UserDefaults = .standard,
         supportDirectory: URL = AppSupport.directory
     ) {
-        self.store = store
+        self.database = database
         self.userDefaults = userDefaults
         self.supportDirectory = supportDirectory
 
-        switch store.loadResult() {
-        case .value(let snapshot):
-            tabs = snapshot.tabs
-            windowGroups = snapshot.windowGroups
-        case .missing, .quarantined:
-            let migrated = migrateFromLegacyStorage()
-            tabs = migrated.tabs
-            windowGroups = migrated.windowGroups
-            // Nothing has mutated yet, so no debounced write is pending — land
-            // the migration on disk now rather than on the next edit.
-            store.save(migrated)
-        case .unreadable(let error):
-            let migrated = migrateFromLegacyStorage()
-            tabs = migrated.tabs
-            windowGroups = migrated.windowGroups
-            suppressWrites = true
+        database.importLegacyTabs(from: supportDirectory)
+        // A tabs.json that survived the import exists but couldn't be read. Leave it for
+        // the next launch rather than writing a recovered session the import would clobber.
+        let legacyUnreadable = FileManager.default.fileExists(
+            atPath: supportDirectory.appendingPathComponent("tabs.json").path)
+
+        do {
+            if let snapshot = try database.tabsSnapshot() {
+                tabs = snapshot.tabs
+                windowGroups = snapshot.windowGroups
+                return
+            }
+        } catch {
             #if DEBUG
-                print(
-                    "[TabsStore] tabs.json is unreadable; preserving it and disabling writes: \(error.localizedDescription)"
-                )
+                print("[TabsStore] Tabs are unreadable; disabling writes: \(error.localizedDescription)")
             #endif
+            suppressWrites = true
         }
+
+        let migrated = migrateFromLegacyStorage()
+        tabs = migrated.tabs
+        windowGroups = migrated.windowGroups
+        if legacyUnreadable { suppressWrites = true }
+        // Nothing has mutated yet, so no debounced write is pending — land the
+        // migration now rather than on the next edit.
+        if !suppressWrites { write(migrated) }
     }
 
     // MARK: - Lookup
@@ -165,7 +169,17 @@ final class TabsStore: ObservableObject {
         guard !suppressWrites else { return }
         saveTask?.cancel()
         saveTask = nil
-        store.save(TabsSnapshot(tabs: tabs, windowGroups: windowGroups))
+        write(TabsSnapshot(tabs: tabs, windowGroups: windowGroups))
+    }
+
+    private func write(_ snapshot: TabsSnapshot) {
+        do {
+            try database.saveTabs(snapshot)
+        } catch {
+            #if DEBUG
+                print("[TabsStore] Could not save tabs: \(error.localizedDescription)")
+            #endif
+        }
     }
 
     // MARK: - Migration
@@ -175,7 +189,7 @@ final class TabsStore: ObservableObject {
     /// Mirrors what launch used to do: `lastViewID` won over `tickers.json`,
     /// because restoring a saved view replaced the ticker list wholesale.
     private func migrateFromLegacyStorage() -> TabsSnapshot {
-        let savedViews = JSONStore<[SavedView]>(filename: "views.json", directory: supportDirectory).load() ?? []
+        let savedViews = database.savedViews(legacyDirectory: supportDirectory)
 
         if let idString = userDefaults.string(forKey: "lastViewID"),
             let id = UUID(uuidString: idString),
