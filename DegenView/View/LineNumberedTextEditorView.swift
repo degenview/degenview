@@ -15,6 +15,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         let container = EditorContainerView()
         container.textView.delegate = context.coordinator
         context.coordinator.gutter = container.gutter
+        context.coordinator.container = container
         context.coordinator.diagnostics = diagnostics
         container.setText(text)
         container.setDiagnostics(diagnostics)
@@ -32,6 +33,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         private var text: Binding<String>
         var diagnostics: [PineDiagnostic] = []
         weak var gutter: LineNumberGutterView?
+        weak var container: EditorContainerView?
         private var lastEditWasWordCharacter: Bool?
 
         init(text: Binding<String>) { self.text = text }
@@ -40,7 +42,12 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView else { return }
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
             text.wrappedValue = textView.string
+            container?.updateOccurrenceHighlights()
             gutter?.needsDisplay = true
+        }
+
+        func textViewDidChangeSelection(_ notification: Notification) {
+            container?.updateOccurrenceHighlights()
         }
 
         /// Groups typing into per-word undo steps, the way Xcode/Sublime/VS Code do,
@@ -81,8 +88,18 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         }
 
         override init(frame frameRect: NSRect) {
-            scrollView = NSTextView.scrollableTextView()
-            textView = scrollView.documentView as! NSTextView
+            // An explicit TextKit 1 stack: the gutter and occurrence highlighting rely on
+            // the layout manager, and `scrollableTextView()` caps horizontal growth.
+            let storage = NSTextStorage()
+            let layoutManager = NSLayoutManager()
+            storage.addLayoutManager(layoutManager)
+            let container = NSTextContainer(
+                size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            )
+            layoutManager.addTextContainer(container)
+            textView = PineTextView(frame: .zero, textContainer: container)
+            scrollView = NSScrollView()
+            scrollView.documentView = textView
             gutter = LineNumberGutterView()
             super.init(frame: frameRect)
 
@@ -102,18 +119,25 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             textView.isAutomaticDashSubstitutionEnabled = false
             textView.isAutomaticTextReplacementEnabled = false
             textView.textContainerInset = NSSize(width: 8, height: 8)
-            textView.isVerticallyResizable = true
-            textView.isHorizontallyResizable = true
-            textView.textContainer?.widthTracksTextView = false
-            textView.textContainer?.containerSize = NSSize(
+            textView.minSize = .zero
+            textView.maxSize = NSSize(
                 width: CGFloat.greatestFiniteMagnitude,
                 height: CGFloat.greatestFiniteMagnitude
             )
+            textView.autoresizingMask = [.width, .height]
+            textView.isVerticallyResizable = true
+            textView.isHorizontallyResizable = true
+            textView.textContainer?.widthTracksTextView = false
+            textView.usesFindBar = true
+            textView.isIncrementalSearchingEnabled = true
 
             scrollView.hasVerticalScroller = true
             scrollView.hasHorizontalScroller = true
             scrollView.autohidesScrollers = true
             scrollView.borderType = .noBorder
+            scrollView.drawsBackground = true
+            scrollView.backgroundColor = .textBackgroundColor
+            scrollView.findBarPosition = .aboveContent
 
             gutter.textView = textView
             gutter.translatesAutoresizingMaskIntoConstraints = false
@@ -138,9 +162,46 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 name: NSView.boundsDidChangeNotification,
                 object: scrollView.contentView
             )
+            // Showing or hiding the find bar moves the content view without scrolling it.
+            scrollView.contentView.postsFrameChangedNotifications = true
+            NotificationCenter.default.addObserver(
+                gutter,
+                selector: #selector(LineNumberGutterView.editorDidScroll),
+                name: NSView.frameDidChangeNotification,
+                object: scrollView.contentView
+            )
         }
 
         required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+        private var escapeMonitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+            escapeMonitor = nil
+            guard window != nil else { return }
+            // SwiftUI windows and sheets consume Escape before the find bar's own
+            // cancel handling sees it, which otherwise leaves no way to close the bar.
+            escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, event.keyCode == 53, self.closeFindBarIfFocused(in: event.window) else {
+                    return event
+                }
+                return nil
+            }
+        }
+
+        private func closeFindBarIfFocused(in eventWindow: NSWindow?) -> Bool {
+            guard scrollView.isFindBarVisible, eventWindow === window,
+                let responder = window?.firstResponder as? NSView,
+                responder === textView || scrollView.findBarView.map({ responder.isDescendant(of: $0) }) == true
+            else { return false }
+            let sender = NSMenuItem()
+            sender.tag = NSTextFinder.Action.hideFindInterface.rawValue
+            textView.performTextFinderAction(sender)
+            window?.makeFirstResponder(textView)
+            return true
+        }
 
         func setText(_ text: String) {
             let undoManager = textView.undoManager
@@ -156,12 +217,152 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 ))
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
             undoManager?.enableUndoRegistration()
+            // Replacing storage bypasses the typing path that normally resizes the view.
+            textView.sizeToFit()
+            updateOccurrenceHighlights()
             gutter.needsDisplay = true
         }
 
         func setDiagnostics(_ diagnostics: [PineDiagnostic]) {
             self.diagnostics = diagnostics
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
+        }
+
+        /// Tints the word under the caret (or the selected word) and every other
+        /// whole-word occurrence of it, so uses of a variable are easy to spot.
+        func updateOccurrenceHighlights() {
+            guard let layoutManager = textView.layoutManager else { return }
+            let source = textView.string as NSString
+            layoutManager.removeTemporaryAttribute(
+                .backgroundColor, forCharacterRange: NSRange(location: 0, length: source.length))
+
+            let selection = textView.selectedRange()
+            let token: NSRange?
+            if selection.length == 0 {
+                token =
+                    PineWordRange.range(at: selection.location, in: source)
+                    ?? PineWordRange.range(at: selection.location - 1, in: source)
+            } else if PineWordRange.range(at: selection.location, in: source) == selection {
+                token = selection
+            } else {
+                token = nil
+            }
+            guard let token else { return }
+
+            let word = source.substring(with: token)
+            let tint = NSColor.selectedTextBackgroundColor
+            for range in PineWordRange.occurrences(of: word, in: source) {
+                layoutManager.addTemporaryAttribute(
+                    .backgroundColor,
+                    value: tint.withAlphaComponent(range == token ? 0.7 : 0.45),
+                    forCharacterRange: range
+                )
+            }
+        }
+    }
+
+    final class PineTextView: NSTextView {
+        /// Double-clicking `table` in `table.cell` selects only `table`: AppKit's word
+        /// breaking treats dotted names as one word, which is wrong for code.
+        override func selectionRange(
+            forProposedRange proposedCharRange: NSRange, granularity: NSSelectionGranularity
+        ) -> NSRange {
+            if granularity == .selectByWord,
+                let word = PineWordRange.range(at: proposedCharRange.location, in: string as NSString)
+            {
+                return word
+            }
+            return super.selectionRange(forProposedRange: proposedCharRange, granularity: granularity)
+        }
+
+        /// Backstop for double-click paths that bypass `selectionRange(forProposedRange:)`:
+        /// when a double-click lands AppKit's own dotted "word" (`table.cell`), narrow it to
+        /// the part under the pointer. Word-wise drags that extend past it are left alone.
+        override func setSelectedRanges(
+            _ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool
+        ) {
+            var ranges = ranges
+            if ranges.count == 1, let word = doubleClickedWord(),
+                let storage = textStorage,
+                ranges[0].rangeValue == storage.doubleClick(at: word.location),
+                ranges[0].rangeValue != word
+            {
+                ranges = [NSValue(range: word)]
+            }
+            super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        }
+
+        private func doubleClickedWord() -> NSRange? {
+            guard let event = NSApp.currentEvent, event.window === window,
+                [.leftMouseDown, .leftMouseDragged, .leftMouseUp].contains(event.type),
+                event.clickCount == 2,
+                let layoutManager, let textContainer
+            else { return nil }
+            var point = convert(event.locationInWindow, from: nil)
+            point.x -= textContainerOrigin.x
+            point.y -= textContainerOrigin.y
+            let index = layoutManager.characterIndex(
+                for: point, in: textContainer, fractionOfDistanceBetweenInsertionPoints: nil)
+            return PineWordRange.range(at: index, in: string as NSString)
+        }
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard window?.firstResponder === self,
+                let key = event.charactersIgnoringModifiers?.lowercased()
+            else { return super.performKeyEquivalent(with: event) }
+
+            let action: NSTextFinder.Action?
+            switch (key, modifiers) {
+            case ("f", [.command]): action = .showFindInterface
+            case ("g", [.command]): action = .nextMatch
+            case ("g", [.command, .shift]): action = .previousMatch
+            default: action = nil
+            }
+            guard let action else { return super.performKeyEquivalent(with: event) }
+            // Like Xcode: cmd+F with a single-line selection searches for that text.
+            let selection = selectedRange()
+            if action == .showFindInterface, selection.length > 0,
+                (string as NSString).substring(with: selection).rangeOfCharacter(from: .newlines) == nil
+            {
+                let useSelection = NSMenuItem()
+                useSelection.tag = NSTextFinder.Action.setSearchString.rawValue
+                performTextFinderAction(useSelection)
+            }
+            let sender = NSMenuItem()
+            sender.tag = action.rawValue
+            performTextFinderAction(sender)
+            return true
+        }
+
+        override func performTextFinderAction(_ sender: Any?) {
+            super.performTextFinderAction(sender)
+            styleFindBarCloseButton()
+        }
+
+        /// Turns the find bar's "Done" button into a trailing X. AppKit offers no API for
+        /// this, so the button is found by its (non-localized) action and keeps it, meaning
+        /// clicking it still closes the bar the native way. If AppKit's layout changes,
+        /// the lookup simply fails and the stock button stays.
+        private func styleFindBarCloseButton() {
+            guard let findBar = enclosingScrollView?.findBarView,
+                let done = Self.buttons(in: findBar).first(where: {
+                    $0.action == NSSelectorFromString("_doneButton:")
+                }),
+                let stack = done.superview as? NSStackView,
+                stack.arrangedSubviews.last !== done || done.image == nil
+            else { return }
+            done.title = ""
+            done.image = NSImage(systemSymbolName: "xmark", accessibilityDescription: "Close")
+            done.imagePosition = .imageOnly
+            done.isBordered = false
+            done.toolTip = "Close"
+            stack.removeArrangedSubview(done)
+            stack.addArrangedSubview(done)
+        }
+
+        private static func buttons(in view: NSView) -> [NSButton] {
+            ((view as? NSButton).map { [$0] } ?? []) + view.subviews.flatMap(buttons(in:))
         }
     }
 
@@ -181,8 +382,13 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             dirtyRect.fill()
             guard let textView,
                 let layoutManager = textView.layoutManager,
-                let textContainer = textView.textContainer
+                let textContainer = textView.textContainer,
+                let clipView = textView.enclosingScrollView?.contentView
             else { return }
+            // Line numbers must not draw beside the find bar when it is shown.
+            // Only the vertical extent matters: the clip view sits to the right of the gutter.
+            let contentArea = convert(clipView.bounds, from: clipView)
+            NSRect(x: bounds.minX, y: contentArea.minY, width: bounds.width, height: contentArea.height).clip()
 
             let visibleRect = textView.visibleRect
             let glyphRange = layoutManager.glyphRange(forBoundingRect: visibleRect, in: textContainer)
@@ -206,13 +412,48 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
 
                 let label = "\(lineNumber)" as NSString
                 let size = label.size(withAttributes: self.attributes)
-                let y = usedRect.minY + textView.textContainerOrigin.y - visibleRect.minY
+                let y = self.convert(
+                    NSPoint(x: 0, y: usedRect.minY + textView.textContainerOrigin.y), from: textView
+                ).y
                 label.draw(
                     at: NSPoint(x: self.bounds.width - size.width - 8, y: y),
                     withAttributes: self.attributes
                 )
             }
         }
+    }
+}
+
+/// Word boundaries for code: letters, digits and `_`, so dots split `table.cell`.
+enum PineWordRange {
+    /// The word containing the UTF-16 `index`, or `nil` when it is not on a word character.
+    static func range(at index: Int, in source: NSString) -> NSRange? {
+        guard index >= 0, index < source.length, isWordCharacter(at: index, in: source) else { return nil }
+        var start = index
+        var end = index + 1
+        while start > 0, isWordCharacter(at: start - 1, in: source) { start -= 1 }
+        while end < source.length, isWordCharacter(at: end, in: source) { end += 1 }
+        return NSRange(location: start, length: end - start)
+    }
+
+    /// Every whole-word occurrence of `word`, so `len` does not match inside `length`.
+    static func occurrences(of word: String, in source: NSString) -> [NSRange] {
+        guard !word.isEmpty else { return [] }
+        var result: [NSRange] = []
+        var searchRange = NSRange(location: 0, length: source.length)
+        while true {
+            let found = source.range(of: word, options: .literal, range: searchRange)
+            guard found.location != NSNotFound else { break }
+            if range(at: found.location, in: source) == found { result.append(found) }
+            let next = NSMaxRange(found)
+            searchRange = NSRange(location: next, length: source.length - next)
+        }
+        return result
+    }
+
+    private static func isWordCharacter(at index: Int, in source: NSString) -> Bool {
+        let composed = source.rangeOfComposedCharacterSequence(at: index)
+        return Character(source.substring(with: composed)).isWordCharacter
     }
 }
 

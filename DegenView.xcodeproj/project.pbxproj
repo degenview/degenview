@@ -14,6 +14,7 @@
 		BPL000000000000000000003 /* BitcoinPowerLawChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */; };
 		BPL000000000000000000004 /* BitcoinPowerLawSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */; };
 		SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000106 /* ScriptStoreTests.swift */; };
+		PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0000000000000000000106 /* PineWordRangeTests.swift */; };
 		SM0000000000000000000001 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000101 /* ScriptStore.swift */; };
 		SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000102 /* ScriptManagerViewModel.swift */; };
 		SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000103 /* ScriptEditorViewModel.swift */; };
@@ -195,6 +196,7 @@
 		BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawSettingsSheet.swift; sourceTree = "<group>"; };
 		BPL000000000000000000106 /* BitcoinPowerLawTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000106 /* ScriptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStoreTests.swift; sourceTree = "<group>"; };
+		PW0000000000000000000106 /* PineWordRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWordRangeTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000101 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
 		SM0000000000000000000102 /* ScriptManagerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerViewModel.swift; sourceTree = "<group>"; };
 		SM0000000000000000000103 /* ScriptEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorViewModel.swift; sourceTree = "<group>"; };
@@ -552,6 +554,7 @@
 			children = (
 				BPL000000000000000000106 /* BitcoinPowerLawTests.swift */,
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
+				PW0000000000000000000106 /* PineWordRangeTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
@@ -688,6 +691,7 @@
 			files = (
 				BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */,
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
+				PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */,
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
