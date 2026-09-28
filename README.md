@@ -122,11 +122,14 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 - **Persistent local history** — Rules, crossing baselines, re-arm state, processed quote
   fingerprints, settings, and trigger history are stored in a local SQLite database only
 
-Alerts evaluate while DegenView is running, including when chart windows are hidden or
-occluded. They cannot evaluate while the app is quit, the Mac is asleep, or fresh market
-or FX data is unavailable. Turning delivery off suppresses banners and notifications but
-does not stop evaluation or history recording. No account, CloudKit, remote alert API,
-push service, login item, or background helper is used.
+Alerts are evaluated by a bundled login-item agent, which DegenView registers once an
+alert exists, so they keep running while you're logged in even after the app quits. If
+the agent is disabled or still needs approval in System Settings › Login Items, the app
+evaluates alerts itself while it is running, including when chart windows are hidden or
+occluded. Alerts cannot evaluate while the Mac is asleep or fresh market or FX data is
+unavailable. Turning delivery off suppresses banners and notifications but does not stop
+evaluation or history recording. No account, CloudKit, remote alert API, or push service
+is used.
 
 ### Paper trading
 
