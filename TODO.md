@@ -43,7 +43,7 @@ work. Items are grouped by area rather than priority.
 
 ## Persistence and Sessions
 
-- [ ] **Migrate persistent data from JSON to SQLite.** Design a schema and migration path
+- [x] **Migrate persistent data from JSON to SQLite.** Design a schema and migration path
   for tabs, saved views, alerts, portfolio data, and other persisted state while
   preserving existing user data.
 - [ ] **Restore the previous tab session after relaunch.** Verify and harden restoration

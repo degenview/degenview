@@ -75,7 +75,13 @@ DegenView/
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
-    └── JSONStore.swift                # Generic Codable JSON persistence
+    ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database and legacy JSON import
+    ├── AppDatabase+Schema.swift       # Append-only migrations, document and setting helpers
+    ├── AppDatabase+Workspace.swift    # Tabs, saved views, and drawings tables
+    ├── AppDatabase+Portfolio.swift    # Portfolio ledger tables
+    ├── AppDatabase+PaperTrading.swift # Paper-trading tables
+    ├── AlertRuntimePersistence.swift  # Alert snapshot and GUI→runtime command queue
+    └── JSONStore.swift                # Codable JSON files for disposable caches
 ```
 
 ## Data flow
@@ -93,9 +99,17 @@ DegenView/
    rate limiter, and its cache is flushed to disk when the app quits. The shared
    `CoinMarketCapClient` coalesces identical in-flight requests and uses a 15-minute cache
    for latest/Altcoin data and a six-hour cache for daily Fear and Greed history.
-6. `TabsStore`, `FavoritesStore`, and `DrawingStore` persist independent JSON documents in
-   Application Support. Alpaca and optional CoinMarketCap secrets live in Keychain rather
-   than JSON; only CMC chart type, range, and display settings enter workspace state.
+6. User data lives in one SQLite database, `degenview.sqlite` in Application Support,
+   opened through `AppDatabase` (GRDB `DatabasePool`, WAL). `TabsStore`, saved views,
+   `FavoritesStore`, `DrawingStore`, `PortfolioStore`, `PaperTradingStore`, and alert
+   persistence each own their tables and keep their public API; nested chart configuration
+   stays a JSON payload column so it evolves through Codable defaults rather than schema
+   migrations. Schema changes are new, append-only `registerMigration` entries. On first
+   launch each store imports its pre-SQLite JSON file once and renames it to
+   `*.migrated.json`; state that fails to load disables writes instead of being replaced
+   by an empty value. Caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
+   files. Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
+   database; only CMC chart type, range, and display settings enter workspace state.
    Each tab and named saved view also stores ordered `ChartColumn` membership by the
    stable `TickerConfig.chartID`. Older documents without columns are repaired into the
    former two-column row-major arrangement when loaded.
@@ -110,8 +124,8 @@ DegenView/
 8. Binance and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
    lower-timeframe bars are aggregated against the provider-returned displayed-bar
    boundaries, preserving stock sessions, market gaps, and DST alignment.
-9. Portfolio mutations are serialized by `PortfolioLedger`, persisted atomically in
-   `portfolios.json`, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
+9. Portfolio mutations are serialized by `PortfolioLedger`, persisted as one database
+   transaction, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
    valuation without replaying static accounting; historical edits invalidate only the
    affected snapshot suffix.
 10. Selecting a reporting currency asks `FXRateService` for current or historical
@@ -138,6 +152,10 @@ DegenView/
     apply targeted, instrument-keyed replacements through `DrawingStore`, preserving
     unrelated drawing changes made by another window while immediately updating every
     chart observing the same instrument.
+15. Price alerts are evaluated by one `AlertRuntimeHost`, in either the app or the
+    login-item agent, whichever holds `alert_runtime.lock`. Both processes open the same
+    database: the owner saves the alert snapshot in one transaction per change, and the GUI
+    sends edits by inserting `alert_command` rows, which the owner applies and deletes.
 
 ## Drawing undo and redo
 
@@ -204,10 +222,10 @@ forming NaN or infinite paths. DegenView does not currently expose a logarithmic
 price scale, so the log-Fib setting is disabled in the UI while its calculator and tests
 remain available for that future scale mode.
 
-Completed drawings are stored separately in `fib-drawings.json`; existing trend-line
-storage remains in `drawings.json`, avoiding a migration of existing installations.
+Completed drawings are stored in the `drawing` table, distinguished from trend lines by
+`kind`; `drawing_instrument` remembers instruments whose drawings were all deleted.
 Continuous anchor/body drags update published in-memory geometry at pointer frequency and
-perform one disk write on mouse-up. Both candlestick and probability line charts reuse
+perform one database write on mouse-up. Both candlestick and probability line charts reuse
 the same immediate-mode Fib renderer and hit-testing geometry.
 
 The Fib settings sheet follows the main DegenView Settings layout: sidebar navigation,

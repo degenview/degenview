@@ -4,7 +4,7 @@
 
 A native macOS market dashboard for watching crypto, stocks, prediction markets, and
 CoinMarketCap market-wide indices in customizable charts and metric widgets. Built with
-SwiftUI and an AppKit `Canvas`, with no external dependencies.
+SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLite storage.
 
 ## Features
 
@@ -120,7 +120,7 @@ SwiftUI and an AppKit `Canvas`, with no external dependencies.
 - **Local delivery** — Trigger events can show an in-app banner and a macOS notification;
   delivery, sound, banners, and system notifications are independently configurable
 - **Persistent local history** — Rules, crossing baselines, re-arm state, processed quote
-  fingerprints, settings, and trigger history are stored in local JSON only
+  fingerprints, settings, and trigger history are stored in a local SQLite database only
 
 Alerts evaluate while DegenView is running, including when chart windows are hidden or
 occluded. They cannot evaluate while the app is quit, the Mac is asleep, or fresh market
@@ -223,8 +223,9 @@ Then choose **Product → Run** (⌘R) in Xcode. You can also build from Termina
 xcodebuild -project DegenView.xcodeproj -scheme DegenView build
 ```
 
-DegenView uses only native SwiftUI, AppKit, URLSession, and WebSocket APIs—there are no
-CocoaPods, Swift Package Manager, or Carthage dependencies.
+DegenView uses native SwiftUI, AppKit, URLSession, and WebSocket APIs. Its one Swift
+Package Manager dependency, [GRDB.swift](https://github.com/groue/GRDB.swift), provides
+local SQLite storage; Xcode resolves it on first build.
 
 ## Documentation
 
