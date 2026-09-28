@@ -29,7 +29,8 @@ final class PortfolioStore: ObservableObject {
     }
     private var derivedStates: [Set<UUID>: DerivedState] = [:]
     private struct ReportingPreferences: Codable { var currencies: [String: PortfolioCurrency] = [:] }
-    private let reportingStore: JSONStore<ReportingPreferences>
+    private static let reportingPreferencesKey = "portfolio.reportingCurrencies"
+    private let database: AppDatabase
     private var reportingPreferences: ReportingPreferences
     private var convertedTransactions: [UUID: PortfolioTransaction] = [:]
     private var convertedQuotes: [UUID: [String: PortfolioQuote]] = [:]
@@ -57,33 +58,47 @@ final class PortfolioStore: ObservableObject {
 
     init(
         initialSnapshot: PortfolioLedgerSnapshot? = nil, initialQuotes suppliedQuotes: [String: PortfolioQuote]? = nil,
-        fxService: any FXRateProviding = FXRateService.shared, storageDirectory: URL = AppSupport.directory
+        fxService: any FXRateProviding = FXRateService.shared, database: AppDatabase = .shared,
+        storageDirectory: URL = AppSupport.directory
     ) {
-        let portfolioStore = JSONStore<PortfolioLedgerSnapshot>(
-            filename: "portfolios.json", directory: storageDirectory)
+        database.importLegacyPortfolio(from: storageDirectory)
+        database.importLegacyJSON(
+            ReportingPreferences.self, filename: "portfolio_reporting_currencies.json", directory: storageDirectory
+        ) { try AppDatabase.setSetting($1, key: Self.reportingPreferencesKey, db: $0) }
+
         let quoteStore = JSONStore<[String: PortfolioQuote]>(
             filename: "portfolio_quotes.json", directory: storageDirectory)
-        let reportingStore = JSONStore<ReportingPreferences>(
-            filename: "portfolio_reporting_currencies.json", directory: storageDirectory)
-        let initial = initialSnapshot ?? portfolioStore.load() ?? .empty
+        var persisted: PortfolioLedgerSnapshot?
+        var canPersist = true
+        if initialSnapshot == nil {
+            do {
+                persisted = try database.portfolioLedger()
+            } catch {
+                // Never let an empty in-memory ledger overwrite one that failed to decode.
+                canPersist = false
+                #if DEBUG
+                    print("[PortfolioStore] Ledger unreadable; disabling writes: \(error.localizedDescription)")
+                #endif
+            }
+        }
+        let initial = initialSnapshot ?? persisted ?? .empty
         let loadedQuotes = suppliedQuotes ?? quoteStore.load() ?? [:]
         let referencedKeys = Set(PortfolioAccountingEngine.uniqueAssets(in: initial.transactions).map(\.key))
         let initialQuotes = loadedQuotes.filter { referencedKeys.contains($0.key) }
         self.fxService = fxService
         self.quoteStore = quoteStore
-        self.reportingStore = reportingStore
+        self.database = database
         snapshot = initial
         quotes = initialQuotes
-        reportingPreferences = reportingStore.load() ?? ReportingPreferences()
+        reportingPreferences =
+            database.setting(ReportingPreferences.self, key: Self.reportingPreferencesKey) ?? ReportingPreferences()
         initialReportingCurrency = Self.preferredCurrency(
             selectionID: initial.selectedPortfolioID, snapshot: initial, preferences: reportingPreferences)
         reportingCurrency = Self.nativeCurrency(selectionID: initial.selectedPortfolioID, snapshot: initial)
         isLoadingInitialValues = !initial.portfolios.isEmpty
         ledger = PortfolioLedger(
             snapshot: initial,
-            persist: { value in
-                portfolioStore.save(value)
-            })
+            persist: canPersist ? { value in try database.savePortfolioLedger(value) } : nil)
         if initialQuotes != loadedQuotes {
             quoteStore.save(initialQuotes)
         }
@@ -489,7 +504,7 @@ final class PortfolioStore: ObservableObject {
 
     private func saveReportingPreference(_ currency: PortfolioCurrency) {
         reportingPreferences.currencies[Self.preferenceKey(snapshot.selectedPortfolioID)] = currency
-        reportingStore.save(reportingPreferences)
+        database.setSetting(reportingPreferences, key: Self.reportingPreferencesKey)
     }
 
     private func loadReportingCurrencyForSelection() async {

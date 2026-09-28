@@ -599,7 +599,8 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         let service = CountingFXService()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+        let store = PortfolioStore(
+            initialSnapshot: snapshot, fxService: service, database: try .makeInMemory(), storageDirectory: directory)
 
         await store.selectReportingCurrency(.EUR)
         await store.selectReportingCurrency(.GBP)
@@ -625,7 +626,8 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         let service = CountingFXService()
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+        let store = PortfolioStore(
+            initialSnapshot: snapshot, fxService: service, database: try .makeInMemory(), storageDirectory: directory)
 
         await store.refreshQuotes()
 
@@ -645,7 +647,8 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         try Data(preference.utf8).write(
             to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
         let service = CountingFXService()
-        let store = PortfolioStore(initialSnapshot: snapshot, fxService: service, storageDirectory: directory)
+        let store = PortfolioStore(
+            initialSnapshot: snapshot, fxService: service, database: try .makeInMemory(), storageDirectory: directory)
 
         XCTAssertEqual(store.reportingCurrency, .USD)
         XCTAssertTrue(store.isLoadingInitialValues)
@@ -668,7 +671,8 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         try Data(preference.utf8).write(
             to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
         let store = PortfolioStore(
-            initialSnapshot: snapshot, fxService: CountingFXService(fails: true), storageDirectory: directory)
+            initialSnapshot: snapshot, fxService: CountingFXService(fails: true), database: try .makeInMemory(),
+            storageDirectory: directory)
 
         await store.initialize()
 

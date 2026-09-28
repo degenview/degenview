@@ -116,6 +116,52 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(reloaded.linesByInstrument[reloaded.key(ticker: "BTC", source: .binance)], [])
     }
 
+    // MARK: - Portfolio
+
+    func testLedgerRoundTripKeepsOrderPrecisionAndSelection() async throws {
+        let asset = PortfolioAsset(key: "Binance:BTCUSDT", symbol: "BTC", name: "Bitcoin", source: .binance)
+        let day = Date(timeIntervalSince1970: 1_735_689_600)
+        let database = self.database!
+        let ledger = PortfolioLedger(now: { day }, persist: { try database.savePortfolioLedger($0) })
+        let id = try await ledger.createPortfolio(name: "Main", currency: .USD)
+        _ = try await ledger.createPortfolio(name: "Other", currency: .EUR)
+        try await ledger.select(id)
+        try await ledger.add(
+            PortfolioTransaction(
+                portfolioID: id, asset: asset, type: .buy, quantity: Decimal(string: "0.123456789012345678")!,
+                price: Decimal(string: "97123.45")!, timestamp: day.addingTimeInterval(86_400)))
+        try await ledger.storeSnapshots(
+            [
+                PortfolioSnapshot(
+                    portfolioID: id, timestamp: day, value: 1, netContributions: 1, realizedPnL: 0,
+                    unrealizedPnL: 0, isComplete: true)
+            ], for: id, from: day)
+        try await ledger.add(
+            PortfolioTransaction(
+                portfolioID: id, asset: asset, type: .sell, quantity: Decimal(string: "0.1")!,
+                price: 100_000, timestamp: day.addingTimeInterval(2 * 86_400)))
+
+        let expected = await ledger.snapshot()
+        XCTAssertFalse(expected.invalidatedAfter.isEmpty)
+        XCTAssertEqual(try database.portfolioLedger(), expected)
+    }
+
+    func testLegacyPortfolioAndReportingCurrenciesImport() throws {
+        let portfolio = Portfolio(name: "Legacy", baseCurrency: .USD, createdAt: Date(), updatedAt: Date())
+        var legacy = PortfolioLedgerSnapshot()
+        legacy.portfolios = [portfolio]
+        legacy.selectedPortfolioID = portfolio.id
+        try writeLegacy(legacy, to: "portfolios.json")
+        try Data(#"{"currencies":{"all-portfolios":"EUR"}}"#.utf8)
+            .write(to: directory.appendingPathComponent("portfolio_reporting_currencies.json"))
+
+        let store = PortfolioStore(database: database, storageDirectory: directory)
+
+        XCTAssertEqual(store.snapshot, legacy)
+        XCTAssertTrue(exists("portfolios.migrated.json"))
+        XCTAssertTrue(exists("portfolio_reporting_currencies.migrated.json"))
+    }
+
     // MARK: - Helpers
 
     private func writeLegacy<T: Encodable>(_ value: T, to filename: String) throws {

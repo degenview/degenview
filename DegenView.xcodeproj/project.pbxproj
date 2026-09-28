@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
 		3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */; };
 		CF26E21BD8C65C8C7E32111F /* AppDatabase+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */; };
 		A24D9D482B61F5B6BC523F10 /* AppDatabase+Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */; };
@@ -198,6 +199,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Portfolio.swift"; sourceTree = "<group>"; };
 		B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabaseTests.swift"; sourceTree = "<group>"; };
 		6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Workspace.swift"; sourceTree = "<group>"; };
 		5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Schema.swift"; sourceTree = "<group>"; };
@@ -440,6 +442,7 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */,
 				6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */,
 				5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */,
 				25F781FB543C23EA5567E8E9 /* AppDatabase.swift */,
@@ -741,6 +744,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */,
 				CF26E21BD8C65C8C7E32111F /* AppDatabase+Workspace.swift in Sources */,
 				0B3A6A699CA2BD7F002BA89C /* AppDatabase+Schema.swift in Sources */,
 				B434136DF80AC5E2F3A79296 /* AppDatabase.swift in Sources */,

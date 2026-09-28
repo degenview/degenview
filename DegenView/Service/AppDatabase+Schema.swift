@@ -9,12 +9,8 @@ extension AppDatabase {
         migrator.registerMigration("v1_documents") { db in
             // Ordered lists of Codable values. The payload stays JSON so nested chart
             // configuration can evolve through Codable defaults instead of migrations.
-            for table in DocumentTable.allCases {
-                try db.create(table: table.rawValue) { t in
-                    t.primaryKey("id", .text)
-                    t.column("position", .integer).notNull()
-                    t.column("payload", .text).notNull()
-                }
+            for table in ["favorite", "saved_view", "tab"] {
+                try createDocumentTable(table, db: db)
             }
 
             try db.create(table: "window_group") { t in
@@ -39,17 +35,57 @@ extension AppDatabase {
             }
         }
 
+        migrator.registerMigration("v2_portfolio") { db in
+            try createDocumentTable("portfolio", db: db)
+
+            // Transaction order is significant to validation, so `position` preserves it.
+            try db.create(table: "portfolio_transaction") { t in
+                t.primaryKey("id", .text)
+                t.column("portfolio_id", .text).notNull()
+                t.column("timestamp", .double).notNull()
+                t.column("position", .integer).notNull()
+                t.column("payload", .text).notNull()
+            }
+            try db.create(
+                index: "portfolio_transaction_on_portfolio", on: "portfolio_transaction",
+                columns: ["portfolio_id", "timestamp"])
+
+            try db.create(table: "portfolio_snapshot") { t in
+                t.autoIncrementedPrimaryKey("rowid")
+                t.column("portfolio_id", .text).notNull()
+                t.column("timestamp", .double).notNull()
+                t.column("payload", .text).notNull()
+            }
+            try db.create(
+                index: "portfolio_snapshot_on_portfolio", on: "portfolio_snapshot",
+                columns: ["portfolio_id", "timestamp"])
+
+            try db.create(table: "setting") { t in
+                t.primaryKey("key", .text)
+                t.column("value", .text).notNull()
+            }
+        }
+
         return migrator
+    }
+
+    private static func createDocumentTable(_ name: String, db: Database) throws {
+        try db.create(table: name) { t in
+            t.primaryKey("id", .text)
+            t.column("position", .integer).notNull()
+            t.column("payload", .text).notNull()
+        }
     }
 }
 
 // MARK: - Ordered documents
 
 /// Tables holding one ordered list of Codable values, keyed by the value's UUID.
-enum DocumentTable: String, CaseIterable {
+enum DocumentTable: String {
     case favorite
     case savedView = "saved_view"
     case tab
+    case portfolio
 }
 
 extension AppDatabase {
@@ -106,5 +142,47 @@ extension AppDatabase {
 
     static func json<T: Encodable>(_ value: T) throws -> String {
         String(decoding: try encoder.encode(value), as: UTF8.self)
+    }
+}
+
+// MARK: - Settings
+
+/// Single Codable values that don't warrant a table, keyed by a dotted name.
+extension AppDatabase {
+    static func setting<T: Decodable>(_ type: T.Type, key: String, db: Database) throws -> T? {
+        guard let value = try String.fetchOne(db, sql: "SELECT value FROM setting WHERE key = ?", arguments: [key])
+        else { return nil }
+        return try decoder.decode(T.self, from: Data(value.utf8))
+    }
+
+    /// Nil deletes the key.
+    static func setSetting<T: Encodable>(_ value: T?, key: String, db: Database) throws {
+        guard let value else {
+            try db.execute(sql: "DELETE FROM setting WHERE key = ?", arguments: [key])
+            return
+        }
+        try db.execute(
+            sql: "INSERT OR REPLACE INTO setting (key, value) VALUES (?, ?)", arguments: [key, try json(value)])
+    }
+
+    func setting<T: Decodable>(_ type: T.Type, key: String) -> T? {
+        do {
+            return try reader.read { try Self.setting(type, key: key, db: $0) }
+        } catch {
+            #if DEBUG
+                print("[AppDatabase] Could not read setting \(key): \(error.localizedDescription)")
+            #endif
+            return nil
+        }
+    }
+
+    func setSetting<T: Encodable>(_ value: T?, key: String) {
+        do {
+            try writer.write { try Self.setSetting(value, key: key, db: $0) }
+        } catch {
+            #if DEBUG
+                print("[AppDatabase] Could not write setting \(key): \(error.localizedDescription)")
+            #endif
+        }
     }
 }

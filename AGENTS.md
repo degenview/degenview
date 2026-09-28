@@ -24,7 +24,7 @@ Requires Xcode 16+, macOS 14+.
 - **No SwiftUI Charts** — candles are hand-drawn via AppKit `Canvas`
 - **Protocol abstraction** for data sources: `TickerDataSource` protocol, `DataSourceFactory` singleton
 - **Persistence**: user data lives in SQLite (`degenview.sqlite`, WAL) through
-  `AppDatabase`. Tabs, saved views, favorites, and drawings are migrated; the rest still
+  `AppDatabase`. Tabs, saved views, favorites, drawings, and portfolios are migrated; the rest still
   uses `JSONStore<T>`. Caches stay in `JSONStore<T>` for good. Schema changes are new
   `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one.
   Legacy JSON is imported once by the owning store and renamed to `*.migrated.json`
