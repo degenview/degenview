@@ -30,6 +30,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 struct AppSettingsView: View {
     @AppStorage("settingsTab") private var selectedTab: SettingsTab = .appearance
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     var body: some View {
         HStack(spacing: 0) {
@@ -48,6 +49,7 @@ struct AppSettingsView: View {
                 .padding(.bottom, 20)
         }
         .frame(width: 740, height: 520)
+        .preferredColorScheme(appTheme.colorScheme)
     }
 
     @ViewBuilder

@@ -3,6 +3,7 @@ import SwiftUI
 struct ScriptManagerView: View {
     @StateObject private var model = ScriptManagerViewModel()
     @State private var pendingDelete: LocalScript?
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     var body: some View {
         VStack(spacing: 0) {
@@ -89,6 +90,7 @@ struct ScriptManagerView: View {
         } message: { script in
             Text("The script file will be moved to the Trash.")
         }
+        .preferredColorScheme(appTheme.colorScheme)
     }
 }
 
