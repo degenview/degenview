@@ -67,44 +67,56 @@ struct AddTickerSheet: View {
         }
     }
 
+    private var tabPicker: some View {
+        Picker("", selection: $selectedTab) {
+            ForEach(
+                Tab.allCases.filter {
+                    ($0 != .portfolio || onAddPortfolio != nil)
+                        && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
+                        && ($0 != .models || onAddBitcoinPowerLaw != nil)
+                }, id: \.self
+            ) { tab in
+                Text(tab.rawValue).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title)
+            Label(title, systemImage: "plus.circle.fill")
                 .font(.headline)
 
-            Picker("", selection: $selectedTab) {
-                ForEach(
-                    Tab.allCases.filter {
-                        ($0 != .portfolio || onAddPortfolio != nil)
-                            && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
-                            && ($0 != .models || onAddBitcoinPowerLaw != nil)
-                    }, id: \.self
-                ) { tab in
-                    Text(tab.rawValue).tag(tab)
+            // Pinned at its natural size: on a selection change the segmented control reverts
+            // to equal-width segments, so any narrower proposed width makes it jump between
+            // the two layouts and drag the rest of the sheet's content with it.
+            tabPicker
+                .fixedSize()
+                .frame(maxWidth: .infinity)
+
+            ZStack(alignment: .topLeading) {
+                switch selectedTab {
+                case .crypto:
+                    cryptoTab
+                case .stocks:
+                    stockTab
+                case .polymarket:
+                    PolymarketSearchPane(
+                        searchVM: polymarketVM,
+                        searchText: $polymarketText,
+                        sizing: .fillAvailable,
+                        showsStatus: false,
+                        onCommitResult: { addTicker($0) }
+                    )
+                case .coinMarketCap:
+                    coinMarketCapTab
+                case .portfolio:
+                    portfolioTab
+                case .models:
+                    modelsTab
                 }
             }
-            .pickerStyle(.segmented)
-
-            switch selectedTab {
-            case .crypto:
-                cryptoTab
-            case .stocks:
-                stockTab
-            case .polymarket:
-                PolymarketSearchPane(
-                    searchVM: polymarketVM,
-                    searchText: $polymarketText,
-                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
-                    showsStatus: false,
-                    onCommitResult: { addTicker($0) }
-                )
-            case .coinMarketCap:
-                coinMarketCapTab
-            case .portfolio:
-                portfolioTab
-            case .models:
-                modelsTab
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
 
             statusRows
 
@@ -143,9 +155,8 @@ struct AddTickerSheet: View {
             }
         }
         .padding(24)
-        .frame(width: UI.addTickerSheetWidth)
-        .fixedSize(horizontal: false, vertical: true)
-        .animation(.easeInOut(duration: 0.18), value: selectedTab)
+        // Fixed rather than content-hugging, so switching tabs never changes the sheet's size.
+        .frame(width: UI.addTickerSheetWidth, height: UI.addTickerSheetHeight)
         .animation(.easeInOut(duration: 0.18), value: searchVM.searchResults.values.reduce(0) { $0 + $1.count })
         .animation(.easeInOut(duration: 0.18), value: stockVM.searchResults.values.reduce(0) { $0 + $1.count })
         .animation(.easeInOut(duration: 0.18), value: polymarketVM.groups.reduce(0) { $0 + $1.results.count })
@@ -215,7 +226,7 @@ struct AddTickerSheet: View {
     }
 
     private var coinMarketCapTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Market-wide CoinMarketCap indices").font(.caption).foregroundStyle(.secondary)
             ForEach(CoinMarketCapChartType.allCases) { type in
                 Button {
@@ -259,23 +270,15 @@ struct AddTickerSheet: View {
             )
 
             if stockVM.searchResults.isEmpty && !stockVM.isSearching {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Popular US stocks and ETFs · free IEX feed")
-                        .font(.caption).foregroundStyle(.secondary)
-                    LazyVGrid(
-                        columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
-                    ) {
-                        ForEach(stockSuggestions, id: \.self) { symbol in
-                            Button(symbol) {
-                                stockText = symbol
-                                stockVM.selectedResult = TickerSearchResult(
-                                    symbol: symbol, fullSymbol: symbol, source: .alpaca, price: nil
-                                )
-                                if AlpacaCredentialsStore.isConfigured { stockVM.scheduleSearch(query: symbol) }
-                            }
-                            .buttonStyle(.bordered).controlSize(.small)
-                        }
-                    }
+                SuggestionChipGrid(
+                    caption: "Popular US stocks and ETFs · free IEX feed",
+                    items: stockSuggestions
+                ) { symbol in
+                    stockText = symbol
+                    stockVM.selectedResult = TickerSearchResult(
+                        symbol: symbol, fullSymbol: symbol, source: .alpaca, price: nil
+                    )
+                    if AlpacaCredentialsStore.isConfigured { stockVM.scheduleSearch(query: symbol) }
                 }
             }
 
@@ -283,7 +286,7 @@ struct AddTickerSheet: View {
                 TickerSearchResultList(
                     searchVM: stockVM,
                     sources: [.alpaca],
-                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
+                    sizing: .fillAvailable,
                     onCommitResult: { addTicker($0) }
                 )
             }
@@ -308,23 +311,9 @@ struct AddTickerSheet: View {
 
             // Suggestions
             if searchVM.searchResults.isEmpty && !searchVM.isSearching {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Suggestions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    LazyVGrid(
-                        columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
-                    ) {
-                        ForEach(suggestions, id: \.self) { ticker in
-                            Button(ticker) {
-                                inputText = ticker
-                                searchVM.scheduleSearch(query: ticker)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
+                SuggestionChipGrid(caption: "Suggestions", items: suggestions) { ticker in
+                    inputText = ticker
+                    searchVM.scheduleSearch(query: ticker)
                 }
             }
 
@@ -333,7 +322,7 @@ struct AddTickerSheet: View {
                 TickerSearchResultList(
                     searchVM: searchVM,
                     sources: searchVM.orderedSources,
-                    sizing: .contentFitting(maxHeight: UI.addTickerResultsMaxHeight),
+                    sizing: .fillAvailable,
                     onCommitResult: { addTicker($0) }
                 )
             }

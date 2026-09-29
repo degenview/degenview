@@ -79,6 +79,46 @@ private struct SearchResultListSizeModifier: ViewModifier {
     }
 }
 
+/// Quick-fill suggestion chips shown before the user has typed a query.
+struct SuggestionChipGrid: View {
+    let caption: String
+    let items: [String]
+    let onSelect: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            LazyVGrid(
+                columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
+            ) {
+                ForEach(items, id: \.self) { item in
+                    Button(item) { onSelect(item) }
+                        .buttonStyle(SuggestionChipButtonStyle())
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct SuggestionChipButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.caption.weight(.medium))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity)
+            .background(
+                Color.secondary.opacity(configuration.isPressed ? 0.22 : 0.14), in: Capsule()
+            )
+            .foregroundStyle(.primary)
+    }
+}
+
 /// Search text field with an inline progress spinner.
 ///
 /// Shared by every search pane in both sheets — crypto and Polymarket, add and edit.
@@ -164,7 +204,7 @@ struct SelectedResultBanner: View {
             Spacer(minLength: 0)
         }
         .padding(8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -197,7 +237,7 @@ struct PolymarketSearchPane: View {
     }
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             SearchFieldRow(
                 placeholder: "Search markets (e.g. Bitcoin, Fed, election)",
                 text: $searchText,
