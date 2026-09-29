@@ -56,7 +56,10 @@ DegenView/
 │   ├── Runtime/
 │   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
 │   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
-│   │   └── PineEvaluation.swift       # Compile + run off the main thread, as one outcome value
+│   │   ├── PineExecutionHost.swift    # Actor around one controller: serialized rebuild / ingest / sync
+│   │   ├── PineExecutionController.swift # Aggregator + scheduler + session for one script; history, ticks, REST reconcile
+│   │   ├── PineCandleAggregator.swift # Bar lifecycle: identity, dedupe, close, gap / correction detection
+│   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
 │   ├── Editor/                        # Script editor text view, highlighter, word ranges, diagnostic mapping
@@ -144,8 +147,12 @@ DegenView/
     and caches the result as a projection. Switching back to an already-computed currency
     reuses its cached projection instead of re-converting or re-fetching rates.
 11. Each market `ChartViewModel` owns an optional Pine configuration. Compilation and
-    evaluation run in a generation-checked detached task; the runtime receives only an
-    immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
+    execution run behind a `PineExecutionHost`, fed in order through an `AsyncStream` of
+    `PineFeedOperation`s (rebuild, live candle, REST snapshot) and applied only if its
+    generation is still current. A rebuild replays history once; afterwards each WebSocket
+    tick, live bar, or REST refresh becomes an execution event, so realtime bars roll back and
+    commit like TradingView's (see `pine-compatibility.md`, Execution model). The runtime
+    receives only an immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
     persisted separately from last-valid applied source, so invalid edits do not remove
     the active result. Pine outputs are never shared between tabs or cards. A `strategy()`
     script's broker emulator is a value inside the runtime's per-bar state, so realtime

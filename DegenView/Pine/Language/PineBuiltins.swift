@@ -31,11 +31,14 @@ enum PineBuiltins {
             "strategy.percent_of_equity", "strategy.commission.percent",
             "strategy.commission.cash_per_order", "strategy.commission.cash_per_contract",
             "strategy.oca.none", "strategy.oca.cancel", "strategy.oca.reduce",
-            "alert.freq_all", "alert.freq_once_per_bar", "alert.freq_once_per_bar_close",
             "format.inherit", "format.price", "format.volume", "format.percent", "format.mintick",
             "order.ascending", "order.descending",
         ]
         for name in names { table[name] = .string(name) }
+        for frequency in [PineAlertFrequency.all, .oncePerBar, .oncePerBarClose] {
+            let name = PineAlertFrequency.pinePrefix + frequency.rawValue
+            table[name] = .string(name)
+        }
         return table
     }()
 

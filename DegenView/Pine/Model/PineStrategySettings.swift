@@ -15,4 +15,6 @@ struct PineStrategySettings: Codable, Equatable, Sendable {
     var pyramiding = 1
     var currency: String?
     var processOrdersOnClose = false
+    /// `calc_on_every_tick`: recalculate on every realtime update instead of only at bar close.
+    var calcOnEveryTick = false
 }

@@ -21,6 +21,55 @@ event commits. The runtime exposes `barstate.isfirst`, `islast`, `ishistory`, `i
 `isnew`, `isconfirmed`, and `islastconfirmedhistory`. Replay passes only `replayKlines`, so
 canonical future bars are unavailable to scripts.
 
+### Execution model
+
+Execution is event-driven. Market data decides when a script runs; the runtime decides how.
+
+```
+market update → PineCandleAggregator → PineExecutionScheduler → PineRuntimeSession.execute
+   (WS tick, REST      bar identity,        does this script       rollback, run top to bottom,
+    refresh, live bar)  dedupe, lifecycle    run for this event?    commit when the bar is confirmed
+```
+
+Each chart owns one `PineExecutionHost` (an actor around a `PineExecutionController`, which owns
+the aggregator and the session). There is no timer and no polling inside Pine: events come from
+the existing WebSocket callback, the existing 5 s refresh, and rebuild triggers.
+
+- **Load / rebuild.** A new host recalculates from scratch: closed bars run as `.historical` and
+  commit one by one; a still-forming final bar runs as the first realtime tick (`isnew`). A rebuild
+  happens on script apply or edit, input or theme change, symbol or timeframe change, replay
+  entry or exit, and whenever the feed can no longer be reconciled with committed history. No state
+  crosses a rebuild.
+- **Bar identity** is the bar's open time within a dataset (`PineDatasetKey`: `<source>:<ticker>`
+  plus timeframe). The aggregator drops duplicates, late ticks, and repeats of an already closed
+  bar. `PineRuntimeSession.execute` independently refuses (`PineExecutionRejection`) a bar older
+  than the last one executed or one already committed.
+- **Realtime.** Each tick runs on a copy of the last committed state (`working = committed`), so
+  ordinary variables, `var`, call-site histories, arrays, plots, drawings, and the broker roll back.
+  `varip` values live in `session.intrabar` and are restored into each recalculation of the same
+  bar. Only the closing execution commits, so a bar contributes exactly one series entry no matter
+  how many ticks it saw.
+- **Close** is confirmed by the provider's flag (Binance `x`) or, for REST-only sources, by the
+  next bar arriving. It is never inferred from a clock.
+- **Scheduling** (`PineExecutionScheduler`): indicators and libraries execute on every event.
+  Strategies execute on history and on each realtime bar's closing update; with
+  `calc_on_every_tick=true` they also execute on every tick, with the same rollback. Ticks a
+  strategy skips still update the aggregator.
+- **Alerts** are raised during execution and collected per execution. Historical executions
+  record alerts (they appear in the report list) but never emit them for delivery; only
+  executions on a realtime bar do. `alert.freq_once_per_bar` uses a per-bar ledger that survives
+  rollback, `freq_once_per_bar_close` requires the closing execution, `freq_all` fires on every
+  execution. Events carry `frequency`, `isRealtime`, and `isConfirmed`.
+- **Multiple scripts** have separate hosts, sessions, and aggregators; nothing mutable is shared.
+  The chart UI applies one script per chart today.
+
+`barstate.*` follows the [Pine execution model](https://www.tradingview.com/pine-script-docs/language/execution-model/):
+on a historical bar `isnew` and `isconfirmed` are both true. On a realtime bar the first execution
+has `isrealtime`, `isnew`, and not `isconfirmed`; later ticks have neither `isnew` nor
+`isconfirmed`; the closing execution has `isconfirmed` and not `isnew`. In this engine a default
+strategy executes only on the closing update, so there `isnew` and `isconfirmed` are both true;
+that combination was derived from the rules above, not checked against TradingView.
+
 ## Supported
 
 - Required `//@version=6` and exactly one `indicator()` or `strategy()` declaration.
@@ -122,7 +171,8 @@ meets (`PINE4001`–`PINE4006`).
 `strategy()` scripts run through a broker emulator (`PineBrokerEmulator`). Settings honoured:
 `initial_capital`, `default_qty_type`/`default_qty_value` (fixed, cash, percent of equity),
 `commission_type`/`commission_value` (percent, cash per order, cash per contract), `slippage`
-(ticks), `pyramiding`, `process_orders_on_close`, and `currency`. `margin_*`,
+(ticks), `pyramiding`, `process_orders_on_close`, `calc_on_every_tick`, and `currency`.
+`calc_on_order_fills`, `close_entries_rule`, `margin_*`,
 `use_bar_magnifier` and other arguments report `PINE9001`.
 
 - Orders queued on bar N fill on bar N+1 (or at bar N's close with `process_orders_on_close`).
@@ -164,9 +214,38 @@ unknown-function diagnostics; a `request.*` call is reported (`PINE9003`) wherev
 appears, including inside an assignment or argument. Reading a plain identifier that is
 not a variable, series, or builtin raises `PINE4008` at runtime instead of silently
 evaluating to a string; dotted names such as `size.small` or `shape.circle` remain
-enumeration constants. An integer literal too large for an `int` is `PINE2014`. REST reconciliation reevaluates the visible canonical
-series. Binance carries explicit close flags and accepts new-bar transitions; Alpaca bars
-are still reconciled through the existing timeframe aggregator.
+enumeration constants. An integer literal too large for an `int` is `PINE2014`. A REST refresh is
+reconciled against committed bars (`PineExecutionController.sync`): new bars become close and open
+events, an identical snapshot changes nothing, and a snapshot that disagrees with committed history
+(corrected bar, missing bar, longer window) rebuilds the script. Binance carries explicit close
+flags; other sources infer a close from the next bar.
+
+### Known differences from TradingView (realtime execution)
+
+Verified against the official execution-model and strategy pages only where stated; nothing else is
+claimed as parity.
+
+- **Order fills on realtime bars.** Orders fill at the next bar's open on history and realtime alike,
+  including with `calc_on_every_tick=true`. TradingView fills on the next realtime tick, and order
+  data produced on realtime ticks is not rolled back there; here the broker rolls back with the rest
+  of the state. `calc_on_order_fills` is accepted and ignored.
+- **`varip` and every-tick strategies are not reproducible from history.** After a reload only
+  OHLCV bars exist, so each historical bar is one execution. A `varip` counter that reached 4 while
+  the bar was live starts at 1 on recalculation, and an every-tick strategy sees one execution per
+  bar. Recalculation is deterministic for a given source, inputs, and bars; realtime-only state never
+  leaks into it.
+- **Close detection** uses the stream flag or the next bar. A WebSocket reconnect can miss a bar's
+  closing message; the next REST refresh reconciles (a differing final value rebuilds), but
+  an alert for that bar's close is not sent retroactively.
+- **A forming bar at load** runs as a realtime tick only when its open time and the bar length say it
+  is still open. Indicators execute it at once; a default strategy waits for its close.
+- **Sources without a stream** (CoinGecko, DEX pairs) update once per 5 s refresh, so an indicator
+  sees at most one realtime execution per refresh, and `freq_all` alerts fire per execution, not per
+  trade. Alpaca folds minute bars into the chart bar and feeds that as a stream tick.
+- **Rollback cost.** State is two value copies. The first append to each history or plot array in a
+  recalculation copies it, so a tick costs O(bars) and a full load O(bars²) (see above). Fine at
+  chart sizes; a journaled or truncating rollback is the next step if it matters.
+- **One script per chart** in the UI; the engine itself supports any number.
 
 ## Conformance and performance
 

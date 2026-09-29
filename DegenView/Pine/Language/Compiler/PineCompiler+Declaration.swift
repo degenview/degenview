@@ -132,6 +132,7 @@ extension PineCompiler {
             if let n = value.number, n >= 0, n < maxIntegerSetting { settings.pyramiding = Int(n) }
         case ("currency", .string(let v)): settings.currency = v
         case ("process_orders_on_close", .bool(let v)): settings.processOrdersOnClose = v
+        case ("calc_on_every_tick", .bool(let v)): settings.calcOnEveryTick = v
         default: break
         }
         metadata.strategy = settings

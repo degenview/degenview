@@ -8,32 +8,29 @@ extension PineRuntimeSession {
             let b = try bind(call, ["message", "freq"], &context)
             let message = b["message"].map { PineFormat.format($0, nil, mintick: mintick) } ?? ""
             recordAlert(
-                message, frequency: b["freq"].textValue ?? "alert.freq_once_per_bar", site: site, context)
+                message, frequency: PineAlertFrequency(pineName: b["freq"].textValue) ?? .oncePerBar,
+                site: site, context)
         } else {
             let b = try bind(call, ["condition", "title", "message"], &context)
             guard b["condition"]?.bool == true else { return .void }
             recordAlert(
-                b["message"].textValue ?? b["title"].textValue ?? "", frequency: "alert.freq_all", site: site,
-                context)
+                b["message"].textValue ?? b["title"].textValue ?? "", frequency: .all, site: site, context)
         }
         return .void
     }
 
     private func recordAlert(
-        _ message: String, frequency: String, site: Int, _ context: PineRuntimeContext
+        _ message: String, frequency: PineAlertFrequency, site: Int, _ context: PineRuntimeContext
     ) {
-        if frequency == "alert.freq_once_per_bar_close", !context.flags.isConfirmed { return }
-        if frequency == "alert.freq_once_per_bar",
-            working.alerts.contains(where: { $0.site == site && $0.bar == working.barIndex })
-        {
-            return
-        }
-        working.alerts.append(
-            .init(
-                id: allocate(), site: site, bar: working.barIndex, time: context.bar.openTime,
-                message: message))
+        if frequency == .oncePerBarClose, !context.flags.isConfirmed { return }
+        if frequency == .oncePerBar, !oncePerBarLedger.insert(site).inserted { return }
+        let event = PineAlertEvent(
+            id: allocate(), site: site, bar: working.barIndex, time: context.bar.openTime, message: message,
+            frequency: frequency, isRealtime: context.flags.isRealtime, isConfirmed: context.flags.isConfirmed)
+        working.alerts.append(event)
         if working.alerts.count > Self.alertLimit {
             working.alerts.removeFirst(working.alerts.count - Self.alertLimit)
         }
+        if event.isRealtime { emit(event) }
     }
 }

@@ -8,4 +8,9 @@ struct PineAlertEvent: Sendable, Identifiable, Equatable {
     var bar: Int
     var time: Date
     var message: String
+    var frequency = PineAlertFrequency.oncePerBar
+    /// Whether the execution ran on a realtime bar. Historical executions never notify.
+    var isRealtime = false
+    /// Whether the execution was the bar's closing one.
+    var isConfirmed = false
 }

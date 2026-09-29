@@ -19,7 +19,16 @@ final class PineRuntimeSession {
     var working = PineRuntimeState()
     /// `varip` values, which survive the rollback between realtime ticks of one bar.
     var intrabar: [String: PineRuntimeValue] = [:]
+    /// Open time of the bar most recently executed, confirmed or not.
     var lastOpenTime: Date?
+    /// Open time of the bar most recently committed. Anything at or before it is stale.
+    var lastCommittedOpenTime: Date?
+    /// Call sites that already fired `alert.freq_once_per_bar` on the current bar. Like `intrabar` it
+    /// escapes rollback, otherwise every realtime tick would fire the alert again.
+    var oncePerBarLedger: Set<Int> = []
+    /// Alerts raised by the latest `execute` on a realtime bar. Historical executions never populate it, so
+    /// loading history cannot notify.
+    private(set) var emittedAlerts: [PineAlertEvent] = []
     /// `syminfo.mintick`. When not supplied it is inferred from bar prices on `evaluate`.
     private let suppliedMintick: Double?
     var mintick: Double
@@ -77,15 +86,32 @@ final class PineRuntimeSession {
         working = committed
         intrabar = [:]
         lastOpenTime = nil
+        lastCommittedOpenTime = nil
+        oncePerBarLedger = []
+        emittedAlerts = []
         barSeconds = 0
         mintick = suppliedMintick ?? Self.defaultMintick
     }
 
     // MARK: - Running
 
+    /// Runs `bars` as one all-historical pass and returns the resulting output.
     func evaluate(bars: [KlineData]) throws -> PineRuntimeResult {
+        let states = try load(history: bars)
+        return .init(output: output(), diagnostics: [], barStates: states)
+    }
+
+    /// Resets the session and executes `bars` as confirmed history, committing each. Pass
+    /// `precedesLiveBar` when a forming bar will follow through `execute`, so the last history bar is
+    /// not reported as `barstate.islast`. `barSeconds` seeds the bar length when history is too short to
+    /// learn it.
+    @discardableResult
+    func load(history bars: [KlineData], precedesLiveBar: Bool = false, barSeconds seed: Double? = nil)
+        throws -> [PineBarFlags]
+    {
         reset(inputs: inputs)
         if suppliedMintick == nil { mintick = Self.inferredMintick(bars) }
+        if let seed, seed > 0 { barSeconds = seed }
         if bars.count > 1 {
             barSeconds = bars[bars.count - 1].openTime.timeIntervalSince(bars[bars.count - 2].openTime)
         }
@@ -99,10 +125,13 @@ final class PineRuntimeSession {
             if Date().timeIntervalSince(start) > limits.deadline {
                 throw PineDiagnostic.error("PINE8007", .resource, "Evaluation deadline exceeded.", .zero)
             }
+            let isLastHistory = index == bars.count - 1
             states.append(
-                try execute(.init(candle: bar, phase: .historical), isLast: index == bars.count - 1))
+                try execute(
+                    .init(candle: bar, phase: .historical), isLast: isLastHistory && !precedesLiveBar,
+                    isLastHistory: isLastHistory))
         }
-        return .init(output: output(), diagnostics: [], barStates: states)
+        return states
     }
 
     /// Smallest decimal step that represents every recent price exactly (capped at 1e-8).
@@ -121,10 +150,22 @@ final class PineRuntimeSession {
     }
 
     /// Runs the script on one bar event. Historical bars and confirmed realtime bars commit;
-    /// a realtime tick runs on a scratch copy of the state.
+    /// a realtime tick runs on a scratch copy of the state (rollback). Bar identity is the open time:
+    /// an event for a bar older than the last one executed, or for one already committed, is rejected
+    /// with `PineExecutionRejection` rather than advancing the series a second time.
     @discardableResult
-    func execute(_ event: PineBarEvent, isLast: Bool = true) throws -> PineBarFlags {
-        let isNew = event.candle.openTime != lastOpenTime
+    func execute(_ event: PineBarEvent, isLast: Bool = true, isLastHistory: Bool? = nil) throws -> PineBarFlags {
+        let openTime = event.candle.openTime
+        if let committedTime = lastCommittedOpenTime, openTime <= committedTime {
+            throw openTime < committedTime ? PineExecutionRejection.staleBar : .duplicateBar
+        }
+        if let previous = lastOpenTime, openTime < previous { throw PineExecutionRejection.staleBar }
+        let isNew = openTime != lastOpenTime
+        if isNew {
+            intrabar = [:]
+            oncePerBarLedger = []
+        }
+        emittedAlerts = []
         if isNew, let previous = lastOpenTime {
             barSeconds = event.candle.openTime.timeIntervalSince(previous)
         }
@@ -136,7 +177,7 @@ final class PineRuntimeSession {
         if !isNew { for (key, value) in intrabar { working.variables[key] = value } }
         let flags = PineBarFlags(
             isFirst: working.barIndex == 0, isLast: isLast, isHistory: !realtime, isRealtime: realtime,
-            isNew: isNew, isConfirmed: confirmed, isLastConfirmedHistory: !realtime && isLast)
+            isNew: isNew, isConfirmed: confirmed, isLastConfirmedHistory: !realtime && (isLastHistory ?? isLast))
         var context = PineRuntimeContext(bar: event.candle, flags: flags)
         if isStrategy {
             working.broker.process(bar: event.candle, barIndex: working.barIndex, mintick: mintick)
@@ -147,8 +188,9 @@ final class PineRuntimeSession {
             commitHistories(event.candle)
             committed = working
             intrabar = [:]
+            lastCommittedOpenTime = openTime
         }
-        lastOpenTime = event.candle.openTime
+        lastOpenTime = openTime
         return flags
     }
 
@@ -159,6 +201,9 @@ final class PineRuntimeSession {
         }
         working.broker.recordEquity(close: candle.closePrice)
     }
+
+    /// Notes an alert this execution raised on a realtime bar. Called by the alert builtins.
+    func emit(_ alert: PineAlertEvent) { emittedAlerts.append(alert) }
 
     func output() -> PineVisualOutput {
         .init(
