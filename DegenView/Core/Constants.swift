@@ -315,8 +315,11 @@ enum UI {
     /// it to be reused — enough of the title bar to grab.
     static let windowRestoreMinVisibleWidth: CGFloat = 160
     static let windowRestoreMinVisibleHeight: CGFloat = 80
-    /// Sheet frame width for Add Ticker.
-    static let addTickerSheetWidth: CGFloat = 600
+    /// Sheet frame dimensions for Add Ticker. The width fits the tab bar's natural
+    /// (equal-segment) size with all six tabs; the height fits the tallest static tab
+    /// (CoinMarketCap), and search results scroll within whatever is left.
+    static let addTickerSheetWidth: CGFloat = 760
+    static let addTickerSheetHeight: CGFloat = 560
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.
