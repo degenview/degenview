@@ -10,14 +10,12 @@ final class DrawingStore: ObservableObject {
     @Published private(set) var linesByInstrument: [String: [TrendLine]]
     @Published private(set) var fibsByInstrument: [String: [FibonacciRetracementDrawing]]
 
-    private let store: JSONStore<[String: [TrendLine]]>
-    private let fibStore: JSONStore<[String: [FibonacciRetracementDrawing]]>
+    private let database: AppDatabase
 
-    init(directory: URL = AppSupport.directory) {
-        store = JSONStore(filename: "drawings.json", directory: directory)
-        fibStore = JSONStore(filename: "fib-drawings.json", directory: directory)
-        linesByInstrument = store.load() ?? [:]
-        fibsByInstrument = fibStore.load() ?? [:]
+    init(database: AppDatabase = .shared) {
+        self.database = database
+        linesByInstrument = database.drawings(TrendLine.self, kind: .trendLine)
+        fibsByInstrument = database.drawings(FibonacciRetracementDrawing.self, kind: .fibonacci)
     }
 
     func fibs(ticker: String, source: DataSourceType) -> [FibonacciRetracementDrawing] {
@@ -25,8 +23,9 @@ final class DrawingStore: ObservableObject {
     }
 
     func save(_ fibs: [FibonacciRetracementDrawing], ticker: String, source: DataSourceType) {
-        fibsByInstrument[key(ticker: ticker, source: source)] = fibs
-        fibStore.save(fibsByInstrument)
+        let instrument = key(ticker: ticker, source: source)
+        fibsByInstrument[instrument] = fibs
+        database.saveDrawings(fibs, instrument: instrument, kind: .fibonacci)
     }
 
     func key(ticker: String, source: DataSourceType) -> String {
@@ -39,18 +38,8 @@ final class DrawingStore: ObservableObject {
 
     func save(_ lines: [TrendLine], ticker: String, source: DataSourceType) {
         let instrument = key(ticker: ticker, source: source)
-        // Keep an explicit empty entry. Besides representing deletion, it prevents an
-        // old saved view containing legacy lines from importing them again later.
         linesByInstrument[instrument] = lines
-        store.save(linesByInstrument)
-    }
-
-    /// Moves lines persisted by older versions out of a tab/view config. An existing
-    /// instrument entry wins, since it is already the shared source of truth.
-    func importLegacy(_ lines: [TrendLine], ticker: String, source: DataSourceType) {
-        let instrument = key(ticker: ticker, source: source)
-        guard !lines.isEmpty, linesByInstrument[instrument] == nil else { return }
-        save(lines, ticker: ticker, source: source)
+        database.saveDrawings(lines, instrument: instrument, kind: .trendLine)
     }
 
     func setLine(_ line: TrendLine?, at preferredIndex: Int, instrument: String, id: UUID) {
@@ -58,7 +47,7 @@ final class DrawingStore: ObservableObject {
         lines.removeAll { $0.id == id }
         if let line { lines.insert(line, at: min(max(0, preferredIndex), lines.count)) }
         linesByInstrument[instrument] = lines
-        store.save(linesByInstrument)
+        database.saveDrawings(lines, instrument: instrument, kind: .trendLine)
     }
 
     func setFibonacci(
@@ -68,6 +57,6 @@ final class DrawingStore: ObservableObject {
         drawings.removeAll { $0.id == id }
         if let drawing { drawings.insert(drawing, at: min(max(0, preferredIndex), drawings.count)) }
         fibsByInstrument[instrument] = drawings
-        fibStore.save(fibsByInstrument)
+        database.saveDrawings(drawings, instrument: instrument, kind: .fibonacci)
     }
 }

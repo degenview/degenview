@@ -107,7 +107,7 @@ struct PriceAlertEditor: View {
         alert.note = note
         alert.state = .active
         if await store.isIdentical(alert) { identical = true }
-        await store.save(alert)
+        store.save(alert)
         dismiss()
     }
 }

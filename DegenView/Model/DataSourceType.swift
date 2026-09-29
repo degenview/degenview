@@ -203,10 +203,6 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Confirmed bullish/bearish Supertrend change markers. nil = off.
     var showTrendFlips: Bool?
 
-    /// Legacy trend-line storage. New versions migrate this into DrawingStore and
-    /// always write nil so drawings are not attached to tabs or saved views.
-    var trendLines: [TrendLine]?
-
     /// Human-readable label shown on the card. Only set for sources whose `symbol`
     /// is an opaque identifier — a Polymarket CLOB token id is 77 digits, so the
     /// market question has to ride along. Nil for crypto (the symbol reads fine).
@@ -233,7 +229,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         bearishColorHex: String? = nil, yAxisDecimalPlaces: Int? = nil, yZoom: Double? = nil,
         showVolume: Bool? = nil, showRSI: Bool? = nil, showEMA: Bool? = nil,
         emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
-        trendLines: [TrendLine]? = nil, displayName: String? = nil,
+        displayName: String? = nil,
         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
         coinMarketCapChart: CoinMarketCapChartConfig? = nil,
         bitcoinPowerLaw: BitcoinPowerLawConfig? = nil,
@@ -253,7 +249,6 @@ struct TickerConfig: Codable, Equatable, Hashable {
         self.emaPeriod = emaPeriod
         self.showBollinger = showBollinger
         self.showTrendFlips = showTrendFlips
-        self.trendLines = trendLines
         self.displayName = displayName
         self.pmSeries = pmSeries
         self.portfolioChart = portfolioChart
@@ -266,7 +261,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     private enum CodingKeys: String, CodingKey {
         case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
             yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
-            trendLines, displayName, pmSeries, portfolioChart, coinMarketCapChart, bitcoinPowerLaw, pine, scripts
+            displayName, pmSeries, portfolioChart, coinMarketCapChart, bitcoinPowerLaw, pine, scripts
     }
 
     init(from decoder: Decoder) throws {
@@ -284,7 +279,6 @@ struct TickerConfig: Codable, Equatable, Hashable {
         emaPeriod = try c.decodeIfPresent(Int.self, forKey: .emaPeriod)
         showBollinger = try c.decodeIfPresent(Bool.self, forKey: .showBollinger)
         showTrendFlips = try c.decodeIfPresent(Bool.self, forKey: .showTrendFlips)
-        trendLines = try c.decodeIfPresent([TrendLine].self, forKey: .trendLines)
         displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
         pmSeries = try c.decodeIfPresent([PmSeriesConfig].self, forKey: .pmSeries)
         portfolioChart = try c.decodeIfPresent(PortfolioChartConfig.self, forKey: .portfolioChart)

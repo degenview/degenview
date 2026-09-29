@@ -6,12 +6,8 @@ enum ChartTabKind: String, Codable {
 }
 
 /// One tab's worth of chart state — the unit `TabsStore` persists and
-/// `ContentViewModel` hydrates from.
-///
-/// Everything here used to be app-global: the ticker list lived in `tickers.json`
-/// and the timeframe/layout/zoom lived only in memory on the single
-/// `ContentViewModel`. Making it a value keyed by `id` is what lets several
-/// windows hold independent chart sets.
+/// `ContentViewModel` hydrates from. Making it a value keyed by `id` is what lets
+/// several windows hold independent chart sets.
 struct ChartTab: Identifiable, Codable, Equatable {
     let id: UUID
     /// Tab label — `UI.unnamedView` until a saved view is loaded or the user renames it.

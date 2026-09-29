@@ -6,10 +6,11 @@ final class FavoritesStore: ObservableObject {
     static let shared = FavoritesStore()
 
     @Published private(set) var items: [FavoriteItem]
-    private let store = JSONStore<[FavoriteItem]>(filename: "favorites.json")
+    private let database: AppDatabase
 
-    private init() {
-        items = store.load() ?? []
+    init(database: AppDatabase = .shared) {
+        self.database = database
+        items = database.documents(FavoriteItem.self, in: .favorite)
     }
 
     func contains(source: DataSourceType, symbol: String) -> Bool {
@@ -27,7 +28,7 @@ final class FavoritesStore: ObservableObject {
         } else {
             items.append(FavoriteItem(name: name, ticker: ticker, config: config))
         }
-        store.save(items)
+        persist()
     }
 
     func add(_ result: TickerSearchResult) throws {
@@ -47,12 +48,12 @@ final class FavoritesStore: ObservableObject {
             pmSeries: result.pmSeries
         )
         items.append(FavoriteItem(name: labels.name, ticker: labels.ticker, config: config))
-        store.save(items)
+        persist()
     }
 
     func remove(_ item: FavoriteItem) {
         items.removeAll { $0.id == item.id }
-        store.save(items)
+        persist()
     }
 
     /// Reorder favorites using SwiftUI `List` move coordinates, then persist the
@@ -71,7 +72,7 @@ final class FavoritesStore: ObservableObject {
 
         guard reordered != items else { return }
         items = reordered
-        store.save(items)
+        persist()
     }
 
     /// Move one dragged favorite to the position occupied by another row. SwiftUI's
@@ -87,6 +88,10 @@ final class FavoritesStore: ObservableObject {
             fromOffsets: IndexSet(integer: source),
             toOffset: target > source ? target + 1 : target
         )
+    }
+
+    private func persist() {
+        database.replaceDocuments(items, in: .favorite)
     }
 
     private static func labels(for result: TickerSearchResult) -> (name: String, ticker: String) {

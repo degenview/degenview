@@ -7,6 +7,16 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */; };
+		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
+		3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */; };
+		CF26E21BD8C65C8C7E32111F /* AppDatabase+Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */; };
+		A24D9D482B61F5B6BC523F10 /* AppDatabase+Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */; };
+		0B3A6A699CA2BD7F002BA89C /* AppDatabase+Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */; };
+		1DAC5FB0C81B58F9830D3762 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
+		B434136DF80AC5E2F3A79296 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
+		EC643A7261A4C0F752C37873 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C880371EEA29513F2A4311F2 /* GRDB */; };
+		E2E93C6762852DD20A055D77 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7EFA6A7BE1F17D7347DCA645 /* GRDB */; };
 		BPL000000000000000000001 /* BitcoinPowerLaw.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000101 /* BitcoinPowerLaw.swift */; };
 		BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000101 /* BitcoinPowerLaw.swift */; };
 		BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BPL000000000000000000106 /* BitcoinPowerLawTests.swift */; };
@@ -190,6 +200,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PaperTrading.swift"; sourceTree = "<group>"; };
+		343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Portfolio.swift"; sourceTree = "<group>"; };
+		B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabaseTests.swift"; sourceTree = "<group>"; };
+		6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Workspace.swift"; sourceTree = "<group>"; };
+		5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Schema.swift"; sourceTree = "<group>"; };
+		25F781FB543C23EA5567E8E9 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase.swift"; sourceTree = "<group>"; };
 		BPL000000000000000000101 /* BitcoinPowerLaw.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLaw.swift; sourceTree = "<group>"; };
 		BPL000000000000000000102 /* BitcoinHistoryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinHistoryService.swift; sourceTree = "<group>"; };
 		BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BitcoinPowerLawChartView.swift; sourceTree = "<group>"; };
@@ -332,7 +348,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		BA1000000000000000000301 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		BA1000000000000000000301 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (E2E93C6762852DD20A055D77 /* GRDB in Frameworks */, ); runOnlyForDeploymentPostprocessing = 0; };
 		E40000000000000000000301 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -343,6 +359,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				EC643A7261A4C0F752C37873 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -427,6 +444,11 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */,
+				343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */,
+				6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */,
+				5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */,
+				25F781FB543C23EA5567E8E9 /* AppDatabase.swift */,
 				BPL000000000000000000102 /* BitcoinHistoryService.swift */,
 				SM0000000000000000000101 /* ScriptStore.swift */,
 				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
@@ -552,6 +574,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */,
 				BPL000000000000000000106 /* BitcoinPowerLawTests.swift */,
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				PW0000000000000000000106 /* PineWordRangeTests.swift */,
@@ -582,7 +605,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = BA1000000000000000000601 /* Build configuration list for PBXNativeTarget "DegenViewAlertAgent" */;
 			buildPhases = (BA1000000000000000000501 /* Sources */, BA1000000000000000000301 /* Frameworks */, );
-			buildRules = (); dependencies = (); name = DegenViewAlertAgent; productName = DegenViewAlertAgent;
+			buildRules = (); dependencies = (); name = DegenViewAlertAgent; packageProductDependencies = (7EFA6A7BE1F17D7347DCA645 /* GRDB */, ); productName = DegenViewAlertAgent;
 			productReference = BA1000000000000000000102 /* DegenViewAlertAgent.app */; productType = "com.apple.product-type.application";
 		};
 		E40000000000000000000501 /* DegenViewTests */ = {
@@ -614,6 +637,9 @@
 			);
 			dependencies = (BA1000000000000000000202 /* PBXTargetDependency */, );
 			name = DegenView;
+			packageProductDependencies = (
+				C880371EEA29513F2A4311F2 /* GRDB */,
+			);
 			productName = DegenView;
 			productReference = A00000000000000000000110 /* DegenView.app */;
 			productType = "com.apple.product-type.application";
@@ -644,6 +670,9 @@
 				Base,
 			);
 			mainGroup = A00000000000000000000300;
+			packageReferences = (
+				62080E861FA2BEF11515D9BE /* XCRemoteSwiftPackageReference "GRDB.swift" */,
+			);
 			productRefGroup = A00000000000000000000302 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -672,6 +701,8 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		BA1000000000000000000501 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+				A24D9D482B61F5B6BC523F10 /* AppDatabase+Schema.swift in Sources */,
+				1DAC5FB0C81B58F9830D3762 /* AppDatabase.swift in Sources */,
 			BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */,
 			BA1100000000000000000021 /* BitcoinHistoryService.swift in Agent Sources */,
 			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
@@ -689,6 +720,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */,
 				BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */,
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */,
@@ -715,6 +747,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */,
+				8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */,
+				CF26E21BD8C65C8C7E32111F /* AppDatabase+Workspace.swift in Sources */,
+				0B3A6A699CA2BD7F002BA89C /* AppDatabase+Schema.swift in Sources */,
+				B434136DF80AC5E2F3A79296 /* AppDatabase.swift in Sources */,
 				BPL000000000000000000001 /* BitcoinPowerLaw.swift in Sources */,
 				BPL000000000000000000002 /* BitcoinHistoryService.swift in Sources */,
 				BPL000000000000000000003 /* BitcoinPowerLawChartView.swift in Sources */,
@@ -1009,6 +1046,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		62080E861FA2BEF11515D9BE /* XCRemoteSwiftPackageReference "GRDB.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.11.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		C880371EEA29513F2A4311F2 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 62080E861FA2BEF11515D9BE /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+		7EFA6A7BE1F17D7347DCA645 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 62080E861FA2BEF11515D9BE /* XCRemoteSwiftPackageReference "GRDB.swift" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = A00000000000000000000701 /* Project object */;
 }

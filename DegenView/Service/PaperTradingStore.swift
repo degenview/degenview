@@ -12,14 +12,22 @@ final class PaperTradingStore: ObservableObject {
     let engine: PaperTradingEngine
     let execution: PaperTradingExecutionService
 
-    private init() {
-        let initial = JSONStore<PaperTradingSnapshot>(filename: "paper_trading.json").load() ?? .empty
+    init(database: AppDatabase = .shared) {
+        var initial = PaperTradingSnapshot.empty
+        var canPersist = true
+        do {
+            initial = try database.paperTrading()
+        } catch {
+            // Never let an empty in-memory account overwrite one that failed to decode.
+            canPersist = false
+            #if DEBUG
+                print("[PaperTradingStore] Paper trading unreadable; disabling writes: \(error.localizedDescription)")
+            #endif
+        }
         snapshot = initial
         let engine = PaperTradingEngine(
             snapshot: initial,
-            persist: { value in
-                JSONStore<PaperTradingSnapshot>(filename: "paper_trading.json").save(value)
-            })
+            persist: canPersist ? { value in try database.savePaperTrading(value) } : nil)
         self.engine = engine
         execution = PaperTradingExecutionService(engine: engine)
     }

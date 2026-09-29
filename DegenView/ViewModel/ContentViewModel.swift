@@ -89,7 +89,6 @@ final class ContentViewModel: ObservableObject {
     private var isHydrating = true
 
     private let api: BinanceAPIService
-    private let viewStore = JSONStore<[SavedView]>(filename: "views.json")
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
     private let alpacaWSService = AlpacaWebSocketService()
@@ -171,7 +170,7 @@ final class ContentViewModel: ObservableObject {
     init(tabID: UUID, api: BinanceAPIService = BinanceAPIService()) {
         self.tabID = tabID
         self.api = api
-        self.savedViews = viewStore.load() ?? []
+        self.savedViews = AppDatabase.shared.savedViews()
 
         let tab = TabsStore.shared.ensureTab(tabID)
         pendingReplayRestore = tab.replaySession
@@ -1284,9 +1283,6 @@ final class ContentViewModel: ObservableObject {
                 emaPeriod: vm.showEMA ? vm.emaPeriod : nil,
                 showBollinger: vm.showBollinger ? true : nil,
                 showTrendFlips: vm.showTrendFlips ? true : nil,
-                // Drawings live in DrawingStore, keyed by source+ticker. Keep this
-                // field nil so tabs and saved views no longer own copies of lines.
-                trendLines: nil,
                 displayName: vm.displayName,
                 pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries,
                 portfolioChart: vm.portfolioChart,
@@ -1347,7 +1343,7 @@ final class ContentViewModel: ObservableObject {
         )
         savedViews.removeAll { $0.id == view.id }
         savedViews.append(view)
-        viewStore.save(savedViews)
+        AppDatabase.shared.saveSavedViews(savedViews)
 
         tabName = name
         currentViewID = view.id
@@ -1396,7 +1392,7 @@ final class ContentViewModel: ObservableObject {
     /// Delete a saved view. Tabs sitting on it keep their charts but lose the link.
     func deleteView(_ view: SavedView) {
         savedViews.removeAll { $0.id == view.id }
-        viewStore.save(savedViews)
+        AppDatabase.shared.saveSavedViews(savedViews)
         if currentViewID == view.id {
             tabName = UI.unnamedView
             currentViewID = nil

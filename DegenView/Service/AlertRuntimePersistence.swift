@@ -1,85 +1,114 @@
 import Foundation
+import GRDB
 
-/// Cross-process storage for the GUI and login-item agent. Every access is coordinated;
-/// writes use Foundation's atomic replacement so readers never observe partial JSON.
+/// Cross-process storage for the GUI and login-item agent. Both open the same WAL
+/// database: the runtime that owns `alert_runtime.lock` writes the snapshot, the GUI
+/// enqueues commands, and each write is a single transaction so readers never see a
+/// half-saved snapshot.
 struct AlertRuntimePersistence: Sendable {
     static let shared = AlertRuntimePersistence()
+    /// Holds `alert_runtime.lock`, which decides which process evaluates alerts.
     let directory: URL
-    let snapshotURL: URL
-    let commandsURL: URL
+    private let database: AppDatabase
 
-    init(directory: URL = AppSupport.directory) {
-        self.directory = directory
-        snapshotURL = directory.appendingPathComponent("price_alerts.json")
-        commandsURL = directory.appendingPathComponent("alert_commands", isDirectory: true)
-        try? FileManager.default.createDirectory(at: commandsURL, withIntermediateDirectories: true)
+    private enum Key {
+        static let schemaVersion = "alert.schemaVersion"
+        static let revision = "alert.revision"
+        static let settings = "alert.settings"
+        static let processedCommandIDs = "alert.processedCommandIDs"
+        static let health = "alert.health"
     }
 
+    init(database: AppDatabase = .shared, directory: URL = AppSupport.directory) {
+        self.database = database
+        self.directory = directory
+    }
+
+    /// Nil until a runtime has saved once, so the engine can start from defaults.
     func loadSnapshot() -> AlertPersistenceSnapshot? {
-        guard FileManager.default.fileExists(atPath: snapshotURL.path) else { return nil }
-        var result: AlertPersistenceSnapshot?
-        var coordinationError: NSError?
-        NSFileCoordinator().coordinate(readingItemAt: snapshotURL, options: [], error: &coordinationError) { url in
-            guard let data = try? Data(contentsOf: url) else { return }
-            result = try? Self.decoder.decode(AlertPersistenceSnapshot.self, from: data)
-            if result == nil { quarantineMalformedFile(url) }
+        do {
+            return try database.reader.read { db in
+                guard let schemaVersion = try AppDatabase.setting(Int.self, key: Key.schemaVersion, db: db)
+                else { return nil }
+                var snapshot = AlertPersistenceSnapshot()
+                snapshot.schemaVersion = schemaVersion
+                snapshot.revision = try AppDatabase.setting(UInt64.self, key: Key.revision, db: db) ?? 0
+                // Per-row decoding: one unreadable alert or event must not make the engine
+                // start empty and overwrite the rest.
+                snapshot.alerts = try AppDatabase.documents(PriceAlert.self, in: .priceAlert, db: db)
+                snapshot.history = try String.fetchAll(db, sql: "SELECT payload FROM alert_event ORDER BY rowid")
+                    .compactMap { try? AppDatabase.decoder.decode(AlertTriggerEvent.self, from: Data($0.utf8)) }
+                snapshot.settings =
+                    (try? AppDatabase.setting(AlertNotificationSettings.self, key: Key.settings, db: db))
+                    ?? AlertNotificationSettings()
+                snapshot.processedCommandIDs =
+                    (try? AppDatabase.setting([UUID].self, key: Key.processedCommandIDs, db: db)) ?? []
+                snapshot.health =
+                    (try? AppDatabase.setting(AlertRuntimeHealth.self, key: Key.health, db: db))
+                    ?? AlertRuntimeHealth()
+                return snapshot
+            }
+        } catch {
+            #if DEBUG
+                print("[AlertRuntimePersistence] Could not load alerts: \(error.localizedDescription)")
+            #endif
+            return nil
         }
-        return result
     }
 
     func saveSnapshot(_ snapshot: AlertPersistenceSnapshot) {
-        guard let data = try? Self.encoder.encode(snapshot) else { return }
-        var coordinationError: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: snapshotURL, options: .forReplacing, error: &coordinationError) {
-            url in
-            try? data.write(to: url, options: .atomic)
+        do {
+            try database.writer.write { try Self.replaceSnapshot(snapshot, db: $0) }
+        } catch {
+            #if DEBUG
+                print("[AlertRuntimePersistence] Could not save alerts: \(error.localizedDescription)")
+            #endif
         }
     }
 
     func enqueue(_ command: AlertRuntimeCommand) throws {
-        let url = commandsURL.appendingPathComponent(
-            "\(command.createdAt.timeIntervalSince1970)-\(command.id.uuidString).json")
-        let data = try Self.encoder.encode(command)
-        var coordinationError: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) {
-            coordinatedURL in
-            try? data.write(to: coordinatedURL, options: .atomic)
-        }
-        if let coordinationError { throw coordinationError }
+        try database.writer.write { try Self.insert(command, db: $0) }
     }
 
-    func pendingCommands() -> [(URL, AlertRuntimeCommand)] {
-        let urls =
-            (try? FileManager.default.contentsOfDirectory(at: commandsURL, includingPropertiesForKeys: nil)) ?? []
-        return urls.filter { $0.pathExtension == "json" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
-            .compactMap { url in
-                var command: AlertRuntimeCommand?
-                var error: NSError?
-                NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &error) { coordinatedURL in
-                    guard let data = try? Data(contentsOf: coordinatedURL) else { return }
-                    command = try? Self.decoder.decode(AlertRuntimeCommand.self, from: data)
-                }
-                return command.map { (url, $0) }
-            }
+    /// Oldest first. Rows that no longer decode stay queued rather than being dropped.
+    func pendingCommands() -> [AlertRuntimeCommand] {
+        let payloads =
+            (try? database.reader.read { db in
+                try String.fetchAll(db, sql: "SELECT payload FROM alert_command ORDER BY created_at, rowid")
+            }) ?? []
+        return payloads.compactMap { try? AppDatabase.decoder.decode(AlertRuntimeCommand.self, from: Data($0.utf8)) }
     }
 
-    func acknowledge(_ url: URL) {
-        var error: NSError?
-        NSFileCoordinator().coordinate(writingItemAt: url, options: .forDeleting, error: &error) {
-            try? FileManager.default.removeItem(at: $0)
+    func acknowledge(_ id: UUID) {
+        try? database.writer.write {
+            try $0.execute(sql: "DELETE FROM alert_command WHERE id = ?", arguments: [id.uuidString])
         }
     }
 
-    private func quarantineMalformedFile(_ url: URL) {
-        let suffix = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        try? FileManager.default.copyItem(
-            at: url, to: directory.appendingPathComponent("price_alerts.malformed-\(suffix).json"))
+    // MARK: - Private
+
+    private static func replaceSnapshot(_ snapshot: AlertPersistenceSnapshot, db: Database) throws {
+        try AppDatabase.replaceDocuments(snapshot.alerts, in: .priceAlert, db: db)
+        try db.execute(sql: "DELETE FROM alert_event")
+        let event = try db.makeStatement(
+            sql: "INSERT INTO alert_event (alert_id, timestamp, payload) VALUES (?, ?, ?)")
+        for value in snapshot.history {
+            try event.execute(arguments: [
+                value.alertID.uuidString, value.timestamp.timeIntervalSince1970, try AppDatabase.json(value),
+            ])
+        }
+        try AppDatabase.setSetting(snapshot.schemaVersion, key: Key.schemaVersion, db: db)
+        try AppDatabase.setSetting(snapshot.revision, key: Key.revision, db: db)
+        try AppDatabase.setSetting(snapshot.settings, key: Key.settings, db: db)
+        try AppDatabase.setSetting(snapshot.processedCommandIDs, key: Key.processedCommandIDs, db: db)
+        try AppDatabase.setSetting(snapshot.health, key: Key.health, db: db)
     }
 
-    private static let encoder: JSONEncoder = {
-        let value = JSONEncoder()
-        value.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return value
-    }()
-    private static let decoder = JSONDecoder()
+    private static func insert(_ command: AlertRuntimeCommand, db: Database) throws {
+        try db.execute(
+            sql: "INSERT OR IGNORE INTO alert_command (id, created_at, payload) VALUES (?, ?, ?)",
+            arguments: [
+                command.id.uuidString, command.createdAt.timeIntervalSince1970, try AppDatabase.json(command),
+            ])
+    }
 }

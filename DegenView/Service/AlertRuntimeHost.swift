@@ -67,10 +67,10 @@ actor AlertRuntimeHost {
     private func tick() async {
         guard let engine else { return }
         var changed = false
-        for (url, command) in persistence.pendingCommands() {
+        for command in persistence.pendingCommands() {
             if case .requestNotificationAuthorization = command.payload { await requestNotificationAuthorization() }
             await engine.apply(command)
-            persistence.acknowledge(url)
+            persistence.acknowledge(command.id)
             changed = true
         }
         if changed { await refreshSubscriptions() }

@@ -51,7 +51,7 @@ Organize source membership into three logical layers:
    - API and WebSocket data sources.
    - Indicators, chart plotting geometry, replay, Pine engine/runtime.
    - Portfolio and paper-trading accounting.
-   - Codable persistence and caches.
+   - `AppDatabase` (GRDB) persistence and `JSONStore` caches.
    - Shared view models.
    - SwiftUI views that contain no AppKit/UIKit dependency.
    - Renderer-neutral chart styles and drawing models.
@@ -92,10 +92,10 @@ Refactor them into:
 
 Preserve existing user data:
 
-- Decode the current `tabs.json` and `TabsSnapshot`.
-- Migrate its `tabs` to the new workspace snapshot.
-- Migrate `windowGroups` to the macOS-only session snapshot.
-- Leave the original file intact until both new files have been written successfully.
+- Read the current `tab` and `window_group` tables through `AppDatabase`.
+- Migrate `tab` rows to the new workspace tables in a new `registerMigration` entry.
+- Migrate `window_group` rows to the macOS-only session tables in the same migration.
+- Rely on the migration's single transaction so a failure leaves the original tables intact.
 - Make migration idempotent and cover missing, malformed, partially migrated, and duplicate-ID cases.
 - Mobile starts with its own empty local store and does not attempt to access the Mac’s container.
 
