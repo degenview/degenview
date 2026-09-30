@@ -11,6 +11,7 @@ enum CoinMarketCapCredentialStore {
     private static let lock = NSLock()
     private static var cached: String?
     private static var loaded = false
+    private static var exists: Bool?
 
     static var apiKey: String? {
         lock.lock()
@@ -33,7 +34,26 @@ enum CoinMarketCapCredentialStore {
         return cached
     }
 
-    static var isConfigured: Bool { apiKey != nil }
+    /// Whether a key is saved. Reads the item's attributes only, never its data, so it
+    /// doesn't raise the Keychain access prompt — that waits for a request that sends the key.
+    static var isConfigured: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if loaded { return cached != nil }
+        if let exists { return exists }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let found = status == errSecSuccess || status == errSecInteractionNotAllowed
+        exists = found
+        return found
+    }
 
     static func save(_ key: String) throws {
         let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -272,7 +292,7 @@ actor CoinMarketCapClient {
     }
 
     private func load(path: String, query: [URLQueryItem]) async throws -> Data {
-        let key = CoinMarketCapCredentialStore.apiKey
+        let key = CoinMarketCapCredentialStore.isConfigured ? CoinMarketCapCredentialStore.apiKey : nil
         let request = Self.makeRequest(path: path, query: query, apiKey: key)
         for attempt in 0..<4 {
             do {
