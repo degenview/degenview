@@ -1,14 +1,13 @@
 import CryptoKit
 import Foundation
 
-enum ScriptStoreError: LocalizedError {
-    case missingScript, missingRevision, nameConflict, invalidName, unreadableFile
+enum ScriptStoreError: LocalizedError, Equatable {
+    case missingScript, missingRevision, nameConflict, unreadableFile
     var errorDescription: String? {
         switch self {
         case .missingScript: return "The script no longer exists."
         case .missingRevision: return "The script revision no longer exists."
         case .nameConflict: return "A script with that name already exists."
-        case .invalidName: return "Script names cannot be empty, start with a period, or contain “/” or “:”."
         case .unreadableFile: return "The file isn't a readable text file."
         }
     }
@@ -89,10 +88,13 @@ actor ScriptStore {
     }
 
     @discardableResult
-    func create(name requestedName: String, type: ScriptType, source: String? = nil) throws -> LocalScript {
+    func create(
+        name requestedName: String, type: ScriptType, source: String? = nil, disambiguating: Bool = true
+    ) throws -> LocalScript {
         try loadIfNeeded()
         let base = try Self.validatedName(requestedName)
-        let name = disambiguatedName(base)
+        if !disambiguating, isNameTaken(base) { throw ScriptStoreError.nameConflict }
+        let name = disambiguating ? disambiguatedName(base) : base
         let now = Date()
         let id = UUID()
         let script = LocalScript(
@@ -136,19 +138,15 @@ actor ScriptStore {
         return metadata[id]
     }
 
-    func save(id: UUID, name: String, type: ScriptType, source: String) throws -> LocalScript {
+    /// Saves new source under the script's current name. The type follows the script's own
+    /// declaration; while the source has no single declaration (mid-edit) it keeps the old one.
+    func save(id: UUID, source: String) throws -> LocalScript {
         try loadIfNeeded()
         guard var script = metadata[id] else { throw ScriptStoreError.missingScript }
-        let cleanName = try Self.validatedName(name)
-        if metadata.values.contains(where: { $0.id != id && $0.name.caseInsensitiveCompare(cleanName) == .orderedSame })
-        {
-            throw ScriptStoreError.nameConflict
-        }
         // Invalid source saves too; its errors are recorded in the compile record.
         let compiled = PineCompiler.compile(source: source)
         let status = Self.status(for: compiled.diagnostics)
         let now = Date()
-        if cleanName != script.name { try renameFile(id: id, to: cleanName) }
         if source != script.source || script.latestRevisionID == nil {
             let revision = ScriptVersion(
                 id: UUID(), scriptID: id, createdAt: now,
@@ -156,8 +154,7 @@ actor ScriptStore {
             try write(revision)
             script.latestRevisionID = revision.id
         }
-        script.name = cleanName
-        script.type = type
+        script.type = Self.hasSingleDeclaration(compiled) ? compiled.declaration.type : script.type
         script.source = source
         script.modifiedAt = now
         script.compileRecord = ScriptCompileRecord(
@@ -165,12 +162,29 @@ actor ScriptStore {
             compilerVersion: Self.compilerVersion, pineVersion: compiled.declaration.pineVersion,
             status: status, diagnostics: compiled.diagnostics, declaration: compiled.declaration,
             compiledAt: now)
-        try writeFile(id: id, name: cleanName, source: source)
+        try writeFile(id: id, name: script.name, source: source)
         try write(script)
         try removeDraft(id: id)
         metadata[id] = script
         try saveIndex()
         try pruneRevisions(for: id, keeping: 100)
+        return script
+    }
+
+    /// Renames the script's file and nothing else: source, revisions and draft are untouched.
+    @discardableResult
+    func rename(id: UUID, to newName: String) throws -> LocalScript {
+        try loadIfNeeded()
+        guard var script = metadata[id] else { throw ScriptStoreError.missingScript }
+        let cleanName = try Self.validatedName(newName)
+        guard cleanName != script.name else { return script }
+        if isNameTaken(cleanName, excluding: id) { throw ScriptStoreError.nameConflict }
+        try renameFile(id: id, to: cleanName)
+        script.name = cleanName
+        script.modifiedAt = Date()
+        try write(script)
+        metadata[id] = script
+        try saveIndex()
         return script
     }
 
@@ -196,10 +210,10 @@ actor ScriptStore {
     }
 
     func restore(scriptID: UUID, revisionID: UUID) throws -> LocalScript {
-        guard let revision = try revisions(id: scriptID).first(where: { $0.id == revisionID }),
-            let script = try script(id: scriptID)
-        else { throw ScriptStoreError.missingRevision }
-        return try save(id: scriptID, name: script.name, type: script.type, source: revision.source)
+        guard let revision = try revisions(id: scriptID).first(where: { $0.id == revisionID }) else {
+            throw ScriptStoreError.missingRevision
+        }
+        return try save(id: scriptID, source: revision.source)
     }
 
     func setFavorite(id: UUID, _ favorite: Bool) throws {
@@ -314,9 +328,15 @@ actor ScriptStore {
     private func fileURL(forName name: String) -> URL {
         scriptsDirectory.appendingPathComponent(name).appendingPathExtension(Self.fileExtension)
     }
+    /// Defense in depth behind `ScriptNameValidator`: a file must land directly in the library.
+    private func assertInsideLibrary(_ url: URL) throws {
+        guard url.deletingLastPathComponent().standardizedFileURL.path == scriptsDirectory.standardizedFileURL.path
+        else { throw ScriptNameError.forbiddenCharacter("/") }
+    }
 
     private func writeFile(id: UUID, name: String, source: String) throws {
         let url = fileURL(forName: name)
+        try assertInsideLibrary(url)
         try Data(source.utf8).write(to: url, options: .atomic)
         // An atomic write replaces the file, dropping the previous extended attributes.
         Self.writeID(id, at: url)
@@ -327,6 +347,7 @@ actor ScriptStore {
         guard let oldName = fileNames[id] else { return }
         let source = scriptsDirectory.appendingPathComponent(oldName)
         let destination = fileURL(forName: name)
+        try assertInsideLibrary(destination)
         guard fm.fileExists(atPath: source.path) else { return }
         if oldName.caseInsensitiveCompare(destination.lastPathComponent) == .orderedSame {
             // A case-only rename on a case-insensitive volume: the destination "exists".
@@ -366,12 +387,19 @@ actor ScriptStore {
 
     // MARK: - Helpers
 
-    private func disambiguatedName(_ base: String) -> String {
-        var taken = Set(metadata.values.map { $0.name.lowercased() })
+    private func takenNames(excluding id: UUID? = nil) -> Set<String> {
+        var taken = Set(metadata.values.filter { $0.id != id }.map { $0.name.lowercased() })
         // Files not (yet) in the catalog still occupy their names on disk.
-        let onDisk = (try? fm.contentsOfDirectory(atPath: scriptsDirectory.path)) ?? []
+        let own = id.flatMap { fileNames[$0] }
+        let onDisk = ((try? fm.contentsOfDirectory(atPath: scriptsDirectory.path)) ?? []).filter { $0 != own }
         taken.formUnion(onDisk.map { Self.stem($0).lowercased() })
-        return disambiguatedName(base, taken: taken)
+        return taken
+    }
+    private func isNameTaken(_ name: String, excluding id: UUID? = nil) -> Bool {
+        takenNames(excluding: id).contains(name.lowercased())
+    }
+    private func disambiguatedName(_ base: String) -> String {
+        disambiguatedName(base, taken: takenNames())
     }
     private func disambiguatedName(_ base: String, taken: Set<String>) -> String {
         if !taken.contains(base.lowercased()) { return base }
@@ -385,13 +413,15 @@ actor ScriptStore {
         }
     }
 
-    /// Script names double as file names, so they must be valid, visible file names.
+    /// Script names double as file names, so they are validated before any path is built.
     private static func validatedName(_ name: String) throws -> String {
-        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, !clean.hasPrefix("."), !clean.contains("/"), !clean.contains(":") else {
-            throw ScriptStoreError.invalidName
-        }
-        return clean
+        try ScriptNameValidator.validate(name).get()
+    }
+
+    /// False when the compiler reported a missing or duplicated declaration (PINE3001), in
+    /// which case `declaration.type` is a default rather than something the script declared.
+    private static func hasSingleDeclaration(_ compiled: PineCompiledProgram) -> Bool {
+        !compiled.diagnostics.contains { $0.code == "PINE3001" }
     }
     private static func stem(_ fileName: String) -> String { (fileName as NSString).deletingPathExtension }
 

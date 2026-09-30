@@ -2,9 +2,8 @@ import Foundation
 
 @MainActor
 final class ScriptEditorViewModel: ObservableObject {
-    @Published private(set) var scriptID: UUID?
-    @Published var name = ""
-    @Published var type: ScriptType = .indicator
+    let scriptID: UUID
+    @Published private(set) var name = ""
     @Published var source = ""
     @Published var status: CompileStatus = .notCompiled
     @Published var diagnostics: [PineDiagnostic] = []
@@ -13,21 +12,14 @@ final class ScriptEditorViewModel: ObservableObject {
     private var savedSource = ""
     private var draftTask: Task<Void, Never>?
 
-    init(scriptID: UUID?) {
+    init(scriptID: UUID) {
         self.scriptID = scriptID
-        if scriptID == nil {
-            name = "Untitled"
-            source = ScriptStore.template(for: .indicator, title: "Untitled")
-            isDirty = true
-        }
     }
     func load() {
-        guard let scriptID else { return }
         Task {
             do {
                 guard let script = try await ScriptStore.shared.script(id: scriptID) else { return }
                 name = script.name
-                type = script.type
                 source = script.source
                 savedSource = script.source
                 status =
@@ -41,10 +33,15 @@ final class ScriptEditorViewModel: ObservableObject {
             } catch { errorMessage = error.localizedDescription }
         }
     }
+    /// Picks up a rename made from the sidebar so the window title stays current.
+    func refreshName() {
+        Task {
+            if let script = try? await ScriptStore.shared.script(id: scriptID) { name = script.name }
+        }
+    }
     func changed() {
         isDirty = source != savedSource
         compile()
-        guard let scriptID else { return }
         draftTask?.cancel()
         let draft = ScriptDraft(scriptID: scriptID, source: source, modifiedAt: Date(), basedOnRevisionID: nil)
         draftTask = Task {
@@ -62,19 +59,9 @@ final class ScriptEditorViewModel: ObservableObject {
     }
     func save() {
         compile()
-        let requestedType = type
         Task {
             do {
-                let id: UUID
-                if let scriptID {
-                    id = scriptID
-                } else {
-                    let created = try await ScriptStore.shared.create(name: name, type: requestedType, source: source)
-                    id = created.id
-                    scriptID = id
-                    name = created.name
-                }
-                let result = try await ScriptStore.shared.save(id: id, name: name, type: requestedType, source: source)
+                let result = try await ScriptStore.shared.save(id: scriptID, source: source)
                 savedSource = result.source
                 isDirty = false
                 status = result.compileRecord?.status ?? .notCompiled
