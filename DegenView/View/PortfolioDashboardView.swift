@@ -1232,7 +1232,7 @@ private struct CoinMarketCapImportSheet: View {
                 HStack {
                     ProgressView().controlSize(.small)
                     Text(
-                        "Finding \(portfolioCurrency.rawValue) markets — Binance first, then CoinGecko and DEXScreener…"
+                        "Finding \(portfolioCurrency.rawValue) markets — Binance, then Coinbase, CoinGecko and DEXScreener…"
                     ).font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -1241,7 +1241,7 @@ private struct CoinMarketCapImportSheet: View {
                     Text(symbol).bold().frame(width: 90, alignment: .leading)
                     if resolvingSymbols.contains(symbol) {
                         ProgressView().controlSize(.small)
-                        Text("Searching Binance…").foregroundStyle(.secondary)
+                        Text("Searching exchanges…").foregroundStyle(.secondary)
                     } else if let asset = mappings[symbol] {
                         Text("\(asset.name) · \(asset.source.rawValue)").foregroundStyle(.secondary)
                         if autoMappedSymbols.contains(symbol) {

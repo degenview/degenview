@@ -91,6 +91,7 @@ final class ContentViewModel: ObservableObject {
     private let api: BinanceAPIService
     private var refreshTimer: Timer?
     private let wsService = BinanceWebSocketService()
+    private let coinbaseWSService = CoinbaseWebSocketService()
     private let alpacaWSService = AlpacaWebSocketService()
 
     private var scrollMonitor: Any?
@@ -365,6 +366,7 @@ final class ContentViewModel: ObservableObject {
         activeTool = .none
         crosshair.clear()
         wsService.disconnect()
+        coinbaseWSService.disconnect()
         alpacaWSService.disconnect()
     }
 
@@ -903,6 +905,7 @@ final class ContentViewModel: ObservableObject {
         refreshTimer?.invalidate()
         refreshTimer = nil
         wsService.disconnect()
+        coinbaseWSService.disconnect()
         alpacaWSService.disconnect()
         refetchTask?.cancel()
     }
@@ -985,6 +988,7 @@ final class ContentViewModel: ObservableObject {
         // A hidden tab has nothing to draw a tick onto.
         guard isWindowVisible, !replay.isActive else {
             wsService.disconnect()
+            coinbaseWSService.disconnect()
             alpacaWSService.disconnect()
             return
         }
@@ -993,13 +997,27 @@ final class ContentViewModel: ObservableObject {
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
 
-        if symbols.isEmpty {
+        // Binance streams no quarterly or yearly klines, and its monthly ones would land in the
+        // wrong candle. Those candles move slowly; the five-second REST refresh keeps them current.
+        if symbols.isEmpty || KlineData.monthlyFold(for: interval) != nil {
             wsService.disconnect()
         } else {
             wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
                 self?.chartViewModels
                     .first(where: { $0.source == .binance && $0.apiSymbol.uppercased() == symbol.uppercased() })?
                     .applyKlineUpdate(kline)
+            }
+        }
+
+        let coinbaseProducts = marketChartViewModels.filter { $0.source == .coinbase }.map(\.apiSymbol)
+        if coinbaseProducts.isEmpty {
+            coinbaseWSService.disconnect()
+        } else if let plan = CoinbaseGranularity(interval: selectedTimeRange.binanceInterval) {
+            // The socket is interval-agnostic; the plan only decides which candle a trade lands in.
+            coinbaseWSService.connect(products: coinbaseProducts) { [weak self] tick in
+                self?.chartViewModels
+                    .first(where: { $0.source == .coinbase && $0.apiSymbol.uppercased() == tick.productID })?
+                    .applyTick(tick, plan: plan)
             }
         }
 
@@ -1368,7 +1386,7 @@ final class ContentViewModel: ObservableObject {
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
-        candleCount = view.candleCount ?? view.timeRange.dataPointLimit
+        candleCount = view.candleCount.map(view.timeRange.migratedCandleCount) ?? view.timeRange.dataPointLimit
         layoutMode = view.layoutMode
 
         let configs = view.resolvedConfigs

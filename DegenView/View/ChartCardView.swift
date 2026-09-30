@@ -99,6 +99,9 @@ struct ChartCardView: View {
             viewModel.setPineTheme(scheme == .dark ? .dark : .light)
         }
         .task(id: viewModel.iconKey) {
+            await viewModel.resolveCoinSymbol()
+        }
+        .task(id: viewModel.iconKey) {
             iconURL = nil
             iconURL = await IconResolver.shared.iconURL(
                 ticker: viewModel.ticker,

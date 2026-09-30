@@ -103,6 +103,10 @@ enum Timeout {
     static let resource: Double = 30
     /// Binance kline cache TTL (seconds).
     static let binanceCacheTTL: TimeInterval = 15
+    /// Coinbase candle cache TTL (seconds). Kept under the 5 s auto-refresh so a refresh never
+    /// swaps the live candle for an older cached copy; a refresh costs one request per chart
+    /// against Coinbase's ~10 requests/s public limit.
+    static let coinbaseCacheTTL: TimeInterval = 3
     /// CoinGecko kline cache TTL (seconds — free tier, slow to update).
     static let coingeckoCacheTTL: TimeInterval = 120
     /// CoinGecko rate-limiter starting gap between calls (seconds).

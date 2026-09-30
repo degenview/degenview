@@ -35,11 +35,14 @@ enum BinanceAPIError: LocalizedError {
 
 final class BinanceAPIService: GranularReplayDataSource {
     let type: DataSourceType = .binance
-    private let session = AppSupport.defaultSession
-    private let baseURL = "https://api.binance.com"
+    private let session: URLSession
+    private let baseURL: String
     private let cache = KlineCache()
 
-    init() {}
+    init(session: URLSession = AppSupport.defaultSession, baseURL: String = "https://api.binance.com") {
+        self.session = session
+        self.baseURL = baseURL
+    }
 
     /// Return cached klines regardless of freshness — instant first render.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {
@@ -55,15 +58,19 @@ final class BinanceAPIService: GranularReplayDataSource {
             return cached
         }
 
-        // Cache miss — fetch from API
+        // Cache miss — fetch from API. Binance has no quarterly or yearly klines: those are
+        // folded from monthly ones, fetching one bucket more than shown for the partial oldest.
+        let fold = KlineData.monthlyFold(for: interval)
+        let requested = fold.map { min(1_000, (limit + 1) * $0.months) } ?? limit
+
         guard var components = URLComponents(string: "\(baseURL)/api/v3/klines") else {
             throw BinanceAPIError.invalidURL
         }
 
         components.queryItems = [
             URLQueryItem(name: "symbol", value: symbol.uppercased()),
-            URLQueryItem(name: "interval", value: interval),
-            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "interval", value: fold == nil ? interval : "1M"),
+            URLQueryItem(name: "limit", value: String(requested)),
         ]
 
         guard let url = components.url else {
@@ -97,7 +104,10 @@ final class BinanceAPIService: GranularReplayDataSource {
             throw BinanceAPIError.parseError("Failed to parse kline data")
         }
 
-        let sorted = klines.sorted { $0.openTime < $1.openTime }
+        var sorted = klines.sorted { $0.openTime < $1.openTime }
+        if let fold {
+            sorted = Array(sorted.folded(into: fold.seconds).suffix(limit))
+        }
 
         #if DEBUG
             let formatter = DateFormatter()
@@ -181,6 +191,8 @@ final class BinanceAPIService: GranularReplayDataSource {
         case "1d": return 86_400
         case "1w": return 604_800
         case "1M": return 2_592_000
+        case "3M": return 7_776_000
+        case "1Y": return 31_536_000
         default: return 0
         }
     }

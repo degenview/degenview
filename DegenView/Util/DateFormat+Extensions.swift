@@ -15,7 +15,9 @@ enum TimeAxisFormatter {
         // Split weekly from monthly at two weeks rather than at a month: calendar months
         // are 28–31 days, and a threshold at 30 would format February as a week.
         if interval < 1209600 { return "MMM d, yyyy" }  // weekly
-        return "MMM yyyy"  // monthly and coarser
+        // Yearly candles are ~365 days apart and quarterly ~90; split well clear of both.
+        if interval < 25_000_000 { return "MMM yyyy" }  // monthly and quarterly
+        return "yyyy"  // yearly
     }
 
     /// A candle's open time, rendered at the granularity that candle resolves.

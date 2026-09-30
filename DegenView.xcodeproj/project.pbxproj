@@ -44,6 +44,19 @@
 		C50000000000000000000001 /* JSONStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000101 /* JSONStoreTests.swift */; };
 		C50000000000000000000002 /* ChartViewModelFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000102 /* ChartViewModelFetchTests.swift */; };
 		C50000000000000000000011 /* KalshiServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000111 /* KalshiServiceTests.swift */; };
+		CB1000000000000000000016 /* QuarterlyYearlyCandleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000116 /* QuarterlyYearlyCandleTests.swift */; };
+		CB1000000000000000000015 /* CoinSymbolLookupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000115 /* CoinSymbolLookupTests.swift */; };
+		CB1000000000000000000014 /* MarketSymbolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000114 /* MarketSymbolTests.swift */; };
+		CB1000000000000000000005 /* MarketSymbol.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000105 /* MarketSymbol.swift */; };
+		CB1000000000000000000013 /* CoinbaseLiveCandleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000113 /* CoinbaseLiveCandleTests.swift */; };
+		CB1000000000000000000012 /* CoinbaseWebSocketServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000112 /* CoinbaseWebSocketServiceTests.swift */; };
+		CB1000000000000000000011 /* CoinbaseAPIServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000111 /* CoinbaseAPIServiceTests.swift */; };
+		CB1100000000000000000002 /* CoinbaseGranularity.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000104; };
+		CB1000000000000000000004 /* CoinbaseGranularity.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000104 /* CoinbaseGranularity.swift */; };
+		CB1000000000000000000003 /* CoinbaseTick.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000103 /* CoinbaseTick.swift */; };
+		CB1000000000000000000002 /* CoinbaseWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000102 /* CoinbaseWebSocketService.swift */; };
+		CB1100000000000000000001 /* CoinbaseAPIService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000101; };
+		CB1000000000000000000001 /* CoinbaseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000101 /* CoinbaseAPIService.swift */; };
 		C50000000000000000000003 /* ChartPlotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000103 /* ChartPlotTests.swift */; };
 		D30000000000000000000003 /* ChartColumnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000103 /* ChartColumnTests.swift */; };
 		C50000000000000000000004 /* IndicatorsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000104 /* IndicatorsTests.swift */; };
@@ -451,6 +464,17 @@
 		C50000000000000000000101 /* JSONStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONStoreTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000102 /* ChartViewModelFetchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModelFetchTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000111 /* KalshiServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiServiceTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000116 /* QuarterlyYearlyCandleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuarterlyYearlyCandleTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000115 /* CoinSymbolLookupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinSymbolLookupTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000114 /* MarketSymbolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSymbolTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000105 /* MarketSymbol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSymbol.swift; sourceTree = "<group>"; };
+		CB1000000000000000000113 /* CoinbaseLiveCandleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseLiveCandleTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000112 /* CoinbaseWebSocketServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseWebSocketServiceTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000111 /* CoinbaseAPIServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseAPIServiceTests.swift; sourceTree = "<group>"; };
+		CB1000000000000000000104 /* CoinbaseGranularity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseGranularity.swift; sourceTree = "<group>"; };
+		CB1000000000000000000103 /* CoinbaseTick.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseTick.swift; sourceTree = "<group>"; };
+		CB1000000000000000000102 /* CoinbaseWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseWebSocketService.swift; sourceTree = "<group>"; };
+		CB1000000000000000000101 /* CoinbaseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseAPIService.swift; sourceTree = "<group>"; };
 		C50000000000000000000103 /* ChartPlotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlotTests.swift; sourceTree = "<group>"; };
 		D30000000000000000000103 /* ChartColumnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartColumnTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000104 /* IndicatorsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorsTests.swift; sourceTree = "<group>"; };
@@ -805,6 +829,8 @@
 				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
 				A00000000000000000000103 /* KlineData.swift */,
+				CB1000000000000000000104 /* CoinbaseGranularity.swift */,
+				CB1000000000000000000103 /* CoinbaseTick.swift */,
 				A00000000000000000000904 /* Indicators.swift */,
 				A00000000000000000000906 /* TrendLine.swift */,
 				FB0000000000000000000101 /* FibonacciRetracement.swift */,
@@ -813,6 +839,7 @@
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
 				A00000000000000000000118 /* DataSourceType.swift */,
+				CB1000000000000000000105 /* MarketSymbol.swift */,
 				C10000000000000000000101 /* PolymarketModels.swift */,
 				C10000000000000000000211 /* KalshiModels.swift */,
 				D10000000000000000000101 /* ChartTab.swift */,
@@ -853,6 +880,8 @@
 				E20000000000000000000103 /* AlpacaWebSocketService.swift */,
 				A00000000000000000000106 /* BinanceAPIService.swift */,
 				A00000000000000000000114 /* BinanceWebSocketService.swift */,
+				CB1000000000000000000102 /* CoinbaseWebSocketService.swift */,
+				CB1000000000000000000101 /* CoinbaseAPIService.swift */,
 				A00000000000000000000117 /* IconResolver.swift */,
 				A0000000000000000000011E /* CGRateLimiter.swift */,
 				A00000000000000000000119 /* TickerDataSource.swift */,
@@ -976,6 +1005,12 @@
 				C50000000000000000000101 /* JSONStoreTests.swift */,
 				C50000000000000000000102 /* ChartViewModelFetchTests.swift */,
 				C50000000000000000000111 /* KalshiServiceTests.swift */,
+				CB1000000000000000000116 /* QuarterlyYearlyCandleTests.swift */,
+				CB1000000000000000000115 /* CoinSymbolLookupTests.swift */,
+				CB1000000000000000000114 /* MarketSymbolTests.swift */,
+				CB1000000000000000000113 /* CoinbaseLiveCandleTests.swift */,
+				CB1000000000000000000112 /* CoinbaseWebSocketServiceTests.swift */,
+				CB1000000000000000000111 /* CoinbaseAPIServiceTests.swift */,
 				C50000000000000000000103 /* ChartPlotTests.swift */,
 				D30000000000000000000103 /* ChartColumnTests.swift */,
 				C50000000000000000000104 /* IndicatorsTests.swift */,
@@ -1369,6 +1404,8 @@
 			BA1100000000000000000025,
 			BA1100000000000000000024,
 			BA1100000000000000000023,
+			CB1100000000000000000002,
+			CB1100000000000000000001,
 			BA1100000000000000000022,
 			F37733F8391CC5322B372A07 /* PineAlertEvent.swift in Agent Sources */,
 			F39BA9285624FF2EB7E4ED59 /* PineAlertFrequency.swift in Agent Sources */,
@@ -1443,6 +1480,12 @@
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
 				C50000000000000000000002 /* ChartViewModelFetchTests.swift in Sources */,
 				C50000000000000000000011 /* KalshiServiceTests.swift in Sources */,
+				CB1000000000000000000016 /* QuarterlyYearlyCandleTests.swift in Sources */,
+				CB1000000000000000000015 /* CoinSymbolLookupTests.swift in Sources */,
+				CB1000000000000000000014 /* MarketSymbolTests.swift in Sources */,
+				CB1000000000000000000013 /* CoinbaseLiveCandleTests.swift in Sources */,
+				CB1000000000000000000012 /* CoinbaseWebSocketServiceTests.swift in Sources */,
+				CB1000000000000000000011 /* CoinbaseAPIServiceTests.swift in Sources */,
 				C50000000000000000000003 /* ChartPlotTests.swift in Sources */,
 				D30000000000000000000003 /* ChartColumnTests.swift in Sources */,
 				C50000000000000000000004 /* IndicatorsTests.swift in Sources */,
@@ -1563,6 +1606,11 @@
 				C10000000000000000000008 /* SearchPane.swift in Sources */,
 				C10000000000000000000009 /* SearchDebouncer.swift in Sources */,
 				A00000000000000000000013 /* BinanceWebSocketService.swift in Sources */,
+				CB1000000000000000000005 /* MarketSymbol.swift in Sources */,
+				CB1000000000000000000004 /* CoinbaseGranularity.swift in Sources */,
+				CB1000000000000000000003 /* CoinbaseTick.swift in Sources */,
+				CB1000000000000000000002 /* CoinbaseWebSocketService.swift in Sources */,
+				CB1000000000000000000001 /* CoinbaseAPIService.swift in Sources */,
 				A00000000000000000000014 /* SavedView.swift in Sources */,
 				A00000000000000000000016 /* IconResolver.swift in Sources */,
 				A00000000000000000000017 /* DataSourceType.swift in Sources */,

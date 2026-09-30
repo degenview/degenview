@@ -59,7 +59,7 @@ struct ChartTab: Identifiable, Codable, Equatable {
         chartColumns = try values.decodeIfPresent([ChartColumn].self, forKey: .chartColumns)
         timeRange = try values.decode(TimeRange.self, forKey: .timeRange)
         layoutMode = try values.decode(LayoutMode.self, forKey: .layoutMode)
-        candleCount = try values.decode(Int.self, forKey: .candleCount)
+        candleCount = timeRange.migratedCandleCount(try values.decode(Int.self, forKey: .candleCount))
         replaySession = try values.decodeIfPresent(ReplaySession.self, forKey: .replaySession)
         kind = try values.decodeIfPresent(ChartTabKind.self, forKey: .kind) ?? .charts
     }

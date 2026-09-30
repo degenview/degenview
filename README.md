@@ -10,7 +10,7 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 
 ### Markets and live data
 
-- **Crypto** — Search Binance, CoinGecko, and DEXScreener side by side. DEX pairs use
+- **Crypto** — Search Binance, Coinbase, CoinGecko, and DEXScreener side by side, in that order. DEX pairs use
   GeckoTerminal for historical OHLCV data
 - **Stocks** — Search and chart US equities through Alpaca's IEX feed (API credentials
   are stored securely in Keychain)
@@ -20,9 +20,10 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 - **CoinMarketCap indices** — Add historical or latest Altcoin Season and CMC Crypto Fear
   and Greed charts. The official Public API works without a key; an optional key stored in
   Keychain enables higher authenticated rate limits
-- **Live updates** — Binance crypto and Alpaca stock charts receive WebSocket updates;
+- **Live updates** — Binance and Coinbase crypto and Alpaca stock charts receive WebSocket updates;
   other sources refresh automatically
-- **Six timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y, with scroll-wheel zoom to change the
+- **Six timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y, each the size of one candle (3M draws
+  calendar-quarter candles, 1Y calendar-year candles), with scroll-wheel zoom to change the
   visible candle count
 - **Multi-source identity** — The same symbol can be added from different sources without
   being treated as a duplicate
@@ -102,7 +103,7 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 - **CSV workflows** — Preview and atomically import DegenView CSV files, and export
   transactions, current holdings, or portfolio history with timezone-bearing timestamps
 - **CoinMarketCap import** — Parse CoinMarketCap transaction exports, auto-map tokens to
-  portfolio-currency pairs (Binance first, then CoinGecko and DEXScreener), override or
+  portfolio-currency pairs (Binance first, then Coinbase, CoinGecko and DEXScreener), override or
   skip mappings, deduplicate reimports, and supply historical FX for foreign fees or skip
   individual affected rows
 
@@ -112,7 +113,7 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   rise/fall alerts with a fixed reference price and materialized target
 - **Once or repeating** — One-shot alerts move to Triggered after firing; repeating
   alerts re-arm only after the market moves strictly back across the target
-- **Source-qualified assets** — Binance, CoinGecko, DEXScreener, and Alpaca alerts use the
+- **Source-qualified assets** — Binance, Coinbase, CoinGecko, DEXScreener, and Alpaca alerts use the
   same stable provider-qualified identity as portfolio assets. Polymarket and Kalshi are excluded
 - **Multi-currency targets** — Evaluate alerts in USD, EUR, GBP, JPY, or CHF using current
   daily Frankfurter reference rates cached locally for weekends and holidays
@@ -167,7 +168,7 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
   rendering, indicators, volume, crosshair inspection, autoscaling, or drawing snapping
 - **Native replay controls** — Select a bar, date/time, random bar, or first available
   bar; then step, play/pause, change speed or interval, restart, or return to latest
-- **Granular Binance and Alpaca replay** — When lower-timeframe OHLCV is available,
+- **Granular Binance, Coinbase and Alpaca replay** — When lower-timeframe OHLCV is available,
   DegenView paginates up to 100,000 source bars and incrementally reconstructs the active
   displayed candle. Other providers fall back to deterministic complete-chart-bar steps
   without fabricating intrabar prices

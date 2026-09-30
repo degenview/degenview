@@ -41,8 +41,9 @@ enum DrawingTimeframeVisibility: String, Codable, CaseIterable, Hashable {
         switch self {
         case .all: return true
         case .intraday: return range == .oneHour
-        case .daily: return range == .oneDay || range == .threeMonths
-        case .weeklyAndMonthly: return range == .oneWeek || range == .oneMonth || range == .oneYear
+        case .daily: return range == .oneDay
+        case .weeklyAndMonthly:
+            return range == .oneWeek || range == .oneMonth || range == .threeMonths || range == .oneYear
         }
     }
 }

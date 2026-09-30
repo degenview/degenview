@@ -213,8 +213,8 @@ actor GeckoTerminalService {
 
     /// Pick the finest native bucket that still covers the requested span.
     ///
-    /// The chart asks in Binance's vocabulary (`1h`, `1d`, `1w`, `1M`). Anything up to
-    /// daily maps straight across; weekly and monthly have no GeckoTerminal
+    /// The chart asks in Binance's vocabulary (`1h`, `1d`, `1w`, `1M`, `3M`, `1Y`). Anything up
+    /// to daily maps straight across; weekly and coarser have no GeckoTerminal
     /// equivalent, so daily candles are fetched and folded down afterwards — which is
     /// also why the fetch can ask for far more candles than the chart draws.
     static func window(interval: String, limit: Int) -> Window {
@@ -246,6 +246,8 @@ actor GeckoTerminalService {
         case "1d": return 86_400
         case "1w": return 604_800
         case "1M": return 2_592_000
+        case "3M": return 7_776_000
+        case "1Y": return 31_536_000
         default: return 3_600
         }
     }

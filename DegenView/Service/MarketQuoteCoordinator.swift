@@ -88,7 +88,7 @@ actor MarketQuoteCoordinator {
 
     private static func maximumAge(for source: DataSourceType) -> TimeInterval {
         switch source {
-        case .binance: 180
+        case .binance, .coinbase: 180
         case .alpaca: 7_200
         case .coingecko, .dexscreener: 1_800
         case .polymarket, .kalshi, .coinMarketCap: 0

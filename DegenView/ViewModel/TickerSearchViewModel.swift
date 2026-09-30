@@ -22,16 +22,13 @@ final class TickerSearchViewModel: ObservableObject {
         self.sources = sources
     }
 
-    /// Crypto sources, those with results first, then alphabetically.
+    /// Crypto sources, those with results first. Within each group the order is the
+    /// factory's priority (Binance, then Coinbase, then the rest), not alphabetical.
     var orderedSources: [DataSourceType] {
-        var sources = sources().map(\.type)
-        sources.sort { a, b in
-            let aHas = !(searchResults[a]?.isEmpty ?? true)
-            let bHas = !(searchResults[b]?.isEmpty ?? true)
-            if aHas != bHas { return aHas }
-            return a.rawValue < b.rawValue
-        }
-        return sources
+        let sources = sources().map(\.type)
+        let withResults = sources.filter { !(searchResults[$0]?.isEmpty ?? true) }
+        let withoutResults = sources.filter { searchResults[$0]?.isEmpty ?? true }
+        return withResults + withoutResults
     }
 
     /// First result across all sources (for Enter-key quick-select).

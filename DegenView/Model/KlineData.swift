@@ -160,11 +160,12 @@ extension KlineData {
     /// Where the candle of `interval` containing `date` opens.
     ///
     /// Epoch multiples for anything up to a day, which is how Binance aligns minute,
-    /// hour and day klines. Weeks and months don't divide the epoch evenly, so those go
-    /// through the calendar instead: Binance opens a weekly kline on Monday and a
-    /// monthly one on the 1st, while epoch multiples would put every week on a Thursday
-    /// and every "month" 30 days after the last one. Two charts side by side have to
-    /// agree on which week a candle is.
+    /// hour and day klines. Weeks, months, quarters and years don't divide the epoch
+    /// evenly, so those go through the calendar instead: Binance opens a weekly kline on
+    /// Monday and a monthly one on the 1st, while epoch multiples would put every week on
+    /// a Thursday and every "month" 30 days after the last one. Two charts side by side
+    /// have to agree on which week a candle is. Quarters open on 1 Jan/Apr/Jul/Oct and
+    /// years on 1 Jan.
     static func bucketStart(of date: Date, interval: TimeInterval) -> Date {
         switch interval {
         case ..<604_800:
@@ -173,8 +174,30 @@ extension KlineData {
             )
         case ..<2_419_200:  // a week, up to the shortest month
             return utcCalendar.dateInterval(of: .weekOfYear, for: date)?.start ?? date
-        default:
+        case ..<7_000_000:  // a month, up to the shortest quarter
             return utcCalendar.dateInterval(of: .month, for: date)?.start ?? date
+        case ..<30_000_000:  // a quarter, up to the shortest year
+            return quarterStart(of: date)
+        default:
+            return utcCalendar.dateInterval(of: .year, for: date)?.start ?? date
+        }
+    }
+
+    private static func quarterStart(of date: Date) -> Date {
+        let parts = utcCalendar.dateComponents([.year, .month], from: date)
+        guard let year = parts.year, let month = parts.month else { return date }
+        let firstMonth = (month - 1) / 3 * 3 + 1
+        return utcCalendar.date(from: DateComponents(year: year, month: firstMonth, day: 1)) ?? date
+    }
+
+    /// Candle sizes no provider serves directly, and the monthly candles they're built from:
+    /// `3M` folds three months into a calendar quarter, `1Y` twelve into a calendar year.
+    /// Nil for every interval a provider can answer itself.
+    static func monthlyFold(for interval: String) -> (months: Int, seconds: TimeInterval)? {
+        switch interval {
+        case "3M": return (3, 7_776_000)
+        case "1Y": return (12, 31_536_000)
+        default: return nil
         }
     }
 
@@ -251,6 +274,33 @@ extension Array where Element == KlineData {
             )
         }
         return merged
+    }
+
+    /// Fold ascending candles into calendar buckets of `interval` seconds — open from the first
+    /// candle in a bucket, close from the last, high/low across it, volumes summed.
+    ///
+    /// Unlike ``aggregated(into:)`` the buckets are the ones ``KlineData/bucketStart(of:interval:)``
+    /// names, so a quarterly or yearly candle opens where every other chart's does.
+    func folded(into interval: TimeInterval) -> [KlineData] {
+        var folded: [KlineData] = []
+        for candle in self {
+            let start = KlineData.bucketStart(of: candle.openTime, interval: interval)
+            if let last = folded.last, last.openTime == start {
+                let index = folded.count - 1
+                folded[index].highPrice = Swift.max(last.highPrice, candle.highPrice)
+                folded[index].lowPrice = Swift.min(last.lowPrice, candle.lowPrice)
+                folded[index].closePrice = candle.closePrice
+                folded[index].volume += candle.volume
+                folded[index].quoteVolume += candle.quoteVolume
+            } else {
+                folded.append(
+                    KlineData(
+                        openTime: start, openPrice: candle.openPrice, highPrice: candle.highPrice,
+                        lowPrice: candle.lowPrice, closePrice: candle.closePrice,
+                        volume: candle.volume, quoteVolume: candle.quoteVolume))
+            }
+        }
+        return folded
     }
 
     /// Thin to at most `count` points by uniform stride, always keeping the newest one.

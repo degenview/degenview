@@ -10,15 +10,17 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
 
     var id: String { rawValue }
 
-    /// Binance kline interval string — directly matches the picker label.
+    /// Candle interval token — directly matches the picker label, so each timeframe is the size
+    /// of one candle. `3M` and `1Y` have no native kline anywhere; each provider builds them by
+    /// folding monthly or daily candles into calendar quarters and years.
     var binanceInterval: String {
         switch self {
         case .oneHour: return "1h"
         case .oneDay: return "1d"
         case .oneWeek: return "1w"
         case .oneMonth: return "1M"
-        case .threeMonths: return "1d"  // no "3M" on Binance; daily bars for 3 months
-        case .oneYear: return "1w"  // no "1Y" on Binance; weekly bars for 1 year
+        case .threeMonths: return "3M"
+        case .oneYear: return "1Y"
         }
     }
 
@@ -31,19 +33,37 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         case .oneDay: return 86_400  // 1d
         case .oneWeek: return 604_800  // 1w
         case .oneMonth: return 2_592_000  // 1M (30d)
-        case .threeMonths: return 86_400  // 1d (Binance fallback)
-        case .oneYear: return 604_800  // 1w (Binance fallback)
+        case .threeMonths: return 7_776_000  // 3M (90d)
+        case .oneYear: return 31_536_000  // 1Y (365d)
         }
     }
 
-    /// Time span a Binance chart covers at this range, in days.
+    /// Time span the prediction-market line charts cover at this range, in days.
     ///
-    /// ``dataPointLimit`` candles × ``binanceIntervalSeconds`` per candle gives
-    /// the width of the x-axis the user actually sees. Non-Binance sources use
-    /// this as the target span so every chart shows the same history for the
-    /// selected timeframe.
+    /// They draw a price line rather than candles, so a quarterly or yearly candle size means
+    /// nothing there: 3M and 1Y stay windows of three months and a year.
     var effectiveSpanDays: Int {
-        Int((TimeInterval(dataPointLimit) * binanceIntervalSeconds / 86_400).rounded(.up))
+        switch self {
+        case .oneHour: return 2
+        case .oneDay: return 60
+        case .oneWeek: return 182
+        case .oneMonth: return 360
+        case .threeMonths: return 90
+        case .oneYear: return 364
+        }
+    }
+
+    /// Points a prediction-market line chart draws at this range. Independent of
+    /// ``dataPointLimit``: a line of 10 points for a year would be a polyline, not a chart.
+    var lineChartPointCount: Int {
+        switch self {
+        case .oneHour: return 48
+        case .oneDay: return 60
+        case .oneWeek: return 26
+        case .oneMonth: return 12
+        case .threeMonths: return 90
+        case .oneYear: return 52
+        }
     }
 
     /// Polymarket CLOB `/prices-history` window: named interval plus the bucket
@@ -60,7 +80,7 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
     /// ~30 days all land on `"max"` and render whatever exists.
     var polymarketWindow: (interval: String, fidelity: Int) {
         let span = effectiveSpanDays
-        let needed = dataPointLimit * 2
+        let needed = lineChartPointCount * 2
 
         let interval: String
         if span <= 1 {
@@ -110,8 +130,18 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         case .oneDay: return 60  // ~2 months of 1d candles
         case .oneWeek: return 26  // ~6 months of 1w candles
         case .oneMonth: return 12  // 1 year of 1M candles
-        case .threeMonths: return 90  // 3 months of 1d candles
-        case .oneYear: return 52  // 1 year of 1w candles
+        case .threeMonths: return 16  // 4 years of quarterly candles
+        case .oneYear: return 10  // 10 years of yearly candles
+        }
+    }
+
+    /// The candle count earlier versions stored for this range. A tab or saved view still
+    /// holding one of these was never zoomed — it predates the range meaning a candle size —
+    /// and would draw 90 quarters across a history that is a dozen long.
+    func migratedCandleCount(_ stored: Int) -> Int {
+        switch (self, stored) {
+        case (.threeMonths, 90), (.oneYear, 52): return dataPointLimit
+        default: return stored
         }
     }
 
