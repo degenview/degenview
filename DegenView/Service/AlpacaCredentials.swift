@@ -22,6 +22,7 @@ enum AlpacaCredentialsStore {
     }
     private static let lock = NSLock()
     private static var cachedCredentials: AlpacaCredentials?
+    private static var cachedExists: Bool?
 
     static var credentials: AlpacaCredentials {
         lock.lock()
@@ -43,7 +44,17 @@ enum AlpacaCredentialsStore {
         return empty
     }
 
-    static var isConfigured: Bool { credentials.isConfigured }
+    /// Whether credentials are saved. Reads item attributes only, never the secret, so it
+    /// doesn't raise the Keychain access prompt — that waits for a request that needs the key.
+    static var isConfigured: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if let cachedCredentials { return cachedCredentials.isConfigured }
+        if let cachedExists { return cachedExists }
+        let found = itemExists(shared: true) || itemExists(shared: false)
+        cachedExists = found
+        return found
+    }
 
     static func save(_ credentials: AlpacaCredentials) throws {
         let normalized = AlpacaCredentials(
@@ -59,12 +70,27 @@ enum AlpacaCredentialsStore {
                 delete(account: credentialsAccount)
             }
             cachedCredentials = normalized
+            cachedExists = nil
             lock.unlock()
         } catch {
             lock.unlock()
             throw error
         }
         NotificationCenter.default.post(name: .alpacaCredentialsChanged, object: nil)
+    }
+
+    private static func itemExists(shared: Bool) -> Bool {
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: credentialsAccount,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        if shared, let accessGroup { query[kSecAttrAccessGroup as String] = accessGroup }
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        return status == errSecSuccess || status == errSecInteractionNotAllowed
     }
 
     private static func readData(account: String, shared: Bool) -> Data? {
