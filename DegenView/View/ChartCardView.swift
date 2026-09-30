@@ -558,6 +558,7 @@ private struct PortfolioValueMiniChart: View {
     let range: PortfolioChartRange
     let privacy: Bool
     let hidesYAxisValues: Bool
+    @State private var hoverLocation: CGPoint?
 
     private struct Point {
         let date: Date
@@ -568,23 +569,37 @@ private struct PortfolioValueMiniChart: View {
             + [Point(date: now, value: currentValue)]
     }
 
+    /// The value axis: the data's range plus 8% either side, so the line clears the edges.
+    private func valueRange(_ points: [Point]) -> (low: Decimal, spread: Decimal) {
+        let values = points.map(\.value)
+        var low = values.min() ?? 0
+        var high = values.max() ?? 1
+        if low == high {
+            low -= 1
+            high += 1
+        }
+        let padding = (high - low) * Decimal(string: "0.08")!
+        low -= padding
+        high += padding
+        return (low, high - low)
+    }
+
+    private func plot(in size: CGSize) -> CGRect {
+        CGRect(x: 12, y: 8, width: max(1, size.width - 96), height: max(1, size.height - 34))
+    }
+
+    private func x(forIndex index: Int, count: Int, in plot: CGRect) -> CGFloat {
+        count == 1 ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(count - 1)
+    }
+
     var body: some View {
         let points = preparedPoints()
         GeometryReader { geometry in
             Canvas { context, size in
                 guard !privacy, !points.isEmpty else { return }
                 let values = points.map(\.value)
-                var low = values.min() ?? 0
-                var high = values.max() ?? 1
-                if low == high {
-                    low -= 1
-                    high += 1
-                }
-                let padding = (high - low) * Decimal(string: "0.08")!
-                low -= padding
-                high += padding
-                let spread = high - low
-                let plot = CGRect(x: 12, y: 8, width: max(1, size.width - 96), height: max(1, size.height - 34))
+                let (low, spread) = valueRange(points)
+                let plot = plot(in: size)
 
                 for tick in 0...4 {
                     let fraction = CGFloat(tick) / 4
@@ -601,19 +616,26 @@ private struct PortfolioValueMiniChart: View {
                     )
                 }
 
-                var path = Path()
-                for index in points.indices {
-                    let x =
-                        points.count == 1
-                        ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
+                let coordinates = points.indices.map { index in
                     let fraction = CGFloat(((points[index].value - low) / spread).doubleValue)
-                    let point = CGPoint(x: x, y: plot.maxY - plot.height * fraction)
+                    return CGPoint(
+                        x: x(forIndex: index, count: points.count, in: plot),
+                        y: plot.maxY - plot.height * fraction)
+                }
+                let currentColor: Color = (values.last ?? 0) >= (values.first ?? 0) ? .green : .red
+                if coordinates.count > 1 {
+                    context.fillAreaUnderLine(
+                        coordinates, plot: plot, color: currentColor,
+                        opacity: ChartStyle.default.areaFillOpacity)
+                }
+                var path = Path()
+                for (index, point) in coordinates.enumerated() {
                     index == 0 ? path.move(to: point) : path.addLine(to: point)
                 }
                 context.stroke(
-                    path, with: .color((values.last ?? 0) >= (values.first ?? 0) ? .green : .red), lineWidth: 2.5)
+                    path, with: .color(currentColor),
+                    style: StrokeStyle(lineWidth: ChartStyle.default.lineWidth, lineCap: .round, lineJoin: .round))
 
-                let currentColor: Color = (values.last ?? 0) >= (values.first ?? 0) ? .green : .red
                 drawCurrentValueOverlay(
                     context: &context, plot: plot, low: low, spread: spread,
                     color: currentColor
@@ -621,13 +643,27 @@ private struct PortfolioValueMiniChart: View {
 
                 let labelIndices = Array(Set([0, max(0, points.count / 2), max(0, points.count - 1)])).sorted()
                 for index in labelIndices {
-                    let x =
-                        points.count == 1
-                        ? plot.midX : plot.minX + plot.width * CGFloat(index) / CGFloat(points.count - 1)
                     context.draw(
                         Text(dateLabel(points[index].date)).font(.caption2).foregroundStyle(.secondary),
-                        at: CGPoint(x: x, y: plot.maxY + 7), anchor: .top
+                        at: CGPoint(x: x(forIndex: index, count: points.count, in: plot), y: plot.maxY + 7),
+                        anchor: .top
                     )
+                }
+            }
+            .overlay {
+                Canvas { context, size in
+                    guard let hover = hoverLocation, !privacy, points.count > 1 else { return }
+                    drawCrosshair(context: &context, plot: plot(in: size), points: points, at: hover)
+                }
+                .allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hoverLocation = plot(in: geometry.size).contains(location) ? location : nil
+                case .ended:
+                    hoverLocation = nil
                 }
             }
             .overlay {
@@ -693,6 +729,62 @@ private struct PortfolioValueMiniChart: View {
         )
         context.fill(Path(roundedRect: box, cornerRadius: 3), with: .color(color))
         context.draw(resolved, at: CGPoint(x: box.midX, y: box.midY))
+    }
+
+    /// Same crosshair the market charts draw: dashed lines through the pointer, the value in
+    /// the right gutter and the date of the nearest point along the bottom.
+    private func drawCrosshair(
+        context: inout GraphicsContext, plot: CGRect, points: [Point], at location: CGPoint
+    ) {
+        let style = ChartStyle.default
+        let stroke = StrokeStyle(lineWidth: style.crosshairLineWidth, dash: style.crosshairDashPattern)
+        var vertical = Path()
+        vertical.move(to: CGPoint(x: location.x, y: plot.minY))
+        vertical.addLine(to: CGPoint(x: location.x, y: plot.maxY))
+        var horizontal = Path()
+        horizontal.move(to: CGPoint(x: plot.minX, y: location.y))
+        horizontal.addLine(to: CGPoint(x: plot.maxX, y: location.y))
+        context.stroke(vertical, with: .color(style.crosshairColor), style: stroke)
+        context.stroke(horizontal, with: .color(style.crosshairColor), style: stroke)
+
+        // Snapped to the point under the pointer: the label names a snapshot, and a
+        // snapshot has one timestamp.
+        let fraction = ((location.x - plot.minX) / plot.width).clamped(to: 0...1)
+        let index = Int((fraction * CGFloat(points.count - 1)).rounded())
+        let time = pill(context, dateLabel(points[index].date))
+        let timeX = (location.x - time.size.width / 2)
+            .clamped(to: plot.minX...max(plot.minX, plot.maxX - time.size.width))
+        drawPill(
+            time, in: CGRect(origin: CGPoint(x: timeX, y: plot.maxY - time.size.height - 2), size: time.size),
+            into: &context)
+
+        let (low, spread) = valueRange(points)
+        let value = low + spread * Decimal(Double((plot.maxY - location.y) / plot.height))
+        let price = pill(
+            context, hidesYAxisValues ? "*****" : value.formatted(.number.precision(.fractionLength(2))))
+        guard
+            let originY = ChartPlot.overlayOriginY(
+                centeredAt: location.y, in: plot, labelHeight: price.size.height)
+        else { return }
+        drawPill(
+            price, in: CGRect(origin: CGPoint(x: plot.maxX + 4, y: originY), size: price.size),
+            into: &context)
+    }
+
+    private func pill(
+        _ context: GraphicsContext, _ string: String
+    ) -> (text: GraphicsContext.ResolvedText, size: CGSize) {
+        let text = context.resolve(Text(string).font(.caption2).bold().foregroundStyle(.white))
+        let measured = text.measure(in: CGSize(width: 140, height: 20))
+        return (text, CGSize(width: measured.width + 10, height: 18))
+    }
+
+    private func drawPill(
+        _ pill: (text: GraphicsContext.ResolvedText, size: CGSize), in rect: CGRect,
+        into context: inout GraphicsContext
+    ) {
+        context.fill(Path(roundedRect: rect, cornerRadius: 3), with: .color(ChartStyle.default.crosshairLabelColor))
+        context.draw(pill.text, at: CGPoint(x: rect.midX, y: rect.midY))
     }
 
     private func dateLabel(_ date: Date) -> String {

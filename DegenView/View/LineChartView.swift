@@ -272,25 +272,8 @@ struct LineChartView: View {
         }
 
         if withGradient {
-            // Gradient under the line, closed along the bottom of the plot.
-            // Built with explicit `addLine` calls — `addLines` opens a *new* subpath,
-            // which would leave the baseline disconnected from the series.
-            var area = Path()
-            area.move(to: CGPoint(x: coordinates[0].x, y: plot.plotRect.maxY))
-            for point in coordinates {
-                area.addLine(to: point)
-            }
-            area.addLine(to: CGPoint(x: coordinates[coordinates.count - 1].x, y: plot.plotRect.maxY))
-            area.closeSubpath()
-
-            context.fill(
-                area,
-                with: .linearGradient(
-                    Gradient(colors: [color.opacity(style.areaFillOpacity), color.opacity(0)]),
-                    startPoint: CGPoint(x: plot.plotRect.midX, y: plot.plotRect.minY),
-                    endPoint: CGPoint(x: plot.plotRect.midX, y: plot.plotRect.maxY)
-                )
-            )
+            context.fillAreaUnderLine(
+                coordinates, plot: plot.plotRect, color: color, opacity: style.areaFillOpacity)
         }
 
         var line = Path()
@@ -315,6 +298,33 @@ struct LineChartView: View {
                     x: center.x - radius, y: center.y - radius,
                     width: radius * 2, height: radius * 2)),
             with: .color(color)
+        )
+    }
+}
+
+extension GraphicsContext {
+    /// Gradient under a polyline, closed along the bottom of the plot: `opacity` of `color`
+    /// at the top of the plot, fading to nothing at the bottom.
+    ///
+    /// Built with explicit `addLine` calls — `addLines` opens a *new* subpath, which would
+    /// leave the baseline disconnected from the series.
+    mutating func fillAreaUnderLine(_ points: [CGPoint], plot: CGRect, color: Color, opacity: Double) {
+        guard let first = points.first, let last = points.last else { return }
+        var area = Path()
+        area.move(to: CGPoint(x: first.x, y: plot.maxY))
+        for point in points {
+            area.addLine(to: point)
+        }
+        area.addLine(to: CGPoint(x: last.x, y: plot.maxY))
+        area.closeSubpath()
+
+        fill(
+            area,
+            with: .linearGradient(
+                Gradient(colors: [color.opacity(opacity), color.opacity(0)]),
+                startPoint: CGPoint(x: plot.midX, y: plot.minY),
+                endPoint: CGPoint(x: plot.midX, y: plot.maxY)
+            )
         )
     }
 }
