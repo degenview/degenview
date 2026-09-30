@@ -29,12 +29,13 @@ final class ScriptStoreTests: XCTestCase {
     func testRenameMovesFileAndKeepsID() async throws {
         let (store, scripts, _) = try makeStore()
         let script = try await store.create(name: "Alpha", type: .indicator)
-        let renamed = try await store.save(id: script.id, name: "Beta", type: .indicator, source: validSource)
+        _ = try await store.save(id: script.id, source: validSource)
+        let renamed = try await store.rename(id: script.id, to: "Beta")
         XCTAssertEqual(renamed.id, script.id)
         XCTAssertFalse(FileManager.default.fileExists(atPath: scripts.appendingPathComponent("Alpha.pine").path))
         XCTAssertEqual(
             try String(contentsOf: scripts.appendingPathComponent("Beta.pine"), encoding: .utf8), validSource)
-        let caseOnly = try await store.save(id: script.id, name: "BETA", type: .indicator, source: validSource)
+        let caseOnly = try await store.rename(id: script.id, to: "BETA")
         XCTAssertEqual(caseOnly.name, "BETA")
         let all = try await store.allScripts()
         XCTAssertEqual(all.map(\.name), ["BETA"])
@@ -111,7 +112,7 @@ final class ScriptStoreTests: XCTestCase {
         let (store, scripts, _) = try makeStore()
         let script = try await store.create(name: "Broken", type: .indicator)
         let source = "//@version=6\nindicator(\"Broken\")\nplot("
-        let saved = try await store.save(id: script.id, name: script.name, type: .indicator, source: source)
+        let saved = try await store.save(id: script.id, source: source)
         XCTAssertEqual(saved.compileRecord?.status, .error)
         XCTAssertFalse(saved.compileRecord?.diagnostics.isEmpty ?? true)
         XCTAssertEqual(
@@ -147,5 +148,107 @@ final class ScriptStoreTests: XCTestCase {
         let config = try JSONDecoder().decode(TickerConfig.self, from: data)
         XCTAssertFalse(config.chartID.uuidString.isEmpty)
         XCTAssertTrue(config.scripts.isEmpty)
+    }
+
+    // MARK: - Names
+
+    func testValidatorAcceptsAndNormalizes() {
+        for (raw, expected) in [
+            ("Alpha", "Alpha"), ("My Script v2", "My Script v2"), ("  Padded  ", "Padded"),
+            ("foo.pine", "foo"), ("Foo.PINE", "Foo"), ("v1.2", "v1.2"),
+        ] {
+            XCTAssertEqual(try? ScriptNameValidator.validate(raw).get(), expected, raw)
+        }
+    }
+
+    func testValidatorRejectsUnsafeNames() {
+        let rejected = [
+            "", "   ", ".", "..", ".hidden", ".pine", "../x", "..\\x", "a/b", "a\\b", "a:b",
+            "/etc/passwd", "nul\u{0}byte", "line\nbreak", String(repeating: "a", count: 251),
+        ]
+        for raw in rejected {
+            XCTAssertThrowsError(try ScriptNameValidator.validate(raw).get(), raw.debugDescription)
+        }
+        XCTAssertNoThrow(try ScriptNameValidator.validate(String(repeating: "a", count: 250)).get())
+    }
+
+    func testCreateRejectsInvalidNameWithoutWritingFiles() async throws {
+        let (store, scripts, _) = try makeStore()
+        do {
+            _ = try await store.create(name: "../escape", type: .indicator)
+            XCTFail("expected failure")
+        } catch {}
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: scripts.path)) ?? []
+        XCTAssertTrue(files.isEmpty)
+        let escaped = scripts.deletingLastPathComponent().appendingPathComponent("escape.pine")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: escaped.path))
+    }
+
+    func testCreateWithoutDisambiguationThrowsOnConflict() async throws {
+        let (store, _, _) = try makeStore()
+        _ = try await store.create(name: "Alpha", type: .indicator)
+        do {
+            _ = try await store.create(name: "alpha", type: .indicator, disambiguating: false)
+            XCTFail("expected nameConflict")
+        } catch {
+            XCTAssertEqual(error as? ScriptStoreError, .nameConflict)
+        }
+        let all = try await store.allScripts()
+        XCTAssertEqual(all.count, 1)
+    }
+
+    func testRenameRejectsInvalidAndConflictingNamesLeavingFilesAlone() async throws {
+        let (store, scripts, _) = try makeStore()
+        let alpha = try await store.create(name: "Alpha", type: .indicator)
+        _ = try await store.create(name: "Beta", type: .indicator)
+        for bad in ["../Alpha2", "a/b", "", ".x"] {
+            do {
+                _ = try await store.rename(id: alpha.id, to: bad)
+                XCTFail("expected failure for \(bad)")
+            } catch {}
+        }
+        do {
+            _ = try await store.rename(id: alpha.id, to: "beta")
+            XCTFail("expected nameConflict")
+        } catch {
+            XCTAssertEqual(error as? ScriptStoreError, .nameConflict)
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: scripts.appendingPathComponent("Alpha.pine").path))
+        let names = try await store.allScripts().map(\.name).sorted()
+        XCTAssertEqual(names, ["Alpha", "Beta"])
+    }
+
+    func testRenameKeepsSourceAndRevisions() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        _ = try await store.save(id: script.id, source: validSource)
+        let before = try await store.revisions(id: script.id).count
+        let renamed = try await store.rename(id: script.id, to: "Gamma.pine")
+        XCTAssertEqual(renamed.name, "Gamma")
+        XCTAssertEqual(renamed.source, validSource)
+        let after = try await store.revisions(id: script.id).count
+        XCTAssertEqual(before, after)
+    }
+
+    // MARK: - Type detection
+
+    func testSaveDetectsTypeFromSource() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        let strategy = try await store.save(
+            id: script.id, source: "//@version=6\nstrategy(\"S\", overlay=true)\n")
+        XCTAssertEqual(strategy.type, .strategy)
+        let library = try await store.save(id: script.id, source: "//@version=6\nlibrary(\"L\")\n")
+        XCTAssertEqual(library.type, .library)
+        let back = try await store.save(id: script.id, source: validSource)
+        XCTAssertEqual(back.type, .indicator)
+    }
+
+    func testSaveKeepsTypeWhenDeclarationIsMissing() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        _ = try await store.save(id: script.id, source: "//@version=6\nstrategy(\"S\")\n")
+        let broken = try await store.save(id: script.id, source: "//@version=6\nplot(close)\n")
+        XCTAssertEqual(broken.type, .strategy)
     }
 }

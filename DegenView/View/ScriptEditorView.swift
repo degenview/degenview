@@ -2,23 +2,9 @@ import SwiftUI
 
 struct ScriptEditorView: View {
     @StateObject private var model: ScriptEditorViewModel
-    init(scriptID: UUID?) { _model = StateObject(wrappedValue: ScriptEditorViewModel(scriptID: scriptID)) }
+    init(scriptID: UUID) { _model = StateObject(wrappedValue: ScriptEditorViewModel(scriptID: scriptID)) }
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Name")
-                TextField("Script Name", text: $model.name)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 200)
-                Spacer()
-                Picker("Type", selection: $model.type) { ForEach(ScriptType.allCases) { Text($0.displayName).tag($0) } }
-                    .frame(width: 130)
-            }
-            .padding()
-            .fixedSize(horizontal: false, vertical: true)
-            .layoutPriority(2)
-            .zIndex(1)
-            Divider()
             LineNumberedTextEditorView(text: $model.source, diagnostics: model.diagnostics)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: 200)
@@ -36,5 +22,6 @@ struct ScriptEditorView: View {
         }
         .navigationTitle(model.name + (model.isDirty ? " — Edited" : ""))
         .task { model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in model.refreshName() }
     }
 }

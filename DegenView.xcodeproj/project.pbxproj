@@ -26,10 +26,12 @@
 		SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000106 /* ScriptStoreTests.swift */; };
 		PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0000000000000000000106 /* PineWordRangeTests.swift */; };
 		SM0000000000000000000001 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000101 /* ScriptStore.swift */; };
+		SM0000000000000000000008 /* ScriptNameValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000108 /* ScriptNameValidator.swift */; };
 		SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000102 /* ScriptManagerViewModel.swift */; };
 		SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000103 /* ScriptEditorViewModel.swift */; };
 		SM0000000000000000000004 /* ScriptManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000104 /* ScriptManagerView.swift */; };
 		SM0000000000000000000005 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000105 /* ScriptEditorView.swift */; };
+		SM0000000000000000000009 /* ScriptNameSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000109 /* ScriptNameSheet.swift */; };
 		SM0000000000000000000007 /* LineNumberedTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000107 /* LineNumberedTextEditorView.swift */; };
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
 		P20000000000000000000004 /* PineStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000104 /* PineStrategyTests.swift */; };
@@ -421,10 +423,12 @@
 		SM0000000000000000000106 /* ScriptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStoreTests.swift; sourceTree = "<group>"; };
 		PW0000000000000000000106 /* PineWordRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWordRangeTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000101 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
+		SM0000000000000000000108 /* ScriptNameValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptNameValidator.swift; sourceTree = "<group>"; };
 		SM0000000000000000000102 /* ScriptManagerViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerViewModel.swift; sourceTree = "<group>"; };
 		SM0000000000000000000103 /* ScriptEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorViewModel.swift; sourceTree = "<group>"; };
 		SM0000000000000000000104 /* ScriptManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerView.swift; sourceTree = "<group>"; };
 		SM0000000000000000000105 /* ScriptEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorView.swift; sourceTree = "<group>"; };
+		SM0000000000000000000109 /* ScriptNameSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptNameSheet.swift; sourceTree = "<group>"; };
 		SM0000000000000000000107 /* LineNumberedTextEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineNumberedTextEditorView.swift; sourceTree = "<group>"; };
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
 		P20000000000000000000104 /* PineStrategyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyTests.swift; sourceTree = "<group>"; };
@@ -811,6 +815,7 @@
 				25F781FB543C23EA5567E8E9 /* AppDatabase.swift */,
 				BPL000000000000000000102 /* BitcoinHistoryService.swift */,
 				SM0000000000000000000101 /* ScriptStore.swift */,
+				SM0000000000000000000108 /* ScriptNameValidator.swift */,
 				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
 				BA0000000000000000000102 /* AlertRuntimeHost.swift */,
 				BA0000000000000000000103 /* AlertBackgroundService.swift */,
@@ -873,6 +878,7 @@
 				BPL000000000000000000104 /* BitcoinPowerLawSettingsSheet.swift */,
 				SM0000000000000000000104 /* ScriptManagerView.swift */,
 				SM0000000000000000000105 /* ScriptEditorView.swift */,
+				SM0000000000000000000109 /* ScriptNameSheet.swift */,
 				SM0000000000000000000107 /* LineNumberedTextEditorView.swift */,
 				B90000000000000000000106 /* PriceAlertEditor.swift */,
 				B90000000000000000000107 /* AlertsCenterView.swift */,
@@ -1444,10 +1450,12 @@
 				BPL000000000000000000003 /* BitcoinPowerLawChartView.swift in Sources */,
 				BPL000000000000000000004 /* BitcoinPowerLawSettingsSheet.swift in Sources */,
 				SM0000000000000000000001 /* ScriptStore.swift in Sources */,
+				SM0000000000000000000008 /* ScriptNameValidator.swift in Sources */,
 				SM0000000000000000000002 /* ScriptManagerViewModel.swift in Sources */,
 				SM0000000000000000000003 /* ScriptEditorViewModel.swift in Sources */,
 				SM0000000000000000000004 /* ScriptManagerView.swift in Sources */,
 				SM0000000000000000000005 /* ScriptEditorView.swift in Sources */,
+				SM0000000000000000000009 /* ScriptNameSheet.swift in Sources */,
 				SM0000000000000000000007 /* LineNumberedTextEditorView.swift in Sources */,
 				BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */,
 				BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */,

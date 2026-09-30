@@ -3,6 +3,7 @@ import SwiftUI
 struct ScriptManagerView: View {
     @StateObject private var model = ScriptManagerViewModel()
     @State private var pendingDelete: LocalScript?
+    @State private var showNewScript = false
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
 
     var body: some View {
@@ -10,9 +11,7 @@ struct ScriptManagerView: View {
             HStack(spacing: 12) {
                 Text("Script Manager").font(.headline)
                 Spacer()
-                Button { model.create() } label: {
-                    Label("New Script", systemImage: "plus")
-                }
+                Button("New Script", systemImage: "plus") { showNewScript = true }
             }
             .padding(10)
             Divider()
@@ -23,8 +22,11 @@ struct ScriptManagerView: View {
                         ForEach(model.groups) { group in
                             Section(isExpanded: model.isExpanded(group.id)) {
                                 ForEach(group.rows) { row in
-                                    ScriptRow(script: row.script, rowID: row.id, model: model, onDelete: { pendingDelete = $0 })
-                                        .tag(row.script.id)
+                                    ScriptRow(
+                                        script: row.script, rowID: row.id, model: model,
+                                        onDelete: { pendingDelete = $0 }
+                                    )
+                                    .tag(row.script.id)
                                 }
                             } header: {
                                 Text(group.title)
@@ -77,6 +79,15 @@ struct ScriptManagerView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .sheet(isPresented: $showNewScript) {
+            ScriptNameSheet(
+                problemFor: { model.nameProblem(for: $0) },
+                onCreate: { name in
+                    showNewScript = false
+                    model.create(named: name)
+                },
+                onCancel: { showNewScript = false })
+        }
         .confirmationDialog(
             "Delete Script",
             isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
@@ -103,11 +114,14 @@ private struct ScriptRow: View {
     @State private var draftName = ""
     @FocusState private var isRenameFocused: Bool
 
+    private var nameIsValid: Bool { model.nameProblem(for: draftName, excluding: script.id) == nil }
+
     var body: some View {
         HStack {
             if model.renamingRowID == rowID {
                 TextField("Name", text: $draftName)
                     .textFieldStyle(.plain)
+                    .foregroundStyle(nameIsValid ? Color.primary : Color.red)
                     .focused($isRenameFocused)
                     .onSubmit { model.commitRename(script, newName: draftName) }
                     .onExitCommand { model.renamingRowID = nil }
@@ -131,6 +145,7 @@ private struct ScriptRow: View {
         .simultaneousGesture(TapGesture().onEnded { model.handleRowClick(rowID: rowID, scriptID: script.id) })
         .contextMenu {
             Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
+            Button("Rename") { model.renamingRowID = rowID }
             Divider()
             Button("Show in Finder") { model.showInFinder(script) }
             Button("Export…") { model.export(script) }

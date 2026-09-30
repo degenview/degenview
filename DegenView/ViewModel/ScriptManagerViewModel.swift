@@ -40,14 +40,36 @@ final class ScriptManagerViewModel: ObservableObject {
         if interval > 0.4 && interval < 1.5 { renamingRowID = rowID }
     }
 
+    /// Why `raw` cannot name a script (invalid file name, or another script already has it),
+    /// or nil when it can. Empty input has no message; callers disable their action instead.
+    func nameProblem(for raw: String, excluding id: UUID? = nil) -> String? {
+        switch ScriptNameValidator.validate(raw) {
+        case .failure(.empty):
+            return raw.isEmpty ? nil : ScriptNameError.empty.localizedDescription
+        case .failure(let error):
+            return error.localizedDescription
+        case .success(let clean):
+            let taken = scripts.contains {
+                $0.id != id && $0.name.caseInsensitiveCompare(clean) == .orderedSame
+            }
+            return taken ? ScriptStoreError.nameConflict.localizedDescription : nil
+        }
+    }
+
+    /// Validates before touching the store. An invalid name reports why and leaves the row in
+    /// edit mode so it can be corrected.
     func commitRename(_ script: LocalScript, newName: String) {
+        guard case .success(let clean) = ScriptNameValidator.validate(newName),
+            nameProblem(for: newName, excluding: script.id) == nil
+        else {
+            errorMessage = nameProblem(for: newName, excluding: script.id) ?? ScriptNameError.empty.localizedDescription
+            return
+        }
         renamingRowID = nil
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != script.name else { return }
+        guard clean != script.name else { return }
         Task {
             do {
-                _ = try await ScriptStore.shared.save(
-                    id: script.id, name: trimmed, type: script.type, source: script.source)
+                try await ScriptStore.shared.rename(id: script.id, to: clean)
                 NotificationCenter.default.post(name: .localScriptsDidChange, object: script.id)
                 await refresh()
             } catch { errorMessage = error.localizedDescription }
@@ -98,10 +120,16 @@ final class ScriptManagerViewModel: ObservableObject {
         _ = WindowCoordinator.shared.takePendingScriptManagerSelection()
         Task { await refresh(selecting: id) }
     }
-    func create(type: ScriptType = .indicator) {
+    /// The template declares an indicator; the type is re-detected from the code on save.
+    func create(named name: String) {
+        if let problem = nameProblem(for: name) {
+            errorMessage = problem
+            return
+        }
         Task {
             do {
-                let script = try await ScriptStore.shared.create(name: "Untitled", type: type)
+                let script = try await ScriptStore.shared.create(
+                    name: name, type: .indicator, disambiguating: false)
                 await refresh(selecting: script.id)
             } catch { errorMessage = error.localizedDescription }
         }
