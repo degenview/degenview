@@ -2,9 +2,9 @@ import Foundation
 
 /// How a Binance-vocabulary interval token ("1h", "1w", …) is served from Coinbase.
 ///
-/// Coinbase Exchange only produces 1m, 5m, 15m, 1h, 6h and 1d candles. Weekly and
-/// monthly charts are built by folding daily candles into calendar buckets, the same
-/// trick `GeckoTerminalService` uses above its own daily ceiling.
+/// Coinbase Exchange only produces 1m, 5m, 15m, 1h, 6h and 1d candles. Weekly, monthly,
+/// quarterly and yearly charts are built by folding daily candles into calendar buckets,
+/// the same trick `GeckoTerminalService` uses above its own daily ceiling.
 struct CoinbaseGranularity: Equatable {
     /// Candle size requested from Coinbase, in seconds.
     let source: Int
@@ -32,6 +32,8 @@ struct CoinbaseGranularity: Equatable {
         case "1d": self.init(native: 86_400)
         case "1w": self.init(source: 86_400, target: 604_800, sourceCandlesPerTarget: 7)
         case "1M": self.init(source: 86_400, target: 2_592_000, sourceCandlesPerTarget: 31)
+        case "3M": self.init(source: 86_400, target: 7_776_000, sourceCandlesPerTarget: 92)
+        case "1Y": self.init(source: 86_400, target: 31_536_000, sourceCandlesPerTarget: 366)
         default: return nil
         }
     }
@@ -54,7 +56,7 @@ struct CoinbaseGranularity: Equatable {
 
     /// End of the displayed candle that opens at `start`.
     func bucketEnd(after start: Date) -> Date {
-        // A month bucket isn't a fixed length — find where the next one opens.
+        // Months, quarters and years aren't a fixed length — find where the next one opens.
         if target >= 2_419_200 {
             return bucketStart(of: start.addingTimeInterval(target * 1.2))
         }

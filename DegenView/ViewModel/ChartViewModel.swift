@@ -1313,9 +1313,12 @@ final class ChartViewModel: ObservableObject {
             return
         }
 
-        visibleCount = Swift.max(1, count)
+        // A prediction market draws a price line, not candles: its 3M and 1Y stay three months and
+        // a year of points however few quarterly or yearly candles the tab asks the others for.
+        let shownCount = source.isPredictionMarket ? Swift.max(count, range.lineChartPointCount) : count
+        visibleCount = Swift.max(1, shownCount)
         requestedRange = range
-        let count = fetchCount(for: count)
+        let count = fetchCount(for: shownCount)
 
         fetchTask?.cancel()
         fetchGeneration += 1

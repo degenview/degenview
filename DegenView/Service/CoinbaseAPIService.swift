@@ -37,7 +37,8 @@ enum CoinbaseAPIError: LocalizedError {
 ///
 /// Differences from Binance that shape this file:
 /// - Candles arrive newest-first as `[time, low, high, open, close, volume]`, with no
-///   quote volume, and only in six sizes. Weekly and monthly charts are folded from daily.
+///   quote volume, and only in six sizes. Weekly, monthly, quarterly and yearly charts are
+///   folded from daily.
 /// - One request spans at most 300 candles, so deep history is paged backwards.
 /// - Public REST is limited to about 10 requests a second per IP; requests are spaced out.
 final class CoinbaseAPIService: GranularReplayDataSource {
@@ -168,27 +169,10 @@ final class CoinbaseAPIService: GranularReplayDataSource {
         )
     }
 
-    /// Fold ascending daily candles into weekly or monthly ones on the same boundaries Binance uses.
+    /// Fold ascending daily candles into weekly, monthly, quarterly or yearly ones on the same
+    /// boundaries Binance uses.
     static func fold(_ candles: [KlineData], into plan: CoinbaseGranularity) -> [KlineData] {
-        var folded: [KlineData] = []
-        for candle in candles {
-            let start = plan.bucketStart(of: candle.openTime)
-            if let last = folded.last, last.openTime == start {
-                let index = folded.count - 1
-                folded[index].highPrice = max(last.highPrice, candle.highPrice)
-                folded[index].lowPrice = min(last.lowPrice, candle.lowPrice)
-                folded[index].closePrice = candle.closePrice
-                folded[index].volume += candle.volume
-                folded[index].quoteVolume += candle.quoteVolume
-            } else {
-                folded.append(
-                    KlineData(
-                        openTime: start, openPrice: candle.openPrice, highPrice: candle.highPrice,
-                        lowPrice: candle.lowPrice, closePrice: candle.closePrice,
-                        volume: candle.volume, quoteVolume: candle.quoteVolume))
-            }
-        }
-        return folded
+        candles.folded(into: plan.target)
     }
 
     /// Union by open time, oldest first. `fresh` wins where both hold a candle — the newest one is still forming.

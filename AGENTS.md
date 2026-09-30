@@ -60,7 +60,13 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 ### Adding a new timeframe
 1. Add case to `TimeRange` enum
 2. Set `binanceInterval`, `dataPointLimit`, `chartTitle`, `dateFormat`
-3. If Binance doesn't support the interval natively, pick closest and adjust `dataPointLimit`
+3. If a provider can't serve the interval natively, fold a finer one into calendar buckets
+   (`KlineData.folded(into:)`, boundaries from `KlineData.bucketStart`) rather than picking a
+   nearby size. `3M` and `1Y` are quarterly/yearly candles on every source: Binance and Alpaca
+   fold monthly bars (`KlineData.monthlyFold`), Coinbase folds daily, CoinGecko and
+   GeckoTerminal build them from their own series. Binance has no live stream for them — the
+   5 s REST refresh covers it. Prediction markets are line charts, so they keep their own
+   `effectiveSpanDays`/`lineChartPointCount` windows
 
 ### Chart rendering
 - `CandleChartView` owns the `Canvas` draw loop

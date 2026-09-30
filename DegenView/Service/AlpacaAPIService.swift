@@ -25,11 +25,14 @@ final class AlpacaAPIService: GranularReplayDataSource {
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
         let credentials = try configuredCredentials()
+        // No quarterly or yearly bars: those are folded from monthly ones, one bucket more than shown.
+        let fold = KlineData.monthlyFold(for: interval)
+        let requested = fold.map { (limit + 1) * $0.months } ?? limit
         var components = URLComponents(string: "https://data.alpaca.markets/v2/stocks/\(symbol.uppercased())/bars")!
         components.queryItems = [
-            URLQueryItem(name: "timeframe", value: Self.timeframe(for: interval)),
-            URLQueryItem(name: "start", value: Self.startDate(interval: interval, limit: limit)),
-            URLQueryItem(name: "limit", value: String(min(limit, 10_000))),
+            URLQueryItem(name: "timeframe", value: Self.timeframe(for: fold == nil ? interval : "1M")),
+            URLQueryItem(name: "start", value: Self.startDate(interval: fold == nil ? interval : "1M", limit: requested)),
+            URLQueryItem(name: "limit", value: String(min(requested, 10_000))),
             URLQueryItem(name: "adjustment", value: "all"),
             URLQueryItem(name: "feed", value: "iex"),
             URLQueryItem(name: "sort", value: "desc"),
@@ -37,11 +40,13 @@ final class AlpacaAPIService: GranularReplayDataSource {
         let data = try await request(components.url!, credentials: credentials)
         let response = try JSONDecoder.alpaca.decode(BarsResponse.self, from: data)
         guard !response.bars.isEmpty else { throw AlpacaError.noData(symbol.uppercased()) }
-        return response.bars.reversed().map { bar in
+        let bars = response.bars.reversed().map { bar in
             KlineData(
                 openTime: bar.t, openPrice: bar.o, highPrice: bar.h, lowPrice: bar.l,
                 closePrice: bar.c, volume: bar.v, quoteVolume: bar.vw.map { $0 * bar.v } ?? 0)
         }
+        guard let fold else { return bars }
+        return Array(bars.folded(into: fold.seconds).suffix(limit))
     }
 
     func supportedReplayIntervals(chartInterval: String) -> [ReplayInterval] {
@@ -51,6 +56,8 @@ final class AlpacaAPIService: GranularReplayDataSource {
         case "1d": chartSeconds = 86_400
         case "1w": chartSeconds = 604_800
         case "1M": chartSeconds = 2_592_000
+        case "3M": chartSeconds = 7_776_000
+        case "1Y": chartSeconds = 31_536_000
         default: chartSeconds = 0
         }
         return ReplayInterval.allCases.filter { interval in

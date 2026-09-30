@@ -478,7 +478,7 @@ final class CoinGeckoAPIService: TickerDataSource {
     private static let intervalSeconds: [String: TimeInterval] = [
         "1m": 60, "5m": 300, "15m": 900, "30m": 1_800,
         "1h": 3_600, "4h": 14_400,
-        "1d": 86_400, "1w": 604_800, "1M": 2_592_000,
+        "1d": 86_400, "1w": 604_800, "1M": 2_592_000, "3M": 7_776_000, "1Y": 31_536_000,
     ]
 
     /// One `/market_chart` window: a span of days, and what CoinGecko returns for it.

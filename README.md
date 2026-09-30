@@ -22,7 +22,8 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   Keychain enables higher authenticated rate limits
 - **Live updates** — Binance and Coinbase crypto and Alpaca stock charts receive WebSocket updates;
   other sources refresh automatically
-- **Six timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y, with scroll-wheel zoom to change the
+- **Six timeframes** — 1H, 1D, 1W, 1M, 3M, and 1Y, each the size of one candle (3M draws
+  calendar-quarter candles, 1Y calendar-year candles), with scroll-wheel zoom to change the
   visible candle count
 - **Multi-source identity** — The same symbol can be added from different sources without
   being treated as a duplicate

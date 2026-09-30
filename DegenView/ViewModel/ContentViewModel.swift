@@ -997,7 +997,9 @@ final class ContentViewModel: ObservableObject {
         let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
         let interval = selectedTimeRange.binanceInterval
 
-        if symbols.isEmpty {
+        // Binance streams no quarterly or yearly klines, and its monthly ones would land in the
+        // wrong candle. Those candles move slowly; the five-second REST refresh keeps them current.
+        if symbols.isEmpty || KlineData.monthlyFold(for: interval) != nil {
             wsService.disconnect()
         } else {
             wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
@@ -1384,7 +1386,7 @@ final class ContentViewModel: ObservableObject {
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
-        candleCount = view.candleCount ?? view.timeRange.dataPointLimit
+        candleCount = view.candleCount.map(view.timeRange.migratedCandleCount) ?? view.timeRange.dataPointLimit
         layoutMode = view.layoutMode
 
         let configs = view.resolvedConfigs
