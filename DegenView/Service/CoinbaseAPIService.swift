@@ -315,6 +315,36 @@ final class CoinbaseAPIService: GranularReplayDataSource {
     }
 }
 
+// MARK: - Batch quotes
+
+extension CoinbaseAPIService: BatchQuoteDataSource {
+    private struct Stats: Decodable {
+        let open: String
+        let last: String
+    }
+
+    /// Coinbase has no multi-product price call, but `/stats` is one small request per product
+    /// (against the ~8 a second the request gate allows) instead of a candle page each. A
+    /// product that fails is left out rather than failing the rest.
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        await withTaskGroup(of: (String, SourceQuote?).self) { group in
+            for request in requests {
+                group.addTask { [self] in
+                    let id = Self.productID(request.symbol)
+                    guard let data = try? await get("/products/\(id)/stats", query: [], symbol: id),
+                        let stats = try? JSONDecoder().decode(Stats.self, from: data),
+                        let price = Double(stats.last), price > 0
+                    else { return (request.symbol, nil) }
+                    return (request.symbol, SourceQuote(price: price, previousDayPrice: Double(stats.open)))
+                }
+            }
+            var quotes: [String: SourceQuote] = [:]
+            for await (symbol, quote) in group { quotes[symbol] = quote }
+            return quotes
+        }
+    }
+}
+
 // MARK: - Support types
 
 private struct CoinbaseProduct: Decodable {

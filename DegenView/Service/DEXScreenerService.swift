@@ -13,6 +13,7 @@ private struct DEXPair: Codable {
     let baseToken: DEXToken?
     let quoteToken: DEXToken?
     let priceUsd: String?
+    let priceChange: DEXPriceChange?
     let volume: DEXVolume?
     let liquidity: DEXLiquidity?
     let pairCreatedAt: Int64?
@@ -30,6 +31,10 @@ private struct DEXPair: Codable {
     }
 
     struct DEXVolume: Codable {
+        let h24: Double?
+    }
+
+    struct DEXPriceChange: Codable {
         let h24: Double?
     }
 
@@ -189,5 +194,51 @@ enum DEXScreenerError: LocalizedError {
         case .invalidURL: return "Invalid URL"
         case .invalidResponse: return "Unexpected response from DEXScreener"
         }
+    }
+}
+
+// MARK: - Batch quotes
+
+extension DEXScreenerService: BatchQuoteDataSource {
+    /// DEXScreener takes at most this many pair addresses per call.
+    private static let pairsPerRequest = 30
+
+    /// One request per chain for up to 30 pools each, priced straight from DEXScreener. Candles
+    /// come from GeckoTerminal, whose limiter allows a call every 2.2 seconds. Pairs without a
+    /// known chain are left out and fall back to candles.
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        let byChain = Dictionary(grouping: requests.filter { $0.metadata["chain"].map { $0 != "unknown" } ?? false }) {
+            $0.metadata["chain"] ?? ""
+        }
+        return await withTaskGroup(of: [String: SourceQuote].self) { group in
+            for (chain, pairs) in byChain {
+                for start in stride(from: 0, to: pairs.count, by: Self.pairsPerRequest) {
+                    let page = Array(pairs[start..<min(start + Self.pairsPerRequest, pairs.count)])
+                    group.addTask { [self] in (try? await fetchPairs(chain: chain, requests: page)) ?? [:] }
+                }
+            }
+            var quotes: [String: SourceQuote] = [:]
+            for await partial in group { quotes.merge(partial) { first, _ in first } }
+            return quotes
+        }
+    }
+
+    private func fetchPairs(chain: String, requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        let addresses = requests.map(\.symbol).joined(separator: ",")
+        guard let url = URL(string: "\(baseURL)/pairs/\(chain)/\(addresses)") else { return [:] }
+        let (data, response) = try await session.data(from: url)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { return [:] }
+        let pairs = try JSONDecoder().decode(DEXPairsResponse.self, from: data).pairs ?? []
+        let byAddress = Dictionary(
+            pairs.compactMap { pair in pair.pairAddress.map { ($0.lowercased(), pair) } },
+            uniquingKeysWith: { first, _ in first })
+        var quotes: [String: SourceQuote] = [:]
+        for request in requests {
+            guard let pair = byAddress[request.symbol.lowercased()],
+                let price = Double(pair.priceUsd ?? ""), price > 0
+            else { continue }
+            quotes[request.symbol] = SourceQuote(price: price, changePercent24h: pair.priceChange?.h24)
+        }
+        return quotes
     }
 }

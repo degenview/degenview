@@ -54,7 +54,7 @@ final class BitcoinPowerLawTests: XCTestCase {
         XCTAssertEqual(parsed.map(\.close), [1, 3])
     }
 
-    func testConfigCodableAndLegacyTickerConfig() throws {
+    func testConfigCodable() throws {
         let config = BitcoinPowerLawConfig(
             intercept: -15, exponent: 5,
             lowerMultiplier: 0.5, upperMultiplier: 2)
@@ -62,10 +62,6 @@ final class BitcoinPowerLawTests: XCTestCase {
             try JSONDecoder().decode(
                 BitcoinPowerLawConfig.self,
                 from: JSONEncoder().encode(config)), config)
-
-        let legacy = #"{"symbol":"BTC","source":"Binance","scripts":[]}"#
-        let ticker = try JSONDecoder().decode(TickerConfig.self, from: Data(legacy.utf8))
-        XCTAssertNil(ticker.bitcoinPowerLaw)
     }
 
     func testValidationRejectsNonFiniteAndNonPositiveParameters() {

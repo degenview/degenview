@@ -417,6 +417,10 @@ private struct PortfolioChartCard: View {
     private var totalValue: Decimal { holdings.compactMap(\.currentValue).reduce(0, +) }
     private var currency: PortfolioCurrency { portfolio?.baseCurrency ?? .USD }
     private var history: [PortfolioSnapshot] {
+        if config.range == .oneDay {
+            let intraday = store.intradayHistory(for: config.portfolioID)
+            if !intraday.isEmpty { return intraday }
+        }
         let all = store.history(for: config.portfolioID)
         guard let duration = config.range.duration else { return all }
         return all.filter { $0.timestamp >= Date().addingTimeInterval(-duration) }
@@ -453,11 +457,14 @@ private struct PortfolioChartCard: View {
 
             switch config.kind {
             case .valueChart:
-                Picker("History range", selection: $config.range) {
-                    ForEach(PortfolioChartRange.allCases) { Text($0.rawValue).tag($0) }
+                HStack {
+                    timeframeChangeSummary
+                    Spacer(minLength: 8)
+                    Picker("History range", selection: $config.range) {
+                        ForEach(PortfolioChartRange.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden().controlSize(.mini).font(.caption2).fixedSize()
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 380)
-                timeframeChangeSummary
                 PortfolioValueMiniChart(
                     snapshots: history, currentValue: totalValue,
                     currency: currency, range: config.range,
@@ -485,6 +492,13 @@ private struct PortfolioChartCard: View {
             await store.refreshQuotes(forPortfolioID: config.portfolioID)
             await store.rebuildHistory(forPortfolioID: config.portfolioID)
         }
+        .task(id: config.range) {
+            guard config.kind == .valueChart, config.range == .oneDay else { return }
+            while !Task.isCancelled {
+                await store.refreshIntraday(forPortfolioID: config.portfolioID)
+                try? await Task.sleep(for: .seconds(300))
+            }
+        }
     }
 
     private func money(_ value: Decimal) -> String {
@@ -511,7 +525,6 @@ private struct PortfolioChartCard: View {
         .font(.caption.weight(.medium))
         .monospacedDigit()
         .foregroundStyle(changeColor)
-        .frame(maxWidth: 380)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(changeAccessibilityLabel)
     }

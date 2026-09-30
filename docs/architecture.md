@@ -82,6 +82,8 @@ DegenView/
     ├── PortfolioAccountingEngine.swift # Weighted-average basis and P&L calculations
     ├── PortfolioLedger.swift          # Actor-serialized atomic transaction ledger
     ├── PortfolioStore.swift           # Published portfolio state, quotes, history, currency projections
+    ├── PortfolioCandleStore.swift     # SQLite-backed daily candles; fetches only what is missing
+    ├── PortfolioQuoteFetcher.swift    # Current prices: one batched call per source, candles as fallback
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PredictionMarketDataSource.swift # Shared protocol: YES probability history by TimeRange
@@ -96,9 +98,10 @@ DegenView/
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
     ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database
-    ├── AppDatabase+Schema.swift       # Append-only migrations, document and setting helpers
+    ├── AppDatabase+Schema.swift       # Schema creation, document and setting helpers
     ├── AppDatabase+Workspace.swift    # Tabs, saved views, and drawings tables
     ├── AppDatabase+Portfolio.swift    # Portfolio ledger tables
+    ├── AppDatabase+Candles.swift      # Closed daily candle cache and its coverage ranges
     ├── AppDatabase+PaperTrading.swift # Paper-trading tables
     ├── AlertRuntimePersistence.swift  # Alert snapshot and GUI→runtime command queue
     └── JSONStore.swift                # Codable JSON files for disposable caches
@@ -125,9 +128,9 @@ DegenView/
    `FavoritesStore`, `DrawingStore`, `PortfolioStore`, `PaperTradingStore`, and alert
    persistence each own their tables and keep their public API; nested chart configuration
    stays a JSON payload column so it evolves through Codable defaults rather than schema
-   migrations. Schema changes are new, append-only `registerMigration` entries. State that
-   fails to load disables writes instead of being replaced by an empty value. Caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
-   files. Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
+   changes. The schema is a single idempotent `createSchema`; there are no migrations. State that
+   fails to load disables writes instead of being replaced by an empty value. Small caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
+   files; portfolio daily candles are the exception and live in SQLite (`candle`, `candle_coverage`). Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
    database; only CMC chart type, range, and display settings enter workspace state.
    Each tab and named saved view also stores ordered `ChartColumn` membership by the
    stable `TickerConfig.chartID`. Older documents without columns are repaired into the
@@ -146,7 +149,17 @@ DegenView/
 9. Portfolio mutations are serialized by `PortfolioLedger`, persisted as one database
    transaction, and replayed by `PortfolioAccountingEngine`. Quote ticks update live
    valuation without replaying static accounting; historical edits invalidate only the
-   affected snapshot suffix.
+   affected snapshot suffix. Portfolio value history is one persisted snapshot per day;
+   the 1D range is instead an in-memory 30-minute series (`PortfolioStore.intradayHistory`)
+   replayed from recent 15m candles (1h for Alpaca). Daily candles behind that history come
+   from `PortfolioCandleStore`: closed bars are stored once and a rebuild fetches only the
+   days since the newest stored bar (or an older stretch if a transaction reaches back).
+   Startup is value-first: persisted quotes paint the total immediately, `PortfolioQuoteFetcher`
+   refreshes prices (one `BatchQuoteDataSource` call per source — Binance `ticker/24hr`,
+   CoinGecko `coins/markets`, Coinbase `stats`, DEXScreener `pairs`, Alpaca `snapshots` — with
+   hourly candles as the per-asset fallback), and only then does the history rebuild start,
+   so it never queues ahead of prices on a shared rate limiter. The chart has its own loading
+   flag (`isLoadingHistory`); per-day snapshots are computed off the main actor.
 10. Selecting a reporting currency asks `FXRateService` for current or historical
     conversions—fiat rates from Frankfurter, BTC cross-rates from `BitcoinHistoryService`—
     and `PortfolioStore` converts transactions, quotes, and history into that currency once

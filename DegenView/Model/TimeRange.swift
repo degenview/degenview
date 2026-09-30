@@ -134,15 +134,4 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         case .oneYear: return 10  // 10 years of yearly candles
         }
     }
-
-    /// The candle count earlier versions stored for this range. A tab or saved view still
-    /// holding one of these was never zoomed — it predates the range meaning a candle size —
-    /// and would draw 90 quarters across a history that is a dozen long.
-    func migratedCandleCount(_ stored: Int) -> Int {
-        switch (self, stored) {
-        case (.threeMonths, 90), (.oneYear, 52): return dataPointLimit
-        default: return stored
-        }
-    }
-
 }

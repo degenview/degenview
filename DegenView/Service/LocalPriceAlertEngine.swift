@@ -19,11 +19,7 @@ actor LocalPriceAlertEngine {
     init(repository: any AlertSnapshotRepository = LocalAlertRepository()) async {
         self.repository = repository
         let loaded = await repository.load()
-        if let loaded, loaded.schemaVersion <= AlertPersistenceSnapshot.currentSchemaVersion {
-            snapshot = loaded
-        } else {
-            snapshot = AlertPersistenceSnapshot()
-        }
+        snapshot = loaded ?? AlertPersistenceSnapshot()
         for alert in snapshot.alerts where alert.state == .active {
             index[alert.asset.key, default: []].insert(alert.id)
         }
@@ -200,7 +196,6 @@ actor LocalPriceAlertEngine {
         }
     }
     private func persist() async {
-        snapshot.schemaVersion = AlertPersistenceSnapshot.currentSchemaVersion
         snapshot.revision &+= 1
         await repository.save(snapshot)
     }

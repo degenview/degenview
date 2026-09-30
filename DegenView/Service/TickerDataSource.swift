@@ -109,6 +109,39 @@ protocol GranularReplayDataSource: TickerDataSource {
     ) async throws -> [KlineData]
 }
 
+/// One asset to price: the source's own symbol, plus whatever the source needs beyond it
+/// (a DEX pair also needs its chain).
+struct QuoteRequest: Hashable, Sendable {
+    let symbol: String
+    let metadata: [String: String]
+}
+
+/// A current price with the price 24 hours earlier, when the source reports one.
+struct SourceQuote: Equatable, Sendable {
+    let price: Double
+    let previousDayPrice: Double?
+}
+
+/// Optional capability for sources that can price many assets in one call, far cheaper than
+/// reading the last close out of a candle request per asset. Results are keyed by
+/// `QuoteRequest.symbol` exactly as passed in; a symbol the source didn't answer is omitted,
+/// and the caller falls back to candles for it.
+protocol BatchQuoteDataSource: TickerDataSource {
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote]
+}
+
+extension SourceQuote {
+    /// Sources that report a 24h percent change rather than a price: `previous = price / (1 + pct/100)`.
+    init(price: Double, changePercent24h: Double?) {
+        self.price = price
+        if let changePercent24h, changePercent24h > -100 {
+            previousDayPrice = price / (1 + changePercent24h / 100)
+        } else {
+            previousDayPrice = nil
+        }
+    }
+}
+
 extension TickerDataSource {
     /// Default: no cache access. Services with caches override.
     func getCachedKlines(symbol: String, interval: String, count: Int) async -> [KlineData]? {

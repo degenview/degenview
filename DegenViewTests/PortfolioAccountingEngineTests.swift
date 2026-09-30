@@ -264,6 +264,75 @@ final class PortfolioAccountingEngineTests: XCTestCase {
         )
     }
 
+    private func intradayBars(from start: Date, count: Int, seconds: TimeInterval = 900)
+        -> PortfolioStore.IntradayBars
+    {
+        let bars = (0..<count).map { index in
+            KlineData(
+                openTime: start.addingTimeInterval(Double(index) * seconds), openPrice: 0, highPrice: 0, lowPrice: 0,
+                closePrice: Double(index), volume: 0)
+        }
+        return .init(bars: bars, seconds: seconds, fetched: start)
+    }
+
+    func testIntradaySnapshotsStepEveryThirtyMinutes() {
+        let now = jan1.addingTimeInterval(3 * 86_400 + 1_000)
+        let points = PortfolioStore.intradaySnapshots(
+            transactions: [tx(p1, btc, .buy, 2, 100)], portfolioID: p1, bars: [:], rateToReporting: 1, now: now)
+        XCTAssertEqual(points.count, 49)
+        XCTAssertEqual(points.last?.timestamp, jan1.addingTimeInterval(3 * 86_400))
+        let gaps = zip(points, points.dropFirst()).map { $1.timestamp.timeIntervalSince($0.timestamp) }
+        XCTAssertEqual(Set(gaps), [1_800])
+        XCTAssertTrue(points.allSatisfy { !$0.isComplete && $0.value == 0 })
+    }
+
+    func testIntradaySnapshotsPriceFromLastFinishedCandleAndScaleByRate() {
+        let now = jan1.addingTimeInterval(3 * 86_400)
+        let barStart = now.addingTimeInterval(-30 * 3_600)
+        let points = PortfolioStore.intradaySnapshots(
+            transactions: [tx(p1, btc, .buy, 2, 100)], portfolioID: p1,
+            bars: [btc.key: intradayBars(from: barStart, count: 120)], rateToReporting: 2, now: now)
+        let last = points.last
+        // The slot at `now` uses the candle that opened 15 minutes earlier: index 119 (30 h window / 15 min = 120 bars).
+        XCTAssertEqual(last?.value, 2 * 119 * 2)
+        XCTAssertEqual(last?.isComplete, true)
+        // A slot is priced by the candle that had finished by then, not the one still forming.
+        let slot = points[1]
+        let expectedIndex = (slot.timestamp.timeIntervalSince(barStart) - 900) / 900
+        XCTAssertEqual(slot.value, Decimal(expectedIndex) * 4)
+    }
+
+    func testIntradaySnapshotsForwardFillAcrossGap() {
+        let now = jan1.addingTimeInterval(3 * 86_400)
+        let bars = intradayBars(from: now.addingTimeInterval(-30 * 3_600), count: 10, seconds: 3_600)
+        let points = PortfolioStore.intradaySnapshots(
+            transactions: [tx(p1, btc, .buy, 1, 100)], portfolioID: p1, bars: [btc.key: bars], rateToReporting: 1,
+            now: now)
+        // Candles stop 20 h before `now`; the last close carries forward.
+        XCTAssertEqual(points.last?.value, 9)
+        XCTAssertEqual(points.last?.isComplete, true)
+    }
+
+    func testIntradaySnapshotsSkipSlotsBeforeFirstTransaction() {
+        let now = jan1.addingTimeInterval(3 * 86_400)
+        let points = PortfolioStore.intradaySnapshots(
+            transactions: [tx(p1, btc, .buy, 1, 100, day: 3 - 2.0 / 24)], portfolioID: p1, bars: [:],
+            rateToReporting: 1, now: now)
+        XCTAssertEqual(points.count, 5)
+        XCTAssertEqual(points.first?.timestamp, now.addingTimeInterval(-7_200))
+    }
+
+    func testSumIntradayTotalsByTimestamp() {
+        let first = snapshotPoint(portfolio: p1, day: 1)
+        let second = PortfolioSnapshot(
+            portfolioID: p2, timestamp: first.timestamp, value: 5, netContributions: 1, realizedPnL: 0,
+            unrealizedPnL: 0, isComplete: false)
+        let sum = PortfolioStore.sumIntraday([[first], [second]])
+        XCTAssertEqual(sum.count, 1)
+        XCTAssertEqual(sum.first?.value, first.value + 5)
+        XCTAssertEqual(sum.first?.isComplete, false)
+    }
+
     func testAggregateHistoryHasStableIdentityAndTotals() throws {
         let first = snapshotPoint(portfolio: p1, day: 1)
         let second = PortfolioSnapshot(

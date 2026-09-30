@@ -1,8 +1,10 @@
 import Foundation
 import GRDB
 
-/// SQLite store for user-authored data: tabs, saved views, favorites, drawings, and
-/// (as they migrate) portfolios, paper trading, and alerts. Caches stay in `JSONStore`.
+/// SQLite store for user-authored data: tabs, saved views, favorites, drawings, portfolios,
+/// paper trading, and alerts. Small caches stay in
+/// `JSONStore`; the exception is candle history, which is large, append-mostly and read by
+/// range, so it lives here (`AppDatabase+Candles`).
 ///
 /// Opened as a WAL `DatabasePool`, so the GUI and the login-item agent can share the
 /// file: readers never block the writer, and a writer waits on `busyTimeout` for the
@@ -29,12 +31,12 @@ final class AppDatabase: Sendable {
         var configuration = Configuration()
         configuration.busyMode = .timeout(5)
         writer = try DatabasePool(path: path, configuration: configuration)
-        try Self.migrator.migrate(writer)
+        try writer.write(Self.createSchema)
     }
 
     private init(writer: any DatabaseWriter) throws {
         self.writer = writer
-        try Self.migrator.migrate(writer)
+        try writer.write(Self.createSchema)
     }
 
     static func makeInMemory() throws -> AppDatabase {

@@ -20,21 +20,6 @@ struct KlineData: Identifiable, Codable {
         case openTime, openPrice, highPrice, lowPrice, closePrice, volume, quoteVolume, isClosed
     }
 
-    /// Hand-written so `quoteVolume` can be optional on the way in: it was added
-    /// after the kline cache shipped, and a synthesized decoder would reject every
-    /// entry already on disk. Encoding stays synthesized.
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        openTime = try container.decode(Date.self, forKey: .openTime)
-        openPrice = try container.decode(Double.self, forKey: .openPrice)
-        highPrice = try container.decode(Double.self, forKey: .highPrice)
-        lowPrice = try container.decode(Double.self, forKey: .lowPrice)
-        closePrice = try container.decode(Double.self, forKey: .closePrice)
-        volume = try container.decode(Double.self, forKey: .volume)
-        quoteVolume = try container.decodeIfPresent(Double.self, forKey: .quoteVolume) ?? 0
-        isClosed = try container.decodeIfPresent(Bool.self, forKey: .isClosed) ?? false
-    }
-
     init(
         openTime: Date,
         openPrice: Double,

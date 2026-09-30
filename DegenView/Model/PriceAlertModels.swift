@@ -183,30 +183,12 @@ struct AlertNotificationSettings: Codable, Equatable, Sendable {
 }
 
 struct AlertPersistenceSnapshot: Codable, Equatable, Sendable {
-    static let currentSchemaVersion = 2
-    var schemaVersion = currentSchemaVersion
     var revision: UInt64 = 0
     var alerts: [PriceAlert] = []
     var history: [AlertTriggerEvent] = []
     var settings = AlertNotificationSettings()
     var processedCommandIDs: [UUID] = []
     var health = AlertRuntimeHealth()
-
-    private enum CodingKeys: String, CodingKey {
-        case schemaVersion, revision, alerts, history, settings, processedCommandIDs, health
-    }
-    init() {}
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        schemaVersion = try c.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
-        revision = try c.decodeIfPresent(UInt64.self, forKey: .revision) ?? 0
-        alerts = try c.decodeIfPresent([PriceAlert].self, forKey: .alerts) ?? []
-        history = try c.decodeIfPresent([AlertTriggerEvent].self, forKey: .history) ?? []
-        settings = try c.decodeIfPresent(AlertNotificationSettings.self, forKey: .settings) ?? .init()
-        processedCommandIDs = try c.decodeIfPresent([UUID].self, forKey: .processedCommandIDs) ?? []
-        health = try c.decodeIfPresent(AlertRuntimeHealth.self, forKey: .health) ?? .init()
-        schemaVersion = Self.currentSchemaVersion
-    }
 }
 
 enum AlertRuntimeOwner: String, Codable, Sendable { case none, app, agent }

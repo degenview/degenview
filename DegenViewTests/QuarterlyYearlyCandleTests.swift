@@ -76,24 +76,6 @@ final class QuarterlyYearlyCandleTests: XCTestCase {
         XCTAssertEqual(TimeRange.oneMonth.effectiveSpanDays, 360)
     }
 
-    func testCandleCountsStoredBeforeTheChangeAreReplacedOnlyWhenTheyWereDefaults() {
-        XCTAssertEqual(TimeRange.threeMonths.migratedCandleCount(90), 16)
-        XCTAssertEqual(TimeRange.oneYear.migratedCandleCount(52), 10)
-        XCTAssertEqual(TimeRange.threeMonths.migratedCandleCount(40), 40, "a zoom the user chose stays")
-        XCTAssertEqual(TimeRange.oneDay.migratedCandleCount(90), 90, "only 3M and 1Y changed meaning")
-    }
-
-    func testSavedTabWithOldDefaultCandleCountIsMigratedOnDecode() throws {
-        let tab = ChartTab(timeRange: .threeMonths, candleCount: 16)
-        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(tab)) as? [String: Any])
-        json["candleCount"] = 90
-
-        let decoded = try JSONDecoder().decode(ChartTab.self, from: JSONSerialization.data(withJSONObject: json))
-
-        XCTAssertEqual(decoded.candleCount, 16)
-        XCTAssertEqual(decoded.timeRange, .threeMonths)
-    }
-
     // MARK: - Calendar buckets
 
     func testQuartersOpenOnJanAprJulOct() {

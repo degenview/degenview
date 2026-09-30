@@ -143,13 +143,6 @@ final class ScriptStoreTests: XCTestCase {
         }
     }
 
-    func testLegacyTickerConfigGainsChartIdentityAndEmptyInstances() throws {
-        let data = Data(#"{"symbol":"BTCUSDT","source":"Binance"}"#.utf8)
-        let config = try JSONDecoder().decode(TickerConfig.self, from: data)
-        XCTAssertFalse(config.chartID.uuidString.isEmpty)
-        XCTAssertTrue(config.scripts.isEmpty)
-    }
-
     // MARK: - Names
 
     func testValidatorAcceptsAndNormalizes() {

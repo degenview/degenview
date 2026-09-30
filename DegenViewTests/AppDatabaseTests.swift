@@ -30,7 +30,10 @@ final class AppDatabaseTests: XCTestCase {
         XCTAssertEqual(FavoritesStore(database: database).items, favorites)
 
         let views = ["B", "A"].map {
-            SavedView(name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, layoutMode: .grid, createdAt: Date())
+            SavedView(
+                name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, layoutMode: .grid, createdAt: Date(),
+                tickerConfigs: [TickerConfig(symbol: "BTCUSDT", source: .binance)],
+                candleCount: TimeRange.oneDay.dataPointLimit)
         }
         database.saveSavedViews(views)
         XCTAssertEqual(database.savedViews().map(\.name), ["B", "A"])

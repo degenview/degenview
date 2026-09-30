@@ -12,7 +12,6 @@ struct AlertRuntimePersistence: Sendable {
     private let database: AppDatabase
 
     private enum Key {
-        static let schemaVersion = "alert.schemaVersion"
         static let revision = "alert.revision"
         static let settings = "alert.settings"
         static let processedCommandIDs = "alert.processedCommandIDs"
@@ -28,11 +27,11 @@ struct AlertRuntimePersistence: Sendable {
     func loadSnapshot() -> AlertPersistenceSnapshot? {
         do {
             return try database.reader.read { db in
-                guard let schemaVersion = try AppDatabase.setting(Int.self, key: Key.schemaVersion, db: db)
+                // `revision` is written on every save, so its absence means nothing was saved yet.
+                guard let revision = try AppDatabase.setting(UInt64.self, key: Key.revision, db: db)
                 else { return nil }
                 var snapshot = AlertPersistenceSnapshot()
-                snapshot.schemaVersion = schemaVersion
-                snapshot.revision = try AppDatabase.setting(UInt64.self, key: Key.revision, db: db) ?? 0
+                snapshot.revision = revision
                 // Per-row decoding: one unreadable alert or event must not make the engine
                 // start empty and overwrite the rest.
                 snapshot.alerts = try AppDatabase.documents(PriceAlert.self, in: .priceAlert, db: db)
@@ -97,7 +96,6 @@ struct AlertRuntimePersistence: Sendable {
                 value.alertID.uuidString, value.timestamp.timeIntervalSince1970, try AppDatabase.json(value),
             ])
         }
-        try AppDatabase.setSetting(snapshot.schemaVersion, key: Key.schemaVersion, db: db)
         try AppDatabase.setSetting(snapshot.revision, key: Key.revision, db: db)
         try AppDatabase.setSetting(snapshot.settings, key: Key.settings, db: db)
         try AppDatabase.setSetting(snapshot.processedCommandIDs, key: Key.processedCommandIDs, db: db)

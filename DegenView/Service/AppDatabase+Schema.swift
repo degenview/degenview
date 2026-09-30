@@ -2,101 +2,124 @@ import Foundation
 import GRDB
 
 extension AppDatabase {
-    /// Append-only: never edit a registered migration once it has shipped, add a new one.
-    static var migrator: DatabaseMigrator {
-        var migrator = DatabaseMigrator()
-
-        migrator.registerMigration("v1") { db in
-            // Ordered lists of Codable values. The payload stays JSON so nested chart
-            // configuration can evolve through Codable defaults instead of migrations.
-            for table in ["favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert"] {
-                try createDocumentTable(table, db: db)
-            }
-
-            try db.create(table: "setting") { t in
-                t.primaryKey("key", .text)
-                t.column("value", .text).notNull()
-            }
-
-            // MARK: Workspace
-
-            try db.create(table: "window_group") { t in
-                t.primaryKey("position", .integer)
-                t.column("tab_ids", .text).notNull()
-            }
-
-            try db.create(table: "drawing") { t in
-                t.column("instrument", .text).notNull()
-                t.column("kind", .text).notNull()
-                t.column("id", .text).notNull()
-                t.column("position", .integer).notNull()
-                t.column("payload", .text).notNull()
-                t.primaryKey(["instrument", "kind", "id"])
-            }
-
-            // MARK: Portfolio
-
-            // Transaction order is significant to validation, so `position` preserves it.
-            try db.create(table: "portfolio_transaction") { t in
-                t.primaryKey("id", .text)
-                t.column("portfolio_id", .text).notNull()
-                t.column("timestamp", .double).notNull()
-                t.column("position", .integer).notNull()
-                t.column("payload", .text).notNull()
-            }
-            try db.create(
-                index: "portfolio_transaction_on_portfolio", on: "portfolio_transaction",
-                columns: ["portfolio_id", "timestamp"])
-
-            try db.create(table: "portfolio_snapshot") { t in
-                t.autoIncrementedPrimaryKey("rowid")
-                t.column("portfolio_id", .text).notNull()
-                t.column("timestamp", .double).notNull()
-                t.column("payload", .text).notNull()
-            }
-            try db.create(
-                index: "portfolio_snapshot_on_portfolio", on: "portfolio_snapshot",
-                columns: ["portfolio_id", "timestamp"])
-
-            // MARK: Paper trading
-
-            // Collections owned by one account, kept in engine order via the rowid.
-            for table in [
-                "paper_order", "paper_fill", "paper_position", "paper_order_event",
-                "paper_closed_trade", "paper_journal",
-            ] {
-                try db.create(table: table) { t in
-                    t.autoIncrementedPrimaryKey("rowid")
-                    t.column("account_id", .text).notNull()
-                    t.column("payload", .text).notNull()
-                }
-                try db.create(index: "\(table)_on_account", on: table, columns: ["account_id"])
-            }
-
-            // MARK: Alerts
-
-            try db.create(table: "alert_event") { t in
-                t.autoIncrementedPrimaryKey("rowid")
-                t.column("alert_id", .text).notNull()
-                t.column("timestamp", .double).notNull()
-                t.column("payload", .text).notNull()
-            }
-            try db.create(index: "alert_event_on_alert", on: "alert_event", columns: ["alert_id"])
-
-            // GUI → runtime queue. The runtime deletes a row once the command is applied.
-            try db.create(table: "alert_command") { t in
-                t.primaryKey("id", .text)
-                t.column("created_at", .double).notNull()
-                t.column("payload", .text).notNull()
-            }
-            try db.create(index: "alert_command_on_created_at", on: "alert_command", columns: ["created_at"])
+    /// Creates every table the app uses. Idempotent, so the GUI and the login-item agent can
+    /// both run it against the same file.
+    static func createSchema(_ db: Database) throws {
+        // Ordered lists of Codable values. The payload stays JSON so nested chart
+        // configuration can evolve through Codable defaults instead of schema changes.
+        for table in ["favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert"] {
+            try createDocumentTable(table, db: db)
         }
 
-        return migrator
+        try db.create(table: "setting", options: .ifNotExists) { t in
+            t.primaryKey("key", .text)
+            t.column("value", .text).notNull()
+        }
+
+        // MARK: Workspace
+
+        try db.create(table: "window_group", options: .ifNotExists) { t in
+            t.primaryKey("position", .integer)
+            t.column("tab_ids", .text).notNull()
+        }
+
+        try db.create(table: "drawing", options: .ifNotExists) { t in
+            t.column("instrument", .text).notNull()
+            t.column("kind", .text).notNull()
+            t.column("id", .text).notNull()
+            t.column("position", .integer).notNull()
+            t.column("payload", .text).notNull()
+            t.primaryKey(["instrument", "kind", "id"])
+        }
+
+        // MARK: Portfolio
+
+        // Transaction order is significant to validation, so `position` preserves it.
+        try db.create(table: "portfolio_transaction", options: .ifNotExists) { t in
+            t.primaryKey("id", .text)
+            t.column("portfolio_id", .text).notNull()
+            t.column("timestamp", .double).notNull()
+            t.column("position", .integer).notNull()
+            t.column("payload", .text).notNull()
+        }
+        try db.create(
+            index: "portfolio_transaction_on_portfolio", on: "portfolio_transaction",
+            columns: ["portfolio_id", "timestamp"], options: .ifNotExists)
+
+        try db.create(table: "portfolio_snapshot", options: .ifNotExists) { t in
+            t.autoIncrementedPrimaryKey("rowid")
+            t.column("portfolio_id", .text).notNull()
+            t.column("timestamp", .double).notNull()
+            t.column("payload", .text).notNull()
+        }
+        try db.create(
+            index: "portfolio_snapshot_on_portfolio", on: "portfolio_snapshot",
+            columns: ["portfolio_id", "timestamp"], options: .ifNotExists)
+
+        // Closed candles never change, so the portfolio keeps them instead of refetching. A
+        // disposable cache: dropping both tables only costs a refetch. `covered_from` records
+        // how far back a series was fetched, so a hole isn't mistaken for missing history.
+        try db.create(table: "candle", options: [.ifNotExists, .withoutRowID]) { t in
+            t.column("source", .text).notNull()
+            t.column("symbol", .text).notNull()
+            t.column("interval", .text).notNull()
+            t.column("open_time", .double).notNull()
+            t.column("open", .double).notNull()
+            t.column("high", .double).notNull()
+            t.column("low", .double).notNull()
+            t.column("close", .double).notNull()
+            t.column("volume", .double).notNull()
+            t.column("quote_volume", .double).notNull()
+            t.primaryKey(["source", "symbol", "interval", "open_time"])
+        }
+
+        try db.create(table: "candle_coverage", options: .ifNotExists) { t in
+            t.column("source", .text).notNull()
+            t.column("symbol", .text).notNull()
+            t.column("interval", .text).notNull()
+            t.column("covered_from", .double).notNull()
+            t.column("newest", .double).notNull()
+            t.primaryKey(["source", "symbol", "interval"])
+        }
+
+        // MARK: Paper trading
+
+        // Collections owned by one account, kept in engine order via the rowid.
+        for table in [
+            "paper_order", "paper_fill", "paper_position", "paper_order_event",
+            "paper_closed_trade", "paper_journal",
+        ] {
+            try db.create(table: table, options: .ifNotExists) { t in
+                t.autoIncrementedPrimaryKey("rowid")
+                t.column("account_id", .text).notNull()
+                t.column("payload", .text).notNull()
+            }
+            try db.create(index: "\(table)_on_account", on: table, columns: ["account_id"], options: .ifNotExists)
+        }
+
+        // MARK: Alerts
+
+        try db.create(table: "alert_event", options: .ifNotExists) { t in
+            t.autoIncrementedPrimaryKey("rowid")
+            t.column("alert_id", .text).notNull()
+            t.column("timestamp", .double).notNull()
+            t.column("payload", .text).notNull()
+        }
+        try db.create(index: "alert_event_on_alert", on: "alert_event", columns: ["alert_id"], options: .ifNotExists)
+
+        // GUI → runtime queue. The runtime deletes a row once the command is applied.
+        try db.create(table: "alert_command", options: .ifNotExists) { t in
+            t.primaryKey("id", .text)
+            t.column("created_at", .double).notNull()
+            t.column("payload", .text).notNull()
+        }
+        try db.create(
+            index: "alert_command_on_created_at", on: "alert_command", columns: ["created_at"],
+            options: .ifNotExists)
     }
 
     private static func createDocumentTable(_ name: String, db: Database) throws {
-        try db.create(table: name) { t in
+        try db.create(table: name, options: .ifNotExists) { t in
             t.primaryKey("id", .text)
             t.column("position", .integer).notNull()
             t.column("payload", .text).notNull()

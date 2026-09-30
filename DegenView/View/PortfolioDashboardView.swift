@@ -219,7 +219,7 @@ struct PortfolioDashboardView: View {
             ProgressView(value: store.reportingConversionProgress ?? 0)
                 .progressViewStyle(.linear)
                 .frame(maxWidth: 260)
-            Text(store.isLoadingInitialValues ? "Loading values and charts…" : "Updating values and charts…")
+            Text(store.isLoadingInitialValues ? "Loading prices…" : "Updating values and charts…")
             Spacer()
             Text("\(Int(((store.reportingConversionProgress ?? 0) * 100).rounded()))%")
                 .monospacedDigit()
@@ -266,8 +266,14 @@ struct PortfolioDashboardView: View {
                         .accessibilityHidden(!store.isLoadingInitialValues)
                     }
                     .animation(.easeOut(duration: 0.25), value: store.isLoadingInitialValues)
-                    Text(store.marketValueCaption)
-                        .font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        Text(store.marketValueCaption)
+                        if store.isUpdating && !store.isLoadingInitialValues {
+                            ProgressView().controlSize(.mini)
+                            Text("Updating…")
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
                 }
                 HStack {
                     metric("All-time P&L", store.totalPnL)
@@ -285,6 +291,8 @@ struct PortfolioDashboardView: View {
                         }
                         .pickerStyle(.segmented)
                         .labelsHidden()
+                        .controlSize(.mini)
+                        .font(.caption2)
                         .fixedSize()
                     }
                     PortfolioHistoryChart(
@@ -294,11 +302,21 @@ struct PortfolioDashboardView: View {
                         range: historyRange,
                         privacy: store.privacyMode,
                         isLoading: store.isLoadingInitialValues || store.isChangingReportingCurrency
+                            || (store.isLoadingHistory && history.isEmpty),
+                        loadingMessage: store.isLoadingInitialValues || store.isChangingReportingCurrency
+                            ? "Loading market data…" : "Building history…"
                     )
                     .frame(height: 230)
                 }
                 .padding(12)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .task(id: historyRange) {
+                    guard historyRange == .oneDay else { return }
+                    while !Task.isCancelled {
+                        await store.refreshIntraday(forPortfolioID: store.snapshot.selectedPortfolioID)
+                        try? await Task.sleep(for: .seconds(300))
+                    }
+                }
                 HStack(alignment: .top, spacing: 20) {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Allocation").font(.headline).fontWeight(.bold)
@@ -492,7 +510,12 @@ struct PortfolioDashboardView: View {
         }
     }
     private var history: [PortfolioSnapshot] {
-        store.history(for: store.snapshot.selectedPortfolioID)
+        let id = store.snapshot.selectedPortfolioID
+        if historyRange == .oneDay {
+            let intraday = store.intradayHistory(for: id)
+            if !intraday.isEmpty { return intraday }
+        }
+        return store.history(for: id)
     }
     private var filteredTransactions: [PortfolioTransaction] {
         store.ledgerTransactions.filter { tx in
@@ -749,6 +772,7 @@ private struct PortfolioHistoryChart: View {
     let range: PortfolioHistoryRange
     let privacy: Bool
     let isLoading: Bool
+    var loadingMessage = "Loading market data…"
     @State private var hoveredIndex: Int?
 
     private let leftMargin: CGFloat = 12
@@ -794,13 +818,13 @@ private struct PortfolioHistoryChart: View {
             if isLoading {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Loading market data…").font(.callout)
+                    Text(loadingMessage).font(.callout)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("Loading market data")
+                .accessibilityLabel(loadingMessage)
             } else if privacy {
                 Text("••••••••").font(.title)
             } else if points.isEmpty {
@@ -810,7 +834,7 @@ private struct PortfolioHistoryChart: View {
         .animation(.easeOut(duration: 0.25), value: isLoading)
         .accessibilityLabel(
             isLoading
-                ? "Loading market data"
+                ? loadingMessage
                 : privacy ? "Portfolio history values hidden" : "Portfolio value history, \(points.count) observations")
     }
 

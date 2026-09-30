@@ -31,7 +31,9 @@ final class AlpacaAPIService: GranularReplayDataSource {
         var components = URLComponents(string: "https://data.alpaca.markets/v2/stocks/\(symbol.uppercased())/bars")!
         components.queryItems = [
             URLQueryItem(name: "timeframe", value: Self.timeframe(for: fold == nil ? interval : "1M")),
-            URLQueryItem(name: "start", value: Self.startDate(interval: fold == nil ? interval : "1M", limit: requested)),
+            URLQueryItem(
+                name: "start",
+                value: Self.startDate(interval: fold == nil ? interval : "1M", limit: requested)),
             URLQueryItem(name: "limit", value: String(min(requested, 10_000))),
             URLQueryItem(name: "adjustment", value: "all"),
             URLQueryItem(name: "feed", value: "iex"),
@@ -145,8 +147,11 @@ final class AlpacaAPIService: GranularReplayDataSource {
         return value
     }
 
-    private func request(_ url: URL, credentials: AlpacaCredentials) async throws -> Data {
+    private func request(
+        _ url: URL, credentials: AlpacaCredentials, timeout: TimeInterval? = nil
+    ) async throws -> Data {
         var request = URLRequest(url: url)
+        if let timeout { request.timeoutInterval = timeout }
         request.setValue(credentials.keyID, forHTTPHeaderField: "APCA-API-KEY-ID")
         request.setValue(credentials.secretKey, forHTTPHeaderField: "APCA-API-SECRET-KEY")
         let (data, response) = try await session.data(for: request)
@@ -249,5 +254,44 @@ private extension JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
+    }
+}
+
+// MARK: - Batch quotes
+
+extension AlpacaAPIService: BatchQuoteDataSource {
+    private struct Snapshot: Decodable {
+        let latestTrade: Trade?
+        let dailyBar: Bar?
+        let prevDailyBar: Bar?
+
+        struct Trade: Decodable { let p: Double }
+        struct Bar: Decodable { let c: Double }
+    }
+
+    /// One `/snapshots` call for every ticker: the latest trade, and the previous session's close
+    /// as the day-change reference. The daily bar stands in while a symbol has no trade yet.
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        let credentials = try configuredCredentials()
+        let symbols = requests.map { $0.symbol.uppercased() }
+        guard !symbols.isEmpty,
+            var components = URLComponents(string: "https://data.alpaca.markets/v2/stocks/snapshots")
+        else { return [:] }
+        components.queryItems = [
+            URLQueryItem(name: "symbols", value: symbols.joined(separator: ",")),
+            URLQueryItem(name: "feed", value: "iex"),
+        ]
+        guard let url = components.url else { return [:] }
+
+        let data = try await request(url, credentials: credentials, timeout: Timeout.request)
+        let snapshots = try JSONDecoder().decode([String: Snapshot].self, from: data)
+        var quotes: [String: SourceQuote] = [:]
+        for request in requests {
+            guard let snapshot = snapshots[request.symbol.uppercased()],
+                let price = snapshot.latestTrade?.p ?? snapshot.dailyBar?.c, price > 0
+            else { continue }
+            quotes[request.symbol] = SourceQuote(price: price, previousDayPrice: snapshot.prevDailyBar?.c)
+        }
+        return quotes
     }
 }
