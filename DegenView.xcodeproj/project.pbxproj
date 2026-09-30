@@ -360,6 +360,12 @@
 		F2C6063E7938EA2862F32EF8 /* PineBrokerEmulator+Order.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E3DCA6FC000CE8C4D1DB41 /* PineBrokerEmulator+Order.swift */; };
 		F2C9B91B79AA777F4EA598F3 /* PineBrokerEmulator+Trades.swift in Sources */ = {isa = PBXBuildFile; fileRef = F141F0FBA7BFF114E11D831E /* PineBrokerEmulator+Trades.swift */; };
 		F21BB2BA213C0785C589B355 /* PineBrokerEmulator+Triggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F133B2C45AAF7EBACBC47DDC /* PineBrokerEmulator+Triggers.swift */; };
+		F2F6BF38A8C2FEB2CB0B17C0 /* Color+PineRGBA.swift in Sources */ = {isa = PBXBuildFile; fileRef = F143BB1971DA4DB42DF27321 /* Color+PineRGBA.swift */; };
+		F2E35D96AE04BAA662FE43B4 /* PineChartLayer+Drawings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19AF0929147F9ED05ADD3EC /* PineChartLayer+Drawings.swift */; };
+		F2B381C5D5B9AD2305AC8C93 /* PineChartLayer+Markers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */; };
+		F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */; };
+		F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */ = {isa = PBXBuildFile; fileRef = F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */; };
+		F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -639,6 +645,12 @@
 		F1E3DCA6FC000CE8C4D1DB41 /* PineBrokerEmulator+Order.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Order.swift"; sourceTree = "<group>"; };
 		F141F0FBA7BFF114E11D831E /* PineBrokerEmulator+Trades.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Trades.swift"; sourceTree = "<group>"; };
 		F133B2C45AAF7EBACBC47DDC /* PineBrokerEmulator+Triggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Triggers.swift"; sourceTree = "<group>"; };
+		F143BB1971DA4DB42DF27321 /* Color+PineRGBA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+PineRGBA.swift"; sourceTree = "<group>"; };
+		F19AF0929147F9ED05ADD3EC /* PineChartLayer+Drawings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Drawings.swift"; sourceTree = "<group>"; };
+		F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Markers.swift"; sourceTree = "<group>"; };
+		F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Plots.swift"; sourceTree = "<group>"; };
+		F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Tables.swift"; sourceTree = "<group>"; };
+		F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+ValueRange.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1082,6 +1094,12 @@
 		F9B2F03E6391D6473102E21D /* View */ = {
 			isa = PBXGroup;
 			children = (
+				F143BB1971DA4DB42DF27321 /* Color+PineRGBA.swift */,
+				F19AF0929147F9ED05ADD3EC /* PineChartLayer+Drawings.swift */,
+				F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */,
+				F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */,
+				F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */,
+				F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */,
 				D20000000000000000000101 /* PineChartLayer.swift */,
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */,
@@ -1558,6 +1576,12 @@
 				F2C6063E7938EA2862F32EF8 /* PineBrokerEmulator+Order.swift in Sources */,
 				F2C9B91B79AA777F4EA598F3 /* PineBrokerEmulator+Trades.swift in Sources */,
 				F21BB2BA213C0785C589B355 /* PineBrokerEmulator+Triggers.swift in Sources */,
+				F2F6BF38A8C2FEB2CB0B17C0 /* Color+PineRGBA.swift in Sources */,
+				F2E35D96AE04BAA662FE43B4 /* PineChartLayer+Drawings.swift in Sources */,
+				F2B381C5D5B9AD2305AC8C93 /* PineChartLayer+Markers.swift in Sources */,
+				F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */,
+				F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */,
+				F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
