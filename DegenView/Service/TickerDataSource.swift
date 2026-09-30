@@ -60,6 +60,10 @@ extension Array where Element == TickerSearchResult {
 }
 
 private extension TickerSearchResult {
+    /// The quotes a bare ticker most likely means: Binance's dollar market, and Coinbase's.
+    /// USDC and the rest stay behind them, in the provider's own order.
+    static let primaryQuotes: Set<String> = ["USDT", "USD"]
+
     func searchRank(for needle: String) -> Int {
         let display = symbol.uppercased()
         let full = fullSymbol.uppercased()
@@ -68,7 +72,7 @@ private extension TickerSearchResult {
         let quote = pair.count == 2 ? pair[1] : nil
 
         if display == needle || full == needle || base == needle && quote == nil { return 0 }
-        if base == needle && quote == "USDT" { return 1 }
+        if base == needle && quote.map(Self.primaryQuotes.contains) == true { return 1 }
         if base == needle && quote != nil { return 2 }
         if display.hasPrefix(needle) || full.hasPrefix(needle) || base.hasPrefix(needle) { return 3 }
         if display.contains(needle) || full.contains(needle) { return 4 }
@@ -124,6 +128,7 @@ final class DataSourceFactory {
     static let shared = DataSourceFactory()
 
     private lazy var binanceService = BinanceAPIService()
+    private lazy var coinbaseService = CoinbaseAPIService()
     private lazy var coinGeckoService = CoinGeckoAPIService()
     private lazy var dexScreenerService = DEXScreenerService()
     private lazy var alpacaService = AlpacaAPIService()
@@ -134,6 +139,7 @@ final class DataSourceFactory {
     func service(for type: DataSourceType) -> TickerDataSource {
         switch type {
         case .binance: return binanceService
+        case .coinbase: return coinbaseService
         case .coingecko: return coinGeckoService
         case .dexscreener: return dexScreenerService
         case .alpaca: return alpacaService
@@ -143,10 +149,11 @@ final class DataSourceFactory {
         }
     }
 
-    /// Crypto sources fanned out to by the multi-source ticker search.
+    /// Crypto sources fanned out to by the multi-source ticker search, in priority order:
+    /// the search lists results — and Enter picks the first hit — in this sequence.
     /// Prediction markets are searched separately — different query shape, different rows.
     var allSources: [TickerDataSource] {
-        [binanceService, coinGeckoService, dexScreenerService]
+        [binanceService, coinbaseService, coinGeckoService, dexScreenerService]
     }
 
     /// Concretely typed accessor — the Polymarket search pane and the chart fetch

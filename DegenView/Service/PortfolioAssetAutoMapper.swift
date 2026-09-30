@@ -18,6 +18,18 @@ enum PortfolioAssetAutoMapper {
             }
         }
 
+        // Coinbase is second: its ids are BASE-QUOTE, so the requested pair is matched
+        // through the same hyphen-insensitive search the picker uses.
+        let coinbase = DataSourceFactory.shared.service(for: .coinbase)
+        for quote in preferredQuotes {
+            let requestedPair = "\(token)-\(quote)"
+            if let results = try? await coinbase.searchTickers(query: requestedPair),
+                let match = results.first(where: { $0.fullSymbol.caseInsensitiveCompare(requestedPair) == .orderedSame })
+            {
+                return PortfolioAsset(searchResult: match)
+            }
+        }
+
         // CoinGecko is the next safest identity source because its fullSymbol is
         // a stable coin id rather than a ticker. DEX pairs are the final fallback.
         if let results = try? await DataSourceFactory.shared.service(for: .coingecko).searchTickers(query: token),

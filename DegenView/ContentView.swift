@@ -788,7 +788,8 @@ struct ContentView: View {
         if vm.source == .dexscreener {
             return vm.baseSymbol
         }
-        return vm.ticker.uppercased()
+        // Exchange pairs read BASE/QUOTE, like the card header they were starred from.
+        return vm.marketPair?.display ?? vm.ticker.uppercased()
     }
 
     private func openTicket(for vm: ChartViewModel, side: PaperOrderSide) {

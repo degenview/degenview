@@ -4,7 +4,7 @@ Guidance for AI coding agents working in this repo.
 
 ## Project
 
-macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST + WebSocket data from Binance/CoinGecko/DEXScreener. One external dependency: [GRDB.swift](https://github.com/groue/GRDB.swift) (SQLite persistence), via SPM.
+macOS crypto candlestick chart app. SwiftUI views, AppKit Canvas rendering, REST + WebSocket data from Binance/Coinbase/CoinGecko/DEXScreener. One external dependency: [GRDB.swift](https://github.com/groue/GRDB.swift) (SQLite persistence), via SPM.
 
 See [Architecture](docs/architecture.md) for the project structure and data flow.
 
@@ -35,7 +35,7 @@ Requires Xcode 16+, macOS 14+.
   runtime types, and add any new file there to the agent's Sources phase as well
 - **One `ContentViewModel` per tab** — never treat it as app-global state
 - **Caching**: `ChartViewModel.fetchData` caches results keyed by (symbol, interval, limit) in a dictionary
-- **WebSocket**: Only Binance tickers get live streams; connect/disconnect on ticker add/remove
+- **WebSocket**: Only Binance, Coinbase and Alpaca tickers get live streams; connect/disconnect on ticker add/remove
 
 ## Key patterns
 
@@ -87,6 +87,19 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - `BinanceWebSocketService.connect(symbols:interval:)` opens one combined stream
 - Callback dispatches to matching `ChartViewModel.applyKlineUpdate(_:)`
 - `applyKlineUpdate` updates last candle in-place (no full refetch)
+- **Coinbase has no candle channel** (`candles is not a valid channel`). `CoinbaseWebSocketService`
+  subscribes to `ticker` + `heartbeat` and emits one `CoinbaseTick` per trade;
+  `ChartViewModel.applyTick` folds it into the last candle (REST supplies the open), flags the
+  old candle `isClosed` on rollover, and the 5 s REST refresh reconciles volume. The socket does
+  not depend on the chart interval
+- Coinbase REST only serves 1m/5m/15m/1h/6h/1d, so `1w` and `1M` are folded from daily candles
+  (`CoinbaseGranularity`, bucket boundaries from `KlineData.bucketStart`). One request spans at
+  most 300 candles — `CoinbaseAPIService` pages backwards, keeps the merged source candles so a
+  refresh is one request, and remembers when a listing's history is exhausted. Coinbase reports
+  no turnover, so `quoteVolume` is volume priced at the OHLC average (live: size × price)
+- **Search order is priority, not alphabetical**: `DataSourceFactory.allSources` is
+  Binance → Coinbase → the rest, and `TickerSearchViewModel.orderedSources` keeps that order
+  (sources with results first). A new crypto source goes in that list at its intended rank
 
 ### Tabs and windows
 - Each tab is a real `NSWindow` in a tab group, rendering one `ContentView` +
@@ -168,7 +181,7 @@ xcodebuild test \
 
 Use the following manual flow for native window/tab behavior and end-to-end UI checks:
 
-1. Launch app, add BTC from Binance
+1. Launch app, add BTC from Binance, then BTC/USD from Coinbase (live ticks should move its last candle)
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
 3. Switch timeframes, toggle log scale, switch layout
 4. Scroll-zoom on chart, verify candle count changes

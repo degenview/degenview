@@ -67,6 +67,8 @@ DegenView/
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
     ├── BinanceWebSocketService.swift  # Binance live klines
+    ├── CoinbaseAPIService.swift       # Coinbase REST candles (paged, 1w/1M folded from daily) + product search
+    ├── CoinbaseWebSocketService.swift # Coinbase live trades (ticker channel → CoinbaseTick)
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata
     ├── DEXScreenerService.swift       # Pair discovery and metadata
     ├── GeckoTerminalService.swift     # DEX-pair historical OHLCV
@@ -111,7 +113,8 @@ DegenView/
    index models and never force non-price metrics into OHLCV.
 3. Indicator values are calculated from a warm-up buffer and trimmed to the visible
    candles before the custom Canvas renderer draws them.
-4. Binance and Alpaca streams update the latest matching candle in place. The five-second
+4. Binance and Alpaca streams update the latest matching candle in place; Coinbase trades are
+   folded into it (`applyTick`) because Coinbase publishes no candle stream. The five-second
    refresh path covers other sources and recovery, while hidden tabs suspend both paths.
 5. Candle responses are cached by symbol, interval, and limit. CoinGecko requests share a
    rate limiter, and its cache is flushed to disk when the app quits. The shared
@@ -137,7 +140,7 @@ DegenView/
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
    timestamp and one cancellable playback task.
-8. Binance and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
+8. Binance, Coinbase and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
    lower-timeframe bars are aggregated against the provider-returned displayed-bar
    boundaries, preserving stock sessions, market gaps, and DST alignment.
 9. Portfolio mutations are serialized by `PortfolioLedger`, persisted as one database

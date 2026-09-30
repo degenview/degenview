@@ -32,9 +32,36 @@ final class ChartViewModel: ObservableObject {
     private var api: TickerDataSource
 
     /// What the card header and settings sheet call this chart.
+    ///
+    /// Exchange pairs read `BASE/QUOTE` whichever id the exchange uses (`BTCUSDT`, `BTC-USD`).
+    /// Only the label changes — `ticker` stays the identity everything else is keyed by.
     var title: String {
         if let displayName, !displayName.isEmpty { return displayName }
-        return ticker.uppercased()
+        return marketPair?.display ?? ticker.uppercased()
+    }
+
+    /// The pair an exchange chart trades. The persisted ticker is read as-is, so `ETHBTC` stays
+    /// `ETH/BTC`; only a bare asset (`BTC` on Binance) goes through `apiSymbol`, which supplies the
+    /// quote it will fetch against.
+    var marketPair: MarketSymbol? {
+        // A CoinGecko chart stores a coin id ("bitcoin"); its symbol has to be looked up.
+        if source == .coingecko { return coinSymbol.map(MarketSymbol.coinGecko(symbol:)) }
+        return MarketSymbol(ticker: ticker, source: source) ?? MarketSymbol(ticker: apiSymbol, source: source)
+    }
+
+    /// Ticker symbol behind a CoinGecko coin id, once `resolveCoinSymbol()` has found it.
+    /// Until then the header keeps showing the id.
+    @Published var coinSymbol: String?
+
+    /// Look up `coinSymbol` for a CoinGecko chart. Independent of icon caching, so charts saved
+    /// before this existed are labelled too.
+    func resolveCoinSymbol() async {
+        guard source == .coingecko, coinSymbol == nil else { return }
+        let id = ticker
+        let symbol = await IconResolver.shared.symbol(forCoinID: id)
+        // The chart may have been pointed at another coin while the lookup ran.
+        guard source == .coingecko, ticker == id else { return }
+        coinSymbol = symbol
     }
 
     /// The symbol used for API calls — source-dependent.
@@ -46,6 +73,8 @@ final class ChartViewModel: ObservableObject {
                 return upper
             }
             return "\(upper)USDT"
+        case .coinbase:
+            return CoinbaseAPIService.productID(ticker)
         case .coingecko, .dexscreener, .alpaca, .polymarket, .kalshi, .coinMarketCap:
             // ticker IS the fullSymbol (coin ID, pair address, CLOB token id, or Kalshi "SERIES/MARKET")
             return ticker
@@ -55,14 +84,8 @@ final class ChartViewModel: ObservableObject {
     /// Base asset symbol for icon lookup (strips quote currency suffixes).
     var baseSymbol: String {
         switch source {
-        case .binance:
-            let upper = ticker.uppercased()
-            for quote in ["USDT", "USDC", "BUSD", "USD", "BTC", "ETH", "BNB"] {
-                if upper.hasSuffix(quote), upper.count > quote.count {
-                    return String(upper.dropLast(quote.count))
-                }
-            }
-            return upper
+        case .binance, .coinbase:
+            return marketPair?.base ?? ticker.uppercased()
         case .coingecko, .dexscreener:
             let parts = ticker.components(separatedBy: "/")
             return parts.first?.uppercased() ?? ticker.uppercased()
@@ -1117,6 +1140,7 @@ final class ChartViewModel: ObservableObject {
         ticker = symbol
         self.source = source
         self.displayName = displayName
+        coinSymbol = nil
         self.pmSeries = pmSeries ?? []
         self.pmSeriesData = [:]
         klineData = []
@@ -1204,6 +1228,44 @@ final class ChartViewModel: ObservableObject {
         feedPine(klineData[index], origin: .stream)
     }
 
+    /// Fold one Coinbase trade into the live candle.
+    ///
+    /// Coinbase has no candle stream, so the candle is built here: the REST fetch supplies the
+    /// open and the history, each trade moves the high, low and close, and a trade past the
+    /// candle's end opens the next one. The REST refresh replaces the buffer every few seconds,
+    /// so volume summed from trades only has to hold until then.
+    func applyTick(_ tick: CoinbaseTick, plan: CoinbaseGranularity) {
+        guard let last = klineData.last else { return }
+
+        let bucket = plan.bucketStart(of: tick.time)
+        guard bucket >= last.openTime else { return }
+
+        let notional = tick.price * tick.size
+        let index = klineData.count - 1
+        if bucket == last.openTime {
+            klineData[index].highPrice = max(last.highPrice, tick.price)
+            klineData[index].lowPrice = min(last.lowPrice, tick.price)
+            klineData[index].closePrice = tick.price
+            klineData[index].volume += tick.size
+            klineData[index].quoteVolume += notional
+            feedPine(klineData[index], origin: .stream)
+        } else {
+            // Same hand-off Binance's closing kline makes: the finished candle is flagged
+            // before the first trade of the next one arrives.
+            klineData[index].isClosed = true
+            feedPine(klineData[index], origin: .stream)
+            let opened = KlineData(
+                openTime: bucket, openPrice: tick.price, highPrice: tick.price, lowPrice: tick.price,
+                closePrice: tick.price, volume: tick.size, quoteVolume: notional)
+            klineData.append(opened)
+            feedPine(opened, origin: .stream)
+        }
+
+        if currentPrice != tick.price {
+            currentPrice = tick.price
+        }
+    }
+
     /// Show a different slice of the buffer without going back to the network.
     ///
     /// Zooming changes how many candles are on screen far more often than it exhausts
@@ -1263,7 +1325,7 @@ final class ChartViewModel: ObservableObject {
         isFetching = true
 
         let hadData = !klineData.isEmpty
-        let isSlowSource = source != .binance
+        let isSlowSource = source != .binance && source != .coinbase
 
         // Cache-first for slow sources: show stale data instantly.
         if !hadData, isSlowSource {

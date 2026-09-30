@@ -2,6 +2,7 @@ import Foundation
 
 enum DataSourceType: String, CaseIterable, Codable {
     case binance = "Binance"
+    case coinbase = "Coinbase"
     case coingecko = "CoinGecko"
     case dexscreener = "DEXScreener"
     case alpaca = "Alpaca (IEX)"
@@ -9,10 +10,11 @@ enum DataSourceType: String, CaseIterable, Codable {
     case kalshi = "Kalshi"
     case coinMarketCap = "CoinMarketCap"
 
-    /// Crypto price sources — the set the multi-source ticker search fans out to.
-    /// Prediction markets are excluded: they get their own search pane.
+    /// Crypto price sources — the set the multi-source ticker search fans out to, in
+    /// the order its results are listed. Prediction markets are excluded: they get
+    /// their own search pane.
     static var cryptoSources: [DataSourceType] {
-        [.binance, .coingecko, .dexscreener]
+        [.binance, .coinbase, .coingecko, .dexscreener]
     }
 
     var displayName: String { rawValue }
@@ -32,13 +34,13 @@ enum DataSourceType: String, CaseIterable, Codable {
 
     /// Whether this source reports per-candle turnover for the volume bars to draw.
     ///
-    /// Binance sends quote volume with every kline, and DEX pairs get theirs from
-    /// GeckoTerminal. CoinGecko's OHLC endpoint has no volume column — only
+    /// Binance sends quote volume with every kline, Coinbase's candles carry base volume
+    /// that is priced into turnover, and DEX pairs get theirs from GeckoTerminal. CoinGecko's OHLC endpoint has no volume column — only
     /// `/market_chart`, which reports a rolling 24h figure rather than per-candle —
     /// and the prediction-market line charts report none at all.
     var providesVolume: Bool {
         switch self {
-        case .binance, .dexscreener, .alpaca: return true
+        case .binance, .coinbase, .dexscreener, .alpaca: return true
         case .coingecko, .polymarket, .kalshi, .coinMarketCap: return false
         }
     }
@@ -54,7 +56,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     /// buffer already fetched, at the same candle size, without another request.
     var fetchesByCount: Bool {
         switch self {
-        case .binance, .dexscreener, .coingecko, .alpaca: return true
+        case .binance, .coinbase, .dexscreener, .coingecko, .alpaca: return true
         case .polymarket, .kalshi, .coinMarketCap: return false
         }
     }
@@ -62,6 +64,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     var icon: String {
         switch self {
         case .binance: return "building.columns.fill"
+        case .coinbase: return "bitcoinsign.circle.fill"
         case .coingecko: return "chart.line.uptrend.xyaxis"
         case .dexscreener: return "arrow.triangle.swap"
         case .alpaca: return "chart.xyaxis.line"

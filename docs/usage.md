@@ -1,7 +1,7 @@
 # Usage
 
 1. Click the toolbar **+** and choose Crypto, Stocks, Prediction Markets, CoinMarketCap, or
-   Portfolio. Prediction Markets has a Polymarket | Kalshi switch; both work keylessly. Crypto search fans out across Binance, CoinGecko, and DEXScreener; stock
+   Portfolio. Prediction Markets has a Polymarket | Kalshi switch; both work keylessly. Crypto search fans out across Binance, Coinbase, CoinGecko, and DEXScreener, listed in that order; stock
    search requires Alpaca keys in **Settings → Alpaca**. CoinMarketCap offers four
    market-wide index charts and works keylessly.
 2. Pick a timeframe in the toolbar and scroll over a chart to zoom its history. Drag the
@@ -77,6 +77,7 @@ differences.
 | Provider | Granular replay | Available behavior |
 | --- | --- | --- |
 | Binance | Yes | `1m`, `5m`, `15m`, `30m`, `1h`, and `1D` where finer than the chart |
+| Coinbase | Yes | `1m`, `5m`, `15m`, `1h`, and `1D` where finer than the chart (no 30m candles) |
 | Alpaca | Yes | Minute/hour/day historical bars from the configured IEX feed |
 | CoinGecko | No | Complete displayed bars |
 | DEXScreener / GeckoTerminal | No | Complete displayed bars |

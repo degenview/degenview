@@ -19,6 +19,9 @@ private struct IconCache: Codable {
     /// CoinGecko coin id → image URL, from the same snapshot. Kept apart from
     /// `symbolMap` because ids and symbols share a namespace ("bitcoin" is both).
     var idMap: [String: String] = [:]
+    /// CoinGecko coin id → uppercased ticker symbol ("bitcoin" → "BTC"), so a chart that only
+    /// stores the id can be labelled `BTC/USD`. Optional so caches written before it existed decode.
+    var symbolByID: [String: String]?
     var marketUpdatedAt: Date = .distantPast
     /// Optional so caches written before stock-specific resolution still decode.
     var stockResolverVersion: Int?
@@ -46,9 +49,10 @@ private struct IconCache: Codable {
 actor IconResolver {
     static let shared = IconResolver()
 
-    private let baseURL = CoinGeckoAPIService.apiBase
-    private let session = AppSupport.defaultSession
-    private let store = JSONStore<IconCache>(filename: "icon_cache.json")
+    private let baseURL: String
+    private let session: URLSession
+    private let store: JSONStore<IconCache>
+    private let rateLimiter: CGRateLimiter
 
     private var cache: IconCache
 
@@ -61,9 +65,23 @@ actor IconResolver {
 
     /// Coin ids waiting to go out in the next batched `/coins/markets` call.
     private var pendingCoinIDs: Set<String> = []
-    private var coinIDBatch: Task<[String: String], Never>?
+    /// Nil when the request failed, so a caller can tell "not listed" from "couldn't ask".
+    private var coinIDBatch: Task<[String: MarketCoin]?, Never>?
 
-    init() {
+    /// Ids a successful request found no symbol for, and when — so a coin CoinGecko doesn't
+    /// list isn't asked about again every time its card appears.
+    private var unlistedSymbolIDs: [String: Date] = [:]
+
+    init(
+        session: URLSession = AppSupport.defaultSession,
+        baseURL: String = CoinGeckoAPIService.apiBase,
+        directory: URL = AppSupport.directory,
+        rateLimiter: CGRateLimiter = .shared
+    ) {
+        self.session = session
+        self.baseURL = baseURL
+        self.rateLimiter = rateLimiter
+        store = JSONStore<IconCache>(filename: "icon_cache.json", directory: directory)
         cache = store.load() ?? IconCache()
         if cache.stockResolverVersion != Icon.stockResolverVersion {
             cache.entries = cache.entries.filter { key, _ in
@@ -157,7 +175,7 @@ actor IconResolver {
                 }
             }
 
-        case .binance, .alpaca, .polymarket, .kalshi, .coinMarketCap:
+        case .binance, .coinbase, .alpaca, .polymarket, .kalshi, .coinMarketCap:
             break
         }
 
@@ -185,7 +203,7 @@ actor IconResolver {
             // The ticker is the coin id; fall back to the symbol for ids that
             // happen to match one (e.g. a coin listed under "btc").
             image = cache.idMap[ticker.lowercased()] ?? cache.symbolMap[symbol.lowercased()]
-        case .binance, .dexscreener, .alpaca:
+        case .binance, .coinbase, .dexscreener, .alpaca:
             image = cache.symbolMap[symbol.lowercased()]
         case .polymarket, .kalshi, .coinMarketCap:
             // Market questions never key into a coin symbol map.
@@ -231,14 +249,17 @@ actor IconResolver {
 
         var symbols: [String: String] = [:]
         var ids: [String: String] = [:]
+        var symbolByID = cache.symbolByID ?? [:]
         for coin in coins {
             let symbol = coin.symbol.lowercased()
             if symbols[symbol] == nil { symbols[symbol] = coin.image }
             ids[coin.id.lowercased()] = coin.image
+            symbolByID[coin.id.lowercased()] = coin.symbol.uppercased()
         }
 
         cache.symbolMap = symbols
         cache.idMap = ids
+        cache.symbolByID = symbolByID
         cache.marketUpdatedAt = Date()
         save()
     }
@@ -248,10 +269,16 @@ actor IconResolver {
     /// Icons for coin ids outside the snapshot. Cards that miss within the same
     /// window ride along on one `ids=` request instead of one call each.
     private func coinGeckoIcon(id: String) async -> URL? {
-        let coinID = id.lowercased()
-        pendingCoinIDs.insert(coinID)
+        let coin = await coinGeckoCoins(including: id)?[id.lowercased()]
+        return coin.flatMap { URL(string: $0.image) }
+    }
 
-        let batch: Task<[String: String], Never>
+    /// The batched `/coins/markets?ids=` answer that `id` rides along on. Icons and symbols
+    /// share it, so a card asking for both costs one request.
+    private func coinGeckoCoins(including id: String) async -> [String: MarketCoin]? {
+        pendingCoinIDs.insert(id.lowercased())
+
+        let batch: Task<[String: MarketCoin]?, Never>
         if let existing = coinIDBatch {
             batch = existing
         } else {
@@ -262,11 +289,10 @@ actor IconResolver {
             coinIDBatch = batch
         }
 
-        let images = await batch.value
-        return images[coinID].flatMap { URL(string: $0) }
+        return await batch.value
     }
 
-    private func runCoinIDBatch() async -> [String: String] {
+    private func runCoinIDBatch() async -> [String: MarketCoin]? {
         let ids = Array(pendingCoinIDs.prefix(Icon.maxCoins))
         pendingCoinIDs.subtract(ids)
         // Cleared before the request so ids arriving during it open a fresh batch.
@@ -274,7 +300,7 @@ actor IconResolver {
 
         guard !ids.isEmpty,
             var components = URLComponents(string: "\(baseURL)/coins/markets")
-        else { return [:] }
+        else { return nil }
 
         components.queryItems = [
             URLQueryItem(name: "vs_currency", value: "usd"),
@@ -284,22 +310,48 @@ actor IconResolver {
         ]
         guard let url = components.url,
             let coins = await fetchMarketCoins(url: url, describedAs: "\(ids.count) coin id(s)")
-        else { return [:] }
+        else { return nil }
 
-        var images: [String: String] = [:]
+        var found: [String: MarketCoin] = [:]
+        var symbolByID = cache.symbolByID ?? [:]
         for coin in coins {
-            images[coin.id.lowercased()] = coin.image
+            let id = coin.id.lowercased()
+            found[id] = coin
             // Worth keeping: these coins sit outside the snapshot entirely.
-            cache.idMap[coin.id.lowercased()] = coin.image
+            cache.idMap[id] = coin.image
+            symbolByID[id] = coin.symbol.uppercased()
         }
+        cache.symbolByID = symbolByID
         save()
-        return images
+        return found
+    }
+
+    // MARK: - Coin symbols
+
+    /// The ticker symbol for a CoinGecko coin id (`"bitcoin"` → `"BTC"`), or nil when it isn't
+    /// known yet. Answers from the persisted map; otherwise joins the next batched lookup, so a
+    /// tab restoring a dozen CoinGecko charts asks once, not twelve times.
+    func symbol(forCoinID id: String) async -> String? {
+        let coinID = id.lowercased()
+        if let known = cache.symbolByID?[coinID] { return known }
+        if let missed = unlistedSymbolIDs[coinID], Date().timeIntervalSince(missed) < Icon.negativeTTL {
+            return nil
+        }
+
+        // nil means the request itself failed (rate limit, offline) — worth asking again later.
+        guard let coins = await coinGeckoCoins(including: coinID) else { return nil }
+        if let symbol = coins[coinID]?.symbol.uppercased() { return symbol }
+
+        // Another card's batch can complete first and carry this id's answer in the cache.
+        if let known = cache.symbolByID?[coinID] { return known }
+        unlistedSymbolIDs[coinID] = Date()
+        return nil
     }
 
     /// Shared `/coins/markets` request path — rate limited alongside OHLC fetches,
     /// which draw on the same public-tier budget.
     private func fetchMarketCoins(url: URL, describedAs label: String) async -> [MarketCoin]? {
-        await CGRateLimiter.shared.waitForSlot()
+        await rateLimiter.waitForSlot()
         guard !Task.isCancelled else { return nil }
 
         do {
@@ -311,12 +363,12 @@ actor IconResolver {
             guard let httpResponse = response as? HTTPURLResponse else { return nil }
             if httpResponse.statusCode == 429 {
                 let waitSeconds = httpResponse.value(forHTTPHeaderField: "Retry-After").flatMap(Int.init) ?? 30
-                await CGRateLimiter.shared.backoff(seconds: waitSeconds)
+                await rateLimiter.backoff(seconds: waitSeconds)
                 return nil
             }
             guard httpResponse.statusCode == 200 else { return nil }
 
-            await CGRateLimiter.shared.noteSuccess()
+            await rateLimiter.noteSuccess()
             return try JSONDecoder().decode([MarketCoin].self, from: data)
         } catch {
             #if DEBUG
