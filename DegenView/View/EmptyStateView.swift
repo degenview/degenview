@@ -72,7 +72,7 @@ private struct SavedViewRow: View {
     @State private var isHovering = false
 
     private var subtitle: String {
-        let count = view.resolvedConfigs.count
+        let count = view.tickerConfigs.count
         let charts = count == 1 ? "1 chart" : "\(count) charts"
         return "\(charts) · \(view.timeRange.rawValue)"
     }

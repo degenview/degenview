@@ -3,7 +3,7 @@ import XCTest
 @testable import DegenView
 
 final class ChartColumnTests: XCTestCase {
-    func testLegacyLayoutReproducesTwoColumnRowMajorGrid() {
+    func testNoPersistedColumnsGivesTwoColumnRowMajorGrid() {
         let ids = (0..<5).map { _ in UUID() }
 
         let columns = ChartColumn.resolved(nil, chartIDs: ids)

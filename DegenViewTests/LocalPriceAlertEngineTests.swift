@@ -136,17 +136,4 @@ final class LocalPriceAlertEngineTests: XCTestCase {
         let snapshot = await engine.currentSnapshot()
         XCTAssertEqual(snapshot.history.count, 1)
     }
-
-    func testSchemaOneSnapshotDecodesWithMigrationDefaults() throws {
-        let old = AlertPersistenceSnapshot()
-        let encoded = try JSONEncoder().encode(old)
-        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
-        object["schemaVersion"] = 1
-        ["revision", "processedCommandIDs", "health"].forEach { object.removeValue(forKey: $0) }
-        let migrated = try JSONDecoder().decode(
-            AlertPersistenceSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
-        XCTAssertEqual(migrated.schemaVersion, AlertPersistenceSnapshot.currentSchemaVersion)
-        XCTAssertEqual(migrated.revision, 0)
-        XCTAssertTrue(migrated.processedCommandIDs.isEmpty)
-    }
 }

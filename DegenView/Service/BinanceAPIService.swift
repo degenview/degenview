@@ -252,3 +252,48 @@ final class BinanceAPIService: GranularReplayDataSource {
     }
 
 }
+
+// MARK: - Batch quotes
+
+extension BinanceAPIService: BatchQuoteDataSource {
+    private struct Ticker: Decodable {
+        let symbol: String
+        let lastPrice: String
+        let openPrice: String
+    }
+
+    /// One `/ticker/24hr` call for every symbol. `openPrice` is the rolling 24h open, a truer
+    /// day-change reference than a candle picked from the last 25 hours. One unknown symbol
+    /// fails the whole request; the caller then falls back to candles for each.
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        let symbols = requests.map { $0.symbol.uppercased() }
+        guard !symbols.isEmpty else { return [:] }
+        guard var components = URLComponents(string: "\(baseURL)/api/v3/ticker/24hr") else {
+            throw BinanceAPIError.invalidURL
+        }
+        let list = "[" + symbols.map { "\"\($0)\"" }.joined(separator: ",") + "]"
+        components.queryItems = [
+            URLQueryItem(name: "symbols", value: list),
+            URLQueryItem(name: "type", value: "MINI"),
+        ]
+        guard let url = components.url else { throw BinanceAPIError.invalidURL }
+
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else { throw BinanceAPIError.invalidResponse }
+        switch http.statusCode {
+        case 200: break
+        case 429: throw BinanceAPIError.rateLimited
+        default: throw BinanceAPIError.httpError(http.statusCode)
+        }
+
+        let tickers = try JSONDecoder().decode([Ticker].self, from: data)
+        let bySymbol = Dictionary(tickers.map { ($0.symbol, $0) }, uniquingKeysWith: { first, _ in first })
+        var quotes: [String: SourceQuote] = [:]
+        for request in requests {
+            guard let ticker = bySymbol[request.symbol.uppercased()], let price = Double(ticker.lastPrice), price > 0
+            else { continue }
+            quotes[request.symbol] = SourceQuote(price: price, previousDayPrice: Double(ticker.openPrice))
+        }
+        return quotes
+    }
+}

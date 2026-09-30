@@ -708,3 +708,59 @@ enum CoinGeckoError: LocalizedError {
         }
     }
 }
+
+// MARK: - Batch quotes
+
+extension CoinGeckoAPIService: BatchQuoteDataSource {
+    private struct MarketPrice: Decodable {
+        let id: String
+        let currentPrice: Double?
+        let changePercent24h: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case currentPrice = "current_price"
+            case changePercent24h = "price_change_percentage_24h"
+        }
+    }
+
+    /// `/coins/markets` prices every coin id in one call, which costs the limiter a single slot
+    /// however many coins there are; fetching a candle series per coin costs one slot each.
+    func fetchQuotes(_ requests: [QuoteRequest]) async throws -> [String: SourceQuote] {
+        var quotes: [String: SourceQuote] = [:]
+        let symbols = requests.map(\.symbol)
+        for start in stride(from: 0, to: symbols.count, by: CoinGecko.pageLimit) {
+            let page = Array(symbols[start..<min(start + CoinGecko.pageLimit, symbols.count)])
+            quotes.merge(try await fetchMarketPrices(page)) { first, _ in first }
+        }
+        return quotes
+    }
+
+    private func fetchMarketPrices(_ symbols: [String]) async throws -> [String: SourceQuote] {
+        guard var components = URLComponents(string: "\(baseURL)/coins/markets") else {
+            throw CoinGeckoError.invalidResponse
+        }
+        components.queryItems = [
+            URLQueryItem(name: "vs_currency", value: "usd"),
+            URLQueryItem(name: "ids", value: symbols.map { $0.lowercased() }.joined(separator: ",")),
+            URLQueryItem(name: "sparkline", value: "false"),
+            URLQueryItem(name: "price_change_percentage", value: "24h"),
+            URLQueryItem(name: "per_page", value: String(min(symbols.count, CoinGecko.pageLimit))),
+        ]
+        guard let url = components.url else { throw CoinGeckoError.invalidResponse }
+
+        await rateLimiter.waitForSlot()
+        let (data, response) = try await session.data(from: url)
+        try await checkHTTPResponse(data: data, response: response, url: url)
+        await rateLimiter.noteSuccess()
+
+        let coins = try JSONDecoder().decode([MarketPrice].self, from: data)
+        let byID = Dictionary(coins.map { ($0.id.lowercased(), $0) }, uniquingKeysWith: { first, _ in first })
+        var quotes: [String: SourceQuote] = [:]
+        for symbol in symbols {
+            guard let coin = byID[symbol.lowercased()], let price = coin.currentPrice, price > 0 else { continue }
+            quotes[symbol] = SourceQuote(price: price, changePercent24h: coin.changePercent24h)
+        }
+        return quotes
+    }
+}

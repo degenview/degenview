@@ -8,6 +8,8 @@ final class PortfolioStore: ObservableObject {
     @Published private(set) var snapshot: PortfolioLedgerSnapshot
     @Published private(set) var quotes: [String: PortfolioQuote]
     @Published private(set) var isRefreshing = false
+    /// True while daily history is being rebuilt. The chart has its own loading state; the value doesn't wait on it.
+    @Published private(set) var isLoadingHistory = false
     @Published private(set) var isLoadingInitialValues: Bool
     @Published private(set) var reportingCurrency: PortfolioCurrency = .USD
     @Published private(set) var isChangingReportingCurrency = false
@@ -27,7 +29,19 @@ final class PortfolioStore: ObservableObject {
         let totalUnrealizedPnL: Decimal
         let unpricedAssetCount: Int
     }
-    private var derivedStates: [Set<UUID>: DerivedState] = [:]
+    private var derivedStates: [Set<UUID>: DerivedState] = [:] {
+        didSet { if derivedStates.isEmpty { intradayStates.removeAll() } }
+    }
+    /// Recent fine-grained candles per asset key, for the 1D chart. In memory only.
+    struct IntradayBars {
+        var bars: [KlineData]
+        var seconds: TimeInterval
+        var fetched: Date
+    }
+    private var intradayBars: [String: IntradayBars] = [:]
+    private var intradayInFlight: Set<String> = []
+    private var intradayStates: [Set<UUID>: (bucket: Int, points: [PortfolioSnapshot])] = [:]
+    nonisolated static let intradayStep: TimeInterval = 1_800
     private struct ReportingPreferences: Codable { var currencies: [String: PortfolioCurrency] = [:] }
     static let reportingPreferencesKey = "portfolio.reportingCurrencies"
     private let database: AppDatabase
@@ -50,16 +64,21 @@ final class PortfolioStore: ObservableObject {
     private let fxService: any FXRateProviding
     private let initialReportingCurrency: PortfolioCurrency
     private var hasInitialized = false
-    private var isInitializing = false
-    private var historyTasks: [UUID: Task<Void, Never>] = [:]
+    @Published private(set) var isInitializing = false
+    private var historyTasks: [UUID: Task<Bool, Never>] = [:]
+    private var historyRebuildsInFlight = 0
     private var quoteTasks: [String: Task<PortfolioQuote?, Never>] = [:]
     private let quoteFreshness: TimeInterval = 5 * 60
     private let quoteStore: JSONStore<[String: PortfolioQuote]>
+    private let candleStore: PortfolioCandleStore
+    private let showsCachedValues: Bool
+    private let quoteFetcher: PortfolioQuoteFetcher
 
     init(
         initialSnapshot: PortfolioLedgerSnapshot? = nil, initialQuotes suppliedQuotes: [String: PortfolioQuote]? = nil,
         fxService: any FXRateProviding = FXRateService.shared, database: AppDatabase = .shared,
-        storageDirectory: URL = AppSupport.directory
+        storageDirectory: URL = AppSupport.directory, candleStore: PortfolioCandleStore? = nil,
+        quoteFetcher: PortfolioQuoteFetcher = .live
     ) {
         let quoteStore = JSONStore<[String: PortfolioQuote]>(
             filename: "portfolio_quotes.json", directory: storageDirectory)
@@ -83,13 +102,22 @@ final class PortfolioStore: ObservableObject {
         self.fxService = fxService
         self.quoteStore = quoteStore
         self.database = database
+        self.candleStore = candleStore ?? PortfolioCandleStore(database: database)
+        self.quoteFetcher = quoteFetcher
         snapshot = initial
         quotes = initialQuotes
         reportingPreferences =
             database.setting(ReportingPreferences.self, key: Self.reportingPreferencesKey) ?? ReportingPreferences()
-        initialReportingCurrency = Self.preferredCurrency(
+        let preferredCurrency = Self.preferredCurrency(
             selectionID: initial.selectedPortfolioID, snapshot: initial, preferences: reportingPreferences)
-        reportingCurrency = Self.nativeCurrency(selectionID: initial.selectedPortfolioID, snapshot: initial)
+        let nativeCurrency = Self.nativeCurrency(selectionID: initial.selectedPortfolioID, snapshot: initial)
+        initialReportingCurrency = preferredCurrency
+        reportingCurrency = nativeCurrency
+        // Persisted quotes can paint real numbers before any network call, but only if every
+        // asset has one (an unpriced asset would read as 0) and the reporting currency is the
+        // stored one (otherwise the value would flash in the wrong currency).
+        showsCachedValues =
+            !Self.needsInitialQuoteLoad(snapshot: initial, quotes: initialQuotes) && preferredCurrency == nativeCurrency
         isLoadingInitialValues = !initial.portfolios.isEmpty
         ledger = PortfolioLedger(
             snapshot: initial,
@@ -98,6 +126,9 @@ final class PortfolioStore: ObservableObject {
             quoteStore.save(initialQuotes)
         }
     }
+
+    /// Background work is running behind values that are already on screen.
+    var isUpdating: Bool { isInitializing || isRefreshing }
 
     var selectedPortfolio: Portfolio? {
         snapshot.selectedPortfolioID.flatMap { id in snapshot.portfolios.first { $0.id == id } }
@@ -178,20 +209,27 @@ final class PortfolioStore: ObservableObject {
         guard !hasInitialized else { return }
         hasInitialized = true
         isInitializing = true
-        isLoadingInitialValues = true
         defer {
             isInitializing = false
             isLoadingInitialValues = false
         }
         await refresh()
+        if showsCachedValues, initialReportingCurrency == reportingCurrency {
+            // Values are read from the projection, so build it from the persisted quotes first;
+            // without network work this is quick, and the screen can show numbers while the rest loads.
+            await reloadReportingProjection()
+            isLoadingInitialValues = false
+        }
+        // The value needs only current prices, so they go first and alone: history requests would
+        // queue behind them on shared rate limiters. The chart is filled in afterwards.
         await refreshQuotes(for: selectedPortfolioIDs)
         if initialReportingCurrency == reportingCurrency {
             await reloadReportingProjection()
-        }
-        await rebuildHistory()
-        if initialReportingCurrency != reportingCurrency {
+            isLoadingInitialValues = false
+        } else {
             await selectReportingCurrency(initialReportingCurrency)
         }
+        await rebuildHistory()
     }
     func select(_ selection: PortfolioSelection) {
         Task {
@@ -288,37 +326,24 @@ final class PortfolioStore: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         let now = Date()
+        let stale = assets.filter { asset in
+            quotes[asset.key].map { now.timeIntervalSince($0.timestamp) >= quoteFreshness } ?? true
+        }
+        // One fetch prices every asset not already in flight; each asset's task just picks its
+        // own quote out of it, so a concurrent caller shares the request instead of repeating it.
+        let unclaimed = stale.filter { quoteTasks[$0.key] == nil }
+        if !unclaimed.isEmpty {
+            let fetcher = quoteFetcher
+            let batch = Task { await fetcher.quotes(for: unclaimed) }
+            for asset in unclaimed { quoteTasks[asset.key] = Task { await batch.value[asset.key] } }
+        }
+        let pending = stale.compactMap { asset in quoteTasks[asset.key].map { (asset.key, $0) } }
         var updates: [String: PortfolioQuote] = [:]
         await withTaskGroup(of: (String, PortfolioQuote?).self) { group in
-            for asset in assets {
-                if let quote = quotes[asset.key], now.timeIntervalSince(quote.timestamp) < quoteFreshness { continue }
-                let task: Task<PortfolioQuote?, Never>
-                if let existing = quoteTasks[asset.key] {
-                    task = existing
-                } else {
-                    task = Task {
-                        guard asset.quoteCurrency == .USD else { return nil }
-                        let service = DataSourceFactory.shared.service(for: asset.source)
-                        guard
-                            let data = try? await service.fetchKlines(
-                                symbol: asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":"),
-                                interval: "1h", limit: 25),
-                            let latest = data.last
-                        else { return nil }
-                        let prior = data.last(where: { latest.openTime.timeIntervalSince($0.openTime) >= 23 * 3600 })
-                        return PortfolioQuote(
-                            price: Decimal(latest.closePrice),
-                            previousDayPrice: prior.map { Decimal($0.closePrice) }, timestamp: Date())
-                    }
-                    quoteTasks[asset.key] = task
-                }
-                group.addTask {
-                    (asset.key, await task.value)
-                }
-            }
+            for (key, task) in pending { group.addTask { (key, await task.value) } }
             for await (key, quote) in group { if let quote { updates[key] = quote } }
         }
-        for asset in assets { quoteTasks[asset.key] = nil }
+        for asset in stale { quoteTasks[asset.key] = nil }
         if !updates.isEmpty {
             var merged = quotes
             merged.merge(updates) { _, new in new }
@@ -336,64 +361,100 @@ final class PortfolioStore: ObservableObject {
     /// Rebuilds only the invalidated suffix. Each daily point uses holdings that existed then
     /// and a nearest prior real close; missing observations produce an incomplete snapshot.
     func rebuildHistory() async {
-        let portfolios = selectedPortfolio.map { [$0] } ?? activePortfolios
-        for portfolio in portfolios { await rebuildHistory(for: portfolio) }
+        await rebuildHistory(selectedPortfolio.map { [$0] } ?? activePortfolios)
     }
 
     func rebuildHistory(forPortfolioID id: UUID?) async {
-        let portfolios =
-            id.flatMap { target in activePortfolios.first { $0.id == target } }.map { [$0] } ?? activePortfolios
-        for portfolio in portfolios { await rebuildHistory(for: portfolio) }
+        await rebuildHistory(
+            id.flatMap { target in activePortfolios.first { $0.id == target } }.map { [$0] } ?? activePortfolios)
     }
 
-    private func rebuildHistory(for portfolio: Portfolio) async {
-        if let task = historyTasks[portfolio.id] {
-            await task.value
-            return
+    /// Portfolios rebuild side by side; the projection reloads once afterwards so two rebuilds
+    /// never race to commit one built from older data.
+    private func rebuildHistory(_ portfolios: [Portfolio]) async {
+        var changed: Set<UUID> = []
+        historyRebuildsInFlight += 1
+        isLoadingHistory = true
+        defer {
+            historyRebuildsInFlight -= 1
+            isLoadingHistory = historyRebuildsInFlight > 0
         }
-        guard let start = Self.historyRebuildStart(for: portfolio.id, in: snapshot, today: Date()) else { return }
-        let task = Task { [weak self] in
-            guard let self else { return }
-            await self.performHistoryRebuild(for: portfolio, start: start)
+        await withTaskGroup(of: (UUID, Bool).self) { group in
+            for portfolio in portfolios {
+                group.addTask { (portfolio.id, await self.rebuildHistory(for: portfolio)) }
+            }
+            for await (id, didChange) in group where didChange { changed.insert(id) }
+        }
+        if !selectedPortfolioIDs.isDisjoint(with: changed) { await reloadReportingProjection() }
+    }
+
+    /// True when new points were stored.
+    private func rebuildHistory(for portfolio: Portfolio) async -> Bool {
+        if let task = historyTasks[portfolio.id] { return await task.value }
+        guard let start = Self.historyRebuildStart(for: portfolio.id, in: snapshot, today: Date()) else {
+            return false
+        }
+        let task = Task { [weak self] () -> Bool in
+            guard let self else { return false }
+            return await self.performHistoryRebuild(for: portfolio, start: start)
         }
         historyTasks[portfolio.id] = task
-        await task.value
+        let didChange = await task.value
         historyTasks[portfolio.id] = nil
+        return didChange
     }
 
-    private func performHistoryRebuild(for portfolio: Portfolio, start: Date) async {
-        let calendar = Calendar(identifier: .gregorian)
+    private func performHistoryRebuild(for portfolio: Portfolio, start: Date) async -> Bool {
         let end = Date()
-        let assets = PortfolioAccountingEngine.uniqueAssets(
-            in: snapshot.transactions.filter { $0.portfolioID == portfolio.id }
-        )
+        let transactions = snapshot.transactions.filter { $0.portfolioID == portfolio.id }
+        let assets = PortfolioAccountingEngine.uniqueAssets(in: transactions)
         var histories: [String: [KlineData]] = [:]
         if portfolio.baseCurrency == .USD {
+            let candleStore = candleStore
             await withTaskGroup(of: (String, [KlineData]).self) { group in
                 for asset in assets {
-                    group.addTask {
-                        let symbol = asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":")
-                        let bars =
-                            (try? await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
-                                symbol: symbol, interval: "1d", limit: 2000)) ?? []
-                        return (asset.key, bars)
-                    }
+                    group.addTask { (asset.key, await candleStore.dailyBars(for: asset, from: start)) }
                 }
                 for await (key, bars) in group { histories[key] = bars }
             }
         }
+        // One step per day, each replaying the ledger: too much to run on the main actor.
+        let fetched = histories
+        let points = await Task.detached(priority: .userInitiated) {
+            Self.buildSnapshots(
+                portfolioID: portfolio.id, transactions: transactions, assets: assets, histories: fetched,
+                start: start, end: end)
+        }.value
+        do {
+            try await ledger.storeSnapshots(points, for: portfolio.id, from: start)
+            await refresh()
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// One snapshot per day from `start` through `end`, priced from the nearest prior daily
+    /// bar no more than three days old. `transactions` must already be the portfolio's own.
+    nonisolated static func buildSnapshots(
+        portfolioID: UUID, transactions: [PortfolioTransaction], assets: [PortfolioAsset],
+        histories: [String: [KlineData]], start: Date, end: Date,
+        calendar: Calendar = Calendar(identifier: .gregorian)
+    ) -> [PortfolioSnapshot] {
+        let bars = histories.mapValues { $0.sorted { $0.openTime < $1.openTime } }
         var points: [PortfolioSnapshot] = []
         var cursor = calendar.startOfDay(for: start)
         while cursor <= end {
             let historicalQuotes = Dictionary(
                 assets.compactMap { asset -> (String, PortfolioQuote)? in
-                    guard let bar = histories[asset.key]?.last(where: { $0.openTime <= cursor }),
+                    guard let bar = lastBar(in: bars[asset.key] ?? [], atOrBefore: cursor),
                         cursor.timeIntervalSince(bar.openTime) <= 3 * 86_400
                     else { return nil }
                     return (asset.key, PortfolioQuote(price: Decimal(bar.closePrice), timestamp: bar.openTime))
                 }, uniquingKeysWith: { existing, _ in existing })
             let holdingValues = try? PortfolioAccountingEngine.holdings(
-                transactions: snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor,
+                transactions: transactions, portfolioIDs: [portfolioID], through: cursor,
                 quotes: historicalQuotes)
             let incomplete = holdingValues?.contains { $0.currentPrice == nil } ?? true
             let value = holdingValues?.compactMap(\.currentValue).reduce(0, +) ?? 0
@@ -401,17 +462,136 @@ final class PortfolioStore: ObservableObject {
             let realized = holdingValues?.reduce(0) { $0 + $1.realizedPnL } ?? 0
             points.append(
                 .init(
-                    portfolioID: portfolio.id, timestamp: cursor, value: value,
+                    portfolioID: portfolioID, timestamp: cursor, value: value,
                     netContributions: PortfolioAccountingEngine.netContributions(
-                        snapshot.transactions, portfolioIDs: [portfolio.id], through: cursor),
+                        transactions, portfolioIDs: [portfolioID], through: cursor),
                     realizedPnL: realized, unrealizedPnL: value - cost, isComplete: !incomplete))
             cursor = calendar.date(byAdding: .day, value: 1, to: cursor)!
         }
-        do {
-            try await ledger.storeSnapshots(points, for: portfolio.id, from: start)
-            await refresh()
-            if selectedPortfolioIDs.contains(portfolio.id) { await reloadReportingProjection() }
-        } catch { lastError = error.localizedDescription }
+        return points
+    }
+
+    /// Binary search over bars sorted by open time.
+    nonisolated private static func lastBar(in bars: [KlineData], atOrBefore date: Date) -> KlineData? {
+        var low = 0
+        var high = bars.count
+        while low < high {
+            let mid = (low + high) / 2
+            if bars[mid].openTime <= date { low = mid + 1 } else { high = mid }
+        }
+        return low > 0 ? bars[low - 1] : nil
+    }
+
+    /// Fetches the last day of fine candles for the assets the 1D chart replays. Alpaca has
+    /// no 15-minute timeframe, so it is sampled from hourly bars.
+    func refreshIntraday(forPortfolioID id: UUID?) async {
+        let portfolios = activePortfolios.filter { ($0.id == id || id == nil) && $0.baseCurrency == .USD }
+        let now = Date()
+        let assets = PortfolioAccountingEngine.uniqueAssets(
+            in: snapshot.transactions.filter { transaction in portfolios.contains { $0.id == transaction.portfolioID } }
+        ).filter { asset in
+            asset.quoteCurrency == .USD && !intradayInFlight.contains(asset.key)
+                && intradayBars[asset.key].map { now.timeIntervalSince($0.fetched) >= quoteFreshness } ?? true
+        }
+        guard !assets.isEmpty else { return }
+        intradayInFlight.formUnion(assets.map(\.key))
+        var fetched: [String: IntradayBars] = [:]
+        await withTaskGroup(of: (String, IntradayBars?).self) { group in
+            for asset in assets {
+                group.addTask {
+                    let hourly = asset.source == .alpaca
+                    let symbol = asset.key.components(separatedBy: ":").dropFirst().joined(separator: ":")
+                    guard
+                        let bars = try? await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
+                            symbol: symbol, interval: hourly ? "1h" : "15m", limit: hourly ? 48 : 120),
+                        !bars.isEmpty
+                    else { return (asset.key, nil) }
+                    return (asset.key, IntradayBars(bars: bars, seconds: hourly ? 3_600 : 900, fetched: Date()))
+                }
+            }
+            for await (key, result) in group { if let result { fetched[key] = result } }
+        }
+        intradayInFlight.subtract(assets.map(\.key))
+        guard !fetched.isEmpty else { return }
+        intradayBars.merge(fetched) { _, new in new }
+        derivedStates.removeAll(keepingCapacity: true)
+        objectWillChange.send()
+    }
+
+    /// The last 24 hours at 30-minute spacing, in the reporting currency. Empty when the
+    /// selection can't be replayed (non-USD portfolios, no candles yet) so callers fall back
+    /// to the daily history.
+    func intradayHistory(for portfolioID: UUID?, now: Date = Date()) -> [PortfolioSnapshot] {
+        let portfolios = activePortfolios.filter { $0.id == portfolioID || portfolioID == nil }
+        guard !portfolios.isEmpty, portfolios.allSatisfy({ $0.baseCurrency == .USD }) else { return [] }
+        let ids = Set(portfolios.map(\.id))
+        let bucket = Int(now.timeIntervalSince1970 / Self.intradayStep)
+        if let cached = intradayStates[ids], cached.bucket == bucket { return cached.points }
+        let transactions = derivedState(for: ids).transactions
+        let series = portfolios.map {
+            Self.intradaySnapshots(
+                transactions: transactions, portfolioID: $0.id, bars: intradayBars,
+                rateToReporting: baseToReportingRates[$0.id] ?? 1, now: now)
+        }
+        let points = series.count == 1 ? series[0] : Self.sumIntraday(series)
+        intradayStates[ids] = (bucket, points)
+        return points
+    }
+
+    /// Portfolio value at every `step` boundary of the trailing `window`, replaying holdings
+    /// at each slot against the close of the last candle that had finished by then. A candle
+    /// older than three days is treated as no quote, like the daily rebuild.
+    nonisolated static func intradaySnapshots(
+        transactions: [PortfolioTransaction], portfolioID: UUID, bars: [String: IntradayBars],
+        rateToReporting: Decimal, now: Date, step: TimeInterval = intradayStep, window: TimeInterval = 86_400
+    ) -> [PortfolioSnapshot] {
+        let own = transactions.filter { $0.portfolioID == portfolioID }
+        guard let first = own.map(\.timestamp).min() else { return [] }
+        let assets = PortfolioAccountingEngine.uniqueAssets(in: own)
+        let end = (now.timeIntervalSince1970 / step).rounded(.down) * step
+        var points: [PortfolioSnapshot] = []
+        var slotTime = end - window
+        while slotTime <= end {
+            defer { slotTime += step }
+            let slot = Date(timeIntervalSince1970: slotTime)
+            guard slot >= first else { continue }
+            let quotes = Dictionary(
+                assets.compactMap { asset -> (String, PortfolioQuote)? in
+                    guard let series = bars[asset.key],
+                        let bar = series.bars.last(where: { $0.openTime.addingTimeInterval(series.seconds) <= slot }),
+                        slot.timeIntervalSince(bar.openTime) <= 3 * 86_400
+                    else { return nil }
+                    return (
+                        asset.key,
+                        PortfolioQuote(price: Decimal(bar.closePrice) * rateToReporting, timestamp: bar.openTime)
+                    )
+                }, uniquingKeysWith: { existing, _ in existing })
+            let holdings = try? PortfolioAccountingEngine.holdings(
+                transactions: own, portfolioIDs: [portfolioID], through: slot, quotes: quotes)
+            let value = holdings?.compactMap(\.currentValue).reduce(0, +) ?? 0
+            let cost = holdings?.reduce(0) { $0 + $1.costBasis } ?? 0
+            points.append(
+                .init(
+                    portfolioID: portfolioID, timestamp: slot, value: value,
+                    netContributions: PortfolioAccountingEngine.netContributions(
+                        own, portfolioIDs: [portfolioID], through: slot),
+                    realizedPnL: holdings?.reduce(0) { $0 + $1.realizedPnL } ?? 0, unrealizedPnL: value - cost,
+                    isComplete: !(holdings?.contains { $0.currentPrice == nil } ?? true)))
+        }
+        return points
+    }
+
+    nonisolated static func sumIntraday(_ series: [[PortfolioSnapshot]]) -> [PortfolioSnapshot] {
+        let aggregateID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
+        return Dictionary(grouping: series.flatMap { $0 }, by: \.timestamp).map { date, points in
+            PortfolioSnapshot(
+                portfolioID: aggregateID, timestamp: date,
+                value: points.reduce(0) { $0 + $1.value },
+                netContributions: points.reduce(0) { $0 + $1.netContributions },
+                realizedPnL: points.reduce(0) { $0 + $1.realizedPnL },
+                unrealizedPnL: points.reduce(0) { $0 + $1.unrealizedPnL },
+                isComplete: points.allSatisfy(\.isComplete))
+        }.sorted { $0.timestamp < $1.timestamp }
     }
 
     nonisolated static func historyRebuildStart(

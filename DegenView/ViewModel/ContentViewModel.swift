@@ -1386,10 +1386,10 @@ final class ContentViewModel: ObservableObject {
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
-        candleCount = view.candleCount.map(view.timeRange.migratedCandleCount) ?? view.timeRange.dataPointLimit
+        candleCount = view.candleCount
         layoutMode = view.layoutMode
 
-        let configs = view.resolvedConfigs
+        let configs = view.tickerConfigs
         chartViewModels = configs.map { config in
             let vm = ChartViewModel(ticker: config.symbol, source: config.source)
             vm.applyConfig(config)

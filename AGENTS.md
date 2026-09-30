@@ -25,8 +25,11 @@ Requires Xcode 16+, macOS 14+.
 - **Protocol abstraction** for data sources: `TickerDataSource` protocol, `DataSourceFactory` singleton
 - **Persistence**: user data (tabs, saved views, favorites, drawings, portfolios, paper
   trading, alerts) lives in SQLite (`degenview.sqlite`, WAL) through `AppDatabase`, shared
-  with the alert agent. Caches stay in `JSONStore<T>`. Schema changes are new
-  `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one
+  with the alert agent. Small caches stay in `JSONStore<T>`; closed daily candles for
+  portfolio history are the exception — large, append-mostly, read by range — and live in the
+  `candle`/`candle_coverage` tables via `PortfolioCandleStore`. The schema is one
+  `AppDatabase.createSchema` in `AppDatabase+Schema.swift` (`IF NOT EXISTS`); there are no
+  versioned migrations and no readers for older data — this is the first version
 - **Pine is a feature folder**: everything for the Pine Script engine lives under
   `DegenView/Pine/` (`Language`, `Runtime`, `Broker`, `Model`, `Editor`, `View`). One type per
   file still applies; a long type is split into `Type+Concern.swift` extensions (members

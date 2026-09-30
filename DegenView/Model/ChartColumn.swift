@@ -11,9 +11,9 @@ struct ChartColumn: Identifiable, Codable, Equatable {
         self.chartIDs = chartIDs
     }
 
-    /// Resolve persisted columns against the charts that actually exist. Old
-    /// documents have no columns, so reproduce the former two-column row-major
-    /// grid. Corrupt/stale membership is repaired without dropping charts.
+    /// Resolve persisted columns against the charts that actually exist. With no
+    /// columns yet, lay the charts out as a two-column row-major grid.
+    /// Stale membership is repaired without dropping charts.
     static func resolved(_ persisted: [ChartColumn]?, chartIDs: [UUID]) -> [ChartColumn] {
         guard !chartIDs.isEmpty else { return [] }
 

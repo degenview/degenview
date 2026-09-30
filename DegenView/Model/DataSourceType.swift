@@ -202,7 +202,7 @@ struct CoinMarketCapChartConfig: Codable, Equatable, Hashable {
 
 /// Persisted config for a single ticker — symbol + which API to fetch from.
 struct TickerConfig: Codable, Equatable, Hashable {
-    /// Stable identity for script attachment and migration. Older documents synthesize one.
+    /// Stable identity for script attachment.
     var chartID: UUID = UUID()
     let symbol: String
     let source: DataSourceType
@@ -249,7 +249,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// are stored separately so a compiler error never blanks an already working plot.
     var pine: PineConfiguration? = nil
 
-    /// Canonical local-script instances. `pine` is read only by the migration coordinator.
+    /// Canonical local-script instances.
     var scripts: [ChartScriptInstance] = []
 
     init(
@@ -284,35 +284,5 @@ struct TickerConfig: Codable, Equatable, Hashable {
         self.bitcoinPowerLaw = bitcoinPowerLaw
         self.pine = pine
         self.scripts = scripts
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case chartID, symbol, source, bullishColorHex, bearishColorHex, yAxisDecimalPlaces,
-            yZoom, showVolume, showRSI, showEMA, emaPeriod, showBollinger, showTrendFlips,
-            displayName, pmSeries, portfolioChart, coinMarketCapChart, bitcoinPowerLaw, pine, scripts
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        chartID = try c.decodeIfPresent(UUID.self, forKey: .chartID) ?? UUID()
-        symbol = try c.decode(String.self, forKey: .symbol)
-        source = try c.decode(DataSourceType.self, forKey: .source)
-        bullishColorHex = try c.decodeIfPresent(String.self, forKey: .bullishColorHex)
-        bearishColorHex = try c.decodeIfPresent(String.self, forKey: .bearishColorHex)
-        yAxisDecimalPlaces = try c.decodeIfPresent(Int.self, forKey: .yAxisDecimalPlaces)
-        yZoom = try c.decodeIfPresent(Double.self, forKey: .yZoom)
-        showVolume = try c.decodeIfPresent(Bool.self, forKey: .showVolume)
-        showRSI = try c.decodeIfPresent(Bool.self, forKey: .showRSI)
-        showEMA = try c.decodeIfPresent(Bool.self, forKey: .showEMA)
-        emaPeriod = try c.decodeIfPresent(Int.self, forKey: .emaPeriod)
-        showBollinger = try c.decodeIfPresent(Bool.self, forKey: .showBollinger)
-        showTrendFlips = try c.decodeIfPresent(Bool.self, forKey: .showTrendFlips)
-        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
-        pmSeries = try c.decodeIfPresent([PmSeriesConfig].self, forKey: .pmSeries)
-        portfolioChart = try c.decodeIfPresent(PortfolioChartConfig.self, forKey: .portfolioChart)
-        coinMarketCapChart = try c.decodeIfPresent(CoinMarketCapChartConfig.self, forKey: .coinMarketCapChart)
-        bitcoinPowerLaw = try c.decodeIfPresent(BitcoinPowerLawConfig.self, forKey: .bitcoinPowerLaw)
-        pine = try c.decodeIfPresent(PineConfiguration.self, forKey: .pine)
-        scripts = try c.decodeIfPresent([ChartScriptInstance].self, forKey: .scripts) ?? []
     }
 }
