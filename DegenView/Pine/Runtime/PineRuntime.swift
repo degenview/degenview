@@ -287,13 +287,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             case .assignment(let name, let op, let expression, _):
                 let rhs = try eval(expression, &context)
                 let old = working.variables[name] ?? .na
-                let value =
-                    op == .reassign
-                    ? rhs
-                    : op == .plusAssign
-                        ? add(old, rhs)
-                        : numeric(
-                            old, rhs, op == .minusAssign ? .minus : op == .starAssign ? .star : .slash)
+                let value = PineOperators.apply(op, old: old, rhs)
                 working.variables[name] = value
                 if context.modes[name] == .intrabar || intrabar[name] != nil { intrabar[name] = value }
                 last = value
@@ -374,7 +368,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                     }
                     let value = try eval(condition, &context)
                     if target != nil {
-                        if compare(target!, value, .equal) == .bool(true) {
+                        if PineOperators.apply(.equal, target!, value) == .bool(true) {
                             chosen = arm.body
                             break
                         }
@@ -433,16 +427,13 @@ final class PineRuntimeSession: @unchecked Sendable {
         case .unary(let op, let e, let range):
             let v = try eval(e, &context)
             switch op {
-            case .minus:
-                if case .int(let x) = v { return .int(-x) }
-                return v.number.map { .float(-$0) } ?? .na
+            case .negate: return PineOperators.negate(v)
             case .plus: return v
             case .not:
                 guard case .bool(let b) = v else {
                     throw PineDiagnostic.error("PINE4002", .runtime, "not requires bool.", range)
                 }
                 return .bool(!b)
-            default: return .na
             }
         case .binary(let left, let op, let right, let range):
             let lhs = try eval(left, &context)
@@ -466,12 +457,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 }
                 return .bool(r)
             }
-            let rhs = try eval(right, &context)
-            if [.equal, .notEqual, .less, .lessEqual, .greater, .greaterEqual].contains(op) {
-                return compare(lhs, rhs, op)
-            }
-            if op == .plus { return add(lhs, rhs) }
-            return numeric(lhs, rhs, op)
+            return PineOperators.apply(op, lhs, try eval(right, &context))
         case .ternary(let condition, let yes, let no, let range):
             guard case .bool(let b) = try eval(condition, &context) else {
                 throw PineDiagnostic.error("PINE4005", .runtime, "Ternary condition must be bool.", range)
@@ -1739,51 +1725,6 @@ final class PineRuntimeSession: @unchecked Sendable {
         return text + suffix
     }
 
-    private func add(_ a: PineRuntimeValue, _ b: PineRuntimeValue) -> PineRuntimeValue {
-        if case .string(let x) = a, case .string(let y) = b { return .string(x + y) }
-        return numeric(a, b, .plus)
-    }
-
-    private func numeric(_ a: PineRuntimeValue, _ b: PineRuntimeValue, _ op: PineTokenKind)
-        -> PineRuntimeValue
-    {
-        if case .int(let x) = a, case .int(let y) = b {
-            switch op {
-            case .plus: return .int(x &+ y)
-            case .minus: return .int(x &- y)
-            case .star: return .int(x &* y)
-            case .percent: return y == 0 ? .na : .int(x % y)
-            default: break
-            }
-        }
-        guard let x = a.number, let y = b.number else { return .na }
-        switch op {
-        case .plus: return .float(x + y)
-        case .minus: return .float(x - y)
-        case .star: return .float(x * y)
-        case .slash: return y == 0 ? .na : .float(x / y)
-        case .percent: return y == 0 ? .na : .float(x.truncatingRemainder(dividingBy: y))
-        case .power: return .float(pow(x, y))
-        default: return .na
-        }
-    }
-    private func compare(_ a: PineRuntimeValue, _ b: PineRuntimeValue, _ op: PineTokenKind)
-        -> PineRuntimeValue
-    {
-        if a == .na || b == .na { return .bool(false) }
-        if let x = a.number, let y = b.number {
-            switch op {
-            case .equal: return .bool(x == y)
-            case .notEqual: return .bool(x != y)
-            case .less: return .bool(x < y)
-            case .lessEqual: return .bool(x <= y)
-            case .greater: return .bool(x > y)
-            case .greaterEqual: return .bool(x >= y)
-            default: break
-            }
-        }
-        return .bool(op == .equal ? a == b : a != b)
-    }
     private func commitHistories(_ bar: KlineData) {
         var series: [String: PineRuntimeValue] = [
             "open": .float(bar.openPrice), "high": .float(bar.highPrice), "low": .float(bar.lowPrice),

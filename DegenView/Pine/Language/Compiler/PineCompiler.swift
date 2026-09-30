@@ -19,8 +19,7 @@ enum PineCompiler {
         }
         let lexed = PineLexer(source: normalizedSource, limits: limits).lex()
         diagnostics += lexed.diagnostics
-        var parser = PineParser(
-            tokens: lexed.tokens, index: 0, diagnostics: [], callSite: 0, limits: limits)
+        var parser = PineParser(tokens: lexed.tokens, limits: limits)
         let (statements, parseDiagnostics) = parser.parse()
         diagnostics += parseDiagnostics
         var declarations: [(ScriptType, PineExpression, PineSourceRange)] = []
@@ -158,33 +157,18 @@ enum PineCompiler {
             if let value = environment[name] { return value }
             if let value = PineBuiltins.constants[name] { return value }
             return PineBuiltins.colors[name].map(PineRuntimeValue.color)
-        case .unary(.minus, let inner, _):
+        case .unary(.negate, let inner, _):
             switch constantValue(inner, environment) {
-            case .int(let x)?: return .int(-x)
+            case .int(let x)?: return .int(0 &- x)
             case .float(let x)?: return .float(-x)
             default: return nil
             }
         case .binary(let l, let op, let r, _):
-            guard let a = constantValue(l, environment), let b = constantValue(r, environment) else {
-                return nil
-            }
-            if op == .plus, case .string(let x) = a, case .string(let y) = b { return .string(x + y) }
-            if case .int(let x) = a, case .int(let y) = b {
-                switch op {
-                case .plus: return .int(x + y)
-                case .minus: return .int(x - y)
-                case .star: return .int(x * y)
-                default: break
-                }
-            }
-            guard let x = a.number, let y = b.number else { return nil }
-            switch op {
-            case .plus: return .float(x + y)
-            case .minus: return .float(x - y)
-            case .star: return .float(x * y)
-            case .slash: return y == 0 ? nil : .float(x / y)
-            default: return nil
-            }
+            guard op.isArithmetic, let a = constantValue(l, environment),
+                let b = constantValue(r, environment)
+            else { return nil }
+            let value = PineOperators.apply(op, a, b)
+            return value == .na ? nil : value
         case .call("timestamp", let arguments, _, _):
             var positional: [PineRuntimeValue] = []
             var named: [String: PineRuntimeValue] = [:]
@@ -340,7 +324,7 @@ enum PineCompiler {
     private static func constantNumber(_ e: PineExpression) -> Double? {
         switch e {
         case .literal(let value, _): return value.number
-        case .unary(.minus, let inner, _): return constantNumber(inner).map { -$0 }
+        case .unary(.negate, let inner, _): return constantNumber(inner).map { -$0 }
         default: return nil
         }
     }

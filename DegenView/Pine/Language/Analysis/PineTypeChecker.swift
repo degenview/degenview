@@ -171,19 +171,12 @@ struct PineTypeChecker {
     }
 
     private mutating func assign(
-        _ name: String, _ op: PineTokenKind, _ expression: PineExpression, _ scope: Scope
+        _ name: String, _ op: PineAssignmentOperator, _ expression: PineExpression, _ scope: Scope
     ) {
         let value = infer(expression, scope)
         guard let target = scope.variables[name], case .known(let type, _) = target else { return }
         var result = value
-        if op != .reassign {
-            let underlying: PineTokenKind =
-                switch op {
-                case .plusAssign: .plus
-                case .minusAssign: .minus
-                case .starAssign: .star
-                default: .slash
-                }
+        if case .compound(let underlying) = op {
             result = binary(
                 underlying, target, value, left: expression.range, right: expression.range,
                 range: expression.range)
@@ -314,80 +307,57 @@ struct PineTypeChecker {
 
     // MARK: - Operators
 
-    private static func symbol(_ op: PineTokenKind) -> String {
-        switch op {
-        case .plus: "+"
-        case .minus: "-"
-        case .star: "*"
-        case .slash: "/"
-        case .percent: "%"
-        case .power: "**"
-        case .equal: "=="
-        case .notEqual: "!="
-        case .less: "<"
-        case .lessEqual: "<="
-        case .greater: ">"
-        case .greaterEqual: ">="
-        case .and: "and"
-        case .or: "or"
-        default: "?"
-        }
-    }
-
     private mutating func requireBool(_ value: Inferred, _ what: String, _ range: PineSourceRange) {
         if case .known(let type, _) = value, type != .bool {
             error("PINE3033", "\(what) must be bool, got \(type.rawValue).", range)
         }
     }
 
-    private mutating func unary(_ op: PineTokenKind, _ operand: Inferred, _ range: PineSourceRange) -> Inferred {
+    private mutating func unary(_ op: PineUnaryOperator, _ operand: Inferred, _ range: PineSourceRange) -> Inferred {
         guard case .known(let type, let qualifier) = operand else { return .unknown }
         if op == .not {
             requireBool(operand, "Operand of 'not'", range)
             return .known(.bool, qualifier)
         }
         guard Self.isNumeric(type) else {
-            error("PINE3034", "Operator '\(op == .minus ? "-" : "+")' cannot be applied to \(type.rawValue).", range)
+            error("PINE3034", "Operator '\(op == .negate ? "-" : "+")' cannot be applied to \(type.rawValue).", range)
             return .unknown
         }
         return operand
     }
 
     private mutating func binary(
-        _ op: PineTokenKind, _ a: Inferred, _ b: Inferred, left: PineSourceRange, right: PineSourceRange,
+        _ op: PineBinaryOperator, _ a: Inferred, _ b: Inferred, left: PineSourceRange, right: PineSourceRange,
         range: PineSourceRange
     ) -> Inferred {
-        let comparisons: [PineTokenKind] = [.equal, .notEqual, .less, .lessEqual, .greater, .greaterEqual]
         // A comparison with `na` is legal whatever the other side is.
-        if comparisons.contains(op), a == .na || b == .na { return .known(.bool, .series) }
+        if op.isComparison, a == .na || b == .na { return .known(.bool, .series) }
         guard case .known(let x, let qx) = a, case .known(let y, let qy) = b else { return .unknown }
         let qualifier = Self.maxQualifier(qx, qy)
 
         switch op {
         case .and, .or:
-            requireBool(a, "Operand of '\(Self.symbol(op))'", left)
-            requireBool(b, "Operand of '\(Self.symbol(op))'", right)
+            requireBool(a, "Operand of '\(op.symbol)'", left)
+            requireBool(b, "Operand of '\(op.symbol)'", right)
             return .known(.bool, qualifier)
         case .equal, .notEqual:
             if x == y || (Self.isNumeric(x) && Self.isNumeric(y)) { return .known(.bool, qualifier) }
         case .less, .lessEqual, .greater, .greaterEqual:
             if Self.isNumeric(x) && Self.isNumeric(y) { return .known(.bool, qualifier) }
-        case .plus:
+        case .add:
             if x == .string && y == .string { return .known(.string, qualifier) }
             if Self.isNumeric(x) && Self.isNumeric(y) {
                 return .known(x == .int && y == .int ? .int : .float, qualifier)
             }
-        case .minus, .star, .percent:
+        case .subtract, .multiply, .modulo:
             if Self.isNumeric(x) && Self.isNumeric(y) {
                 return .known(x == .int && y == .int ? .int : .float, qualifier)
             }
-        case .slash, .power:
+        case .divide, .power:
             if Self.isNumeric(x) && Self.isNumeric(y) { return .known(.float, qualifier) }
-        default:
-            return .unknown
         }
         error(
-            "PINE3034", "Operator '\(Self.symbol(op))' cannot be applied to \(x.rawValue) and \(y.rawValue).", range)
+            "PINE3034", "Operator '\(op.symbol)' cannot be applied to \(x.rawValue) and \(y.rawValue).", range)
         return .unknown
     }
 
