@@ -357,6 +357,9 @@
 		F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F414E00390468E456A83EB64 /* PineRegressionTests.swift */; };
 		F2634A95761B88EAC1DBE0FF /* PineBuiltinTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */; };
 		F2B83DE70381EF295A63B7EB /* PineTypeChecker+Expressions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */; };
+		F2C6063E7938EA2862F32EF8 /* PineBrokerEmulator+Order.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E3DCA6FC000CE8C4D1DB41 /* PineBrokerEmulator+Order.swift */; };
+		F2C9B91B79AA777F4EA598F3 /* PineBrokerEmulator+Trades.swift in Sources */ = {isa = PBXBuildFile; fileRef = F141F0FBA7BFF114E11D831E /* PineBrokerEmulator+Trades.swift */; };
+		F21BB2BA213C0785C589B355 /* PineBrokerEmulator+Triggers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F133B2C45AAF7EBACBC47DDC /* PineBrokerEmulator+Triggers.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -633,6 +636,9 @@
 		F414E00390468E456A83EB64 /* PineRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRegressionTests.swift; sourceTree = "<group>"; };
 		F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBuiltinTypes.swift; sourceTree = "<group>"; };
 		F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineTypeChecker+Expressions.swift"; sourceTree = "<group>"; };
+		F1E3DCA6FC000CE8C4D1DB41 /* PineBrokerEmulator+Order.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Order.swift"; sourceTree = "<group>"; };
+		F141F0FBA7BFF114E11D831E /* PineBrokerEmulator+Trades.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Trades.swift"; sourceTree = "<group>"; };
+		F133B2C45AAF7EBACBC47DDC /* PineBrokerEmulator+Triggers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineBrokerEmulator+Triggers.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -889,6 +895,9 @@
 		F9D02D91B3FD66FF1D1BD4C8 /* Broker */ = {
 			isa = PBXGroup;
 			children = (
+				F1E3DCA6FC000CE8C4D1DB41 /* PineBrokerEmulator+Order.swift */,
+				F141F0FBA7BFF114E11D831E /* PineBrokerEmulator+Trades.swift */,
+				F133B2C45AAF7EBACBC47DDC /* PineBrokerEmulator+Triggers.swift */,
 				P20000000000000000000101 /* PineBrokerEmulator.swift */,
 			);
 			path = Broker;
@@ -1546,6 +1555,9 @@
 				F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */,
 				F2634A95761B88EAC1DBE0FF /* PineBuiltinTypes.swift in Sources */,
 				F2B83DE70381EF295A63B7EB /* PineTypeChecker+Expressions.swift in Sources */,
+				F2C6063E7938EA2862F32EF8 /* PineBrokerEmulator+Order.swift in Sources */,
+				F2C9B91B79AA777F4EA598F3 /* PineBrokerEmulator+Trades.swift in Sources */,
+				F21BB2BA213C0785C589B355 /* PineBrokerEmulator+Triggers.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
