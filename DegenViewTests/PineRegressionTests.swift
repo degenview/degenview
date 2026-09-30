@@ -162,6 +162,12 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots[0].values, [nil, nil, nil])
     }
 
+    func testNonFiniteColorTransparencyIsOpaqueNotATrap() throws {
+        let program = compile("plot(close, color=color.new(color.red, math.sqrt(-1)))")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots[0].color & 0xFF, 0xFF)
+    }
+
     // MARK: - Timestamps
 
     func testMonthNamesMatchWholeWordsOrAbbreviations() {

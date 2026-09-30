@@ -51,9 +51,15 @@ enum PineBuiltins {
         }
     }
 
-    /// Pine transparency is 0 (opaque) … 100 (invisible).
+    /// Pine transparency runs from 0 (opaque) to 100 (invisible); the alpha byte is the rest.
+    private static let maxTransparency = 100.0
+    private static let alphaPerPercent = 2.55
+
+    /// A non-finite transparency (`na`, NaN) counts as opaque.
     static func withTransparency(_ rgba: UInt32, _ transparency: Double) -> UInt32 {
-        (rgba & 0xFFFF_FF00) | UInt32(((100 - min(100, max(0, transparency))) * 2.55).rounded())
+        let clamped = transparency.isFinite ? min(maxTransparency, max(0, transparency)) : 0
+        let alpha = UInt32(((maxTransparency - clamped) * alphaPerPercent).rounded())
+        return (rgba & 0xFFFF_FF00) | alpha
     }
 
     static func rgb(_ r: Double, _ g: Double, _ b: Double, _ transparency: Double) -> UInt32 {

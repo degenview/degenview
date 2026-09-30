@@ -571,31 +571,21 @@ final class ChartViewModel: ObservableObject {
             type: self.source == .alpaca ? "stock" : self.source == .polymarket ? "prediction" : "crypto")
         pineTask = Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) {
-                () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
-                let compiled = supplied ?? PineCompiler.compile(source: source)
-                guard compiled.isValid else { return (compiled, nil, nil) }
-                do {
-                    let session = PineRuntimeSession(
-                        program: compiled, inputs: inputs, theme: theme, symbol: symbol)
-                    return (compiled, try session.evaluate(bars: bars), nil)
-                } catch {
-                    return (
-                        compiled, nil,
-                        error as? PineDiagnostic
-                            ?? PineDiagnostic.error("PINE4999", .runtime, error.localizedDescription, .zero)
-                    )
-                }
+                PineEvaluation.run(
+                    source: source, compiled: supplied, inputs: inputs, theme: theme, symbol: symbol,
+                    bars: bars)
             }.value
             guard let self, self.pineGeneration == generation, !Task.isCancelled else { return }
-            if let result = outcome.1 {
+            switch outcome {
+            case .applied(let compiled, let result):
                 self.pineOutput = result.output
-                self.pineDiagnostics = outcome.0.diagnostics + result.diagnostics
-                self.pineStatus = "Applied \(outcome.0.declaration.title) · \(bars.count) bars"
-            } else if let runtime = outcome.2 {
-                self.pineDiagnostics = [runtime]
+                self.pineDiagnostics = compiled.diagnostics + result.diagnostics
+                self.pineStatus = "Applied \(compiled.declaration.title) · \(bars.count) bars"
+            case .runtimeFailed(_, let diagnostic):
+                self.pineDiagnostics = [diagnostic]
                 self.pineStatus = "Runtime failed — last valid output remains active"
-            } else {
-                self.pineDiagnostics = outcome.0.diagnostics
+            case .compileFailed(let compiled):
+                self.pineDiagnostics = compiled.diagnostics
                 self.pineStatus = "Compile failed"
             }
         }

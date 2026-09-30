@@ -375,6 +375,7 @@
 		F237C581C5EB44F434386840 /* PineSyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FF38F9ABD54E9ECE0C0D8D /* PineSyntaxHighlighter.swift */; };
 		F2C23B32CD6F8F6676B2CB4A /* PineTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EBB66A321D9D8F79BF639C /* PineTextView.swift */; };
 		F2EE3A97A25FED6B9D2F39A9 /* PineWordRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B6870D59A665A8CE7CAC44 /* PineWordRange.swift */; };
+		F2E589D075589E7982623D5D /* PineEvaluation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D6F592AF73311DDDB6A6C4 /* PineEvaluation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -669,6 +670,7 @@
 		F1FF38F9ABD54E9ECE0C0D8D /* PineSyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSyntaxHighlighter.swift; sourceTree = "<group>"; };
 		F1EBB66A321D9D8F79BF639C /* PineTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTextView.swift; sourceTree = "<group>"; };
 		F1B6870D59A665A8CE7CAC44 /* PineWordRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWordRange.swift; sourceTree = "<group>"; };
+		F1D6F592AF73311DDDB6A6C4 /* PineEvaluation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEvaluation.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1099,6 +1101,7 @@
 			children = (
 				F94A25D628E62FCB1C4E5CFF /* Builtins */,
 				F1B1DDF1C2610B7C01BB4CD5 /* PineCall.swift */,
+				F1D6F592AF73311DDDB6A6C4 /* PineEvaluation.swift */,
 				F19B15D39CB83904E538B760 /* PineRefKind.swift */,
 				F1B29D54CED234F51C30F620 /* PineRuntimeContext.swift */,
 				F117FAF59B0E91681AF1F6B5 /* PineRuntimeFunction.swift */,
@@ -1626,6 +1629,7 @@
 				F237C581C5EB44F434386840 /* PineSyntaxHighlighter.swift in Sources */,
 				F2C23B32CD6F8F6676B2CB4A /* PineTextView.swift in Sources */,
 				F2EE3A97A25FED6B9D2F39A9 /* PineWordRange.swift in Sources */,
+				F2E589D075589E7982623D5D /* PineEvaluation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
