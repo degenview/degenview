@@ -566,13 +566,17 @@ final class ChartViewModel: ObservableObject {
         let bars = replayKlines
         let inputs = config.inputs
         let theme = pineTheme
+        let symbol = PineSymbolInfo(
+            ticker: ticker, tickerID: "\(self.source.rawValue):\(ticker)",
+            type: self.source == .alpaca ? "stock" : self.source == .polymarket ? "prediction" : "crypto")
         pineTask = Task { [weak self] in
             let outcome = await Task.detached(priority: .userInitiated) {
                 () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
                 let compiled = supplied ?? PineCompiler.compile(source: source)
                 guard compiled.isValid else { return (compiled, nil, nil) }
                 do {
-                    let session = PineRuntimeSession(program: compiled, inputs: inputs, theme: theme)
+                    let session = PineRuntimeSession(
+                        program: compiled, inputs: inputs, theme: theme, symbol: symbol)
                     return (compiled, try session.evaluate(bars: bars), nil)
                 } catch {
                     return (

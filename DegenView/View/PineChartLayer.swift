@@ -10,6 +10,8 @@ struct PineChartLayer {
     let candles: [KlineData]
     /// In its own pane there are no candles to anchor `abovebar`/`belowbar` markers to.
     var inPane = false
+    /// Sizes `plotcandle()` bodies and wicks like the real candles they overlay.
+    var style: ChartStyle = .default
 
     /// Behind the candles: `bgcolor()` bands.
     func drawBackground(_ context: inout GraphicsContext, plot: ChartPlot) {
@@ -20,11 +22,13 @@ struct PineChartLayer {
     func drawForeground(_ context: inout GraphicsContext, plot: ChartPlot) {
         drawScriptFills(context: &context, plot: plot)
         drawScriptBoxes(context: &context, plot: plot)
+        drawScriptCandles(context: &context, plot: plot)
         drawScriptPlots(context: &context, plot: plot)
         drawScriptLines(context: &context, plot: plot)
         drawScriptHorizontalLines(context: &context, plot: plot)
         drawScriptMarkers(context: &context, plot: plot)
         drawScriptLabels(context: &context, plot: plot)
+        drawStrategyTrades(context: &context, plot: plot)
     }
 
     /// Tables pin to the plot's corners and are never value-anchored, so callers draw
@@ -44,8 +48,14 @@ struct PineChartLayer {
     /// like `ChartPlot.priceRange` so nothing touches the frame.
     func valueRange(padding: CGFloat) -> (min: Double, max: Double) {
         var values: [Double] = []
-        for output in pine.plots {
+        for output in pine.plots where output.display & PineDisplay.pane != 0 {
             values += output.values.suffix(candles.count).compactMap { $0 }
+            if output.style == .histogram || output.style == .columns || output.style == .area {
+                values.append(output.histBase)
+            }
+        }
+        for output in pine.candles where output.display & PineDisplay.pane != 0 {
+            for bar in output.bars.suffix(candles.count).compactMap({ $0 }) { values += [bar.high, bar.low] }
         }
         values += pine.hlines.map(\.value)
         if !candles.isEmpty {
@@ -107,12 +117,17 @@ struct PineChartLayer {
     /// gaps do not get bridged by a line. The segment ending at a bar takes that bar's color.
     private func drawScriptPlots(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = plot.slotWidth(forCount: candles.count)
-        for output in pine.plots {
+        // A `display.none` plot still exists for `fill()` to reference; it just isn't drawn.
+        for output in pine.plots where output.display & PineDisplay.pane != 0 {
             func point(_ i: Int) -> CGPoint? {
                 guard let value = visible(output.values, at: i) ?? nil else { return nil }
                 return CGPoint(x: plot.x(forIndex: i, slotWidth: slot), y: plot.y(for: value))
             }
             func color(_ i: Int) -> UInt32 { (visible(output.colors, at: i) ?? nil) ?? output.color }
+            if output.style != .line && output.style != .stepline {
+                drawDiscretePlot(output, point: point, color: color, plot: plot, slot: slot, context: &context)
+                continue
+            }
             var i = 0
             while i < candles.count {
                 guard let start = point(i) else {
@@ -123,8 +138,11 @@ struct PineChartLayer {
                 var path = Path()
                 path.move(to: start)
                 var j = i
+                var previous = start
                 while j + 1 < candles.count, let next = point(j + 1), color(j + 1) == runColor {
+                    if output.style == .stepline { path.addLine(to: CGPoint(x: next.x, y: previous.y)) }
                     path.addLine(to: next)
+                    previous = next
                     j += 1
                 }
                 if runColor & 0xFF != 0 {
@@ -132,6 +150,94 @@ struct PineChartLayer {
                         path, with: .color(Color(pineRGBA: runColor)), lineWidth: CGFloat(output.lineWidth))
                 }
                 i = j == i ? i + 1 : j
+            }
+        }
+    }
+
+    /// Histogram, columns, area, circles, and cross plot styles.
+    private func drawDiscretePlot(
+        _ output: PinePlotOutput, point: (Int) -> CGPoint?, color: (Int) -> UInt32, plot: ChartPlot,
+        slot: CGFloat, context: inout GraphicsContext
+    ) {
+        let base = plot.y(for: output.histBase)
+        switch output.style {
+        case .area:
+            var i = 0
+            while i < candles.count {
+                guard point(i) != nil else {
+                    i += 1
+                    continue
+                }
+                var j = i
+                var path = Path()
+                path.move(to: CGPoint(x: point(i)!.x, y: base))
+                path.addLine(to: point(i)!)
+                while j + 1 < candles.count, let next = point(j + 1) {
+                    path.addLine(to: next)
+                    j += 1
+                }
+                path.addLine(to: CGPoint(x: point(j)!.x, y: base))
+                path.closeSubpath()
+                context.fill(path, with: .color(Color(pineRGBA: color(j)).opacity(0.3)))
+                i = j + 1
+            }
+        default:
+            let width = output.style == .columns ? max(1, slot * 0.8) : max(1, slot * 0.35)
+            let size = CGFloat(max(1, output.lineWidth))
+            for i in candles.indices {
+                guard let p = point(i), color(i) & 0xFF != 0 else { continue }
+                let tint = Color(pineRGBA: color(i))
+                switch output.style {
+                case .histogram, .columns:
+                    let rect = CGRect(
+                        x: p.x - width / 2, y: min(p.y, base), width: width, height: max(1, abs(base - p.y)))
+                    context.fill(Path(rect), with: .color(tint))
+                case .circles:
+                    let r = size + 1
+                    context.fill(
+                        Path(ellipseIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)),
+                        with: .color(tint))
+                default:
+                    var cross = Path()
+                    cross.move(to: CGPoint(x: p.x - 3, y: p.y))
+                    cross.addLine(to: CGPoint(x: p.x + 3, y: p.y))
+                    cross.move(to: CGPoint(x: p.x, y: p.y - 3))
+                    cross.addLine(to: CGPoint(x: p.x, y: p.y + 3))
+                    context.stroke(cross, with: .color(tint), lineWidth: size)
+                }
+            }
+        }
+    }
+
+    /// `plotcandle()`: drawn over the real candles at the same width, so a solid color
+    /// recolors them and an `na` color leaves them showing.
+    private func drawScriptCandles(context: inout GraphicsContext, plot: ChartPlot) {
+        let slot = plot.slotWidth(forCount: candles.count)
+        let bodyWidth = (slot * style.candleBodyFraction).clamped(
+            to: style.candleBodyMin...style.candleBodyMax)
+        let wickWidth = (slot * style.wickFraction).clamped(to: style.wickMin...style.wickMax)
+        for output in pine.candles where output.display & PineDisplay.pane != 0 {
+            for i in candles.indices {
+                guard let bar = visible(output.bars, at: i) ?? nil else { continue }
+                let x = plot.x(forIndex: i, slotWidth: slot)
+                if let wick = bar.wickColor, wick & 0xFF != 0 {
+                    let top = plot.y(for: bar.high)
+                    let bottom = plot.y(for: bar.low)
+                    context.fill(
+                        Path(
+                            CGRect(x: x - wickWidth / 2, y: top, width: wickWidth, height: max(0.5, bottom - top))),
+                        with: .color(Color(pineRGBA: wick)))
+                }
+                let top = plot.y(for: max(bar.open, bar.close))
+                let bottom = plot.y(for: min(bar.open, bar.close))
+                let body = CGRect(
+                    x: x - bodyWidth / 2, y: top, width: bodyWidth, height: max(style.minBodyHeight, bottom - top))
+                if let fill = bar.color, fill & 0xFF != 0 {
+                    context.fill(Path(body), with: .color(Color(pineRGBA: fill)))
+                }
+                if let border = bar.borderColor, border & 0xFF != 0 {
+                    context.stroke(Path(body), with: .color(Color(pineRGBA: border)), lineWidth: 1)
+                }
             }
         }
     }
@@ -147,6 +253,26 @@ struct PineChartLayer {
                 guard let top = visible(a.values, at: i) ?? nil, let bottom = visible(b.values, at: i) ?? nil
                 else { return nil }
                 return (plot.x(forIndex: i, slotWidth: slot), plot.y(for: top), plot.y(for: bottom))
+            }
+            if !fill.gradients.isEmpty {
+                // One quad per bar pair, blended top-to-bottom by the bar's own price range.
+                for i in 0..<max(0, candles.count - 1) {
+                    guard let p = pair(i), let q = pair(i + 1), let g = visible(fill.gradients, at: i + 1) ?? nil
+                    else { continue }
+                    var quad = Path()
+                    quad.move(to: CGPoint(x: p.0, y: p.1))
+                    quad.addLine(to: CGPoint(x: q.0, y: q.1))
+                    quad.addLine(to: CGPoint(x: q.0, y: q.2))
+                    quad.addLine(to: CGPoint(x: p.0, y: p.2))
+                    quad.closeSubpath()
+                    context.fill(
+                        quad,
+                        with: .linearGradient(
+                            Gradient(colors: [Color(pineRGBA: g.topColor), Color(pineRGBA: g.bottomColor)]),
+                            startPoint: CGPoint(x: q.0, y: plot.y(for: g.top)),
+                            endPoint: CGPoint(x: q.0, y: plot.y(for: g.bottom))))
+                }
+                continue
             }
             func color(_ i: Int) -> UInt32? { visible(fill.colors, at: i) ?? nil }
             var i = 0
@@ -183,7 +309,7 @@ struct PineChartLayer {
 
     private func drawScriptMarkers(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = plot.slotWidth(forCount: candles.count)
-        for marker in pine.markers {
+        for marker in pine.markers where marker.display & PineDisplay.pane != 0 {
             for candleIndex in candles.indices where visible(marker.values, at: candleIndex) == true {
                 let x = plot.x(forIndex: candleIndex, slotWidth: slot)
                 let candle = candles[candleIndex]
@@ -211,6 +337,52 @@ struct PineChartLayer {
                 ).foregroundColor(color)
                 context.draw(text, at: CGPoint(x: x, y: y))
             }
+        }
+    }
+
+    /// Strategy round trips: an arrow at each entry, a dot at each exit, and a dashed
+    /// connector colored by the trade's result. Prices are absolute, so this is chart-only.
+    private func drawStrategyTrades(context: inout GraphicsContext, plot: ChartPlot) {
+        guard !inPane, let report = pine.strategy else { return }
+        let slot = plot.slotWidth(forCount: candles.count)
+        let visibleBars = (pine.barCount - candles.count)..<pine.barCount
+        func arrow(long: Bool, at point: CGPoint, color: Color, context: inout GraphicsContext) {
+            var path = Path()
+            let h: CGFloat = 5
+            if long {
+                path.move(to: CGPoint(x: point.x, y: point.y))
+                path.addLine(to: CGPoint(x: point.x - h, y: point.y + h * 1.6))
+                path.addLine(to: CGPoint(x: point.x + h, y: point.y + h * 1.6))
+            } else {
+                path.move(to: CGPoint(x: point.x, y: point.y))
+                path.addLine(to: CGPoint(x: point.x - h, y: point.y - h * 1.6))
+                path.addLine(to: CGPoint(x: point.x + h, y: point.y - h * 1.6))
+            }
+            path.closeSubpath()
+            context.fill(path, with: .color(color))
+        }
+        let win = Color(pineRGBA: 0x26a6_9aff)
+        let loss = Color(pineRGBA: 0xef53_50ff)
+        for trade in report.trades
+        where visibleBars.contains(trade.entryBar) || visibleBars.contains(trade.exitBar) {
+            let entry = CGPoint(
+                x: x(forBar: trade.entryBar, plot: plot, slot: slot), y: plot.y(for: trade.entryPrice))
+            let exit = CGPoint(
+                x: x(forBar: trade.exitBar, plot: plot, slot: slot), y: plot.y(for: trade.exitPrice))
+            let tint = trade.profit >= 0 ? win : loss
+            var connector = Path()
+            connector.move(to: entry)
+            connector.addLine(to: exit)
+            context.stroke(
+                connector, with: .color(tint.opacity(0.7)), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            arrow(long: trade.isLong, at: entry, color: trade.isLong ? win : loss, context: &context)
+            context.fill(
+                Path(ellipseIn: CGRect(x: exit.x - 3, y: exit.y - 3, width: 6, height: 6)), with: .color(tint))
+        }
+        for trade in report.openTrades where visibleBars.contains(trade.entryBar) {
+            let entry = CGPoint(
+                x: x(forBar: trade.entryBar, plot: plot, slot: slot), y: plot.y(for: trade.entryPrice))
+            arrow(long: trade.isLong, at: entry, color: trade.isLong ? win : loss, context: &context)
         }
     }
 

@@ -35,6 +35,7 @@ DegenView/
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── PineChartLayer.swift           # Pine script visuals drawn into a ChartPlot
 │   ├── PineScriptPaneView.swift       # Separate pane for overlay=false scripts
+│   ├── PineStrategyReportView.swift   # Backtest metrics, equity curve, trades, script alerts
 │   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
@@ -51,6 +52,8 @@ DegenView/
     ├── BinanceAPIService.swift        # Binance REST klines
     ├── PineEngine.swift               # Ranged lexer, AST parser, semantic compiler
     ├── PineRuntime.swift              # Sandboxed bar VM, rollback, TA and visual builtins
+    ├── PineBrokerEmulator.swift       # strategy() order book, fills, positions, trades, equity
+    ├── PineTimestamp.swift            # timestamp() parsing and UTC calendar math
     ├── BinanceWebSocketService.swift  # Binance live klines
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata
     ├── DEXScreenerService.swift       # Pair discovery and metadata
@@ -135,7 +138,10 @@ DegenView/
     evaluation run in a generation-checked detached task; the runtime receives only an
     immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
     persisted separately from last-valid applied source, so invalid edits do not remove
-    the active result. Pine outputs are never shared between tabs or cards.
+    the active result. Pine outputs are never shared between tabs or cards. A `strategy()`
+    script's broker emulator is a value inside the runtime's per-bar state, so realtime
+    rollback restores its orders, positions, and trades with everything else; its report
+    and any `alert()` events ride along in `PineVisualOutput`.
 12. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
     stale range response cannot replace a newer selection. CMC cards are excluded from

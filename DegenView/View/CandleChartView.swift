@@ -46,7 +46,7 @@ struct CandleChartView: View {
                 style: style
             )
 
-            let script = PineChartLayer(pine: pine, candles: candles)
+            let script = PineChartLayer(pine: pine, candles: candles, style: style)
 
             Canvas { context, _ in
                 plot.drawGrid(&context)

@@ -63,9 +63,14 @@ plotshape(bullish, color=color.green)
 plotshape(bearish, color=color.red)
 ```
 
-The current engine intentionally supports an indicator-focused subset rather than every
-Pine feature. See [Pine compatibility](pine-compatibility.md) for exact syntax, built-ins,
-limits, and known differences.
+Scripts declared with `strategy()` are backtested over the chart's bars: the Scripts tab
+shows net profit, win rate, profit factor, drawdown, an equity curve, and the trade list,
+and the chart marks each entry and exit. `alert()` and `alertcondition()` calls are listed
+there too; they do not raise notifications.
+
+The engine supports a subset of Pine rather than every feature. See
+[Pine compatibility](pine-compatibility.md) for exact syntax, built-ins, limits, and known
+differences.
 
 ## Replay data support
 

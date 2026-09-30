@@ -23,17 +23,22 @@ canonical future bars are unavailable to scripts.
 
 ## Supported
 
-- Required `//@version=6` and exactly one `indicator()` declaration.
+- Required `//@version=6` and exactly one `indicator()` or `strategy()` declaration.
 - Declaration arguments: `title`, `shorttitle`, `overlay`, `format`, `precision`,
   `max_bars_back`, and `max_lines_count`/`max_labels_count`/`max_boxes_count` (default
-  50; the oldest drawing is deleted past the limit). Other valid arguments report `PINE9001`.
+  50; the oldest drawing is deleted past the limit). Arguments may be constants, named
+  constants (`strategy.percent_of_equity`), or earlier `const` variables. Other valid
+  arguments report `PINE9001`.
 - Integers, floats, booleans, strings, colors, typed `na`, declarations, `var`, `varip`,
   reassignment and compound numeric assignment.
 - Arithmetic (int-preserving for `+ - * %`), string concatenation, comparison, lazy
   `and`/`or`, unary operators, ternary expressions, member names, history references,
   named arguments, indentation, and wrapped calls/expressions.
 - `if` / `else if` / `else` chains; `for i = a to b [by s]` (direction follows the
-  bounds), `for x in array`, `for [i, x] in array`, `break`, and `continue`.
+  bounds), `for x in array`, `for [i, x] in array`, `while`, `break`, and `continue`.
+  `switch` (with or without a subject, optional `=>` default arm), and `if`/`switch` used
+  as expressions (`x = switch …`). Tuple destructuring `[a, b] = f()`.
+- `const`, `simple`, and `series` qualifiers before declarations.
 - User-defined functions with typed/untyped parameters, defaults, named arguments,
   single-line or block bodies (last statement is the result). Locals are scoped to the
   call; builtins inside a function keep separate history per call site; `var` locals
@@ -54,11 +59,27 @@ canonical future bars are unavailable to scripts.
 - Inputs: int, float, bool, string, and color defaults (literals, `color.*` constants,
   constant `color.new`/`color.rgb`) plus title, tooltip, group, inline, confirm, min/max,
   step, and `options` (rendered as a picker). Input values reevaluate without recompilation.
-- TA entry points: SMA, EMA, RMA, RSI, MACD, ATR, change, highest, lowest, cross,
-  crossover, crossunder.
-- Visual entry points: plot (per-bar color, returns a handle), fill (between two plots,
-  per-bar color), hline, plotshape (incl. `shape.circle`, `location.absolute`, `size`),
-  plotchar, bgcolor, and barcolor.
+- TA entry points: SMA, EMA, RMA, WMA, RSI, MACD, ATR, TR, stdev, bb, mom, roc, change,
+  highest, lowest, rising, falling, cum, barssince, cross, crossover, crossunder, and
+  `pivothigh`/`pivotlow` (2- and 3-argument forms). A pivot appears on the bar that
+  confirms it, `rightbars` after the pivot bar. The centre must be strictly beyond every left
+  bar and at least as extreme as every right bar, so a flat top yields one pivot at its first
+  bar; this tie rule is an assumption not yet checked against TradingView.
+- Also: `math.avg/log10/sin/cos/tan/asin/acos/atan/todegrees/toradians/round_to_mintick`,
+  `math.pi/e/phi`; `str.length/contains/upper/lower/trim/startswith/endswith/replace_all/
+  substring/tonumber/format`; `array.sort/reverse/copy/concat/slice/join`; `timestamp()`
+  (date strings, numeric parts, optional zone; UTC when none is named), `year`, `month`,
+  `dayofmonth`, `hour`, `minute`, `second`, `dayofweek` (variables and functions),
+  `syminfo.ticker/tickerid/currency/type`, and `timeframe.*` inferred from bar spacing.
+- `input.time` (rendered as a date picker) and `group` headings in the Scripts tab.
+- Visual entry points: plot (per-bar color, returns a handle; styles line, linebr, stepline,
+  histogram, columns, area, circles, cross), fill (between two plots, per-bar color, or the
+  gradient overload `fill(p1, p2, top_value, bottom_value, top_color, bottom_color)`), hline,
+  plotshape (incl. `shape.circle`, `location.absolute`, `size`), plotchar, plotcandle, bgcolor,
+  and barcolor. `display` is honoured on plot, plotshape, plotchar, and plotcandle; a
+  `display.none` plot is not drawn but a `fill()` may still reference it.
+- `alert()` and `alertcondition()` record an event (bar, time, message) that the Scripts tab
+  lists. They never notify. `alert.freq_once_per_bar_close` fires only on confirmed bars.
 - Drawing objects with `xloc.bar_index` coordinates: `line.new/set_*/get_*/delete`
   (style, extend), `label.new/set_*/get_*/delete` (bubble styles up/down/left/right/none),
   `box.new/set_*/get_*/delete`, and `table.new/cell/delete` pinned to any `position.*`.
@@ -72,11 +93,61 @@ canonical future bars are unavailable to scripts.
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
   cancellation, and a 10-second evaluation deadline. Enforced limits use `PINE8xxx`.
 
+## Type checking
+
+`PineTypeChecker` runs after parsing (skipped when the source has lexical or syntax errors) and
+reports compile errors for:
+
+| Code | Rule |
+|---|---|
+| `PINE3030` | Initializer does not fit the declared type: `const string g = 222`, `int n = 1.5`, `bool b = 1`. `int` fits `float`; `na` fits anything (`bool x = na` is `PINE3021`). |
+| `PINE3031` | Initializer's qualifier is higher than the declared `const`/`simple`: `const int n = input.int(5)`. |
+| `PINE3032` | `:=` or a compound assignment changes the variable's type: `x = 0` then `x := 1.5`. |
+| `PINE3033` | `if`/`while` condition, ternary test, subjectless `switch` arm, or `and`/`or`/`not` operand is not bool. |
+| `PINE3034` | Operator applied to unsuitable operands: `"a" - 1`, `"a" + 1`, `close < "x"`. Comparisons with `na` are always allowed. |
+| `PINE3035` | `input.*` default does not fit its function: `input.int("x")`, `input.bool(1)`. |
+
+The checker only reports when every type involved is certain. It knows literals, operators,
+market series, `barstate.*`/`syminfo.*`/`strategy.*` values, `input.*`, and the return types of
+common `ta.*`, `math.*`, `str.*`, `color.*`, and casts. Everything else (user-function results,
+other builtins, arrays, tuples, undeclared names) is treated as unknown and never flagged.
+An unannotated variable keeps its initializer's qualifier, so `grp = "G"` can feed `group = grp`;
+`var`/`varip` variables and anything reassigned with `:=` are series. Builtin argument
+signatures and undeclared identifiers are not checked; the runtime still rejects bad values it
+meets (`PINE4001`–`PINE4006`).
+
+## Strategies
+
+`strategy()` scripts run through a broker emulator (`PineBrokerEmulator`). Settings honoured:
+`initial_capital`, `default_qty_type`/`default_qty_value` (fixed, cash, percent of equity),
+`commission_type`/`commission_value` (percent, cash per order, cash per contract), `slippage`
+(ticks), `pyramiding`, `process_orders_on_close`, and `currency`. `margin_*`,
+`use_bar_magnifier` and other arguments report `PINE9001`.
+
+- Orders queued on bar N fill on bar N+1 (or at bar N's close with `process_orders_on_close`).
+  Market orders fill at the open; stop and limit orders fill where the bar's price path
+  reaches them, using TradingView's assumption that the path goes from the open to the nearer
+  extreme first. A stop the open gaps through fills at the open. Slippage is adverse on
+  market and stop fills, never on limit fills.
+- `strategy.entry` in the opposite direction closes the position and opens the new side.
+  Same-direction entries are limited by `pyramiding` (0 and 1 both allow one entry).
+  `strategy.order` nets against the position and does not apply pyramiding.
+- Supported calls: `entry`, `order`, `exit` (`from_entry`, `stop`, `limit`, `loss`/`profit`
+  ticks, `qty`, `qty_percent`), `close`, `close_all`, `cancel`, `cancel_all`; `strategy.risk.*`
+  is accepted and ignored. Trailing stops report `PINE9005`.
+- Series: `strategy.position_size`, `position_avg_price`, `equity`, `netprofit`, `openprofit`,
+  `initial_capital`, `closedtrades`, `opentrades`, `wintrades`, `losstrades`, `grossprofit`,
+  `grossloss`. The first five keep history, so `strategy.position_size[1]` works.
+- Not modelled: margin and leverage, contract-size rounding, the bar magnifier, and
+  stop-limit fills to the tick. Results will not match TradingView exactly. The runtime
+  copies its history arrays each bar, so evaluation time grows quadratically with bar count:
+  about 2 s for 1,500 bars of a script this size, and it reaches the 10-second deadline
+  somewhere before 5,000 bars.
+
 ## Known incompatibilities
 
-The current grammar does not yet implement tuple destructuring, `switch`, `while`, method
-call syntax (`arr.push(x)`), maps, matrices, user-defined types, enums, `polyline`,
-`linefill`, or `xloc.bar_time` drawings. Label `yloc` is treated as `yloc.price`.
+The current grammar does not yet implement method call syntax (`arr.push(x)`), maps,
+matrices, user-defined types, enums, `polyline`, `linefill`, or `xloc.bar_time` drawings. Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
 but missing-value and conditional-call behavior needs a larger differential corpus. Non-overlay
@@ -86,7 +157,7 @@ and overlay values do not yet join price autoscaling. Plot style/location/size
 coverage is partial. Runtime byte accounting, recursion detection, and a compact bytecode
 lowering pass are planned; the current executable representation is the typed AST.
 
-`request.security`, alerts, strategies, libraries, maps/matrices, and `switch` are
+`request.security`, libraries, and maps/matrices are
 intentionally outside this release and produce unsupported or
 unknown-function diagnostics. REST reconciliation reevaluates the visible canonical
 series. Binance carries explicit close flags and accepts new-bar transitions; Alpaca bars
@@ -96,7 +167,9 @@ are still reconciled through the existing timeframe aggregator.
 
 `PineEngineTests` executes the six integration scripts from `PINE.md` over deterministic
 OHLCV fixtures and checks history, persistent state, v6 diagnostics, realtime rollback,
-and `varip`. The entire pre-existing test target remains the regression gate. A formal
+and `varip`. `PineStrategyTests` runs a full volume-breakout strategy verbatim plus
+focused language and broker cases (fills, gaps, commissions, pyramiding, rollback). The
+entire pre-existing test target remains the regression gate. A formal
 TradingView differential corpus and an Instruments peak-memory run are still required
 before publishing compatibility or 100,000-bar benchmark numbers; no unmeasured numbers
 are claimed here.

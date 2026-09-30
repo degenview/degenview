@@ -17,6 +17,10 @@ final class PineRuntimeSession: @unchecked Sendable {
     private let suppliedMintick: Double?
     private var mintick: Double
     private let functions: [String: Function]
+    private let symbol: PineSymbolInfo
+    /// Seconds between bars, inferred on `evaluate` for `timeframe.*`.
+    private var barSeconds: Double = 0
+    private var isStrategy: Bool { program.declaration.type == .strategy }
 
     private struct State {
         var variables: [String: PineRuntimeValue] = [:]
@@ -36,6 +40,9 @@ final class PineRuntimeSession: @unchecked Sendable {
         var labels: [Int: PineLabelOutput] = [:]
         var boxes: [Int: PineBoxOutput] = [:]
         var tables: [Int: PineTableOutput] = [:]
+        var candles: [Int: PineCandleOutput] = [:]
+        var alerts: [PineAlertEvent] = []
+        var broker = PineBrokerEmulator()
         var nextReference = 0
         var barIndex = -1
         var instructions = 0
@@ -52,14 +59,17 @@ final class PineRuntimeSession: @unchecked Sendable {
 
     private enum Flow { case normal, breakLoop, continueLoop }
 
+    private static let alertLimit = 200
     private static let defaultDrawingLimit = 50
     private static let defaultColor: UInt32 = 0x2196_f3ff
 
     init(
         program: PineCompiledProgram, inputs: [String: PineInputValue] = [:],
-        limits: PineLimits = .default, mintick: Double? = nil, theme: PineChartTheme = .dark
+        limits: PineLimits = .default, mintick: Double? = nil, theme: PineChartTheme = .dark,
+        symbol: PineSymbolInfo = PineSymbolInfo()
     ) {
         self.program = program
+        self.symbol = symbol
         self.inputs = inputs
         self.limits = limits
         self.theme = theme
@@ -78,6 +88,14 @@ final class PineRuntimeSession: @unchecked Sendable {
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue
         }
+        committed = freshState()
+        working = committed
+    }
+
+    private func freshState() -> State {
+        var state = State()
+        state.broker = PineBrokerEmulator(settings: program.declaration.strategy ?? PineStrategySettings())
+        return state
     }
 
     private func chartColor(_ name: String) -> UInt32? {
@@ -93,9 +111,12 @@ final class PineRuntimeSession: @unchecked Sendable {
     ) {
         for statement in statements {
             switch statement {
-            case .declaration(let name, _, let mode, _, _):
+            case .declaration(let name, _, let mode, let expression, _):
                 names.insert(name)
                 if mode != .ordinary { persistent.insert(name) }
+                if case .statementExpression(let block, _) = expression {
+                    collectDeclarations([block], into: &names, persistent: &persistent)
+                }
             case .conditional(_, let a, let b, _):
                 collectDeclarations(a, into: &names, persistent: &persistent)
                 collectDeclarations(b, into: &names, persistent: &persistent)
@@ -106,6 +127,10 @@ final class PineRuntimeSession: @unchecked Sendable {
                 if let index { names.insert(index) }
                 names.insert(value)
                 collectDeclarations(body, into: &names, persistent: &persistent)
+            case .whileLoop(_, let body, _): collectDeclarations(body, into: &names, persistent: &persistent)
+            case .switchStatement(_, let arms, _):
+                for arm in arms { collectDeclarations(arm.body, into: &names, persistent: &persistent) }
+            case .tupleDeclaration(let tupleNames, _, _): names.formUnion(tupleNames)
             default: break
             }
         }
@@ -113,8 +138,8 @@ final class PineRuntimeSession: @unchecked Sendable {
 
     func reset(inputs: [String: PineInputValue]? = nil) {
         if let inputs { self.inputs = inputs }
-        committed = State()
-        working = State()
+        committed = freshState()
+        working = committed
         intrabar = [:]
         lastOpenTime = nil
     }
@@ -122,6 +147,9 @@ final class PineRuntimeSession: @unchecked Sendable {
     func evaluate(bars: [KlineData]) throws -> PineRuntimeResult {
         reset(inputs: inputs)
         if suppliedMintick == nil { mintick = Self.inferredMintick(bars) }
+        if bars.count > 1 {
+            barSeconds = bars[bars.count - 1].openTime.timeIntervalSince(bars[bars.count - 2].openTime)
+        }
         let start = Date()
         var states: [[String: Bool]] = []
         for (index, bar) in bars.enumerated() {
@@ -177,7 +205,17 @@ final class PineRuntimeSession: @unchecked Sendable {
             "barstate.isconfirmed": confirmed, "barstate.islastconfirmedhistory": !realtime && isLast,
         ]
         var context = Context(bar: event.candle, flags: flags)
+        if isStrategy {
+            working.broker.process(bar: event.candle, barIndex: working.barIndex, mintick: mintick)
+        }
         try run(program.statements, &context)
+        if isStrategy {
+            if program.declaration.strategy?.processOrdersOnClose == true {
+                working.broker.fillMarketOrdersAtClose(
+                    bar: event.candle, barIndex: working.barIndex, mintick: mintick)
+            }
+            working.broker.recordEquity(close: event.candle.closePrice)
+        }
         if confirmed {
             commitHistories(event.candle)
             committed = working
@@ -201,7 +239,9 @@ final class PineRuntimeSession: @unchecked Sendable {
             lines: working.lines.values.sorted { $0.id < $1.id },
             labels: working.labels.values.sorted { $0.id < $1.id },
             boxes: working.boxes.values.sorted { $0.id < $1.id },
-            tables: working.tables.values.sorted { $0.id < $1.id })
+            tables: working.tables.values.sorted { $0.id < $1.id },
+            candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
+            strategy: isStrategy ? working.broker.report() : nil)
     }
     private struct Context {
         var bar: KlineData
@@ -312,6 +352,60 @@ final class PineRuntimeSession: @unchecked Sendable {
                     last = value
                     if flow == .breakLoop { break }
                 }
+            case .whileLoop(let condition, let body, _):
+                while true {
+                    try budget()
+                    guard case .bool(let test) = try eval(condition, &context) else {
+                        throw diag(
+                            "PINE4001", .runtime, "while condition must be bool.", condition.range)
+                    }
+                    if !test { break }
+                    let (flow, value) = try run(body, &context)
+                    last = value
+                    if flow == .breakLoop { break }
+                }
+            case .switchStatement(let subject, let arms, let range):
+                let target = try subject.map { try eval($0, &context) }
+                var chosen: [PineStatement]?
+                for arm in arms {
+                    guard let condition = arm.condition else {
+                        chosen = chosen ?? arm.body
+                        continue
+                    }
+                    let value = try eval(condition, &context)
+                    if target != nil {
+                        if compare(target!, value, .equal) == .bool(true) {
+                            chosen = arm.body
+                            break
+                        }
+                    } else {
+                        guard case .bool(let test) = value else {
+                            throw diag(
+                                "PINE4001", .runtime, "switch arm condition must be bool.", range)
+                        }
+                        if test {
+                            chosen = arm.body
+                            break
+                        }
+                    }
+                }
+                if let chosen {
+                    let (flow, value) = try run(chosen, &context)
+                    last = value
+                    if flow != .normal { return (flow, last) }
+                } else {
+                    last = .na
+                }
+            case .tupleDeclaration(let names, let expression, _):
+                let value = try eval(expression, &context)
+                if case .tuple(let items) = value {
+                    for (i, name) in names.enumerated() where name != "_" {
+                        working.variables[name] = i < items.count ? items[i] : .na
+                    }
+                } else {
+                    for name in names where name != "_" { working.variables[name] = .na }
+                }
+                last = value
             case .loopControl(let control, _):
                 return (control == .breakLoop ? .breakLoop : .continueLoop, last)
             case .function:
@@ -334,6 +428,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             if let color = PineBuiltins.colors[name] ?? chartColor(name) {
                 return .color(color)
             }
+            if let constant = PineBuiltins.constants[name] { return constant }
             return .string(name)
         case .unary(let op, let e, let range):
             let v = try eval(e, &context)
@@ -398,6 +493,9 @@ final class PineRuntimeSession: @unchecked Sendable {
             let history = working.histories[name] ?? []
             return i <= history.count ? history[history.count - i] : .na
         case .tuple(let expressions, _): return .tuple(try expressions.map { try eval($0, &context) })
+        case .statementExpression(let statement, _):
+            let (_, value) = try run([statement], &context)
+            return value == .void ? .na : value
         case .call(let name, let args, let site, let range):
             return try call(name, args, site, range, &context)
         }
@@ -418,7 +516,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             return try invoke(function, name, args, site, range, &context)
         }
         let key = siteKey(site, context)
-        if name == "indicator" { return .void }
+        if name == "indicator" || name == "strategy" || name == "library" { return .void }
         if name.hasPrefix("input.") {
             guard case .identifier(let variable, _) = findDeclarationExpression(site: site) else {
                 return try arg(0)
@@ -460,23 +558,74 @@ final class PineRuntimeSession: @unchecked Sendable {
                     try arg(0).number ?? 0, try arg(1).number ?? 0, try arg(2).number ?? 0,
                     try arg(3).number ?? 0))
         }
+        if name.hasPrefix("str.") && name != "str.tostring" {
+            return try stringFunction(name, args.indices.map { try arg($0) }, range)
+        }
         if name == "str.tostring" {
             let value = try arg(0)
             let pattern = textValue(try arg(1, "format"))
             return .string(format(value, pattern))
         }
+        if name == "timestamp" {
+            var positional: [PineRuntimeValue] = []
+            var named: [String: PineRuntimeValue] = [:]
+            for argument in args {
+                let value = try eval(argument.value, &context)
+                if let label = argument.name { named[label] = value } else { positional.append(value) }
+            }
+            return PineTimestamp.evaluate(positional: positional, named: named).map(PineRuntimeValue.int)
+                ?? .na
+        }
+        if ["year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek"].contains(name) {
+            if args.isEmpty { return Self.timePart(name, Self.milliseconds(context.bar.openTime)) }
+            guard let stamp = intValue(try arg(0)) else { return .na }
+            return Self.timePart(name, stamp)
+        }
+        if name == "alert" || name == "alertcondition" {
+            return try alertCall(name, args, key, &context)
+        }
+        if name.hasPrefix("strategy.") { return try strategyCall(name, args, range, &context) }
         if name.hasPrefix("ta.") {
             if name == "ta.atr" {
                 // ATR is the RMA of true range; true range uses the previous close.
                 let length = Int(try arg(0).number.flatMap { $0.isFinite ? $0 : nil } ?? 0)
-                let previous = working.histories["close"]?.last?.number
-                let bar = context.bar
-                let tr = max(
-                    bar.highPrice - bar.lowPrice,
-                    max(
-                        previous.map { abs(bar.highPrice - $0) } ?? 0,
-                        previous.map { abs(bar.lowPrice - $0) } ?? 0))
-                return ta("ta.rma", .float(tr), .na, length, key, context)
+                return ta("ta.rma", .float(trueRange(context.bar)), .na, length, key, context)
+            }
+            if name == "ta.tr" { return .float(trueRange(context.bar)) }
+            if name == "ta.pivothigh" || name == "ta.pivotlow" {
+                return try pivot(name, args, key, &context)
+            }
+            if name == "ta.barssince" {
+                let condition = try arg(0)
+                let prior = working.calls[key]?.last?.number
+                let result: PineRuntimeValue
+                if condition == .bool(true) {
+                    result = .int(0)
+                } else if let prior {
+                    result = .int(Int(prior) + 1)
+                } else {
+                    result = .na
+                }
+                working.calls[key] = [result]
+                return result
+            }
+            if name == "ta.cum" {
+                let total = (working.calls[key]?.last?.number ?? 0) + (try arg(0).number ?? 0)
+                working.calls[key] = [.float(total)]
+                return .float(total)
+            }
+            if name == "ta.bb" {
+                let source = try arg(0)
+                let length = intValue(try arg(1)) ?? 0
+                let multiplier = try arg(2).number ?? 2
+                let basis = ta("ta.sma", source, .na, length, key, context)
+                let deviation = ta("ta.stdev", source, .na, length, -(key &+ 1), context)
+                guard let mid = basis.number, let spread = deviation.number else {
+                    return .tuple([.na, .na, .na])
+                }
+                return .tuple([
+                    .float(mid), .float(mid + multiplier * spread), .float(mid - multiplier * spread),
+                ])
             }
             let source = try arg(0)
             let second = try arg(1)
@@ -487,7 +636,9 @@ final class PineRuntimeSession: @unchecked Sendable {
         if ["line.", "label.", "box.", "table."].contains(where: name.hasPrefix) {
             return try drawing(name, args, range, &context)
         }
-        if ["plot", "hline", "plotshape", "plotchar", "bgcolor", "barcolor", "fill"].contains(name) {
+        if ["plot", "hline", "plotshape", "plotchar", "plotcandle", "bgcolor", "barcolor", "fill"]
+            .contains(name)
+        {
             return try visual(name, args, key, &context)
         }
         throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
@@ -580,6 +731,21 @@ final class PineRuntimeSession: @unchecked Sendable {
         case "math.sqrt": return a.number.map { .float(sqrt($0)) } ?? .na
         case "math.log": return a.number.map { .float(log($0)) } ?? .na
         case "math.exp": return a.number.map { .float(exp($0)) } ?? .na
+        case "math.log10": return a.number.map { .float(log10($0)) } ?? .na
+        case "math.sin": return a.number.map { .float(sin($0)) } ?? .na
+        case "math.cos": return a.number.map { .float(cos($0)) } ?? .na
+        case "math.tan": return a.number.map { .float(tan($0)) } ?? .na
+        case "math.asin": return a.number.map { .float(asin($0)) } ?? .na
+        case "math.acos": return a.number.map { .float(acos($0)) } ?? .na
+        case "math.atan": return a.number.map { .float(atan($0)) } ?? .na
+        case "math.todegrees": return a.number.map { .float($0 * 180 / .pi) } ?? .na
+        case "math.toradians": return a.number.map { .float($0 * .pi / 180) } ?? .na
+        case "math.avg":
+            guard !numbers.isEmpty, !numbers.contains(where: { $0 == nil }) else { return .na }
+            return .float(numbers.compactMap { $0 }.reduce(0, +) / Double(numbers.count))
+        case "math.round_to_mintick":
+            guard let x = a.number, x.isFinite else { return .na }
+            return .float((x / mintick).rounded() * mintick)
         case "math.pow":
             guard let x = a.number, numbers.count > 1, let y = numbers[1] else { return .na }
             return .float(pow(x, y))
@@ -626,6 +792,44 @@ final class PineRuntimeSession: @unchecked Sendable {
                 let previous = values[values.count - 1 - offset]
             {
                 result = .float(current - previous)
+            } else {
+                result = .na
+            }
+        case "ta.wma":
+            let window = values.suffix(length)
+            if length > 0, window.count == length, !window.contains(where: { $0 == nil }) {
+                let weighted = window.enumerated().reduce(0.0) { $0 + Double($1.offset + 1) * $1.element! }
+                result = .float(weighted / Double(length * (length + 1) / 2))
+            } else {
+                result = .na
+            }
+        case "ta.stdev":
+            let window = values.suffix(length)
+            if length > 0, window.count == length, !window.contains(where: { $0 == nil }) {
+                let numbers = window.map { $0! }
+                let mean = numbers.reduce(0, +) / Double(length)
+                result = .float(sqrt(numbers.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(length)))
+            } else {
+                result = .na
+            }
+        case "ta.rising", "ta.falling":
+            let window = values.suffix(length + 1)
+            if length > 0, window.count == length + 1, !window.contains(where: { $0 == nil }) {
+                let numbers = window.map { $0! }
+                result = .bool(
+                    zip(numbers, numbers.dropFirst()).allSatisfy {
+                        name == "ta.rising" ? $1 > $0 : $1 < $0
+                    })
+            } else {
+                result = .bool(false)
+            }
+        case "ta.mom", "ta.roc":
+            if length > 0, values.count > length, let current = values[values.count - 1],
+                let previous = values[values.count - 1 - length]
+            {
+                result =
+                    name == "ta.mom"
+                    ? .float(current - previous) : (previous == 0 ? .na : .float(100 * (current - previous) / previous))
             } else {
                 result = .na
             }
@@ -687,6 +891,288 @@ final class PineRuntimeSession: @unchecked Sendable {
         var e = valid.prefix(length).reduce(0, +) / Double(length)
         for x in valid.dropFirst(length) { e = (2 * x + Double(length - 1) * e) / Double(length + 1) }
         return e
+    }
+
+    // MARK: - Strings
+
+    private func stringFunction(_ name: String, _ values: [PineRuntimeValue], _ range: PineSourceRange)
+        throws -> PineRuntimeValue
+    {
+        func text(_ index: Int) -> String? {
+            if index < values.count, case .string(let value) = values[index] { return value }
+            return nil
+        }
+        guard let subject = text(0) else {
+            // `na` (or a non-string) in, `na` out — except the predicates, which are false.
+            return ["str.contains", "str.startswith", "str.endswith"].contains(name) ? .bool(false) : .na
+        }
+        switch name {
+        case "str.length": return .int(subject.count)
+        case "str.upper": return .string(subject.uppercased())
+        case "str.lower": return .string(subject.lowercased())
+        case "str.trim": return .string(subject.trimmingCharacters(in: .whitespacesAndNewlines))
+        case "str.contains": return .bool(text(1).map { $0.isEmpty || subject.contains($0) } ?? false)
+        case "str.startswith": return .bool(text(1).map(subject.hasPrefix) ?? false)
+        case "str.endswith": return .bool(text(1).map(subject.hasSuffix) ?? false)
+        case "str.replace_all":
+            guard let target = text(1), !target.isEmpty, let replacement = text(2) else { return .string(subject) }
+            return .string(subject.replacingOccurrences(of: target, with: replacement))
+        case "str.substring":
+            let characters = Array(subject)
+            guard values.count > 1, let begin = intValue(values[1]), begin >= 0, begin <= characters.count else {
+                throw diag("PINE4016", .runtime, "str.substring begin index is out of range.", range)
+            }
+            let end = values.count > 2 ? (intValue(values[2]) ?? characters.count) : characters.count
+            guard end >= begin, end <= characters.count else {
+                throw diag("PINE4016", .runtime, "str.substring end index is out of range.", range)
+            }
+            return .string(String(characters[begin..<end]))
+        case "str.tonumber":
+            return Double(subject.trimmingCharacters(in: .whitespaces)).map(PineRuntimeValue.float) ?? .na
+        case "str.format": return .string(formatTemplate(subject, Array(values.dropFirst())))
+        default: throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+        }
+    }
+
+    /// `str.format("{0} of {1,number,#.##}", a, b)`: `{n}` inserts the n-th argument,
+    /// `{n,number,pattern}` formats it with a `str.tostring` pattern.
+    private func formatTemplate(_ template: String, _ values: [PineRuntimeValue]) -> String {
+        var output = ""
+        var index = template.startIndex
+        while index < template.endIndex {
+            let character = template[index]
+            guard character == "{", let close = template[index...].firstIndex(of: "}") else {
+                output.append(character)
+                index = template.index(after: index)
+                continue
+            }
+            let parts = template[template.index(after: index)..<close].split(
+                separator: ",", maxSplits: 2, omittingEmptySubsequences: false
+            ).map { $0.trimmingCharacters(in: .whitespaces) }
+            if let slot = parts.first.flatMap({ Int($0) }), values.indices.contains(slot) {
+                output += format(values[slot], parts.count > 2 && parts[1] == "number" ? parts[2] : nil)
+            } else {
+                output += String(template[index...close])
+            }
+            index = template.index(after: close)
+        }
+        return output
+    }
+
+    private func trueRange(_ bar: KlineData) -> Double {
+        let previous = working.histories["close"]?.last?.number
+        return max(
+            bar.highPrice - bar.lowPrice,
+            max(
+                previous.map { abs(bar.highPrice - $0) } ?? 0,
+                previous.map { abs(bar.lowPrice - $0) } ?? 0))
+    }
+
+    /// `ta.pivothigh` / `ta.pivotlow`. The pivot is the bar `rightbars` back, so it is only
+    /// known once that many later bars exist — the value appears on the confirming bar.
+    /// The centre must be strictly beyond every left bar and at least as extreme as every
+    /// right bar, so a flat top yields one pivot, at its first bar.
+    private func pivot(
+        _ name: String, _ args: [PineArgument], _ site: Int, _ context: inout Context
+    ) throws -> PineRuntimeValue {
+        let isHigh = name == "ta.pivothigh"
+        let positional = args.filter { $0.name == nil }.count
+        let b = try bind(
+            args, positional == 2 ? ["leftbars", "rightbars"] : ["source", "leftbars", "rightbars"],
+            &context)
+        let source = b["source"] ?? market(isHigh ? "high" : "low", context) ?? .na
+        guard let left = intValue(b["leftbars"]), let right = intValue(b["rightbars"]), left >= 0,
+            right >= 0
+        else { return .na }
+        let needed = left + right + 1
+        var window = working.callInputs[site] ?? []
+        window.append(source)
+        if window.count > needed { window.removeFirst(window.count - needed) }
+        working.callInputs[site] = window
+        guard window.count == needed, let centre = window[left].number else { return .na }
+        func beyond(_ value: PineRuntimeValue, strict: Bool) -> Bool {
+            guard let x = value.number else { return false }
+            if isHigh { return strict ? centre > x : centre >= x }
+            return strict ? centre < x : centre <= x
+        }
+        guard window[..<left].allSatisfy({ beyond($0, strict: true) }),
+            window[(left + 1)...].allSatisfy({ beyond($0, strict: false) })
+        else { return .na }
+        return .float(centre)
+    }
+
+    // MARK: - Alerts
+
+    private func alertCall(
+        _ name: String, _ args: [PineArgument], _ site: Int, _ context: inout Context
+    ) throws -> PineRuntimeValue {
+        if name == "alert" {
+            let b = try bind(args, ["message", "freq"], &context)
+            let message = b["message"].map { format($0, nil) } ?? ""
+            recordAlert(
+                message, freq: textValue(b["freq"]) ?? "alert.freq_once_per_bar", site: site, context)
+        } else {
+            let b = try bind(args, ["condition", "title", "message"], &context)
+            guard b["condition"]?.bool == true else { return .void }
+            recordAlert(
+                textValue(b["message"]) ?? textValue(b["title"]) ?? "", freq: "alert.freq_all", site: site,
+                context)
+        }
+        return .void
+    }
+
+    private func recordAlert(_ message: String, freq: String, site: Int, _ context: Context) {
+        if freq == "alert.freq_once_per_bar_close", context.flags["barstate.isconfirmed"] != true { return }
+        if freq == "alert.freq_once_per_bar",
+            working.alerts.contains(where: { $0.site == site && $0.bar == working.barIndex })
+        {
+            return
+        }
+        working.alerts.append(
+            .init(
+                id: allocate(), site: site, bar: working.barIndex, time: context.bar.openTime,
+                message: message))
+        if working.alerts.count > Self.alertLimit {
+            working.alerts.removeFirst(working.alerts.count - Self.alertLimit)
+        }
+    }
+
+    // MARK: - Strategy
+
+    private func strategyCall(
+        _ name: String, _ args: [PineArgument], _ range: PineSourceRange, _ context: inout Context
+    ) throws -> PineRuntimeValue {
+        guard isStrategy else {
+            throw diag("PINE4015", .runtime, "\(name) is only available in strategy() scripts.", range)
+        }
+        func positive(_ value: PineRuntimeValue?) -> Double? {
+            guard let n = value?.number, n.isFinite, n > 0 else { return nil }
+            return n
+        }
+        switch name {
+        case "strategy.entry", "strategy.order":
+            let b = try bind(
+                args,
+                [
+                    "id", "direction", "qty", "limit", "stop", "oca_name", "oca_type", "comment",
+                    "alert_message",
+                ], &context)
+            guard let id = textValue(b["id"]), let direction = textValue(b["direction"]) else {
+                return .void
+            }
+            working.broker.place(
+                .init(
+                    kind: name == "strategy.entry" ? .entry : .order, id: id,
+                    isLong: direction == "strategy.long", quantity: positive(b["qty"]),
+                    limit: b["limit"]?.number, stop: b["stop"]?.number))
+        case "strategy.exit":
+            let b = try bind(
+                args,
+                [
+                    "id", "from_entry", "qty", "qty_percent", "profit", "limit", "loss", "stop",
+                    "trail_price", "trail_points", "trail_offset",
+                ], &context)
+            if b["trail_price"]?.number != nil || b["trail_points"]?.number != nil {
+                throw diag(
+                    "PINE9005", .unsupported, "strategy.exit trailing stops are not supported yet.", range)
+            }
+            guard let id = textValue(b["id"]) else { return .void }
+            working.broker.place(
+                .init(
+                    kind: .exit, id: id, quantity: positive(b["qty"]),
+                    quantityPercent: positive(b["qty_percent"]), limit: b["limit"]?.number,
+                    stop: b["stop"]?.number, fromEntry: textValue(b["from_entry"]),
+                    profitTicks: positive(b["profit"]), lossTicks: positive(b["loss"])))
+        case "strategy.close":
+            let b = try bind(args, ["id", "comment", "qty", "qty_percent"], &context)
+            guard let id = textValue(b["id"]) else { return .void }
+            working.broker.place(
+                .init(
+                    kind: .close, id: id, quantity: positive(b["qty"]),
+                    quantityPercent: positive(b["qty_percent"])))
+        case "strategy.close_all":
+            working.broker.place(.init(kind: .closeAll, id: "Close position order"))
+        case "strategy.cancel":
+            if let id = textValue(try bind(args, ["id"], &context)["id"]) { working.broker.cancel(id: id) }
+        case "strategy.cancel_all":
+            working.broker.cancelAll()
+        default:
+            // `strategy.risk.*` limits are accepted and ignored.
+            if !name.hasPrefix("strategy.risk.") {
+                throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+            }
+        }
+        return .void
+    }
+
+    private func strategyValue(_ name: String, _ bar: KlineData) -> PineRuntimeValue? {
+        let broker = working.broker
+        switch name {
+        case "strategy.position_size": return .float(broker.positionSize)
+        case "strategy.position_avg_price":
+            return broker.positionSize == 0 ? .na : .float(broker.averagePrice)
+        case "strategy.equity": return .float(broker.equity(at: bar.closePrice))
+        case "strategy.netprofit": return .float(broker.netProfit)
+        case "strategy.openprofit": return .float(broker.openProfit(at: bar.closePrice))
+        case "strategy.initial_capital": return .float(broker.settings.initialCapital)
+        case "strategy.closedtrades": return .int(broker.closedTrades.count)
+        case "strategy.opentrades": return .int(broker.openTrades.count)
+        case "strategy.wintrades": return .int(broker.closedTrades.filter { $0.profit > 0 }.count)
+        case "strategy.losstrades": return .int(broker.closedTrades.filter { $0.profit < 0 }.count)
+        case "strategy.grossprofit":
+            return .float(broker.closedTrades.filter { $0.profit > 0 }.reduce(0) { $0 + $1.profit })
+        case "strategy.grossloss":
+            return .float(-broker.closedTrades.filter { $0.profit < 0 }.reduce(0) { $0 + $1.profit })
+        default: return nil
+        }
+    }
+
+    // MARK: - Symbol and time
+
+    private static func milliseconds(_ date: Date) -> Int { Int(date.timeIntervalSince1970 * 1000) }
+
+    private static func timePart(_ name: String, _ stamp: Int) -> PineRuntimeValue {
+        let c = PineTimestamp.components(milliseconds: stamp)
+        switch name {
+        case "year": return .int(c.year)
+        case "month": return .int(c.month)
+        case "dayofmonth": return .int(c.day)
+        case "hour": return .int(c.hour)
+        case "minute": return .int(c.minute)
+        case "second": return .int(c.second)
+        default: return .int(c.weekday)
+        }
+    }
+
+    /// `timeframe.*`, derived from the spacing of the bars the script runs over.
+    private func timeframeValue(_ name: String) -> PineRuntimeValue? {
+        let seconds = barSeconds
+        guard seconds > 0 else { return nil }
+        let day = 86_400.0
+        let isMonthly = seconds >= 28 * day
+        let isWeekly = !isMonthly && seconds >= 7 * day
+        let isDaily = !isWeekly && !isMonthly && seconds >= day
+        switch name {
+        case "timeframe.period":
+            if isMonthly { return .string("\(max(1, Int((seconds / (30 * day)).rounded())))M") }
+            if isWeekly { return .string("\(max(1, Int((seconds / (7 * day)).rounded())))W") }
+            if isDaily { return .string("\(max(1, Int((seconds / day).rounded())))D") }
+            if seconds < 60 { return .string("\(Int(seconds))S") }
+            return .string("\(Int((seconds / 60).rounded()))")
+        case "timeframe.multiplier":
+            if isMonthly { return .int(max(1, Int((seconds / (30 * day)).rounded()))) }
+            if isWeekly { return .int(max(1, Int((seconds / (7 * day)).rounded()))) }
+            if isDaily { return .int(max(1, Int((seconds / day).rounded()))) }
+            return .int(seconds < 60 ? Int(seconds) : Int((seconds / 60).rounded()))
+        case "timeframe.isdaily": return .bool(isDaily)
+        case "timeframe.isweekly": return .bool(isWeekly)
+        case "timeframe.ismonthly": return .bool(isMonthly)
+        case "timeframe.isseconds": return .bool(seconds < 60)
+        case "timeframe.isminutes": return .bool(seconds >= 60 && seconds < day)
+        case "timeframe.isintraday": return .bool(seconds < day)
+        case "timeframe.isdwm": return .bool(seconds >= day)
+        default: return nil
+        }
     }
 
     // MARK: - Arguments
@@ -786,6 +1272,39 @@ final class PineRuntimeSession: @unchecked Sendable {
             }
             let total = numbers.reduce(0, +)
             result = integral ? .int(Int(total)) : .float(total)
+        case "array.reverse": items.reverse()
+        case "array.sort":
+            let descending = textValue(b["order"] ?? b["index"]) == "order.descending"
+            items.sort { lhs, rhs in
+                switch (lhs.number, rhs.number) {
+                case (let x?, let y?): return descending ? x > y : x < y
+                case (nil, _?): return false
+                case (_?, nil): return true
+                default: return format(lhs, nil) < format(rhs, nil)
+                }
+            }
+        case "array.copy":
+            let copy = allocate()
+            working.arrays[copy] = items
+            result = .ref(.array, copy)
+        case "array.concat":
+            guard case .ref(.array, let otherID)? = b["index"], let other = working.arrays[otherID] else {
+                throw diag("PINE4011", .runtime, "array.concat requires two arrays.", range)
+            }
+            items += other
+            result = .ref(.array, id)
+        case "array.slice":
+            let from = try index("index", allowEnd: true)
+            let to = intValue(b["value"]) ?? items.count
+            guard to >= from, to <= items.count else {
+                throw diag("PINE4010", .runtime, "array.slice end index \(to) is out of bounds.", range)
+            }
+            let slice = allocate()
+            working.arrays[slice] = Array(items[from..<to])
+            result = .ref(.array, slice)
+        case "array.join":
+            let separator = textValue(b["index"]) ?? ","
+            result = .string(items.map { format($0, nil) }.joined(separator: separator))
         case "array.avg": result = numbers.isEmpty ? .na : .float(numbers.reduce(0, +) / Double(numbers.count))
         case "array.max": result = numbers.max().map(PineRuntimeValue.float) ?? .na
         case "array.min": result = numbers.min().map(PineRuntimeValue.float) ?? .na
@@ -920,7 +1439,9 @@ final class PineRuntimeSession: @unchecked Sendable {
                 return member.hasPrefix("get_") ? .na : .void
             }
             switch member {
-            case "delete": working.lines[id] = nil; return .void
+            case "delete":
+                working.lines[id] = nil
+                return .void
             case "set_x1": line.x1 = intValue(a) ?? line.x1
             case "set_x2": line.x2 = intValue(a) ?? line.x2
             case "set_y1": line.y1 = a.number ?? line.y1
@@ -949,7 +1470,9 @@ final class PineRuntimeSession: @unchecked Sendable {
                 return member.hasPrefix("get_") ? .na : .void
             }
             switch member {
-            case "delete": working.labels[id] = nil; return .void
+            case "delete":
+                working.labels[id] = nil
+                return .void
             case "set_x": label.x = intValue(a) ?? label.x
             case "set_y": label.y = a.number ?? label.y
             case "set_xy":
@@ -973,7 +1496,9 @@ final class PineRuntimeSession: @unchecked Sendable {
                 return member.hasPrefix("get_") ? .na : .void
             }
             switch member {
-            case "delete": working.boxes[id] = nil; return .void
+            case "delete":
+                working.boxes[id] = nil
+                return .void
             case "set_left": box.left = intValue(a) ?? box.left
             case "set_right": box.right = intValue(a) ?? box.right
             case "set_top": box.top = a.number ?? box.top
@@ -1016,16 +1541,19 @@ final class PineRuntimeSession: @unchecked Sendable {
     {
         switch name {
         case "plot":
-            let b = try bind(args, ["series", "title", "color", "linewidth", "style"], &context)
+            let b = try bind(
+                args, ["series", "title", "color", "linewidth", "style", "trackprice", "histbase"],
+                &context)
             let color = colorValue(b["color"], Self.defaultColor) ?? 0
             var p =
                 working.plots[site]
                 ?? .init(
                     id: site, title: textValue(b["title"]), values: [], color: color,
-                    lineWidth: intValue(b["linewidth"]) ?? 1,
-                    style: textValue(b["style"]) == "plot.style_stepline" ? .stepline : .line)
+                    lineWidth: intValue(b["linewidth"]) ?? 1, style: Self.plotStyle(textValue(b["style"])))
             p.values.append(b["series"]?.number)
             p.colors.append(color)
+            p.display = intValue(b["display"]) ?? PineDisplay.all
+            p.histBase = b["histbase"]?.number ?? 0
             working.plots[site] = p
             return .ref(.plot, site)
         case "hline":
@@ -1052,17 +1580,67 @@ final class PineRuntimeSession: @unchecked Sendable {
             m.values.append(markerValue.bool ?? (markerValue.number != nil))
             m.prices.append(markerValue.number)
             m.colors.append(color)
+            m.display = intValue(b["display"]) ?? PineDisplay.all
             working.markers[site] = m
             return .void
         case "fill":
-            let b = try bind(args, ["plot1", "plot2", "color", "title"], &context)
+            // `fill(p1, p2, top_value, bottom_value, top_color, bottom_color)` blends two colors
+            // by price; `fill(p1, p2, color)` is flat.
+            let isGradient =
+                args.contains { $0.name == "top_value" } || args.filter { $0.name == nil }.count >= 5
+            let b = try bind(
+                args,
+                isGradient
+                    ? ["plot1", "plot2", "top_value", "bottom_value", "top_color", "bottom_color", "title"]
+                    : ["plot1", "plot2", "color", "title"], &context)
             // Fills between hlines are not supported; only plot handles are.
             guard case .ref(.plot, let first)? = b["plot1"], case .ref(.plot, let second)? = b["plot2"] else {
                 return .void
             }
             var f = working.fills[site] ?? .init(id: site, plotA: first, plotB: second, colors: [])
-            f.colors.append(colorValue(b["color"], PineBuiltins.withTransparency(Self.defaultColor, 90)))
+            if isGradient {
+                f.colors.append(nil)
+                if let top = b["top_value"]?.number, let bottom = b["bottom_value"]?.number,
+                    let topColor = colorValue(b["top_color"], nil),
+                    let bottomColor = colorValue(b["bottom_color"], nil)
+                {
+                    f.gradients.append(
+                        .init(top: top, bottom: bottom, topColor: topColor, bottomColor: bottomColor))
+                } else {
+                    f.gradients.append(nil)
+                }
+            } else {
+                f.colors.append(
+                    colorValue(b["color"], PineBuiltins.withTransparency(Self.defaultColor, 90)))
+            }
             working.fills[site] = f
+            return .void
+        case "plotcandle":
+            let b = try bind(
+                args,
+                [
+                    "open", "high", "low", "close", "title", "color", "wickcolor", "editable", "show_last",
+                    "bordercolor",
+                ], &context)
+            var output =
+                working.candles[site]
+                ?? .init(id: site, title: textValue(b["title"]), bars: [])
+            output.display = intValue(b["display"]) ?? PineDisplay.all
+            if let open = b["open"]?.number, let high = b["high"]?.number, let low = b["low"]?.number,
+                let close = b["close"]?.number
+            {
+                // An omitted color takes the up/down default; an explicit `na` hides that part.
+                let fallback: UInt32 = close >= open ? 0x26a6_9aff : 0xef53_50ff
+                let body = colorValue(b["color"], fallback)
+                output.bars.append(
+                    .init(
+                        open: open, high: high, low: low, close: close, color: body,
+                        wickColor: colorValue(b["wickcolor"], body),
+                        borderColor: colorValue(b["bordercolor"], body)))
+            } else {
+                output.bars.append(nil)
+            }
+            working.candles[site] = output
             return .void
         default:
             let b = try bind(args, ["color"], &context)
@@ -1072,6 +1650,18 @@ final class PineRuntimeSession: @unchecked Sendable {
             c.colors.append(colorValue(b["color"] ?? .na, nil))
             if name == "bgcolor" { working.backgrounds[site] = c } else { working.barColors[site] = c }
             return .void
+        }
+    }
+
+    private static func plotStyle(_ name: String?) -> PinePlotStyle {
+        switch name {
+        case "plot.style_stepline", "plot.style_steplinebr": .stepline
+        case "plot.style_histogram": .histogram
+        case "plot.style_columns": .columns
+        case "plot.style_area", "plot.style_areabr": .area
+        case "plot.style_circles": .circles
+        case "plot.style_cross": .cross
+        default: .line
         }
     }
 
@@ -1092,7 +1682,17 @@ final class PineRuntimeSession: @unchecked Sendable {
         case "time_close": return .int(Int(bar.openTime.timeIntervalSince1970 * 1000))
         case "bar_index": return .int(working.barIndex)
         case "syminfo.mintick": return .float(mintick)
-        default: return nil
+        case "syminfo.ticker": return .string(symbol.ticker)
+        case "syminfo.tickerid": return .string(symbol.tickerID)
+        case "syminfo.currency": return .string(symbol.currency)
+        case "syminfo.type": return .string(symbol.type)
+        case "ta.tr": return .float(trueRange(bar))
+        case "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek":
+            return Self.timePart(name, Self.milliseconds(bar.openTime))
+        default:
+            if name.hasPrefix("strategy.") { return strategyValue(name, bar) }
+            if name.hasPrefix("timeframe.") { return timeframeValue(name) }
+            return nil
         }
     }
 
@@ -1185,11 +1785,19 @@ final class PineRuntimeSession: @unchecked Sendable {
         return .bool(op == .equal ? a == b : a != b)
     }
     private func commitHistories(_ bar: KlineData) {
-        let market: [String: PineRuntimeValue] = [
+        var series: [String: PineRuntimeValue] = [
             "open": .float(bar.openPrice), "high": .float(bar.highPrice), "low": .float(bar.lowPrice),
             "close": .float(bar.closePrice), "volume": .float(bar.volume),
         ]
-        for (k, v) in market.merging(working.variables, uniquingKeysWith: { $1 }) {
+        if isStrategy {
+            for name in [
+                "strategy.position_size", "strategy.position_avg_price", "strategy.equity",
+                "strategy.netprofit", "strategy.openprofit",
+            ] {
+                series[name] = strategyValue(name, bar)
+            }
+        }
+        for (k, v) in series.merging(working.variables, uniquingKeysWith: { $1 }) {
             working.histories[k, default: []].append(v)
         }
     }

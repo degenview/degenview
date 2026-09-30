@@ -32,9 +32,14 @@
 		SM0000000000000000000005 /* ScriptEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000105 /* ScriptEditorView.swift */; };
 		SM0000000000000000000007 /* LineNumberedTextEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000107 /* LineNumberedTextEditorView.swift */; };
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
+		P20000000000000000000004 /* PineStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000104 /* PineStrategyTests.swift */; };
+		P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000102 /* PineTypeCheckerTests.swift */; };
 		P10000000000000000000001 /* PineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101 /* PineModels.swift */; };
 		P10000000000000000000002 /* PineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000102 /* PineEngine.swift */; };
 		P10000000000000000000003 /* PineRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000103 /* PineRuntime.swift */; };
+		P20000000000000000000002 /* PineTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000102 /* PineTimestamp.swift */; };
+		P30000000000000000000001 /* PineTypeChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000101 /* PineTypeChecker.swift */; };
+		P20000000000000000000001 /* PineBrokerEmulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000101 /* PineBrokerEmulator.swift */; };
 		C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */; };
 		C50000000000000000000006 /* KlineDataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000106 /* KlineDataTests.swift */; };
 		C50000000000000000000001 /* JSONStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000101 /* JSONStoreTests.swift */; };
@@ -135,6 +140,7 @@
 		C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000103 /* PolymarketSearchViewModel.swift */; };
 		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
 		D20000000000000000000001 /* PineChartLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000101 /* PineChartLayer.swift */; };
+		P20000000000000000000003 /* PineStrategyReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000103 /* PineStrategyReportView.swift */; };
 		D20000000000000000000002 /* PineScriptPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000102 /* PineScriptPaneView.swift */; };
 		C10000000000000000000005 /* ChartStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000105 /* ChartStyle.swift */; };
 		C10000000000000000000006 /* LineChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000106 /* LineChartView.swift */; };
@@ -220,9 +226,14 @@
 		SM0000000000000000000105 /* ScriptEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptEditorView.swift; sourceTree = "<group>"; };
 		SM0000000000000000000107 /* LineNumberedTextEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineNumberedTextEditorView.swift; sourceTree = "<group>"; };
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
+		P20000000000000000000104 /* PineStrategyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyTests.swift; sourceTree = "<group>"; };
+		P30000000000000000000102 /* PineTypeCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeCheckerTests.swift; sourceTree = "<group>"; };
 		P10000000000000000000101 /* PineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineModels.swift; sourceTree = "<group>"; };
 		P10000000000000000000102 /* PineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngine.swift; sourceTree = "<group>"; };
 		P10000000000000000000103 /* PineRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntime.swift; sourceTree = "<group>"; };
+		P20000000000000000000102 /* PineTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTimestamp.swift; sourceTree = "<group>"; };
+		P30000000000000000000101 /* PineTypeChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeChecker.swift; sourceTree = "<group>"; };
+		P20000000000000000000101 /* PineBrokerEmulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBrokerEmulator.swift; sourceTree = "<group>"; };
 		C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceWebSocketServiceTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000106 /* KlineDataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineDataTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000101 /* JSONStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONStoreTests.swift; sourceTree = "<group>"; };
@@ -290,6 +301,7 @@
 		C10000000000000000000103 /* PolymarketSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PolymarketSearchViewModel.swift; sourceTree = "<group>"; };
 		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
 		D20000000000000000000101 /* PineChartLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartLayer.swift; sourceTree = "<group>"; };
+		P20000000000000000000103 /* PineStrategyReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyReportView.swift; sourceTree = "<group>"; };
 		D20000000000000000000102 /* PineScriptPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineScriptPaneView.swift; sourceTree = "<group>"; };
 		C10000000000000000000105 /* ChartStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartStyle.swift; sourceTree = "<group>"; };
 		C10000000000000000000106 /* LineChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineChartView.swift; sourceTree = "<group>"; };
@@ -456,6 +468,9 @@
 				BA0000000000000000000103 /* AlertBackgroundService.swift */,
 				P10000000000000000000102 /* PineEngine.swift */,
 				P10000000000000000000103 /* PineRuntime.swift */,
+				P20000000000000000000102 /* PineTimestamp.swift */,
+				P30000000000000000000101 /* PineTypeChecker.swift */,
+				P20000000000000000000101 /* PineBrokerEmulator.swift */,
 				B90000000000000000000102 /* LocalPriceAlertEngine.swift */,
 				B90000000000000000000103 /* FXRateService.swift */,
 				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
@@ -536,6 +551,7 @@
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
 				D20000000000000000000101 /* PineChartLayer.swift */,
+				P20000000000000000000103 /* PineStrategyReportView.swift */,
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
@@ -579,6 +595,8 @@
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				PW0000000000000000000106 /* PineWordRangeTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
+				P20000000000000000000104 /* PineStrategyTests.swift */,
+				P30000000000000000000102 /* PineTypeCheckerTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
 				C50000000000000000000101 /* JSONStoreTests.swift */,
@@ -725,6 +743,8 @@
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */,
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
+				P20000000000000000000004 /* PineStrategyTests.swift in Sources */,
+				P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
@@ -768,6 +788,9 @@
 				P10000000000000000000001 /* PineModels.swift in Sources */,
 				P10000000000000000000002 /* PineEngine.swift in Sources */,
 				P10000000000000000000003 /* PineRuntime.swift in Sources */,
+				P20000000000000000000002 /* PineTimestamp.swift in Sources */,
+				P30000000000000000000001 /* PineTypeChecker.swift in Sources */,
+				P20000000000000000000001 /* PineBrokerEmulator.swift in Sources */,
 				B90000000000000000000001 /* PriceAlertModels.swift in Sources */,
 				B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */,
 				B90000000000000000000003 /* FXRateService.swift in Sources */,
@@ -825,6 +848,7 @@
 				C10000000000000000000003 /* PolymarketSearchViewModel.swift in Sources */,
 				C10000000000000000000004 /* ChartPlot.swift in Sources */,
 				D20000000000000000000001 /* PineChartLayer.swift in Sources */,
+				P20000000000000000000003 /* PineStrategyReportView.swift in Sources */,
 				D20000000000000000000002 /* PineScriptPaneView.swift in Sources */,
 				C10000000000000000000005 /* ChartStyle.swift in Sources */,
 				C10000000000000000000006 /* LineChartView.swift in Sources */,

@@ -15,7 +15,7 @@ enum PineTokenKind: Equatable, Sendable {
     case plusAssign, minusAssign, starAssign, slashAssign
     case equal, notEqual, less, lessEqual, greater, greaterEqual
     case and, or, not, ifKeyword, elseKeyword, varKeyword, varipKeyword
-    case forKeyword, breakKeyword, continueKeyword
+    case forKeyword, breakKeyword, continueKeyword, whileKeyword, switchKeyword
     case typeKeyword(PineValueType)
     case arrow
 }
@@ -103,6 +103,8 @@ struct PineLexer {
                     case "for": kind = .forKeyword
                     case "break": kind = .breakKeyword
                     case "continue": kind = .continueKeyword
+                    case "while": kind = .whileKeyword
+                    case "switch": kind = .switchKeyword
                     case "int": kind = .typeKeyword(.int)
                     case "float": kind = .typeKeyword(.float)
                     case "bool": kind = .typeKeyword(.bool)
@@ -262,10 +264,13 @@ indirect enum PineExpression: Sendable {
     case call(String, [PineArgument], Int, PineSourceRange)
     case history(PineExpression, PineExpression, PineSourceRange)
     case tuple([PineExpression], PineSourceRange)
+    /// `x = if …` / `x = switch …`: a block statement used for its value.
+    case statementExpression(PineStatement, PineSourceRange)
     var range: PineSourceRange {
         switch self {
         case .literal(_, let r), .identifier(_, let r), .unary(_, _, let r), .binary(_, _, _, let r),
-            .ternary(_, _, _, let r), .call(_, _, _, let r), .history(_, _, let r), .tuple(_, let r):
+            .ternary(_, _, _, let r), .call(_, _, _, let r), .history(_, _, let r), .tuple(_, let r),
+            .statementExpression(_, let r):
             return r
         }
     }
@@ -281,8 +286,13 @@ struct PineParameter: Sendable {
     var type: PineValueType?
     var defaultValue: PineExpression?
 }
+/// One `switch` arm; a nil condition is the default (`=> value`) arm.
+struct PineSwitchArm: Sendable {
+    var condition: PineExpression?
+    var body: [PineStatement]
+}
 indirect enum PineStatement: Sendable {
-    case declaration(String, PineValueType?, PineDeclarationMode, PineExpression, PineSourceRange)
+    case declaration(String, PineTypeAnnotation, PineDeclarationMode, PineExpression, PineSourceRange)
     case assignment(String, PineTokenKind, PineExpression, PineSourceRange)
     case expression(PineExpression)
     case conditional(PineExpression, [PineStatement], [PineStatement], PineSourceRange)
@@ -290,6 +300,12 @@ indirect enum PineStatement: Sendable {
     case forRange(String, PineExpression, PineExpression, PineExpression?, [PineStatement], PineSourceRange)
     /// `for value in array` / `for [index, value] in array`
     case forIn(String?, String, PineExpression, [PineStatement], PineSourceRange)
+    case whileLoop(PineExpression, [PineStatement], PineSourceRange)
+    /// `switch subject` compares each arm's condition to the subject; `switch` without a
+    /// subject takes the first arm whose condition is true.
+    case switchStatement(PineExpression?, [PineSwitchArm], PineSourceRange)
+    /// `[a, b] = expression`
+    case tupleDeclaration([String], PineExpression, PineSourceRange)
     case loopControl(PineLoopControl, PineSourceRange)
     /// User-defined function. The body's last statement is the return value.
     case function(String, [PineParameter], [PineStatement], PineSourceRange)
@@ -344,6 +360,9 @@ struct PineParser {
     mutating private func statement() -> PineStatement? {
         if take(.ifKeyword) { return ifStatement() }
         if take(.forKeyword) { return forStatement() }
+        if take(.whileKeyword) { return whileStatement() }
+        if take(.switchKeyword) { return switchStatement() }
+        if isTupleDeclaration() { return tupleDeclaration() }
         if take(.breakKeyword) { return .loopControl(.breakLoop, previous.range) }
         if take(.continueKeyword) { return .loopControl(.continueLoop, previous.range) }
         if isFunctionDefinition() { return functionDefinition() }
@@ -386,6 +405,87 @@ struct PineParser {
             return nil
         }
         return block(untilDedent: true)
+    }
+
+    /// Called after `while` has been consumed.
+    mutating private func whileStatement() -> PineStatement? {
+        let start = previous.range
+        guard let condition = expression() else { return nil }
+        guard let body = indentedBlock("while") else { return nil }
+        return .whileLoop(condition, body, start)
+    }
+
+    /// Called after `switch` has been consumed.
+    mutating private func switchStatement() -> PineStatement? {
+        let start = previous.range
+        var subject: PineExpression?
+        if !at(.newline) {
+            guard let value = expression() else { return nil }
+            subject = value
+        }
+        _ = take(.newline)
+        guard take(.indent) else {
+            error("PINE2002", "Expected an indented block after switch.", current.range)
+            return nil
+        }
+        var arms: [PineSwitchArm] = []
+        while !at(.eof) && !at(.dedent) {
+            if take(.newline) { continue }
+            var condition: PineExpression?
+            if !take(.arrow) {
+                guard let value = expression() else {
+                    while !at(.newline) && !at(.dedent) && !at(.eof) { advance() }
+                    continue
+                }
+                condition = value
+                expect(.arrow, "Expected '=>' in switch arm.")
+            }
+            let body: [PineStatement]
+            if at(.newline) {
+                guard let block = indentedBlock("switch arm") else { return nil }
+                body = block
+            } else if let single = statement() {
+                body = [single]
+            } else {
+                return nil
+            }
+            arms.append(.init(condition: condition, body: body))
+            while take(.newline) {}
+        }
+        _ = take(.dedent)
+        return .switchStatement(subject, arms, start)
+    }
+
+    /// `[a, b] = …` — a bracketed name list directly followed by `=`.
+    private func isTupleDeclaration() -> Bool {
+        guard at(.leftBracket) else { return false }
+        var i = index + 1
+        var expectName = true
+        while i < tokens.count {
+            switch tokens[i].kind {
+            case .identifier where expectName: expectName = false
+            case .comma where !expectName: expectName = true
+            case .rightBracket: return !expectName && i + 1 < tokens.count && tokens[i + 1].kind == .assign
+            default: return false
+            }
+            i += 1
+        }
+        return false
+    }
+
+    mutating private func tupleDeclaration() -> PineStatement? {
+        let range = current.range
+        advance()
+        var names: [String] = []
+        while case .identifier(let name) = current.kind {
+            names.append(name)
+            advance()
+            if !take(.comma) { break }
+        }
+        expect(.rightBracket, "Expected ']'.")
+        expect(.assign, "Expected '='.")
+        guard let rhs = expression() else { return nil }
+        return .tupleDeclaration(names, rhs, range)
     }
 
     /// Called after `for` has been consumed.
@@ -498,6 +598,7 @@ struct PineParser {
         let start = index
         var mode = PineDeclarationMode.ordinary
         if take(.varKeyword) { mode = .variable } else if take(.varipKeyword) { mode = .intrabar }
+        let qualifier = skipQualifier()
         let type = typeAnnotation()
         guard case .identifier(let name) = current.kind, peek(1)?.kind == .assign else {
             index = start
@@ -507,7 +608,7 @@ struct PineParser {
         advance()
         advance()
         guard let rhs = expression() else { return nil }
-        return .declaration(name, type, mode, rhs, range)
+        return .declaration(name, .init(type: type, qualifier: qualifier), mode, rhs, range)
     }
 
     private static let objectTypes: [String: PineValueType] = [
@@ -551,13 +652,19 @@ struct PineParser {
         return nil
     }
 
-    mutating private func skipQualifier() {
-        guard case .identifier(let word) = current.kind,
-            ["series", "simple", "const", "input"].contains(word), let next = peek(1)
-        else { return }
+    @discardableResult
+    mutating private func skipQualifier() -> PineQualifier? {
+        let qualifiers: [String: PineQualifier] = [
+            "const": .constant, "input": .input, "simple": .simple, "series": .series,
+        ]
+        guard case .identifier(let word) = current.kind, let qualifier = qualifiers[word],
+            let next = peek(1)
+        else { return nil }
         switch next.kind {
-        case .typeKeyword, .identifier: advance()
-        default: break
+        case .typeKeyword, .identifier:
+            advance()
+            return qualifier
+        default: return nil
         }
     }
 
@@ -577,12 +684,21 @@ struct PineParser {
         case .color(let value): lhs = .literal(.color(value), token.range)
         case .string(let s): lhs = .literal(.string(s), token.range)
         case .bool(let b): lhs = .literal(.bool(b), token.range)
-        case .na: lhs = .literal(.na, token.range)
+        case .na:
+            // `na(x)` is the builtin test; a bare `na` is the value.
+            lhs = at(.leftParen) ? .identifier("na", token.range) : .literal(.na, token.range)
         case .identifier(let name): lhs = .identifier(name, token.range)
         case .typeKeyword(let type): lhs = .identifier(type.rawValue, token.range)
         case .minus, .plus, .not:
             guard let rhs = expression(80) else { return nil }
             lhs = .unary(token.kind, rhs, token.range)
+        case .ifKeyword, .switchKeyword:
+            // The block consumes its own dedent, so the postfix/binary loop below must not
+            // run: the next line's first token could be mistaken for an operator.
+            guard let block = token.kind == .ifKeyword ? ifStatement() : switchStatement() else {
+                return nil
+            }
+            return .statementExpression(block, token.range)
         case .leftParen:
             guard let inner = expression() else { return nil }
             lhs = inner
@@ -779,23 +895,34 @@ enum PineCompiler {
                     "A script must contain exactly one indicator(), strategy(), or library() declaration.",
                     declarations.first?.2 ?? .zero))
         }
+        let environment = constantEnvironment(statements)
         var metadata = PineDeclarationMetadata(
             type: declarations.first?.0 ?? .indicator,
             pineVersion: versionMatches.first.flatMap(Int.init),
             title: "Untitled", shortTitle: nil, overlay: false, format: nil, precision: nil,
             maxBarsBack: nil)
+        if metadata.type == .strategy { metadata.strategy = PineStrategySettings() }
         if let expression = declarations.first?.1, case .call(let declarationName, let args, _, let range) = expression
         {
-            if let first = args.first, case .literal(.string(let title), _) = first.value {
+            if let first = args.first, first.name == nil || first.name == "title",
+                case .string(let title)? = constantValue(first.value, environment)
+            {
                 metadata.title = title
             } else {
                 diagnostics.append(
-                    diag("PINE3002", .semantic, "indicator() title must be a constant string.", range))
+                    diag("PINE3002", .semantic, "\(declarationName)() title must be a constant string.", range))
             }
-            let supported: Set<String> = [
+            var supported: Set<String> = [
                 "title", "shorttitle", "overlay", "format", "precision", "max_bars_back",
                 "max_lines_count", "max_labels_count", "max_boxes_count",
             ]
+            if metadata.type == .strategy {
+                supported.formUnion([
+                    "initial_capital", "default_qty_type", "default_qty_value", "commission_type",
+                    "commission_value", "slippage", "pyramiding", "currency", "process_orders_on_close",
+                    "calc_on_order_fills", "calc_on_every_tick", "close_entries_rule",
+                ])
+            }
             for arg in args where arg.name != nil {
                 let name = arg.name!
                 if !supported.contains(name) {
@@ -805,22 +932,27 @@ enum PineCompiler {
                             arg.value.range))
                     continue
                 }
-                switch (name, arg.value) {
-                case ("shorttitle", .literal(.string(let v), _)): metadata.shortTitle = v
-                case ("overlay", .literal(.bool(let v), _)): metadata.overlay = v
-                case ("format", .literal(.string(let v), _)): metadata.format = v
-                case ("precision", .literal(.int(let v), _)): metadata.precision = v
-                case ("max_bars_back", .literal(.int(let v), _)): metadata.maxBarsBack = v
-                case ("max_lines_count", .literal(.int(let v), _)): metadata.maxLinesCount = v
-                case ("max_labels_count", .literal(.int(let v), _)): metadata.maxLabelsCount = v
-                case ("max_boxes_count", .literal(.int(let v), _)): metadata.maxBoxesCount = v
-                default: break
+                guard let value = constantValue(arg.value, environment) else { continue }
+                switch (name, value) {
+                case ("shorttitle", .string(let v)): metadata.shortTitle = v
+                case ("overlay", .bool(let v)): metadata.overlay = v
+                case ("format", .string(let v)): metadata.format = v
+                case ("precision", .int(let v)): metadata.precision = v
+                case ("max_bars_back", .int(let v)): metadata.maxBarsBack = v
+                case ("max_lines_count", .int(let v)): metadata.maxLinesCount = v
+                case ("max_labels_count", .int(let v)): metadata.maxLabelsCount = v
+                case ("max_boxes_count", .int(let v)): metadata.maxBoxesCount = v
+                default: applyStrategySetting(name, value, &metadata)
                 }
             }
         }
         var schema = PineInputSchema()
-        collectInputs(statements, &schema, &diagnostics)
+        collectInputs(statements, environment, &schema, &diagnostics)
         validate(statements, diagnostics: &diagnostics)
+        // Type errors on top of a broken parse would only be noise from a half-built tree.
+        if !diagnostics.contains(where: { $0.category == .lexical || $0.category == .syntax }) {
+            diagnostics += PineTypeChecker.check(statements)
+        }
         return .init(
             source: normalizedSource, statements: statements, declaration: metadata, inputSchema: schema,
             diagnostics: diagnostics)
@@ -837,9 +969,125 @@ enum PineCompiler {
             .replacingOccurrences(of: "\u{2029}", with: "\n")
     }
 
+    /// Values of top-level declarations that fold to a constant and are never reassigned, so
+    /// `group = g_sr` and `default_qty_value = riskPercent` resolve at compile time.
+    private static func constantEnvironment(_ statements: [PineStatement]) -> [String: PineRuntimeValue] {
+        var reassigned = Set<String>()
+        func collect(_ statements: [PineStatement]) {
+            for statement in statements {
+                switch statement {
+                case .assignment(let name, _, _, _): reassigned.insert(name)
+                case .conditional(_, let a, let b, _):
+                    collect(a)
+                    collect(b)
+                case .forRange(_, _, _, _, let body, _), .forIn(_, _, _, let body, _),
+                    .whileLoop(_, let body, _), .function(_, _, let body, _):
+                    collect(body)
+                case .switchStatement(_, let arms, _): arms.forEach { collect($0.body) }
+                default: break
+                }
+            }
+        }
+        collect(statements)
+        var environment: [String: PineRuntimeValue] = [:]
+        for statement in statements {
+            guard case .declaration(let name, _, .ordinary, let expression, _) = statement,
+                !reassigned.contains(name), let value = constantValue(expression, environment)
+            else { continue }
+            environment[name] = value
+        }
+        return environment
+    }
+
+    /// Folds compile-time expressions: literals, builtin constants, earlier constants,
+    /// arithmetic on numbers, string concatenation, colors, and `timestamp()`.
+    static func constantValue(_ e: PineExpression, _ environment: [String: PineRuntimeValue])
+        -> PineRuntimeValue?
+    {
+        switch e {
+        case .literal(let value, _): return value == .na ? nil : value
+        case .identifier(let name, _):
+            if let value = environment[name] { return value }
+            if let value = PineBuiltins.constants[name] { return value }
+            return PineBuiltins.colors[name].map(PineRuntimeValue.color)
+        case .unary(.minus, let inner, _):
+            switch constantValue(inner, environment) {
+            case .int(let x)?: return .int(-x)
+            case .float(let x)?: return .float(-x)
+            default: return nil
+            }
+        case .binary(let l, let op, let r, _):
+            guard let a = constantValue(l, environment), let b = constantValue(r, environment) else {
+                return nil
+            }
+            if op == .plus, case .string(let x) = a, case .string(let y) = b { return .string(x + y) }
+            if case .int(let x) = a, case .int(let y) = b {
+                switch op {
+                case .plus: return .int(x + y)
+                case .minus: return .int(x - y)
+                case .star: return .int(x * y)
+                default: break
+                }
+            }
+            guard let x = a.number, let y = b.number else { return nil }
+            switch op {
+            case .plus: return .float(x + y)
+            case .minus: return .float(x - y)
+            case .star: return .float(x * y)
+            case .slash: return y == 0 ? nil : .float(x / y)
+            default: return nil
+            }
+        case .call("timestamp", let arguments, _, _):
+            var positional: [PineRuntimeValue] = []
+            var named: [String: PineRuntimeValue] = [:]
+            for argument in arguments {
+                guard let value = constantValue(argument.value, environment) else { return nil }
+                if let name = argument.name { named[name] = value } else { positional.append(value) }
+            }
+            return PineTimestamp.evaluate(positional: positional, named: named).map(PineRuntimeValue.int)
+        case .call("color.new", _, _, _), .call("color.rgb", _, _, _):
+            return constantColor(e).map(PineRuntimeValue.color)
+        default: return nil
+        }
+    }
+
+    private static func applyStrategySetting(
+        _ name: String, _ value: PineRuntimeValue, _ metadata: inout PineDeclarationMetadata
+    ) {
+        guard var settings = metadata.strategy else { return }
+        switch (name, value) {
+        case ("initial_capital", _):
+            if let n = value.number, n > 0 { settings.initialCapital = n }
+        case ("default_qty_type", .string(let v)):
+            switch v {
+            case "strategy.cash": settings.quantityType = .cash
+            case "strategy.percent_of_equity": settings.quantityType = .percentOfEquity
+            default: settings.quantityType = .fixed
+            }
+        case ("default_qty_value", _):
+            if let n = value.number, n >= 0 { settings.quantityValue = n }
+        case ("commission_type", .string(let v)):
+            switch v {
+            case "strategy.commission.cash_per_order": settings.commissionType = .cashPerOrder
+            case "strategy.commission.cash_per_contract": settings.commissionType = .cashPerContract
+            default: settings.commissionType = .percent
+            }
+        case ("commission_value", _):
+            if let n = value.number, n >= 0 { settings.commissionValue = n }
+        case ("slippage", _):
+            if let n = value.number, n >= 0, n < 1e6 { settings.slippage = Int(n) }
+        case ("pyramiding", _):
+            if let n = value.number, n >= 0, n < 1e6 { settings.pyramiding = Int(n) }
+        case ("currency", .string(let v)): settings.currency = v
+        case ("process_orders_on_close", .bool(let v)): settings.processOrdersOnClose = v
+        default: break
+        }
+        metadata.strategy = settings
+    }
+
     private static func collectInputs(
-        _ statements: [PineStatement], _ schema: inout PineInputSchema,
-        _ diagnostics: inout [PineDiagnostic]
+        _ statements: [PineStatement], _ environment: [String: PineRuntimeValue],
+        _ schema: inout PineInputSchema, _ diagnostics: inout [PineDiagnostic]
     ) {
         for statement in statements {
             if case .declaration(let variable, _, _, let expr, _) = statement,
@@ -851,24 +1099,24 @@ enum PineCompiler {
                 case "input.float": type = .float
                 case "input.bool": type = .bool
                 case "input.color": type = .color
+                case "input.time": type = .time
                 default: type = .string
                 }
-                guard let first = args.first, let defaultValue = inputValue(first.value, function: name) else {
+                guard let first = args.first,
+                    let defaultValue = inputValue(first.value, function: name, environment)
+                else {
                     diagnostics.append(
                         diag("PINE3010", .semantic, "\(name) requires a constant default value.", range))
                     continue
                 }
                 func string(_ key: String) -> String? {
                     args.first { $0.name == key }.flatMap {
-                        if case .literal(.string(let v), _) = $0.value { return v }
+                        if case .string(let v)? = constantValue($0.value, environment) { return v }
                         return nil
                     }
                 }
                 func number(_ key: String) -> Double? {
-                    args.first { $0.name == key }.flatMap {
-                        if case .literal(let v, _) = $0.value { return v.number }
-                        return nil
-                    }
+                    args.first { $0.name == key }.flatMap { constantValue($0.value, environment)?.number }
                 }
                 func boolean(_ key: String) -> Bool {
                     args.first { $0.name == key }.flatMap {
@@ -880,7 +1128,7 @@ enum PineCompiler {
                     string("title")
                     ?? (args.count > 1 && args[1].name == nil
                         ? {
-                            if case .literal(.string(let v), _) = args[1].value { return v }
+                            if case .string(let v)? = constantValue(args[1].value, environment) { return v }
                             return nil
                         }() : nil)
                 schema.inputs.append(
@@ -888,38 +1136,38 @@ enum PineCompiler {
                         id: variable, type: type, defaultValue: defaultValue, title: title,
                         tooltip: string("tooltip"), group: string("group"), inline: string("inline"),
                         confirm: boolean("confirm"), minValue: number("minval"), maxValue: number("maxval"),
-                        step: number("step"), options: options(args, function: name)))
+                        step: number("step"), options: options(args, function: name, environment)))
             }
             if case .conditional(_, let a, let b, _) = statement {
-                collectInputs(a, &schema, &diagnostics)
-                collectInputs(b, &schema, &diagnostics)
+                collectInputs(a, environment, &schema, &diagnostics)
+                collectInputs(b, environment, &schema, &diagnostics)
             }
         }
     }
-    private static func options(_ args: [PineArgument], function: String) -> [PineInputValue]? {
+    private static func options(
+        _ args: [PineArgument], function: String, _ environment: [String: PineRuntimeValue]
+    ) -> [PineInputValue]? {
         guard let argument = args.first(where: { $0.name == "options" }),
             case .tuple(let values, _) = argument.value
         else { return nil }
-        let options = values.compactMap { inputValue($0, function: function) }
+        let options = values.compactMap { inputValue($0, function: function, environment) }
         return options.count == values.count && !options.isEmpty ? options : nil
     }
 
-    private static func inputValue(_ e: PineExpression, function: String) -> PineInputValue? {
+    private static func inputValue(
+        _ e: PineExpression, function: String, _ environment: [String: PineRuntimeValue]
+    ) -> PineInputValue? {
         if function == "input.source", case .identifier(let name, _) = e {
             return .source(name)
         }
-        if case .literal(let v, _) = e {
-            switch v {
-            case .int(let x): return .int(x)
-            case .float(let x): return .float(x)
-            case .bool(let x): return .bool(x)
-            case .string(let x): return .string(x)
-            case .color(let x): return .color(x)
-            default: return nil
-            }
+        switch constantValue(e, environment) {
+        case .int(let x)?: return .int(x)
+        case .float(let x)?: return .float(x)
+        case .bool(let x)?: return .bool(x)
+        case .string(let x)?: return .string(x)
+        case .color(let x)?: return .color(x)
+        default: return nil
         }
-        if function == "input.color", let color = constantColor(e) { return .color(color) }
-        return nil
     }
 
     /// Folds compile-time color expressions: literals, `color.*` constants, and
@@ -959,13 +1207,13 @@ enum PineCompiler {
         var declared = inheritedDeclarations
         for statement in statements {
             switch statement {
-            case .declaration(let n, let type, _, let e, let r):
+            case .declaration(let n, let annotation, _, let e, let r):
                 if declared.contains(n) {
                     diagnostics.append(
                         diag("PINE3020", .semantic, "Variable '\(n)' is already declared in this scope.", r))
                 }
                 declared.insert(n)
-                if type == .bool, case .literal(.na, _) = e {
+                if annotation.type == .bool, case .literal(.na, _) = e {
                     diagnostics.append(
                         diag("PINE3021", .semantic, "Boolean values cannot be na in Pine v6.", r))
                 }
@@ -985,6 +1233,21 @@ enum PineCompiler {
                 validate(
                     body, inheritedDeclarations: declared.union([index, value].compactMap { $0 }),
                     inLoop: true, diagnostics: &diagnostics)
+            case .whileLoop(_, let body, _):
+                validate(body, inheritedDeclarations: declared, inLoop: true, diagnostics: &diagnostics)
+            case .switchStatement(_, let arms, _):
+                for arm in arms {
+                    validate(
+                        arm.body, inheritedDeclarations: declared, inLoop: inLoop, diagnostics: &diagnostics)
+                }
+            case .tupleDeclaration(let names, _, let r):
+                for name in names where name != "_" {
+                    if declared.contains(name) {
+                        diagnostics.append(
+                            diag("PINE3020", .semantic, "Variable '\(name)' is already declared in this scope.", r))
+                    }
+                    declared.insert(name)
+                }
             case .loopControl(_, let r):
                 if !inLoop {
                     diagnostics.append(
@@ -1003,7 +1266,7 @@ enum PineCompiler {
                     diagnostics: &diagnostics)
             case .expression(let e):
                 if case .call(let n, _, _, let r) = e,
-                    n.hasPrefix("request.") || ["alert", "alertcondition"].contains(n)
+                    n.hasPrefix("request.")
                 {
                     diagnostics.append(
                         diag("PINE9003", .unsupported, "Feature '\(n)' is not supported in this release.", r))
@@ -1023,6 +1286,33 @@ enum PineBuiltins {
         "color.red": 0xf236_45ff, "color.silver": 0xb2b5_beff, "color.teal": 0x0089_7bff,
         "color.white": 0xffff_ffff, "color.yellow": 0xffeb_3bff,
     ]
+
+    /// Named constants that are not colors. Enumeration-like values are their own name, so a
+    /// script compares and passes them exactly as it would in Pine; `display.*` and
+    /// `dayofweek.*` are integers because scripts do arithmetic on them.
+    static let constants: [String: PineRuntimeValue] = {
+        var table: [String: PineRuntimeValue] = [
+            "display.none": .int(PineDisplay.none), "display.pane": .int(PineDisplay.pane),
+            "display.data_window": .int(PineDisplay.dataWindow),
+            "display.price_scale": .int(PineDisplay.priceScale),
+            "display.status_line": .int(PineDisplay.statusLine), "display.all": .int(PineDisplay.all),
+            "dayofweek.sunday": .int(1), "dayofweek.monday": .int(2), "dayofweek.tuesday": .int(3),
+            "dayofweek.wednesday": .int(4), "dayofweek.thursday": .int(5), "dayofweek.friday": .int(6),
+            "dayofweek.saturday": .int(7), "math.pi": .float(Double.pi), "math.e": .float(M_E),
+            "math.phi": .float((1 + 5.0.squareRoot()) / 2),
+        ]
+        let names = [
+            "strategy.long", "strategy.short", "strategy.cash", "strategy.fixed",
+            "strategy.percent_of_equity", "strategy.commission.percent",
+            "strategy.commission.cash_per_order", "strategy.commission.cash_per_contract",
+            "strategy.oca.none", "strategy.oca.cancel", "strategy.oca.reduce",
+            "alert.freq_all", "alert.freq_once_per_bar", "alert.freq_once_per_bar_close",
+            "format.inherit", "format.price", "format.volume", "format.percent", "format.mintick",
+            "order.ascending", "order.descending",
+        ]
+        for name in names { table[name] = .string(name) }
+        return table
+    }()
 
     /// Pine transparency is 0 (opaque) … 100 (invisible).
     static func withTransparency(_ rgba: UInt32, _ transparency: Double) -> UInt32 {
