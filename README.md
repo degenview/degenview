@@ -14,8 +14,9 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   GeckoTerminal for historical OHLCV data
 - **Stocks** — Search and chart US equities through Alpaca's IEX feed (API credentials
   are stored securely in Keychain)
-- **Prediction markets** — Search Polymarket events, chart probabilities as percentages,
-  and toggle the outcome series shown for multi-outcome markets
+- **Prediction markets** — Search Polymarket or Kalshi events from one "Prediction
+  Markets" tab, chart probabilities as percentages, and toggle the outcome series shown for
+  multi-outcome markets. Both use public endpoints and need no key
 - **CoinMarketCap indices** — Add historical or latest Altcoin Season and CMC Crypto Fear
   and Greed charts. The official Public API works without a key; an optional key stored in
   Keychain enables higher authenticated rate limits
@@ -112,7 +113,7 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 - **Once or repeating** — One-shot alerts move to Triggered after firing; repeating
   alerts re-arm only after the market moves strictly back across the target
 - **Source-qualified assets** — Binance, CoinGecko, DEXScreener, and Alpaca alerts use the
-  same stable provider-qualified identity as portfolio assets. Polymarket is excluded
+  same stable provider-qualified identity as portfolio assets. Polymarket and Kalshi are excluded
 - **Multi-currency targets** — Evaluate alerts in USD, EUR, GBP, JPY, or CHF using current
   daily Frankfurter reference rates cached locally for weekends and holidays
 - **Alerts center** — Open the app-wide Alerts window from a chart bell or the Portfolio

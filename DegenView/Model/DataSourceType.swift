@@ -6,20 +6,28 @@ enum DataSourceType: String, CaseIterable, Codable {
     case dexscreener = "DEXScreener"
     case alpaca = "Alpaca (IEX)"
     case polymarket = "Polymarket"
+    case kalshi = "Kalshi"
     case coinMarketCap = "CoinMarketCap"
 
     /// Crypto price sources — the set the multi-source ticker search fans out to.
-    /// Polymarket is excluded: prediction markets get their own search pane.
+    /// Prediction markets are excluded: they get their own search pane.
     static var cryptoSources: [DataSourceType] {
         [.binance, .coingecko, .dexscreener]
     }
 
     var displayName: String { rawValue }
 
-    /// What this source's prices mean. Polymarket quotes probabilities in 0…1;
-    /// everything else quotes USD.
+    /// Prediction-market providers — YES probabilities in 0…1, charted as lines.
+    static let predictionMarkets: [DataSourceType] = [.polymarket, .kalshi]
+
+    var isPredictionMarket: Bool {
+        self == .polymarket || self == .kalshi
+    }
+
+    /// What this source's prices mean. Prediction markets quote probabilities in
+    /// 0…1; everything else quotes USD.
     var priceScale: PriceScale {
-        self == .polymarket ? .probability : .currency
+        isPredictionMarket ? .probability : .currency
     }
 
     /// Whether this source reports per-candle turnover for the volume bars to draw.
@@ -27,17 +35,17 @@ enum DataSourceType: String, CaseIterable, Codable {
     /// Binance sends quote volume with every kline, and DEX pairs get theirs from
     /// GeckoTerminal. CoinGecko's OHLC endpoint has no volume column — only
     /// `/market_chart`, which reports a rolling 24h figure rather than per-candle —
-    /// and Polymarket reports none at all.
+    /// and the prediction-market line charts report none at all.
     var providesVolume: Bool {
         switch self {
         case .binance, .dexscreener, .alpaca: return true
-        case .coingecko, .polymarket, .coinMarketCap: return false
+        case .coingecko, .polymarket, .kalshi, .coinMarketCap: return false
         }
     }
 
     /// Whether a larger `limit` buys *older* candles at the same interval.
     ///
-    /// True everywhere except Polymarket, whose count only sets downsample fidelity
+    /// True everywhere except prediction markets, whose count only sets downsample fidelity
     /// inside a fixed window — asking for more shrinks the step rather than extending
     /// history, so indicator warm-up is fetched only where it actually works.
     ///
@@ -47,7 +55,7 @@ enum DataSourceType: String, CaseIterable, Codable {
     var fetchesByCount: Bool {
         switch self {
         case .binance, .dexscreener, .coingecko, .alpaca: return true
-        case .polymarket, .coinMarketCap: return false
+        case .polymarket, .kalshi, .coinMarketCap: return false
         }
     }
 
@@ -57,7 +65,7 @@ enum DataSourceType: String, CaseIterable, Codable {
         case .coingecko: return "chart.line.uptrend.xyaxis"
         case .dexscreener: return "arrow.triangle.swap"
         case .alpaca: return "chart.xyaxis.line"
-        case .polymarket: return "chart.line.flattrend.xyaxis"
+        case .polymarket, .kalshi: return "chart.line.flattrend.xyaxis"
         case .coinMarketCap: return "gauge.with.dots.needle.50percent"
         }
     }
@@ -66,12 +74,14 @@ enum DataSourceType: String, CaseIterable, Codable {
 enum ChartAssetType: String, CaseIterable, Identifiable {
     case crypto = "Crypto"
     case stock = "Stock"
-    case polymarket = "Polymarket"
+    case predictionMarket = "Prediction Markets"
 
     var id: String { rawValue }
 }
 
-/// One tradable choice within a Polymarket event — a token ID + human label pair.
+/// One tradable choice within a prediction-market event — a market id + human label
+/// pair. The id is a CLOB token id on Polymarket and `"SERIES/MARKET"` on Kalshi; the
+/// name is persisted JSON, so it stays.
 struct PmSeriesConfig: Codable, Equatable, Hashable, Identifiable {
     let tokenID: String
     let label: String

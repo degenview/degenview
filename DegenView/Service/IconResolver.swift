@@ -119,10 +119,12 @@ actor IconResolver {
 
         // Prediction markets carry their own artwork and have no crypto symbol behind
         // them — none of the coin-oriented steps below can contribute, so skip them
-        // rather than spend a market-snapshot refresh on the way past.
+        // rather than spend a market-snapshot refresh on the way past. Kalshi's API
+        // serves no artwork at all, so its cards stay on the monogram.
         if source == .polymarket {
             return await PolymarketService.marketInfo(tokenID: ticker)?.imageURL
         }
+        if source == .kalshi { return nil }
 
         // Equity tickers share symbols with tokenized stocks and unrelated crypto
         // projects. Keep them out of every coin-oriented step below: an absent stock
@@ -155,7 +157,7 @@ actor IconResolver {
                 }
             }
 
-        case .binance, .alpaca, .polymarket, .coinMarketCap:
+        case .binance, .alpaca, .polymarket, .kalshi, .coinMarketCap:
             break
         }
 
@@ -185,7 +187,7 @@ actor IconResolver {
             image = cache.idMap[ticker.lowercased()] ?? cache.symbolMap[symbol.lowercased()]
         case .binance, .dexscreener, .alpaca:
             image = cache.symbolMap[symbol.lowercased()]
-        case .polymarket, .coinMarketCap:
+        case .polymarket, .kalshi, .coinMarketCap:
             // Market questions never key into a coin symbol map.
             image = nil
         }

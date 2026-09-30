@@ -91,6 +91,18 @@ enum TimeRange: String, CaseIterable, Identifiable, Codable {
         return (interval, fidelity)
     }
 
+    /// Kalshi candlestick window: period in minutes (the API only accepts 1, 60 and
+    /// 1440) and how far back to start.
+    ///
+    /// Kalshi rejects a request that would return more than roughly 5,000 candles,
+    /// so the period steps up with the span: 1-minute bars for ≤ 2 days, hourly to
+    /// 120 days, daily beyond.
+    var kalshiWindow: (periodMinutes: Int, spanSeconds: TimeInterval) {
+        let span = effectiveSpanDays
+        let period = span <= 2 ? 1 : (span <= 120 ? 60 : 1_440)
+        return (period, TimeInterval(span) * 86_400)
+    }
+
     /// Number of candles to fetch from the API.
     var dataPointLimit: Int {
         switch self {

@@ -208,18 +208,20 @@ struct SelectedResultBanner: View {
     }
 }
 
-/// Polymarket market search: field, grouped results, empty states.
+/// Prediction-market search (Polymarket or Kalshi): field, grouped results, empty states.
 ///
 /// Multi-choice groups show a group-level checkbox in the section header
 /// plus individual toggles per row. Single-choice groups use tap-to-select.
-struct PolymarketSearchPane: View {
-    @ObservedObject var searchVM: PolymarketSearchViewModel
+struct PredictionMarketSearchPane: View {
+    @ObservedObject var searchVM: PredictionMarketSearchViewModel
     @Binding var searchText: String
     /// A `List` has no intrinsic height, so in a sheet that sizes itself to its
     /// content it collapses to nothing without a floor.
     var resultsMinHeight: CGFloat = UI.addTickerResultsMinHeight
     var sizing: SearchResultListSizing
     var showsStatus = true
+    /// When set, a provider dropdown (Polymarket / Kalshi) leads the search field.
+    var provider: Binding<DataSourceType>? = nil
     var onCommitResult: ((TickerSearchResult) -> Void)? = nil
 
     private var resultHeight: CGFloat {
@@ -238,17 +240,31 @@ struct PolymarketSearchPane: View {
 
     var body: some View {
         VStack(spacing: 16) {
-            SearchFieldRow(
-                placeholder: "Search markets (e.g. Bitcoin, Fed, election)",
-                text: $searchText,
-                isSearching: searchVM.isSearching,
-                onChange: { searchVM.scheduleSearch(query: $0) },
-                onSubmit: {
-                    if let first = searchVM.firstAvailableResult {
-                        searchVM.selectedResult = first
+            HStack(spacing: 8) {
+                if let provider {
+                    Picker("Provider", selection: provider) {
+                        ForEach(DataSourceType.predictionMarkets, id: \.self) { source in
+                            Text(source.displayName).tag(source)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .fixedSize()
+                    .help("Prediction market provider")
                 }
-            )
+
+                SearchFieldRow(
+                    placeholder: "Search markets (e.g. Bitcoin, Fed, election)",
+                    text: $searchText,
+                    isSearching: searchVM.isSearching,
+                    onChange: { searchVM.scheduleSearch(query: $0) },
+                    onSubmit: {
+                        if let first = searchVM.firstAvailableResult {
+                            searchVM.selectedResult = first
+                        }
+                    }
+                )
+            }
 
             if searchVM.hasResults {
                 List {
@@ -259,7 +275,7 @@ struct PolymarketSearchPane: View {
 
                         if searchVM.isExpanded(group) {
                             ForEach(group.results) { result in
-                                polymarketRow(result, in: group)
+                                marketRow(result, in: group)
                                     .listRowSeparator(.hidden)
                                     .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
                             }
@@ -273,7 +289,7 @@ struct PolymarketSearchPane: View {
                     }
                 }
                 .listStyle(.inset)
-                .modifier(PolymarketListSizeModifier(sizing: sizing, height: resultHeight))
+                .modifier(PredictionMarketListSizeModifier(sizing: sizing, height: resultHeight))
             }
 
             if showsStatus, let error = searchVM.errorMessage {
@@ -293,18 +309,18 @@ struct PolymarketSearchPane: View {
     }
 
     @ViewBuilder
-    private func polymarketRow(
-        _ result: TickerSearchResult, in group: PolymarketResultGroup
+    private func marketRow(
+        _ result: TickerSearchResult, in group: PredictionMarketResultGroup
     ) -> some View {
         if group.results.count > 1 {
-            PolymarketResultRow(
+            PredictionMarketResultRow(
                 result: result,
                 isChecked: searchVM.checkedChoices[result.fullSymbol] ?? false,
                 onToggle: { searchVM.toggleChoice(result.fullSymbol) },
                 onCommit: onCommitResult.map { commit in { commit(result) } }
             )
         } else {
-            PolymarketResultRow(
+            PredictionMarketResultRow(
                 result: result,
                 isSelected: searchVM.selectedResult == result,
                 onSelect: { searchVM.selectedResult = result },
@@ -314,7 +330,7 @@ struct PolymarketSearchPane: View {
     }
 
     /// Disclosure and selection are separate controls so either can be changed independently.
-    private func groupHeader(for group: PolymarketResultGroup) -> some View {
+    private func groupHeader(for group: PredictionMarketResultGroup) -> some View {
         let allChecked = searchVM.isGroupChecked(group)
         let anyChecked = searchVM.isGroupAnyChecked(group)
         let iconName =
@@ -345,7 +361,7 @@ struct PolymarketSearchPane: View {
                         TickerIconView(
                             symbol: result.symbol,
                             url: result.imageURL,
-                            size: UI.polymarketRowImageSize
+                            size: UI.predictionMarketRowImageSize
                         )
                     }
                     VStack(alignment: .leading, spacing: 2) {
@@ -371,7 +387,7 @@ struct PolymarketSearchPane: View {
     }
 }
 
-private struct PolymarketListSizeModifier: ViewModifier {
+private struct PredictionMarketListSizeModifier: ViewModifier {
     let sizing: SearchResultListSizing
     let height: CGFloat
 

@@ -126,7 +126,7 @@ struct ContentView: View {
                 }
             ) { selected in
                 let displayName: String? = {
-                    guard selected.source == .polymarket else { return nil }
+                    guard selected.source.isPredictionMarket else { return nil }
                     return selected.eventTitle ?? selected.question ?? selected.symbol
                 }()
                 try await contentViewModel.addTicker(
@@ -774,7 +774,7 @@ struct ContentView: View {
     }
 
     private func favoriteTicker(for vm: ChartViewModel) -> String {
-        if vm.source == .polymarket {
+        if vm.source.isPredictionMarket {
             if vm.pmSeries.count > 1,
                 let outcome = vm.pmSeries.first(where: {
                     $0.tokenID.caseInsensitiveCompare(vm.ticker) == .orderedSame

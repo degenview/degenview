@@ -46,6 +46,17 @@ Requires Xcode 16+, macOS 14+.
 4. Add kline parser init in `KlineData` if API format differs
 5. Update `AddTickerSheet` search to include new source
 
+Prediction markets (Polymarket, Kalshi) are the exception to steps 3 and 5: conform to
+`PredictionMarketDataSource`, add the case to `DataSourceType.predictionMarkets`, and use
+`isPredictionMarket` rather than comparing against `.polymarket`. They get a
+`PredictionMarketSearchViewModel` and appear under the "Prediction Markets" tab
+(`PredictionMarketPicker`) in both `AddTickerSheet` and `ChartSettingsSheet`. Kalshi has no
+keyword search, so `KalshiSeriesIndex` ranks the cached series list locally; its
+WebSocket needs a signed API key, so both providers refresh over REST. Kalshi ids are
+`"SERIES/MARKET"` (`KalshiMarketID`) and ride in `pmSeries.tokenID`. `KalshiService`,
+`KalshiSeriesIndex`, `KalshiModels` and `PredictionMarketDataSource` also compile into
+`DegenViewAlertAgent`.
+
 ### Adding a new timeframe
 1. Add case to `TimeRange` enum
 2. Set `binanceInterval`, `dataPointLimit`, `chartTitle`, `dateFormat`

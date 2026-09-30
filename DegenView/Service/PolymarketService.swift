@@ -5,7 +5,7 @@ import Foundation
 ///
 /// A "ticker" here is a CLOB token id for a market's YES outcome, and its price is a
 /// probability in 0…1 rather than a currency amount.
-final class PolymarketService: TickerDataSource {
+final class PolymarketService: PredictionMarketDataSource {
     let type: DataSourceType = .polymarket
 
     /// Market metadata and search.
@@ -136,6 +136,12 @@ final class PolymarketService: TickerDataSource {
         return current
     }
 
+    // MARK: - PredictionMarketDataSource
+
+    func fetchPrices(marketID: String, range: TimeRange, count: Int) async throws -> [KlineData] {
+        try await fetchPrices(tokenID: marketID, range: range, count: count)
+    }
+
     // MARK: - TickerDataSource
 
     func fetchKlines(symbol: String, interval: String, limit: Int) async throws -> [KlineData] {
@@ -177,12 +183,7 @@ final class PolymarketService: TickerDataSource {
     }
 
     static func replacingLastPrice(in data: [KlineData], with price: Double) -> [KlineData] {
-        guard !data.isEmpty, price.isFinite, (0...1).contains(price) else { return data }
-        var result = data
-        result[result.count - 1].closePrice = price
-        result[result.count - 1].highPrice = price
-        result[result.count - 1].lowPrice = price
-        return result
+        PredictionMarketPrice.replacingLastPrice(in: data, with: price)
     }
 
     // MARK: - Market metadata

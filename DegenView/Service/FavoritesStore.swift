@@ -38,7 +38,7 @@ final class FavoritesStore: ObservableObject {
 
         let labels = Self.labels(for: result)
         let displayName: String? = {
-            guard result.source == .polymarket else { return nil }
+            guard result.source.isPredictionMarket else { return nil }
             return result.eventTitle ?? result.question ?? result.symbol
         }()
         let config = TickerConfig(
@@ -95,7 +95,7 @@ final class FavoritesStore: ObservableObject {
     }
 
     private static func labels(for result: TickerSearchResult) -> (name: String, ticker: String) {
-        if result.source == .polymarket {
+        if result.source.isPredictionMarket {
             return (result.eventTitle ?? result.question ?? result.symbol, result.symbol)
         }
 

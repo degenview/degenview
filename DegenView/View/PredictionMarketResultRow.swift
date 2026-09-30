@@ -1,11 +1,11 @@
 import SwiftUI
 
-/// A single Polymarket market in the search list — one chartable bet.
+/// A single prediction market in the search list — one chartable bet.
 ///
 /// Same selection contract as `SearchResultRow` (whole row is the hit target, accent
 /// wash when picked), but leads with the market's own artwork and trails with the YES
 /// probability instead of a USD price.
-struct PolymarketResultRow: View {
+struct PredictionMarketResultRow: View {
     let result: TickerSearchResult
     var isSelected: Bool = false
     var onSelect: () -> Void = {}
@@ -25,7 +25,7 @@ struct PolymarketResultRow: View {
             TickerIconView(
                 symbol: result.symbol,
                 url: result.imageURL,
-                size: UI.polymarketRowImageSize
+                size: UI.predictionMarketRowImageSize
             )
 
             Text(result.symbol)
@@ -50,7 +50,7 @@ struct PolymarketResultRow: View {
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
-        .modifier(PolymarketRowTapModifier(
+        .modifier(PredictionMarketRowTapModifier(
             onSelect: { if isChecked != nil { onToggle?() } else { onSelect() } },
             onCommit: onCommit
         ))
@@ -63,7 +63,7 @@ struct PolymarketResultRow: View {
     }
 }
 
-private struct PolymarketRowTapModifier: ViewModifier {
+private struct PredictionMarketRowTapModifier: ViewModifier {
     let onSelect: () -> Void
     let onCommit: (() -> Void)?
 

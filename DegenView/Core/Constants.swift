@@ -154,6 +154,21 @@ enum Polymarket {
     static let maxTitleLength = 90
 }
 
+// MARK: - Kalshi Constants
+
+enum Kalshi {
+    static let baseURL = "https://external-api.kalshi.com/trade-api/v2"
+    /// Series matched by a query that get their open events fetched — each is one
+    /// request, so this bounds the fan-out.
+    static let maxSearchSeries = 8
+    /// Open events requested per matched series.
+    static let maxEventsPerSeries = 20
+    /// Price-history cache TTL (seconds).
+    static let cacheTTL: TimeInterval = 60
+    /// How long the on-disk series list stays fresh (seconds).
+    static let seriesIndexTTL: TimeInterval = 12 * 3600
+}
+
 // MARK: - Icon Constants
 
 enum Icon {
@@ -316,9 +331,11 @@ enum UI {
     static let windowRestoreMinVisibleWidth: CGFloat = 160
     static let windowRestoreMinVisibleHeight: CGFloat = 80
     /// Sheet frame dimensions for Add Ticker. The width fits the tab bar's natural
-    /// (equal-segment) size with all six tabs; the height fits the tallest static tab
-    /// (CoinMarketCap), and search results scroll within whatever is left.
-    static let addTickerSheetWidth: CGFloat = 760
+    /// (equal-segment) size with all six tabs: six segments of the widest label,
+    /// "Prediction Markets" (~138 pt each, ~828 pt) plus the sheet's 24 pt padding on
+    /// both sides. The height fits the tallest static tab (CoinMarketCap), and search
+    /// results scroll within whatever is left.
+    static let addTickerSheetWidth: CGFloat = 900
     static let addTickerSheetHeight: CGFloat = 560
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
@@ -350,8 +367,8 @@ enum UI {
     }
     /// Suggestion grid columns.
     static let suggestionGridColumns = 5
-    /// Market artwork edge length in a Polymarket search row.
-    static let polymarketRowImageSize: CGFloat = 24
+    /// Market artwork edge length in a prediction-market search row.
+    static let predictionMarketRowImageSize: CGFloat = 24
     /// Saved-view shortcut list on an empty tab.
     static let emptyStateViewListMaxHeight: CGFloat = 200
     static let emptyStateViewListWidth: CGFloat = 280
