@@ -27,6 +27,12 @@ Requires Xcode 16+, macOS 14+.
   trading, alerts) lives in SQLite (`degenview.sqlite`, WAL) through `AppDatabase`, shared
   with the alert agent. Caches stay in `JSONStore<T>`. Schema changes are new
   `registerMigration` entries in `AppDatabase+Schema.swift` — never edit a shipped one
+- **Pine is a feature folder**: everything for the Pine Script engine lives under
+  `DegenView/Pine/` (`Language`, `Runtime`, `Broker`, `Model`, `Editor`, `View`). One type per
+  file still applies; a long type is split into `Type+Concern.swift` extensions (members
+  shared across those files are internal, not `private`). `Pine/Model` and `Model/Script`
+  also compile into the `DegenViewAlertAgent` target — keep them free of compiler and
+  runtime types, and add any new file there to the agent's Sources phase as well
 - **One `ContentViewModel` per tab** — never treat it as app-global state
 - **Caching**: `ChartViewModel.fetchData` caches results keyed by (symbol, interval, limit) in a dictionary
 - **WebSocket**: Only Binance tickers get live streams; connect/disconnect on ticker add/remove

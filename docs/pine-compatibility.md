@@ -47,7 +47,8 @@ canonical future bars are unavailable to scripts.
   `table`, `T[]`, and `array<T>`.
 - v6 boolean rules: booleans are non-nullable and numeric values are not conditions.
 - Market values: `open`, `high`, `low`, `close`, `volume`, `hl2`, `hlc3`, `ohlc4`, `time`,
-  `time_close`, `bar_index`, and `syminfo.mintick` (inferred from price decimals).
+  `time_close` (the bar's open time plus the bar length, learned from consecutive bars),
+  `bar_index`, and `syminfo.mintick` (inferred from price decimals).
   `chart.fg_color`/`chart.bg_color` follow the app's light or dark appearance.
 - `na()`, `nz()`, `int()`/`float()`/`bool()` casts, `math.max/min/abs/round/floor/ceil/sign/
   sqrt/pow/log/exp`, color constants, `color.new`, `color.rgb`, and `str.tostring` with
@@ -159,13 +160,19 @@ lowering pass are planned; the current executable representation is the typed AS
 
 `request.security`, libraries, and maps/matrices are
 intentionally outside this release and produce unsupported or
-unknown-function diagnostics. REST reconciliation reevaluates the visible canonical
+unknown-function diagnostics; a `request.*` call is reported (`PINE9003`) wherever it
+appears, including inside an assignment or argument. Reading a plain identifier that is
+not a variable, series, or builtin raises `PINE4008` at runtime instead of silently
+evaluating to a string; dotted names such as `size.small` or `shape.circle` remain
+enumeration constants. An integer literal too large for an `int` is `PINE2014`. REST reconciliation reevaluates the visible canonical
 series. Binance carries explicit close flags and accepts new-bar transitions; Alpaca bars
 are still reconciled through the existing timeframe aggregator.
 
 ## Conformance and performance
 
-`PineEngineTests` executes the six integration scripts from `PINE.md` over deterministic
+`PineRegressionTests` pins one case per defect fixed while the engine was split into the
+`DegenView/Pine` folder (overflow and range traps, UTF-16 diagnostic offsets, `time_close`,
+month-name matching, named array arguments). `PineEngineTests` executes the six integration scripts from `PINE.md` over deterministic
 OHLCV fixtures and checks history, persistent state, v6 diagnostics, realtime rollback,
 and `varip`. `PineStrategyTests` runs a full volume-breakout strategy verbatim plus
 focused language and broker cases (fills, gaps, commissions, pyramiding, rollback). The
