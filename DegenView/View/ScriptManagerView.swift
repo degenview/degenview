@@ -18,6 +18,16 @@ struct ScriptManagerView: View {
 
             HSplitView {
                 VStack(spacing: 0) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                        TextField("Search name or source", text: $model.query)
+                            .textFieldStyle(.plain)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(8)
+
                     List(selection: $model.selection) {
                         ForEach(model.groups) { group in
                             Section(isExpanded: model.isExpanded(group.id)) {
@@ -35,14 +45,6 @@ struct ScriptManagerView: View {
                     }
                     .listStyle(.sidebar)
                     .frame(maxHeight: .infinity)
-
-                    Divider()
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Search name or source", text: $model.query)
-                            .textFieldStyle(.plain)
-                    }
-                    .padding(8)
                 }
                 .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
 
@@ -50,6 +52,27 @@ struct ScriptManagerView: View {
                     ScriptEditorView(scriptID: id)
                         .id(id)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if model.hasLoaded && model.scripts.isEmpty {
+                    VStack(spacing: 12) {
+                        Text("No scripts yet")
+                            .font(.headline)
+                        Text("Write a Pine Script indicator or strategy and run it on your charts.")
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button("Create Your First Script", systemImage: "plus") { showNewScript = true }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                        HStack(spacing: 16) {
+                            Link(
+                                "Pine Script documentation",
+                                destination: URL(string: "https://www.tradingview.com/pine-script-docs/")!)
+                            Link(
+                                "Community scripts",
+                                destination: URL(string: "https://www.tradingview.com/scripts/")!)
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     Text("Select a script")
                         .foregroundStyle(.secondary)
