@@ -20,6 +20,8 @@ final class ScriptManagerViewModel: ObservableObject {
         let rows: [Row]
     }
     @Published var scripts: [LocalScript] = []
+    /// False until the first fetch lands, so an empty `scripts` isn't mistaken for "no scripts yet".
+    @Published private(set) var hasLoaded = false
     @Published var selection: UUID?
     @Published var query = ""
     @Published var errorMessage: String?
@@ -182,6 +184,7 @@ final class ScriptManagerViewModel: ObservableObject {
     private func refresh(selecting id: UUID? = nil) async {
         do {
             scripts = try await ScriptStore.shared.allScripts()
+            hasLoaded = true
             if let id { selection = id }
             // The file may have been deleted or renamed away outside the app.
             if let current = selection, !scripts.contains(where: { $0.id == current }) { selection = nil }
