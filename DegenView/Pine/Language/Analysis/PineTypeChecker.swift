@@ -49,7 +49,7 @@ struct PineTypeChecker {
 
     static func check(_ statements: [PineStatement]) -> [PineDiagnostic] {
         var checker = PineTypeChecker()
-        checker.reassigned = reassignedNames(in: statements)
+        checker.reassigned = PineStatement.assignedNames(in: statements)
         checker.functions = Set(
             statements.compactMap { statement -> String? in
                 if case .function(let name, _, _, _) = statement { return name }
@@ -58,25 +58,6 @@ struct PineTypeChecker {
         var scope = Scope()
         checker.check(statements, &scope)
         return checker.diagnostics
-    }
-
-    private static func reassignedNames(in statements: [PineStatement]) -> Set<String> {
-        var names = Set<String>()
-        for statement in statements {
-            switch statement {
-            case .assignment(let name, _, _, _): names.insert(name)
-            case .conditional(_, let yes, let no, _):
-                names.formUnion(reassignedNames(in: yes))
-                names.formUnion(reassignedNames(in: no))
-            case .forRange(_, _, _, _, let body, _), .forIn(_, _, _, let body, _), .whileLoop(_, let body, _),
-                .function(_, _, let body, _):
-                names.formUnion(reassignedNames(in: body))
-            case .switchStatement(_, let arms, _):
-                for arm in arms { names.formUnion(reassignedNames(in: arm.body)) }
-            default: break
-            }
-        }
-        return names
     }
 
     // MARK: - Statements

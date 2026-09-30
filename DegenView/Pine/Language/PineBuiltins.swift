@@ -38,6 +38,18 @@ enum PineBuiltins {
         return table
     }()
 
+    /// The value type an `input.*` function declares; anything unlisted is a string.
+    static func inputType(function: String) -> PineValueType {
+        switch function {
+        case "input.int": .int
+        case "input.float": .float
+        case "input.bool": .bool
+        case "input.color": .color
+        case "input.time": .time
+        default: .string
+        }
+    }
+
     /// Pine transparency is 0 (opaque) … 100 (invisible).
     static func withTransparency(_ rgba: UInt32, _ transparency: Double) -> UInt32 {
         (rgba & 0xFFFF_FF00) | UInt32(((100 - min(100, max(0, transparency))) * 2.55).rounded())
