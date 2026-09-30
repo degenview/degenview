@@ -411,6 +411,7 @@
 				A00000000000000000000314 /* Preview Content */,
 				A00000000000000000000315 /* Util */,
 				27720E9AD19F30A5F3240B21 /* Core */,
+				F977F6C522534CE535AB53A4 /* Pine */,
 			);
 			path = DegenView;
 			sourceTree = "<group>";
@@ -430,7 +431,6 @@
 			isa = PBXGroup;
 			children = (
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
-				P10000000000000000000101 /* PineModels.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
@@ -466,11 +466,6 @@
 				BA0000000000000000000101 /* AlertRuntimePersistence.swift */,
 				BA0000000000000000000102 /* AlertRuntimeHost.swift */,
 				BA0000000000000000000103 /* AlertBackgroundService.swift */,
-				P10000000000000000000102 /* PineEngine.swift */,
-				P10000000000000000000103 /* PineRuntime.swift */,
-				P20000000000000000000102 /* PineTimestamp.swift */,
-				P30000000000000000000101 /* PineTypeChecker.swift */,
-				P20000000000000000000101 /* PineBrokerEmulator.swift */,
 				B90000000000000000000102 /* LocalPriceAlertEngine.swift */,
 				B90000000000000000000103 /* FXRateService.swift */,
 				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
@@ -550,9 +545,6 @@
 				C10000000000000000000106 /* LineChartView.swift */,
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
-				D20000000000000000000101 /* PineChartLayer.swift */,
-				P20000000000000000000103 /* PineStrategyReportView.swift */,
-				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
@@ -614,6 +606,78 @@
 				F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */,
 			);
 			path = DegenViewTests;
+			sourceTree = "<group>";
+		};
+		F9D02D91B3FD66FF1D1BD4C8 /* Broker */ = {
+			isa = PBXGroup;
+			children = (
+				P20000000000000000000101 /* PineBrokerEmulator.swift */,
+			);
+			path = Broker;
+			sourceTree = "<group>";
+		};
+		F9BE3990A8A07995985F7C88 /* Analysis */ = {
+			isa = PBXGroup;
+			children = (
+				P30000000000000000000101 /* PineTypeChecker.swift */,
+			);
+			path = Analysis;
+			sourceTree = "<group>";
+		};
+		F9DC387E4AFD200F50F66F2C /* Language */ = {
+			isa = PBXGroup;
+			children = (
+				F9BE3990A8A07995985F7C88 /* Analysis */,
+				P10000000000000000000102 /* PineEngine.swift */,
+			);
+			path = Language;
+			sourceTree = "<group>";
+		};
+		F9676AFED85B0D360C5D07C9 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				P10000000000000000000101 /* PineModels.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		F94A25D628E62FCB1C4E5CFF /* Builtins */ = {
+			isa = PBXGroup;
+			children = (
+				P20000000000000000000102 /* PineTimestamp.swift */,
+			);
+			path = Builtins;
+			sourceTree = "<group>";
+		};
+		F90886AED54C1E45202F0E58 /* Runtime */ = {
+			isa = PBXGroup;
+			children = (
+				F94A25D628E62FCB1C4E5CFF /* Builtins */,
+				P10000000000000000000103 /* PineRuntime.swift */,
+			);
+			path = Runtime;
+			sourceTree = "<group>";
+		};
+		F9B2F03E6391D6473102E21D /* View */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000101 /* PineChartLayer.swift */,
+				D20000000000000000000102 /* PineScriptPaneView.swift */,
+				P20000000000000000000103 /* PineStrategyReportView.swift */,
+			);
+			path = View;
+			sourceTree = "<group>";
+		};
+		F977F6C522534CE535AB53A4 /* Pine */ = {
+			isa = PBXGroup;
+			children = (
+				F9D02D91B3FD66FF1D1BD4C8 /* Broker */,
+				F9DC387E4AFD200F50F66F2C /* Language */,
+				F9676AFED85B0D360C5D07C9 /* Model */,
+				F90886AED54C1E45202F0E58 /* Runtime */,
+				F9B2F03E6391D6473102E21D /* View */,
+			);
+			path = Pine;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
