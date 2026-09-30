@@ -366,6 +366,10 @@
 		F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */; };
 		F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */ = {isa = PBXBuildFile; fileRef = F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */; };
 		F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */; };
+		F25ED63FDE194961A2638C76 /* PineEquityCurveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */; };
+		F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16CDF90684319BAC522DBEA /* PineReportColors.swift */; };
+		F26EA2169CCFCC19ABABAA08 /* PineReportFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11375E00439D240DDF1AB6E /* PineReportFormat.swift */; };
+		F2BF763D52D53F4C49562B63 /* PineReportListSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -651,6 +655,10 @@
 		F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Plots.swift"; sourceTree = "<group>"; };
 		F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Tables.swift"; sourceTree = "<group>"; };
 		F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+ValueRange.swift"; sourceTree = "<group>"; };
+		F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEquityCurveView.swift; sourceTree = "<group>"; };
+		F16CDF90684319BAC522DBEA /* PineReportColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportColors.swift; sourceTree = "<group>"; };
+		F11375E00439D240DDF1AB6E /* PineReportFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportFormat.swift; sourceTree = "<group>"; };
+		F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportListSection.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1101,6 +1109,10 @@
 				F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */,
 				F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */,
 				D20000000000000000000101 /* PineChartLayer.swift */,
+				F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */,
+				F16CDF90684319BAC522DBEA /* PineReportColors.swift */,
+				F11375E00439D240DDF1AB6E /* PineReportFormat.swift */,
+				F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */,
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */,
 				P20000000000000000000103 /* PineStrategyReportView.swift */,
@@ -1582,6 +1594,10 @@
 				F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */,
 				F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */,
 				F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */,
+				F25ED63FDE194961A2638C76 /* PineEquityCurveView.swift in Sources */,
+				F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */,
+				F26EA2169CCFCC19ABABAA08 /* PineReportFormat.swift in Sources */,
+				F2BF763D52D53F4C49562B63 /* PineReportListSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
