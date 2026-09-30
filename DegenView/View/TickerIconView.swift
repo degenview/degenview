@@ -10,13 +10,16 @@ struct TickerIconView: View {
     let symbol: String
     let url: URL?
     var size: CGFloat = Icon.size
+    /// When set, that source's logo is overlaid small on the bottom-right corner.
+    var source: DataSourceType?
 
     @State private var loadedImage: NSImage?
 
-    init(symbol: String, url: URL?, size: CGFloat = Icon.size) {
+    init(symbol: String, url: URL?, size: CGFloat = Icon.size, source: DataSourceType? = nil) {
         self.symbol = symbol
         self.url = url
         self.size = size
+        self.source = source
         // Seed from cache so re-scrolled cells show the image instantly.
         _loadedImage = State(initialValue: url.flatMap { ImageCache.shared.cachedImage(for: $0) })
     }
@@ -40,6 +43,26 @@ struct TickerIconView: View {
             }
             loadedImage = await ImageCache.shared.image(for: url)
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let source {
+                sourceBadge(source)
+            }
+        }
+    }
+
+    // MARK: - Source badge
+
+    /// The source logo sits half-outside the corner, ringed in the window color so it
+    /// reads against any coin artwork.
+    private func sourceBadge(_ source: DataSourceType) -> some View {
+        let badge = (size * 0.55).rounded()
+        return SourceLogoView(source: source, size: badge)
+            .padding(1)
+            .background(
+                RoundedRectangle(cornerRadius: badge * 0.3, style: .continuous)
+                    .fill(Color(nsColor: .windowBackgroundColor))
+            )
+            .offset(x: badge * 0.3, y: badge * 0.3)
     }
 
     // MARK: - Fallback

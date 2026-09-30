@@ -138,16 +138,14 @@ struct ChartCardView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        TickerIconView(symbol: viewModel.baseSymbol, url: iconURL)
+                        TickerIconView(
+                            symbol: viewModel.baseSymbol, url: iconURL, source: viewModel.source)
                         // Market questions are long — keep the header on one line.
                         Text(viewModel.title)
                             .font(.headline)
                             .fontWeight(.bold)
                             .lineLimit(1)
                             .truncationMode(.tail)
-                        Image(systemName: viewModel.source.icon)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
                         Image(systemName: "gearshape.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary.opacity(0.6))
