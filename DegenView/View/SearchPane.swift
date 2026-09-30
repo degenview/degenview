@@ -24,11 +24,14 @@ struct TickerSearchResultList: View {
         List {
             ForEach(Array(sources.enumerated()), id: \.element) { index, source in
                 if let results = searchVM.searchResults[source], !results.isEmpty {
-                    Label(source.displayName, systemImage: source.icon)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .listRowSeparator(.hidden)
-                        .listRowInsets(.init(top: 4, leading: 8, bottom: 2, trailing: 8))
+                    HStack(spacing: 6) {
+                        SourceLogoView(source: source, size: 14)
+                        Text(source.displayName)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init(top: 4, leading: 8, bottom: 2, trailing: 8))
 
                     ForEach(results) { result in
                         SearchResultRow(
@@ -186,8 +189,7 @@ struct SelectedResultBanner: View {
             if let url = result.imageURL {
                 TickerIconView(symbol: result.symbol, url: url)
             } else {
-                Image(systemName: result.source.icon)
-                    .foregroundStyle(.secondary)
+                SourceLogoView(source: result.source)
             }
 
             Text("\(prefix): \(displayLabel)")

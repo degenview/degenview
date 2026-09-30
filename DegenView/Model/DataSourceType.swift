@@ -72,6 +72,21 @@ enum DataSourceType: String, CaseIterable, Codable {
         case .coinMarketCap: return "gauge.with.dots.needle.50percent"
         }
     }
+
+    /// Name of this provider's logo imageset in the app's asset catalog. A plain string
+    /// so the alert agent, which bundles no assets, can still compile this file.
+    var logoAsset: String {
+        switch self {
+        case .binance: return "SourceLogo-binance"
+        case .coinbase: return "SourceLogo-coinbase"
+        case .coingecko: return "SourceLogo-coingecko"
+        case .dexscreener: return "SourceLogo-dexscreener"
+        case .alpaca: return "SourceLogo-alpaca"
+        case .polymarket: return "SourceLogo-polymarket"
+        case .kalshi: return "SourceLogo-kalshi"
+        case .coinMarketCap: return "SourceLogo-coinmarketcap"
+        }
+    }
 }
 
 enum ChartAssetType: String, CaseIterable, Identifiable {

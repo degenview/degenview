@@ -408,9 +408,7 @@ struct ChartSettingsSheet: View {
     /// What this chart currently tracks — shown above both search panes.
     private var currentChartRow: some View {
         HStack(spacing: 12) {
-            Image(systemName: viewModel.source.icon)
-                .font(.title3)
-                .foregroundStyle(Color.accentColor)
+            SourceLogoView(source: viewModel.source, size: 24)
                 .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Current chart")

@@ -45,6 +45,9 @@ Requires Xcode 16+, macOS 14+.
 3. Register in `DataSourceFactory.service(for:)` and `allSources`
 4. Add kline parser init in `KlineData` if API format differs
 5. Update `AddTickerSheet` search to include new source
+6. Add a `SourceLogo-<case>` imageset to `Assets.xcassets` and a `DataSourceType.logoAsset`
+   case; `SourceLogoView` draws it (falls back to the SF Symbol `icon`). Record the logo's
+   origin in `docs/source-logos.md`
 
 Prediction markets (Polymarket, Kalshi) are the exception to steps 3 and 5: conform to
 `PredictionMarketDataSource`, add the case to `DataSourceType.predictionMarkets`, and use

@@ -185,6 +185,7 @@
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
 		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
+		A00000000000000000000F01 /* SourceLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F02 /* SourceLogoView.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
 		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
@@ -569,6 +570,7 @@
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
+		A00000000000000000000F02 /* SourceLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLogoView.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
@@ -942,6 +944,7 @@
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
 				A0000000000000000000011F /* TickerIconView.swift */,
+				A00000000000000000000F02 /* SourceLogoView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
 				A0000000000000000000010D /* EmptyStateView.swift */,
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
@@ -1581,6 +1584,7 @@
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
 				A0000000000000000000001E /* TickerIconView.swift in Sources */,
+				A00000000000000000000F01 /* SourceLogoView.swift in Sources */,
 				A0000000000000000000000A /* ChartCardView.swift in Sources */,
 				A0000000000000000000000B /* AddTickerSheet.swift in Sources */,
 				A0000000000000000000000D /* EmptyStateView.swift in Sources */,
