@@ -481,6 +481,6 @@ struct PineTypeChecker {
     }
 
     private mutating func error(_ code: String, _ message: String, _ range: PineSourceRange) {
-        diagnostics.append(diag(code, .semantic, message, range))
+        diagnostics.append(PineDiagnostic.error(code, .semantic, message, range))
     }
 }

@@ -153,9 +153,9 @@ final class PineRuntimeSession: @unchecked Sendable {
         let start = Date()
         var states: [[String: Bool]] = []
         for (index, bar) in bars.enumerated() {
-            if Task.isCancelled { throw diag("PINE8008", .cancellation, "Evaluation cancelled.", .zero) }
+            if Task.isCancelled { throw PineDiagnostic.error("PINE8008", .cancellation, "Evaluation cancelled.", .zero) }
             if Date().timeIntervalSince(start) > limits.deadline {
-                throw diag("PINE8007", .resource, "Evaluation deadline exceeded.", .zero)
+                throw PineDiagnostic.error("PINE8007", .resource, "Evaluation deadline exceeded.", .zero)
             }
             states.append(
                 try execute(.init(candle: bar, phase: .historical), isLast: index == bars.count - 1))
@@ -300,7 +300,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             case .expression(let expression): last = try eval(expression, &context)
             case .conditional(let condition, let yes, let no, _):
                 guard case .bool(let test) = try eval(condition, &context) else {
-                    throw diag(
+                    throw PineDiagnostic.error(
                         "PINE4001", .runtime,
                         "if condition must be bool; numeric-to-bool coercion is not allowed in v6.",
                         condition.range)
@@ -321,7 +321,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 if let step {
                     let stepValue = try eval(step, &context)
                     guard let size = stepValue.number, size != 0, size.isFinite else {
-                        throw diag("PINE4014", .runtime, "for loop step must be a non-zero number.", range)
+                        throw PineDiagnostic.error("PINE4014", .runtime, "for loop step must be a non-zero number.", range)
                     }
                     stride = abs(size)
                     if case .int = stepValue {} else { integral = false }
@@ -341,7 +341,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 let target = try eval(collection, &context)
                 if target == .na { continue }
                 guard case .ref(.array, let id) = target else {
-                    throw diag("PINE4011", .runtime, "for...in requires an array.", range)
+                    throw PineDiagnostic.error("PINE4011", .runtime, "for...in requires an array.", range)
                 }
                 // Iterate a snapshot: Pine forbids resizing the array inside the loop.
                 for (offset, item) in (working.arrays[id] ?? []).enumerated() {
@@ -356,7 +356,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 while true {
                     try budget()
                     guard case .bool(let test) = try eval(condition, &context) else {
-                        throw diag(
+                        throw PineDiagnostic.error(
                             "PINE4001", .runtime, "while condition must be bool.", condition.range)
                     }
                     if !test { break }
@@ -380,7 +380,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                         }
                     } else {
                         guard case .bool(let test) = value else {
-                            throw diag(
+                            throw PineDiagnostic.error(
                                 "PINE4001", .runtime, "switch arm condition must be bool.", range)
                         }
                         if test {
@@ -439,7 +439,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             case .plus: return v
             case .not:
                 guard case .bool(let b) = v else {
-                    throw diag("PINE4002", .runtime, "not requires bool.", range)
+                    throw PineDiagnostic.error("PINE4002", .runtime, "not requires bool.", range)
                 }
                 return .bool(!b)
             default: return .na
@@ -448,21 +448,21 @@ final class PineRuntimeSession: @unchecked Sendable {
             let lhs = try eval(left, &context)
             if op == .and {
                 guard case .bool(let b) = lhs else {
-                    throw diag("PINE4003", .runtime, "and requires bool operands.", range)
+                    throw PineDiagnostic.error("PINE4003", .runtime, "and requires bool operands.", range)
                 }
                 if !b { return .bool(false) }
                 guard case .bool(let r) = try eval(right, &context) else {
-                    throw diag("PINE4003", .runtime, "and requires bool operands.", range)
+                    throw PineDiagnostic.error("PINE4003", .runtime, "and requires bool operands.", range)
                 }
                 return .bool(r)
             }
             if op == .or {
                 guard case .bool(let b) = lhs else {
-                    throw diag("PINE4004", .runtime, "or requires bool operands.", range)
+                    throw PineDiagnostic.error("PINE4004", .runtime, "or requires bool operands.", range)
                 }
                 if b { return .bool(true) }
                 guard case .bool(let r) = try eval(right, &context) else {
-                    throw diag("PINE4004", .runtime, "or requires bool operands.", range)
+                    throw PineDiagnostic.error("PINE4004", .runtime, "or requires bool operands.", range)
                 }
                 return .bool(r)
             }
@@ -474,20 +474,20 @@ final class PineRuntimeSession: @unchecked Sendable {
             return numeric(lhs, rhs, op)
         case .ternary(let condition, let yes, let no, let range):
             guard case .bool(let b) = try eval(condition, &context) else {
-                throw diag("PINE4005", .runtime, "Ternary condition must be bool.", range)
+                throw PineDiagnostic.error("PINE4005", .runtime, "Ternary condition must be bool.", range)
             }
             return try eval(b ? yes : no, &context)
         case .history(let base, let offset, let range):
             guard case .identifier(let name, _) = base, let n = try eval(offset, &context).number,
                 n.isFinite
             else {
-                throw diag(
+                throw PineDiagnostic.error(
                     "PINE4006", .runtime,
                     "History offset must be a non-negative integer and base must be a series.", range)
             }
             let i = Int(n)
             guard i >= 0 else {
-                throw diag("PINE4006", .runtime, "History offset cannot be negative.", range)
+                throw PineDiagnostic.error("PINE4006", .runtime, "History offset cannot be negative.", range)
             }
             if i == 0 { return try eval(base, &context) }
             let history = working.histories[name] ?? []
@@ -641,7 +641,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         {
             return try visual(name, args, key, &context)
         }
-        throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+        throw PineDiagnostic.error("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
     }
 
     private func invoke(
@@ -649,7 +649,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         _ range: PineSourceRange, _ context: inout Context
     ) throws -> PineRuntimeValue {
         guard context.depth < limits.callDepth else {
-            throw diag("PINE8005", .resource, "Call depth limit exceeded in '\(name)'.", range)
+            throw PineDiagnostic.error("PINE8005", .resource, "Call depth limit exceeded in '\(name)'.", range)
         }
         // Arguments evaluate in the caller's scope, before any local is bound.
         let positional = args.filter { $0.name == nil }
@@ -920,17 +920,17 @@ final class PineRuntimeSession: @unchecked Sendable {
         case "str.substring":
             let characters = Array(subject)
             guard values.count > 1, let begin = intValue(values[1]), begin >= 0, begin <= characters.count else {
-                throw diag("PINE4016", .runtime, "str.substring begin index is out of range.", range)
+                throw PineDiagnostic.error("PINE4016", .runtime, "str.substring begin index is out of range.", range)
             }
             let end = values.count > 2 ? (intValue(values[2]) ?? characters.count) : characters.count
             guard end >= begin, end <= characters.count else {
-                throw diag("PINE4016", .runtime, "str.substring end index is out of range.", range)
+                throw PineDiagnostic.error("PINE4016", .runtime, "str.substring end index is out of range.", range)
             }
             return .string(String(characters[begin..<end]))
         case "str.tonumber":
             return Double(subject.trimmingCharacters(in: .whitespaces)).map(PineRuntimeValue.float) ?? .na
         case "str.format": return .string(formatTemplate(subject, Array(values.dropFirst())))
-        default: throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+        default: throw PineDiagnostic.error("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
         }
     }
 
@@ -1043,7 +1043,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         _ name: String, _ args: [PineArgument], _ range: PineSourceRange, _ context: inout Context
     ) throws -> PineRuntimeValue {
         guard isStrategy else {
-            throw diag("PINE4015", .runtime, "\(name) is only available in strategy() scripts.", range)
+            throw PineDiagnostic.error("PINE4015", .runtime, "\(name) is only available in strategy() scripts.", range)
         }
         func positive(_ value: PineRuntimeValue?) -> Double? {
             guard let n = value?.number, n.isFinite, n > 0 else { return nil }
@@ -1073,7 +1073,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                     "trail_price", "trail_points", "trail_offset",
                 ], &context)
             if b["trail_price"]?.number != nil || b["trail_points"]?.number != nil {
-                throw diag(
+                throw PineDiagnostic.error(
                     "PINE9005", .unsupported, "strategy.exit trailing stops are not supported yet.", range)
             }
             guard let id = textValue(b["id"]) else { return .void }
@@ -1099,7 +1099,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         default:
             // `strategy.risk.*` limits are accepted and ignored.
             if !name.hasPrefix("strategy.risk.") {
-                throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+                throw PineDiagnostic.error("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
             }
         }
         return .void
@@ -1235,11 +1235,11 @@ final class PineRuntimeSession: @unchecked Sendable {
         }
         let b = try bind(args, ["id", "index", "value"], &context)
         guard case .ref(.array, let id)? = b["id"], var items = working.arrays[id] else {
-            throw diag("PINE4011", .runtime, "\(name) requires an array; got na.", range)
+            throw PineDiagnostic.error("PINE4011", .runtime, "\(name) requires an array; got na.", range)
         }
         func index(_ key: String, allowEnd: Bool = false) throws -> Int {
             guard let i = intValue(b[key]), i >= 0, i < items.count + (allowEnd ? 1 : 0) else {
-                throw diag(
+                throw PineDiagnostic.error(
                     "PINE4010", .runtime,
                     "\(name) index \(b[key]?.number.map { String(Int($0)) } ?? "na") is out of bounds (size \(items.count)).",
                     range)
@@ -1289,7 +1289,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             result = .ref(.array, copy)
         case "array.concat":
             guard case .ref(.array, let otherID)? = b["index"], let other = working.arrays[otherID] else {
-                throw diag("PINE4011", .runtime, "array.concat requires two arrays.", range)
+                throw PineDiagnostic.error("PINE4011", .runtime, "array.concat requires two arrays.", range)
             }
             items += other
             result = .ref(.array, id)
@@ -1297,7 +1297,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             let from = try index("index", allowEnd: true)
             let to = intValue(b["value"]) ?? items.count
             guard to >= from, to <= items.count else {
-                throw diag("PINE4010", .runtime, "array.slice end index \(to) is out of bounds.", range)
+                throw PineDiagnostic.error("PINE4010", .runtime, "array.slice end index \(to) is out of bounds.", range)
             }
             let slice = allocate()
             working.arrays[slice] = Array(items[from..<to])
@@ -1309,7 +1309,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         case "array.max": result = numbers.max().map(PineRuntimeValue.float) ?? .na
         case "array.min": result = numbers.min().map(PineRuntimeValue.float) ?? .na
         default:
-            throw diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+            throw PineDiagnostic.error("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
         }
         working.arrays[id] = items
         return result
@@ -1404,7 +1404,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             guard let column = intValue(b["column"]), let row = intValue(b["row"]),
                 (0..<table.columns).contains(column), (0..<table.rows).contains(row)
             else {
-                throw diag(
+                throw PineDiagnostic.error(
                     "PINE4013", .runtime,
                     "table.cell position is outside the table's \(table.columns)×\(table.rows) grid.", range)
             }
@@ -1431,7 +1431,7 @@ final class PineRuntimeSession: @unchecked Sendable {
         let target = values.first ?? .na
         let a = values.count > 1 ? values[1] : .na
         let b = values.count > 2 ? values[2] : .na
-        let unsupported = diag("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
+        let unsupported = PineDiagnostic.error("PINE4007", .runtime, "Unknown or unsupported function '\(name)'.", range)
         let member = String(name.split(separator: ".", maxSplits: 1).last ?? "")
 
         if name.hasPrefix("line.") {
@@ -1530,7 +1530,7 @@ final class PineRuntimeSession: @unchecked Sendable {
 
     private func requireBarIndex(_ xloc: PineRuntimeValue?, _ range: PineSourceRange) throws {
         if textValue(xloc) == "xloc.bar_time" {
-            throw diag("PINE9004", .unsupported, "xloc.bar_time drawings are not supported yet.", range)
+            throw PineDiagnostic.error("PINE9004", .unsupported, "xloc.bar_time drawings are not supported yet.", range)
         }
     }
 
@@ -1815,7 +1815,7 @@ final class PineRuntimeSession: @unchecked Sendable {
     private func budget() throws {
         working.instructions += 1
         if working.instructions > limits.instructionsPerBar {
-            throw diag("PINE8004", .resource, "Per-bar instruction limit exceeded.", .zero)
+            throw PineDiagnostic.error("PINE8004", .resource, "Per-bar instruction limit exceeded.", .zero)
         }
     }
 }

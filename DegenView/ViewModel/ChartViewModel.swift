@@ -582,7 +582,7 @@ final class ChartViewModel: ObservableObject {
                     return (
                         compiled, nil,
                         error as? PineDiagnostic
-                            ?? diag("PINE4999", .runtime, error.localizedDescription, .zero)
+                            ?? PineDiagnostic.error("PINE4999", .runtime, error.localizedDescription, .zero)
                     )
                 }
             }.value
