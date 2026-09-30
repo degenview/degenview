@@ -611,6 +611,11 @@ struct ChartSettingsSheet: View {
                 }.buttonStyle(.borderedProminent)
             }
 
+            if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
+                PineStrategyReportView(
+                    report: viewModel.pineOutput.strategy, alerts: viewModel.pineOutput.alerts)
+            }
+
             if !viewModel.pineDiagnostics.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
@@ -644,7 +649,12 @@ struct ChartSettingsSheet: View {
 
             if let source = viewModel.pineConfiguration?.appliedSource {
                 let schema = PineCompiler.compile(source: source).inputSchema
-                ForEach(schema.inputs) { input in pineInput(input) }
+                ForEach(Array(pineInputGroups(schema).enumerated()), id: \.offset) { _, group in
+                    if let title = group.title {
+                        Text(title).font(.caption.weight(.semibold)).padding(.top, 4)
+                    }
+                    ForEach(group.inputs) { input in pineInput(input) }
+                }
             }
         }.padding(16)
     }
@@ -704,6 +714,19 @@ struct ChartSettingsSheet: View {
         }
     }
 
+    /// Inputs sectioned by their `group`, in the order each group first appears.
+    private func pineInputGroups(_ schema: PineInputSchema) -> [(title: String?, inputs: [PineInputDefinition])] {
+        var groups: [(title: String?, inputs: [PineInputDefinition])] = []
+        for input in schema.inputs {
+            if let index = groups.firstIndex(where: { $0.title == input.group }) {
+                groups[index].inputs.append(input)
+            } else {
+                groups.append((input.group, [input]))
+            }
+        }
+        return groups
+    }
+
     @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
         let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
         switch (input.type, current) {
@@ -716,6 +739,16 @@ struct ChartSettingsSheet: View {
                         viewModel.setPineInput(.bool($0), id: input.id)
                         onStyleChanged()
                     }))
+        case (.time, .int(let value)):
+            DatePicker(
+                input.title ?? input.id,
+                selection: Binding(
+                    get: { Date(timeIntervalSince1970: Double(value) / 1000) },
+                    set: {
+                        viewModel.setPineInput(.int(Int($0.timeIntervalSince1970 * 1000)), id: input.id)
+                        onStyleChanged()
+                    }),
+                displayedComponents: [.date, .hourAndMinute])
         case (.int, .int(let value)):
             Stepper(
                 "\(input.title ?? input.id): \(value)",
@@ -724,7 +757,8 @@ struct ChartSettingsSheet: View {
                     set: {
                         viewModel.setPineInput(.int($0), id: input.id)
                         onStyleChanged()
-                    }), in: Int(input.minValue ?? 1)...Int(input.maxValue ?? 10_000),
+                    }),
+                in: Int(input.minValue ?? Double(min(value, 1)))...Int(input.maxValue ?? Double(max(value, 10_000))),
                 step: Int(input.step ?? 1))
         case (.float, .float(let value)):
             HStack {
@@ -872,25 +906,6 @@ struct ChartSettingsSheet: View {
         default:
             "Shows \(decimalPlacesMode.rawValue) decimal place\(decimalPlacesMode.rawValue == "1" ? "" : "s") on the Y-axis."
         }
-    }
-}
-
-private extension Color {
-    init(pineRGBA value: UInt32) {
-        self.init(
-            .sRGB,
-            red: Double((value >> 24) & 255) / 255,
-            green: Double((value >> 16) & 255) / 255,
-            blue: Double((value >> 8) & 255) / 255,
-            opacity: Double(value & 255) / 255)
-    }
-
-    var pineRGBA: UInt32? {
-        guard let color = NSColor(self).usingColorSpace(.sRGB) else { return nil }
-        return UInt32((color.redComponent * 255).rounded()) << 24
-            | UInt32((color.greenComponent * 255).rounded()) << 16
-            | UInt32((color.blueComponent * 255).rounded()) << 8
-            | UInt32((color.alphaComponent * 255).rounded())
     }
 }
 

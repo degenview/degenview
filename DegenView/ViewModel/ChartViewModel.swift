@@ -218,8 +218,18 @@ final class ChartViewModel: ObservableObject {
     @Published private(set) var pineStatus = "No script applied"
     /// Resolves `chart.fg_color` / `chart.bg_color`; set by the card from its color scheme.
     private(set) var pineTheme: PineChartTheme = .dark
-    private var pineTask: Task<Void, Never>?
+    /// Feeds the chart's Pine host, one operation at a time and in order.
+    private var pineFeed: AsyncStream<PineFeedOperation>.Continuation?
+    private var pineFeedTask: Task<Void, Never>?
     private var pineGeneration = 0
+    /// The dataset the Pine host currently holds. Live updates are fed only while it matches the
+    /// chart's requested symbol and timeframe, so a tick for a new timeframe cannot land on old bars.
+    private var pineDataset: PineDatasetKey?
+    /// The timeframe most recently requested from `fetchData`.
+    private var requestedRange: TimeRange?
+    /// Called on the main actor with alerts a script raised on a live bar. Historical calculation and
+    /// loading never call it.
+    var pineAlertHandler: (([PineAlertEvent], PineBarID?) -> Void)?
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -319,7 +329,10 @@ final class ChartViewModel: ObservableObject {
     }
 
     func applyReplayTimestamp(_ timestamp: Date?) {
+        let changed = replayTimestamp != timestamp
         replayTimestamp = timestamp
+        // Replay recalculates as pure history; leaving it goes back to the live feed.
+        if changed, pineConfiguration?.appliedSource?.isEmpty == false { reevaluatePine() }
     }
 
     func applyReplaySelectionTimestamp(_ timestamp: Date?) {
@@ -555,8 +568,16 @@ final class ChartViewModel: ObservableObject {
         reevaluatePine()
     }
 
+    /// The dataset a fetch for `range` fills.
+    private func pineDataset(for range: TimeRange) -> PineDatasetKey {
+        PineDatasetKey(symbolKey: "\(source.rawValue):\(ticker)", timeframe: range.rawValue)
+    }
+
+    /// Recalculates the applied script from scratch over the current bars: on a config, script, input,
+    /// theme, symbol or timeframe change, or when the feed can no longer be reconciled. A fresh host
+    /// means no state survives from the previous program or dataset.
     func reevaluatePine(compiled supplied: PineCompiledProgram? = nil) {
-        pineTask?.cancel()
+        stopPineFeed()
         pineGeneration += 1
         let generation = pineGeneration
         guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
@@ -564,36 +585,100 @@ final class ChartViewModel: ObservableObject {
             return
         }
         let bars = replayKlines
+        let live = replayTimestamp == nil
+        let dataset = pineDataset(for: requestedRange ?? .oneDay)
         let inputs = config.inputs
         let theme = pineTheme
-        pineTask = Task { [weak self] in
-            let outcome = await Task.detached(priority: .userInitiated) {
-                () -> (PineCompiledProgram, PineRuntimeResult?, PineDiagnostic?) in
-                let compiled = supplied ?? PineCompiler.compile(source: source)
-                guard compiled.isValid else { return (compiled, nil, nil) }
-                do {
-                    let session = PineRuntimeSession(program: compiled, inputs: inputs, theme: theme)
-                    return (compiled, try session.evaluate(bars: bars), nil)
-                } catch {
-                    return (
-                        compiled, nil,
-                        error as? PineDiagnostic
-                            ?? diag("PINE4999", .runtime, error.localizedDescription, .zero)
-                    )
+        let symbol = PineSymbolInfo(
+            ticker: ticker, tickerID: dataset.symbolKey,
+            type: self.source == .alpaca ? "stock" : self.source == .polymarket ? "prediction" : "crypto")
+        let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
+        pineFeed = feed
+        pineDataset = dataset
+        pineFeedTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var compiled = supplied
+            var host: PineExecutionHost?
+            for await operation in operations {
+                if Task.isCancelled { return }
+                var outcome: PineExecutionOutcome
+                switch operation {
+                case .rebuild:
+                    let program = compiled ?? PineCompiler.compile(source: source)
+                    compiled = program
+                    guard program.isValid else {
+                        await self?.applyPine(program: program, outcome: nil, generation: generation)
+                        host = nil
+                        continue
+                    }
+                    let fresh = PineExecutionHost(
+                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol)
+                    host = fresh
+                    outcome = await fresh.rebuild(bars: bars, live: live)
+                case .ingest(let update):
+                    guard let host else { continue }
+                    outcome = await host.ingest(update)
+                case .sync(let snapshot):
+                    guard let host else { continue }
+                    outcome = await host.sync(snapshot: snapshot)
                 }
-            }.value
-            guard let self, self.pineGeneration == generation, !Task.isCancelled else { return }
-            if let result = outcome.1 {
-                self.pineOutput = result.output
-                self.pineDiagnostics = outcome.0.diagnostics + result.diagnostics
-                self.pineStatus = "Applied \(outcome.0.declaration.title) · \(bars.count) bars"
-            } else if let runtime = outcome.2 {
-                self.pineDiagnostics = [runtime]
-                self.pineStatus = "Runtime failed — last valid output remains active"
-            } else {
-                self.pineDiagnostics = outcome.0.diagnostics
-                self.pineStatus = "Compile failed"
+                guard let program = compiled else { continue }
+                await self?.applyPine(program: program, outcome: outcome, generation: generation)
             }
+        }
+        feed.yield(.rebuild)
+    }
+
+    private func stopPineFeed() {
+        pineFeed?.finish()
+        pineFeedTask?.cancel()
+        pineFeed = nil
+        pineFeedTask = nil
+    }
+
+    /// Whether live updates may reach the Pine host right now.
+    private var pineAcceptsLiveUpdates: Bool {
+        guard pineFeed != nil, replayTimestamp == nil, let requestedRange else { return false }
+        return pineDataset == pineDataset(for: requestedRange)
+    }
+
+    /// Feeds a live candle observation into the applied script's execution pipeline.
+    private func feedPine(_ bar: KlineData, origin: PineMarketUpdate.Origin) {
+        guard pineAcceptsLiveUpdates else { return }
+        pineFeed?.yield(.ingest(PineMarketUpdate(bar: bar, origin: origin)))
+    }
+
+    /// After a fetch: reconcile a running script with the refreshed bars, or rebuild when the symbol,
+    /// timeframe or script changed under it.
+    private func syncPine(range: TimeRange) {
+        guard let source = pineConfiguration?.appliedSource, !source.isEmpty else { return }
+        guard replayTimestamp == nil, pineFeed != nil, pineDataset == pineDataset(for: range) else {
+            reevaluatePine()
+            return
+        }
+        pineFeed?.yield(.sync(klineData))
+    }
+
+    private func applyPine(program: PineCompiledProgram, outcome: PineExecutionOutcome?, generation: Int) {
+        guard pineGeneration == generation else { return }
+        guard let outcome else {
+            pineDiagnostics = program.diagnostics
+            pineStatus = "Compile failed"
+            return
+        }
+        switch outcome {
+        case .updated(let update):
+            pineOutput = update.output
+            pineDiagnostics = program.diagnostics
+            let live = update.executions.contains { $0.isRealtime }
+            pineStatus = "Applied \(program.declaration.title) · \(update.output.barCount) bars\(live ? " · live" : "")"
+            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID) }
+        case .unchanged:
+            break
+        case .needsRebuild:
+            reevaluatePine(compiled: program)
+        case .failed(let diagnostic):
+            pineDiagnostics = [diagnostic]
+            pineStatus = "Runtime failed — last valid output remains active"
         }
     }
 
@@ -1035,6 +1120,10 @@ final class ChartViewModel: ObservableObject {
         self.pmSeriesData = [:]
         klineData = []
         currentPrice = nil
+        // A new instrument shares no series with the old one; the next fetch rebuilds the script.
+        stopPineFeed()
+        pineDataset = nil
+        pineOutput = .empty
         api = DataSourceFactory.shared.service(for: source)
         trendLines = drawingStore.lines(ticker: ticker, source: source)
     }
@@ -1070,7 +1159,9 @@ final class ChartViewModel: ObservableObject {
 
     /// Merge a WebSocket kline tick into the current dataset.
     /// - Updates the in-progress (rightmost) candle in-place when the openTime matches.
-    /// - Does NOT append new candles; REST refresh picks those up.
+    /// - Appends a candle that opens after the last one; the REST refresh later reconciles the buffer.
+    /// - Forwards the raw tick to the Pine pipeline, which owns bar identity and the close flag: the
+    ///   REST refresh replaces `klineData`, so `isClosed` cannot be read back from it.
     func applyKlineUpdate(_ kline: KlineData) {
         guard let last = klineData.last else { return }
 
@@ -1090,7 +1181,7 @@ final class ChartViewModel: ObservableObject {
         if currentPrice != kline.closePrice {
             currentPrice = kline.closePrice
         }
-        reevaluatePine()
+        feedPine(kline, origin: .stream)
     }
 
     /// Fold a completed lower-resolution live bar into the current displayed candle.
@@ -1109,6 +1200,7 @@ final class ChartViewModel: ObservableObject {
         klineData[index].volume += bar.volume
         klineData[index].quoteVolume += bar.quoteVolume
         currentPrice = bar.closePrice
+        feedPine(klineData[index], origin: .stream)
     }
 
     /// Show a different slice of the buffer without going back to the network.
@@ -1159,6 +1251,7 @@ final class ChartViewModel: ObservableObject {
         }
 
         visibleCount = Swift.max(1, count)
+        requestedRange = range
         let count = fetchCount(for: count)
 
         fetchTask?.cancel()
@@ -1257,7 +1350,7 @@ final class ChartViewModel: ObservableObject {
 
         if fetchGeneration == generation {
             fetchTask = nil
-            reevaluatePine()
+            syncPine(range: range)
         }
     }
 

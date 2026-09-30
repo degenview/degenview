@@ -8,7 +8,6 @@ DegenView/
 ├── ContentView.swift                  # Per-tab dashboard, toolbar, layouts, sidebars
 ├── Model/
 │   ├── KlineData.swift                # Shared OHLCV representation and API parsers
-│   ├── PineModels.swift               # Pine diagnostics, inputs, persistence, visual output
 │   ├── Indicators.swift               # RSI, EMA, Bollinger, and Supertrend calculations
 │   ├── TimeRange.swift                # Timeframes, source intervals, visible limits
 │   ├── DataSourceType.swift           # Sources, CMC chart identity, persisted card config
@@ -20,6 +19,7 @@ DegenView/
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
+│   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
 │   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
 │   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
@@ -33,8 +33,6 @@ DegenView/
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
-│   ├── PineChartLayer.swift           # Pine script visuals drawn into a ChartPlot
-│   ├── PineScriptPaneView.swift       # Separate pane for overlay=false scripts
 │   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
@@ -47,10 +45,27 @@ DegenView/
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
 │   └── AppSettingsView.swift          # Theme, provider credentials, notifications
+├── Pine/                              # Pine Script feature: language, runtime, broker, editor, views
+│   ├── Language/
+│   │   ├── Lexer/                     # PineLexer (+Tokens), PineSourceLine, tokens
+│   │   ├── AST/                       # Expressions, statements, typed operators, traversal helpers
+│   │   ├── Parser/                    # PineParser (+Statements, +Declarations, +Expressions)
+│   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs)
+│   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
+│   │   └── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
+│   ├── Runtime/
+│   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
+│   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
+│   │   ├── PineExecutionHost.swift    # Actor around one controller: serialized rebuild / ingest / sync
+│   │   ├── PineExecutionController.swift # Aggregator + scheduler + session for one script; history, ticks, REST reconcile
+│   │   ├── PineCandleAggregator.swift # Bar lifecycle: identity, dedupe, close, gap / correction detection
+│   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
+│   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
+│   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
+│   ├── Editor/                        # Script editor text view, highlighter, word ranges, diagnostic mapping
+│   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
-    ├── PineEngine.swift               # Ranged lexer, AST parser, semantic compiler
-    ├── PineRuntime.swift              # Sandboxed bar VM, rollback, TA and visual builtins
     ├── BinanceWebSocketService.swift  # Binance live klines
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata
     ├── DEXScreenerService.swift       # Pair discovery and metadata
@@ -132,10 +147,23 @@ DegenView/
     and caches the result as a projection. Switching back to an already-computed currency
     reuses its cached projection instead of re-converting or re-fetching rates.
 11. Each market `ChartViewModel` owns an optional Pine configuration. Compilation and
-    evaluation run in a generation-checked detached task; the runtime receives only an
-    immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
+    execution run behind a `PineExecutionHost`, fed in order through an `AsyncStream` of
+    `PineFeedOperation`s (rebuild, live candle, REST snapshot) and applied only if its
+    generation is still current. A rebuild replays history once; afterwards each WebSocket
+    tick, live bar, or REST refresh becomes an execution event, so realtime bars roll back and
+    commit like TradingView's (see `pine-compatibility.md`, Execution model). The runtime
+    receives only an immutable OHLCV/replay prefix and emits renderer-neutral visuals. Draft source is
     persisted separately from last-valid applied source, so invalid edits do not remove
-    the active result. Pine outputs are never shared between tabs or cards.
+    the active result. Pine outputs are never shared between tabs or cards. A `strategy()`
+    script's broker emulator is a value inside the runtime's per-bar state, so realtime
+    rollback restores its orders, positions, and trades with everything else; its report
+    and any `alert()` events ride along in `PineVisualOutput`.
+    The pipeline is `PineLexer` → `PineParser` → `PineCompiler` (constant folding, inputs,
+    `PineStructureValidator`, `PineTypeChecker`) → `PineRuntimeSession`. The session's call
+    router maps each builtin name or namespace to one handler in a per-family extension;
+    the pure parts (`PineMath`, `PineStrings`, `PineTA`, `PineOperators`…) hold no session
+    state. `Pine/Model` and `Model/Script` must stay free of compiler/runtime types: the
+    alert agent target compiles them.
 12. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a
     stale range response cannot replace a newer selection. CMC cards are excluded from

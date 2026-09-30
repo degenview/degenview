@@ -1,0 +1,14 @@
+import Foundation
+
+/// Drawing objects anchor x coordinates to absolute `bar_index` values.
+struct PineLineOutput: Sendable, Identifiable, Equatable {
+    let id: Int
+    var x1: Int
+    var y1: Double
+    var x2: Int
+    var y2: Double
+    var color: UInt32
+    var width: Int
+    var style: PineLineStyle
+    var extend: PineLineExtend
+}

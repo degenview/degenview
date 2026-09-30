@@ -393,7 +393,7 @@ final class PineEngineTests: XCTestCase {
                 """)
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let types = program.statements.compactMap { statement -> PineValueType? in
-            if case .declaration(_, let type, _, _, _) = statement { return type }
+            if case .declaration(_, let annotation, _, _, _) = statement { return annotation.type }
             return nil
         }
         XCTAssertEqual(types, [.line, .label, .table, .array, .array, .array])
@@ -506,14 +506,16 @@ final class PineEngineTests: XCTestCase {
         XCTAssertEqual(output.lines.first?.color, 0xF236_45FF)
         XCTAssertEqual(output.lines.first?.width, 2)
         XCTAssertEqual(output.labels.first?.text, "bar 2")
-        XCTAssertEqual(output.labels.first?.style, "label.style_label_up")
+        XCTAssertEqual(output.labels.first?.style, .labelUp)
         XCTAssertEqual(output.boxes.first?.right, 2)
         XCTAssertNil(output.boxes.first?.borderColor)
-        XCTAssertEqual(output.tables.first?.cells, [
-            PineTableCell(
-                column: 1, row: 0, text: "done", textColor: 0xFFFF_FFFF, backgroundColor: nil,
-                textSize: "size.small")
-        ])
+        XCTAssertEqual(
+            output.tables.first?.cells,
+            [
+                PineTableCell(
+                    column: 1, row: 0, text: "done", textColor: 0xFFFF_FFFF, backgroundColor: nil,
+                    textSize: .small)
+            ])
         XCTAssertEqual(output.fills.count, 1)
         XCTAssertEqual(output.fills[0].colors, [0xF236_45FF, 0x4CAF_50FF, 0x4CAF_50FF])
         XCTAssertEqual(output.fills[0].plotA, output.plots[0].id)
@@ -543,7 +545,7 @@ final class PineEngineTests: XCTestCase {
 
         XCTAssertEqual(output.lines.count, 1)
         XCTAssertEqual(output.labels.count, 1)
-        XCTAssertEqual(output.labels.first?.style, "label.style_label_up")
+        XCTAssertEqual(output.labels.first?.style, .labelUp)
         XCTAssertTrue(output.labels.first?.text.hasPrefix("Range: ") == true, "\(output.labels)")
         XCTAssertEqual(output.boxes.count, 16)
         // Breakout recolors the zone with the bullish input color.
@@ -562,228 +564,228 @@ final class PineEngineTests: XCTestCase {
 extension PineEngineTests {
     // Verbatim third-party script, kept with its license header.
     static let stepRangeBreakoutSource = #"""
-// This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
-// https://creativecommons.org/licenses/by-nc-sa/4.0/
-// © BigBeluga
+        // This work is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+        // https://creativecommons.org/licenses/by-nc-sa/4.0/
+        // © BigBeluga
 
-//@version=6
-indicator("Step Range Breakout & Trailing Stop [BigBeluga]", overlay=true, precision=2, max_lines_count=500, max_boxes_count=500)
+        //@version=6
+        indicator("Step Range Breakout & Trailing Stop [BigBeluga]", overlay=true, precision=2, max_lines_count=500, max_boxes_count=500)
 
-// ＩＮＰＵＴＳ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
-len    = input.int(20, "Structure Length", minval=1, tooltip="Lookback period to calculate the highest high and lowest low for structural boundaries.")
-len1   = input.int(5, "Consolidation Bars / Length", minval=1, tooltip="Number of consecutive bars the range average must remain unchanged to confirm a valid consolidation zone.")
+        // ＩＮＰＵＴＳ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+        len    = input.int(20, "Structure Length", minval=1, tooltip="Lookback period to calculate the highest high and lowest low for structural boundaries.")
+        len1   = input.int(5, "Consolidation Bars / Length", minval=1, tooltip="Number of consecutive bars the range average must remain unchanged to confirm a valid consolidation zone.")
 
-// Range Display Mode Input
-dspMd  = input.string("Price", "Range Display Format", options=["Price", "Ticks", "Both"], group="Display Settings", tooltip="Choose whether to show the range value in Price, Ticks/Pips, or Both.")
+        // Range Display Mode Input
+        dspMd  = input.string("Price", "Range Display Format", options=["Price", "Ticks", "Both"], group="Display Settings", tooltip="Choose whether to show the range value in Price, Ticks/Pips, or Both.")
 
-aLen   = input.int(14, "Trailing Stop ATR Length", minval=1, tooltip="Average True Range (ATR) length used for calculating the trailing stop distance.")
-aMul   = input.float(3.0, "Trailing Stop Multiplier", minval=0.1, step=0.1, tooltip="Multiplier applied to the ATR to set how far the trailing stop trails behind the price.")
+        aLen   = input.int(14, "Trailing Stop ATR Length", minval=1, tooltip="Average True Range (ATR) length used for calculating the trailing stop distance.")
+        aMul   = input.float(3.0, "Trailing Stop Multiplier", minval=0.1, step=0.1, tooltip="Multiplier applied to the ATR to set how far the trailing stop trails behind the price.")
 
-wLen   = input.int(100, "Win Rate Lookback Trades", minval=1, tooltip="Number of recent closed trades to calculate the win rate percentage.")
+        wLen   = input.int(100, "Win Rate Lookback Trades", minval=1, tooltip="Number of recent closed trades to calculate the win rate percentage.")
 
-// Custom Color Inputs
-cBul   = input.color(color.rgb(10, 167, 151), "Bullish Color", group="Color Settings", tooltip="Color used for bullish breakouts, fills, and trailing stops.")
-cBar   = input.color(color.red, "Bearish Color", group="Color Settings", tooltip="Color used for bearish breakouts, fills, and trailing stops.")
-cMid   = input.color(color.rgb(190, 193, 204), "Mid Line Color", group="Color Settings", tooltip="Color used for the center line of the range.")
-// }
+        // Custom Color Inputs
+        cBul   = input.color(color.rgb(10, 167, 151), "Bullish Color", group="Color Settings", tooltip="Color used for bullish breakouts, fills, and trailing stops.")
+        cBar   = input.color(color.red, "Bearish Color", group="Color Settings", tooltip="Color used for bearish breakouts, fills, and trailing stops.")
+        cMid   = input.color(color.rgb(190, 193, 204), "Mid Line Color", group="Color Settings", tooltip="Color used for the center line of the range.")
+        // }
 
-// ＣＡＬＣＵＬＡＴＩＯＮＳ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
-hi     = ta.highest(high, len)
-lo     = ta.lowest(low, len)
-rAvg   = (hi + lo) / 2
-
-
-// Check if the range average remains completely unchanged over the specified length bars
-stbl   = ta.change(rAvg, len1) == 0
-
-// Helper function to format the range text based on settings
-f_txt(float pUp, float pLo) =>
-    float pDif = pUp - pLo
-    float tDif = pDif / syminfo.mintick
-    string txt = ""
-    if dspMd == "Price"
-        txt := "Range: " + str.tostring(pDif, "#.##")
-    else if dspMd == "Ticks"
-        txt := "Range: " + str.tostring(tDif, "#.##") + " Ticks"
-    else
-        txt := "Range: " + str.tostring(pDif, "#.##") + " (" + str.tostring(tDif, "#.##") + " Ticks)"
-    txt
-
-// State variables
-var float mLVal = na
-var float uLVal = na
-var float lLVal = na
-var float tStop = na
-var string stat = "SEARCHING" // "SEARCHING", "ZONE_ACTIVE", "TRAILING"
-var bool isBul  = true
-
-// Line and Label references for dynamic drawing
-var line mLin   = na
-var label rLab  = na
-var int zBar    = na
-
-// Box array for current active range gradient fill (historical boxes are preserved)
-var box[] aBox  = array.new_box(0)
-int nSli        = 16
-
-cAtr   = ta.atr(aLen)
-bool jstTr      = false
-
-// Dashboard tracking variables
-var string lDir = "None"
-var float lPrc  = na
-var float eCls  = na
-var int[] trRes = array.new_int(0)
-
-// State Machine Logic
-if stat == "SEARCHING"
-    if stbl
-        mLVal := rAvg
-        uLVal := hi
-        lLVal := lo
-        zBar  := bar_index - len1
-
-        // Create permanent historical lines for the new zone using user input color
-        mLin  := line.new(zBar, mLVal, bar_index, mLVal, width=1, color = cMid)
-
-        // Create range label positioned at the horizontal middle of the range length
-        int midBar = math.round(zBar + (bar_index - zBar) / 2.0)
-        rLab  := label.new(midBar, uLVal, text=f_txt(uLVal, lLVal), color=color.new(cMid, 100), textcolor=chart.fg_color, style=label.style_label_down, size=size.small)
-
-        // Initialize new active range boxes without deleting historical past boxes
-        aBox  := array.new_box(0)
-        sSiz  = (uLVal - lLVal) / nSli
-
-        for i = 0 to nSli - 1
-            bBot = lLVal + (i * sSiz)
-            bTop = lLVal + ((i + 1) * sSiz)
-
-            // Calculate gradient transparency for active consolidation state using neutral mid color
-            dCtr = math.abs(i - (nSli - 1) / 2.0)
-            mDst = (nSli - 1) / 2.0
-            trns = math.round(110 - (90 - 50) * (dCtr / mDst))
+        // ＣＡＬＣＵＬＡＴＩＯＮＳ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+        hi     = ta.highest(high, len)
+        lo     = ta.lowest(low, len)
+        rAvg   = (hi + lo) / 2
 
 
-            b = box.new(zBar, bTop, bar_index, bBot, border_color=na, bgcolor=color.new(cMid, int(trns)))
-            array.push(aBox, b)
+        // Check if the range average remains completely unchanged over the specified length bars
+        stbl   = ta.change(rAvg, len1) == 0
 
-        stat := "ZONE_ACTIVE"
+        // Helper function to format the range text based on settings
+        f_txt(float pUp, float pLo) =>
+            float pDif = pUp - pLo
+            float tDif = pDif / syminfo.mintick
+            string txt = ""
+            if dspMd == "Price"
+                txt := "Range: " + str.tostring(pDif, "#.##")
+            else if dspMd == "Ticks"
+                txt := "Range: " + str.tostring(tDif, "#.##") + " Ticks"
+            else
+                txt := "Range: " + str.tostring(pDif, "#.##") + " (" + str.tostring(tDif, "#.##") + " Ticks)"
+            txt
 
-else if stat == "ZONE_ACTIVE"
-    // Extend active lines, current gradient boxes, and keep label centered horizontally as time moves on
-    line.set_x2(mLin, bar_index)
+        // State variables
+        var float mLVal = na
+        var float uLVal = na
+        var float lLVal = na
+        var float tStop = na
+        var string stat = "SEARCHING" // "SEARCHING", "ZONE_ACTIVE", "TRAILING"
+        var bool isBul  = true
 
-    int midBar = math.round(zBar + (bar_index - zBar) / 2.0)
-    label.set_x(rLab, midBar)
-    label.set_y(rLab, uLVal)
-    label.set_text(rLab, f_txt(uLVal, lLVal))
+        // Line and Label references for dynamic drawing
+        var line mLin   = na
+        var label rLab  = na
+        var int zBar    = na
 
-    if array.size(aBox) > 0
-        for b in aBox
-            box.set_right(b, bar_index)
+        // Box array for current active range gradient fill (historical boxes are preserved)
+        var box[] aBox  = array.new_box(0)
+        int nSli        = 16
 
-    if close > uLVal and barstate.isconfirmed
-        isBul  := true
-        tStop  := low - (cAtr * aMul)
+        cAtr   = ta.atr(aLen)
+        bool jstTr      = false
 
-        // Record dashboard metrics for breakout
-        lDir   := "BULLISH"
-        lPrc   := close
-        eCls   := close
+        // Dashboard tracking variables
+        var string lDir = "None"
+        var float lPrc  = na
+        var float eCls  = na
+        var int[] trRes = array.new_int(0)
 
-        // Keep label centered horizontally and pinned to lower line pointing up on bullish breakout
-        label.set_x(rLab, math.round(zBar + (bar_index - zBar) / 2.0))
-        label.set_y(rLab, lLVal)
-        label.set_style(rLab, label.style_label_up)
-        label.set_textcolor(rLab, chart.fg_color)
+        // State Machine Logic
+        if stat == "SEARCHING"
+            if stbl
+                mLVal := rAvg
+                uLVal := hi
+                lLVal := lo
+                zBar  := bar_index - len1
 
-        // Color gradient boxes pale green on upward breakout
-        if array.size(aBox) > 0
-            for i = 0 to array.size(aBox) - 1
-                b = array.get(aBox, i)
-                dCtr = math.abs(i - (nSli - 1) / 2.0)
-                mDst = (nSli - 1) / 2.0
-                trns = math.round(110 - (90 - 50) * (dCtr / mDst))
-                box.set_bgcolor(b, color.new(cBul, int(trns)))
+                // Create permanent historical lines for the new zone using user input color
+                mLin  := line.new(zBar, mLVal, bar_index, mLVal, width=1, color = cMid)
 
-        stat  := "TRAILING"
-        jstTr := true
+                // Create range label positioned at the horizontal middle of the range length
+                int midBar = math.round(zBar + (bar_index - zBar) / 2.0)
+                rLab  := label.new(midBar, uLVal, text=f_txt(uLVal, lLVal), color=color.new(cMid, 100), textcolor=chart.fg_color, style=label.style_label_down, size=size.small)
 
-    else if close < lLVal and barstate.isconfirmed
-        isBul  := false
-        tStop  := high + (cAtr * aMul)
+                // Initialize new active range boxes without deleting historical past boxes
+                aBox  := array.new_box(0)
+                sSiz  = (uLVal - lLVal) / nSli
 
-        // Record dashboard metrics for breakout
-        lDir   := "BEARISH"
-        lPrc   := close
-        eCls   := close
+                for i = 0 to nSli - 1
+                    bBot = lLVal + (i * sSiz)
+                    bTop = lLVal + ((i + 1) * sSiz)
 
-        // Keep label centered horizontally and pinned to upper line pointing down on bearish breakout
-        label.set_x(rLab, math.round(zBar + (bar_index - zBar) / 2.0))
-        label.set_y(rLab, uLVal)
-        label.set_style(rLab, label.style_label_down)
-        label.set_textcolor(rLab, chart.fg_color)
+                    // Calculate gradient transparency for active consolidation state using neutral mid color
+                    dCtr = math.abs(i - (nSli - 1) / 2.0)
+                    mDst = (nSli - 1) / 2.0
+                    trns = math.round(110 - (90 - 50) * (dCtr / mDst))
 
-        // Color gradient boxes pale red on downward breakout
-        if array.size(aBox) > 0
-            for i = 0 to array.size(aBox) - 1
-                b = array.get(aBox, i)
-                dCtr = math.abs(i - (nSli - 1) / 2.0)
-                mDst = (nSli - 1) / 2.0
-                trns = math.round(110 - (90 - 50) * (dCtr / mDst))
-                box.set_bgcolor(b, color.new(cBar, int(trns)))
 
-        stat  := "TRAILING"
-        jstTr := true
+                    b = box.new(zBar, bTop, bar_index, bBot, border_color=na, bgcolor=color.new(cMid, int(trns)))
+                    array.push(aBox, b)
 
-else if stat == "TRAILING"
-    if isBul
-        tStop := math.max(tStop, low - (cAtr * aMul))
-        if close < tStop and barstate.isconfirmed
-            bool isWin = isBul ? (close > eCls) : (close < eCls)
-            array.push(trRes, isWin ? 1 : 0)
-            if array.size(trRes) > wLen
-                array.shift(trRes)
-            stat := "SEARCHING"
-    else
-        tStop := math.min(tStop, high + (cAtr * aMul))
-        if close > tStop and barstate.isconfirmed
-            bool isWin = isBul ? (close > eCls) : (close < eCls)
-            array.push(trRes, isWin ? 1 : 0)
-            if array.size(trRes) > wLen
-                array.shift(trRes)
-            stat := "SEARCHING"
-// }
+                stat := "ZONE_ACTIVE"
 
-// ＰＬＯＴ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
-tSPlt  = stat == "TRAILING" ? tStop : na
-hPlt   = stat == "TRAILING" ? hl2 : na
+        else if stat == "ZONE_ACTIVE"
+            // Extend active lines, current gradient boxes, and keep label centered horizontally as time moves on
+            line.set_x2(mLin, bar_index)
 
-p1 = plot(tSPlt, title="Trailing Stop", color=isBul ? cBul : cBar, linewidth=1, style=plot.style_linebr)
-p2 = plot(tSPlt + (isBul ? +cAtr : -cAtr), title="Trailing Stop Reference", color=color.new(color.white, 100), style=plot.style_linebr)
-fill(p1, p2, color=color.new(isBul ? cBul : cBar, 90), title="Trailing Stop Fill")
+            int midBar = math.round(zBar + (bar_index - zBar) / 2.0)
+            label.set_x(rLab, midBar)
+            label.set_y(rLab, uLVal)
+            label.set_text(rLab, f_txt(uLVal, lLVal))
 
-// Circle marker at the exact starting point of the trailing stop
-plotshape(jstTr ? tSPlt : na, title="Trailing Start Circle", style=shape.circle, location=location.absolute, color= color.new(isBul ? cBul : cBar, 50), size=size.small)
-plotshape(jstTr ? tSPlt : na, title="Trailing Start Circle", style=shape.circle, location=location.absolute, color= color.new(isBul ? cBul : cBar, 0), size=size.tiny)
+            if array.size(aBox) > 0
+                for b in aBox
+                    box.set_right(b, bar_index)
 
-// Dashboard Table Generation
-var table dash = table.new(position = position.top_right, columns = 2, rows = 3, bgcolor = color.new(color.black, 50), border_color = chart.bg_color, border_width = 2)
-if barstate.islast
-    // Calculate Win Rate statistics
-    int tTrd  = array.size(trRes)
-    int wins  = tTrd > 0 ? array.sum(trRes) : 0
-    float wRat = tTrd > 0 ? (float(wins) / float(tTrd)) * 100.0 : 0.0
+            if close > uLVal and barstate.isconfirmed
+                isBul  := true
+                tStop  := low - (cAtr * aMul)
 
-    // Populate Table Cells
-    table.cell(dash, 0, 0, "Last Breakout", text_color=chart.fg_color, text_size=size.normal)
-    table.cell(dash, 1, 0, lDir + "/" + str.tostring(lPrc, "#.##"), text_color=lDir == "BULLISH" ? cBul : cBar, text_size=size.normal)
+                // Record dashboard metrics for breakout
+                lDir   := "BULLISH"
+                lPrc   := close
+                eCls   := close
 
-    table.cell(dash, 0, 1, "Closed Trades", text_color=chart.fg_color, text_size=size.normal)
-    table.cell(dash, 1, 1, str.tostring(tTrd), text_color=chart.fg_color, text_size=size.normal)
+                // Keep label centered horizontally and pinned to lower line pointing up on bullish breakout
+                label.set_x(rLab, math.round(zBar + (bar_index - zBar) / 2.0))
+                label.set_y(rLab, lLVal)
+                label.set_style(rLab, label.style_label_up)
+                label.set_textcolor(rLab, chart.fg_color)
 
-    table.cell(dash, 0, 2, "Win Rate", text_color=chart.fg_color, text_size=size.normal)
-    table.cell(dash, 1, 2, str.tostring(wins) + "/" + str.tostring(tTrd) + " (" + str.tostring(wRat, "#.##") + "%)", text_color=wRat >= 50 ? cBul : cBar, text_size=size.normal)
-// }
-"""#
+                // Color gradient boxes pale green on upward breakout
+                if array.size(aBox) > 0
+                    for i = 0 to array.size(aBox) - 1
+                        b = array.get(aBox, i)
+                        dCtr = math.abs(i - (nSli - 1) / 2.0)
+                        mDst = (nSli - 1) / 2.0
+                        trns = math.round(110 - (90 - 50) * (dCtr / mDst))
+                        box.set_bgcolor(b, color.new(cBul, int(trns)))
+
+                stat  := "TRAILING"
+                jstTr := true
+
+            else if close < lLVal and barstate.isconfirmed
+                isBul  := false
+                tStop  := high + (cAtr * aMul)
+
+                // Record dashboard metrics for breakout
+                lDir   := "BEARISH"
+                lPrc   := close
+                eCls   := close
+
+                // Keep label centered horizontally and pinned to upper line pointing down on bearish breakout
+                label.set_x(rLab, math.round(zBar + (bar_index - zBar) / 2.0))
+                label.set_y(rLab, uLVal)
+                label.set_style(rLab, label.style_label_down)
+                label.set_textcolor(rLab, chart.fg_color)
+
+                // Color gradient boxes pale red on downward breakout
+                if array.size(aBox) > 0
+                    for i = 0 to array.size(aBox) - 1
+                        b = array.get(aBox, i)
+                        dCtr = math.abs(i - (nSli - 1) / 2.0)
+                        mDst = (nSli - 1) / 2.0
+                        trns = math.round(110 - (90 - 50) * (dCtr / mDst))
+                        box.set_bgcolor(b, color.new(cBar, int(trns)))
+
+                stat  := "TRAILING"
+                jstTr := true
+
+        else if stat == "TRAILING"
+            if isBul
+                tStop := math.max(tStop, low - (cAtr * aMul))
+                if close < tStop and barstate.isconfirmed
+                    bool isWin = isBul ? (close > eCls) : (close < eCls)
+                    array.push(trRes, isWin ? 1 : 0)
+                    if array.size(trRes) > wLen
+                        array.shift(trRes)
+                    stat := "SEARCHING"
+            else
+                tStop := math.min(tStop, high + (cAtr * aMul))
+                if close > tStop and barstate.isconfirmed
+                    bool isWin = isBul ? (close > eCls) : (close < eCls)
+                    array.push(trRes, isWin ? 1 : 0)
+                    if array.size(trRes) > wLen
+                        array.shift(trRes)
+                    stat := "SEARCHING"
+        // }
+
+        // ＰＬＯＴ ――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――{
+        tSPlt  = stat == "TRAILING" ? tStop : na
+        hPlt   = stat == "TRAILING" ? hl2 : na
+
+        p1 = plot(tSPlt, title="Trailing Stop", color=isBul ? cBul : cBar, linewidth=1, style=plot.style_linebr)
+        p2 = plot(tSPlt + (isBul ? +cAtr : -cAtr), title="Trailing Stop Reference", color=color.new(color.white, 100), style=plot.style_linebr)
+        fill(p1, p2, color=color.new(isBul ? cBul : cBar, 90), title="Trailing Stop Fill")
+
+        // Circle marker at the exact starting point of the trailing stop
+        plotshape(jstTr ? tSPlt : na, title="Trailing Start Circle", style=shape.circle, location=location.absolute, color= color.new(isBul ? cBul : cBar, 50), size=size.small)
+        plotshape(jstTr ? tSPlt : na, title="Trailing Start Circle", style=shape.circle, location=location.absolute, color= color.new(isBul ? cBul : cBar, 0), size=size.tiny)
+
+        // Dashboard Table Generation
+        var table dash = table.new(position = position.top_right, columns = 2, rows = 3, bgcolor = color.new(color.black, 50), border_color = chart.bg_color, border_width = 2)
+        if barstate.islast
+            // Calculate Win Rate statistics
+            int tTrd  = array.size(trRes)
+            int wins  = tTrd > 0 ? array.sum(trRes) : 0
+            float wRat = tTrd > 0 ? (float(wins) / float(tTrd)) * 100.0 : 0.0
+
+            // Populate Table Cells
+            table.cell(dash, 0, 0, "Last Breakout", text_color=chart.fg_color, text_size=size.normal)
+            table.cell(dash, 1, 0, lDir + "/" + str.tostring(lPrc, "#.##"), text_color=lDir == "BULLISH" ? cBul : cBar, text_size=size.normal)
+
+            table.cell(dash, 0, 1, "Closed Trades", text_color=chart.fg_color, text_size=size.normal)
+            table.cell(dash, 1, 1, str.tostring(tTrd), text_color=chart.fg_color, text_size=size.normal)
+
+            table.cell(dash, 0, 2, "Win Rate", text_color=chart.fg_color, text_size=size.normal)
+            table.cell(dash, 1, 2, str.tostring(wins) + "/" + str.tostring(tTrd) + " (" + str.tostring(wRat, "#.##") + "%)", text_color=wRat >= 50 ? cBul : cBar, text_size=size.normal)
+        // }
+        """#
 }
