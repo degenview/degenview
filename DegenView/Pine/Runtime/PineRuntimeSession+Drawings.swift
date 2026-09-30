@@ -159,7 +159,7 @@ extension PineRuntimeSession {
             if case .ref(.table, let id) = target { working.tables[id] = nil }
             return .void
         }
-        switch call.name.prefix { $0 != "." } {
+        switch call.name.split(separator: ".").first.map(String.init) {
         case "line":
             return try withObject(\.lines, .line, target, member) { try Self.mutate(&$0, member, a, b, call) }
         case "label":
