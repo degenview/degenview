@@ -48,13 +48,13 @@ struct PineChartLayer {
     /// like `ChartPlot.priceRange` so nothing touches the frame.
     func valueRange(padding: CGFloat) -> (min: Double, max: Double) {
         var values: [Double] = []
-        for output in pine.plots where output.display & PineDisplay.pane != 0 {
+        for output in pine.plots where output.display.contains(.pane) {
             values += output.values.suffix(candles.count).compactMap { $0 }
             if output.style == .histogram || output.style == .columns || output.style == .area {
                 values.append(output.histBase)
             }
         }
-        for output in pine.candles where output.display & PineDisplay.pane != 0 {
+        for output in pine.candles where output.display.contains(.pane) {
             for bar in output.bars.suffix(candles.count).compactMap({ $0 }) { values += [bar.high, bar.low] }
         }
         values += pine.hlines.map(\.value)
@@ -118,7 +118,7 @@ struct PineChartLayer {
     private func drawScriptPlots(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = plot.slotWidth(forCount: candles.count)
         // A `display.none` plot still exists for `fill()` to reference; it just isn't drawn.
-        for output in pine.plots where output.display & PineDisplay.pane != 0 {
+        for output in pine.plots where output.display.contains(.pane) {
             func point(_ i: Int) -> CGPoint? {
                 guard let value = visible(output.values, at: i) ?? nil else { return nil }
                 return CGPoint(x: plot.x(forIndex: i, slotWidth: slot), y: plot.y(for: value))
@@ -216,7 +216,7 @@ struct PineChartLayer {
         let bodyWidth = (slot * style.candleBodyFraction).clamped(
             to: style.candleBodyMin...style.candleBodyMax)
         let wickWidth = (slot * style.wickFraction).clamped(to: style.wickMin...style.wickMax)
-        for output in pine.candles where output.display & PineDisplay.pane != 0 {
+        for output in pine.candles where output.display.contains(.pane) {
             for i in candles.indices {
                 guard let bar = visible(output.bars, at: i) ?? nil else { continue }
                 let x = plot.x(forIndex: i, slotWidth: slot)
@@ -309,30 +309,30 @@ struct PineChartLayer {
 
     private func drawScriptMarkers(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = plot.slotWidth(forCount: candles.count)
-        for marker in pine.markers where marker.display & PineDisplay.pane != 0 {
+        for marker in pine.markers where marker.display.contains(.pane) {
             for candleIndex in candles.indices where visible(marker.values, at: candleIndex) == true {
                 let x = plot.x(forIndex: candleIndex, slotWidth: slot)
                 let candle = candles[candleIndex]
                 let price = visible(marker.prices, at: candleIndex) ?? nil
                 let y: CGFloat
-                if marker.location == "location.absolute", let price {
+                if marker.location == .absolute, let price {
                     y = plot.y(for: price)
                 } else if inPane {
                     // No candles in a script pane: above/below bar pin to its edges.
-                    y = marker.location.contains("below") ? plot.plotRect.maxY - 8 : plot.plotRect.minY + 8
-                } else if marker.location.contains("below") {
+                    y = marker.location.isBelow ? plot.plotRect.maxY - 8 : plot.plotRect.minY + 8
+                } else if marker.location.isBelow {
                     y = plot.y(for: candle.lowPrice) + 8
                 } else {
                     y = plot.y(for: candle.highPrice) - 8
                 }
                 let color = Color(pineRGBA: (visible(marker.colors, at: candleIndex) ?? nil) ?? marker.color)
-                if marker.style == "shape.circle" {
-                    let r = Self.markerRadius(marker.size)
+                if marker.style == .circle {
+                    let r = marker.size.markerRadius
                     context.fill(
                         Path(ellipseIn: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r)), with: .color(color))
                     continue
                 }
-                let text = Text(marker.character ?? (marker.style.contains("down") ? "▼" : "▲")).font(
+                let text = Text(marker.character ?? (marker.style.pointsDown ? "▼" : "▲")).font(
                     .caption
                 ).foregroundColor(color)
                 context.draw(text, at: CGPoint(x: x, y: y))
@@ -386,27 +386,6 @@ struct PineChartLayer {
         }
     }
 
-    private static func markerRadius(_ size: String) -> CGFloat {
-        switch size {
-        case "size.tiny": 3
-        case "size.small": 5
-        case "size.normal": 7
-        case "size.large": 10
-        case "size.huge": 14
-        default: 5
-        }
-    }
-
-    private static func fontSize(_ size: String) -> CGFloat {
-        switch size {
-        case "size.tiny": 8
-        case "size.small": 10
-        case "size.large": 15
-        case "size.huge": 20
-        default: 12
-        }
-    }
-
     // MARK: - Script drawing objects
 
     private func drawScriptBoxes(context: inout GraphicsContext, plot: ChartPlot) {
@@ -438,10 +417,10 @@ struct PineChartLayer {
                 let (leftPoint, rightPoint) = start.x < end.x ? (start, end) : (end, start)
                 var l = leftPoint
                 var r = rightPoint
-                if line.extend == "extend.left" || line.extend == "extend.both" {
+                if line.extend.extendsLeft {
                     l = CGPoint(x: plot.plotRect.minX, y: leftPoint.y - slope * (leftPoint.x - plot.plotRect.minX))
                 }
-                if line.extend == "extend.right" || line.extend == "extend.both" {
+                if line.extend.extendsRight {
                     r = CGPoint(x: plot.plotRect.maxX, y: rightPoint.y + slope * (plot.plotRect.maxX - rightPoint.x))
                 }
                 (start, end) = (l, r)
@@ -451,8 +430,8 @@ struct PineChartLayer {
             path.addLine(to: end)
             let dash: [CGFloat] =
                 switch line.style {
-                case "line.style_dashed": [6, 4]
-                case "line.style_dotted": [1, 3]
+                case .dashed: [6, 4]
+                case .dotted: [1, 3]
                 default: []
                 }
             context.stroke(
@@ -470,35 +449,35 @@ struct PineChartLayer {
             let anchor = CGPoint(x: x(forBar: label.x, plot: plot, slot: slot), y: plot.y(for: label.y))
             let text = context.resolve(
                 Text(label.text)
-                    .font(.system(size: Self.fontSize(label.size)))
+                    .font(.system(size: label.size.fontSize))
                     .foregroundColor(Color(pineRGBA: label.textColor)))
             let measured = text.measure(in: CGSize(width: 600, height: 400))
             let size = CGSize(width: measured.width + 10, height: measured.height + 6)
             var bubble = CGRect(origin: .zero, size: size)
             var tip: [CGPoint] = []
             switch label.style {
-            case "label.style_label_down":
+            case .labelDown:
                 bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y - pointer - size.height)
                 tip = [
                     CGPoint(x: anchor.x - pointer, y: bubble.maxY),
                     anchor,
                     CGPoint(x: anchor.x + pointer, y: bubble.maxY),
                 ]
-            case "label.style_label_up":
+            case .labelUp:
                 bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y + pointer)
                 tip = [
                     CGPoint(x: anchor.x - pointer, y: bubble.minY),
                     anchor,
                     CGPoint(x: anchor.x + pointer, y: bubble.minY),
                 ]
-            case "label.style_label_left":
+            case .labelLeft:
                 bubble.origin = CGPoint(x: anchor.x + pointer, y: anchor.y - size.height / 2)
                 tip = [
                     CGPoint(x: bubble.minX, y: anchor.y - pointer),
                     anchor,
                     CGPoint(x: bubble.minX, y: anchor.y + pointer),
                 ]
-            case "label.style_label_right":
+            case .labelRight:
                 bubble.origin = CGPoint(x: anchor.x - pointer - size.width, y: anchor.y - size.height / 2)
                 tip = [
                     CGPoint(x: bubble.maxX, y: anchor.y - pointer),
@@ -508,7 +487,7 @@ struct PineChartLayer {
             default:
                 bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y - size.height / 2)
             }
-            if let fill = label.color, fill & 0xFF != 0, label.style != "label.style_none" {
+            if let fill = label.color, fill & 0xFF != 0, label.style != .none {
                 var shape = Path(roundedRect: bubble, cornerRadius: 3)
                 if !tip.isEmpty {
                     shape.move(to: tip[0])
@@ -533,7 +512,7 @@ struct PineChartLayer {
             for cell in table.cells {
                 let text = context.resolve(
                     Text(cell.text)
-                        .font(.system(size: Self.fontSize(cell.textSize)))
+                        .font(.system(size: cell.textSize.fontSize))
                         .foregroundColor(Color(pineRGBA: cell.textColor)))
                 let size = text.measure(in: CGSize(width: 400, height: 200))
                 widths[cell.column] = max(widths[cell.column], size.width + padding.width)
@@ -544,13 +523,17 @@ struct PineChartLayer {
             let area = plot.plotRect.insetBy(dx: margin, dy: margin)
             let position = table.position
             let originX: CGFloat =
-                position.hasSuffix("_left")
-                ? area.minX
-                : position.hasSuffix("_center") ? area.midX - total.width / 2 : area.maxX - total.width
+                switch position.horizontal {
+                case .left: area.minX
+                case .center: area.midX - total.width / 2
+                case .right: area.maxX - total.width
+                }
             let originY: CGFloat =
-                position.contains(".top_")
-                ? area.minY
-                : position.contains(".middle_") ? area.midY - total.height / 2 : area.maxY - total.height
+                switch position.vertical {
+                case .top: area.minY
+                case .middle: area.midY - total.height / 2
+                case .bottom: area.maxY - total.height
+                }
             let frame = CGRect(x: originX, y: originY, width: total.width, height: total.height)
 
             if let background = table.backgroundColor {

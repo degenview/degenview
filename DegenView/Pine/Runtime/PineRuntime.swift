@@ -1323,8 +1323,8 @@ final class PineRuntimeSession: @unchecked Sendable {
             let id = allocate()
             working.lines[id] = .init(
                 id: id, x1: x1, y1: y1, x2: x2, y2: y2, color: colorValue(b["color"], Self.defaultColor) ?? 0,
-                width: intValue(b["width"]) ?? 1, style: textValue(b["style"]) ?? "line.style_solid",
-                extend: textValue(b["extend"]) ?? "extend.none")
+                width: intValue(b["width"]) ?? 1, style: .parse(textValue(b["style"]), absent: .solid),
+                extend: .parse(textValue(b["extend"]), absent: .none))
             prune(&working.lines, limit: limits.maxLinesCount)
             return .ref(.line, id)
         case "label.new":
@@ -1339,8 +1339,8 @@ final class PineRuntimeSession: @unchecked Sendable {
                 id: id, x: x, y: y, text: textValue(b["text"]) ?? "",
                 color: colorValue(b["color"], Self.defaultColor),
                 textColor: colorValue(b["textcolor"], 0x0000_00ff) ?? 0,
-                style: textValue(b["style"]) ?? "label.style_label_down",
-                size: textValue(b["size"]) ?? "size.normal")
+                style: .parse(textValue(b["style"]), absent: .labelDown, unknown: .labelCenter),
+                size: .parse(textValue(b["size"]), absent: .normal))
             prune(&working.labels, limit: limits.maxLabelsCount)
             return .ref(.label, id)
         case "box.new":
@@ -1371,7 +1371,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 ], &context)
             let id = allocate()
             working.tables[id] = .init(
-                id: id, position: textValue(b["position"]) ?? "position.top_right",
+                id: id, position: .parse(textValue(b["position"]), absent: .topRight),
                 columns: max(0, intValue(b["columns"]) ?? 0), rows: max(0, intValue(b["rows"]) ?? 0),
                 backgroundColor: colorValue(b["bgcolor"], nil), borderColor: colorValue(b["border_color"], nil),
                 borderWidth: intValue(b["border_width"]) ?? 0, frameColor: colorValue(b["frame_color"], nil),
@@ -1398,7 +1398,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                 column: column, row: row, text: textValue(b["text"]) ?? "",
                 textColor: colorValue(b["text_color"], 0x0000_00ff) ?? 0,
                 backgroundColor: colorValue(b["bgcolor"], nil),
-                textSize: textValue(b["text_size"]) ?? "size.normal")
+                textSize: .parse(textValue(b["text_size"]), absent: .normal))
             table.cells.removeAll { $0.column == column && $0.row == row }
             table.cells.append(cell)
             working.tables[id] = table
@@ -1440,8 +1440,8 @@ final class PineRuntimeSession: @unchecked Sendable {
                 line.y2 = b.number ?? line.y2
             case "set_color": line.color = colorValue(a, nil) ?? 0
             case "set_width": line.width = intValue(a) ?? line.width
-            case "set_style": line.style = textValue(a) ?? line.style
-            case "set_extend": line.extend = textValue(a) ?? line.extend
+            case "set_style": line.style = PineLineStyle(pineName: textValue(a)) ?? line.style
+            case "set_extend": line.extend = PineLineExtend(pineName: textValue(a)) ?? line.extend
             case "get_x1": return .int(line.x1)
             case "get_x2": return .int(line.x2)
             case "get_y1": return .float(line.y1)
@@ -1467,8 +1467,9 @@ final class PineRuntimeSession: @unchecked Sendable {
             case "set_text": label.text = textValue(a) ?? ""
             case "set_color": label.color = colorValue(a, nil)
             case "set_textcolor": label.textColor = colorValue(a, nil) ?? 0
-            case "set_style": label.style = textValue(a) ?? label.style
-            case "set_size": label.size = textValue(a) ?? label.size
+            case "set_style":
+                label.style = textValue(a).map { PineLabelStyle(pineName: $0) ?? .labelCenter } ?? label.style
+            case "set_size": label.size = PineSize(pineName: textValue(a)) ?? label.size
             case "get_x": return .int(label.x)
             case "get_y": return .float(label.y)
             case "get_text": return .string(label.text)
@@ -1514,6 +1515,10 @@ final class PineRuntimeSession: @unchecked Sendable {
         throw unsupported
     }
 
+    private func display(_ value: PineRuntimeValue?) -> PineDisplay {
+        intValue(value).map(PineDisplay.init(rawValue:)) ?? .all
+    }
+
     private func requireBarIndex(_ xloc: PineRuntimeValue?, _ range: PineSourceRange) throws {
         if textValue(xloc) == "xloc.bar_time" {
             throw PineDiagnostic.error("PINE9004", .unsupported, "xloc.bar_time drawings are not supported yet.", range)
@@ -1538,7 +1543,7 @@ final class PineRuntimeSession: @unchecked Sendable {
                     lineWidth: intValue(b["linewidth"]) ?? 1, style: Self.plotStyle(textValue(b["style"])))
             p.values.append(b["series"]?.number)
             p.colors.append(color)
-            p.display = intValue(b["display"]) ?? PineDisplay.all
+            p.display = display(b["display"])
             p.histBase = b["histbase"]?.number ?? 0
             working.plots[site] = p
             return .ref(.plot, site)
@@ -1560,13 +1565,14 @@ final class PineRuntimeSession: @unchecked Sendable {
                 ?? .init(
                     id: site, kind: isShape ? .shape : .character, values: [],
                     character: isShape ? nil : textValue(b["char"]), color: color,
-                    location: textValue(b["location"]) ?? "location.abovebar",
-                    style: textValue(b["style"]) ?? "", size: textValue(b["size"]) ?? "size.auto")
+                    location: .parse(textValue(b["location"]), absent: .abovebar),
+                    style: .parse(textValue(b["style"]), absent: .triangleup),
+                    size: .parse(textValue(b["size"]), absent: .auto))
             let markerValue = b["series"] ?? .na
             m.values.append(markerValue.bool ?? (markerValue.number != nil))
             m.prices.append(markerValue.number)
             m.colors.append(color)
-            m.display = intValue(b["display"]) ?? PineDisplay.all
+            m.display = display(b["display"])
             working.markers[site] = m
             return .void
         case "fill":
@@ -1611,7 +1617,7 @@ final class PineRuntimeSession: @unchecked Sendable {
             var output =
                 working.candles[site]
                 ?? .init(id: site, title: textValue(b["title"]), bars: [])
-            output.display = intValue(b["display"]) ?? PineDisplay.all
+            output.display = display(b["display"])
             if let open = b["open"]?.number, let high = b["high"]?.number, let low = b["low"]?.number,
                 let close = b["close"]?.number
             {

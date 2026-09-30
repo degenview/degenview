@@ -506,7 +506,7 @@ final class PineEngineTests: XCTestCase {
         XCTAssertEqual(output.lines.first?.color, 0xF236_45FF)
         XCTAssertEqual(output.lines.first?.width, 2)
         XCTAssertEqual(output.labels.first?.text, "bar 2")
-        XCTAssertEqual(output.labels.first?.style, "label.style_label_up")
+        XCTAssertEqual(output.labels.first?.style, .labelUp)
         XCTAssertEqual(output.boxes.first?.right, 2)
         XCTAssertNil(output.boxes.first?.borderColor)
         XCTAssertEqual(
@@ -514,7 +514,7 @@ final class PineEngineTests: XCTestCase {
             [
                 PineTableCell(
                     column: 1, row: 0, text: "done", textColor: 0xFFFF_FFFF, backgroundColor: nil,
-                    textSize: "size.small")
+                    textSize: .small)
             ])
         XCTAssertEqual(output.fills.count, 1)
         XCTAssertEqual(output.fills[0].colors, [0xF236_45FF, 0x4CAF_50FF, 0x4CAF_50FF])
@@ -545,7 +545,7 @@ final class PineEngineTests: XCTestCase {
 
         XCTAssertEqual(output.lines.count, 1)
         XCTAssertEqual(output.labels.count, 1)
-        XCTAssertEqual(output.labels.first?.style, "label.style_label_up")
+        XCTAssertEqual(output.labels.first?.style, .labelUp)
         XCTAssertTrue(output.labels.first?.text.hasPrefix("Range: ") == true, "\(output.labels)")
         XCTAssertEqual(output.boxes.count, 16)
         // Breakout recolors the zone with the bullish input color.

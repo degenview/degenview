@@ -34,7 +34,6 @@
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
 		P20000000000000000000004 /* PineStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000104 /* PineStrategyTests.swift */; };
 		P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000102 /* PineTypeCheckerTests.swift */; };
-		P10000000000000000000001 /* PineModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101 /* PineModels.swift */; };
 		P10000000000000000000003 /* PineRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000103 /* PineRuntime.swift */; };
 		P20000000000000000000002 /* PineTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000102 /* PineTimestamp.swift */; };
 		P30000000000000000000001 /* PineTypeChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000101 /* PineTypeChecker.swift */; };
@@ -89,7 +88,6 @@
 		BA110000000000000000001A /* Constants.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94; };
 		BA110000000000000000001B /* PriceFormatter.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6; };
 		BA110000000000000000001C /* TrendLine.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906; };
-		BA110000000000000000001D /* PineModels.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000101; };
 		BA110000000000000000001E /* Indicators.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904; };
 		BA110000000000000000001F /* SymbolInfo.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105; };
 		BA1100000000000000000020 /* Comparable+Clamped.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = 9AB4301ACD00B5A586820208; };
@@ -222,6 +220,117 @@
 		F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1200A8B9DA384EA78D57845 /* PineCompiler+Constants.swift */; };
 		F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1492E39849F65BA51ECF1BD /* PineCompiler+Declaration.swift */; };
 		F2DAAC4A7BBA2961E517621F /* PineCompiler+Inputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10180C8BEB258415D79C88D /* PineCompiler+Inputs.swift */; };
+		F20C147C602535650C562791 /* PineAlertEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BA1F4B1EABF23ADAA39F14 /* PineAlertEvent.swift */; };
+		F37733F8391CC5322B372A07 /* PineAlertEvent.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1BA1F4B1EABF23ADAA39F14; };
+		F20129750AD0CA387882DC7E /* PineBarEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D56DF7067B2701DE5DB2BC /* PineBarEvent.swift */; };
+		F3CBE6041A115064C5E7FF0A /* PineBarEvent.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1D56DF7067B2701DE5DB2BC; };
+		F2EF8A405664AE6BEA617705 /* PineBarPhase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */; };
+		F36E6C80E0510F2722D8D513 /* PineBarPhase.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1AAC1CA4C85EBB8F8367820; };
+		F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70 /* PineBoxOutput.swift */; };
+		F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70; };
+		F22699D174BF7AD998A0F2E9 /* PineCandleBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */; };
+		F301315B7D9CBC497B96BAF0 /* PineCandleBar.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1DF7FECA85C3EF69DB81573; };
+		F25893DDA3AA157DDADF7383 /* PineCandleOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */; };
+		F37183215F3DCA7882EEAB33 /* PineCandleOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F104AEA3B7776906DB6A2648; };
+		F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F171A9B196E8CCB53752887F /* PineChartTheme.swift */; };
+		F3D76D46E0096EC225E28584 /* PineChartTheme.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F171A9B196E8CCB53752887F; };
+		F2E3DE6A9B4837B900DC6BE5 /* PineColorOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F171F6B79C0598BDC8C53AC2 /* PineColorOutput.swift */; };
+		F3223B6C0264ACF7A0360BC1 /* PineColorOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F171F6B79C0598BDC8C53AC2; };
+		F2F76023BFC626395DEF27FC /* PineConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F146477AC9DC7EE6B96C883D /* PineConfiguration.swift */; };
+		F376F87862509804BCA5DA49 /* PineConfiguration.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F146477AC9DC7EE6B96C883D; };
+		F2DD1FFA21CFDBCAAA7459ED /* PineDeclarationMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = F110B23EE6D7F7FDAFC4BC7F /* PineDeclarationMetadata.swift */; };
+		F327381BA2F001443B05DFC6 /* PineDeclarationMetadata.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F110B23EE6D7F7FDAFC4BC7F; };
+		F2D28E71520E791E3D0A44BF /* PineDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F9041E88ECA8BD53C8EE01 /* PineDiagnostic.swift */; };
+		F3D174A923BA4091DF0D5E74 /* PineDiagnostic.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1F9041E88ECA8BD53C8EE01; };
+		F24408FFF4419BA3BEEEDAE2 /* PineDiagnosticCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17457B2F66CB5D2E7CE19FC /* PineDiagnosticCategory.swift */; };
+		F3A8C36F82F72E39C6595F67 /* PineDiagnosticCategory.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F17457B2F66CB5D2E7CE19FC; };
+		F259F754F2227FD010A4AFE1 /* PineDiagnosticSeverity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1351096740A7D18966808D7 /* PineDiagnosticSeverity.swift */; };
+		F3B46EA9E62ACB946F1A4EB6 /* PineDiagnosticSeverity.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1351096740A7D18966808D7; };
+		F2173919C4E341BB74A9A578 /* PineDisplay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19D3C84B697154D5B48E2AD /* PineDisplay.swift */; };
+		F372AEC6C733B36632558CAB /* PineDisplay.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19D3C84B697154D5B48E2AD; };
+		F2CE03AD26726AA4C6B2E949 /* PineFillGradient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DE1EE06AE3EB4594D5100B /* PineFillGradient.swift */; };
+		F3ECE82ED5C7DB03215CA7CC /* PineFillGradient.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1DE1EE06AE3EB4594D5100B; };
+		F281BA21A8B50F5338088830 /* PineFillOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FE879A82E4917D092130F9 /* PineFillOutput.swift */; };
+		F3FF7273F6B44536A2853277 /* PineFillOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1FE879A82E4917D092130F9; };
+		F2417A32142F0E427EFE6A90 /* PineHorizontalLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1657439BAE4823E811A63EA /* PineHorizontalLine.swift */; };
+		F3BB704E892DC8AAC41E6ED4 /* PineHorizontalLine.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1657439BAE4823E811A63EA; };
+		F297E85450118D6D24C97EDD /* PineInputDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12AE15AE13EE7AE9306A8CC /* PineInputDefinition.swift */; };
+		F3D9989F00D9173E286838FF /* PineInputDefinition.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F12AE15AE13EE7AE9306A8CC; };
+		F2C27F3CD506ED50F24C7246 /* PineInputSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = F163C447149B4A3F0D822D49 /* PineInputSchema.swift */; };
+		F3CC5F706040297AD7C05F94 /* PineInputSchema.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F163C447149B4A3F0D822D49; };
+		F27CD8A1C25A958CC6A9473D /* PineInputValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B2F43AEA9AF8D478067DCA /* PineInputValue.swift */; };
+		F30727B78A0CD5000EBF9BAD /* PineInputValue.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1B2F43AEA9AF8D478067DCA; };
+		F2B673D0E251D0FB342487DF /* PineLabelOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8227F8B91304BF3861C5E /* PineLabelOutput.swift */; };
+		F309E0A644630A4E5D8A8F78 /* PineLabelOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1B8227F8B91304BF3861C5E; };
+		F265059156831B6395842E21 /* PineLimits.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13AA84FE0DBA809EA83666C /* PineLimits.swift */; };
+		F3E7A4BCEC546F68E354FBE8 /* PineLimits.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F13AA84FE0DBA809EA83666C; };
+		F27745A654C0716FA6457D2F /* PineLineOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10CBC70E475DBEF89814AA2 /* PineLineOutput.swift */; };
+		F3336DD851F5F3DDA76193D2 /* PineLineOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F10CBC70E475DBEF89814AA2; };
+		F2A419FC920A13FC5145772B /* PineMarkerKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A77B3E5257125ED76EE71A /* PineMarkerKind.swift */; };
+		F389A9E9629C23DB0BA7890A /* PineMarkerKind.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1A77B3E5257125ED76EE71A; };
+		F2083594719C0E9A2272BEF4 /* PineMarkerOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C84A02D6C320E2C6C7BC2 /* PineMarkerOutput.swift */; };
+		F392BAD861C04C9B47B056CD /* PineMarkerOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19C84A02D6C320E2C6C7BC2; };
+		F2516238F7E0523D95CBCA25 /* PineOpenTrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12161A1D5B39BDB5906230E /* PineOpenTrade.swift */; };
+		F3BC66DAAE40AF2B412637FC /* PineOpenTrade.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F12161A1D5B39BDB5906230E; };
+		F253870D4B4BBB68B4C24328 /* PinePlotOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DB2F4EF5D327252494241A /* PinePlotOutput.swift */; };
+		F3D311008DCA4F72319C50BA /* PinePlotOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1DB2F4EF5D327252494241A; };
+		F22A5FD0696C37E64F129BEC /* PinePlotStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F101CA1CFAF62096921987DC /* PinePlotStyle.swift */; };
+		F33EE648D0A262506F0F17B3 /* PinePlotStyle.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F101CA1CFAF62096921987DC; };
+		F26ADB2BC8E8D870EDBEB988 /* PineQualifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13142156C231DD409EEF05F /* PineQualifier.swift */; };
+		F344783FAD0090AE1A3AF7D6 /* PineQualifier.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F13142156C231DD409EEF05F; };
+		F26C0C88A08CD38E7188ACD6 /* PineSourcePosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1D9DFA6CEC77B599421B76F /* PineSourcePosition.swift */; };
+		F3D2769AE035386AACEBB6C1 /* PineSourcePosition.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1D9DFA6CEC77B599421B76F; };
+		F27FBB21A4360F104E048D72 /* PineSourceRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C50F73F6688314AE4E1045 /* PineSourceRange.swift */; };
+		F3E3CE86E73AF597F962CC7E /* PineSourceRange.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1C50F73F6688314AE4E1045; };
+		F23B84D312EDB27A8A36C6C4 /* PineStrategyReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1578D27D0F040BAE87DD2C6 /* PineStrategyReport.swift */; };
+		F3BE737555694E7410F29087 /* PineStrategyReport.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1578D27D0F040BAE87DD2C6; };
+		F2E6FF3B0A19CF1B39E150AB /* PineStrategySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F12A5FBA149C9579122DF5 /* PineStrategySettings.swift */; };
+		F37A3994F87474F4EAFA6D35 /* PineStrategySettings.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1F12A5FBA149C9579122DF5; };
+		F2359069A2036B821EAFE003 /* PineSymbolInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B091C30EE7F3CC2798D9E6 /* PineSymbolInfo.swift */; };
+		F32B3A3DB0D6EA1A465E6575 /* PineSymbolInfo.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1B091C30EE7F3CC2798D9E6; };
+		F297FE5A8700BCAE0CAE5CFA /* PineTableCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19CBE5490C42322F31E60B3 /* PineTableCell.swift */; };
+		F3A48D1BB089BFD8E4E72D9D /* PineTableCell.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19CBE5490C42322F31E60B3; };
+		F2DECE5644ACB7D783B6B11E /* PineTableOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A064F91DB28946EEB51F6F /* PineTableOutput.swift */; };
+		F3F73052C1F3FB468CBE573E /* PineTableOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1A064F91DB28946EEB51F6F; };
+		F20C5D175855AE308B5388AF /* PineTrade.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DBFA15AE8F798B917CF1DB /* PineTrade.swift */; };
+		F3185A64A2B858F3088AE733 /* PineTrade.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1DBFA15AE8F798B917CF1DB; };
+		F2E6FD103FC3068852A08802 /* PineTypeAnnotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A99F8079FA6AE07D9943E7 /* PineTypeAnnotation.swift */; };
+		F33F05CEEC66F7CEDC7815F5 /* PineTypeAnnotation.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1A99F8079FA6AE07D9943E7; };
+		F2557EDA03FC3B6943CF666A /* PineValueType.swift in Sources */ = {isa = PBXBuildFile; fileRef = F168D9D305F1CA9572C50C0D /* PineValueType.swift */; };
+		F39AE3EB209261A1CFD8C459 /* PineValueType.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F168D9D305F1CA9572C50C0D; };
+		F2ACB3FC3C12DFCDFEBE6439 /* PineVisualOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F133773719BDC6E823035753 /* PineVisualOutput.swift */; };
+		F3F337B81240610F9168828A /* PineVisualOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F133773719BDC6E823035753; };
+		F28F6C9EA60DAE357CD71D76 /* ChartScriptInstance.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17036E9091B07FA4E4196B3 /* ChartScriptInstance.swift */; };
+		F34AF06CBBB35CB084CB0C0A /* ChartScriptInstance.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F17036E9091B07FA4E4196B3; };
+		F281D4638048F5964242D044 /* CompileStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = F144F23F24C69E826A765929 /* CompileStatus.swift */; };
+		F3A77A9470484E071DCFAB31 /* CompileStatus.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F144F23F24C69E826A765929; };
+		F29EEF885B2825DEAAAF5F1C /* LocalScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1560291C1BF9545EDD3ECC3 /* LocalScript.swift */; };
+		F31DB6399E1FF13E292AEDB7 /* LocalScript.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1560291C1BF9545EDD3ECC3; };
+		F249B062499E0744AC6CF441 /* ScriptCompileRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C89028B6C2C0C4489EA0DE /* ScriptCompileRecord.swift */; };
+		F35BB9F099E92CEF1326FAED /* ScriptCompileRecord.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1C89028B6C2C0C4489EA0DE; };
+		F28E602E831FDC3515A93993 /* ScriptDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A423AE2ECA9E617EB43334 /* ScriptDraft.swift */; };
+		F3FE9105ECC82B1A28EC4DB4 /* ScriptDraft.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1A423AE2ECA9E617EB43334; };
+		F27C1AA1CC8B3DEA10CE59B3 /* ScriptType.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1CFCC15DBCB81F21E127AAA /* ScriptType.swift */; };
+		F34D7060C0C4624F8EA04AD1 /* ScriptType.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1CFCC15DBCB81F21E127AAA; };
+		F282EE82E0908E66A1919EC1 /* ScriptVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1254F1B2898B544ED20C31A /* ScriptVersion.swift */; };
+		F36CE13E5DAE1D200E5ACAF0 /* ScriptVersion.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1254F1B2898B544ED20C31A; };
+		F2A7C824E2531B15A6D2C6BC /* PineLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F125D67AA82B891BEDBF04EE /* PineLabelStyle.swift */; };
+		F366AE0594E72A9CC570C1D8 /* PineLabelStyle.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F125D67AA82B891BEDBF04EE; };
+		F2436B0226DD5767E5ACD083 /* PineLineExtend.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14312F3C0924E3FF26E5E4F /* PineLineExtend.swift */; };
+		F3D3DCB7FB28D18E947AD677 /* PineLineExtend.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F14312F3C0924E3FF26E5E4F; };
+		F2B9BFDD13CC936F5478138F /* PineLineStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16E087F6DC4D54A3FBC33D6 /* PineLineStyle.swift */; };
+		F35CDA78C7E489754E9C3F9A /* PineLineStyle.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F16E087F6DC4D54A3FBC33D6; };
+		F2FEDD39B71DF703059D9348 /* PineMarkerLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E788AD04B43F03458463C6 /* PineMarkerLocation.swift */; };
+		F32F7F892D011726E7C4C5E1 /* PineMarkerLocation.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1E788AD04B43F03458463C6; };
+		F28E9210C3CC109ACCA34EBE /* PineMarkerShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1827F8687572B214AE12AE5 /* PineMarkerShape.swift */; };
+		F31ADEB77AF57D77E9E1BF15 /* PineMarkerShape.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1827F8687572B214AE12AE5; };
+		F200E6C09D729CD8362AE2D7 /* PineNamedConstant.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B323670ED636C33548B6F8 /* PineNamedConstant.swift */; };
+		F3A5FBED7471DB2E2DB71336 /* PineNamedConstant.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1B323670ED636C33548B6F8; };
+		F28AA7DCE6207ED55AFDAD2F /* PineSize.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10EB2DB62EC78FC2894565A /* PineSize.swift */; };
+		F38EB18AA919A09EFFE74873 /* PineSize.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F10EB2DB62EC78FC2894565A; };
+		F2FFA6B70E73380BCE7BA463 /* PineTablePosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10FB14597E57722BA49B174 /* PineTablePosition.swift */; };
+		F33D1B2F24D01DFCA2A1614C /* PineTablePosition.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F10FB14597E57722BA49B174; };
+		F2F2BF7E88E6DD5FF7978553 /* PineSize+Drawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -258,7 +367,6 @@
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
 		P20000000000000000000104 /* PineStrategyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyTests.swift; sourceTree = "<group>"; };
 		P30000000000000000000102 /* PineTypeCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeCheckerTests.swift; sourceTree = "<group>"; };
-		P10000000000000000000101 /* PineModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineModels.swift; sourceTree = "<group>"; };
 		P10000000000000000000103 /* PineRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntime.swift; sourceTree = "<group>"; };
 		P20000000000000000000102 /* PineTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTimestamp.swift; sourceTree = "<group>"; };
 		P30000000000000000000101 /* PineTypeChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeChecker.swift; sourceTree = "<group>"; };
@@ -417,6 +525,62 @@
 		F1200A8B9DA384EA78D57845 /* PineCompiler+Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Constants.swift"; sourceTree = "<group>"; };
 		F1492E39849F65BA51ECF1BD /* PineCompiler+Declaration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Declaration.swift"; sourceTree = "<group>"; };
 		F10180C8BEB258415D79C88D /* PineCompiler+Inputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Inputs.swift"; sourceTree = "<group>"; };
+		F1BA1F4B1EABF23ADAA39F14 /* PineAlertEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertEvent.swift; sourceTree = "<group>"; };
+		F1D56DF7067B2701DE5DB2BC /* PineBarEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBarEvent.swift; sourceTree = "<group>"; };
+		F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBarPhase.swift; sourceTree = "<group>"; };
+		F19084F629170F398B48BA70 /* PineBoxOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBoxOutput.swift; sourceTree = "<group>"; };
+		F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleBar.swift; sourceTree = "<group>"; };
+		F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleOutput.swift; sourceTree = "<group>"; };
+		F171A9B196E8CCB53752887F /* PineChartTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartTheme.swift; sourceTree = "<group>"; };
+		F171F6B79C0598BDC8C53AC2 /* PineColorOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineColorOutput.swift; sourceTree = "<group>"; };
+		F146477AC9DC7EE6B96C883D /* PineConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineConfiguration.swift; sourceTree = "<group>"; };
+		F110B23EE6D7F7FDAFC4BC7F /* PineDeclarationMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDeclarationMetadata.swift; sourceTree = "<group>"; };
+		F1F9041E88ECA8BD53C8EE01 /* PineDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDiagnostic.swift; sourceTree = "<group>"; };
+		F17457B2F66CB5D2E7CE19FC /* PineDiagnosticCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDiagnosticCategory.swift; sourceTree = "<group>"; };
+		F1351096740A7D18966808D7 /* PineDiagnosticSeverity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDiagnosticSeverity.swift; sourceTree = "<group>"; };
+		F19D3C84B697154D5B48E2AD /* PineDisplay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDisplay.swift; sourceTree = "<group>"; };
+		F1DE1EE06AE3EB4594D5100B /* PineFillGradient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineFillGradient.swift; sourceTree = "<group>"; };
+		F1FE879A82E4917D092130F9 /* PineFillOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineFillOutput.swift; sourceTree = "<group>"; };
+		F1657439BAE4823E811A63EA /* PineHorizontalLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineHorizontalLine.swift; sourceTree = "<group>"; };
+		F12AE15AE13EE7AE9306A8CC /* PineInputDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineInputDefinition.swift; sourceTree = "<group>"; };
+		F163C447149B4A3F0D822D49 /* PineInputSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineInputSchema.swift; sourceTree = "<group>"; };
+		F1B2F43AEA9AF8D478067DCA /* PineInputValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineInputValue.swift; sourceTree = "<group>"; };
+		F1B8227F8B91304BF3861C5E /* PineLabelOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLabelOutput.swift; sourceTree = "<group>"; };
+		F13AA84FE0DBA809EA83666C /* PineLimits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLimits.swift; sourceTree = "<group>"; };
+		F10CBC70E475DBEF89814AA2 /* PineLineOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLineOutput.swift; sourceTree = "<group>"; };
+		F1A77B3E5257125ED76EE71A /* PineMarkerKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMarkerKind.swift; sourceTree = "<group>"; };
+		F19C84A02D6C320E2C6C7BC2 /* PineMarkerOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMarkerOutput.swift; sourceTree = "<group>"; };
+		F12161A1D5B39BDB5906230E /* PineOpenTrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineOpenTrade.swift; sourceTree = "<group>"; };
+		F1DB2F4EF5D327252494241A /* PinePlotOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinePlotOutput.swift; sourceTree = "<group>"; };
+		F101CA1CFAF62096921987DC /* PinePlotStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinePlotStyle.swift; sourceTree = "<group>"; };
+		F13142156C231DD409EEF05F /* PineQualifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineQualifier.swift; sourceTree = "<group>"; };
+		F1D9DFA6CEC77B599421B76F /* PineSourcePosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSourcePosition.swift; sourceTree = "<group>"; };
+		F1C50F73F6688314AE4E1045 /* PineSourceRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSourceRange.swift; sourceTree = "<group>"; };
+		F1578D27D0F040BAE87DD2C6 /* PineStrategyReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyReport.swift; sourceTree = "<group>"; };
+		F1F12A5FBA149C9579122DF5 /* PineStrategySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategySettings.swift; sourceTree = "<group>"; };
+		F1B091C30EE7F3CC2798D9E6 /* PineSymbolInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolInfo.swift; sourceTree = "<group>"; };
+		F19CBE5490C42322F31E60B3 /* PineTableCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTableCell.swift; sourceTree = "<group>"; };
+		F1A064F91DB28946EEB51F6F /* PineTableOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTableOutput.swift; sourceTree = "<group>"; };
+		F1DBFA15AE8F798B917CF1DB /* PineTrade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTrade.swift; sourceTree = "<group>"; };
+		F1A99F8079FA6AE07D9943E7 /* PineTypeAnnotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeAnnotation.swift; sourceTree = "<group>"; };
+		F168D9D305F1CA9572C50C0D /* PineValueType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineValueType.swift; sourceTree = "<group>"; };
+		F133773719BDC6E823035753 /* PineVisualOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineVisualOutput.swift; sourceTree = "<group>"; };
+		F17036E9091B07FA4E4196B3 /* ChartScriptInstance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartScriptInstance.swift; sourceTree = "<group>"; };
+		F144F23F24C69E826A765929 /* CompileStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompileStatus.swift; sourceTree = "<group>"; };
+		F1560291C1BF9545EDD3ECC3 /* LocalScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalScript.swift; sourceTree = "<group>"; };
+		F1C89028B6C2C0C4489EA0DE /* ScriptCompileRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptCompileRecord.swift; sourceTree = "<group>"; };
+		F1A423AE2ECA9E617EB43334 /* ScriptDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptDraft.swift; sourceTree = "<group>"; };
+		F1CFCC15DBCB81F21E127AAA /* ScriptType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptType.swift; sourceTree = "<group>"; };
+		F1254F1B2898B544ED20C31A /* ScriptVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptVersion.swift; sourceTree = "<group>"; };
+		F125D67AA82B891BEDBF04EE /* PineLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLabelStyle.swift; sourceTree = "<group>"; };
+		F14312F3C0924E3FF26E5E4F /* PineLineExtend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLineExtend.swift; sourceTree = "<group>"; };
+		F16E087F6DC4D54A3FBC33D6 /* PineLineStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLineStyle.swift; sourceTree = "<group>"; };
+		F1E788AD04B43F03458463C6 /* PineMarkerLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMarkerLocation.swift; sourceTree = "<group>"; };
+		F1827F8687572B214AE12AE5 /* PineMarkerShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMarkerShape.swift; sourceTree = "<group>"; };
+		F1B323670ED636C33548B6F8 /* PineNamedConstant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineNamedConstant.swift; sourceTree = "<group>"; };
+		F10EB2DB62EC78FC2894565A /* PineSize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSize.swift; sourceTree = "<group>"; };
+		F10FB14597E57722BA49B174 /* PineTablePosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTablePosition.swift; sourceTree = "<group>"; };
+		F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineSize+Drawing.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -509,6 +673,7 @@
 				C10000000000000000000101 /* PolymarketModels.swift */,
 				D10000000000000000000101 /* ChartTab.swift */,
 				D30000000000000000000101 /* ChartColumn.swift */,
+				F942FA5B7FB7B0EC36435479 /* Script */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -755,7 +920,54 @@
 		F9676AFED85B0D360C5D07C9 /* Model */ = {
 			isa = PBXGroup;
 			children = (
-				P10000000000000000000101 /* PineModels.swift */,
+				F1BA1F4B1EABF23ADAA39F14 /* PineAlertEvent.swift */,
+				F1D56DF7067B2701DE5DB2BC /* PineBarEvent.swift */,
+				F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */,
+				F19084F629170F398B48BA70 /* PineBoxOutput.swift */,
+				F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */,
+				F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */,
+				F171A9B196E8CCB53752887F /* PineChartTheme.swift */,
+				F171F6B79C0598BDC8C53AC2 /* PineColorOutput.swift */,
+				F146477AC9DC7EE6B96C883D /* PineConfiguration.swift */,
+				F110B23EE6D7F7FDAFC4BC7F /* PineDeclarationMetadata.swift */,
+				F1F9041E88ECA8BD53C8EE01 /* PineDiagnostic.swift */,
+				F17457B2F66CB5D2E7CE19FC /* PineDiagnosticCategory.swift */,
+				F1351096740A7D18966808D7 /* PineDiagnosticSeverity.swift */,
+				F19D3C84B697154D5B48E2AD /* PineDisplay.swift */,
+				F1DE1EE06AE3EB4594D5100B /* PineFillGradient.swift */,
+				F1FE879A82E4917D092130F9 /* PineFillOutput.swift */,
+				F1657439BAE4823E811A63EA /* PineHorizontalLine.swift */,
+				F12AE15AE13EE7AE9306A8CC /* PineInputDefinition.swift */,
+				F163C447149B4A3F0D822D49 /* PineInputSchema.swift */,
+				F1B2F43AEA9AF8D478067DCA /* PineInputValue.swift */,
+				F1B8227F8B91304BF3861C5E /* PineLabelOutput.swift */,
+				F125D67AA82B891BEDBF04EE /* PineLabelStyle.swift */,
+				F13AA84FE0DBA809EA83666C /* PineLimits.swift */,
+				F14312F3C0924E3FF26E5E4F /* PineLineExtend.swift */,
+				F10CBC70E475DBEF89814AA2 /* PineLineOutput.swift */,
+				F16E087F6DC4D54A3FBC33D6 /* PineLineStyle.swift */,
+				F1A77B3E5257125ED76EE71A /* PineMarkerKind.swift */,
+				F1E788AD04B43F03458463C6 /* PineMarkerLocation.swift */,
+				F19C84A02D6C320E2C6C7BC2 /* PineMarkerOutput.swift */,
+				F1827F8687572B214AE12AE5 /* PineMarkerShape.swift */,
+				F1B323670ED636C33548B6F8 /* PineNamedConstant.swift */,
+				F12161A1D5B39BDB5906230E /* PineOpenTrade.swift */,
+				F1DB2F4EF5D327252494241A /* PinePlotOutput.swift */,
+				F101CA1CFAF62096921987DC /* PinePlotStyle.swift */,
+				F13142156C231DD409EEF05F /* PineQualifier.swift */,
+				F10EB2DB62EC78FC2894565A /* PineSize.swift */,
+				F1D9DFA6CEC77B599421B76F /* PineSourcePosition.swift */,
+				F1C50F73F6688314AE4E1045 /* PineSourceRange.swift */,
+				F1578D27D0F040BAE87DD2C6 /* PineStrategyReport.swift */,
+				F1F12A5FBA149C9579122DF5 /* PineStrategySettings.swift */,
+				F1B091C30EE7F3CC2798D9E6 /* PineSymbolInfo.swift */,
+				F19CBE5490C42322F31E60B3 /* PineTableCell.swift */,
+				F1A064F91DB28946EEB51F6F /* PineTableOutput.swift */,
+				F10FB14597E57722BA49B174 /* PineTablePosition.swift */,
+				F1DBFA15AE8F798B917CF1DB /* PineTrade.swift */,
+				F1A99F8079FA6AE07D9943E7 /* PineTypeAnnotation.swift */,
+				F168D9D305F1CA9572C50C0D /* PineValueType.swift */,
+				F133773719BDC6E823035753 /* PineVisualOutput.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -785,6 +997,7 @@
 			children = (
 				D20000000000000000000101 /* PineChartLayer.swift */,
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
+				F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */,
 				P20000000000000000000103 /* PineStrategyReportView.swift */,
 			);
 			path = View;
@@ -800,6 +1013,20 @@
 				F9B2F03E6391D6473102E21D /* View */,
 			);
 			path = Pine;
+			sourceTree = "<group>";
+		};
+		F942FA5B7FB7B0EC36435479 /* Script */ = {
+			isa = PBXGroup;
+			children = (
+				F17036E9091B07FA4E4196B3 /* ChartScriptInstance.swift */,
+				F144F23F24C69E826A765929 /* CompileStatus.swift */,
+				F1560291C1BF9545EDD3ECC3 /* LocalScript.swift */,
+				F1C89028B6C2C0C4489EA0DE /* ScriptCompileRecord.swift */,
+				F1A423AE2ECA9E617EB43334 /* ScriptDraft.swift */,
+				F1CFCC15DBCB81F21E127AAA /* ScriptType.swift */,
+				F1254F1B2898B544ED20C31A /* ScriptVersion.swift */,
+			);
+			path = Script;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -917,8 +1144,63 @@
 			BA1100000000000000000011, BA1100000000000000000012, BA1100000000000000000013, BA1100000000000000000014,
 			BA1100000000000000000015, BA1100000000000000000016, BA1100000000000000000017,
 			BA1100000000000000000018, BA1100000000000000000019, BA110000000000000000001A, BA110000000000000000001B,
-			BA110000000000000000001C, BA110000000000000000001D, BA110000000000000000001E,
+			BA110000000000000000001C, BA110000000000000000001E,
 			BA110000000000000000001F, BA1100000000000000000020,
+			F37733F8391CC5322B372A07 /* PineAlertEvent.swift in Agent Sources */,
+			F3CBE6041A115064C5E7FF0A /* PineBarEvent.swift in Agent Sources */,
+			F36E6C80E0510F2722D8D513 /* PineBarPhase.swift in Agent Sources */,
+			F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */,
+			F301315B7D9CBC497B96BAF0 /* PineCandleBar.swift in Agent Sources */,
+			F37183215F3DCA7882EEAB33 /* PineCandleOutput.swift in Agent Sources */,
+			F3D76D46E0096EC225E28584 /* PineChartTheme.swift in Agent Sources */,
+			F3223B6C0264ACF7A0360BC1 /* PineColorOutput.swift in Agent Sources */,
+			F376F87862509804BCA5DA49 /* PineConfiguration.swift in Agent Sources */,
+			F327381BA2F001443B05DFC6 /* PineDeclarationMetadata.swift in Agent Sources */,
+			F3D174A923BA4091DF0D5E74 /* PineDiagnostic.swift in Agent Sources */,
+			F3A8C36F82F72E39C6595F67 /* PineDiagnosticCategory.swift in Agent Sources */,
+			F3B46EA9E62ACB946F1A4EB6 /* PineDiagnosticSeverity.swift in Agent Sources */,
+			F372AEC6C733B36632558CAB /* PineDisplay.swift in Agent Sources */,
+			F3ECE82ED5C7DB03215CA7CC /* PineFillGradient.swift in Agent Sources */,
+			F3FF7273F6B44536A2853277 /* PineFillOutput.swift in Agent Sources */,
+			F3BB704E892DC8AAC41E6ED4 /* PineHorizontalLine.swift in Agent Sources */,
+			F3D9989F00D9173E286838FF /* PineInputDefinition.swift in Agent Sources */,
+			F3CC5F706040297AD7C05F94 /* PineInputSchema.swift in Agent Sources */,
+			F30727B78A0CD5000EBF9BAD /* PineInputValue.swift in Agent Sources */,
+			F309E0A644630A4E5D8A8F78 /* PineLabelOutput.swift in Agent Sources */,
+			F3E7A4BCEC546F68E354FBE8 /* PineLimits.swift in Agent Sources */,
+			F3336DD851F5F3DDA76193D2 /* PineLineOutput.swift in Agent Sources */,
+			F389A9E9629C23DB0BA7890A /* PineMarkerKind.swift in Agent Sources */,
+			F392BAD861C04C9B47B056CD /* PineMarkerOutput.swift in Agent Sources */,
+			F3BC66DAAE40AF2B412637FC /* PineOpenTrade.swift in Agent Sources */,
+			F3D311008DCA4F72319C50BA /* PinePlotOutput.swift in Agent Sources */,
+			F33EE648D0A262506F0F17B3 /* PinePlotStyle.swift in Agent Sources */,
+			F344783FAD0090AE1A3AF7D6 /* PineQualifier.swift in Agent Sources */,
+			F3D2769AE035386AACEBB6C1 /* PineSourcePosition.swift in Agent Sources */,
+			F3E3CE86E73AF597F962CC7E /* PineSourceRange.swift in Agent Sources */,
+			F3BE737555694E7410F29087 /* PineStrategyReport.swift in Agent Sources */,
+			F37A3994F87474F4EAFA6D35 /* PineStrategySettings.swift in Agent Sources */,
+			F32B3A3DB0D6EA1A465E6575 /* PineSymbolInfo.swift in Agent Sources */,
+			F3A48D1BB089BFD8E4E72D9D /* PineTableCell.swift in Agent Sources */,
+			F3F73052C1F3FB468CBE573E /* PineTableOutput.swift in Agent Sources */,
+			F3185A64A2B858F3088AE733 /* PineTrade.swift in Agent Sources */,
+			F33F05CEEC66F7CEDC7815F5 /* PineTypeAnnotation.swift in Agent Sources */,
+			F39AE3EB209261A1CFD8C459 /* PineValueType.swift in Agent Sources */,
+			F3F337B81240610F9168828A /* PineVisualOutput.swift in Agent Sources */,
+			F34AF06CBBB35CB084CB0C0A /* ChartScriptInstance.swift in Agent Sources */,
+			F3A77A9470484E071DCFAB31 /* CompileStatus.swift in Agent Sources */,
+			F31DB6399E1FF13E292AEDB7 /* LocalScript.swift in Agent Sources */,
+			F35BB9F099E92CEF1326FAED /* ScriptCompileRecord.swift in Agent Sources */,
+			F3FE9105ECC82B1A28EC4DB4 /* ScriptDraft.swift in Agent Sources */,
+			F34D7060C0C4624F8EA04AD1 /* ScriptType.swift in Agent Sources */,
+			F36CE13E5DAE1D200E5ACAF0 /* ScriptVersion.swift in Agent Sources */,
+			F366AE0594E72A9CC570C1D8 /* PineLabelStyle.swift in Agent Sources */,
+			F3D3DCB7FB28D18E947AD677 /* PineLineExtend.swift in Agent Sources */,
+			F35CDA78C7E489754E9C3F9A /* PineLineStyle.swift in Agent Sources */,
+			F32F7F892D011726E7C4C5E1 /* PineMarkerLocation.swift in Agent Sources */,
+			F31ADEB77AF57D77E9E1BF15 /* PineMarkerShape.swift in Agent Sources */,
+			F3A5FBED7471DB2E2DB71336 /* PineNamedConstant.swift in Agent Sources */,
+			F38EB18AA919A09EFFE74873 /* PineSize.swift in Agent Sources */,
+			F33D1B2F24D01DFCA2A1614C /* PineTablePosition.swift in Agent Sources */,
 		); runOnlyForDeploymentPostprocessing = 0; };
 		E40000000000000000000302 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -971,7 +1253,6 @@
 				BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */,
 				BA0000000000000000000002 /* AlertRuntimeHost.swift in Sources */,
 				BA0000000000000000000003 /* AlertBackgroundService.swift in Sources */,
-				P10000000000000000000001 /* PineModels.swift in Sources */,
 				P10000000000000000000003 /* PineRuntime.swift in Sources */,
 				P20000000000000000000002 /* PineTimestamp.swift in Sources */,
 				P30000000000000000000001 /* PineTypeChecker.swift in Sources */,
@@ -1105,6 +1386,62 @@
 				F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */,
 				F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */,
 				F2DAAC4A7BBA2961E517621F /* PineCompiler+Inputs.swift in Sources */,
+				F20C147C602535650C562791 /* PineAlertEvent.swift in Sources */,
+				F20129750AD0CA387882DC7E /* PineBarEvent.swift in Sources */,
+				F2EF8A405664AE6BEA617705 /* PineBarPhase.swift in Sources */,
+				F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */,
+				F22699D174BF7AD998A0F2E9 /* PineCandleBar.swift in Sources */,
+				F25893DDA3AA157DDADF7383 /* PineCandleOutput.swift in Sources */,
+				F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */,
+				F2E3DE6A9B4837B900DC6BE5 /* PineColorOutput.swift in Sources */,
+				F2F76023BFC626395DEF27FC /* PineConfiguration.swift in Sources */,
+				F2DD1FFA21CFDBCAAA7459ED /* PineDeclarationMetadata.swift in Sources */,
+				F2D28E71520E791E3D0A44BF /* PineDiagnostic.swift in Sources */,
+				F24408FFF4419BA3BEEEDAE2 /* PineDiagnosticCategory.swift in Sources */,
+				F259F754F2227FD010A4AFE1 /* PineDiagnosticSeverity.swift in Sources */,
+				F2173919C4E341BB74A9A578 /* PineDisplay.swift in Sources */,
+				F2CE03AD26726AA4C6B2E949 /* PineFillGradient.swift in Sources */,
+				F281BA21A8B50F5338088830 /* PineFillOutput.swift in Sources */,
+				F2417A32142F0E427EFE6A90 /* PineHorizontalLine.swift in Sources */,
+				F297E85450118D6D24C97EDD /* PineInputDefinition.swift in Sources */,
+				F2C27F3CD506ED50F24C7246 /* PineInputSchema.swift in Sources */,
+				F27CD8A1C25A958CC6A9473D /* PineInputValue.swift in Sources */,
+				F2B673D0E251D0FB342487DF /* PineLabelOutput.swift in Sources */,
+				F265059156831B6395842E21 /* PineLimits.swift in Sources */,
+				F27745A654C0716FA6457D2F /* PineLineOutput.swift in Sources */,
+				F2A419FC920A13FC5145772B /* PineMarkerKind.swift in Sources */,
+				F2083594719C0E9A2272BEF4 /* PineMarkerOutput.swift in Sources */,
+				F2516238F7E0523D95CBCA25 /* PineOpenTrade.swift in Sources */,
+				F253870D4B4BBB68B4C24328 /* PinePlotOutput.swift in Sources */,
+				F22A5FD0696C37E64F129BEC /* PinePlotStyle.swift in Sources */,
+				F26ADB2BC8E8D870EDBEB988 /* PineQualifier.swift in Sources */,
+				F26C0C88A08CD38E7188ACD6 /* PineSourcePosition.swift in Sources */,
+				F27FBB21A4360F104E048D72 /* PineSourceRange.swift in Sources */,
+				F23B84D312EDB27A8A36C6C4 /* PineStrategyReport.swift in Sources */,
+				F2E6FF3B0A19CF1B39E150AB /* PineStrategySettings.swift in Sources */,
+				F2359069A2036B821EAFE003 /* PineSymbolInfo.swift in Sources */,
+				F297FE5A8700BCAE0CAE5CFA /* PineTableCell.swift in Sources */,
+				F2DECE5644ACB7D783B6B11E /* PineTableOutput.swift in Sources */,
+				F20C5D175855AE308B5388AF /* PineTrade.swift in Sources */,
+				F2E6FD103FC3068852A08802 /* PineTypeAnnotation.swift in Sources */,
+				F2557EDA03FC3B6943CF666A /* PineValueType.swift in Sources */,
+				F2ACB3FC3C12DFCDFEBE6439 /* PineVisualOutput.swift in Sources */,
+				F28F6C9EA60DAE357CD71D76 /* ChartScriptInstance.swift in Sources */,
+				F281D4638048F5964242D044 /* CompileStatus.swift in Sources */,
+				F29EEF885B2825DEAAAF5F1C /* LocalScript.swift in Sources */,
+				F249B062499E0744AC6CF441 /* ScriptCompileRecord.swift in Sources */,
+				F28E602E831FDC3515A93993 /* ScriptDraft.swift in Sources */,
+				F27C1AA1CC8B3DEA10CE59B3 /* ScriptType.swift in Sources */,
+				F282EE82E0908E66A1919EC1 /* ScriptVersion.swift in Sources */,
+				F2A7C824E2531B15A6D2C6BC /* PineLabelStyle.swift in Sources */,
+				F2436B0226DD5767E5ACD083 /* PineLineExtend.swift in Sources */,
+				F2B9BFDD13CC936F5478138F /* PineLineStyle.swift in Sources */,
+				F2FEDD39B71DF703059D9348 /* PineMarkerLocation.swift in Sources */,
+				F28E9210C3CC109ACCA34EBE /* PineMarkerShape.swift in Sources */,
+				F200E6C09D729CD8362AE2D7 /* PineNamedConstant.swift in Sources */,
+				F28AA7DCE6207ED55AFDAD2F /* PineSize.swift in Sources */,
+				F2FFA6B70E73380BCE7BA463 /* PineTablePosition.swift in Sources */,
+				F2F2BF7E88E6DD5FF7978553 /* PineSize+Drawing.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

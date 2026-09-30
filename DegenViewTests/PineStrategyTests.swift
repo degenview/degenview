@@ -258,11 +258,11 @@ final class PineStrategyTests: XCTestCase {
         XCTAssertEqual(output.candles.count, 1)
         XCTAssertEqual(output.candles[0].bars.count, bars.count)
         XCTAssertTrue(output.candles[0].bars.contains { $0 != nil })
-        XCTAssertEqual(output.candles[0].display, 3)
+        XCTAssertEqual(output.candles[0].display, [.pane, .dataWindow])
 
         // The channel midline is display.none yet must stay so the gradient fills can use it.
         let midline = try XCTUnwrap(output.plots.first { $0.title == "Channel Midline" })
-        XCTAssertEqual(midline.display, 0)
+        XCTAssertEqual(midline.display, .hidden)
         XCTAssertEqual(output.fills.count, 2)
         XCTAssertTrue(output.fills.allSatisfy { !$0.gradients.isEmpty })
         XCTAssertTrue(output.fills[0].gradients.contains { $0 != nil })
@@ -372,7 +372,7 @@ final class PineStrategyTests: XCTestCase {
             plot(close, display = display.none)
             """, bars: closes([1])
         ).output
-        XCTAssertEqual(output.plots.map(\.display), [3, 0])
+        XCTAssertEqual(output.plots.map(\.display), [[.pane, .dataWindow], .hidden])
     }
 
     func testTimestampForms() throws {

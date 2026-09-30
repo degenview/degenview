@@ -16,10 +16,11 @@ enum PineBuiltins {
     /// `dayofweek.*` are integers because scripts do arithmetic on them.
     static let constants: [String: PineRuntimeValue] = {
         var table: [String: PineRuntimeValue] = [
-            "display.none": .int(PineDisplay.none), "display.pane": .int(PineDisplay.pane),
-            "display.data_window": .int(PineDisplay.dataWindow),
-            "display.price_scale": .int(PineDisplay.priceScale),
-            "display.status_line": .int(PineDisplay.statusLine), "display.all": .int(PineDisplay.all),
+            "display.none": .int(PineDisplay.hidden.rawValue), "display.pane": .int(PineDisplay.pane.rawValue),
+            "display.data_window": .int(PineDisplay.dataWindow.rawValue),
+            "display.price_scale": .int(PineDisplay.priceScale.rawValue),
+            "display.status_line": .int(PineDisplay.statusLine.rawValue),
+            "display.all": .int(PineDisplay.all.rawValue),
             "dayofweek.sunday": .int(1), "dayofweek.monday": .int(2), "dayofweek.tuesday": .int(3),
             "dayofweek.wednesday": .int(4), "dayofweek.thursday": .int(5), "dayofweek.friday": .int(6),
             "dayofweek.saturday": .int(7), "math.pi": .float(Double.pi), "math.e": .float(M_E),
