@@ -355,6 +355,8 @@
 		F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */; };
 		F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */; };
 		F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F414E00390468E456A83EB64 /* PineRegressionTests.swift */; };
+		F2634A95761B88EAC1DBE0FF /* PineBuiltinTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */; };
+		F2B83DE70381EF295A63B7EB /* PineTypeChecker+Expressions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -629,6 +631,8 @@
 		F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntimeState.swift; sourceTree = "<group>"; };
 		F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCalendar.swift; sourceTree = "<group>"; };
 		F414E00390468E456A83EB64 /* PineRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRegressionTests.swift; sourceTree = "<group>"; };
+		F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBuiltinTypes.swift; sourceTree = "<group>"; };
+		F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineTypeChecker+Expressions.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -911,7 +915,9 @@
 		F9BE3990A8A07995985F7C88 /* Analysis */ = {
 			isa = PBXGroup;
 			children = (
+				F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */,
 				F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */,
+				F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */,
 				P30000000000000000000101 /* PineTypeChecker.swift */,
 			);
 			path = Analysis;
@@ -1538,6 +1544,8 @@
 				F2A65A32B9828D5E3268F021 /* PineRuntimeSession.swift in Sources */,
 				F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */,
 				F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */,
+				F2634A95761B88EAC1DBE0FF /* PineBuiltinTypes.swift in Sources */,
+				F2B83DE70381EF295A63B7EB /* PineTypeChecker+Expressions.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
