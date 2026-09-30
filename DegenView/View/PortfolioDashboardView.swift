@@ -851,6 +851,21 @@ private struct PortfolioHistoryChart: View {
         }
 
         if points.count > 1 {
+            // One polygon per stretch of same-colored segments, not per segment — adjacent
+            // fills would show anti-aliasing seams. Each segment takes the color of the
+            // point it ends on, like the stroke below.
+            var runStart = 0
+            for index in 1..<points.count {
+                let profit = points[index].value >= points[index].netContributions
+                let isLast = index == points.count - 1
+                let nextProfit = isLast ? profit : points[index + 1].value >= points[index + 1].netContributions
+                guard isLast || nextProfit != profit else { continue }
+                context.fillAreaUnderLine(
+                    (runStart...index).map(position), plot: plot, color: profit ? .green : .red,
+                    opacity: ChartStyle.default.areaFillOpacity)
+                runStart = index
+            }
+
             for index in 1..<points.count {
                 var segment = Path()
                 segment.move(to: position(index - 1))
