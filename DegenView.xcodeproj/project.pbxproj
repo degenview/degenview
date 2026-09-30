@@ -353,6 +353,8 @@
 		F273A837B5D595B802F6F0BC /* PineRuntimeSession+Visuals.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B3ACA7E593AB78FF90A8C2 /* PineRuntimeSession+Visuals.swift */; };
 		F2A65A32B9828D5E3268F021 /* PineRuntimeSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F7B1C1991619A3D8EF1DC1 /* PineRuntimeSession.swift */; };
 		F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */; };
+		F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */; };
+		F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F414E00390468E456A83EB64 /* PineRegressionTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -625,6 +627,8 @@
 		F1B3ACA7E593AB78FF90A8C2 /* PineRuntimeSession+Visuals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineRuntimeSession+Visuals.swift"; sourceTree = "<group>"; };
 		F1F7B1C1991619A3D8EF1DC1 /* PineRuntimeSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntimeSession.swift; sourceTree = "<group>"; };
 		F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntimeState.swift; sourceTree = "<group>"; };
+		F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCalendar.swift; sourceTree = "<group>"; };
+		F414E00390468E456A83EB64 /* PineRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRegressionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -857,6 +861,7 @@
 				PW0000000000000000000106 /* PineWordRangeTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				P20000000000000000000104 /* PineStrategyTests.swift */,
+				F414E00390468E456A83EB64 /* PineRegressionTests.swift */,
 				P30000000000000000000102 /* PineTypeCheckerTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
@@ -1020,6 +1025,7 @@
 			isa = PBXGroup;
 			children = (
 				F1CB5414A19690FFF35FC8FA /* Int+Pine.swift */,
+				F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */,
 				F1BA9AFF31DB26C2CEB4A9FC /* PineFormat.swift */,
 				F188B81D8E88A287ECA4BD10 /* PineMath.swift */,
 				F16BDE4F9317BCB826A51646 /* PineOperators.swift */,
@@ -1294,6 +1300,7 @@
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
+				F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1530,6 +1537,7 @@
 				F273A837B5D595B802F6F0BC /* PineRuntimeSession+Visuals.swift in Sources */,
 				F2A65A32B9828D5E3268F021 /* PineRuntimeSession.swift in Sources */,
 				F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */,
+				F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

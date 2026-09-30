@@ -143,7 +143,7 @@ enum PineTA {
     }
 
     private static func rsi(_ inputs: [PineRuntimeValue], _ length: Int) -> PineRuntimeValue {
-        guard let values = lastValid(inputs, length + 1) else { return .na }
+        guard length > 0, let values = lastValid(inputs, length + 1) else { return .na }
         let changes = zip(values.dropFirst(), values).map(-)
         let gain = changes.map { max($0, 0) }.reduce(0, +) / Double(length)
         let loss = changes.map { max(-$0, 0) }.reduce(0, +) / Double(length)

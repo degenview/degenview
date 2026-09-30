@@ -276,7 +276,7 @@ final class PineStrategyTests: XCTestCase {
         // past the data must silence the strategy entirely.
         let program = PineCompiler.compile(source: volumeBreakoutStrategy)
         let bars = swingingMarket(count: 700)
-        let late = PineTimestamp.make(year: 2030, month: 1, day: 1)
+        let late = try XCTUnwrap(PineCalendar.make(year: 2030, month: 1, day: 1))
         let output = try PineRuntimeSession(program: program, inputs: ["startDate": .int(late)])
             .evaluate(bars: bars).output
         XCTAssertEqual(output.strategy?.trades.count, 0)
@@ -390,10 +390,10 @@ final class PineStrategyTests: XCTestCase {
         XCTAssertNil(PineTimestamp.parse("not a date"))
         XCTAssertNil(PineTimestamp.evaluate(positional: [.int(2018), .na, .int(1)]))
 
-        let parts = PineTimestamp.components(milliseconds: expected)
+        let parts = PineCalendar.components(milliseconds: expected)
         XCTAssertEqual([parts.year, parts.month, parts.day, parts.weekday], [2018, 1, 1, 2])
         // Months roll over like Pine's: month 13 of 2017 is January 2018.
-        XCTAssertEqual(PineTimestamp.make(year: 2017, month: 13, day: 1), expected)
+        XCTAssertEqual(PineCalendar.make(year: 2017, month: 13, day: 1), expected)
     }
 
     func testTimestampAndTimePartsAtRuntime() throws {

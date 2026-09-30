@@ -11,7 +11,7 @@ enum PineTime {
     static func milliseconds(_ date: Date) -> Int { Int(pine: date.timeIntervalSince1970 * 1000) ?? 0 }
 
     static func part(_ name: String, milliseconds stamp: Int) -> PineRuntimeValue {
-        let c = PineTimestamp.components(milliseconds: stamp)
+        let c = PineCalendar.components(milliseconds: stamp)
         switch name {
         case "year": return .int(c.year)
         case "month": return .int(c.month)
