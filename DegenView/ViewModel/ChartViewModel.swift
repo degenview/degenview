@@ -8,7 +8,8 @@ final class ChartViewModel: ObservableObject {
     @Published var source: DataSourceType
 
     /// Human-readable label, for sources whose `ticker` is an opaque identifier.
-    /// A Polymarket CLOB token id is 77 digits, so the market question rides along.
+    /// A Polymarket CLOB token id is 77 digits (and a Kalshi ticker is opaque), so the market
+    /// question rides along.
     @Published var displayName: String?
     @Published var portfolioChart: PortfolioChartConfig?
     @Published var coinMarketCapChart: CoinMarketCapChartConfig?
@@ -45,8 +46,8 @@ final class ChartViewModel: ObservableObject {
                 return upper
             }
             return "\(upper)USDT"
-        case .coingecko, .dexscreener, .alpaca, .polymarket, .coinMarketCap:
-            // ticker IS the fullSymbol (coin ID, pair address, or CLOB token id)
+        case .coingecko, .dexscreener, .alpaca, .polymarket, .kalshi, .coinMarketCap:
+            // ticker IS the fullSymbol (coin ID, pair address, CLOB token id, or Kalshi "SERIES/MARKET")
             return ticker
         }
     }
@@ -65,8 +66,8 @@ final class ChartViewModel: ObservableObject {
         case .coingecko, .dexscreener:
             let parts = ticker.components(separatedBy: "/")
             return parts.first?.uppercased() ?? ticker.uppercased()
-        case .polymarket:
-            // The ticker is a token id; the monogram fallback needs the question.
+        case .polymarket, .kalshi:
+            // The ticker is an opaque market id; the monogram fallback needs the question.
             return title
         case .alpaca:
             return ticker.uppercased()
@@ -79,15 +80,15 @@ final class ChartViewModel: ObservableObject {
     var priceScale: PriceScale { source.priceScale }
 
     /// Prediction markets report one price per timestamp, so they draw as a line.
-    var usesLineChart: Bool { source == .polymarket }
+    var usesLineChart: Bool { source.isPredictionMarket }
 
     /// Identity of the icon currently wanted. `uniqueID` deliberately survives
     /// `updateTicker`, so it can't drive the icon lookup — the card would keep
     /// showing the previous coin's artwork.
     var iconKey: String { "\(source.rawValue):\(ticker)" }
 
-    /// All tradable choices for multi-outcome Polymarket events. Empty for single-choice
-    /// markets and all non-Polymarket sources.
+    /// All tradable choices for multi-outcome prediction-market events. Empty for single-choice
+    /// markets and all other sources.
     @Published var pmSeries: [PmSeriesConfig] = []
 
     /// Fetched price history keyed by CLOB token id, populated during multi-series fetches.
@@ -119,9 +120,9 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
-    /// Highest currently visible Polymarket choice, used by the card subtitle.
-    var leadingPolymarketChoice: (label: String, price: Double)? {
-        guard source == .polymarket else { return nil }
+    /// Highest currently visible prediction-market choice, used by the card subtitle.
+    var leadingMarketChoice: (label: String, price: Double)? {
+        guard source.isPredictionMarket else { return nil }
         if pmSeries.count > 1 {
             return pmVisibleSeries.compactMap { series in
                 series.data.last.map { (label: series.label, price: $0.closePrice) }
@@ -131,7 +132,7 @@ final class ChartViewModel: ObservableObject {
         return (label, price)
     }
 
-    /// Toggle a Polymarket series on/off by its token id and refresh the primary data.
+    /// Toggle a prediction-market series on/off by its market id and refresh the primary data.
     func togglePmSeries(_ tokenID: String) {
         guard let i = pmSeries.firstIndex(where: { $0.tokenID == tokenID }) else { return }
         pmSeries[i].enabled.toggle()
@@ -591,7 +592,7 @@ final class ChartViewModel: ObservableObject {
         let theme = pineTheme
         let symbol = PineSymbolInfo(
             ticker: ticker, tickerID: dataset.symbolKey,
-            type: self.source == .alpaca ? "stock" : self.source == .polymarket ? "prediction" : "crypto")
+            type: self.source == .alpaca ? "stock" : self.source.isPredictionMarket ? "prediction" : "crypto")
         let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
         pineFeed = feed
         pineDataset = dataset
@@ -1292,8 +1293,8 @@ final class ChartViewModel: ObservableObject {
                         count: count,
                         generation: generation
                     )
-                } else if let pmService = api as? PolymarketService {
-                    // Polymarket needs the whole TimeRange, not the interval token:
+                } else if let pmService = api as? PredictionMarketDataSource {
+                    // Prediction markets need the whole TimeRange, not the interval token:
                     // that token maps 1D and 3M both onto "1d".
                     if pmSeries.count > 1 {
                         try await self.fetchPmMultiSeries(
@@ -1306,7 +1307,7 @@ final class ChartViewModel: ObservableObject {
                     } else {
                         let tokenID = pmSeries.first?.tokenID ?? self.apiSymbol
                         let data = try await pmService.fetchPrices(
-                            tokenID: tokenID,
+                            marketID: tokenID,
                             range: range,
                             count: count
                         )
@@ -1436,12 +1437,12 @@ final class ChartViewModel: ObservableObject {
         Task { await fetchCoinMarketCap(force: false) }
     }
 
-    /// Fetch all Polymarket series in parallel and update `pmSeriesData`.
+    /// Fetch all prediction-market series in parallel and update `pmSeriesData`.
     ///
     /// Individual series failures are silently ignored — the chart shows whatever
     /// data arrived. Sets `lastUpdated` on any partial or full success.
     private func fetchPmMultiSeries(
-        pmService: PolymarketService,
+        pmService: PredictionMarketDataSource,
         range: TimeRange,
         count: Int,
         generation: Int
@@ -1452,7 +1453,7 @@ final class ChartViewModel: ObservableObject {
             for s in series {
                 group.addTask {
                     let data =
-                        (try? await pmService.fetchPrices(tokenID: s.tokenID, range: range, count: count)) ?? []
+                        (try? await pmService.fetchPrices(marketID: s.tokenID, range: range, count: count)) ?? []
                     return (s.tokenID, data)
                 }
             }

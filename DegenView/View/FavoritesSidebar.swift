@@ -28,7 +28,7 @@ struct FavoritesSidebar: View {
                 ContentUnavailableView(
                     "No Favorites",
                     systemImage: "star",
-                    description: Text("Save a stock, crypto, or Polymarket item for quick access.")
+                    description: Text("Save a stock, crypto, or prediction-market item for quick access.")
                 )
                 .frame(maxHeight: .infinity)
             } else {

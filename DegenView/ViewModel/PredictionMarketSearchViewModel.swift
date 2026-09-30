@@ -1,33 +1,35 @@
 import Foundation
 
-/// Markets belonging to one Polymarket event, rendered as a titled section.
-struct PolymarketResultGroup: Identifiable {
+/// Markets belonging to one prediction-market event, rendered as a titled section.
+struct PredictionMarketResultGroup: Identifiable {
     let eventTitle: String
     let results: [TickerSearchResult]
 
     var id: String { eventTitle }
 }
 
-/// Debounced Polymarket market search.
+/// Debounced prediction-market search, for one provider (Polymarket or Kalshi).
 ///
 /// Mirrors `TickerSearchViewModel`'s surface (`scheduleSearch` / `cancelSearch` /
 /// `isSearching` / `selectedResult`) so the shared search-pane views bind to either,
 /// but groups its results by parent event rather than by data source.
 @MainActor
-final class PolymarketSearchViewModel: ObservableObject {
-    @Published var groups: [PolymarketResultGroup] = []
+final class PredictionMarketSearchViewModel: ObservableObject {
+    @Published var groups: [PredictionMarketResultGroup] = []
     @Published var isSearching = false
     @Published var selectedResult: TickerSearchResult?
     @Published var errorMessage: String?
-    /// Per-tokenID checked state for multi-choice groups. False by default — user opts in.
+    /// Per-market-id checked state for multi-choice groups. False by default — user opts in.
     @Published var checkedChoices: [String: Bool] = [:]
     @Published private(set) var expandedGroupIDs: Set<String> = []
     private var resultSetID = ""
 
     private let debouncer = SearchDebouncer()
     private let logPrefix: String
+    let provider: DataSourceType
 
-    init(logPrefix: String = "[PolymarketSearch]") {
+    init(provider: DataSourceType = .polymarket, logPrefix: String = "[PredictionMarketSearch]") {
+        self.provider = provider
         self.logPrefix = logPrefix
     }
 
@@ -38,11 +40,11 @@ final class PolymarketSearchViewModel: ObservableObject {
         groups.first?.results.first
     }
 
-    func isExpanded(_ group: PolymarketResultGroup) -> Bool {
+    func isExpanded(_ group: PredictionMarketResultGroup) -> Bool {
         expandedGroupIDs.contains(group.id)
     }
 
-    func toggleExpansion(_ group: PolymarketResultGroup) {
+    func toggleExpansion(_ group: PredictionMarketResultGroup) {
         if isExpanded(group) {
             expandedGroupIDs.remove(group.id)
         } else {
@@ -53,22 +55,22 @@ final class PolymarketSearchViewModel: ObservableObject {
     // MARK: - Group-level selection
 
     /// Whether ALL choices in `group` are checked.
-    func isGroupChecked(_ group: PolymarketResultGroup) -> Bool {
+    func isGroupChecked(_ group: PredictionMarketResultGroup) -> Bool {
         group.results.allSatisfy { checkedChoices[$0.fullSymbol] == true }
     }
 
     /// Whether ANY choice in `group` is checked.
-    func isGroupAnyChecked(_ group: PolymarketResultGroup) -> Bool {
+    func isGroupAnyChecked(_ group: PredictionMarketResultGroup) -> Bool {
         group.results.contains { checkedChoices[$0.fullSymbol] == true }
     }
 
     /// Whether SOME (but not all) choices in `group` are checked.
-    func isGroupPartiallyChecked(_ group: PolymarketResultGroup) -> Bool {
+    func isGroupPartiallyChecked(_ group: PredictionMarketResultGroup) -> Bool {
         isGroupAnyChecked(group) && !isGroupChecked(group)
     }
 
     /// Toggle all choices in `group` on/off. Checking a group unchecks all other groups.
-    func toggleGroup(_ group: PolymarketResultGroup) {
+    func toggleGroup(_ group: PredictionMarketResultGroup) {
         let allChecked = isGroupChecked(group)
         let newValue = !allChecked
 
@@ -102,7 +104,7 @@ final class PolymarketSearchViewModel: ObservableObject {
     }
 
     /// Build a `TickerSearchResult` representing only the checked choices in `group`.
-    func buildMultiChoiceResult(for group: PolymarketResultGroup) -> TickerSearchResult? {
+    func buildMultiChoiceResult(for group: PredictionMarketResultGroup) -> TickerSearchResult? {
         let checked = group.results.filter { checkedChoices[$0.fullSymbol] == true }
         guard let primary = checked.first else { return nil }
         var result = primary
@@ -169,7 +171,7 @@ final class PolymarketSearchViewModel: ObservableObject {
         isSearching = true
         defer { isSearching = false }
 
-        let service = DataSourceFactory.shared.polymarket
+        let service = DataSourceFactory.shared.service(for: provider)
 
         do {
             let results = try await service.searchTickers(query: query)
@@ -190,7 +192,7 @@ final class PolymarketSearchViewModel: ObservableObject {
 
     /// Bucket results without changing event relevance, then stably sort choices by
     /// descending current YES probability. Missing probabilities appear last.
-    static func group(_ results: [TickerSearchResult]) -> [PolymarketResultGroup] {
+    static func group(_ results: [TickerSearchResult]) -> [PredictionMarketResultGroup] {
         var order: [String] = []
         var buckets: [String: [TickerSearchResult]] = [:]
 
@@ -221,7 +223,7 @@ final class PolymarketSearchViewModel: ObservableObject {
                 item.pmSeries = sortedSeries
                 return item
             }
-            return PolymarketResultGroup(eventTitle: title, results: normalized)
+            return PredictionMarketResultGroup(eventTitle: title, results: normalized)
         }
     }
 

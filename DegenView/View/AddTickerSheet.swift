@@ -13,11 +13,15 @@ struct AddTickerSheet: View {
         logPrefix: "[AddTicker/Stocks]",
         sources: { [DataSourceFactory.shared.alpaca] }
     )
-    @StateObject private var polymarketVM = PolymarketSearchViewModel(logPrefix: "[AddTicker/Polymarket]")
+    @StateObject private var polymarketVM = PredictionMarketSearchViewModel(
+        provider: .polymarket, logPrefix: "[AddTicker/Polymarket]")
+    @StateObject private var kalshiVM = PredictionMarketSearchViewModel(
+        provider: .kalshi, logPrefix: "[AddTicker/Kalshi]")
 
     @State private var selectedTab: Tab = .crypto
     @State private var inputText = ""
-    @State private var polymarketText = ""
+    @State private var predictionMarketText = ""
+    @State private var predictionProvider: DataSourceType = .polymarket
     @State private var stockText = ""
     @State private var addError: String?
     @State private var needsAlpacaSetup = false
@@ -51,10 +55,16 @@ struct AddTickerSheet: View {
     enum Tab: String, CaseIterable {
         case crypto = "Crypto"
         case stocks = "Stocks"
-        case polymarket = "Polymarket"
+        case predictionMarkets = "Prediction Markets"
         case coinMarketCap = "CoinMarketCap"
         case portfolio = "Portfolio"
         case models = "Models"
+    }
+
+    /// View model behind whichever prediction-market provider is selected.
+    private var predictionVM: PredictionMarketSearchViewModel {
+        PredictionMarketPicker.viewModel(
+            for: predictionProvider, polymarket: polymarketVM, kalshi: kalshiVM)
     }
 
     /// Whichever pane is showing owns the selection the Add button commits.
@@ -62,7 +72,7 @@ struct AddTickerSheet: View {
         switch selectedTab {
         case .crypto: return searchVM.selectedResult
         case .stocks: return stockVM.selectedResult
-        case .polymarket: return polymarketVM.selectedResult
+        case .predictionMarkets: return predictionVM.selectedResult
         case .coinMarketCap, .portfolio, .models: return nil
         }
     }
@@ -100,10 +110,12 @@ struct AddTickerSheet: View {
                     cryptoTab
                 case .stocks:
                     stockTab
-                case .polymarket:
-                    PolymarketSearchPane(
-                        searchVM: polymarketVM,
-                        searchText: $polymarketText,
+                case .predictionMarkets:
+                    PredictionMarketPicker(
+                        provider: $predictionProvider,
+                        polymarketVM: polymarketVM,
+                        kalshiVM: kalshiVM,
+                        searchText: $predictionMarketText,
                         sizing: .fillAvailable,
                         showsStatus: false,
                         onCommitResult: { addTicker($0) }
@@ -160,6 +172,7 @@ struct AddTickerSheet: View {
         .animation(.easeInOut(duration: 0.18), value: searchVM.searchResults.values.reduce(0) { $0 + $1.count })
         .animation(.easeInOut(duration: 0.18), value: stockVM.searchResults.values.reduce(0) { $0 + $1.count })
         .animation(.easeInOut(duration: 0.18), value: polymarketVM.groups.reduce(0) { $0 + $1.results.count })
+        .animation(.easeInOut(duration: 0.18), value: kalshiVM.groups.reduce(0) { $0 + $1.results.count })
         .onChange(of: selectedTab) {
             addError = nil
             needsAlpacaSetup = false
@@ -341,13 +354,13 @@ struct AddTickerSheet: View {
 
     @ViewBuilder
     private var statusRows: some View {
-        if let error = addError ?? (selectedTab == .polymarket ? polymarketVM.errorMessage : nil) {
+        if let error = addError ?? (selectedTab == .predictionMarkets ? predictionVM.errorMessage : nil) {
             Label(error, systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        } else if selectedTab == .polymarket, !polymarketVM.isSearching,
-            !polymarketText.trimmingCharacters(in: .whitespaces).isEmpty,
-            !polymarketVM.hasResults
+        } else if selectedTab == .predictionMarkets, !predictionVM.isSearching,
+            !predictionMarketText.trimmingCharacters(in: .whitespaces).isEmpty,
+            !predictionVM.hasResults
         {
             Text("No markets found")
                 .font(.caption)
@@ -375,6 +388,7 @@ struct AddTickerSheet: View {
         searchVM.cancelSearch()
         stockVM.cancelSearch()
         polymarketVM.cancelSearch()
+        kalshiVM.cancelSearch()
     }
 
     private func addTicker(_ selected: TickerSearchResult) {
@@ -385,12 +399,13 @@ struct AddTickerSheet: View {
 
         Task { @MainActor in
             do {
-                // Polymarket search already handed us the market artwork; seed the
-                // resolver so the new card paints it without another round trip.
-                if selected.source == .polymarket {
+                // Prediction-market search already handed us the market artwork (when the
+                // provider has any); seed the resolver so the new card paints it without
+                // another round trip.
+                if selected.source.isPredictionMarket {
                     await IconResolver.shared.remember(
                         ticker: selected.fullSymbol,
-                        source: .polymarket,
+                        source: selected.source,
                         url: selected.imageURL
                     )
                 }

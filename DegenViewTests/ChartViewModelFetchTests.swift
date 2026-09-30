@@ -97,8 +97,8 @@ final class ChartViewModelFetchTests: XCTestCase {
         viewModel.currentPrice = 0.51
 
         XCTAssertEqual(viewModel.title, "AGT Winner")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Bird & Byron")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.51)
+        XCTAssertEqual(viewModel.leadingMarketChoice?.label, "Bird & Byron")
+        XCTAssertEqual(viewModel.leadingMarketChoice?.price, 0.51)
     }
 
     @MainActor
@@ -160,23 +160,23 @@ final class ChartViewModelFetchTests: XCTestCase {
         ]
 
         await viewModel.fetchData(for: .oneDay, count: 2)
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Choice A")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.60)
+        XCTAssertEqual(viewModel.leadingMarketChoice?.label, "Choice A")
+        XCTAssertEqual(viewModel.leadingMarketChoice?.price, 0.60)
 
         await viewModel.fetchData(for: .oneDay, count: 2, silent: true)
         XCTAssertEqual(viewModel.title, "Event title")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Choice B")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.70)
+        XCTAssertEqual(viewModel.leadingMarketChoice?.label, "Choice B")
+        XCTAssertEqual(viewModel.leadingMarketChoice?.price, 0.70)
         XCTAssertEqual(currentPricePolicies.count, 4)
         XCTAssertTrue(currentPricePolicies.allSatisfy { $0 == .reloadIgnoringLocalCacheData })
 
         viewModel.togglePmSeries(tokenB)
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Choice A")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.40)
+        XCTAssertEqual(viewModel.leadingMarketChoice?.label, "Choice A")
+        XCTAssertEqual(viewModel.leadingMarketChoice?.price, 0.40)
 
         viewModel.togglePmSeries(tokenB)
         viewModel.applyReplayTimestamp(Date(timeIntervalSince1970: 100))
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.label, "Choice A")
-        XCTAssertEqual(viewModel.leadingPolymarketChoice?.price, 0.55)
+        XCTAssertEqual(viewModel.leadingMarketChoice?.label, "Choice A")
+        XCTAssertEqual(viewModel.leadingMarketChoice?.price, 0.55)
     }
 }

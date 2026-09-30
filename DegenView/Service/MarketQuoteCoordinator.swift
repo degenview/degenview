@@ -46,7 +46,7 @@ actor MarketQuoteCoordinator {
 
     private func poll() async {
         let assets = Self.assetsByKey(owners.values.flatMap(\.values)).values
-        let values = Array(assets.filter { $0.source != .polymarket })
+        let values = Array(assets.filter { !$0.source.isPredictionMarket })
         for chunkStart in stride(from: 0, to: values.count, by: 4) {
             let chunk = values[chunkStart..<min(chunkStart + 4, values.count)]
             await withTaskGroup(of: MarketQuote?.self) { group in
@@ -91,7 +91,7 @@ actor MarketQuoteCoordinator {
         case .binance: 180
         case .alpaca: 7_200
         case .coingecko, .dexscreener: 1_800
-        case .polymarket, .coinMarketCap: 0
+        case .polymarket, .kalshi, .coinMarketCap: 0
         }
     }
 }

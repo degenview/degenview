@@ -27,7 +27,7 @@ DegenView/
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
-│   └── PolymarketSearchViewModel.swift
+│   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
 │   ├── CandleChartView.swift          # AppKit Canvas candlestick renderer
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
@@ -39,7 +39,7 @@ DegenView/
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
-│   ├── AddTickerSheet.swift           # Crypto/stock/Polymarket/CMC/Portfolio picker
+│   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
@@ -82,7 +82,10 @@ DegenView/
     ├── PortfolioStore.swift           # Published portfolio state, quotes, history, currency projections
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
+    ├── PredictionMarketDataSource.swift # Shared protocol: YES probability history by TimeRange
     ├── PolymarketService.swift        # Event search and probability history
+    ├── KalshiService.swift            # Series-index search, candlestick history, live YES ask
+    ├── KalshiSeriesIndex.swift        # Cached /series list + local keyword ranking
     ├── CoinMarketCapService.swift     # Keychain, typed API client/provider, cache and retry
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs, saved views, and session persistence

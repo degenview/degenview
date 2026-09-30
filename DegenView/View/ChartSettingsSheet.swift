@@ -16,12 +16,15 @@ struct ChartSettingsSheet: View {
         logPrefix: "[ChartSettings/Stocks]",
         sources: { [DataSourceFactory.shared.alpaca] }
     )
-    @StateObject private var polymarketVM = PolymarketSearchViewModel(
-        logPrefix: "[ChartSettings/Polymarket]")
+    @StateObject private var polymarketVM = PredictionMarketSearchViewModel(
+        provider: .polymarket, logPrefix: "[ChartSettings/Polymarket]")
+    @StateObject private var kalshiVM = PredictionMarketSearchViewModel(
+        provider: .kalshi, logPrefix: "[ChartSettings/Kalshi]")
+    @State private var predictionProvider: DataSourceType
 
     @State private var selectedTab: Tab
     @State private var searchText = ""
-    @State private var polymarketText = ""
+    @State private var predictionMarketText = ""
     @State private var stockText = ""
     @State private var assetType: ChartAssetType
 
@@ -105,6 +108,8 @@ struct ChartSettingsSheet: View {
         _showRSI = State(initialValue: viewModel.showRSI)
         _showEMA = State(initialValue: viewModel.showEMA)
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
+        // Polymarket unless this chart is already a Kalshi one.
+        _predictionProvider = State(initialValue: viewModel.source == .kalshi ? .kalshi : .polymarket)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
         _pineDraft = State(
@@ -114,8 +119,8 @@ struct ChartSettingsSheet: View {
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
         _assetType = State(
-            initialValue: viewModel.source == .polymarket
-                ? .polymarket : (viewModel.source == .alpaca ? .stock : .crypto))
+            initialValue: viewModel.source.isPredictionMarket
+                ? .predictionMarket : (viewModel.source == .alpaca ? .stock : .crypto))
     }
 
     var body: some View {
@@ -212,7 +217,7 @@ struct ChartSettingsSheet: View {
                         ? searchVM.selectedResult
                         : assetType == .stock
                             ? stockVM.selectedResult
-                            : polymarketVM.selectedResult
+                            : predictionVM.selectedResult
                     if selectedTab == .ticker, let selected {
                         apply(selected)
                     } else {
@@ -314,7 +319,7 @@ struct ChartSettingsSheet: View {
             switch assetType {
             case .crypto: cryptoTickerSearch
             case .stock: stockTickerSearch
-            case .polymarket: polymarketTab
+            case .predictionMarket: predictionMarketTab
             }
         }
         .padding(.top, 16)
@@ -377,13 +382,21 @@ struct ChartSettingsSheet: View {
         .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    // MARK: - Polymarket Tab
+    // MARK: - Prediction Markets Tab
 
-    private var polymarketTab: some View {
+    /// View model behind whichever prediction-market provider is selected.
+    private var predictionVM: PredictionMarketSearchViewModel {
+        PredictionMarketPicker.viewModel(
+            for: predictionProvider, polymarket: polymarketVM, kalshi: kalshiVM)
+    }
+
+    private var predictionMarketTab: some View {
         VStack(spacing: 12) {
-            PolymarketSearchPane(
-                searchVM: polymarketVM,
-                searchText: $polymarketText,
+            PredictionMarketPicker(
+                provider: $predictionProvider,
+                polymarketVM: polymarketVM,
+                kalshiVM: kalshiVM,
+                searchText: $predictionMarketText,
                 sizing: .fillAvailable
             )
             .padding(.horizontal, 16)
@@ -419,7 +432,7 @@ struct ChartSettingsSheet: View {
         switch assetType {
         case .crypto: searchVM.selectedResult
         case .stock: stockVM.selectedResult
-        case .polymarket: polymarketVM.selectedResult
+        case .predictionMarket: predictionVM.selectedResult
         }
     }
 
@@ -429,22 +442,24 @@ struct ChartSettingsSheet: View {
         searchVM.cancelSearch()
         stockVM.cancelSearch()
         polymarketVM.cancelSearch()
+        kalshiVM.cancelSearch()
     }
 
     private func apply(_ selected: TickerSearchResult) {
         // The search payload already carried the market artwork; seed the resolver so
         // the card repaints without another round trip.
-        if selected.source == .polymarket {
+        if selected.source.isPredictionMarket {
             let ticker = selected.fullSymbol
+            let source = selected.source
             let url = selected.imageURL
-            Task { await IconResolver.shared.remember(ticker: ticker, source: .polymarket, url: url) }
+            Task { await IconResolver.shared.remember(ticker: ticker, source: source, url: url) }
         }
 
         cancelSearches()
         dismiss()
 
         let displayName: String? = {
-            guard selected.source == .polymarket else { return nil }
+            guard selected.source.isPredictionMarket else { return nil }
             return selected.eventTitle ?? selected.question ?? selected.symbol
         }()
 

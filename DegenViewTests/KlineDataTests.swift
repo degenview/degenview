@@ -103,7 +103,7 @@ final class PolymarketSearchPresentationTests: XCTestCase {
             market("A tied second", "a3", event: "Event A", price: 0.6),
         ]
 
-        let groups = PolymarketSearchViewModel.group(results)
+        let groups = PredictionMarketSearchViewModel.group(results)
 
         XCTAssertEqual(groups.map(\.eventTitle), ["Event A", "Event B"])
         XCTAssertEqual(groups[0].results.map(\.fullSymbol), ["a2", "a1", "a3", "a0"])
@@ -112,7 +112,7 @@ final class PolymarketSearchPresentationTests: XCTestCase {
     }
 
     func testMultiChoiceResultUsesVisibleSortedOrder() {
-        let viewModel = PolymarketSearchViewModel()
+        let viewModel = PredictionMarketSearchViewModel()
         viewModel.applyResults([
             market("Low", "low", event: "Event", price: 0.2),
             market("High", "high", event: "Event", price: 0.8),
@@ -126,14 +126,14 @@ final class PolymarketSearchPresentationTests: XCTestCase {
     }
 
     func testSingleChoiceRetainsItsLabelForChartSubtitle() {
-        let viewModel = PolymarketSearchViewModel()
+        let viewModel = PredictionMarketSearchViewModel()
         viewModel.applyResults([market("Bird & Byron", "bird", event: "AGT Winner", price: 0.51)])
 
         XCTAssertEqual(viewModel.groups[0].results[0].pmSeries?.map(\.label), ["Bird & Byron"])
     }
 
     func testExpansionDefaultsAndOnlyResetsForChangedResults() {
-        let viewModel = PolymarketSearchViewModel()
+        let viewModel = PredictionMarketSearchViewModel()
         let oneEvent = [market("Yes", "yes", event: "Event", price: 0.5)]
         viewModel.applyResults(oneEvent)
         XCTAssertTrue(viewModel.isExpanded(viewModel.groups[0]))

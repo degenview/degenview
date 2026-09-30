@@ -48,11 +48,11 @@ struct PaperInstrument: Codable, Hashable, Identifiable {
     var expiration: Date?
 
     static func chart(symbol: String, displayName: String, source: DataSourceType) -> Self {
-        let assetClass: PaperAssetClass = source == .alpaca ? .stock : (source == .polymarket ? .prediction : .crypto)
+        let assetClass: PaperAssetClass = source == .alpaca ? .stock : (source.isPredictionMarket ? .prediction : .crypto)
         return .init(
             key: "\(source.rawValue):\(symbol)", symbol: symbol, displayName: displayName,
             source: source, assetClass: assetClass, quoteCurrency: .USD,
-            tickSize: source == .polymarket ? 0.001 : 0.00000001,
+            tickSize: source == .polymarket ? 0.001 : (source == .kalshi ? 0.01 : 0.00000001),
             minimumQuantity: source == .alpaca ? 1 : 0.00000001,
             quantityIncrement: source == .alpaca ? 1 : 0.00000001,
             contractMultiplier: 1, pointValue: 1

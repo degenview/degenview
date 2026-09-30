@@ -156,7 +156,7 @@ struct ChartCardView: View {
                         }
                     }
 
-                    if let choice = viewModel.leadingPolymarketChoice {
+                    if let choice = viewModel.leadingMarketChoice {
                         Text(
                             "\(choice.label) · \(PriceFormatter.headline(choice.price, scale: viewModel.priceScale))"
                         )
@@ -181,7 +181,7 @@ struct ChartCardView: View {
             .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
             .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
 
-            if viewModel.source != .polymarket {
+            if !viewModel.source.isPredictionMarket {
                 Button {
                     showAlertEditor = true
                 } label: {

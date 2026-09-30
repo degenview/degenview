@@ -21,14 +21,14 @@ struct TickerSearchResult: Identifiable, Hashable {
     /// Pair contract address for DEX pairs
     var pairAddress: String? { metadata["pairAddress"] }
 
-    /// Parent event title for Polymarket markets (e.g. "How many Fed rate cuts in 2026?")
+    /// Parent event title for prediction markets (e.g. "How many Fed rate cuts in 2026?")
     var eventTitle: String? { metadata["eventTitle"]?.nilIfEmpty }
-    /// Full market question for Polymarket markets
+    /// Full market question for prediction markets
     var question: String? { metadata["question"]?.nilIfEmpty }
     /// Artwork supplied by the source itself, when the search payload carries one
     var imageURL: URL? { metadata["imageURL"]?.nilIfEmpty.flatMap(URL.init(string:)) }
 
-    /// All tradable choices for multi-outcome Polymarket events. Nil for single-choice
+    /// All tradable choices for multi-outcome prediction-market events. Nil for single-choice
     /// markets. When set, selecting this result adds all choices as separate chart lines.
     var pmSeries: [PmSeriesConfig]? = nil
 
@@ -128,6 +128,7 @@ final class DataSourceFactory {
     private lazy var dexScreenerService = DEXScreenerService()
     private lazy var alpacaService = AlpacaAPIService()
     private lazy var polymarketService = PolymarketService()
+    private lazy var kalshiService = KalshiService()
     private lazy var coinMarketCapService = CoinMarketCapTickerDataSource()
 
     func service(for type: DataSourceType) -> TickerDataSource {
@@ -137,12 +138,13 @@ final class DataSourceFactory {
         case .dexscreener: return dexScreenerService
         case .alpaca: return alpacaService
         case .polymarket: return polymarketService
+        case .kalshi: return kalshiService
         case .coinMarketCap: return coinMarketCapService
         }
     }
 
     /// Crypto sources fanned out to by the multi-source ticker search.
-    /// Polymarket is searched separately — different query shape, different rows.
+    /// Prediction markets are searched separately — different query shape, different rows.
     var allSources: [TickerDataSource] {
         [binanceService, coinGeckoService, dexScreenerService]
     }
@@ -150,6 +152,12 @@ final class DataSourceFactory {
     /// Concretely typed accessor — the Polymarket search pane and the chart fetch
     /// path both need `PolymarketService`'s non-protocol methods.
     var polymarket: PolymarketService { polymarketService }
+    var kalshi: KalshiService { kalshiService }
+
+    /// Provider behind a prediction-market source.
+    func predictionMarket(for type: DataSourceType) -> PredictionMarketDataSource? {
+        service(for: type) as? PredictionMarketDataSource
+    }
     var alpaca: AlpacaAPIService { alpacaService }
 }
 

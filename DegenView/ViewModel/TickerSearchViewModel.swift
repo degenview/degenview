@@ -3,7 +3,7 @@ import Foundation
 /// Shared search state and debounced multi-source ticker lookup.
 /// Used by the Crypto tab of both AddTickerSheet and ChartSettingsSheet.
 ///
-/// Polymarket is not part of this fan-out — see `PolymarketSearchViewModel`.
+/// Prediction markets are not part of this fan-out — see `PredictionMarketSearchViewModel`.
 @MainActor
 final class TickerSearchViewModel: ObservableObject {
     @Published var searchResults: [DataSourceType: [TickerSearchResult]] = [:]
