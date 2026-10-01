@@ -95,6 +95,24 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
     }
 
+    func testCommaSeparatedStatementsShareALine() throws {
+        let program = compile(
+            """
+            pair(float x) =>
+                var float lo = na, var float hi = na
+                switch int(x)
+                    1 => lo := 1.0, hi := 10.0
+                    => lo := 2.0, hi := 20.0
+                [lo, hi]
+            [a, b] = pair(close)
+            plot(a)
+            plot(b)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots.map(\.values), [[1, 2], [10, 20]])
+    }
+
     func testExportIsAcceptedInALibraryAndRejectedElsewhere() {
         let body = "export const int answer = 42\nexport double(float x) =>\n    x * 2\n"
         let library = PineCompiler.compile(source: "//@version=6\nlibrary(\"Lib\")\n" + body)

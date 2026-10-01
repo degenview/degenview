@@ -49,7 +49,8 @@ extension PineParser {
     /// The body after `=>`: an indented block, or one statement on the same line.
     private mutating func blockOrSingleStatement(_ owner: String) -> [PineStatement]? {
         if at(.newline) { return indentedBlock(owner) }
-        return statement().map { [$0] }
+        let statements = statementsOnLine()
+        return statements.isEmpty ? nil : statements
     }
 
     // MARK: - Control flow
