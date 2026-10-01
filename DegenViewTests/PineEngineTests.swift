@@ -29,6 +29,16 @@ final class PineEngineTests: XCTestCase {
         }
     }
 
+    func testTabIndentationEqualsFourSpaces() {
+        func source(_ indent: String) -> String {
+            "//@version=6\nindicator(\"Tabs\")\nf(string pos) =>\n\(indent)switch pos\n\(indent)\(indent)\"a\" => 1\n\(indent)\(indent)=> 2\nplot(f(\"a\"))"
+        }
+        let spaces = PineCompiler.compile(source: source("    "))
+        let tabs = PineCompiler.compile(source: source("\t"))
+        XCTAssertTrue(spaces.isValid, "\(spaces.diagnostics)")
+        XCTAssertTrue(tabs.isValid, "\(tabs.diagnostics)")
+    }
+
     func testHistoryAndPersistentState() throws {
         let program = PineCompiler.compile(
             source:
