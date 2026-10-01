@@ -13,4 +13,6 @@ struct PineInputDefinition: Codable, Equatable, Hashable, Sendable, Identifiable
     var maxValue: Double?
     var step: Double?
     var options: [PineInputValue]?
+    /// What to show for each of `options`, when it differs from the value (`input.enum` members have titles).
+    var optionTitles: [String]? = nil
 }

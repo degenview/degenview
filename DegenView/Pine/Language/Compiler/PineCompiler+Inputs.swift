@@ -39,12 +39,25 @@ extension PineCompiler {
     /// Finds `name = input.*(…)` declarations, including those nested in `if` blocks.
     static func collectInputs(
         _ statements: [PineStatement], _ environment: [String: PineRuntimeValue],
-        _ schema: inout PineInputSchema, _ diagnostics: inout [PineDiagnostic]
+        _ schema: inout PineInputSchema, _ diagnostics: inout [PineDiagnostic],
+        enums: [String: [PineEnumMember]]? = nil
     ) {
+        let enums = enums ?? enumDeclarations(in: statements)
         for statement in statements {
             if case .declaration(let variable, _, _, .call(let name, let args, _, let range), _) = statement,
                 name.hasPrefix("input.")
             {
+                if name == "input.enum" {
+                    if let input = enumInput(variable, args, enums, environment) {
+                        schema.inputs.append(input)
+                    } else {
+                        diagnostics.append(
+                            .error(
+                                "PINE3010", .semantic,
+                                "input.enum requires a member of a declared enum as its default value.", range))
+                    }
+                    continue
+                }
                 guard let first = args.inputDefault,
                     let defaultValue = inputValue(first.value, function: name, environment)
                 else {
@@ -63,10 +76,47 @@ extension PineCompiler {
                         step: lookup.number("step"), options: options(args, function: name, environment)))
             }
             if case .conditional(_, let whenTrue, let whenFalse, _) = statement {
-                collectInputs(whenTrue, environment, &schema, &diagnostics)
-                collectInputs(whenFalse, environment, &schema, &diagnostics)
+                collectInputs(whenTrue, environment, &schema, &diagnostics, enums: enums)
+                collectInputs(whenFalse, environment, &schema, &diagnostics, enums: enums)
             }
         }
+    }
+
+    private static func enumDeclarations(in statements: [PineStatement]) -> [String: [PineEnumMember]] {
+        var enums: [String: [PineEnumMember]] = [:]
+        for case .enumDeclaration(let name, let members, _) in statements { enums[name] = members }
+        return enums
+    }
+
+    /// `input.enum(Name.member, title, options = [Name.a, Name.b], …)`: a string input whose options are
+    /// the enum's members (or the ones listed), shown by title and stored as `"Name.member"`.
+    private static func enumInput(
+        _ variable: String, _ args: [PineArgument], _ enums: [String: [PineEnumMember]],
+        _ environment: [String: PineRuntimeValue]
+    ) -> PineInputDefinition? {
+        func member(_ expression: PineExpression) -> (name: String, member: PineEnumMember)? {
+            guard case .identifier(let full, _) = expression, let dot = full.firstIndex(of: "."),
+                let found = enums[String(full[..<dot])]?.first(where: {
+                    $0.name == String(full[full.index(after: dot)...])
+                })
+            else { return nil }
+            return (full, found)
+        }
+        guard let first = args.inputDefault, let initial = member(first.value) else { return nil }
+        var choices: [(name: String, member: PineEnumMember)] = []
+        let listed = args.first { $0.name == "options" }
+        if let listed, case .tuple(let values, _) = listed.value {
+            choices = values.compactMap(member)
+        } else if let dot = initial.name.firstIndex(of: "."), let all = enums[String(initial.name[..<dot])] {
+            let prefix = String(initial.name[..<dot])
+            choices = all.map { ("\(prefix).\($0.name)", $0) }
+        }
+        let lookup = InputArguments(arguments: args, environment: environment)
+        return PineInputDefinition(
+            id: variable, type: .string, defaultValue: .string(initial.name), title: lookup.title,
+            tooltip: lookup.string("tooltip"), group: lookup.string("group"), inline: lookup.string("inline"),
+            confirm: lookup.boolean("confirm"), minValue: nil, maxValue: nil, step: nil,
+            options: choices.map { .string($0.name) }, optionTitles: choices.map(\.member.title))
     }
 
     private static func options(

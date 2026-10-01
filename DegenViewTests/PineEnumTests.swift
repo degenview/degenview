@@ -101,4 +101,48 @@ final class PineEnumTests: XCTestCase {
                 """)
         XCTAssertEqual(result.map { $0[0] }, [12, 4, 5])
     }
+
+    // MARK: - input.enum
+
+    func testInputEnumBecomesAStringInputWithTitledOptions() throws {
+        let program = compile(
+            mode
+                + "pick = input.enum(Mode.slow, \"Mode\", group = \"G\", tooltip = \"t\")\nplot(pick == Mode.slow ? 1 : 0)"
+        )
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let input = try XCTUnwrap(program.inputSchema.inputs.first)
+        XCTAssertEqual(input.type, .string)
+        XCTAssertEqual(input.defaultValue, .string("Mode.slow"))
+        XCTAssertEqual(input.options, [.string("Mode.fast"), .string("Mode.slow"), .string("Mode.off")])
+        XCTAssertEqual(input.optionTitles, ["Fast", "slow", "Switched off"])
+        XCTAssertEqual([input.title, input.group, input.tooltip], ["Mode", "G", "t"])
+    }
+
+    func testInputEnumDefaultAndOverrideReachTheScript() throws {
+        let body =
+            mode
+            + "pick = input.enum(Mode.slow, \"Mode\")\nplot(pick == Mode.off ? 1 : 0)\nplot(pick == Mode.slow ? 1 : 0)"
+        XCTAssertEqual(try plots(body).map { $0[0] }, [0, 1])
+        XCTAssertEqual(try plots(body, inputs: ["pick": .string("Mode.off")]).map { $0[0] }, [1, 0])
+    }
+
+    func testInputEnumOptionsCanBeRestrictedToAList() throws {
+        let program = compile(
+            mode + "pick = input.enum(Mode.fast, \"Mode\", options = [Mode.fast, Mode.off])\nplot(close)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let input = try XCTUnwrap(program.inputSchema.inputs.first)
+        XCTAssertEqual(input.options, [.string("Mode.fast"), .string("Mode.off")])
+        XCTAssertEqual(input.optionTitles, ["Fast", "Switched off"])
+    }
+
+    func testInputEnumNeedsAMemberOfADeclaredEnum() {
+        XCTAssertTrue(codes(compile(mode + "pick = input.enum(Mode.nope, \"Mode\")\nplot(close)")).contains("PINE3010"))
+        XCTAssertTrue(codes(compile("pick = input.enum(Other.a, \"Mode\")\nplot(close)")).contains("PINE3010"))
+        XCTAssertTrue(codes(compile("pick = input.enum(5, \"Mode\")\nplot(close)")).contains("PINE3010"))
+    }
+
+    func testInputEnumInsideAnIfBlockStillFindsTheEnum() throws {
+        let program = compile(mode + "if barstate.isfirst\n    pick = input.enum(Mode.fast, \"Mode\")\nplot(close)")
+        XCTAssertEqual(program.inputSchema.inputs.first?.optionTitles, ["Fast", "slow", "Switched off"])
+    }
 }
