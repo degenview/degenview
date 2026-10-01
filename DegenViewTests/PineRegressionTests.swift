@@ -326,6 +326,35 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
     }
 
+    func testTableMergeCellsSpansTheStartCellAndDropsTheOnesItCovers() throws {
+        let program = compile(
+            """
+            var table t = table.new(position.top_right, 3, 2)
+            table.cell(t, 0, 0, "head")
+            table.cell(t, 1, 0, "covered")
+            table.cell(t, 0, 1, "below")
+            table.cell(t, 2, 1, "far")
+            table.merge_cells(t, 0, 0, 1, 1)
+            table.merge_cells(t, 2, 0, 2, 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        let cells = try XCTUnwrap(output.tables.first?.cells)
+        let head = try XCTUnwrap(cells.first { $0.column == 0 && $0.row == 0 })
+        XCTAssertEqual(head.text, "head")
+        XCTAssertEqual([head.columnSpan, head.rowSpan], [2, 2])
+        // (1,0) and (0,1) lie inside the merge and are gone; the empty (2,0) anchor was created.
+        XCTAssertEqual(Set(cells.map { [$0.column, $0.row] }), [[0, 0], [2, 0], [2, 1]])
+    }
+
+    func testTableMergeCellsOutsideTheGridIsARuntimeError() {
+        let program = compile(
+            "var table t = table.new(position.top_right, 2, 2)\ntable.merge_cells(t, 0, 0, 2, 0)")
+        XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {
+            XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE4013")
+        }
+    }
+
     func testUndefinedVariableIsARuntimeError() {
         let program = compile("plot(typo)")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {

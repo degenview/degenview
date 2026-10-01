@@ -13,6 +13,17 @@ extension PineChartLayer {
         var cells: [(cell: PineTableCell, text: GraphicsContext.ResolvedText)]
 
         var size: CGSize { CGSize(width: widths.reduce(0, +), height: heights.reduce(0, +)) }
+
+        /// Where `cell` sits, covering every column and row it spans.
+        func rect(of cell: PineTableCell, origin: CGPoint) -> CGRect {
+            let lastColumn = min(cell.column + cell.columnSpan, widths.count)
+            let lastRow = min(cell.row + cell.rowSpan, heights.count)
+            return CGRect(
+                x: origin.x + widths[..<cell.column].reduce(0, +),
+                y: origin.y + heights[..<cell.row].reduce(0, +),
+                width: widths[cell.column..<lastColumn].reduce(0, +),
+                height: heights[cell.row..<lastRow].reduce(0, +))
+        }
     }
 
     func drawTables(_ context: inout GraphicsContext, plot: ChartPlot) {
@@ -34,9 +45,21 @@ extension PineChartLayer {
                     .font(.system(size: cell.textSize.fontSize))
                     .foregroundColor(Color(pineRGBA: cell.textColor)))
             let size = text.measure(in: CGSize(width: 400, height: 200))
-            layout.widths[cell.column] = max(layout.widths[cell.column], size.width + Self.cellPadding.width)
-            layout.heights[cell.row] = max(layout.heights[cell.row], size.height + Self.cellPadding.height)
+            let width = size.width + Self.cellPadding.width
+            let height = size.height + Self.cellPadding.height
+            if cell.columnSpan == 1 { layout.widths[cell.column] = max(layout.widths[cell.column], width) }
+            if cell.rowSpan == 1 { layout.heights[cell.row] = max(layout.heights[cell.row], height) }
             layout.cells.append((cell, text))
+        }
+        // A merged cell only widens the grid when its text does not fit the columns it spans.
+        for (cell, text) in layout.cells where cell.columnSpan > 1 || cell.rowSpan > 1 {
+            let size = text.measure(in: CGSize(width: 400, height: 200))
+            let last = min(cell.column + cell.columnSpan, table.columns) - 1
+            let lastRow = min(cell.row + cell.rowSpan, table.rows) - 1
+            let spanWidth = layout.widths[cell.column...last].reduce(0, +)
+            let spanHeight = layout.heights[cell.row...lastRow].reduce(0, +)
+            layout.widths[last] += max(0, size.width + Self.cellPadding.width - spanWidth)
+            layout.heights[lastRow] += max(0, size.height + Self.cellPadding.height - spanHeight)
         }
         return layout
     }
@@ -66,10 +89,7 @@ extension PineChartLayer {
             context.fill(Path(frame), with: .color(Color(pineRGBA: background)))
         }
         for (cell, text) in layout.cells {
-            let rect = CGRect(
-                x: origin.x + layout.widths[..<cell.column].reduce(0, +),
-                y: origin.y + layout.heights[..<cell.row].reduce(0, +),
-                width: layout.widths[cell.column], height: layout.heights[cell.row])
+            let rect = layout.rect(of: cell, origin: origin)
             if let background = cell.backgroundColor {
                 context.fill(Path(rect), with: .color(Color(pineRGBA: background)))
             }
@@ -86,20 +106,46 @@ extension PineChartLayer {
         }
     }
 
-    /// The internal separators between columns and rows.
+    /// The internal separators between columns and rows, minus the stretches that run through a
+    /// merged cell.
     private func gridLines(_ layout: TableLayout, in frame: CGRect) -> Path {
         var grid = Path()
+        let merged = layout.cells.map(\.cell).filter { $0.columnSpan > 1 || $0.rowSpan > 1 }
+        func crossesColumn(_ boundary: Int, row: Int) -> Bool {
+            merged.contains {
+                $0.column < boundary && boundary < $0.column + $0.columnSpan
+                    && $0.row <= row && row < $0.row + $0.rowSpan
+            }
+        }
+        func crossesRow(_ boundary: Int, column: Int) -> Bool {
+            merged.contains {
+                $0.row < boundary && boundary < $0.row + $0.rowSpan
+                    && $0.column <= column && column < $0.column + $0.columnSpan
+            }
+        }
         var x = frame.minX
-        for width in layout.widths.dropLast() {
-            x += width
-            grid.move(to: CGPoint(x: x, y: frame.minY))
-            grid.addLine(to: CGPoint(x: x, y: frame.maxY))
+        for boundary in 1..<max(1, layout.widths.count) {
+            x += layout.widths[boundary - 1]
+            var y = frame.minY
+            for row in layout.heights.indices {
+                if !crossesColumn(boundary, row: row) {
+                    grid.move(to: CGPoint(x: x, y: y))
+                    grid.addLine(to: CGPoint(x: x, y: y + layout.heights[row]))
+                }
+                y += layout.heights[row]
+            }
         }
         var y = frame.minY
-        for height in layout.heights.dropLast() {
-            y += height
-            grid.move(to: CGPoint(x: frame.minX, y: y))
-            grid.addLine(to: CGPoint(x: frame.maxX, y: y))
+        for boundary in 1..<max(1, layout.heights.count) {
+            y += layout.heights[boundary - 1]
+            var x = frame.minX
+            for column in layout.widths.indices {
+                if !crossesRow(boundary, column: column) {
+                    grid.move(to: CGPoint(x: x, y: y))
+                    grid.addLine(to: CGPoint(x: x + layout.widths[column], y: y))
+                }
+                x += layout.widths[column]
+            }
         }
         return grid
     }

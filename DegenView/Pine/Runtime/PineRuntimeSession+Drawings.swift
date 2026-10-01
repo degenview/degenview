@@ -12,6 +12,7 @@ extension PineRuntimeSession {
         case "box.new": return try newBox(call, &context)
         case "table.new": return try newTable(call, &context)
         case "table.cell": return try setTableCell(call, &context)
+        case "table.merge_cells": return try mergeTableCells(call, &context)
         default: return try mutateDrawing(call, &context)
         }
     }
@@ -139,6 +140,41 @@ extension PineRuntimeSession {
                 textColor: b["text_color"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 backgroundColor: b["bgcolor"].colorValue(fallback: nil),
                 textSize: .parse(b["text_size"].textValue, absent: .normal)))
+        working.tables[id] = table
+        return .void
+    }
+
+    /// `table.merge_cells(table, start_column, start_row, end_column, end_row)`: the start cell grows to
+    /// cover the range and the cells it covers are dropped.
+    private func mergeTableCells(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["table_id", "start_column", "start_row", "end_column", "end_row"], &context)
+        guard case .ref(.table, let id)? = b["table_id"], var table = working.tables[id] else {
+            return .void
+        }
+        guard let startColumn = b["start_column"].intValue, let startRow = b["start_row"].intValue,
+            let endColumn = b["end_column"].intValue, let endRow = b["end_row"].intValue,
+            (0..<table.columns).contains(startColumn), (0..<table.rows).contains(startRow),
+            (startColumn..<table.columns).contains(endColumn), (startRow..<table.rows).contains(endRow)
+        else {
+            throw PineDiagnostic.error(
+                "PINE4013", .runtime,
+                "table.merge_cells range is outside the table's \(table.columns)×\(table.rows) grid.",
+                call.range)
+        }
+        var anchor =
+            table.cells.first { $0.column == startColumn && $0.row == startRow }
+            ?? PineTableCell(
+                column: startColumn, row: startRow, text: "", textColor: Self.opaqueBlack,
+                backgroundColor: nil, textSize: .normal)
+        anchor.columnSpan = endColumn - startColumn + 1
+        anchor.rowSpan = endRow - startRow + 1
+        table.cells.removeAll {
+            (startColumn...endColumn).contains($0.column) && (startRow...endRow).contains($0.row)
+        }
+        table.cells.append(anchor)
         working.tables[id] = table
         return .void
     }
