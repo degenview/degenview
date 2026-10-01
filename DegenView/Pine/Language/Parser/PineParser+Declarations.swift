@@ -46,6 +46,7 @@ extension PineParser {
     /// they are followed by a name (or `[]`/`<`), so `line.new(...)` and `int(x)` still
     /// parse as expressions.
     mutating func typeAnnotation() -> PineValueType? {
+        annotatedTypeName = nil
         var type: PineValueType
         switch current.kind {
         case .typeKeyword(let t): type = t
@@ -54,12 +55,14 @@ extension PineParser {
             advance()
             advance()
             advance()
+            annotatedTypeName = "chart.point"
             return .object
         case .identifier(let word):
             if let t = Self.objectTypes[word] {
                 type = t
             } else if userTypes.contains(word) || enumTypes.contains(word) {
                 type = .object
+                annotatedTypeName = word
             } else {
                 return nil
             }

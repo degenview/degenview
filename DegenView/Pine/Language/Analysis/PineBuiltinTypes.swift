@@ -8,7 +8,7 @@ enum PineBuiltinTypes {
     // MARK: - Identifiers
 
     static let floatSeries: Set<String> = [
-        "open", "high", "low", "close", "volume", "hl2", "hlc3", "ohlc4", "ta.tr",
+        "open", "high", "low", "close", "volume", "hl2", "hlc3", "ohlc4", "hlcc4", "ta.tr",
         "strategy.position_size", "strategy.position_avg_price", "strategy.equity",
         "strategy.netprofit", "strategy.openprofit", "strategy.initial_capital",
         "strategy.grossprofit", "strategy.grossloss",
@@ -21,10 +21,11 @@ enum PineBuiltinTypes {
     ]
 
     static let simpleStrings: Set<String> = [
-        "syminfo.ticker", "syminfo.tickerid", "syminfo.currency", "syminfo.type",
+        "syminfo.ticker", "syminfo.tickerid", "syminfo.currency", "syminfo.type", "syminfo.root",
+        "syminfo.prefix", "syminfo.timezone",
     ]
 
-    static let simpleFloats: Set<String> = ["syminfo.mintick"]
+    static let simpleFloats: Set<String> = ["syminfo.mintick", "syminfo.pointvalue"]
     static let simpleColors: Set<String> = ["chart.fg_color", "chart.bg_color"]
 
     static func identifier(_ name: String) -> Inferred {

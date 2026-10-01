@@ -532,6 +532,58 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[1], [3], [0], [0], [30]])
     }
 
+    func testADottedNameThatIsNotAPineConstantIsAnErrorNotAString() {
+        for source in [
+            "plot(chart.is_standrd ? 1 : 0)", "plot(size.smal == size.small ? 1 : 0)", "x = ta.smaa\nplot(close)",
+        ] {
+            let program = compile(source)
+            XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+            XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1])), source) {
+                XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE4008")
+            }
+        }
+        // Real constants still stand for their own names.
+        let fine = compile(
+            "plot(size.small == size.small ? 1 : 0)\nplot(plot.style_linebr == plot.style_linebr ? 1 : 0)")
+        XCTAssertNoThrow(try PineRuntimeSession(program: fine).evaluate(bars: bars([1])))
+    }
+
+    func testPineVariablesThisReleaseDoesNotModelAreNa() throws {
+        let program = compile(
+            """
+            plot(na(chart.left_visible_bar_time) ? 1 : 0)
+            plot(na(chart.right_visible_bar_time) ? 1 : 0)
+            plot(na(session.ismarket) ? 1 : 0)
+            plot(na(syminfo.description) ? 1 : 0)
+            plot(na(weekofyear) ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1], [1], [1]])
+    }
+
+    func testSymbolFactsAndHlcc4() throws {
+        let program = compile(
+            """
+            plot(str.length(syminfo.prefix))
+            plot(str.length(syminfo.root))
+            plot(str.length(syminfo.timezone))
+            plot(syminfo.pointvalue)
+            plot(hlcc4)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let crypto = PineSymbolInfo(ticker: "BTC", tickerID: "binance:BTC", type: "crypto")
+        let output = try PineRuntimeSession(program: program, symbol: crypto).evaluate(bars: bars([10])).output
+        // Bar: high 11, low 9, close 10 → (11 + 9 + 10 + 10) / 4.
+        XCTAssertEqual(output.plots.map(\.values), [[7], [3], [7], [1], [10]])
+        let stock = PineSymbolInfo(ticker: "AAPL", tickerID: "AAPL", type: "stock")
+        let other = try PineRuntimeSession(
+            program: compile("plot(na(syminfo.timezone) ? 1 : 0)\nplot(na(syminfo.prefix) ? 1 : 0)"), symbol: stock
+        )
+        .evaluate(bars: bars([1])).output
+        XCTAssertEqual(other.plots.map(\.values), [[1], [1]], "no known exchange zone or prefix")
+    }
+
     func testARunawayLoopStopsAtThePerBarInstructionLimit() {
         var limits = PineLimits.default
         limits.instructionsPerBar = 5_000

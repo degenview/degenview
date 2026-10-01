@@ -399,7 +399,7 @@ final class PineUserTypeTests: XCTestCase {
         XCTAssertEqual(plots, [[6], [6]])
     }
 
-    func testAMethodTakesPrecedenceOverABuiltinOfTheSameName() throws {
+    func testAMethodWinsOnlyForReceiversItsFirstParameterAccepts() throws {
         let plots = try values(
             """
             type Box
@@ -412,8 +412,78 @@ final class PineUserTypeTests: XCTestCase {
             plot(b.size())
             plot(arr.size())
             """)
-        // Methods win over builtins for the same name, whatever the receiver; the script chose that name.
-        XCTAssertEqual(plots.first, [200])
+        XCTAssertEqual(plots, [[200], [3]], "the array still gets the builtin size()")
+    }
+
+    func testAMethodCanBeDefinedForSeveralReceiverTypes() throws {
+        let plots = try values(
+            """
+            type Circle
+                float r
+
+            type Square
+                float side
+
+            method area(Circle this) => this.r * 3
+            method area(Square this) => this.side * this.side
+            method area(array<float> this) => array.sum(this)
+            method area(float this) => this * 2
+
+            plot(Circle.new(2.0).area())
+            plot(Square.new(4.0).area())
+            plot(array.from(1.0, 2.0).area())
+            plot((1.5).area())
+            plot(area(Circle.new(1.0)))
+            plot(area(Square.new(3.0)))
+            """)
+        XCTAssertEqual(plots, [[6], [16], [3], [3], [3], [9]])
+    }
+
+    func testDefiningAMethodTwiceForTheSameReceiverIsStillAnError() {
+        let program = compile(
+            """
+            type Zone
+                float top
+
+            method grow(Zone this) => this.top += 1
+            method grow(Zone this) => this.top += 2
+            plot(close)
+            """)
+        XCTAssertTrue(codes(program).contains("PINE3024"))
+        let functions = compile("f(float x) => x\nf(int x) => x\nplot(close)")
+        XCTAssertTrue(codes(functions).contains("PINE3024"), "only methods may be overloaded")
+    }
+
+    func testNoDefinitionForTheReceiverIsAnError() {
+        XCTAssertEqual(
+            runtimeError(
+                """
+                type A
+                    float v
+
+                type B
+                    float v
+
+                method f(A this) => this.v
+                method f(B this) => this.v + 1
+                plot(f(5.0))
+                """), "PINE4029")
+    }
+
+    func testMethodsOnEnumsAndPrimitivesPickByType() throws {
+        let plots = try values(
+            """
+            enum Mode
+                fast
+                slow
+
+            method label(Mode this) => this == Mode.fast ? 1 : 2
+            method label(string this) => 10
+
+            plot(Mode.slow.label())
+            plot("x".label())
+            """)
+        XCTAssertEqual(plots, [[2], [10]])
     }
 
     func testExportedMethodIsAcceptedInALibrary() {

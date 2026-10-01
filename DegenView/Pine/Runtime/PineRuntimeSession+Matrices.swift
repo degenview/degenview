@@ -86,7 +86,9 @@ extension PineRuntimeSession {
         guard let row = b["row"].intValue, let column = b["column"].intValue,
             matrix.contains(row: row, column: column)
         else {
-            let shown = "\(b["row"].intValue.map(String.init) ?? "na"), \(b["column"].intValue.map(String.init) ?? "na")"
+            let row = b["row"].intValue.map(String.init) ?? "na"
+            let column = b["column"].intValue.map(String.init) ?? "na"
+            let shown = "\(row), \(column)"
             throw PineDiagnostic.error(
                 "PINE4010", .runtime,
                 "\(call.name) cell (\(shown)) is out of bounds (\(matrix.rows)×\(matrix.columns)).", call.range)

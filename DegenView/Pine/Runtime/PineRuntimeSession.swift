@@ -12,6 +12,8 @@ final class PineRuntimeSession {
     let theme: PineChartTheme
     let symbol: PineSymbolInfo
     let functions: [String: PineRuntimeFunction]
+    /// Every definition of each `method`, in source order: a name may be defined for several receiver types.
+    let methods: [String: [PineRuntimeFunction]]
     /// Fields of each script-defined `type`, by type name.
     let types: [String: [PineTypeField]]
     /// Members of each script-defined `enum`, by enum name.
@@ -66,6 +68,7 @@ final class PineRuntimeSession {
         self.suppliedMintick = usableMintick
         self.mintick = usableMintick ?? Self.defaultMintick
         var functions: [String: PineRuntimeFunction] = [:]
+        var methods: [String: [PineRuntimeFunction]] = [:]
         var inputVariables: [Int: String] = [:]
         var types: [String: [PineTypeField]] = [:]
         var enums: [String: [PineEnumMember]] = [:]
@@ -76,13 +79,16 @@ final class PineRuntimeSession {
             case .enumDeclaration(let name, let members, _):
                 enums[name] = members
             case .function(let name, let parameters, let body, _):
-                functions[name] = .init(parameters: parameters, body: body)
+                let function = PineRuntimeFunction(parameters: parameters, body: body)
+                functions[name] = function
+                if program.methodNames.contains(name) { methods[name, default: []].append(function) }
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
                 inputVariables[site] = name
             default: break
             }
         }
         self.functions = functions
+        self.methods = methods
         self.types = types
         self.enums = enums
         self.inputVariables = inputVariables

@@ -19,6 +19,8 @@ struct PineParser {
     var userTypes: Set<String> = []
     /// Names of the `enum`s declared so far; like types, they may annotate a variable or parameter.
     var enumTypes: Set<String> = []
+    /// The name `typeAnnotation()` last matched when it was a script-defined type, an enum or `chart.point`.
+    var annotatedTypeName: String?
     /// Names declared with `method`.
     var methodNames: Set<String> = []
 

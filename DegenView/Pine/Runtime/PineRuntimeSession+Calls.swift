@@ -51,6 +51,9 @@ extension PineRuntimeSession {
     ]
 
     func call(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        if let overloads = methods[call.name], overloads.count > 1 {
+            return try callOverloadedMethod(overloads, call, &context)
+        }
         if let function = functions[call.name] { return try invoke(function, call, &context) }
         if let handler = Self.exactHandlers[call.name] { return try handler(self)(call, &context) }
         if let entry = Self.namespaceHandlers.first(where: { call.name.hasPrefix($0.prefix) }) {
@@ -73,8 +76,14 @@ extension PineRuntimeSession {
         let member = String(call.name[call.name.index(after: dot)...])
         let receiver: PineRuntimeValue
         if receiverName.contains(".") {
-            guard let value = try fieldPath(receiverName, call.range) else { return nil }
-            receiver = value
+            if let value = try fieldPath(receiverName, call.range) {
+                receiver = value
+            } else if let dot = receiverName.firstIndex(of: "."), enums[String(receiverName[..<dot])] != nil {
+                // `Mode.slow.label()`: an enum member as the receiver.
+                receiver = try resolveIdentifier(receiverName, call.range, context)
+            } else {
+                return nil
+            }
         } else {
             guard let value = working.variables[receiverName] else { return nil }
             receiver = value
@@ -103,13 +112,37 @@ extension PineRuntimeSession {
             "PINE4007", .runtime, "Unknown or unsupported method '\(member)'.", range)
     }
 
+    /// `name(receiver, args)` for a method defined for several receiver types: the first argument picks the
+    /// definition. It is evaluated once and passed on as a literal.
+    private func callOverloadedMethod(
+        _ overloads: [PineRuntimeFunction], _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard let first = call.arguments.first else { throw call.unknownFunction }
+        let receiver = try eval(first.value, &context)
+        guard
+            let function = overloads.first(where: {
+                $0.acceptsReceiver(receiver, instances: working.instances)
+            })
+        else {
+            throw PineDiagnostic.error(
+                "PINE4029", .runtime, "No definition of '\(call.name)' accepts that first argument.", call.range)
+        }
+        var arguments = call.arguments
+        arguments[0] = PineArgument(name: first.name, value: .literal(receiver, call.range))
+        return try invoke(
+            function, PineCall(name: call.name, arguments: arguments, site: call.site, range: call.range),
+            &context)
+    }
+
     /// A user `method`, or the namespaced builtin for the receiver's kind (`array.get`, `map.put`…).
     /// Nil when the receiver is not something with methods.
     private func dispatchMethod(
         _ receiver: PineRuntimeValue, _ receiverArgument: PineArgument, _ member: String,
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue? {
-        if program.methodNames.contains(member), let function = functions[member] {
+        if let function = methods[member]?.first(where: {
+            $0.acceptsReceiver(receiver, instances: working.instances)
+        }) {
             let method = PineCall(
                 name: member, arguments: [receiverArgument] + call.arguments, site: call.site,
                 range: call.range)

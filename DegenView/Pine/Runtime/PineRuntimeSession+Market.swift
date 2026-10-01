@@ -13,6 +13,7 @@ extension PineRuntimeSession {
         case "hl2": return .float((bar.highPrice + bar.lowPrice) / 2)
         case "hlc3": return .float((bar.highPrice + bar.lowPrice + bar.closePrice) / 3)
         case "ohlc4": return .float((bar.openPrice + bar.highPrice + bar.lowPrice + bar.closePrice) / 4)
+        case "hlcc4": return .float((bar.highPrice + bar.lowPrice + 2 * bar.closePrice) / 4)
         case "time": return .int(PineTime.milliseconds(bar.openTime))
         case "time_close":
             return .int(PineTime.milliseconds(bar.openTime) + (Int(pine: barSeconds * 1000) ?? 0))
@@ -30,12 +31,24 @@ extension PineRuntimeSession {
         }
     }
 
+    private var exchangePrefix: String? {
+        guard let colon = symbol.tickerID.firstIndex(of: ":") else { return nil }
+        let prefix = symbol.tickerID[..<colon]
+        return prefix.isEmpty ? nil : prefix.uppercased()
+    }
+
     private func symbolValue(_ name: String) -> PineRuntimeValue? {
         switch name {
         case "syminfo.mintick": .float(mintick)
         case "syminfo.ticker": .string(symbol.ticker)
         case "syminfo.tickerid": .string(symbol.tickerID)
         case "syminfo.currency": .string(symbol.currency)
+        case "syminfo.root": .string(symbol.ticker)
+        // The exchange part of "<exchange>:<ticker>", upper-cased as TradingView shows it.
+        case "syminfo.prefix": exchangePrefix.map { .string($0) } ?? .na
+        // Crypto exchanges run on UTC; for anything else the exchange's zone is not known.
+        case "syminfo.timezone": symbol.type == "crypto" ? .string("Etc/UTC") : .na
+        case "syminfo.pointvalue": .float(1)
         case "syminfo.type": .string(symbol.type)
         default: nil
         }

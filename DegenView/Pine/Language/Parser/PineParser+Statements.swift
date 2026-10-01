@@ -243,6 +243,7 @@ extension PineParser {
     private mutating func functionParameter() -> PineParameter? {
         skipQualifier()
         let type = typeAnnotation()
+        let typeName = type == .object ? annotatedTypeName : nil
         guard case .identifier(let name) = current.kind else {
             error("PINE2011", "Expected a parameter name.", current.range)
             return nil
@@ -250,6 +251,6 @@ extension PineParser {
         advance()
         var defaultValue: PineExpression?
         if take(.assign) { defaultValue = expression() }
-        return .init(name: name, type: type, defaultValue: defaultValue)
+        return .init(name: name, type: type, typeName: typeName, defaultValue: defaultValue)
     }
 }

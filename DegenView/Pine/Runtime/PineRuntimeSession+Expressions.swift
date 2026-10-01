@@ -37,7 +37,7 @@ extension PineRuntimeSession {
     /// Variables first, then series and symbol facts, `barstate.*`, colors and named constants.
     /// A dotted name that matches nothing is an enumeration constant (`size.small`,
     /// `shape.circle`…) and stands for itself; a plain name that matches nothing is a typo.
-    private func resolveIdentifier(
+    func resolveIdentifier(
         _ name: String, _ range: PineSourceRange, _ context: PineRuntimeContext
     ) throws -> PineRuntimeValue {
         if let value = working.variables[name] { return value }
@@ -46,6 +46,8 @@ extension PineRuntimeSession {
         if let flag = context.flags.value(named: name) { return .bool(flag) }
         if let color = PineBuiltins.colors[name] ?? chartColor(name) { return .color(color) }
         if let constant = PineBuiltins.constants[name] { return constant }
+        // Pine defines it but this release does not model it (a session, an exchange, the visible window).
+        if PineSymbolCatalog.isUnimplementedVariable(name) { return .na }
         guard name.contains(".") else {
             throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
         }
@@ -58,6 +60,11 @@ extension PineRuntimeSession {
             return .string(name)
         }
         if let field = try fieldPath(name, range) { return field }
+        // A named constant of Pine's (`size.small`, `shape.circle`) stands for its own name; any other
+        // dotted name is a typo or something this release lacks, and says so instead of becoming a string.
+        guard PineSymbolCatalog.constants.contains(name) else {
+            throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
+        }
         return .string(name)
     }
 
