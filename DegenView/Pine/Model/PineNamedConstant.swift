@@ -2,12 +2,15 @@ import Foundation
 
 /// An enumeration of Pine builtin constants that share a namespace, e.g. `size.tiny`.
 /// Raw values are the name after the namespace prefix.
-protocol PineNamedConstant: RawRepresentable, Sendable where RawValue == String {
+protocol PineNamedConstant: RawRepresentable, CaseIterable, Sendable where RawValue == String {
     /// The namespace including its separator, e.g. `"size."` or `"line.style_"`.
     static var pinePrefix: String { get }
 }
 
 extension PineNamedConstant {
+    /// Every full Pine name this enumeration defines, e.g. `"size.tiny"`.
+    static var pineNames: [String] { allCases.map { pinePrefix + $0.rawValue } }
+
     init?(pineName: String?) {
         guard let pineName, pineName.hasPrefix(Self.pinePrefix) else { return nil }
         self.init(rawValue: String(pineName.dropFirst(Self.pinePrefix.count)))

@@ -1,11 +1,11 @@
 import Foundation
 
 extension PineParser {
-    private static let objectTypes: [String: PineValueType] = [
+    static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
     ]
 
-    private static let qualifiers: [String: PineQualifier] = [
+    static let qualifiers: [String: PineQualifier] = [
         "const": .constant, "input": .input, "simple": .simple, "series": .series,
     ]
 

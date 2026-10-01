@@ -35,7 +35,7 @@ enum PineCompiler {
     /// Text copied from browsers and editors can contain CR-only or Unicode line separators.
     /// Normalize them before both annotation discovery and lexing so a leading `//` comment
     /// cannot accidentally consume the entire script.
-    private static func normalizeLineEndings(in source: String) -> String {
+    static func normalizeLineEndings(in source: String) -> String {
         source
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")

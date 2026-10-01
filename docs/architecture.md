@@ -69,7 +69,8 @@ DegenView/
 │   │   ├── Parser/                    # PineParser (+Statements, +Declarations, +Expressions)
 │   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs)
 │   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
-│   │   └── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
+│   │   ├── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
+│   │   └── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above (editor highlighting)
 │   ├── Runtime/
 │   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
 │   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
@@ -79,7 +80,7 @@ DegenView/
 │   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
-│   ├── Editor/                        # Script editor text view, highlighter, word ranges, diagnostic mapping
+│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
