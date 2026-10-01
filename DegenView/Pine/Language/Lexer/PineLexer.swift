@@ -101,7 +101,7 @@ struct PineLexer {
             return lexNumber(at: i, line, &state)
         }
         switch c {
-        case "\"": return lexString(at: i, line, &state)
+        case "\"", "'": return lexString(at: i, quote: c, line, &state)
         case "#": return lexColor(at: i, line, &state)
         default: return lexOperator(at: i, line, &state)
         }

@@ -66,13 +66,16 @@ extension PineLexer {
         return i
     }
 
-    func lexString(at start: Int, _ line: PineSourceLine, _ state: inout State) -> Int {
+    /// A string literal opened by `quote`: Pine accepts both `"…"` and `'…'`.
+    func lexString(
+        at start: Int, quote: Character, _ line: PineSourceLine, _ state: inout State
+    ) -> Int {
         var i = start + 1
         var value = ""
         var closed = false
         while i < line.text.count {
             let c = line.text[i]
-            if c == "\"" {
+            if c == quote {
                 i += 1
                 closed = true
                 break

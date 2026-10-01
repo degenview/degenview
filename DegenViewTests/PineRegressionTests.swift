@@ -27,6 +27,23 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(diagnostic?.range.start.offset, expected)
     }
 
+    func testSingleQuotedStringsLexLikeDoubleQuotedOnes() throws {
+        // `it's "x"` is 8 characters whichever quote delimits it.
+        let program = compile(
+            """
+            plot(str.length('it\\'s "x"'))
+            plot(str.length("it's \\"x\\""))
+            plot(str.length('{"a":1}'))
+            """)
+        XCTAssertTrue(program.isValid, "\(codes(program))")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[8], [8], [7]])
+    }
+
+    func testUnterminatedSingleQuotedStringIsADiagnostic() {
+        XCTAssertTrue(codes(compile("x = 'abc\nplot(close)")).contains("PINE1003"))
+    }
+
     func testFullWidthHexDigitsInColorAreRejectedNotCrashed() {
         let program = compile("plot(close, color=#ＡＢＣＤＥＦ)")
         XCTAssertTrue(codes(program).contains("PINE1004"))
