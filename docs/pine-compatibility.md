@@ -171,7 +171,7 @@ row) → `PineAlertDispatcher` (channels).
   line/column diagnostics survive while last-valid output stays active.
 - Each statement must end its line: leftover tokens after a complete statement
   (`aaa "x" 1`, `plot(close) 5`) are a `PINE2013` syntax error, reported once per line.
-- Limits: 500k source characters (a runaway-input guard; published scripts reach 300k), 50k tokens/nodes, 100k IR/executed instructions,
+- Limits: 500k source characters (a runaway-input guard; published scripts reach 300k), 50k tokens/nodes, 20M executed instructions per bar (Pine bounds a bar by time, not steps),
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
   cancellation, and a 10-second evaluation deadline. Enforced limits use `PINE8xxx`.
 
@@ -189,6 +189,23 @@ row) → `PineAlertDispatcher` (channels).
   including through fields (`book.levels.put(k, v)`). Maps keep insertion order; a whole float and the
   int of the same value are one key; `na` and handles are not keys (`PINE4027`); `for [k, v] in map`
   iterates a snapshot of the pairs. Not supported: enum-keyed maps beyond what strings give.
+- **Polylines.** `chart.point.from_index/from_time/now/new` make ordinary objects with `index`, `time` and
+  `price` fields (so field reads, assignment, `copy()`, `array<chart.point>` and `chart.point p = …`
+  work); `polyline.new(points, closed, xloc, line_color, fill_color, line_style, line_width)` and
+  `polyline.delete`; `max_polylines_count` limits how many are kept. The chart layer draws straight
+  segments, filled when closed with a fill color; `curved = true` is accepted but not drawn curved, and
+  the drawing is not unit-tested. Under `xloc.bar_time` the points' times are mapped to bar indexes.
+- **Matrices.** `matrix<T>`, `matrix.new<T>(rows, columns, initial)` and `get`, `set`, `rows`, `columns`,
+  `row`, `col`, `add_row`, `add_col`, `remove_row`, `remove_col`, `fill`, `copy`, `transpose`,
+  `elements_count`, `avg`, `min`, `max`, as functions or methods (`m.row(1).avg()`). Matrix arithmetic
+  and linear algebra are not supported.
+- **`request.security_lower_tf`** returns empty arrays (a tuple expression a tuple of empty arrays): the
+  engine has only the chart's own bars, so there is no intrabar data, which is what Pine returns when a
+  timeframe cannot be served. A symbol other than the chart's (`PINE4022`) or a timeframe not lower than
+  the chart's (`PINE4021`) is an error unless the script passes `ignore_invalid_symbol` /
+  `ignore_invalid_timeframe`. A script that depends on the intrabar data (delta, intrabar volume
+  profile) runs but shows nothing for it.
+- `array.sort_indices`, `str.repeat`.
 - `color(x)` and `string(x)` casts (a value of that type passes through, anything else is `na`),
   `max_bars_back` (a no-op: all history is kept), `str.match` (first match or `""`), `str.split`,
   `time(timeframe)` and `time_close(timeframe)` (open and close of the `timeframe` bar containing the
@@ -309,10 +326,10 @@ meets (`PINE4001`–`PINE4006`).
 
 ## Known incompatibilities
 
-The current grammar does not yet implement matrices, library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
-`max_polylines_count` declaration arguments, built-in types such as `footprint`, `request.security` for
-other symbols or finer timeframes, or `request.security_lower_tf` (the engine only sees the chart's own
-bars). Label `yloc` is treated as `yloc.price`.
+The current grammar does not yet implement library `import` (`PINE9008`), the `scale` declaration
+argument, built-in types such as `footprint`, overloading a method by receiver type (`PINE3024`),
+`request.security` for other symbols or finer timeframes, or real intrabar data for
+`request.security_lower_tf` (the engine only sees the chart's own bars). Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
 but missing-value and conditional-call behavior needs a larger differential corpus. Non-overlay
@@ -322,8 +339,8 @@ and overlay values do not yet join price autoscaling. Plot style/location/size
 coverage is partial. Runtime byte accounting, recursion detection, and a compact bytecode
 lowering pass are planned; the current executable representation is the typed AST.
 
-Libraries and maps/matrices are intentionally outside this release and produce unsupported or
-unknown-function diagnostics; a `request.*` call other than `request.security` is reported
+Library `import` is intentionally outside this release and produces an unsupported diagnostic; a
+`request.*` call other than `request.security` and `request.security_lower_tf` is reported
 (`PINE9003`) wherever it appears, including inside an assignment or argument. Reading a plain identifier that is
 not a variable, series, or builtin raises `PINE4008` at runtime instead of silently
 evaluating to a string; dotted names such as `size.small` or `shape.circle` remain
@@ -397,16 +414,14 @@ Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries tha
 | After `request.security` (own symbol), expression subscripts, `xloc.bar_time` | 13 / 20 | 5 / 10 |
 | After the 500k source limit and enums | 14 / 20 | 6 / 10 |
 | After maps and methods on call results | 16 / 20 | 6 / 10 |
+| After empty-intrabar `request.security_lower_tf`, polylines, matrices, a 20M per-bar guard | 18 / 20 | 7 / 10 |
 
-The 8 that still fail are blocked by whole features, counted in scripts (a script can have several):
+The 5 that still fail are blocked by whole features (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 2 |
-| `request.security_lower_tf` (`PINE9003`) | 3 |
 | Library `import` (`PINE9008`) | 2 |
-| Matrices | 1 |
-| `chart.point` / `polyline` | 2 |
 | `scale=` declaration argument | 1 |
 | Built-in `footprint` type and overloaded methods (`PINE3024`) | 1 |
 
