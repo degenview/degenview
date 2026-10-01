@@ -36,6 +36,7 @@ extension PineRuntimeSession {
         ("ta.", PineRuntimeSession.taCall), ("array.", PineRuntimeSession.arrayCall),
         ("line.", PineRuntimeSession.drawingCall), ("label.", PineRuntimeSession.drawingCall),
         ("box.", PineRuntimeSession.drawingCall), ("table.", PineRuntimeSession.drawingCall),
+        ("linefill.", PineRuntimeSession.drawingCall),
     ]
 
     func call(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
@@ -44,23 +45,42 @@ extension PineRuntimeSession {
         if let entry = Self.namespaceHandlers.first(where: { call.name.hasPrefix($0.prefix) }) {
             return try entry.handler(self)(call, &context)
         }
-        if let method = methodCall(call) { return try self.call(method, &context) }
+        if let object = try constructorCall(call, &context) { return object }
+        if let result = try methodCall(call, &context) { return result }
         throw call.unknownFunction
     }
 
     /// `values.get(i)` for a variable holding an array or drawing handle is the method spelling of
-    /// `array.get(values, i)`: the receiver becomes the first argument of the namespaced builtin.
-    /// Only reached once nothing else claimed the name, so a namespace never loses to a variable.
-    private func methodCall(_ call: PineCall) -> PineCall? {
-        guard let dot = call.name.firstIndex(of: "."),
-            case .ref(let kind, _)? = working.variables[String(call.name[..<dot])],
-            kind != .plot
-        else { return nil }
-        let receiver = PineArgument(
-            name: nil, value: .identifier(String(call.name[..<dot]), call.range))
-        return PineCall(
-            name: "\(kind.rawValue).\(call.name[call.name.index(after: dot)...])",
-            arguments: [receiver] + call.arguments, site: call.site, range: call.range)
+    /// `array.get(values, i)`: the receiver becomes the first argument of the namespaced builtin. The
+    /// receiver may be a field path (`zone.box.get_top()`). Only reached once nothing else claimed the
+    /// name, so a namespace never loses to a variable.
+    private func methodCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue? {
+        guard let dot = call.name.lastIndex(of: ".") else { return nil }
+        let receiverName = String(call.name[..<dot])
+        let member = String(call.name[call.name.index(after: dot)...])
+        let receiver: PineRuntimeValue
+        if receiverName.contains(".") {
+            guard let value = try fieldPath(receiverName, call.range) else { return nil }
+            receiver = value
+        } else {
+            guard let value = working.variables[receiverName] else { return nil }
+            receiver = value
+        }
+        let receiverArgument = PineArgument(name: nil, value: .identifier(receiverName, call.range))
+        if program.methodNames.contains(member), let function = functions[member] {
+            let method = PineCall(
+                name: member, arguments: [receiverArgument] + call.arguments, site: call.site,
+                range: call.range)
+            return try invoke(function, method, &context)
+        }
+        guard case .ref(let kind, _) = receiver, kind != .plot else { return nil }
+        if kind == .object { return member == "copy" ? try copyInstance(receiver, call.range) : nil }
+        let rewritten = PineCall(
+            name: "\(kind.rawValue).\(member)", arguments: [receiverArgument] + call.arguments,
+            site: call.site, range: call.range)
+        return try self.call(rewritten, &context)
     }
 
     /// Evaluates the `index`-th positional argument, or the one named `key`, lazily: arguments

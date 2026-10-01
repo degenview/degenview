@@ -11,7 +11,10 @@ extension PineRuntimeSession {
         case "label.new": return try newLabel(call, &context)
         case "box.new": return try newBox(call, &context)
         case "table.new": return try newTable(call, &context)
+        case "linefill.new": return try newLinefill(call, &context)
         case "table.cell": return try setTableCell(call, &context)
+        case "table.merge_cells": return try mergeTableCells(call, &context)
+        case "table.clear": return try clearTableCells(call, &context)
         default: return try mutateDrawing(call, &context)
         }
     }
@@ -59,8 +62,11 @@ extension PineRuntimeSession {
 
     private func newLabel(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         let b = try bind(
-            call, ["x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign"],
-            &context)
+            call,
+            [
+                "x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign",
+                "tooltip",
+            ], &context)
         try requireBarIndex(b, call.range)
         guard let x = b["x"].intValue, let y = b["y"]?.number else { return .na }
         return store(\.labels, kind: .label, limit: program.declaration.maxLabelsCount) { id in
@@ -69,7 +75,7 @@ extension PineRuntimeSession {
                 color: b["color"].colorValue(fallback: Self.defaultColor),
                 textColor: b["textcolor"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 style: .parse(b["style"].textValue, absent: .labelDown, unknown: .labelCenter),
-                size: .parse(b["size"].textValue, absent: .normal))
+                size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue)
         }
     }
 
@@ -112,6 +118,21 @@ extension PineRuntimeSession {
         return .ref(.table, id)
     }
 
+    /// `linefill.new(line1, line2, color)`. Both arguments must be live lines.
+    private func newLinefill(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(call, ["line1", "line2", "color"], &context)
+        guard case .ref(.line, let first)? = b["line1"], case .ref(.line, let second)? = b["line2"],
+            working.lines[first] != nil, working.lines[second] != nil
+        else { return .na }
+        return store(\.linefills, kind: .linefill, limit: nil) { id in
+            PineLinefillOutput(
+                id: id, line1: first, line2: second,
+                color: b["color"].colorValue(fallback: Self.defaultColor) ?? 0)
+        }
+    }
+
     private func setTableCell(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
@@ -143,6 +164,58 @@ extension PineRuntimeSession {
         return .void
     }
 
+    /// `table.merge_cells(table, start_column, start_row, end_column, end_row)`: the start cell grows to
+    /// cover the range and the cells it covers are dropped.
+    private func mergeTableCells(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["table_id", "start_column", "start_row", "end_column", "end_row"], &context)
+        guard case .ref(.table, let id)? = b["table_id"], var table = working.tables[id] else {
+            return .void
+        }
+        guard let startColumn = b["start_column"].intValue, let startRow = b["start_row"].intValue,
+            let endColumn = b["end_column"].intValue, let endRow = b["end_row"].intValue,
+            (0..<table.columns).contains(startColumn), (0..<table.rows).contains(startRow),
+            (startColumn..<table.columns).contains(endColumn), (startRow..<table.rows).contains(endRow)
+        else {
+            throw PineDiagnostic.error(
+                "PINE4013", .runtime,
+                "table.merge_cells range is outside the table's \(table.columns)×\(table.rows) grid.",
+                call.range)
+        }
+        var anchor =
+            table.cells.first { $0.column == startColumn && $0.row == startRow }
+            ?? PineTableCell(
+                column: startColumn, row: startRow, text: "", textColor: Self.opaqueBlack,
+                backgroundColor: nil, textSize: .normal)
+        anchor.columnSpan = endColumn - startColumn + 1
+        anchor.rowSpan = endRow - startRow + 1
+        table.cells.removeAll {
+            (startColumn...endColumn).contains($0.column) && (startRow...endRow).contains($0.row)
+        }
+        table.cells.append(anchor)
+        working.tables[id] = table
+        return .void
+    }
+
+    /// `table.clear(table, start_column, start_row, end_column, end_row)`: drops the cells in the
+    /// range. Without a range, every cell goes.
+    private func clearTableCells(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["table_id", "start_column", "start_row", "end_column", "end_row"], &context)
+        guard case .ref(.table, let id)? = b["table_id"], var table = working.tables[id] else {
+            return .void
+        }
+        let columns = (b["start_column"].intValue ?? 0)...(b["end_column"].intValue ?? table.columns - 1)
+        let rows = (b["start_row"].intValue ?? 0)...(b["end_row"].intValue ?? table.rows - 1)
+        table.cells.removeAll { columns.contains($0.column) && rows.contains($0.row) }
+        working.tables[id] = table
+        return .void
+    }
+
     // MARK: - Mutation
 
     /// `line.set_*`, `label.set_*`, `box.set_*`, getters and `*.delete`. Operations on an `na`
@@ -168,6 +241,12 @@ extension PineRuntimeSession {
             }
         case "box":
             return try withObject(\.boxes, .box, target, member) { try Self.mutate(&$0, member, a, b, call) }
+        case "table":
+            return try withObject(\.tables, .table, target, member) { try Self.mutate(&$0, member, a, call) }
+        case "linefill":
+            return try withObject(\.linefills, .linefill, target, member) {
+                try Self.mutate(&$0, member, a, call)
+            }
         default: throw call.unknownFunction
         }
     }
@@ -187,6 +266,34 @@ extension PineRuntimeSession {
         let result = try body(&object)
         working[keyPath: objects][id] = object
         return result
+    }
+
+    private static func mutate(
+        _ table: inout PineTableOutput, _ member: String, _ a: PineRuntimeValue, _ call: PineCall
+    ) throws -> PineRuntimeValue {
+        switch member {
+        case "set_position": table.position = .parse(a.textValue, absent: table.position)
+        case "set_bgcolor": table.backgroundColor = Optional(a).colorValue(fallback: nil)
+        case "set_border_color": table.borderColor = Optional(a).colorValue(fallback: nil)
+        case "set_frame_color": table.frameColor = Optional(a).colorValue(fallback: nil)
+        case "set_border_width": table.borderWidth = a.intValue ?? table.borderWidth
+        case "set_frame_width": table.frameWidth = a.intValue ?? table.frameWidth
+        default: throw call.unknownFunction
+        }
+        return .void
+    }
+
+    private static func mutate(
+        _ fill: inout PineLinefillOutput, _ member: String, _ a: PineRuntimeValue, _ call: PineCall
+    ) throws -> PineRuntimeValue {
+        switch member {
+        case "set_color":
+            if case .color(let color) = a { fill.color = color }
+            return .void
+        case "get_line1": return .ref(.line, fill.line1)
+        case "get_line2": return .ref(.line, fill.line2)
+        default: throw call.unknownFunction
+        }
     }
 
     private static func mutate(
@@ -233,6 +340,7 @@ extension PineRuntimeSession {
         case "set_style":
             label.style = a.textValue.map { PineLabelStyle(pineName: $0) ?? .labelCenter } ?? label.style
         case "set_size": label.size = PineSize(pineName: a.textValue) ?? label.size
+        case "set_tooltip": label.tooltip = a.textValue
         case "get_x": return .int(label.x)
         case "get_y": return .float(label.y)
         case "get_text": return .string(label.text)

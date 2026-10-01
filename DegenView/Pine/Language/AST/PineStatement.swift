@@ -6,6 +6,10 @@ indirect enum PineStatement: Sendable {
         value: PineExpression, range: PineSourceRange)
     case assignment(
         name: String, op: PineAssignmentOperator, value: PineExpression, range: PineSourceRange)
+    /// `zone.top := value`, `a.get(i).count += 1`: assignment to a field of a user-defined type.
+    case fieldAssignment(
+        target: PineExpression, op: PineAssignmentOperator, value: PineExpression,
+        range: PineSourceRange)
     case expression(PineExpression)
     case conditional(
         condition: PineExpression, whenTrue: [PineStatement], whenFalse: [PineStatement],
@@ -25,6 +29,8 @@ indirect enum PineStatement: Sendable {
     /// `[a, b] = expression`
     case tupleDeclaration(names: [String], value: PineExpression, range: PineSourceRange)
     case loopControl(PineLoopControl, PineSourceRange)
+    /// `type Name` and its indented field lines.
+    case typeDeclaration(name: String, fields: [PineTypeField], range: PineSourceRange)
     /// User-defined function. The body's last statement is the return value.
     case function(
         name: String, parameters: [PineParameter], body: [PineStatement], range: PineSourceRange)

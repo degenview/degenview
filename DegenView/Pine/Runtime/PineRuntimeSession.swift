@@ -12,6 +12,8 @@ final class PineRuntimeSession {
     let theme: PineChartTheme
     let symbol: PineSymbolInfo
     let functions: [String: PineRuntimeFunction]
+    /// Fields of each script-defined `type`, by type name.
+    let types: [String: [PineTypeField]]
     /// Variable each top-level `input.*` call site initialises, so input overrides stay keyed
     /// by name even when titles change.
     let inputVariables: [Int: String]
@@ -60,8 +62,11 @@ final class PineRuntimeSession {
         self.mintick = usableMintick ?? Self.defaultMintick
         var functions: [String: PineRuntimeFunction] = [:]
         var inputVariables: [Int: String] = [:]
+        var types: [String: [PineTypeField]] = [:]
         for statement in program.statements {
             switch statement {
+            case .typeDeclaration(let name, let fields, _):
+                types[name] = fields
             case .function(let name, let parameters, let body, _):
                 functions[name] = .init(parameters: parameters, body: body)
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
@@ -70,6 +75,7 @@ final class PineRuntimeSession {
             }
         }
         self.functions = functions
+        self.types = types
         self.inputVariables = inputVariables
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue
@@ -229,6 +235,10 @@ final class PineRuntimeSession {
             lines: working.lines.values.sorted { $0.id < $1.id },
             labels: working.labels.values.sorted { $0.id < $1.id },
             boxes: working.boxes.values.sorted { $0.id < $1.id },
+            // A linefill disappears with either of its lines.
+            linefills: working.linefills.values.filter {
+                working.lines[$0.line1] != nil && working.lines[$0.line2] != nil
+            }.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
             strategy: isStrategy ? working.broker.report() : nil)

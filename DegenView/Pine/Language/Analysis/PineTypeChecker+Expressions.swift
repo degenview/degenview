@@ -40,6 +40,9 @@ extension PineTypeChecker {
         case .tuple(let items, _):
             for item in items { _ = infer(item, scope) }
             return .unknown
+        case .member(let base, _, _):
+            _ = infer(base, scope)
+            return .unknown
         case .statementExpression(let statement, _):
             block([statement], scope)
             return .unknown

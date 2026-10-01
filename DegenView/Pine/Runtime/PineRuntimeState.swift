@@ -16,9 +16,12 @@ struct PineRuntimeState {
     // Reference-typed objects live in the state so realtime rollback restores them
     // together with the variables that point at them.
     var arrays: [Int: [PineRuntimeValue]] = [:]
+    /// Instances of script-defined types, by handle.
+    var instances: [Int: PineObject] = [:]
     var lines: [Int: PineLineOutput] = [:]
     var labels: [Int: PineLabelOutput] = [:]
     var boxes: [Int: PineBoxOutput] = [:]
+    var linefills: [Int: PineLinefillOutput] = [:]
     var tables: [Int: PineTableOutput] = [:]
     var candles: [Int: PineCandleOutput] = [:]
     var alerts: [PineAlertEvent] = []

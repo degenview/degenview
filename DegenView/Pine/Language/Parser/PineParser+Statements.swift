@@ -3,6 +3,8 @@ import Foundation
 extension PineParser {
     mutating func statement() -> PineStatement? {
         if takeWord("export") { return exportedStatement() }
+        if isTypeDeclaration() { return typeDeclaration() }
+        if isMethodDefinition() { return methodDefinition() }
         if skipUnsupportedDeclaration() { return nil }
         if take(.ifKeyword) { return ifStatement() }
         if take(.forKeyword) { return forStatement() }
@@ -13,6 +15,7 @@ extension PineParser {
         if take(.continueKeyword) { return .loopControl(.continueLoop, previous.range) }
         if isFunctionDefinition() { return functionDefinition() }
         if let declaration = declaration() { return declaration }
+        if isFieldAssignment() { return fieldAssignment() }
         if let assignment = assignment() { return assignment }
         return expression().map(PineStatement.expression)
     }

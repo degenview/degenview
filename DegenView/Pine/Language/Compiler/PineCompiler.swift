@@ -34,7 +34,7 @@ enum PineCompiler {
         }
         return .init(
             source: normalizedSource, statements: statements, declaration: metadata,
-            inputSchema: schema, diagnostics: diagnostics)
+            inputSchema: schema, diagnostics: diagnostics, methodNames: parser.methodNames)
     }
 
     /// Text copied from browsers and editors can contain CR-only or Unicode line separators.

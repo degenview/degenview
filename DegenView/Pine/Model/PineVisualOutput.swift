@@ -14,6 +14,7 @@ struct PineVisualOutput: Sendable {
     var lines: [PineLineOutput] = []
     var labels: [PineLabelOutput] = []
     var boxes: [PineBoxOutput] = []
+    var linefills: [PineLinefillOutput] = []
     var tables: [PineTableOutput] = []
     var candles: [PineCandleOutput] = []
     var alerts: [PineAlertEvent] = []

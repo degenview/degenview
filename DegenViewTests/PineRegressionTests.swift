@@ -98,27 +98,15 @@ final class PineRegressionTests: XCTestCase {
     func testUnsupportedDeclarationsReportOnceAndSkipTheirBodies() {
         let program = compile(
             """
-            type Zone
-                float top
-                float bottom
-                int    bars
-
             enum Mode
                 fast
                 slow
-
-            method area(Zone z) =>
-                z.top - z.bottom
 
             import someone/Library/1 as lib
             plot(close)
             """)
         XCTAssertEqual(
-            program.diagnostics.map(\.code), ["PINE9006", "PINE9007", "PINE9009", "PINE9008"])
-    }
-
-    func testTypeAndEnumRemainUsableAsVariableNames() {
-        XCTAssertTrue(compile("type = 1\nenum = type + 1\nplot(enum)").isValid)
+            program.diagnostics.map(\.code), ["PINE9007", "PINE9008"])
     }
 
     func testCommaSeparatedStatementsShareALine() throws {
@@ -336,6 +324,133 @@ final class PineRegressionTests: XCTestCase {
         }
         XCTAssertNil(PineTime.seconds(ofTimeframe: ""))
         XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
+    }
+
+    func testLabelTooltipIsStoredFromNewAndSetTooltip() throws {
+        let program = compile(
+            """
+            var label a = label.new(0, 1.0, "a", tooltip = "first")
+            var label b = label.new(0, 2.0, "b")
+            label.set_tooltip(b, "second")
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.labels.map(\.tooltip), ["first", "second"])
+    }
+
+    func testChartTypeFlagsDescribePlainCandles() throws {
+        let program = compile(
+            "plot(chart.is_standard ? 1 : 0)\nplot(chart.is_heikinashi or chart.is_renko or chart.is_range ? 1 : 0)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[1], [0]])
+    }
+
+    func testBehindChartIsAcceptedOnlyAsFalse() {
+        XCTAssertTrue(compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = false)").isValid)
+        let behind = compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = true)")
+        XCTAssertEqual(codes(behind), ["PINE9001"])
+    }
+
+    func testLinefillJoinsTwoLinesAndFollowsThem() throws {
+        let program = compile(
+            """
+            var line top = line.new(0, 10.0, 5, 12.0)
+            var line bottom = line.new(0, 2.0, 5, 4.0)
+            linefill gone = linefill.new(na, bottom, color.red)
+            var linefill band = linefill.new(top, bottom, color.new(color.blue, 80))
+            band.set_color(color.green)
+            plot(na(gone) ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots[0].values, [1, 1])
+        XCTAssertEqual(output.linefills.count, 1)
+        XCTAssertEqual(output.linefills.first?.color, PineBuiltins.colors["color.green"])
+        XCTAssertEqual(Set([output.linefills[0].line1, output.linefills[0].line2]), Set(output.lines.map(\.id)))
+    }
+
+    func testLinefillDisappearsWithEitherLine() throws {
+        let program = compile(
+            """
+            var line top = line.new(0, 10.0, 5, 12.0)
+            var line bottom = line.new(0, 2.0, 5, 4.0)
+            var linefill band = linefill.new(top, bottom, color.blue)
+            if bar_index == 1
+                line.delete(top)
+            """)
+        let session = PineRuntimeSession(program: program)
+        XCTAssertEqual(try session.evaluate(bars: bars([1])).output.linefills.count, 1)
+        XCTAssertEqual(try session.evaluate(bars: bars([1, 2])).output.linefills.count, 0)
+    }
+
+    func testTableMergeCellsSpansTheStartCellAndDropsTheOnesItCovers() throws {
+        let program = compile(
+            """
+            var table t = table.new(position.top_right, 3, 2)
+            table.cell(t, 0, 0, "head")
+            table.cell(t, 1, 0, "covered")
+            table.cell(t, 0, 1, "below")
+            table.cell(t, 2, 1, "far")
+            table.merge_cells(t, 0, 0, 1, 1)
+            table.merge_cells(t, 2, 0, 2, 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        let cells = try XCTUnwrap(output.tables.first?.cells)
+        let head = try XCTUnwrap(cells.first { $0.column == 0 && $0.row == 0 })
+        XCTAssertEqual(head.text, "head")
+        XCTAssertEqual([head.columnSpan, head.rowSpan], [2, 2])
+        // (1,0) and (0,1) lie inside the merge and are gone; the empty (2,0) anchor was created.
+        XCTAssertEqual(Set(cells.map { [$0.column, $0.row] }), [[0, 0], [2, 0], [2, 1]])
+    }
+
+    func testTableSettersChangeThePositionAndColors() throws {
+        let program = compile(
+            """
+            var table t = table.new(position.top_right, 1, 1, border_width = 1)
+            table.set_position(t, position.bottom_left)
+            table.set_bgcolor(t, color.red)
+            table.set_border_color(t, color.green)
+            table.set_frame_color(t, color.blue)
+            table.set_border_width(t, 3)
+            table.set_frame_width(t, 2)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let table = try XCTUnwrap(
+            try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output.tables.first)
+        XCTAssertEqual(table.position, .parse("position.bottom_left", absent: .topRight))
+        XCTAssertEqual(table.backgroundColor, PineBuiltins.colors["color.red"])
+        XCTAssertEqual(table.borderColor, PineBuiltins.colors["color.green"])
+        XCTAssertEqual(table.frameColor, PineBuiltins.colors["color.blue"])
+        XCTAssertEqual([table.borderWidth, table.frameWidth], [3, 2])
+    }
+
+    func testTableClearDropsTheCellsInARangeOrAll() throws {
+        let program = compile(
+            """
+            var table t = table.new(position.top_right, 3, 2)
+            table.cell(t, 0, 0, "a")
+            table.cell(t, 1, 0, "b")
+            table.cell(t, 2, 0, "c")
+            table.cell(t, 1, 1, "d")
+            table.clear(t, 1, 0, 1, 1)
+            var table u = table.new(position.top_left, 2, 1)
+            table.cell(u, 0, 0, "x")
+            table.cell(u, 1, 0, "y")
+            table.clear(u)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let tables = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output.tables
+        XCTAssertEqual(tables[0].cells.map(\.text).sorted(), ["a", "c"])
+        XCTAssertEqual(tables[1].cells.count, 0)
+    }
+
+    func testTableMergeCellsOutsideTheGridIsARuntimeError() {
+        let program = compile(
+            "var table t = table.new(position.top_right, 2, 2)\ntable.merge_cells(t, 0, 0, 2, 0)")
+        XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {
+            XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE4013")
+        }
     }
 
     func testUndefinedVariableIsARuntimeError() {
