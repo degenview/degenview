@@ -4,7 +4,7 @@ extension PineParser {
     static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
         // Typed `.object` rather than a kind of its own: the checker does not track handles of this kind.
-        "linefill": .object,
+        "linefill": .object, "map": .map,
     ]
 
     static let qualifiers: [String: PineQualifier] = [
@@ -73,19 +73,45 @@ extension PineParser {
         if type == .array, next.kind == .less {
             advance()
             advance()
-            skipElementType()
+            _ = typeArgument()
             expect(.greater, "Expected '>'.")
             return .array
+        }
+        if type == .map, next.kind == .less {
+            advance()
+            advance()
+            _ = typeArgument()
+            expect(.comma, "Expected ',' between the key and value types.")
+            _ = typeArgument()
+            expect(.greater, "Expected '>'.")
+            return .map
         }
         return nil
     }
 
-    /// The `T` of `array<T>`; only one-word element types are supported.
-    private mutating func skipElementType() {
+    /// One type argument of `array<…>` or `map<…, …>`: a type name, a dotted one (`chart.point`), or a nested
+    /// generic (`array<float>`). Returns its first word, which is all the runtime needs.
+    mutating func typeArgument() -> String? {
+        var word: String
         switch current.kind {
-        case .typeKeyword, .identifier: advance()
-        default: error("PINE2012", "Expected an element type.", current.range)
+        case .typeKeyword(let type): word = type.rawValue
+        case .identifier(let name): word = name
+        default:
+            error("PINE2012", "Expected a type.", current.range)
+            return nil
         }
+        advance()
+        while at(.dot), case .identifier(let part)? = peek(1)?.kind {
+            word += "." + part
+            advance()
+            advance()
+        }
+        if take(.less) {
+            _ = typeArgument()
+            while take(.comma) { _ = typeArgument() }
+            expect(.greater, "Expected '>'.")
+        }
+        return word
     }
 
     @discardableResult

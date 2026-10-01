@@ -158,8 +158,11 @@ extension PineRuntimeSession {
     ) throws -> Step {
         let target = try eval(collection, &context)
         if target == .na { return Step() }
+        if case .ref(.map, let id) = target {
+            return try runForInMap(indexName, valueName, id, body, &context)
+        }
         guard case .ref(.array, let id) = target else {
-            throw PineDiagnostic.error("PINE4011", .runtime, "for...in requires an array.", range)
+            throw PineDiagnostic.error("PINE4011", .runtime, "for...in requires an array or a map.", range)
         }
         var last: PineRuntimeValue?
         // Iterate a snapshot: Pine forbids resizing the array inside the loop.
@@ -169,6 +172,28 @@ extension PineRuntimeSession {
             working.variables[valueName] = item
             let (flow, value) = try run(body, &context)
             last = value
+            if flow == .breakLoop { break }
+        }
+        return Step(value: last)
+    }
+
+    /// `for [key, value] in map`: a snapshot of the pairs, in insertion order.
+    private func runForInMap(
+        _ keyName: String?, _ valueName: String, _ id: Int, _ body: [PineStatement],
+        _ context: inout PineRuntimeContext
+    ) throws -> Step {
+        var last: PineRuntimeValue?
+        for (key, value) in working.maps[id]?.pairs ?? [] {
+            try budget()
+            if let keyName {
+                working.variables[keyName] = key
+                working.variables[valueName] = value
+            } else {
+                // Without a pair pattern the variable takes the value.
+                working.variables[valueName] = value
+            }
+            let (flow, result) = try run(body, &context)
+            last = result
             if flow == .breakLoop { break }
         }
         return Step(value: last)

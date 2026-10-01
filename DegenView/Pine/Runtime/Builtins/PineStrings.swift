@@ -28,6 +28,7 @@ enum PineStrings {
             }
             return .string(subject.replacingOccurrences(of: target, with: replacement))
         case "str.substring": return try substring(subject, values, range)
+        case "str.match": return .string(firstMatch(of: text(1), in: subject))
         case "str.tonumber":
             return Double(subject.trimmingCharacters(in: .whitespaces)).map(PineRuntimeValue.float) ?? .na
         case "str.format":
@@ -82,5 +83,16 @@ enum PineStrings {
             index = template.index(after: close)
         }
         return output
+    }
+
+    /// `str.match(source, regex)`: the first substring the regular expression matches, or an empty
+    /// string when nothing matches or the expression is invalid.
+    private static func firstMatch(of pattern: String?, in subject: String) -> String {
+        guard let pattern, let expression = try? NSRegularExpression(pattern: pattern),
+            let match = expression.firstMatch(
+                in: subject, range: NSRange(subject.startIndex..., in: subject)),
+            let range = Range(match.range, in: subject)
+        else { return "" }
+        return String(subject[range])
     }
 }

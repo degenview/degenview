@@ -19,6 +19,8 @@ extension PineRuntimeSession {
             return try eval(test ? whenTrue : whenFalse, &context)
         case .history(let base, let offset, let range): return try evalHistory(base, offset, range, &context)
         case .tuple(let expressions, _): return .tuple(try expressions.map { try eval($0, &context) })
+        case .methodCall(let receiver, let name, let arguments, let site, let range):
+            return try methodCallOnValue(receiver, name, arguments, site, range, &context)
         case .member(let base, let name, let range):
             return try readField(name, of: try eval(base, &context), range)
         case .statementExpression(let statement, _):

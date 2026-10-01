@@ -5,6 +5,8 @@ enum PineValueType: String, Codable, Hashable, Sendable {
     case line, label, box, table, array
     /// An instance of a script-defined `type`. Runtime values are dynamic, so which type is not tracked.
     case object
+    /// `map<K, V>`; key and value types are not tracked.
+    case map
     /// `input.time`: a millisecond timestamp carried as an `int`.
     case time
 }

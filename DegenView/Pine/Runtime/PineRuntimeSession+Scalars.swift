@@ -52,6 +52,54 @@ extension PineRuntimeSession {
         try argument(call, 0, nil, &context).number.map(PineRuntimeValue.float) ?? .na
     }
 
+    /// `time(timeframe)`: the open time of the `timeframe` bar that contains the current bar, so
+    /// `ta.change(time("D"))` marks a new day. Sessions and time zones are not modelled: the argument
+    /// after the timeframe is ignored. Without a usable timeframe it is the bar's own `time`.
+    func timeCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let open = PineTime.milliseconds(context.bar.openTime)
+        guard case .string(let text) = try argument(call, 0, "timeframe", &context), !text.isEmpty else {
+            return .int(open)
+        }
+        guard let seconds = PineTime.seconds(ofTimeframe: text) else {
+            throw PineDiagnostic.error(
+                "PINE4021", .runtime, "time() needs a timeframe such as \"60\" or \"1D\".", call.range)
+        }
+        let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
+        return .int(PineTime.milliseconds(start))
+    }
+
+    /// `time_close(timeframe)`: the close of the `timeframe` bar that contains the current bar.
+    func timeCloseCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        guard case .string(let text) = try argument(call, 0, "timeframe", &context), !text.isEmpty else {
+            return market("time_close", context) ?? .na
+        }
+        guard let seconds = PineTime.seconds(ofTimeframe: text) else {
+            throw PineDiagnostic.error(
+                "PINE4021", .runtime, "time_close() needs a timeframe such as \"60\" or \"1D\".", call.range)
+        }
+        let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
+        return .int(PineTime.milliseconds(KlineData.bucketEnd(after: start, interval: seconds)))
+    }
+
+    /// `max_bars_back(series, n)`: a hint about how much history to keep. The runtime keeps all of it.
+    func maxBarsBackCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        .void
+    }
+
+    /// `color(na)`: the typed na scripts use to clear a color. A color passes through.
+    func colorCast(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let value = try argument(call, 0, nil, &context)
+        if case .color = value { return value }
+        return .na
+    }
+
+    /// `string(na)`: a string passes through, anything else is na.
+    func stringCast(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let value = try argument(call, 0, nil, &context)
+        if case .string = value { return value }
+        return .na
+    }
+
     func boolCast(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         let value = try argument(call, 0, nil, &context)
         if case .bool = value { return value }
@@ -112,7 +160,19 @@ extension PineRuntimeSession {
     }
 
     func stringCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        try PineStrings.call(
+        if call.name == "str.split" {
+            let values = try allArguments(call, &context)
+            guard case .string(let text)? = values.first, case .string(let separator)? = values.dropFirst().first
+            else { return .na }
+            // An empty separator splits into characters; otherwise like Pine, empty pieces are kept.
+            let pieces =
+                separator.isEmpty
+                ? text.map { String($0) } : text.components(separatedBy: separator)
+            let id = allocate()
+            working.arrays[id] = pieces.map(PineRuntimeValue.string)
+            return .ref(.array, id)
+        }
+        return try PineStrings.call(
             call.name, try allArguments(call, &context), call.range, mintick: mintick)
     }
 

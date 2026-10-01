@@ -19,6 +19,7 @@ struct PineRuntimeState {
     // Reference-typed objects live in the state so realtime rollback restores them
     // together with the variables that point at them.
     var arrays: [Int: [PineRuntimeValue]] = [:]
+    var maps: [Int: PineMap] = [:]
     /// Instances of script-defined types, by handle.
     var instances: [Int: PineObject] = [:]
     /// `request.security` call sites, by call-site key. Each holds a state of its own, so this
