@@ -120,7 +120,7 @@ final class PineCorpusTests: XCTestCase {
     }
 
     /// A deterministic random walk (fixed-seed LCG), so a failure reproduces on every machine.
-    private static func syntheticBars(count: Int, spacing: TimeInterval = 3_600) -> [KlineData] {
+    private static func syntheticBars(count: Int, spacing: TimeInterval = 60) -> [KlineData] {
         var state: UInt64 = 0x2545_F491_4F6C_DD1D
         func next() -> Double {
             state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407

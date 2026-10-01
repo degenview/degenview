@@ -17,7 +17,7 @@ struct PineStructureValidator {
         var validator = PineStructureValidator()
         validator.validate(statements, inherited: [], inLoop: false)
         PineStatement.forEachCall(in: statements) { name, range in
-            guard name.hasPrefix("request.") else { return }
+            guard name.hasPrefix("request."), name != "request.security" else { return }
             validator.report(
                 "PINE9003", .unsupported, "Feature '\(name)' is not supported in this release.", range)
         }

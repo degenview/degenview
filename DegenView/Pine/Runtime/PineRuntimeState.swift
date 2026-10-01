@@ -18,6 +18,9 @@ struct PineRuntimeState {
     var arrays: [Int: [PineRuntimeValue]] = [:]
     /// Instances of script-defined types, by handle.
     var instances: [Int: PineObject] = [:]
+    /// `request.security` call sites, by call-site key. Each holds a state of its own, so this
+    /// type contains itself through the dictionary.
+    var securities: [Int: PineSecuritySite] = [:]
     var lines: [Int: PineLineOutput] = [:]
     var labels: [Int: PineLabelOutput] = [:]
     var boxes: [Int: PineBoxOutput] = [:]

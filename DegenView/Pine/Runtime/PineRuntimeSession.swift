@@ -25,6 +25,9 @@ final class PineRuntimeSession {
     var lastOpenTime: Date?
     /// Index and open time of the final bar, for `last_bar_index` and `last_bar_time`. Known up front
     /// for history; a realtime bar that opens past it becomes the new last bar.
+    /// The chart script's variables while a `request.security` expression runs, so the expression can
+    /// read inputs and constants without them entering its own histories. Nil otherwise.
+    var securityGlobals: [String: PineRuntimeValue]?
     var lastBarIndex = -1
     var lastBarTime: Date?
     /// Open time of the bar most recently committed. Anything at or before it is stale.
@@ -256,10 +259,16 @@ final class PineRuntimeSession {
 
     /// Appends the confirmed bar's value of every series and variable to its history, which is
     /// what `x[n]` reads.
-    private func commitHistories(_ bar: KlineData) {
+    func commitHistories(_ bar: KlineData) {
         var series: [String: PineRuntimeValue] = [
             "open": .float(bar.openPrice), "high": .float(bar.highPrice), "low": .float(bar.lowPrice),
             "close": .float(bar.closePrice), "volume": .float(bar.volume),
+            "hl2": .float((bar.highPrice + bar.lowPrice) / 2),
+            "hlc3": .float((bar.highPrice + bar.lowPrice + bar.closePrice) / 3),
+            "ohlc4": .float((bar.openPrice + bar.highPrice + bar.lowPrice + bar.closePrice) / 4),
+            "time": .int(PineTime.milliseconds(bar.openTime)),
+            "time_close": .int(PineTime.milliseconds(bar.openTime) + (Int(pine: barSeconds * 1000) ?? 0)),
+            "bar_index": .int(working.barIndex),
         ]
         if isStrategy {
             for name in Self.strategySeries { series[name] = strategyValue(name, bar) }

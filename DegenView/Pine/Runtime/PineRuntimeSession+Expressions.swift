@@ -39,6 +39,7 @@ extension PineRuntimeSession {
         _ name: String, _ range: PineSourceRange, _ context: PineRuntimeContext
     ) throws -> PineRuntimeValue {
         if let value = working.variables[name] { return value }
+        if let value = securityGlobals?[name] { return value }
         if let value = market(name, context) { return value }
         if let flag = context.flags.value(named: name) { return .bool(flag) }
         if let color = PineBuiltins.colors[name] ?? chartColor(name) { return .color(color) }

@@ -162,7 +162,7 @@ final class PineRegressionTests: XCTestCase {
     }
 
     func testRequestCallsAreFlaggedInsideExpressions() {
-        let program = compile("x = request.security(syminfo.tickerid, \"D\", close)\nplot(x)")
+        let program = compile("x = request.security_lower_tf(syminfo.tickerid, \"1\", close)\nplot(x)")
         XCTAssertTrue(codes(program).contains("PINE9003"), "\(codes(program))")
     }
 
@@ -349,6 +349,23 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = false)").isValid)
         let behind = compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = true)")
         XCTAssertEqual(codes(behind), ["PINE9001"])
+    }
+
+    func testDerivedPricesTimeAndBarIndexHaveHistory() throws {
+        let program = compile(
+            """
+            plot(hl2[1])
+            plot(hlc3[1])
+            plot(ohlc4[1])
+            plot(time[1])
+            plot(time_close[1])
+            plot(bar_index[1])
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([10, 20], spacing: 60)).output
+        // Bar 0: open 10, high 11, low 9, close 10.
+        let previous = output.plots.map { $0.values[1] }
+        XCTAssertEqual(previous, [10, 10, 10, 0, 60_000, 0])
+        XCTAssertTrue(output.plots.allSatisfy { $0.values[0] == nil })
     }
 
     func testTypeKeywordCanNameAVariable() throws {

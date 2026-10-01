@@ -17,6 +17,7 @@ extension PineRuntimeSession {
             "ta.pivotlow": PineRuntimeSession.pivotCall, "ta.barssince": PineRuntimeSession.barsSinceCall,
             "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
             "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
+            "request.security": PineRuntimeSession.securityCall,
             "timeframe.change": PineRuntimeSession.timeframeChangeCall,
             "color.from_gradient": PineRuntimeSession.colorGradient,
             "color.r": PineRuntimeSession.colorComponent, "color.g": PineRuntimeSession.colorComponent,
