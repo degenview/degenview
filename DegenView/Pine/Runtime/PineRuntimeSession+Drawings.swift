@@ -108,7 +108,7 @@ extension PineRuntimeSession {
                 textColor: b["textcolor"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 style: .parse(b["style"].textValue, absent: .labelDown, unknown: .labelCenter),
                 size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue,
-                timeAnchored: timed)
+                textAlign: .parse(b["textalign"].textValue, absent: .center), timeAnchored: timed)
         }
     }
 
@@ -117,7 +117,7 @@ extension PineRuntimeSession {
             call,
             [
                 "left", "top", "right", "bottom", "border_color", "border_width", "border_style",
-                "extend", "xloc", "bgcolor",
+                "extend", "xloc", "bgcolor", "text", "text_size", "text_color", "text_halign", "text_valign",
             ], &context)
         let timed = isTimeAnchored(b)
         guard let rawLeft = b["left"].intValue, let top = b["top"]?.number,
@@ -131,7 +131,12 @@ extension PineRuntimeSession {
                 borderColor: b["border_color"].colorValue(fallback: Self.defaultColor),
                 borderWidth: b["border_width"].intValue ?? 1,
                 backgroundColor: b["bgcolor"].colorValue(fallback: Self.defaultColor),
-                timeAnchored: timed)
+                borderStyle: .parse(b["border_style"].textValue, absent: .solid),
+                text: b["text"].textValue ?? "",
+                textColor: b["text_color"].colorValue(fallback: Self.opaqueBlack) ?? 0,
+                textSize: .parse(b["text_size"].textValue, absent: .normal),
+                textHorizontalAlign: .parse(b["text_halign"].textValue, absent: .center),
+                textVerticalAlign: .parse(b["text_valign"].textValue, absent: .center), timeAnchored: timed)
         }
     }
 
@@ -384,6 +389,8 @@ extension PineRuntimeSession {
             label.style = a.textValue.map { PineLabelStyle(pineName: $0) ?? .labelCenter } ?? label.style
         case "set_size": label.size = PineSize(pineName: a.textValue) ?? label.size
         case "set_tooltip": label.tooltip = a.textValue
+        case "set_textalign": label.textAlign = .parse(a.textValue, absent: label.textAlign)
+        case "set_text_font_family", "set_text_formatting": break  // accepted; fonts are not modelled
         case "get_x": return .int(label.x)
         case "get_y": return .float(label.y)
         case "get_text": return .string(label.text)
@@ -410,6 +417,13 @@ extension PineRuntimeSession {
         case "set_bgcolor": box.backgroundColor = Optional(a).colorValue(fallback: nil)
         case "set_border_color": box.borderColor = Optional(a).colorValue(fallback: nil)
         case "set_border_width": box.borderWidth = a.intValue ?? box.borderWidth
+        case "set_border_style": box.borderStyle = .parse(a.textValue, absent: box.borderStyle)
+        case "set_text": box.text = a.textValue ?? ""
+        case "set_text_color": box.textColor = Optional(a).colorValue(fallback: nil) ?? 0
+        case "set_text_size": box.textSize = .parse(a.textValue, absent: box.textSize)
+        case "set_text_halign": box.textHorizontalAlign = .parse(a.textValue, absent: box.textHorizontalAlign)
+        case "set_text_valign": box.textVerticalAlign = .parse(a.textValue, absent: box.textVerticalAlign)
+        case "set_text_wrap", "set_text_font_family", "set_text_formatting": break  // accepted; not modelled
         case "get_left": return .int(box.left)
         case "get_right": return .int(box.right)
         case "get_top": return .float(box.top)

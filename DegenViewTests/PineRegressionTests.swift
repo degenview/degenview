@@ -369,6 +369,47 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
     }
 
+    func testBoxTextBorderStyleAndLabelAlignmentAreStoredAndSettable() throws {
+        let program = compile(
+            """
+            var box b = box.new(0, 10.0, 3, 5.0, border_style = line.style_dashed, text = "zone",
+                 text_size = size.large, text_color = color.red, text_halign = text.align_left,
+                 text_valign = text.align_top)
+            var label l = label.new(0, 1.0, "a\\nbb", textalign = text.align_right)
+            if bar_index == 1
+                box.set_text(b, "moved")
+                box.set_border_style(b, line.style_dotted)
+                box.set_text_color(b, color.blue)
+                box.set_text_size(b, size.small)
+                box.set_text_halign(b, text.align_right)
+                box.set_text_valign(b, text.align_bottom)
+                box.set_text_wrap(b, text.wrap_auto)
+                label.set_textalign(l, text.align_left)
+                label.set_text_font_family(l, font.family_monospace)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let first = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        let box = try XCTUnwrap(first.boxes.first)
+        XCTAssertEqual(
+            [
+                box.text, "\(box.borderStyle)", "\(box.textSize)", "\(box.textHorizontalAlign)",
+                "\(box.textVerticalAlign)",
+            ],
+            ["zone", "dashed", "large", "left", "top"])
+        XCTAssertEqual(box.textColor, PineBuiltins.colors["color.red"])
+        XCTAssertEqual(first.labels.first?.textAlign, .right)
+        let later = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        let moved = try XCTUnwrap(later.boxes.first)
+        XCTAssertEqual(
+            [
+                moved.text, "\(moved.borderStyle)", "\(moved.textSize)", "\(moved.textHorizontalAlign)",
+                "\(moved.textVerticalAlign)",
+            ],
+            ["moved", "dotted", "small", "right", "bottom"])
+        XCTAssertEqual(moved.textColor, PineBuiltins.colors["color.blue"])
+        XCTAssertEqual(later.labels.first?.textAlign, .left)
+    }
+
     func testEveryLabelStyleConstantResolvesAndIsStored() throws {
         let styles = [
             "none", "label_down", "label_up", "label_left", "label_right", "label_center", "label_lower_left",

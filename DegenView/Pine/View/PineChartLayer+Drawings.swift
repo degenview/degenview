@@ -19,7 +19,20 @@ extension PineChartLayer {
             }
             if let border = box.borderColor, box.borderWidth > 0 {
                 context.stroke(
-                    Path(rect), with: .color(Color(pineRGBA: border)), lineWidth: CGFloat(box.borderWidth))
+                    Path(rect), with: .color(Color(pineRGBA: border)),
+                    style: StrokeStyle(lineWidth: CGFloat(box.borderWidth), dash: box.borderStyle.dashPattern))
+            }
+            if !box.text.isEmpty, box.textColor & 0xFF != 0 {
+                let text = context.resolve(
+                    Text(box.text)
+                        .font(.system(size: box.textSize.fontSize))
+                        .foregroundColor(Color(pineRGBA: box.textColor)))
+                let placement = PineDrawingGeometry.boxTextPlacement(
+                    in: rect, horizontal: box.textHorizontalAlign, vertical: box.textVerticalAlign, margin: 4)
+                context.drawLayer { layer in
+                    layer.clip(to: Path(rect))
+                    layer.draw(text, at: placement.point, anchor: placement.anchor)
+                }
             }
         }
     }
@@ -66,16 +79,11 @@ extension PineChartLayer {
                 context.fill(path, with: .color(Color(pineRGBA: fill)))
             }
             guard let color = polyline.lineColor, polyline.width > 0 else { continue }
-            let dash: [CGFloat] =
-                switch polyline.style {
-                case .dashed: [6, 4]
-                case .dotted: [1, 3]
-                default: []
-                }
             context.stroke(
                 path, with: .color(Color(pineRGBA: color)),
                 style: StrokeStyle(
-                    lineWidth: CGFloat(polyline.width), lineCap: .round, lineJoin: .round, dash: dash))
+                    lineWidth: CGFloat(polyline.width), lineCap: .round, lineJoin: .round,
+                    dash: polyline.style.dashPattern))
         }
     }
 
@@ -88,15 +96,23 @@ extension PineChartLayer {
             var path = Path()
             path.move(to: from)
             path.addLine(to: to)
-            let dash: [CGFloat] =
-                switch line.style {
-                case .dashed: [6, 4]
-                case .dotted: [1, 3]
-                default: []
-                }
             context.stroke(
                 path, with: .color(Color(pineRGBA: line.color)),
-                style: StrokeStyle(lineWidth: CGFloat(max(1, line.width)), lineCap: .round, dash: dash))
+                style: StrokeStyle(
+                    lineWidth: CGFloat(max(1, line.width)), lineCap: .round, dash: line.style.dashPattern))
+            let heads = line.style.arrowheads
+            let size = CGFloat(max(1, line.width)) * 2 + 6
+            for (show, tip, origin) in [(heads.start, start, end), (heads.end, end, start)] where show {
+                let points = PineDrawingGeometry.arrowhead(
+                    tip: tip, from: origin, length: size, halfWidth: size / 2.5)
+                guard points.count == 3 else { continue }
+                var head = Path()
+                head.move(to: points[0])
+                head.addLine(to: points[1])
+                head.addLine(to: points[2])
+                head.closeSubpath()
+                context.fill(head, with: .color(Color(pineRGBA: line.color)))
+            }
         }
     }
 
