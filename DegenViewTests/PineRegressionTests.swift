@@ -369,6 +369,32 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
     }
 
+    func testMathSumIsASlidingSum() throws {
+        let program = compile("plot(math.sum(close, 3))\nplot(math.sum(close, 1))")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4, 5])).output
+        XCTAssertEqual(output.plots[0].values, [nil, nil, 6, 9, 12])
+        XCTAssertEqual(output.plots[1].values, [1, 2, 3, 4, 5])
+    }
+
+    func testFormatTimeUsesUnicodePatternsAndZones() throws {
+        let program = compile(
+            """
+            t = 1000000000000
+            plot(str.length(str.format_time(t, "yyyy-MM-dd HH:mm:ss")))
+            plot(str.format_time(t, "HH", "UTC+3") == "04" ? 1 : 0)
+            plot(str.format_time(t, "HH", "America/New_York") == "21" ? 1 : 0)
+            plot(str.format_time(t, "HH:mm", "GMT-05:30") == "20:16" ? 1 : 0)
+            plot(str.format_time(t, "EEE, MMM d, yyyy hh:mm a", "UTC") == "Sun, Sep 9, 2001 01:46 AM" ? 1 : 0)
+            plot(str.format_time(t) == "2001-09-09T01:46:40+0000" ? 1 : 0)
+            plot(na(str.format_time(na)) ? 1 : 0)
+            plot(str.format_time(t, "HH", "Not/AZone") == "01" ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[19], [1], [1], [1], [1], [1], [1], [1]])
+    }
+
     func testLegacyInputFunctionTakesItsTypeFromTheDefault() throws {
         let program = compile(
             """
@@ -763,6 +789,38 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
         XCTAssertEqual(output.plots.map(\.values), [[6], [8], [0], [1]])
+    }
+
+    func testArrayStatistics() throws {
+        let program = compile(
+            """
+            xs = array.from(4.0, 1.0, 7.0, 7.0, 3.0, 10.0)
+            ys = array.from(2.0, 4.0, 1.0, 8.0, 6.0, 3.0)
+            plot(array.median(xs))
+            plot(array.mode(xs))
+            plot(array.range(xs))
+            plot(array.variance(xs))
+            plot(array.variance(xs, false))
+            plot(array.stdev(xs))
+            plot(array.stdev(xs, false))
+            plot(array.percentile_nearest_rank(xs, 25))
+            plot(array.percentile_nearest_rank(xs, 90))
+            plot(array.percentile_linear_interpolation(xs, 25))
+            plot(array.percentile_linear_interpolation(xs, 90))
+            plot(array.covariance(xs, ys))
+            plot(array.covariance(xs, ys, false))
+            plot(na(array.median(array.new_float())) ? 1 : 0)
+            plot(array.median(array.from(5.0, na, 1.0)))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        let expected: [Double] = [
+            5.5, 7, 9, 8.888888889, 10.666666667, 2.98142397, 3.265986324, 3, 10, 3.25, 8.5, -0.833333333, -1,
+            1, 3,
+        ]
+        for (plot, value) in zip(output.plots, expected) {
+            XCTAssertEqual(try XCTUnwrap(plot.values[0]), value, accuracy: 1e-6)
+        }
     }
 
     func testStrSplitReturnsAnArrayOfPieces() throws {

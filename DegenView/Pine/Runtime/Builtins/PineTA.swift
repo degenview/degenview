@@ -47,6 +47,7 @@ enum PineTA {
         case "ta.highestbars": result = extremumBars(state.inputs, length, highest: true)
         case "ta.lowestbars": result = extremumBars(state.inputs, length, highest: false)
         case "ta.percentrank": result = percentRank(state.inputs, length)
+        case "math.sum": result = statistic(state.inputs, length) { $0.reduce(0, +) }
         case "ta.max": result = runningExtreme(source, prior: state.results.last, pick: max)
         case "ta.min": result = runningExtreme(source, prior: state.results.last, pick: min)
         case "ta.cross", "ta.crossover", "ta.crossunder":

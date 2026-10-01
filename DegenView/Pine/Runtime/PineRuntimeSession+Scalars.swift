@@ -177,10 +177,24 @@ extension PineRuntimeSession {
     // MARK: - math, str
 
     func mathCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        PineMath.call(call.name, try allArguments(call, &context), mintick: mintick)
+        if call.name == "math.sum" {
+            // The sliding sum of the last `length` values: a series function with a history per call site.
+            let source = try argument(call, 0, "source", &context)
+            let length = try argument(call, 1, "length", &context).intValue ?? 0
+            return evaluateTA("math.sum", source: source, length: length, site: siteKey(call.site, context))
+        }
+        return PineMath.call(call.name, try allArguments(call, &context), mintick: mintick)
     }
 
     func stringCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        if call.name == "str.format_time" {
+            let b = try bind(call, ["time", "format", "timezone"], &context)
+            guard let milliseconds = b["time"].intValue else { return .na }
+            return .string(
+                PineTime.formatted(
+                    milliseconds: milliseconds, format: b["format"].textValue,
+                    zone: b["timezone"].textValue))
+        }
         if call.name == "str.split" {
             let values = try allArguments(call, &context)
             guard case .string(let text)? = values.first, case .string(let separator)? = values.dropFirst().first
