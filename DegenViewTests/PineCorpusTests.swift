@@ -22,10 +22,11 @@ final class PineCorpusTests: XCTestCase {
     }
 
     /// Written when `PINE_CORPUS_REPORT` names a file: the observed outcomes, plus each error's
-    /// line and message for triage.
+    /// line and message and each script's run time, for triage.
     private struct Report: Encodable {
         let expectations: [String: Expectation]
         let details: [String: [String]]
+        let milliseconds: [String: Int]
     }
 
     private static let barCount = 1_000
@@ -53,6 +54,7 @@ final class PineCorpusTests: XCTestCase {
         let bars = Self.syntheticBars(count: Self.barCount)
         var observed: [String: Expectation] = [:]
         var details: [String: [String]] = [:]
+        var timings: [String: Int] = [:]
         var table: [String] = []
         for entry in fetched {
             let url = cacheDirectory.appendingPathComponent("\(entry.kind)/\(entry.slug).pine")
@@ -62,6 +64,7 @@ final class PineCorpusTests: XCTestCase {
             let milliseconds = Int(Date().timeIntervalSince(start) * 1000)
             observed[entry.slug] = outcome
             details[entry.slug] = messages
+            timings[entry.slug] = milliseconds
             table.append(
                 "\(entry.slug.padding(toLength: 10, withPad: " ", startingAt: 0)) "
                     + "\(entry.kind.padding(toLength: 9, withPad: " ", startingAt: 0)) "
@@ -73,7 +76,7 @@ final class PineCorpusTests: XCTestCase {
         if let path = ProcessInfo.processInfo.environment["PINE_CORPUS_REPORT"] {
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try encoder.encode(Report(expectations: observed, details: details))
+            try encoder.encode(Report(expectations: observed, details: details, milliseconds: timings))
                 .write(to: URL(fileURLWithPath: path))
         }
 

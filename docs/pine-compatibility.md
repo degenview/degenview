@@ -175,6 +175,23 @@ row) → `PineAlertDispatcher` (channels).
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
   cancellation, and a 10-second evaluation deadline. Enforced limits use `PINE8xxx`.
 
+- Syntax found in community scripts: single-quoted strings (`'…'`), continuation lines indented by
+  a non-multiple of four columns (multi-line ternaries and operator chains), several statements on one
+  line separated by commas (`a := 1, b := 2`), generic constructors (`array.new<float>(n)`), and the
+  `export` modifier (accepted in a `library()`, `PINE3037` elsewhere).
+- Method syntax on a variable holding an array or a `line`/`label`/`box`/`table` handle:
+  `values.get(i)` is `array.get(values, i)`, `ln.set_y2(p)` is `line.set_y2(ln, p)`. The receiver must
+  be a plain variable; chained receivers such as `array.get(a, 0).field` are not parsed.
+- `input.*` defaults are read from `defval =` (or the leading positional argument), so
+  `input.bool(title = "…", defval = true)` works.
+- `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday` (midnight UTC of the bar's day),
+  `timeframe.isticks` (always false), `timeframe.in_seconds([tf])`, `timeframe.change(tf)`,
+  `color.from_gradient`, and `color.r/g/b/t`. `timeframe.in_seconds` counts a month as 30 days, as
+  `timeframe.period` assumes, and `timeframe.change` is true on the first bar; both are assumptions
+  not checked against TradingView.
+- `type`, `enum`, `method` and `import` declarations are recognised and reported once
+  (`PINE9006`–`PINE9009`) with their bodies skipped, rather than as a syntax error per line.
+
 ## Type checking
 
 `PineTypeChecker` runs after parsing (skipped when the source has lexical or syntax errors) and
@@ -229,8 +246,11 @@ meets (`PINE4001`–`PINE4006`).
 
 ## Known incompatibilities
 
-The current grammar does not yet implement method call syntax (`arr.push(x)`), maps,
-matrices, user-defined types, enums, `polyline`, `linefill`, or `xloc.bar_time` drawings. Label `yloc` is treated as `yloc.price`.
+The current grammar does not yet implement method calls on anything but array and drawing
+variables, maps, matrices, user-defined types and methods (`PINE9006`, `PINE9009`), enums
+(`PINE9007`), library `import` (`PINE9008`), `polyline`, `chart.point`, `linefill`,
+`table.merge_cells`, the `scale` and `max_polylines_count` declaration arguments, or `xloc.bar_time`
+drawings. A variable named like a type keyword (`color = …`) does not parse. Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
 but missing-value and conditional-call behavior needs a larger differential corpus. Non-overlay
@@ -294,3 +314,27 @@ entire pre-existing test target remains the regression gate. A formal
 TradingView differential corpus and an Instruments peak-memory run are still required
 before publishing compatibility or 100,000-bar benchmark numbers; no unmeasured numbers
 are claimed here.
+
+### Real-world script corpus
+
+`PineCorpusTests` runs published community scripts through the engine. `tools/pine-corpus/fetch.py`
+downloads the most popular open-source Pine v6 scripts (20 indicators, 10 libraries, in TradingView's
+default popularity order) into the gitignored `.pine-corpus/` directory. Their authors keep the licences, so the
+sources are never committed; `DegenViewTests/PineCorpus/manifest.json` records only metadata. The test skips when
+the cache is absent. Each script is compiled and run over 1,000 deterministic synthetic bars with default inputs,
+and the outcome is compared with `expectations.json`: a regression and a newly supported script both fail it.
+**"Compatible" here means compiles and runs to completion; no values were compared with TradingView.**
+
+Result of the first run against the 30 scripts fetched on 2026-10-01: 1 of 20 indicators and 0 of 10 libraries ran. After the fixes in this change, 5 of 20 indicators and 2 of 10 libraries compile and
+run. The rest are blocked by whole features, counted in scripts (a script can have several):
+
+| Blocker | Scripts |
+|---|---|
+| User-defined types (`PINE9006`), usually with methods (`PINE9009`) | 10 |
+| `request.security` (`PINE9003`) | 10 |
+| Library `import` (`PINE9008`) | 2 |
+| Source over the 100,000-character limit (`PINE8001`) | 2 |
+| `chart.point` / `polyline`, matrices, enums (`PINE9007`), `table.merge_cells`, `scale=` | 5 |
+
+Libraries are checked only for compiling: `library()` and `export` parse, but nothing runs a
+library's exports, and `import` is unsupported.
