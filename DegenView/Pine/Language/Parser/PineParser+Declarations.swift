@@ -94,7 +94,6 @@ extension PineParser {
     private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
         "enum": ("PINE9007", "Enums are not supported in this release."),
         "import": ("PINE9008", "Library imports are not supported in this release."),
-        "method": ("PINE9009", "User-defined methods are not supported in this release."),
     ]
 
     /// `type Name`, `enum Name`, `method name(…) =>` and `import user/lib/1 as alias` are valid Pine

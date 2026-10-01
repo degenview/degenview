@@ -90,4 +90,22 @@ extension PineParser {
         guard let value = expression() else { return nil }
         return .fieldAssignment(target: target, op: op, value: value, range: range)
     }
+
+    // MARK: - Methods
+
+    /// `method name(` … `) =>`.
+    func isMethodDefinition() -> Bool {
+        guard case .identifier("method") = current.kind, let name = peek(1), case .identifier = name.kind,
+            peek(2)?.kind == .leftParen
+        else { return false }
+        return true
+    }
+
+    /// A method is a function whose first parameter is the receiver: `value.name(args)` calls
+    /// `name(value, args)`. The name is remembered so the call resolves ahead of builtins.
+    mutating func methodDefinition() -> PineStatement? {
+        advance()
+        if case .identifier(let name) = current.kind { methodNames.insert(name) }
+        return functionDefinition()
+    }
 }

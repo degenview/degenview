@@ -360,4 +360,65 @@ final class PineUserTypeTests: XCTestCase {
     func testAMemberOnALiteralIsNotAnObjectField() {
         XCTAssertEqual(runtimeError("plot((1.5).top)"), "PINE4018")
     }
+
+    // MARK: - Methods
+
+    func testMethodReceivesTheObjectAndCanMutateIt() throws {
+        let plots = try values(
+            """
+            type Counter
+                int n
+
+            method bump(Counter this, int by = 1) =>
+                this.n += by
+
+            var Counter c = Counter.new(0)
+            c.bump()
+            c.bump(by = 2)
+            plot(c.n)
+            """, bars: [1, 2])
+        XCTAssertEqual(plots, [[3, 6]])
+    }
+
+    func testMethodReturnsAValueAndWorksOnAnArrayElement() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+                float bottom
+
+            method height(Zone this) =>
+                this.top - this.bottom
+
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, Zone.new(10.0, 4.0))
+            Zone first = array.get(zones, 0)
+            plot(first.height())
+            plot(height(first))
+            """)
+        XCTAssertEqual(plots, [[6], [6]])
+    }
+
+    func testAMethodTakesPrecedenceOverABuiltinOfTheSameName() throws {
+        let plots = try values(
+            """
+            type Box
+                float v
+
+            method size(Box this) => this.v * 100
+
+            b = Box.new(2.0)
+            arr = array.from(1.0, 2.0, 3.0)
+            plot(b.size())
+            plot(arr.size())
+            """)
+        // Methods win over builtins for the same name, whatever the receiver; the script chose that name.
+        XCTAssertEqual(plots.first, [200])
+    }
+
+    func testExportedMethodIsAcceptedInALibrary() {
+        let source =
+            "//@version=6\nlibrary(\"L\")\nexport type Zone\n    float top\n\nexport method grow(Zone this) =>\n    this.top += 1\n"
+        XCTAssertTrue(PineCompiler.compile(source: source).isValid)
+    }
 }

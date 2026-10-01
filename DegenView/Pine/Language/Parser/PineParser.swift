@@ -17,6 +17,8 @@ struct PineParser {
     /// Names of the `type`s declared so far. Pine requires a type to precede its use, so the parser
     /// can tell `Zone z = …` (a declaration) from an expression.
     var userTypes: Set<String> = []
+    /// Names declared with `method`.
+    var methodNames: Set<String> = []
 
     init(tokens: [PineToken], limits: PineLimits) {
         self.tokens = tokens

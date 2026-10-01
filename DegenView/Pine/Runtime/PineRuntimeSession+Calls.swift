@@ -67,12 +67,17 @@ extension PineRuntimeSession {
             guard let value = working.variables[receiverName] else { return nil }
             receiver = value
         }
+        let receiverArgument = PineArgument(name: nil, value: .identifier(receiverName, call.range))
+        if program.methodNames.contains(member), let function = functions[member] {
+            let method = PineCall(
+                name: member, arguments: [receiverArgument] + call.arguments, site: call.site,
+                range: call.range)
+            return try invoke(function, method, &context)
+        }
         guard case .ref(let kind, _) = receiver, kind != .plot else { return nil }
         if kind == .object { return member == "copy" ? try copyInstance(receiver, call.range) : nil }
         let rewritten = PineCall(
-            name: "\(kind.rawValue).\(member)",
-            arguments: [PineArgument(name: nil, value: .identifier(receiverName, call.range))]
-                + call.arguments,
+            name: "\(kind.rawValue).\(member)", arguments: [receiverArgument] + call.arguments,
             site: call.site, range: call.range)
         return try self.call(rewritten, &context)
     }
