@@ -6,6 +6,13 @@ enum PineTime {
         "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek",
     ]
 
+    /// Every `timeframe.*` name `timeframe(_:barSeconds:)` resolves.
+    static let timeframeNames: Set<String> = [
+        "timeframe.period", "timeframe.multiplier", "timeframe.isdaily", "timeframe.isweekly",
+        "timeframe.ismonthly", "timeframe.isseconds", "timeframe.isminutes",
+        "timeframe.isintraday", "timeframe.isdwm",
+    ]
+
     private static let day = 86_400.0
 
     static func milliseconds(_ date: Date) -> Int { Int(pine: date.timeIntervalSince1970 * 1000) ?? 0 }

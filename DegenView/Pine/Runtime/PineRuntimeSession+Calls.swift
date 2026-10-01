@@ -5,7 +5,7 @@ extension PineRuntimeSession {
         PineRuntimeValue
 
     /// Builtins dispatched by their exact name. Checked before `namespaceHandlers`.
-    private static let exactHandlers: [String: CallHandler] = {
+    static let exactHandlers: [String: CallHandler] = {
         var table: [String: CallHandler] = [
             "na": PineRuntimeSession.naCall, "nz": PineRuntimeSession.nzCall,
             "int": PineRuntimeSession.intCast, "float": PineRuntimeSession.floatCast,
@@ -25,7 +25,7 @@ extension PineRuntimeSession {
     }()
 
     /// Builtins dispatched by namespace, for whatever the exact table did not claim.
-    private static let namespaceHandlers: [(prefix: String, handler: CallHandler)] = [
+    static let namespaceHandlers: [(prefix: String, handler: CallHandler)] = [
         ("input.", PineRuntimeSession.inputCall), ("math.", PineRuntimeSession.mathCall),
         ("str.", PineRuntimeSession.stringCall), ("strategy.", PineRuntimeSession.strategyCall),
         ("ta.", PineRuntimeSession.taCall), ("array.", PineRuntimeSession.arrayCall),

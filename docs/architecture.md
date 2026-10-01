@@ -20,15 +20,21 @@ DegenView/
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
+│   ├── PreviewMarket.swift            # A crypto or stock market the Script Manager preview charts
+│   ├── ScriptPreviewLayout.swift      # ChartPosition: preview chart left of / above / below the code
 │   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
 │   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
+│   ├── ScriptPreviewViewModel.swift   # Script Manager preview: one chart, market, timeframe, inputs, refresh
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
+│   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
+│   ├── PineAlertCoordinator.swift     # Routes a chart's Pine alerts; pauses/re-arms subscriptions
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
 │   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
+│   ├── ChartIconView.swift            # A chart's market icon with its source logo badge
 │   ├── CandleChartView.swift          # AppKit Canvas candlestick renderer
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
@@ -37,8 +43,19 @@ DegenView/
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
+│   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
+│   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
+│   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
+│   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
+│   ├── ScriptPreviewPane.swift        # Live preview: market, timeframe, zoom, chart, drawer bar
+│   ├── ScriptPreviewDrawer.swift      # Inputs / Report / Problems under the preview chart
+│   ├── ScriptPreviewMarketPicker.swift # Crypto-and-stock-only market popover
+│   ├── PineInputsView.swift           # A script's `input.*` declarations as controls (chart settings + preview)
+│   ├── SettingsCardRow.swift          # Icon, title, hint and trailing control card
+│   ├── PriceAxisDragMonitor.swift     # Drag a price axis to scale candles (chart tabs and the preview)
+│   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
@@ -52,7 +69,8 @@ DegenView/
 │   │   ├── Parser/                    # PineParser (+Statements, +Declarations, +Expressions)
 │   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs)
 │   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
-│   │   └── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
+│   │   ├── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
+│   │   └── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above (editor highlighting)
 │   ├── Runtime/
 │   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
 │   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
@@ -62,10 +80,12 @@ DegenView/
 │   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
-│   ├── Editor/                        # Script editor text view, highlighter, word ranges, diagnostic mapping
+│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
+    ├── ChartLiveFeed.swift            # Opens the Binance/Coinbase/Alpaca streams for a set of charts
+    ├── ScriptPreviewInputsStore.swift # Input values tried in the Script Manager preview, per script
     ├── BinanceWebSocketService.swift  # Binance live klines
     ├── CoinbaseAPIService.swift       # Coinbase REST candles (paged, 1w/1M folded from daily) + product search
     ├── CoinbaseWebSocketService.swift # Coinbase live trades (ticker channel → CoinbaseTick)
@@ -201,6 +221,15 @@ DegenView/
     login-item agent, whichever holds `alert_runtime.lock`. Both processes open the same
     database: the owner saves the alert snapshot in one transaction per change, and the GUI
     sends edits by inserting `alert_command` rows, which the owner applies and deletes.
+16. Pine script alerts run in the app only (the agent has no compiler or runtime).
+    `PineExecutionUpdate.alerts` (realtime executions only) reaches `PineAlertCoordinator`
+    through `ChartViewModel.pineAlertHandler`; the pure `PineAlertRouter` matches it to active
+    `PineAlertSubscription`s (chart, symbol, timeframe, source hash) and
+    `PineAlertFrequencyGuard` admits it once per call site, bar and mode. Admitted alerts are
+    recorded in `pine_alert_event` (unique `dedupe_key`, NULL for `freq_all`) and fanned out by
+    `PineAlertDispatcher` to independent `PineAlertChannel`s (macOS notification, in-app banner).
+    Subscriptions are the `pine_alert_subscription` document table. They are separate from the
+    price-alert snapshot, so `replaceSnapshot` never touches them.
 
 ## Drawing undo and redo
 

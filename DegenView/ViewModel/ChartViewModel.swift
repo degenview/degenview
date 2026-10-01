@@ -254,6 +254,9 @@ final class ChartViewModel: ObservableObject {
     /// Called on the main actor with alerts a script raised on a live bar. Historical calculation and
     /// loading never call it.
     var pineAlertHandler: (([PineAlertEvent], PineBarID?) -> Void)?
+    /// Called on the main actor whenever the applied script is recalculated from scratch: with the
+    /// market it now runs on and the hash of its source, nil when no script is applied.
+    var pineContextHandler: ((PineDatasetKey, String?) -> Void)?
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -581,6 +584,23 @@ final class ChartViewModel: ObservableObject {
         return true
     }
 
+    /// Replaces the running script with `source`. Returns false when it does not compile, in which
+    /// case the previous output stays active.
+    @discardableResult func loadPineScript(source: String, inputs: [String: PineInputValue] = [:]) -> Bool {
+        pineConfiguration = PineConfiguration(
+            draftSource: source, appliedSource: pineConfiguration?.appliedSource, inputs: inputs)
+        return applyPineDraft()
+    }
+
+    /// Stops the running script and forgets its source and inputs.
+    func unloadPineScript() {
+        scriptInstances = []
+        pineConfiguration = nil
+        pineDiagnostics = []
+        pineStatus = "No script applied"
+        reevaluatePine()
+    }
+
     func setPineInput(_ value: PineInputValue, id: String) {
         pineConfiguration?.inputs[id] = value
         reevaluatePine()
@@ -590,6 +610,23 @@ final class ChartViewModel: ObservableObject {
         guard theme != pineTheme else { return }
         pineTheme = theme
         reevaluatePine()
+    }
+
+    /// `overlay=false` scripts get their own pane under the candles; the line chart draws no scripts.
+    var showsPinePane: Bool { !usesLineChart && !pineOutput.overlay }
+
+    /// Height of that pane out of a chart area `chartHeight` tall — the candles keep the rest.
+    func pinePaneHeight(forChartHeight chartHeight: CGFloat) -> CGFloat {
+        showsPinePane ? (chartHeight * 0.3).rounded() : 0
+    }
+
+    /// The market the applied script runs on.
+    var pineAlertDataset: PineDatasetKey { pineDataset(for: requestedRange ?? .oneDay) }
+
+    /// Hash of the applied script's source, nil when none is applied.
+    var appliedSourceHash: String? {
+        guard let source = pineConfiguration?.appliedSource, !source.isEmpty else { return nil }
+        return ScriptSourceHash.sha256(source)
     }
 
     /// The dataset a fetch for `range` fills.
@@ -604,6 +641,7 @@ final class ChartViewModel: ObservableObject {
         stopPineFeed()
         pineGeneration += 1
         let generation = pineGeneration
+        pineContextHandler?(pineAlertDataset, appliedSourceHash)
         guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
             pineOutput = .empty
             return

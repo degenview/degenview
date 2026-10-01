@@ -95,7 +95,22 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
   `updateTicker` by design and would pin the old coin's artwork to a renamed card
 
+### Script Manager preview
+- The Script Manager window is a `SplitContainer` (sidebar | `ScriptWorkspaceView`); the
+  workspace splits the editor and `ScriptPreviewPane` left/top/bottom. `SplitLayout` is a real
+  `Layout`, not an `HStack`/`VStack` switch, so the editor `NSTextView` keeps its cursor and undo
+  stack when the chart moves — keep new panes inside it rather than branching on the axis
+- `ScriptPreviewViewModel` (owned by `ScriptManagerView`, outside the per-script `.id`) drives one
+  standalone `ChartViewModel`: market, timeframe, 5 s refresh, `ChartLiveFeed` streams, occlusion
+  gating, scroll-zoom (`ScrollZoomMonitor`) and price-axis drag (`PriceAxisDragMonitor`, shared with
+  `ContentViewModel`). It never attaches `PineAlertCoordinator`, so a preview cannot raise alerts. Markets are
+  crypto and stock only (`PreviewMarket.isSupported`)
+- `PineInputsView` is the one `input.*` → controls renderer, shared with `ChartSettingsSheet`;
+  it takes a precompiled `PineInputSchema` — never compile inside a view body
+
 ### WebSocket updates
+- `ChartLiveFeed` owns the three socket services and routes ticks to charts; `ContentViewModel`
+  and the Script Manager preview each hold one
 - `BinanceWebSocketService.connect(symbols:interval:)` opens one combined stream
 - Callback dispatches to matching `ChartViewModel.applyKlineUpdate(_:)`
 - `applyKlineUpdate` updates last candle in-place (no full refetch)
@@ -213,6 +228,11 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     against the price axis and its bar count against the candles inside. One more click
     puts it away — on that chart only. Switching tool or timeframe drops it, and it never
     comes back after a relaunch
+14. Script Manager: collapse the sidebar (⌃⌘S) and relaunch — it stays collapsed. Open an
+    indicator: the preview chart appears left of the code. Type — the plot updates after a pause;
+    break the syntax — the banner appears and the last plot stays. Move the chart left/top/bottom
+    without losing the editor's cursor. Change an input, relaunch, reopen the script — the value
+    is back. The market picker offers only Crypto and Stock
 
 Adding a new `.swift` file means four hand-edits to `project.pbxproj` (`PBXBuildFile`,
 `PBXFileReference`, the group's `children`, the `Sources` phase). The project does not use

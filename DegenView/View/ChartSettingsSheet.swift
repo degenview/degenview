@@ -38,11 +38,11 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
-    @State private var pineDraft: String
     @State private var savedScripts: [LocalScript] = []
     @State private var selectedScriptID: UUID?
     @State private var scriptLoadError: String?
-    @State private var copiedPineDiagnostics = false
+    @State private var pineInputSchema = PineInputSchema()
+    @State private var showingPineAlertEditor = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -112,9 +112,6 @@ struct ChartSettingsSheet: View {
         _predictionProvider = State(initialValue: viewModel.source == .kalshi ? .kalshi : .polymarket)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
-        _pineDraft = State(
-            initialValue: viewModel.pineConfiguration?.draftSource
-                ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
         _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
@@ -284,10 +281,6 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
-            onStyleChanged()
-        }
-        .onChange(of: pineDraft) { _, source in
-            viewModel.updatePineDraft(source)
             onStyleChanged()
         }
         .task { await loadSavedScripts() }
@@ -533,7 +526,7 @@ struct ChartSettingsSheet: View {
 
                 // Line sources report one price per timestamp and no turnover at all.
                 if !viewModel.usesLineChart {
-                    indicatorRow(
+                    SettingsCardRow(
                         title: "Volume Bars",
                         icon: "chart.bar.fill",
                         hint: volumeHint
@@ -549,13 +542,13 @@ struct ChartSettingsSheet: View {
 
                 // Every source shares KlineData. Line sources carry flat OHLC points,
                 // whose point-to-point gaps still provide Supertrend's true range.
-                indicatorRow(title: "RSI (\(RSI.period))", icon: "waveform.path.ecg", hint: rsiHint) {
+                SettingsCardRow(title: "RSI (\(RSI.period))", icon: "waveform.path.ecg", hint: rsiHint) {
                     Toggle("RSI (\(RSI.period))", isOn: $showRSI)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(title: "EMA", icon: "chart.line.uptrend.xyaxis", hint: emaHint) {
+                SettingsCardRow(title: "EMA", icon: "chart.line.uptrend.xyaxis", hint: emaHint) {
                     HStack(spacing: 10) {
                         Picker("Period", selection: $emaPeriod) {
                             ForEach(Indicator.emaPeriods, id: \.self) { period in
@@ -573,13 +566,13 @@ struct ChartSettingsSheet: View {
                     }
                 }
 
-                indicatorRow(title: "Bollinger Bands", icon: "lines.measurement.horizontal", hint: bollingerHint) {
+                SettingsCardRow(title: "Bollinger Bands", icon: "lines.measurement.horizontal", hint: bollingerHint) {
                     Toggle("Bollinger Bands", isOn: $showBollinger)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(
+                SettingsCardRow(
                     title: "Trend Flips",
                     icon: "arrow.triangle.2.circlepath",
                     hint: trendFlipsHint
@@ -594,82 +587,87 @@ struct ChartSettingsSheet: View {
         }
     }
 
+    /// The picker and status stay pinned; the report, diagnostics and inputs scroll beneath them,
+    /// so a script with many inputs never pushes content past the sheet.
     private var scriptsTab: some View {
         VStack(alignment: .leading, spacing: 10) {
+            scriptsHeader
+                .padding([.horizontal, .top], 16)
+
+            ScrollView {
+                scriptsDetails
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var scriptsHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Picker("Saved script", selection: $selectedScriptID) {
-                    Text("Custom draft").tag(nil as UUID?)
+                Picker("Script", selection: $selectedScriptID) {
+                    Text("None").tag(nil as UUID?)
                     ForEach(savedScripts) { script in
                         Text(script.name).tag(script.id as UUID?)
                     }
                 }
                 .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
 
+                Button {
+                    openScriptManager()
+                } label: {
+                    Label("Script Manager", systemImage: "curlybraces")
+                }
+                .help("Open Script Manager in a new tab")
+
                 if let scriptLoadError {
                     Text(scriptLoadError).font(.caption).foregroundStyle(.red)
                 }
             }
 
-            LineNumberedTextEditorView(text: $pineDraft, diagnostics: viewModel.pineDiagnostics)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .frame(minHeight: 220)
-
-            HStack {
-                Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Apply") {
-                    viewModel.updatePineDraft(pineDraft)
-                    if viewModel.applyPineDraft() { onStyleChanged() }
-                }.buttonStyle(.borderedProminent)
+            if selectedScriptID == nil {
+                Text("Choose a script, or create one in the Script Manager.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack {
+                    Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Create Alert…") { showingPineAlertEditor = true }
+                        .disabled(viewModel.appliedSourceHash == nil)
+                        .help("Notify me when the applied script raises alert() on a live bar")
+                }
+                .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
             }
+        }
+    }
 
+    private var scriptsDetails: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
                 PineStrategyReportView(
                     report: viewModel.pineOutput.strategy, alerts: viewModel.pineOutput.alerts)
             }
 
             if !viewModel.pineDiagnostics.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Diagnostics").font(.caption.weight(.semibold))
-                        Spacer()
-                        Button {
-                            copyPineDiagnostics()
-                        } label: {
-                            Label(
-                                copiedPineDiagnostics ? "Copied" : "Copy Errors",
-                                systemImage: copiedPineDiagnostics ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                    }
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(viewModel.pineDiagnostics) { diagnostic in
-                                Text(formatted(diagnostic))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(diagnostic.severity == .error ? .red : .orange)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 90)
-                }
+                PineDiagnosticsListView(diagnostics: viewModel.pineDiagnostics)
             }
 
-            if let source = viewModel.pineConfiguration?.appliedSource {
-                let schema = PineCompiler.compile(source: source).inputSchema
-                ForEach(Array(pineInputGroups(schema).enumerated()), id: \.offset) { _, group in
-                    if let title = group.title {
-                        Text(title).font(.caption.weight(.semibold)).padding(.top, 4)
-                    }
-                    ForEach(group.inputs) { input in pineInput(input) }
+            if let inputs = viewModel.pineConfiguration?.inputs {
+                PineInputsView(schema: pineInputSchema, values: inputs) { value, id in
+                    viewModel.setPineInput(value, id: id)
+                    onStyleChanged()
                 }
             }
-        }.padding(16)
+        }
+        // Compiled once per applied source, not on every render.
+        .task(id: viewModel.pineConfiguration?.appliedSource) {
+            let source = viewModel.pineConfiguration?.appliedSource
+            pineInputSchema =
+                source.map { PineCompiler.compile(source: $0).inputSchema } ?? PineInputSchema()
+        }
     }
 
     @MainActor private func loadSavedScripts() async {
@@ -677,11 +675,14 @@ struct ChartSettingsSheet: View {
             savedScripts = try await ScriptStore.shared.allScripts()
             scriptLoadError = nil
             guard let selectedScriptID else { return }
-            if !savedScripts.contains(where: { $0.id == selectedScriptID }) {
+            guard let script = savedScripts.first(where: { $0.id == selectedScriptID }) else {
+                // Deleted in the Script Manager.
                 self.selectedScriptID = nil
-                viewModel.scriptInstances = []
-            } else if viewModel.scriptInstances.first?.scriptID == selectedScriptID {
-                selectSavedScript(selectedScriptID)
+                return
+            }
+            // Picks up edits saved in the Script Manager.
+            if script.source != viewModel.pineConfiguration?.appliedSource {
+                loadScript(script, inputs: viewModel.pineConfiguration?.inputs ?? [:])
             }
         } catch {
             scriptLoadError = error.localizedDescription
@@ -690,194 +691,32 @@ struct ChartSettingsSheet: View {
 
     private func selectSavedScript(_ id: UUID?) {
         guard let id else {
-            viewModel.scriptInstances = []
+            viewModel.unloadPineScript()
             onStyleChanged()
             return
         }
         guard let script = savedScripts.first(where: { $0.id == id }) else { return }
-        pineDraft = script.source
+        loadScript(script, inputs: [:])
+    }
+
+    private func loadScript(_ script: LocalScript, inputs: [String: PineInputValue]) {
+        viewModel.loadPineScript(source: script.source, inputs: inputs)
         if let revisionID = script.latestRevisionID {
             viewModel.scriptInstances = [
-                ChartScriptInstance(
-                    scriptID: script.id,
-                    loadedRevisionID: revisionID,
-                    inputs: viewModel.pineConfiguration?.inputs ?? [:]
-                )
+                ChartScriptInstance(scriptID: script.id, loadedRevisionID: revisionID, inputs: inputs)
             ]
         }
         onStyleChanged()
     }
 
-    private func formatted(_ diagnostic: PineDiagnostic) -> String {
-        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
-    }
-
-    private func copyPineDiagnostics() {
-        let errors = viewModel.pineDiagnostics.filter { $0.severity == .error }
-        let diagnostics = errors.isEmpty ? viewModel.pineDiagnostics : errors
-        let text = diagnostics.map(formatted).joined(separator: "\n")
-
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        copiedPineDiagnostics = true
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            copiedPineDiagnostics = false
-        }
-    }
-
-    /// Inputs sectioned by their `group`, in the order each group first appears.
-    private func pineInputGroups(_ schema: PineInputSchema) -> [(title: String?, inputs: [PineInputDefinition])] {
-        var groups: [(title: String?, inputs: [PineInputDefinition])] = []
-        for input in schema.inputs {
-            if let index = groups.firstIndex(where: { $0.title == input.group }) {
-                groups[index].inputs.append(input)
-            } else {
-                groups.append((input.group, [input]))
-            }
-        }
-        return groups
-    }
-
-    @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
-        let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
-        switch (input.type, current) {
-        case (.bool, .bool(let value)):
-            Toggle(
-                input.title ?? input.id,
-                isOn: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.bool($0), id: input.id)
-                        onStyleChanged()
-                    }))
-        case (.time, .int(let value)):
-            DatePicker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { Date(timeIntervalSince1970: Double(value) / 1000) },
-                    set: {
-                        viewModel.setPineInput(.int(Int($0.timeIntervalSince1970 * 1000)), id: input.id)
-                        onStyleChanged()
-                    }),
-                displayedComponents: [.date, .hourAndMinute])
-        case (.int, .int(let value)):
-            Stepper(
-                "\(input.title ?? input.id): \(value)",
-                value: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.int($0), id: input.id)
-                        onStyleChanged()
-                    }),
-                in: Int(input.minValue ?? Double(min(value, 1)))...Int(input.maxValue ?? Double(max(value, 10_000))),
-                step: Int(input.step ?? 1))
-        case (.float, .float(let value)):
-            HStack {
-                Text(input.title ?? input.id)
-                TextField(
-                    "",
-                    value: Binding(
-                        get: { value },
-                        set: {
-                            viewModel.setPineInput(.float($0), id: input.id)
-                            onStyleChanged()
-                        }), format: .number
-                ).frame(width: 100)
-            }
-        case (.string, .string(let value)) where input.options != nil:
-            Picker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.string($0), id: input.id)
-                        onStyleChanged()
-                    })
-            ) {
-                ForEach(input.options ?? [], id: \.self) { option in
-                    if case .string(let text) = option { Text(text).tag(text) }
-                }
-            }
-            .pickerStyle(.menu)
-        case (.string, .string(let value)):
-            HStack {
-                Text(input.title ?? input.id)
-                TextField(
-                    "",
-                    text: Binding(
-                        get: { value },
-                        set: {
-                            viewModel.setPineInput(.string($0), id: input.id)
-                            onStyleChanged()
-                        }))
-            }
-        case (.color, .color(let value)):
-            ColorPicker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { Color(pineRGBA: value) },
-                    set: {
-                        guard let rgba = $0.pineRGBA else { return }
-                        viewModel.setPineInput(.color(rgba), id: input.id)
-                        onStyleChanged()
-                    }), supportsOpacity: true)
-        case (.string, .source(let value)):
-            Picker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.source($0), id: input.id)
-                        onStyleChanged()
-                    })
-            ) {
-                ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
-                    Text($0.capitalized).tag($0)
-                }
-            }
-        default: EmptyView()
-        }
-    }
-
-    /// A consistently aligned indicator card with its controls anchored to the right.
-    private func indicatorRow<Control: View>(
-        title: String,
-        icon: String,
-        hint: String,
-        @ViewBuilder control: () -> Control
-    ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
-                .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-
-                Text(hint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 16)
-
-            control()
-                .fixedSize()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
-        }
+    /// Closes this sheet, which would otherwise block the new tab, then opens the Script Manager.
+    private func openScriptManager() {
+        let scriptID = selectedScriptID
+        // While the sheet is key the coordinator falls back to the chart window beneath it.
+        WindowCoordinator.shared.prepareAuxiliaryTab()
+        cancelSearches()
+        dismiss()
+        DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
     }
 
     private var volumeHint: String {

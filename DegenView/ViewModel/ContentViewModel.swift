@@ -36,6 +36,7 @@ final class ContentViewModel: ObservableObject {
 
     @Published var chartViewModels: [ChartViewModel] = [] {
         didSet {
+            chartViewModels.forEach { PineAlertCoordinator.shared.attach($0) }
             guard let drawingUndoCoordinator else { return }
             chartViewModels.forEach { $0.drawingUndoCoordinator = drawingUndoCoordinator }
         }
@@ -90,9 +91,7 @@ final class ContentViewModel: ObservableObject {
 
     private let api: BinanceAPIService
     private var refreshTimer: Timer?
-    private let wsService = BinanceWebSocketService()
-    private let coinbaseWSService = CoinbaseWebSocketService()
-    private let alpacaWSService = AlpacaWebSocketService()
+    private let liveFeed = ChartLiveFeed()
 
     private var scrollMonitor: Any?
     private var pendingZoomDelta = 0
@@ -103,13 +102,8 @@ final class ContentViewModel: ObservableObject {
     private let powerLawZoomRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
 
     private var mouseMonitor: Any?
-    /// Y-axis gutters, each mapped to the chart it scales. Weak on both sides, so a
-    /// removed card drops out on its own.
-    private let axisRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
-    /// The chart whose axis is being dragged right now, and where the drag started.
-    private var axisDragTarget: ChartViewModel?
-    private var axisDragOrigin: NSPoint = .zero
-    private var axisDidDrag = false
+    /// Drag-to-scale on each chart's Y-axis gutter.
+    private let axisDrag = PriceAxisDragMonitor()
 
     /// Plot areas, each mapped to the chart drawn in it. Weak on both sides, so a
     /// removed card drops out on its own.
@@ -221,6 +215,9 @@ final class ContentViewModel: ObservableObject {
             return event
         }
 
+        axisDrag.isSuspended = { [weak self] in self?.isShowingSheet ?? true }
+        axisDrag.onChangeEnded = { [weak self] in self?.persistChartSettings() }
+
         mouseMonitor = NSEvent.addLocalMonitorForEvents(
             matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .mouseMoved, .keyDown]
         ) { [weak self] event in
@@ -230,7 +227,7 @@ final class ContentViewModel: ObservableObject {
             }
             // The price gutter gets first refusal; a swallowed event never reaches
             // the drawing tool, which only ever acts inside the plot anyway.
-            guard let remaining = self.handleAxisDrag(event) else { return nil }
+            guard let remaining = self.axisDrag.handle(event) else { return nil }
             return self.handleDrawing(remaining)
         }
 
@@ -287,67 +284,7 @@ final class ContentViewModel: ObservableObject {
     /// Each chart card hands over the view covering its price-axis gutter, paired
     /// with the chart that gutter belongs to.
     func registerAxisRegion(_ view: NSView, for viewModel: ChartViewModel) {
-        axisRegions.setObject(viewModel, forKey: view)
-    }
-
-    /// Drag the price axis to scale it: up for a narrower price slice (taller
-    /// candles), down for a wider one. Double-click restores auto-fit.
-    ///
-    /// Runs off a monitor rather than an `NSView`'s mouse handlers because SwiftUI's
-    /// hosting view claims these events for the cards' `.onDrag` reordering before
-    /// AppKit offers them to any child view. Returning nil for a gesture that lands
-    /// on a gutter is what keeps that reorder drag from starting.
-    private func handleAxisDrag(_ event: NSEvent) -> NSEvent? {
-        guard !isShowingSheet, let own = ownWindow, event.window === own else { return event }
-
-        switch event.type {
-        case .leftMouseDown:
-            guard let target = axisRegion(at: event) else { return event }
-            guard event.clickCount < 2 else {
-                axisDragTarget = nil
-                target.resetYZoom()
-                persistChartSettings()
-                return nil
-            }
-            axisDragTarget = target
-            // Window coordinates are y-up, so the delta is already "positive = up".
-            axisDragOrigin = event.locationInWindow
-            axisDidDrag = false
-            target.beginYZoomDrag()
-            return nil
-
-        case .leftMouseDragged:
-            guard let target = axisDragTarget else { return event }
-            axisDidDrag = true
-            target.updateYZoom(dragOffset: event.locationInWindow.y - axisDragOrigin.y)
-            return nil
-
-        case .leftMouseUp:
-            guard axisDragTarget != nil else { return event }
-            axisDragTarget = nil
-            // One persist per gesture, not one per mouse-move.
-            if axisDidDrag { persistChartSettings() }
-            axisDidDrag = false
-            return nil
-
-        default:
-            return event
-        }
-    }
-
-    /// The chart whose price-axis gutter sits under this event, if any.
-    private func axisRegion(at event: NSEvent) -> ChartViewModel? {
-        guard let window = event.window, let content = window.contentView else { return nil }
-        let point = event.locationInWindow
-        guard window.contentLayoutRect.contains(content.convert(point, from: nil)) else { return nil }
-        guard let views = axisRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
-        for view in views {
-            guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { continue }
-            if view.bounds.contains(view.convert(point, from: nil)) {
-                return axisRegions.object(forKey: view)
-            }
-        }
-        return nil
+        axisDrag.register(view, for: viewModel)
     }
 
     // MARK: - Trend-line drawing
@@ -365,9 +302,7 @@ final class ContentViewModel: ObservableObject {
         replay.beginSelecting()
         activeTool = .none
         crosshair.clear()
-        wsService.disconnect()
-        coinbaseWSService.disconnect()
-        alpacaWSService.disconnect()
+        liveFeed.disconnect()
     }
 
     func selectReplayStart(_ date: Date) {
@@ -843,6 +778,7 @@ final class ContentViewModel: ObservableObject {
     func attach(to window: NSWindow) {
         guard ownWindow !== window else { return }
         ownWindow = window
+        axisDrag.window = window
         if let undoManager = window.undoManager {
             let coordinator = DrawingUndoCoordinator(undoManager: undoManager)
             drawingUndoCoordinator = coordinator
@@ -904,9 +840,7 @@ final class ContentViewModel: ObservableObject {
     private func suspend() {
         refreshTimer?.invalidate()
         refreshTimer = nil
-        wsService.disconnect()
-        coinbaseWSService.disconnect()
-        alpacaWSService.disconnect()
+        liveFeed.disconnect()
         refetchTask?.cancel()
     }
 
@@ -985,53 +919,8 @@ final class ContentViewModel: ObservableObject {
 
     /// Open each provider's live stream for the symbols visible in this tab.
     private func connectWebSocket() {
-        // A hidden tab has nothing to draw a tick onto.
-        guard isWindowVisible, !replay.isActive else {
-            wsService.disconnect()
-            coinbaseWSService.disconnect()
-            alpacaWSService.disconnect()
-            return
-        }
-
-        let binanceVMs = marketChartViewModels.filter { $0.source == .binance }
-        let symbols = binanceVMs.map { $0.apiSymbol.lowercased() }
-        let interval = selectedTimeRange.binanceInterval
-
-        // Binance streams no quarterly or yearly klines, and its monthly ones would land in the
-        // wrong candle. Those candles move slowly; the five-second REST refresh keeps them current.
-        if symbols.isEmpty || KlineData.monthlyFold(for: interval) != nil {
-            wsService.disconnect()
-        } else {
-            wsService.connect(symbols: symbols, interval: interval) { [weak self] symbol, kline in
-                self?.chartViewModels
-                    .first(where: { $0.source == .binance && $0.apiSymbol.uppercased() == symbol.uppercased() })?
-                    .applyKlineUpdate(kline)
-            }
-        }
-
-        let coinbaseProducts = marketChartViewModels.filter { $0.source == .coinbase }.map(\.apiSymbol)
-        if coinbaseProducts.isEmpty {
-            coinbaseWSService.disconnect()
-        } else if let plan = CoinbaseGranularity(interval: selectedTimeRange.binanceInterval) {
-            // The socket is interval-agnostic; the plan only decides which candle a trade lands in.
-            coinbaseWSService.connect(products: coinbaseProducts) { [weak self] tick in
-                self?.chartViewModels
-                    .first(where: { $0.source == .coinbase && $0.apiSymbol.uppercased() == tick.productID })?
-                    .applyTick(tick, plan: plan)
-            }
-        }
-
-        let stockSymbols = marketChartViewModels.filter { $0.source == .alpaca }.map(\.apiSymbol)
-        if stockSymbols.isEmpty || !AlpacaCredentialsStore.isConfigured {
-            alpacaWSService.disconnect()
-        } else {
-            alpacaWSService.connect(symbols: stockSymbols) { [weak self] symbol, kline in
-                guard let self else { return }
-                self.chartViewModels
-                    .first(where: { $0.source == .alpaca && $0.apiSymbol.uppercased() == symbol.uppercased() })?
-                    .applyLiveBar(kline, candleDuration: self.selectedTimeRange.binanceIntervalSeconds)
-            }
-        }
+        liveFeed.update(
+            charts: marketChartViewModels, range: selectedTimeRange, active: isWindowVisible && !replay.isActive)
     }
 
     /// Adjust candle count by a delta. Clamped to [min, max].
@@ -1165,6 +1054,7 @@ final class ContentViewModel: ObservableObject {
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
         chartViewModels.removeAll { $0.uniqueID == vm.uniqueID }
+        PineAlertCoordinator.shared.chartRemoved(chartID: vm.chartID)
         chartColumns = chartColumns.compactMap { column in
             var updated = column
             updated.chartIDs.removeAll { $0 == vm.chartID }

@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 enum ScriptStoreError: LocalizedError, Equatable {
@@ -453,7 +452,7 @@ actor ScriptStore {
         return .valid
     }
     private static func hash(_ source: String) -> String {
-        SHA256.hash(data: Data(source.utf8)).map { String(format: "%02x", $0) }.joined()
+        ScriptSourceHash.sha256(source)
     }
 }
 

@@ -32,7 +32,8 @@
     automatic asset mappings and historical FX issues before committing the atomic import.
 11. Use a chart card's bell to create an absolute or percentage price alert. Open the
     adjacent bell—or the Portfolio toolbar bell—to manage rules and history in the Alerts
-    window. Notification behavior is under **Settings → Notifications**.
+    window (its **Script Alerts** filter lists Pine script alerts). Notification behavior is under
+    **Settings → Notifications**.
 12. Optionally add a CoinMarketCap key under **Settings → CoinMarketCap**. Save and remove
     operations use macOS Keychain, and open CMC charts adopt the new request mode without
     an application restart.
@@ -63,10 +64,26 @@ plotshape(bullish, color=color.green)
 plotshape(bearish, color=color.red)
 ```
 
+The Scripts tab in chart settings loads a saved script onto the chart: pick one from **Script**,
+or **None** to unload it. Scripts are edited only in the Script Manager; the tab's **Script
+Manager** button opens it in a new tab, and saving a script there updates charts using it.
+
+The Script Manager also runs the script you are editing. A live chart sits beside the code (use
+the toolbar's position menu to put it left of, above or below the editor, or hide it with ⌥⌘P):
+it re-runs a moment after you stop typing, and while the code does not compile it keeps showing
+the last working version. Pick the market from the header — crypto or US stocks (stocks need
+Alpaca keys in Settings) — and a timeframe, scroll over the chart to zoom, and drag its price
+axis to make the candles taller or shorter (double-click resets). The bar under the chart opens **Inputs** (every `input.*` declaration as a control; values are remembered per
+script, **Reset to Defaults** clears them), **Report** (strategy results and alerts) and
+**Problems**. Hide the script list with ⌃⌘S. Previews never raise alerts.
+
 Scripts declared with `strategy()` are backtested over the chart's bars: the Scripts tab
 shows net profit, win rate, profit factor, drawdown, an equity curve, and the trade list,
 and the chart marks each entry and exit. `alert()` and `alertcondition()` calls are listed
-there too; they do not raise notifications.
+there too. To be notified when a script raises one on a live bar, choose **Create Alert…** in the
+Scripts tab: you get a macOS notification and an in-app banner, and the alert appears under
+**Script Alerts** in the Alerts window. It fires only while that chart shows the same symbol and
+timeframe, and editing the script pauses it until you re-arm it there.
 
 The engine supports a subset of Pine rather than every feature. See
 [Pine compatibility](pine-compatibility.md) for exact syntax, built-ins, limits, and known

@@ -2,99 +2,77 @@ import SwiftUI
 
 struct ScriptManagerView: View {
     @StateObject private var model = ScriptManagerViewModel()
+    /// Outside the per-script workspace, so the market and its candles survive a change of script.
+    @StateObject private var preview = ScriptPreviewViewModel()
     @State private var pendingDelete: LocalScript?
     @State private var showNewScript = false
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
+    @AppStorage("scriptManager.sidebarVisible") private var sidebarVisible = true
+    @AppStorage("scriptManager.sidebarWidth") private var sidebarWidth = 0.0
+    @AppStorage("scriptManager.chartVisible") private var chartVisible = true
+    @AppStorage("scriptManager.chartPosition") private var chartPosition: ChartPosition = .left
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Text("Script Manager").font(.headline)
-                Spacer()
-                Button("New Script", systemImage: "plus") { showNewScript = true }
-            }
-            .padding(10)
-            Divider()
-
-            HSplitView {
-                VStack(spacing: 0) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                        TextField("Search name or source", text: $model.query)
-                            .textFieldStyle(.plain)
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                    .padding(8)
-
-                    List(selection: $model.selection) {
-                        ForEach(model.groups) { group in
-                            Section(isExpanded: model.isExpanded(group.id)) {
-                                ForEach(group.rows) { row in
-                                    ScriptRow(
-                                        script: row.script, rowID: row.id, model: model,
-                                        onDelete: { pendingDelete = $0 }
-                                    )
-                                    .tag(row.script.id)
-                                }
-                            } header: {
-                                Text(group.title)
-                            }
-                        }
-                    }
-                    .listStyle(.sidebar)
-                    .frame(maxHeight: .infinity)
-                }
-                .frame(minWidth: 200, idealWidth: 240, maxWidth: 320)
-
-                if let id = model.selection {
-                    ScriptEditorView(scriptID: id)
-                        .id(id)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else if model.hasLoaded && model.scripts.isEmpty {
-                    VStack(spacing: 12) {
-                        Text("No scripts yet")
-                            .font(.headline)
-                        Text("Write a Pine Script indicator or strategy and run it on your charts.")
-                            .foregroundStyle(.secondary)
-                            .multilineTextAlignment(.center)
-                        Button("Create Your First Script", systemImage: "plus") { showNewScript = true }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        HStack(spacing: 16) {
-                            Link(
-                                "Pine Script documentation",
-                                destination: URL(string: "https://www.tradingview.com/pine-script-docs/")!)
-                            Link(
-                                "Community scripts",
-                                destination: URL(string: "https://www.tradingview.com/scripts/")!)
-                        }
-                    }
-                    .padding()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    Text("Select a script")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
+        SplitContainer(
+            axis: .horizontal, secondaryFirst: true, secondaryLength: $sidebarWidth,
+            isSecondaryVisible: sidebarVisible, minPrimary: 420, minSecondary: 200, maxSecondary: 320,
+            defaultLength: 240
+        ) {
+            detail
+        } secondary: {
+            sidebar
         }
-        // Keep AppKit's unified toolbar row alive for this native tab. The chart
-        // tab's controls must disappear here, but removing toolbar content entirely
-        // collapses the titlebar and makes the window jump vertically.
+        // The toolbar keeps AppKit's unified titlebar row alive for this native tab. The chart
+        // tab's controls must disappear here, but removing toolbar content entirely collapses the
+        // titlebar and makes the window jump vertically.
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                Color.clear
-                    .frame(width: 1, height: 28)
-                    .accessibilityHidden(true)
-                    .allowsHitTesting(false)
+            ToolbarItem(placement: .navigation) {
+                Button {
+                    withAnimation(.snappy) { sidebarVisible.toggle() }
+                } label: {
+                    Label("Toggle Sidebar", systemImage: "sidebar.left")
+                }
+                .keyboardShortcut("s", modifiers: [.control, .command])
+                .help(sidebarVisible ? "Hide the script list" : "Show the script list")
+            }
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    showNewScript = true
+                } label: {
+                    Label("New Script", systemImage: "plus")
+                }
+                .help("New Script")
+
+                Menu {
+                    Picker("Chart Position", selection: $chartPosition) {
+                        ForEach(ChartPosition.allCases) { position in
+                            Label(position.title, systemImage: position.symbol).tag(position)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                } label: {
+                    Label("Chart Position", systemImage: chartPosition.symbol)
+                }
+                .help("Where the preview chart sits next to the code")
+
+                Button {
+                    withAnimation(.snappy) { chartVisible.toggle() }
+                } label: {
+                    Label(
+                        "Toggle Chart",
+                        systemImage: chartVisible ? "chart.xyaxis.line" : "chart.line.flattrend.xyaxis")
+                }
+                .keyboardShortcut("p", modifiers: [.option, .command])
+                .help(chartVisible ? "Hide the preview chart" : "Show the preview chart")
             }
         }
         .task { model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .selectScriptInManager)) { note in
             if let id = note.object as? UUID { model.select(id) }
+        }
+        .onChange(of: model.scripts) { _, scripts in
+            if model.hasLoaded { preview.prune(keeping: Set(scripts.map(\.id))) }
         }
         .background(WindowAccessor { WindowCoordinator.shared.registerAuxiliaryTab($0) })
         .alert("Script Manager", isPresented: .constant(model.errorMessage != nil)) {
@@ -125,6 +103,75 @@ struct ScriptManagerView: View {
             Text("The script file will be moved to the Trash.")
         }
         .preferredColorScheme(appTheme.colorScheme)
+    }
+}
+
+extension ScriptManagerView {
+    fileprivate var sidebar: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search name or source", text: $model.query)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            .padding(8)
+
+            List(selection: $model.selection) {
+                ForEach(model.groups) { group in
+                    Section(isExpanded: model.isExpanded(group.id)) {
+                        ForEach(group.rows) { row in
+                            ScriptRow(
+                                script: row.script, rowID: row.id, model: model,
+                                onDelete: { pendingDelete = $0 }
+                            )
+                            .tag(row.script.id)
+                        }
+                    } header: {
+                        Text(group.title)
+                    }
+                }
+            }
+            .listStyle(.sidebar)
+            .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder fileprivate var detail: some View {
+        if let id = model.selection {
+            ScriptWorkspaceView(
+                scriptID: id, type: model.scripts.first { $0.id == id }?.type ?? .indicator, preview: preview
+            )
+            .id(id)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if model.hasLoaded && model.scripts.isEmpty {
+            VStack(spacing: 12) {
+                Text("No scripts yet")
+                    .font(.headline)
+                Text("Write a Pine Script indicator or strategy and run it on your charts.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                Button("Create Your First Script", systemImage: "plus") { showNewScript = true }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                HStack(spacing: 16) {
+                    Link(
+                        "Pine Script documentation",
+                        destination: URL(string: "https://www.tradingview.com/pine-script-docs/")!)
+                    Link(
+                        "Community scripts",
+                        destination: URL(string: "https://www.tradingview.com/scripts/")!)
+                }
+            }
+            .padding()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            Text("Select a script")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }
 

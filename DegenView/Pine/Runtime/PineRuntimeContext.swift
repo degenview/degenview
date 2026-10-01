@@ -13,6 +13,12 @@ struct PineBarFlags: Equatable, Sendable {
     var isConfirmed = false
     var isLastConfirmedHistory = false
 
+    /// Every `barstate.*` name `value(named:)` resolves.
+    static let names: Set<String> = [
+        "barstate.isfirst", "barstate.islast", "barstate.ishistory", "barstate.isrealtime",
+        "barstate.isnew", "barstate.isconfirmed", "barstate.islastconfirmedhistory",
+    ]
+
     func value(named name: String) -> Bool? {
         switch name {
         case "barstate.isfirst": isFirst

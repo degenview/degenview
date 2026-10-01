@@ -1,7 +1,7 @@
 import Foundation
 
 /// `alert.freq_*`: how often one `alert()` call site may fire.
-enum PineAlertFrequency: String, PineNamedConstant {
+enum PineAlertFrequency: String, Codable, PineNamedConstant {
     /// Every execution that reaches the call.
     case all = "freq_all"
     /// The first execution on each bar.

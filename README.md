@@ -53,14 +53,18 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   float, boolean, and string controls reevaluate a script without recompiling it
 - **Realtime series semantics** — Script state advances bar by bar with history references,
   persistent `var`, intrabar-persistent `varip`, realtime rollback, and `barstate.*`
-- **Safe script editing** — Each chart persists its draft, last successfully applied
-  source, and typed input values. Invalid drafts show line/column diagnostics while the
-  last valid plot remains active
+- **Script loading** — A chart's Scripts tab picks a saved script (or **None** to unload it)
+  and exposes its typed inputs; scripts are edited only in the Script Manager, which the tab
+  opens in a new tab. Each chart persists its applied source and input values. A script that
+  fails to compile shows line/column diagnostics while the last valid plot remains active
 - **Scripts as `.pine` files** — The Script Manager's library is a folder of plain `.pine`
   files in `~/Library/Application Support/DegenView/Scripts/`, editable with any tool.
   DegenView is the handler for `.pine`: opening one from elsewhere offers to copy it into
   the library and opens it in the Script Manager. Errors are underlined in the editor;
   hover the underline for the message
+- **Live script preview** — The Script Manager charts the script being edited on a real
+  crypto or stock market, left of, above or below the code, and re-runs it as you type. Its
+  inputs are editable in a panel under the chart; the script list collapses
 - **Per-chart appearance** — Custom bullish and bearish colors plus automatic or fixed
   Y-axis decimal precision
 - **Independent price zoom** — Drag a chart's Y-axis to adjust its vertical scale
@@ -123,6 +127,10 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   delivery, sound, banners, and system notifications are independently configurable
 - **Persistent local history** — Rules, crossing baselines, re-arm state, processed quote
   fingerprints, settings, and trigger history are stored in a local SQLite database only
+- **Pine script alerts** — Subscribe a chart's applied script from its Scripts tab and get a
+  macOS notification and in-app banner when `alert()` fires on a live bar. Loading history never
+  notifies, `once_per_bar` and `once_per_bar_close` are deduplicated across relaunches, and
+  editing the script pauses the alert until you re-arm it
 
 Alerts are evaluated by a bundled login-item agent, which DegenView registers once an
 alert exists, so they keep running while you're logged in even after the app quits. If

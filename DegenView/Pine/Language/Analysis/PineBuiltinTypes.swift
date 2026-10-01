@@ -7,22 +7,25 @@ enum PineBuiltinTypes {
 
     // MARK: - Identifiers
 
-    private static let floatSeries: Set<String> = [
+    static let floatSeries: Set<String> = [
         "open", "high", "low", "close", "volume", "hl2", "hlc3", "ohlc4", "ta.tr",
         "strategy.position_size", "strategy.position_avg_price", "strategy.equity",
         "strategy.netprofit", "strategy.openprofit", "strategy.initial_capital",
         "strategy.grossprofit", "strategy.grossloss",
     ]
 
-    private static let intSeries: Set<String> = [
+    static let intSeries: Set<String> = [
         "time", "time_close", "bar_index", "year", "month", "dayofmonth", "hour", "minute", "second",
         "dayofweek", "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades",
         "strategy.losstrades",
     ]
 
-    private static let simpleStrings: Set<String> = [
+    static let simpleStrings: Set<String> = [
         "syminfo.ticker", "syminfo.tickerid", "syminfo.currency", "syminfo.type",
     ]
+
+    static let simpleFloats: Set<String> = ["syminfo.mintick"]
+    static let simpleColors: Set<String> = ["chart.fg_color", "chart.bg_color"]
 
     static func identifier(_ name: String) -> Inferred {
         switch PineBuiltins.constants[name] {
@@ -35,11 +38,9 @@ enum PineBuiltinTypes {
         if floatSeries.contains(name) { return .known(.float, .series) }
         if intSeries.contains(name) { return .known(.int, .series) }
         if simpleStrings.contains(name) { return .known(.string, .simple) }
-        switch name {
-        case "syminfo.mintick": return .known(.float, .simple)
-        case "chart.fg_color", "chart.bg_color": return .known(.color, .simple)
-        default: return name.hasPrefix("barstate.") ? .known(.bool, .series) : .unknown
-        }
+        if simpleFloats.contains(name) { return .known(.float, .simple) }
+        if simpleColors.contains(name) { return .known(.color, .simple) }
+        return name.hasPrefix("barstate.") ? .known(.bool, .series) : .unknown
     }
 
     // MARK: - Functions

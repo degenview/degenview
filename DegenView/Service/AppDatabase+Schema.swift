@@ -7,7 +7,9 @@ extension AppDatabase {
     static func createSchema(_ db: Database) throws {
         // Ordered lists of Codable values. The payload stays JSON so nested chart
         // configuration can evolve through Codable defaults instead of schema changes.
-        for table in ["favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert"] {
+        for table in [
+            "favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert", "pine_alert_subscription",
+        ] {
             try createDocumentTable(table, db: db)
         }
 
@@ -107,6 +109,19 @@ extension AppDatabase {
         }
         try db.create(index: "alert_event_on_alert", on: "alert_event", columns: ["alert_id"], options: .ifNotExists)
 
+        // Pine script alerts. `dedupe_key` is unique per call site, bar and mode, so a relaunch
+        // cannot deliver the same bar twice; it is NULL for `freq_all`, which may repeat.
+        try db.create(table: "pine_alert_event", options: .ifNotExists) { t in
+            t.primaryKey("id", .text)
+            t.column("subscription_id", .text).notNull()
+            t.column("timestamp", .double).notNull()
+            t.column("dedupe_key", .text).unique()
+            t.column("payload", .text).notNull()
+        }
+        try db.create(
+            index: "pine_alert_event_on_subscription", on: "pine_alert_event",
+            columns: ["subscription_id", "timestamp"], options: .ifNotExists)
+
         // GUI → runtime queue. The runtime deletes a row once the command is applied.
         try db.create(table: "alert_command", options: .ifNotExists) { t in
             t.primaryKey("id", .text)
@@ -137,6 +152,7 @@ enum DocumentTable: String {
     case portfolio
     case paperAccount = "paper_account"
     case priceAlert = "price_alert"
+    case pineAlertSubscription = "pine_alert_subscription"
 }
 
 extension AppDatabase {

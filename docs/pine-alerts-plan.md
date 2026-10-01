@@ -1,5 +1,11 @@
 # Plan: deliver Pine `alert()` events as user notifications
 
+> **Status: implemented.** Where this plan and the code differ, the code and
+> `pine-compatibility.md` ("Script alerts") win. Changes from the plan: no `registerMigration`
+> (the schema is one idempotent `createSchema`); `freq_all` events carry no DB dedupe key; the
+> live-tail sections were superseded by `PineExecutionHost`; re-arm re-pins symbol and timeframe
+> as well as the source hash.
+
 ## Context
 
 Exploration changed the shape of this task. **`alert(message, freq)`, `alertcondition`, and the `alert.freq_*` constants already exist**
@@ -89,7 +95,7 @@ Pine knows nothing about channels. Owner/user field is omitted: the app has no a
   restarts), recent events, prune to newest 500. Separate tables from the price-alert snapshot, so `replaceSnapshot` is unaffected.
 
 ### 5. UI (extend, don't fork)
-- `View/PineAlertEditor.swift` sheet, opened from a **"Create Alert…"** button in `ChartSettingsSheet.scriptsTab` (`:584`) beside the existing alert
+- `View/PineAlertEditor.swift` sheet, opened from a **"Create Alert…"** button in `ChartSettingsSheet.scriptsTab` beside the existing alert
   list. Shows read-only script / symbol / timeframe, the detected `alert()` call sites + frequencies, a note, enabled toggle. Disabled with a hint when the
   applied script has no `alert()` calls.
 - `View/AlertsCenterView.swift`: add a "Script Alerts" filter/section — subscriptions with status chip (Active / Script changed / Script deleted / Chart shows other symbol),
