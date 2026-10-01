@@ -95,6 +95,32 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
     }
 
+    func testUnsupportedDeclarationsReportOnceAndSkipTheirBodies() {
+        let program = compile(
+            """
+            type Zone
+                float top
+                float bottom
+                int    bars
+
+            enum Mode
+                fast
+                slow
+
+            method area(Zone z) =>
+                z.top - z.bottom
+
+            import someone/Library/1 as lib
+            plot(close)
+            """)
+        XCTAssertEqual(
+            program.diagnostics.map(\.code), ["PINE9006", "PINE9007", "PINE9009", "PINE9008"])
+    }
+
+    func testTypeAndEnumRemainUsableAsVariableNames() {
+        XCTAssertTrue(compile("type = 1\nenum = type + 1\nplot(enum)").isValid)
+    }
+
     func testCommaSeparatedStatementsShareALine() throws {
         let program = compile(
             """

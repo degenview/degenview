@@ -83,4 +83,35 @@ extension PineParser {
         default: return nil
         }
     }
+
+    // MARK: - Declarations outside this release
+
+    private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
+        "type": ("PINE9006", "User-defined types are not supported in this release."),
+        "enum": ("PINE9007", "Enums are not supported in this release."),
+        "import": ("PINE9008", "Library imports are not supported in this release."),
+        "method": ("PINE9009", "User-defined methods are not supported in this release."),
+    ]
+
+    /// `type Name`, `enum Name`, `method name(…) =>` and `import user/lib/1 as alias` are valid Pine
+    /// the engine does not implement. Reporting the declaration once and skipping its body keeps one
+    /// clear diagnostic from turning into one syntax error per field line. Returns whether it consumed
+    /// anything; ordinary code that merely uses one of these words as a name is left alone.
+    mutating func skipUnsupportedDeclaration() -> Bool {
+        guard case .identifier(let word) = current.kind,
+            let entry = Self.unsupportedDeclarations[word],
+            let next = peek(1), case .identifier = next.kind
+        else { return false }
+        diagnostics.append(.error(entry.code, .unsupported, entry.message, current.range))
+        skipToLineEnd()
+        guard at(.newline), peek(1)?.kind == .indent else { return true }
+        advance()
+        advance()
+        var depth = 1
+        while depth > 0, !at(.eof) {
+            if at(.indent) { depth += 1 } else if at(.dedent) { depth -= 1 }
+            advance()
+        }
+        return true
+    }
 }
