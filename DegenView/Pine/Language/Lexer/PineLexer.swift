@@ -53,7 +53,7 @@ struct PineLexer {
     // MARK: - Lines
 
     private func lexLine(_ line: PineSourceLine, _ state: inout State) {
-        let leading = line.text.prefix { $0 == " " }.count
+        let leading = line.text.prefix { $0 == " " || $0 == "\t" }.count
         let rest = line.text[leading...]
         if rest.isEmpty || rest.starts(with: ["/", "/"]) { return }
         if state.isAtLogicalLineStart {
@@ -70,18 +70,21 @@ struct PineLexer {
         }
     }
 
+    /// `leading` counts the line's leading space/tab characters (for ranges); the indent level
+    /// compares columns, where a tab is one four-space level, as in TradingView.
     private func lexIndentation(leading: Int, _ line: PineSourceLine, _ state: inout State) {
-        if leading % 4 != 0 {
+        let width = line.text.prefix(leading).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+        if width % 4 != 0 {
             state.diagnostics.append(
                 .error(
                     "PINE1002", .lexical, "Indentation must use multiples of four spaces.",
                     line.range(0, max(1, leading))))
         }
-        if leading > state.indents[state.indents.count - 1] {
-            state.indents.append(leading)
+        if width > state.indents[state.indents.count - 1] {
+            state.indents.append(width)
             state.tokens.append(.init(kind: .indent, range: line.range(0, leading)))
         }
-        while leading < state.indents[state.indents.count - 1] {
+        while width < state.indents[state.indents.count - 1] {
             state.indents.removeLast()
             state.tokens.append(.init(kind: .dedent, range: line.range(0, leading)))
         }
