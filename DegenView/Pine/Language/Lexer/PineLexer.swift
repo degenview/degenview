@@ -21,7 +21,8 @@ struct PineLexer {
     func lex() -> (tokens: [PineToken], diagnostics: [PineDiagnostic]) {
         if source.count > limits.sourceCharacters {
             let message = "Source exceeds the \(limits.sourceCharacters)-character limit."
-            return ([], [.error("PINE8001", .resource, message, .zero)])
+            // The parser needs a terminating token even when there is nothing else to parse.
+            return ([.init(kind: .eof, range: .zero)], [.error("PINE8001", .resource, message, .zero)])
         }
         var state = State()
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)

@@ -32,6 +32,15 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(codes(program).contains("PINE1004"))
     }
 
+    func testOversizedSourceIsADiagnosticNotACrash() {
+        var limits = PineLimits.default
+        limits.sourceCharacters = 20
+        let program = PineCompiler.compile(
+            source: "//@version=6\nindicator(\"T\")\nplot(close)\n", limits: limits)
+        XCTAssertTrue(codes(program).contains("PINE8001"), "\(codes(program))")
+        XCTAssertFalse(program.isValid)
+    }
+
     // MARK: - Parser and compiler
 
     func testOversizedIntegerLiteralIsADiagnosticNotACrash() {
