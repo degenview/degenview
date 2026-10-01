@@ -202,6 +202,46 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[5], [1]])
     }
 
+    func testLastBarIndexAndTimeAreKnownOnEveryHistoricalBar() throws {
+        let program = compile("plot(last_bar_index)\nplot(last_bar_time)\nplot(timenow > 0 ? 1 : 0)")
+        let series = bars([1, 2, 3])
+        let output = try PineRuntimeSession(program: program).evaluate(bars: series).output
+        let lastTime = series[2].openTime.timeIntervalSince1970 * 1000
+        XCTAssertEqual(output.plots.map(\.values), [[2, 2, 2], [lastTime, lastTime, lastTime], [1, 1, 1]])
+    }
+
+    func testLastBarIndexAdvancesWhenARealtimeBarOpensPastHistory() throws {
+        let program = compile("plot(last_bar_index)")
+        let session = PineRuntimeSession(program: program)
+        let series = bars([1, 2, 3, 4])
+        try session.load(history: Array(series.prefix(3)), precedesLiveBar: true)
+        try session.execute(.init(candle: series[3], phase: .realtimeTick(isNew: true)), isLast: true)
+        XCTAssertEqual(session.output().plots[0].values, [3, 3, 3, 3])
+    }
+
+    func testTimeframeInSecondsParsesTimeframeStrings() throws {
+        let program = compile(
+            """
+            plot(timeframe.in_seconds())
+            plot(timeframe.in_seconds("15"))
+            plot(timeframe.in_seconds("30S"))
+            plot(timeframe.in_seconds("D"))
+            plot(timeframe.in_seconds("2W"))
+            plot(timeframe.isticks ? 1 : 0)
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots.map { $0.values.last ?? nil }, [60, 900, 30, 86_400, 1_209_600, 0])
+    }
+
+    func testTimeframeInSecondsRejectsAMalformedTimeframe() {
+        let program = compile("plot(timeframe.in_seconds(\"5X\"))")
+        XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {
+            XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE4017")
+        }
+        XCTAssertNil(PineTime.seconds(ofTimeframe: ""))
+        XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
+    }
+
     func testUndefinedVariableIsARuntimeError() {
         let program = compile("plot(typo)")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {

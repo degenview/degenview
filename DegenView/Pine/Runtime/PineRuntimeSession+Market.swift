@@ -17,6 +17,9 @@ extension PineRuntimeSession {
         case "time_close":
             return .int(PineTime.milliseconds(bar.openTime) + (Int(pine: barSeconds * 1000) ?? 0))
         case "bar_index": return .int(working.barIndex)
+        case "last_bar_index": return .int(lastBarIndex)
+        case "last_bar_time": return lastBarTime.map { .int(PineTime.milliseconds($0)) } ?? .na
+        case "timenow": return .int(PineTime.milliseconds(Date()))
         case "ta.tr": return .float(trueRange(bar))
         case "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek":
             return PineTime.part(name, milliseconds: PineTime.milliseconds(bar.openTime))

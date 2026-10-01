@@ -16,6 +16,7 @@ extension PineRuntimeSession {
             "ta.tr": PineRuntimeSession.trueRangeCall, "ta.pivothigh": PineRuntimeSession.pivotCall,
             "ta.pivotlow": PineRuntimeSession.pivotCall, "ta.barssince": PineRuntimeSession.barsSinceCall,
             "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
+            "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
         ]
         for name in ["indicator", "strategy", "library"] { table[name] = PineRuntimeSession.declarationCall }
         for name in ["line", "label", "box", "table"] { table[name] = PineRuntimeSession.handleCast }

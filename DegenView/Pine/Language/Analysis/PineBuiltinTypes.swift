@@ -15,9 +15,9 @@ enum PineBuiltinTypes {
     ]
 
     static let intSeries: Set<String> = [
-        "time", "time_close", "bar_index", "year", "month", "dayofmonth", "hour", "minute", "second",
-        "dayofweek", "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades",
-        "strategy.losstrades",
+        "time", "time_close", "bar_index", "last_bar_index", "last_bar_time", "timenow", "year", "month",
+        "dayofmonth", "hour", "minute", "second", "dayofweek", "strategy.closedtrades",
+        "strategy.opentrades", "strategy.wintrades", "strategy.losstrades",
     ]
 
     static let simpleStrings: Set<String> = [

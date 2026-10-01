@@ -109,6 +109,23 @@ extension PineRuntimeSession {
     }
 
     /// `year()`, `month()`…: of the bar's open time, or of the timestamp passed in.
+    /// `timeframe.in_seconds(tf)`; with no argument, the chart's bar length.
+    func timeframeSecondsCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard !call.arguments.isEmpty else { return barSeconds > 0 ? .int(Int(barSeconds)) : .na }
+        switch try argument(call, 0, "timeframe", &context) {
+        case .na: return .na
+        case .string(let text):
+            if let seconds = PineTime.seconds(ofTimeframe: text) { return .int(Int(seconds)) }
+            fallthrough
+        default:
+            throw PineDiagnostic.error(
+                "PINE4017", .runtime, "timeframe.in_seconds() needs a timeframe such as \"60\" or \"1D\".",
+                call.range)
+        }
+    }
+
     func timePartCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         if call.arguments.isEmpty {
             return PineTime.part(call.name, milliseconds: PineTime.milliseconds(context.bar.openTime))

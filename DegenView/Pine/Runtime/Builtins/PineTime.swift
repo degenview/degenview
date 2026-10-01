@@ -10,7 +10,7 @@ enum PineTime {
     static let timeframeNames: Set<String> = [
         "timeframe.period", "timeframe.multiplier", "timeframe.isdaily", "timeframe.isweekly",
         "timeframe.ismonthly", "timeframe.isseconds", "timeframe.isminutes",
-        "timeframe.isintraday", "timeframe.isdwm",
+        "timeframe.isintraday", "timeframe.isdwm", "timeframe.isticks",
     ]
 
     private static let day = 86_400.0
@@ -40,6 +40,23 @@ enum PineTime {
         return (Int(pine: (seconds / 60).rounded()) ?? 0, "")
     }
 
+    /// Length in seconds of a timeframe string: `"30S"`, `"5"` and `"60"` (minutes), `"1D"`, `"2W"`,
+    /// `"3M"`, or a bare unit such as `"D"`. A month counts as 30 days, as `period(_:)` does. Nil when malformed.
+    static func seconds(ofTimeframe text: String) -> Double? {
+        let digits = text.prefix { $0.isASCII && $0.isNumber }
+        let unit = text.dropFirst(digits.count).uppercased()
+        guard let multiplier = digits.isEmpty ? (unit.isEmpty ? nil : 1) : Double(digits), multiplier > 0
+        else { return nil }
+        switch unit {
+        case "": return multiplier * 60
+        case "S": return multiplier
+        case "D": return multiplier * day
+        case "W": return multiplier * 7 * day
+        case "M": return multiplier * 30 * day
+        default: return nil
+        }
+    }
+
     /// `timeframe.*` for bars `seconds` apart; nil until the spacing is known.
     static func timeframe(_ name: String, barSeconds seconds: Double) -> PineRuntimeValue? {
         guard seconds > 0 else { return nil }
@@ -58,6 +75,8 @@ enum PineTime {
         case "timeframe.isminutes": return .bool(seconds >= 60 && seconds < day)
         case "timeframe.isintraday": return .bool(seconds < day)
         case "timeframe.isdwm": return .bool(seconds >= day)
+        // Bars here are always time based.
+        case "timeframe.isticks": return .bool(false)
         default: return nil
         }
     }
