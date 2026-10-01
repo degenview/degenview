@@ -171,7 +171,7 @@ row) → `PineAlertDispatcher` (channels).
   line/column diagnostics survive while last-valid output stays active.
 - Each statement must end its line: leftover tokens after a complete statement
   (`aaa "x" 1`, `plot(close) 5`) are a `PINE2013` syntax error, reported once per line.
-- Limits: 100k source characters, 50k tokens/nodes, 100k IR/executed instructions,
+- Limits: 500k source characters (a runaway-input guard; published scripts reach 300k), 50k tokens/nodes, 100k IR/executed instructions,
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
   cancellation, and a 10-second evaluation deadline. Enforced limits use `PINE8xxx`.
 
@@ -228,8 +228,17 @@ row) → `PineAlertDispatcher` (channels).
   forwards by whole bar lengths, so a weekend gap in the chart is not modelled). Getters return bar
   indexes.
 - A type keyword can name a variable (`color = x > 1 ? color.green : color.red`).
-- `enum` and `import` declarations are recognised and reported once (`PINE9007`, `PINE9008`) with
-  their bodies skipped, rather than as a syntax error per line.
+- **Enums.** `enum Name` with `member [= "title"]` lines (also `export enum`). A value is the string
+  `"Name.member"`, so `==`, `switch` and `?:` work as for strings; a member the enum lacks is `PINE4025`,
+  and `str.tostring(value)` returns the title (the name when there is none). A declared enum name can
+  annotate a variable or parameter. `input.enum(Name.member, title, options = [...])` is a string input
+  whose options are the enum's members (or the listed ones), shown by title in the inputs panel and stored
+  as `"Name.member"`; an unknown enum or member is `PINE3010`. Not supported: enum-keyed maps and
+  `Name.values()`.
+- `input.*` defaults may be named constants (`input.string(size.small, …)`) and `options` may be the
+  third positional argument.
+- `import` declarations are recognised and reported once (`PINE9008`) with their body skipped, rather
+  than as a syntax error per line.
 
 ## Type checking
 
@@ -285,8 +294,8 @@ meets (`PINE4001`–`PINE4006`).
 
 ## Known incompatibilities
 
-The current grammar does not yet implement method calls on a call result, maps, matrices,
-enums (`PINE9007`), library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
+The current grammar does not yet implement method calls on a call result (`zones.get(k).kill()`), maps,
+matrices, library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
 `max_polylines_count` declaration arguments, built-in types such as `footprint`, `request.security` for
 other symbols or finer timeframes, or `request.security_lower_tf` (the engine only sees the chart's own
 bars). Label `yloc` is treated as `yloc.price`.
@@ -372,17 +381,19 @@ Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries tha
 | After the syntax and builtin fixes | 5 / 20 | 2 / 10 |
 | After user-defined types, methods, `linefill`, table calls | 9 / 20 | 5 / 10 |
 | After `request.security` (own symbol), expression subscripts, `xloc.bar_time` | 13 / 20 | 5 / 10 |
+| After the 500k source limit and enums | 14 / 20 | 6 / 10 |
 
-The 12 that still fail are blocked by whole features, counted in scripts (a script can have several):
+The 10 that still fail are blocked by whole features, counted in scripts (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 2 |
 | `request.security_lower_tf` (`PINE9003`) | 3 |
 | Library `import` (`PINE9008`) | 2 |
-| Source over the 100,000-character limit (`PINE8001`) | 2 |
-| Maps, matrices, `chart.point` / `polyline`, `scale=` | 4 |
-| Enums (`PINE9007`) | 1 |
+| Maps, and methods on a call result | 2 |
+| Matrices | 1 |
+| `chart.point` / `polyline` | 2 |
+| `scale=` declaration argument | 1 |
 | Built-in `footprint` type and overloaded methods (`PINE3024`) | 1 |
 
 Libraries are checked only for compiling: `library()`, `export`, types and methods parse, but nothing
