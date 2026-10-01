@@ -9,4 +9,6 @@ struct PineBoxOutput: Sendable, Identifiable, Equatable {
     var borderColor: UInt32?
     var borderWidth: Int
     var backgroundColor: UInt32?
+    /// Made with `xloc.bar_time`: setters take times, which are mapped to bar indexes.
+    var timeAnchored = false
 }

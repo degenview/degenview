@@ -326,6 +326,37 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
     }
 
+    func testXlocBarTimeMapsTimesToBarIndexesInConstructorsAndSetters() throws {
+        let program = compile(
+            """
+            var box b = na
+            var label l = na
+            var line ln = na
+            var box plain = na
+            var box early = na
+            if bar_index == 5
+                b := box.new(time[2], 10.0, time + 3 * 60000, 5.0, xloc = xloc.bar_time)
+                l := label.new(time[1], 9.0, "x", xloc = xloc.bar_time)
+                ln := line.new(time[5], 1.0, time, 2.0, xloc = xloc.bar_time)
+                plain := box.new(1, 3.0, 2, 2.0)
+                early := box.new(time - 8 * 60000 - 5 * 60000, 3.0, time, 2.0, xloc = xloc.bar_time)
+            if bar_index == 7
+                box.set_right(b, time)
+                label.set_x(l, time + 60000)
+                line.set_x2(ln, time[3])
+                box.set_right(plain, 4)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars(Array(repeating: 1, count: 8)))
+            .output
+        let boxes = output.boxes.sorted { $0.id < $1.id }
+        XCTAssertEqual([boxes[0].left, boxes[0].right], [3, 7], "time[2] is bar 3; time at bar 7 is bar 7")
+        XCTAssertEqual([boxes[1].left, boxes[1].right], [1, 4], "bar-index drawings are untouched")
+        XCTAssertEqual(boxes[2].left, -8, "before the first bar: extrapolated by bar length")
+        XCTAssertEqual(output.labels.first?.x, 8, "one bar after bar 7")
+        XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
+    }
+
     func testLabelTooltipIsStoredFromNewAndSetTooltip() throws {
         let program = compile(
             """
