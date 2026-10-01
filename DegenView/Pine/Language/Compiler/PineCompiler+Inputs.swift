@@ -72,7 +72,10 @@ extension PineCompiler {
     private static func options(
         _ args: [PineArgument], function: String, _ environment: [String: PineRuntimeValue]
     ) -> [PineInputValue]? {
-        guard let argument = args.first(where: { $0.name == "options" }),
+        // `options =`, or the third positional argument: input.string(defval, title, options, …).
+        let positional = args.filter { $0.name == nil }
+        let named = args.first { $0.name == "options" }
+        guard let argument = named ?? (positional.count > 2 ? positional[2] : nil),
             case .tuple(let values, _) = argument.value
         else { return nil }
         let options = values.compactMap { inputValue($0, function: function, environment) }
@@ -84,6 +87,12 @@ extension PineCompiler {
     ) -> PineInputValue? {
         if function == "input.source", case .identifier(let name, _) = e {
             return .source(name)
+        }
+        // A named constant such as `size.small` is the string of its own name at runtime.
+        if case .identifier(let name, _) = e, constantValue(e, environment) == nil,
+            PineSymbolCatalog.constants.contains(name)
+        {
+            return .string(name)
         }
         switch constantValue(e, environment) {
         case .int(let x)?: return .int(x)
