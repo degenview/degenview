@@ -5,6 +5,9 @@ import Foundation
 struct PineRuntimeState {
     var variables: [String: PineRuntimeValue] = [:]
     var histories: [String: [PineRuntimeValue]] = [:]
+    /// This bar's value of every `expression[n]` whose base is not a plain name, by history key.
+    /// Folded into `histories` when the bar commits.
+    var expressionValues: [String: PineRuntimeValue] = [:]
     var calls: [Int: [PineRuntimeValue]] = [:]
     var callInputs: [Int: [PineRuntimeValue]] = [:]
     var plots: [Int: PinePlotOutput] = [:]

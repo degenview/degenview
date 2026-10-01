@@ -277,6 +277,13 @@ final class PineRuntimeSession {
         where !name.hasPrefix(Self.internalPrefix) {
             working.histories[name, default: []].append(value)
         }
+        // A subscripted expression that was not reached this bar still takes its slot, so offsets stay aligned.
+        let expressionKeys = Set(working.histories.keys.filter { $0.hasPrefix(Self.internalPrefix) })
+            .union(working.expressionValues.keys)
+        for key in expressionKeys {
+            working.histories[key, default: []].append(working.expressionValues[key] ?? .na)
+        }
+        working.expressionValues = [:]
     }
 
     func budget() throws {

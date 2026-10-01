@@ -351,6 +351,35 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(codes(behind), ["PINE9001"])
     }
 
+    func testSubscriptOnACallOrExpressionReadsThatExpressionsHistory() throws {
+        let program = compile(
+            """
+            plot(ta.sma(close, 2)[1])
+            plot(ta.highest(high, 3)[1])
+            plot((close + 1)[2])
+            f(float x) => (x * 2)[1]
+            plot(f(close))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4])).output
+        XCTAssertEqual(output.plots[0].values, [nil, nil, 1.5, 2.5])
+        XCTAssertEqual(output.plots[1].values, [nil, nil, nil, 4], "highest(high, 3) is 4 on bar 2 and 5 on bar 3")
+        XCTAssertEqual(output.plots[2].values, [nil, nil, 2, 3])
+        XCTAssertEqual(output.plots[3].values, [nil, 2, 4, 6])
+    }
+
+    func testSubscriptedExpressionNotReachedOnABarKeepsItsSlot() throws {
+        let program = compile(
+            """
+            v = 0.0
+            if bar_index > 1
+                v := ta.sma(close, 1)[1]
+            plot(v)
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4, 5])).output
+        XCTAssertEqual(output.plots[0].values, [0, 0, nil, 3, 4])
+    }
+
     func testDerivedPricesTimeAndBarIndexHaveHistory() throws {
         let program = compile(
             """
