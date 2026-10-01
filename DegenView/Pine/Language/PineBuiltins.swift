@@ -25,6 +25,7 @@ enum PineBuiltins {
             "dayofweek.wednesday": .int(4), "dayofweek.thursday": .int(5), "dayofweek.friday": .int(6),
             "dayofweek.saturday": .int(7), "math.pi": .float(Double.pi), "math.e": .float(M_E),
             "math.phi": .float((1 + 5.0.squareRoot()) / 2),
+            "math.rphi": .float((5.0.squareRoot() - 1) / 2),
         ]
         let names = [
             "strategy.long", "strategy.short", "strategy.cash", "strategy.fixed",
@@ -32,7 +33,8 @@ enum PineBuiltins {
             "strategy.commission.cash_per_order", "strategy.commission.cash_per_contract",
             "strategy.oca.none", "strategy.oca.cancel", "strategy.oca.reduce",
             "format.inherit", "format.price", "format.volume", "format.percent", "format.mintick",
-            "order.ascending", "order.descending",
+            "order.ascending", "order.descending", "strategy.direction.long", "strategy.direction.short",
+            "strategy.direction.all",
         ]
         for name in names { table[name] = .string(name) }
         for frequency in [PineAlertFrequency.all, .oncePerBar, .oncePerBarClose] {

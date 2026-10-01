@@ -715,6 +715,18 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[1], [3], [0], [0], [30]])
     }
 
+    func testPineConstantsScriptsCommonlyPassAreKnown() throws {
+        let program = compile(
+            """
+            plot(math.rphi + math.phi)
+            strategy.risk.allow_entry_in(strategy.direction.long)
+            plot(hlcc4)
+            """, header: "strategy(\"S\")")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(try XCTUnwrap(output.plots[0].values[0]), 5.0.squareRoot(), accuracy: 1e-12)
+    }
+
     func testADottedNameThatIsNotAPineConstantIsAnErrorNotAString() {
         for source in [
             "plot(chart.is_standrd ? 1 : 0)", "plot(size.smal == size.small ? 1 : 0)", "x = ta.smaa\nplot(close)",
