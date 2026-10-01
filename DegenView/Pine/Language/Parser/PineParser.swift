@@ -11,6 +11,9 @@ struct PineParser {
     let limits: PineLimits
     /// Statements produced so far, at any nesting depth; bounded by `limits.astNodes`.
     private var statementCount = 0
+    /// Where `export` prefixed a statement. The keyword is only legal in a library, which the
+    /// parser cannot know, so the compiler checks these against the declaration.
+    private(set) var exportRanges: [PineSourceRange] = []
 
     init(tokens: [PineToken], limits: PineLimits) {
         self.tokens = tokens
@@ -31,16 +34,14 @@ struct PineParser {
                 continue
             }
             let before = index
-            let parsed = statement()
-            if let parsed {
-                out.append(parsed)
-                statementCount += 1
-            }
+            let parsed = statementsOnLine()
+            out += parsed
+            statementCount += parsed.count
             if index == before {
                 error("PINE2001", "Expected a statement.", current.range)
                 advance()
             } else {
-                endStatement(report: parsed != nil)
+                endStatement(report: !parsed.isEmpty)
             }
             while take(.newline) {}
             if statementCount > limits.astNodes {
@@ -50,6 +51,21 @@ struct PineParser {
         }
         if untilDedent { _ = take(.dedent) }
         return out
+    }
+
+    /// One statement, plus any that follow it on the same line after a comma
+    /// (`a := 1, b := 2`). Empty when the first one does not parse.
+    mutating func statementsOnLine() -> [PineStatement] {
+        guard let first = statement() else { return [] }
+        var statements = [first]
+        while take(.comma), let next = statement() { statements.append(next) }
+        return statements
+    }
+
+    /// Notes an `export` prefix and parses the statement it applies to.
+    mutating func exportedStatement() -> PineStatement? {
+        exportRanges.append(previous.range)
+        return statement()
     }
 
     /// A statement must end the line. Block statements (`if`, `for`, block functions) end

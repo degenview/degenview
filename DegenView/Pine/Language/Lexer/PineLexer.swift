@@ -21,7 +21,8 @@ struct PineLexer {
     func lex() -> (tokens: [PineToken], diagnostics: [PineDiagnostic]) {
         if source.count > limits.sourceCharacters {
             let message = "Source exceeds the \(limits.sourceCharacters)-character limit."
-            return ([], [.error("PINE8001", .resource, message, .zero)])
+            // The parser needs a terminating token even when there is nothing else to parse.
+            return ([.init(kind: .eof, range: .zero)], [.error("PINE8001", .resource, message, .zero)])
         }
         var state = State()
         let lines = source.split(separator: "\n", omittingEmptySubsequences: false)
@@ -57,7 +58,12 @@ struct PineLexer {
         let rest = line.text[leading...]
         if rest.isEmpty || rest.starts(with: ["/", "/"]) { return }
         if state.isAtLogicalLineStart {
-            lexIndentation(leading: leading, line, &state)
+            if Self.isWrappedLine(leading: leading, line, state) {
+                // Joins the previous logical line by dropping the newline that ended it.
+                state.tokens.removeLast()
+            } else {
+                lexIndentation(leading: leading, line, &state)
+            }
         }
         var i = leading
         while i < line.text.count { i = lexToken(at: i, line, &state) }
@@ -70,10 +76,21 @@ struct PineLexer {
         }
     }
 
+    /// Columns of leading whitespace, where a tab is one four-space level, as in TradingView.
+    private static func indentWidth(_ line: PineSourceLine, leading: Int) -> Int {
+        line.text.prefix(leading).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+    }
+
+    /// Pine wraps a long line by indenting its continuation by anything but a multiple of four
+    /// columns. A first line has nothing to continue, so it still reports PINE1002.
+    private static func isWrappedLine(leading: Int, _ line: PineSourceLine, _ state: State) -> Bool {
+        indentWidth(line, leading: leading) % 4 != 0 && state.tokens.last?.kind == .newline
+    }
+
     /// `leading` counts the line's leading space/tab characters (for ranges); the indent level
-    /// compares columns, where a tab is one four-space level, as in TradingView.
+    /// compares columns.
     private func lexIndentation(leading: Int, _ line: PineSourceLine, _ state: inout State) {
-        let width = line.text.prefix(leading).reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+        let width = Self.indentWidth(line, leading: leading)
         if width % 4 != 0 {
             state.diagnostics.append(
                 .error(
@@ -100,7 +117,7 @@ struct PineLexer {
             return lexNumber(at: i, line, &state)
         }
         switch c {
-        case "\"": return lexString(at: i, line, &state)
+        case "\"", "'": return lexString(at: i, quote: c, line, &state)
         case "#": return lexColor(at: i, line, &state)
         default: return lexOperator(at: i, line, &state)
         }

@@ -15,9 +15,9 @@ enum PineBuiltinTypes {
     ]
 
     static let intSeries: Set<String> = [
-        "time", "time_close", "bar_index", "year", "month", "dayofmonth", "hour", "minute", "second",
-        "dayofweek", "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades",
-        "strategy.losstrades",
+        "time", "time_close", "bar_index", "last_bar_index", "last_bar_time", "timenow",
+        "time_tradingday", "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek",
+        "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades", "strategy.losstrades",
     ]
 
     static let simpleStrings: Set<String> = [
@@ -69,7 +69,9 @@ enum PineBuiltinTypes {
         ] {
             table[name] = .float
         }
-        for name in ["ta.cross", "ta.crossover", "ta.crossunder", "ta.rising", "ta.falling"] {
+        for name in [
+            "ta.cross", "ta.crossover", "ta.crossunder", "ta.rising", "ta.falling", "timeframe.change",
+        ] {
             table[name] = .bool
         }
         return table
@@ -79,8 +81,9 @@ enum PineBuiltinTypes {
     private static let propagatingResults: [String: PineValueType] = {
         var table: [String: PineValueType] = [
             "int": .int, "float": .float, "bool": .bool, "na": .bool, "timestamp": .int,
-            "color.new": .color, "color.rgb": .color, "str.length": .int, "str.tonumber": .float,
-            "math.floor": .int, "math.ceil": .int,
+            "color.new": .color, "color.rgb": .color, "color.from_gradient": .color,
+            "color.r": .float, "color.g": .float, "color.b": .float, "color.t": .float,
+            "str.length": .int, "str.tonumber": .float, "math.floor": .int, "math.ceil": .int,
         ]
         for name in [
             "str.tostring", "str.format", "str.upper", "str.lower", "str.trim", "str.replace_all",

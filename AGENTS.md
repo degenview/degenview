@@ -197,6 +197,11 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
+`PineCorpusTests` runs cached community scripts (`tools/pine-corpus/fetch.py` fills the
+gitignored `.pine-corpus/`) and skips without them. Third-party sources are never committed or
+copied into tests; reproduce a failure with an original reduction in `PineRegressionTests`, then
+update `DegenViewTests/PineCorpus/expectations.json`. See `tools/pine-corpus/README.md`.
+
 ### Linting
 
 - Every Swift file created or modified in a task must be linted before handoff, including

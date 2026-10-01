@@ -85,6 +85,7 @@ extension PineParser {
 
     private mutating func extend(_ lhs: PineExpression, _ minBP: Int) -> Extension {
         if take(.dot) { return memberAccess(lhs) }
+        if case .identifier("array.new", _) = lhs, at(.less) { return genericArrayConstructor(lhs) }
         if take(.leftParen) { return callSuffix(lhs) }
         if take(.leftBracket) { return historySuffix(lhs) }
         if minBP <= Self.ternaryBindingPower, take(.question) { return ternarySuffix(lhs) }
@@ -106,6 +107,27 @@ extension PineParser {
             return .finished(lhs)
         }
         return .extended(.identifier(base + "." + member, r))
+    }
+
+    /// `array.new<float>(…)` is the v6 spelling of `array.new_float(…)`; arrays are untyped at
+    /// runtime, so the element type only picks the name the builtin dispatch already knows.
+    private mutating func genericArrayConstructor(_ lhs: PineExpression) -> Extension {
+        advance()
+        let element: String
+        switch current.kind {
+        case .typeKeyword(let type): element = type.rawValue
+        case .identifier(let word): element = word
+        default:
+            error("PINE2012", "Expected an element type.", current.range)
+            return .finished(lhs)
+        }
+        advance()
+        expect(.greater, "Expected '>'.")
+        guard take(.leftParen), case .identifier(_, let range) = lhs else {
+            error("PINE2008", "Expected '('.", current.range)
+            return .finished(lhs)
+        }
+        return callSuffix(.identifier("array.new_" + element, range))
     }
 
     private mutating func callSuffix(_ lhs: PineExpression) -> Extension {

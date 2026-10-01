@@ -15,7 +15,8 @@ extension PineRuntimeSession {
         {
             return override
         }
-        return try argument(call, 0, nil, &context)
+        guard let defaultValue = call.arguments.inputDefault else { return .na }
+        return try eval(defaultValue.value, &context)
     }
 
     private func runtimeInput(_ value: PineInputValue?, _ context: PineRuntimeContext) -> PineRuntimeValue? {
@@ -71,6 +72,32 @@ extension PineRuntimeSession {
         return .color(PineBuiltins.withTransparency(c, transparency))
     }
 
+    /// `color.r/g/b` read a channel (0-255); `color.t` the transparency (0-100, 0 opaque).
+    func colorComponent(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard case .color(let rgba) = try argument(call, 0, "color", &context) else { return .na }
+        switch call.name {
+        case "color.r": return .float(Double((rgba >> 24) & 0xFF))
+        case "color.g": return .float(Double((rgba >> 16) & 0xFF))
+        case "color.b": return .float(Double((rgba >> 8) & 0xFF))
+        default: return .float(100 - Double(rgba & 0xFF) / 2.55)
+        }
+    }
+
+    func colorGradient(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["value", "bottom_value", "top_value", "bottom_color", "top_color"], &context)
+        guard let value = b["value"]?.number, let bottom = b["bottom_value"]?.number,
+            let top = b["top_value"]?.number, case .color(let low)? = b["bottom_color"],
+            case .color(let high)? = b["top_color"], value.isFinite
+        else { return .na }
+        return .color(
+            PineBuiltins.gradient(value, bottom: bottom, top: top, bottomColor: low, topColor: high))
+    }
+
     func colorRGB(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         .color(
             PineBuiltins.rgb(
@@ -108,6 +135,42 @@ extension PineRuntimeSession {
     }
 
     /// `year()`, `month()`…: of the bar's open time, or of the timestamp passed in.
+    /// `timeframe.in_seconds(tf)`; with no argument, the chart's bar length.
+    func timeframeSecondsCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard !call.arguments.isEmpty else { return barSeconds > 0 ? .int(Int(barSeconds)) : .na }
+        switch try argument(call, 0, "timeframe", &context) {
+        case .na: return .na
+        case .string(let text):
+            if let seconds = PineTime.seconds(ofTimeframe: text) { return .int(Int(seconds)) }
+            fallthrough
+        default:
+            throw PineDiagnostic.error(
+                "PINE4017", .runtime, "timeframe.in_seconds() needs a timeframe such as \"60\" or \"1D\".",
+                call.range)
+        }
+    }
+
+    /// `timeframe.change(tf)`: whether this bar opens a new `tf` period. The first bar always does.
+    /// Periods follow the same UTC calendar boundaries the app folds weekly and monthly candles on.
+    func timeframeChangeCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard case .string(let text) = try argument(call, 0, "timeframe", &context),
+            let seconds = PineTime.seconds(ofTimeframe: text)
+        else {
+            throw PineDiagnostic.error(
+                "PINE4017", .runtime, "timeframe.change() needs a timeframe such as \"60\" or \"1D\".",
+                call.range)
+        }
+        guard let previous = lastCommittedOpenTime else { return .bool(true) }
+        let now = context.bar.openTime
+        return .bool(
+            KlineData.bucketStart(of: now, interval: seconds)
+                != KlineData.bucketStart(of: previous, interval: seconds))
+    }
+
     func timePartCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         if call.arguments.isEmpty {
             return PineTime.part(call.name, milliseconds: PineTime.milliseconds(context.bar.openTime))

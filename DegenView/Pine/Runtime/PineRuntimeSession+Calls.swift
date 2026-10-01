@@ -16,6 +16,11 @@ extension PineRuntimeSession {
             "ta.tr": PineRuntimeSession.trueRangeCall, "ta.pivothigh": PineRuntimeSession.pivotCall,
             "ta.pivotlow": PineRuntimeSession.pivotCall, "ta.barssince": PineRuntimeSession.barsSinceCall,
             "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
+            "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
+            "timeframe.change": PineRuntimeSession.timeframeChangeCall,
+            "color.from_gradient": PineRuntimeSession.colorGradient,
+            "color.r": PineRuntimeSession.colorComponent, "color.g": PineRuntimeSession.colorComponent,
+            "color.b": PineRuntimeSession.colorComponent, "color.t": PineRuntimeSession.colorComponent,
         ]
         for name in ["indicator", "strategy", "library"] { table[name] = PineRuntimeSession.declarationCall }
         for name in ["line", "label", "box", "table"] { table[name] = PineRuntimeSession.handleCast }
@@ -39,7 +44,23 @@ extension PineRuntimeSession {
         if let entry = Self.namespaceHandlers.first(where: { call.name.hasPrefix($0.prefix) }) {
             return try entry.handler(self)(call, &context)
         }
+        if let method = methodCall(call) { return try self.call(method, &context) }
         throw call.unknownFunction
+    }
+
+    /// `values.get(i)` for a variable holding an array or drawing handle is the method spelling of
+    /// `array.get(values, i)`: the receiver becomes the first argument of the namespaced builtin.
+    /// Only reached once nothing else claimed the name, so a namespace never loses to a variable.
+    private func methodCall(_ call: PineCall) -> PineCall? {
+        guard let dot = call.name.firstIndex(of: "."),
+            case .ref(let kind, _)? = working.variables[String(call.name[..<dot])],
+            kind != .plot
+        else { return nil }
+        let receiver = PineArgument(
+            name: nil, value: .identifier(String(call.name[..<dot]), call.range))
+        return PineCall(
+            name: "\(kind.rawValue).\(call.name[call.name.index(after: dot)...])",
+            arguments: [receiver] + call.arguments, site: call.site, range: call.range)
     }
 
     /// Evaluates the `index`-th positional argument, or the one named `key`, lazily: arguments

@@ -21,6 +21,10 @@ final class PineRuntimeSession {
     var intrabar: [String: PineRuntimeValue] = [:]
     /// Open time of the bar most recently executed, confirmed or not.
     var lastOpenTime: Date?
+    /// Index and open time of the final bar, for `last_bar_index` and `last_bar_time`. Known up front
+    /// for history; a realtime bar that opens past it becomes the new last bar.
+    var lastBarIndex = -1
+    var lastBarTime: Date?
     /// Open time of the bar most recently committed. Anything at or before it is stale.
     var lastCommittedOpenTime: Date?
     /// Call sites that already fired `alert.freq_once_per_bar` on the current bar. Like `intrabar` it
@@ -90,6 +94,8 @@ final class PineRuntimeSession {
         oncePerBarLedger = []
         emittedAlerts = []
         barSeconds = 0
+        lastBarIndex = -1
+        lastBarTime = nil
         mintick = suppliedMintick ?? Self.defaultMintick
     }
 
@@ -115,6 +121,8 @@ final class PineRuntimeSession {
         if bars.count > 1 {
             barSeconds = bars[bars.count - 1].openTime.timeIntervalSince(bars[bars.count - 2].openTime)
         }
+        lastBarIndex = bars.count - 1 + (precedesLiveBar ? 1 : 0)
+        lastBarTime = bars.last.map { $0.openTime.addingTimeInterval(precedesLiveBar ? barSeconds : 0) }
         let start = Date()
         var states: [PineBarFlags] = []
         states.reserveCapacity(bars.count)
@@ -173,6 +181,10 @@ final class PineRuntimeSession {
         let realtime = event.phase.isRealtime
         working = committed
         working.barIndex = committed.barIndex + 1
+        if working.barIndex >= lastBarIndex {
+            lastBarIndex = working.barIndex
+            lastBarTime = openTime
+        }
         working.instructions = 0
         if !isNew { for (key, value) in intrabar { working.variables[key] = value } }
         let flags = PineBarFlags(

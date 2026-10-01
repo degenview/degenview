@@ -14,3 +14,6 @@ DerivedData/
 *.hmap
 *.ipa
 *.moved-aside
+
+# Pine corpus — third-party scripts fetched by tools/pine-corpus/fetch.py
+.pine-corpus/

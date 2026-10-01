@@ -65,6 +65,22 @@ enum PineBuiltins {
         return (rgba & 0xFFFF_FF00) | alpha
     }
 
+    /// `color.from_gradient`: each RGBA channel runs linearly from `bottomColor` at `bottom` to
+    /// `topColor` at `top`, and a value outside that range takes the nearer end.
+    static func gradient(
+        _ value: Double, bottom: Double, top: Double, bottomColor: UInt32, topColor: UInt32
+    ) -> UInt32 {
+        guard top != bottom else { return value >= top ? topColor : bottomColor }
+        let t = min(1, max(0, (value - bottom) / (top - bottom)))
+        var result: UInt32 = 0
+        for shift in stride(from: 24, through: 0, by: -8) {
+            let from = Double((bottomColor >> UInt32(shift)) & 0xFF)
+            let to = Double((topColor >> UInt32(shift)) & 0xFF)
+            result |= UInt32((from + (to - from) * t).rounded()) << UInt32(shift)
+        }
+        return result
+    }
+
     static func rgb(_ r: Double, _ g: Double, _ b: Double, _ transparency: Double) -> UInt32 {
         func channel(_ v: Double) -> UInt32 { UInt32(min(255, max(0, v.isFinite ? v : 0))) }
         return withTransparency(
