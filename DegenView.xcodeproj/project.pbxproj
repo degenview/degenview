@@ -29,6 +29,7 @@
 		SP0000000000000000000018 /* ScriptPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */; };
 		SP0000000000000000000017 /* SplitMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000517 /* SplitMetricsTests.swift */; };
 		PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0000000000000000000106 /* PineWordRangeTests.swift */; };
+		PC0000000000000000000001 /* PineCorpusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PC0000000000000000000101 /* PineCorpusTests.swift */; };
 		0514D14597FD919F194C1D7E /* PineSymbolCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */; };
 		4578BBD93166ADF5DE474B5F /* PineSyntaxClassifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AEEE3EBEB4FD61F06B233FA /* PineSyntaxClassifierTests.swift */; };
 		SM0000000000000000000001 /* ScriptStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000101 /* ScriptStore.swift */; };
@@ -505,6 +506,7 @@
 		SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewViewModelTests.swift; sourceTree = "<group>"; };
 		SP0000000000000000000517 /* SplitMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMetricsTests.swift; sourceTree = "<group>"; };
 		PW0000000000000000000106 /* PineWordRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWordRangeTests.swift; sourceTree = "<group>"; };
+		PC0000000000000000000101 /* PineCorpusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCorpusTests.swift; sourceTree = "<group>"; };
 		15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolCatalogTests.swift; sourceTree = "<group>"; };
 		3AEEE3EBEB4FD61F06B233FA /* PineSyntaxClassifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSyntaxClassifierTests.swift; sourceTree = "<group>"; };
 		SM0000000000000000000101 /* ScriptStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStore.swift; sourceTree = "<group>"; };
@@ -1146,6 +1148,7 @@
 				SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */,
 				SP0000000000000000000517 /* SplitMetricsTests.swift */,
 				PW0000000000000000000106 /* PineWordRangeTests.swift */,
+				PC0000000000000000000101 /* PineCorpusTests.swift */,
 				15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */,
 				3AEEE3EBEB4FD61F06B233FA /* PineSyntaxClassifierTests.swift */,
 				P10000000000000000000104 /* PineEngineTests.swift */,
@@ -1647,6 +1650,7 @@
 				SP0000000000000000000018 /* ScriptPreviewViewModelTests.swift in Sources */,
 				SP0000000000000000000017 /* SplitMetricsTests.swift in Sources */,
 				PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */,
+				PC0000000000000000000001 /* PineCorpusTests.swift in Sources */,
 				0514D14597FD919F194C1D7E /* PineSymbolCatalogTests.swift in Sources */,
 				4578BBD93166ADF5DE474B5F /* PineSyntaxClassifierTests.swift in Sources */,
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
