@@ -7,9 +7,16 @@ extension PineRuntimeSession {
         if call.name == "alert" {
             let b = try bind(call, ["message", "freq"], &context)
             let message = b["message"].map { PineFormat.format($0, nil, mintick: mintick) } ?? ""
-            recordAlert(
-                message, frequency: PineAlertFrequency(pineName: b["freq"].textValue) ?? .oncePerBar,
-                site: site, context)
+            var frequency = PineAlertFrequency.oncePerBar
+            if let name = b["freq"].textValue {
+                guard let resolved = PineAlertFrequency(pineName: name) else {
+                    throw PineDiagnostic.error(
+                        "PINE4009", .runtime, "alert() frequency must be an alert.freq_* constant, not '\(name)'.",
+                        call.range)
+                }
+                frequency = resolved
+            }
+            recordAlert(message, frequency: frequency, site: site, context)
         } else {
             let b = try bind(call, ["condition", "title", "message"], &context)
             guard b["condition"]?.bool == true else { return .void }

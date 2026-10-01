@@ -1,5 +1,11 @@
 # Plan: deliver Pine `alert()` events as user notifications
 
+> **Status: implemented.** Where this plan and the code differ, the code and
+> `pine-compatibility.md` ("Script alerts") win. Changes from the plan: no `registerMigration`
+> (the schema is one idempotent `createSchema`); `freq_all` events carry no DB dedupe key; the
+> live-tail sections were superseded by `PineExecutionHost`; re-arm re-pins symbol and timeframe
+> as well as the source hash.
+
 ## Context
 
 Exploration changed the shape of this task. **`alert(message, freq)`, `alertcondition`, and the `alert.freq_*` constants already exist**

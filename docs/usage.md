@@ -32,7 +32,8 @@
     automatic asset mappings and historical FX issues before committing the atomic import.
 11. Use a chart card's bell to create an absolute or percentage price alert. Open the
     adjacent bell—or the Portfolio toolbar bell—to manage rules and history in the Alerts
-    window. Notification behavior is under **Settings → Notifications**.
+    window (its **Script Alerts** filter lists Pine script alerts). Notification behavior is under
+    **Settings → Notifications**.
 12. Optionally add a CoinMarketCap key under **Settings → CoinMarketCap**. Save and remove
     operations use macOS Keychain, and open CMC charts adopt the new request mode without
     an application restart.
@@ -66,7 +67,10 @@ plotshape(bearish, color=color.red)
 Scripts declared with `strategy()` are backtested over the chart's bars: the Scripts tab
 shows net profit, win rate, profit factor, drawdown, an equity curve, and the trade list,
 and the chart marks each entry and exit. `alert()` and `alertcondition()` calls are listed
-there too; they do not raise notifications.
+there too. To be notified when a script raises one on a live bar, choose **Create Alert…** in the
+Scripts tab: you get a macOS notification and an in-app banner, and the alert appears under
+**Script Alerts** in the Alerts window. It fires only while that chart shows the same symbol and
+timeframe, and editing the script pauses it until you re-arm it there.
 
 The engine supports a subset of Pine rather than every feature. See
 [Pine compatibility](pine-compatibility.md) for exact syntax, built-ins, limits, and known

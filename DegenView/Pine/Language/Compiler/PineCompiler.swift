@@ -22,6 +22,7 @@ enum PineCompiler {
         var schema = PineInputSchema()
         collectInputs(statements, environment, &schema, &diagnostics)
         diagnostics += PineStructureValidator.validate(statements)
+        diagnostics += PineAlertCallValidator.validate(statements)
         // Type errors on top of a broken parse would only be noise from a half-built tree.
         if !diagnostics.contains(where: { $0.category == .lexical || $0.category == .syntax }) {
             diagnostics += PineTypeChecker.check(statements)

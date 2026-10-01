@@ -156,7 +156,7 @@ final class AlertStore: ObservableObject {
         }
     }
 
-    private func requestNotificationAuthorizationIfNeeded() async {
+    func requestNotificationAuthorizationIfNeeded() async {
         guard !UserDefaults.standard.bool(forKey: "didExplainPriceAlerts") else { return }
         UserDefaults.standard.set(true, forKey: "didExplainPriceAlerts")
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])

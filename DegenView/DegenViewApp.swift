@@ -134,6 +134,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSWindow.allowsAutomaticWindowTabbing = true
         UNUserNotificationCenter.current().delegate = AlertNotificationDelegate.shared
         _ = AlertStore.shared
+        _ = PineAlertCoordinator.shared
+        NotificationCenter.default.addObserver(
+            forName: .localScriptsDidChange, object: nil, queue: .main
+        ) { _ in
+            Task { @MainActor in await PineAlertCoordinator.shared.scriptsChanged() }
+        }
         ScriptFolderMonitor.shared.start()
     }
 

@@ -254,6 +254,9 @@ final class ChartViewModel: ObservableObject {
     /// Called on the main actor with alerts a script raised on a live bar. Historical calculation and
     /// loading never call it.
     var pineAlertHandler: (([PineAlertEvent], PineBarID?) -> Void)?
+    /// Called on the main actor whenever the applied script is recalculated from scratch: with the
+    /// market it now runs on and the hash of its source, nil when no script is applied.
+    var pineContextHandler: ((PineDatasetKey, String?) -> Void)?
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -592,6 +595,15 @@ final class ChartViewModel: ObservableObject {
         reevaluatePine()
     }
 
+    /// The market the applied script runs on.
+    var pineAlertDataset: PineDatasetKey { pineDataset(for: requestedRange ?? .oneDay) }
+
+    /// Hash of the applied script's source, nil when none is applied.
+    var appliedSourceHash: String? {
+        guard let source = pineConfiguration?.appliedSource, !source.isEmpty else { return nil }
+        return ScriptSourceHash.sha256(source)
+    }
+
     /// The dataset a fetch for `range` fills.
     private func pineDataset(for range: TimeRange) -> PineDatasetKey {
         PineDatasetKey(symbolKey: "\(source.rawValue):\(ticker)", timeframe: range.rawValue)
@@ -604,6 +616,7 @@ final class ChartViewModel: ObservableObject {
         stopPineFeed()
         pineGeneration += 1
         let generation = pineGeneration
+        pineContextHandler?(pineAlertDataset, appliedSourceHash)
         guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
             pineOutput = .empty
             return

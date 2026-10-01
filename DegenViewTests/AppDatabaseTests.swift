@@ -163,4 +163,64 @@ final class AppDatabaseTests: XCTestCase {
         agent.acknowledge(first.id)
         XCTAssertEqual(gui.pendingCommands(), [second])
     }
+
+    // MARK: - Pine script alerts
+
+    private func pineNotification(_ subscription: UUID = UUID(), at seconds: TimeInterval = 0) -> PineAlertNotification {
+        PineAlertNotification(
+            subscriptionID: subscription, scriptName: "S", chartID: UUID(), symbolKey: "binance:BTC",
+            timeframe: "1H", barTime: Date(timeIntervalSince1970: seconds), message: "m", frequency: .oncePerBar,
+            triggeredAt: Date(timeIntervalSince1970: seconds), isConfirmed: false)
+    }
+
+    func testPineAlertSubscriptionsRoundTripInOrder() {
+        let subscriptions = ["B", "A"].map {
+            PineAlertSubscription(
+                chartID: UUID(), scriptID: UUID(), scriptName: $0, symbolKey: "binance:BTC", timeframe: "1H",
+                sourceHash: "h", note: "n", state: .scriptChanged)
+        }
+        database.savePineAlertSubscriptions(subscriptions)
+        XCTAssertEqual(database.pineAlertSubscriptions(), subscriptions)
+    }
+
+    func testPineAlertEventKeyRejectsADuplicateDelivery() {
+        let id = UUID()
+        XCTAssertTrue(database.insertPineAlertEvent(pineNotification(id), dedupeKey: "key"))
+        XCTAssertFalse(database.insertPineAlertEvent(pineNotification(id), dedupeKey: "key"))
+        XCTAssertEqual(database.recentPineAlertEvents().count, 1)
+        XCTAssertEqual(database.recentPineAlertDedupeKeys(), ["key"])
+    }
+
+    func testPineAlertEventsWithoutAKeyAreNeverDeduplicated() {
+        XCTAssertTrue(database.insertPineAlertEvent(pineNotification(), dedupeKey: nil))
+        XCTAssertTrue(database.insertPineAlertEvent(pineNotification(), dedupeKey: nil))
+        XCTAssertEqual(database.recentPineAlertEvents().count, 2)
+        XCTAssertTrue(database.recentPineAlertDedupeKeys().isEmpty)
+    }
+
+    func testClearingDedupeKeysLetsARearmedSubscriptionDeliverAgain() {
+        let id = UUID()
+        XCTAssertTrue(database.insertPineAlertEvent(pineNotification(id), dedupeKey: "key"))
+        database.clearPineAlertDedupeKeys(subscriptionID: id)
+        XCTAssertTrue(database.insertPineAlertEvent(pineNotification(id, at: 1), dedupeKey: "key"))
+        XCTAssertEqual(database.recentPineAlertEvents().count, 2)
+    }
+
+    func testPineAlertHistoryKeepsTheNewestFiveHundred() {
+        for index in 0..<(AppDatabase.pineAlertHistoryLimit + 5) {
+            database.insertPineAlertEvent(pineNotification(at: Double(index)), dedupeKey: "key-\(index)")
+        }
+        let events = database.recentPineAlertEvents(limit: 1_000)
+        XCTAssertEqual(events.count, AppDatabase.pineAlertHistoryLimit)
+        XCTAssertEqual(events.first?.triggeredAt, Date(timeIntervalSince1970: Double(AppDatabase.pineAlertHistoryLimit + 4)))
+    }
+
+    func testDeletingASubscriptionsEventsLeavesOthers() {
+        let gone = UUID()
+        let kept = UUID()
+        database.insertPineAlertEvent(pineNotification(gone), dedupeKey: "a")
+        database.insertPineAlertEvent(pineNotification(kept), dedupeKey: "b")
+        database.deletePineAlertEvents(subscriptionID: gone)
+        XCTAssertEqual(database.recentPineAlertEvents().map(\.subscriptionID), [kept])
+    }
 }

@@ -160,8 +160,21 @@ extension PineTypeChecker {
             if name != "input.source" { checkInputDefault(name, arguments, values) }
             return .known(type, name == "input.source" ? .series : .input)
         }
+        if name == "alert" || name == "alertcondition" { checkAlertMessage(name, arguments, values, range) }
         let qualifier = values.reduce(PineQualifier?.some(.constant)) { Self.maxQualifier($0, $1.qualifier) }
         return PineBuiltinTypes.call(name, arguments: arguments, values: values, qualifier: qualifier)
+    }
+
+    /// A message whose type is certain and not `string`. Anything the checker cannot type passes.
+    mutating func checkAlertMessage(
+        _ name: String, _ arguments: [PineArgument], _ values: [Inferred], _ range: PineSourceRange
+    ) {
+        let position = name == "alert" ? 0 : 2
+        let positional = arguments.indices.filter { arguments[$0].name == nil }
+        let index =
+            arguments.firstIndex { $0.name == "message" } ?? (position < positional.count ? positional[position] : nil)
+        guard let index, case .known(let type, _) = values[index], type != .string else { return }
+        error("PINE3036", "\(name)() message must be a string, not \(type.rawValue).", range)
     }
 
     mutating func checkInputDefault(

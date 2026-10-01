@@ -129,7 +129,39 @@ that combination was derived from the rules above, not checked against TradingVi
   and barcolor. `display` is honoured on plot, plotshape, plotchar, and plotcandle; a
   `display.none` plot is not drawn but a `fill()` may still reference it.
 - `alert()` and `alertcondition()` record an event (bar, time, message) that the Scripts tab
-  lists. They never notify. `alert.freq_once_per_bar_close` fires only on confirmed bars.
+  lists. Only events raised on realtime bars can notify, and only through a **script alert**
+  subscription (see below). `alert.freq_once_per_bar_close` fires only on confirmed bars. The
+  compiler checks the calls: `alert` takes a message and an optional `alert.freq_*` constant
+  (`PINE3025`, `PINE3027`, `PINE3028`), `alertcondition` a condition, title and message
+  (`PINE3026`, `PINE3027`), and a known non-string message is rejected (`PINE3036`). A frequency
+  the script computes that resolves to nothing fails the run (`PINE4009`) instead of silently
+  defaulting.
+
+#### Script alerts (notifications)
+
+**Create Alert…** in a chart's Scripts tab subscribes to the applied script's alerts. A
+subscription is pinned to that chart, symbol, timeframe, and the SHA-256 of the applied source.
+Delivery is a macOS notification and an in-app banner, governed by the same settings as price
+alerts. The path is `PineExecutionUpdate.alerts` → `ChartViewModel.pineAlertHandler` →
+`PineAlertCoordinator` → `PineAlertRouter` → `PineAlertFrequencyGuard` → `PineAlertStore` (history
+row) → `PineAlertDispatcher` (channels).
+
+- **History never notifies.** The runtime flags historical executions `isRealtime = false` and
+  drops alerts raised while loading or rebuilding; the router drops any non-realtime event, and a
+  bar that ended before the subscription was created is ignored. Replay never goes live.
+- **Dedupe.** Each admitted `once_per_bar` / `once_per_bar_close` alert is stored with the key
+  `subscription|call site|bar open (ms)|frequency`, unique in `pine_alert_event`, and the guard is
+  seeded from those keys at launch, so a relaunch cannot deliver the same bar twice. `freq_all`
+  has no key: it may fire on every execution.
+- **Edit.** Applying different source (or clearing the script) sets the subscription to *Script
+  changed*. It stays silent until you re-arm it, which re-pins the chart's current script, symbol
+  and timeframe and clears its dedupe keys.
+- **Delete.** Removing the saved script sets *Script deleted*; removing the chart deletes its
+  subscriptions.
+- **Symbol or timeframe change.** The subscription stays enabled but fires only while its chart
+  shows the pair it was created for; the Alerts center shows "Chart shows other symbol".
+- **Channels.** `PineAlertChannel` is the seam: a webhook would be one more conformance. Channels
+  run independently and a failing one never reaches the script or blocks the others.
 - Drawing objects with `xloc.bar_index` coordinates: `line.new/set_*/get_*/delete`
   (style, extend), `label.new/set_*/get_*/delete` (bubble styles up/down/left/right/none),
   `box.new/set_*/get_*/delete`, and `table.new/cell/delete` pinned to any `position.*`.
@@ -246,6 +278,9 @@ claimed as parity.
   recalculation copies it, so a tick costs O(bars) and a full load O(bars²) (see above). Fine at
   chart sizes; a journaled or truncating rollback is the next step if it matters.
 - **One script per chart** in the UI; the engine itself supports any number.
+- **Script alerts are client-side.** They need the app running and the chart's tab visible (hidden
+  tabs suspend the feed), and a bar close missed while disconnected is not alerted retroactively.
+  There is no server worker, webhook, email, push, or account.
 
 ## Conformance and performance
 

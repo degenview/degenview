@@ -18,7 +18,7 @@ enum PineSyntaxHighlighter {
     private static let tokenRules = [
         Rule(#"\b(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\b"#, color: .systemOrange),
         Rule(
-            #"\b(?:indicator|strategy|library|plot|plotshape|plotchar|hline|bgcolor|barcolor|input|color|ta)\b"#,
+            #"\b(?:indicator|strategy|library|plot|plotshape|plotchar|hline|bgcolor|barcolor|alert|alertcondition|input|color|ta)\b"#,
             color: .systemTeal
         ),
         Rule(

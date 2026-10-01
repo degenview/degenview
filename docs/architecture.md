@@ -26,6 +26,8 @@ DegenView/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
+│   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
+│   ├── PineAlertCoordinator.swift     # Routes a chart's Pine alerts; pauses/re-arms subscriptions
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
 │   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
@@ -37,6 +39,8 @@ DegenView/
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
+│   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
+│   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
@@ -201,6 +205,15 @@ DegenView/
     login-item agent, whichever holds `alert_runtime.lock`. Both processes open the same
     database: the owner saves the alert snapshot in one transaction per change, and the GUI
     sends edits by inserting `alert_command` rows, which the owner applies and deletes.
+16. Pine script alerts run in the app only (the agent has no compiler or runtime).
+    `PineExecutionUpdate.alerts` (realtime executions only) reaches `PineAlertCoordinator`
+    through `ChartViewModel.pineAlertHandler`; the pure `PineAlertRouter` matches it to active
+    `PineAlertSubscription`s (chart, symbol, timeframe, source hash) and
+    `PineAlertFrequencyGuard` admits it once per call site, bar and mode. Admitted alerts are
+    recorded in `pine_alert_event` (unique `dedupe_key`, NULL for `freq_all`) and fanned out by
+    `PineAlertDispatcher` to independent `PineAlertChannel`s (macOS notification, in-app banner).
+    Subscriptions are the `pine_alert_subscription` document table. They are separate from the
+    price-alert snapshot, so `replaceSnapshot` never touches them.
 
 ## Drawing undo and redo
 

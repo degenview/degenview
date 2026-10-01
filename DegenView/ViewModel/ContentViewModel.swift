@@ -36,6 +36,7 @@ final class ContentViewModel: ObservableObject {
 
     @Published var chartViewModels: [ChartViewModel] = [] {
         didSet {
+            chartViewModels.forEach { PineAlertCoordinator.shared.attach($0) }
             guard let drawingUndoCoordinator else { return }
             chartViewModels.forEach { $0.drawingUndoCoordinator = drawingUndoCoordinator }
         }
@@ -1165,6 +1166,7 @@ final class ContentViewModel: ObservableObject {
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
         chartViewModels.removeAll { $0.uniqueID == vm.uniqueID }
+        PineAlertCoordinator.shared.chartRemoved(chartID: vm.chartID)
         chartColumns = chartColumns.compactMap { column in
             var updated = column
             updated.chartIDs.removeAll { $0 == vm.chartID }

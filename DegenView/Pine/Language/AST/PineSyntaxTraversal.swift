@@ -59,18 +59,26 @@ extension PineStatement {
     static func forEachCall(
         in statements: [PineStatement], _ visit: (_ name: String, _ range: PineSourceRange) -> Void
     ) {
+        forEachCall(withArgumentsIn: statements) { name, _, range in visit(name, range) }
+    }
+
+    /// Like ``forEachCall(in:_:)``, with each call's arguments.
+    static func forEachCall(
+        withArgumentsIn statements: [PineStatement],
+        _ visit: (_ name: String, _ arguments: [PineArgument], _ range: PineSourceRange) -> Void
+    ) {
         for statement in statements {
             for expression in statement.expressions { forEachCall(in: expression, visit) }
-            for block in statement.nestedBlocks { forEachCall(in: block, visit) }
+            for block in statement.nestedBlocks { forEachCall(withArgumentsIn: block, visit) }
         }
     }
 
     private static func forEachCall(
-        in expression: PineExpression, _ visit: (String, PineSourceRange) -> Void
+        in expression: PineExpression, _ visit: (String, [PineArgument], PineSourceRange) -> Void
     ) {
-        if case .call(let name, _, _, let range) = expression { visit(name, range) }
+        if case .call(let name, let arguments, _, let range) = expression { visit(name, arguments, range) }
         if case .statementExpression(let statement, _) = expression {
-            forEachCall(in: [statement], visit)
+            forEachCall(withArgumentsIn: [statement], visit)
         }
         for child in expression.children { forEachCall(in: child, visit) }
     }

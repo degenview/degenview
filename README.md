@@ -123,6 +123,10 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   delivery, sound, banners, and system notifications are independently configurable
 - **Persistent local history** — Rules, crossing baselines, re-arm state, processed quote
   fingerprints, settings, and trigger history are stored in a local SQLite database only
+- **Pine script alerts** — Subscribe a chart's applied script from its Scripts tab and get a
+  macOS notification and in-app banner when `alert()` fires on a live bar. Loading history never
+  notifies, `once_per_bar` and `once_per_bar_close` are deduplicated across relaunches, and
+  editing the script pauses the alert until you re-arm it
 
 Alerts are evaluated by a bundled login-item agent, which DegenView registers once an
 alert exists, so they keep running while you're logged in even after the app quits. If

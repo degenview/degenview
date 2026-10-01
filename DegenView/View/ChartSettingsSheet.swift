@@ -43,6 +43,7 @@ struct ChartSettingsSheet: View {
     @State private var selectedScriptID: UUID?
     @State private var scriptLoadError: String?
     @State private var copiedPineDiagnostics = false
+    @State private var showingPineAlertEditor = false
 
     @Environment(\.dismiss) private var dismiss
 
@@ -618,11 +619,15 @@ struct ChartSettingsSheet: View {
             HStack {
                 Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                Button("Create Alert…") { showingPineAlertEditor = true }
+                    .disabled(viewModel.appliedSourceHash == nil)
+                    .help("Notify me when the applied script raises alert() on a live bar")
                 Button("Apply") {
                     viewModel.updatePineDraft(pineDraft)
                     if viewModel.applyPineDraft() { onStyleChanged() }
                 }.buttonStyle(.borderedProminent)
             }
+            .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
 
             if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
                 PineStrategyReportView(

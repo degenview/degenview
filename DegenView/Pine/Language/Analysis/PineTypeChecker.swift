@@ -16,6 +16,7 @@ import Foundation
 /// | `PINE3033` | a condition, ternary test, or `and`/`or`/`not` operand is not bool |
 /// | `PINE3034` | operator applied to unsuitable operand types |
 /// | `PINE3035` | `input.*` default does not fit the function |
+/// | `PINE3036` | `alert()` / `alertcondition()` message is not a string |
 struct PineTypeChecker {
     enum Inferred: Equatable {
         /// A qualifier of nil means the type is certain but the qualifier is not.
