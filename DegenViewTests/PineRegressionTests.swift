@@ -455,6 +455,71 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(output.plots.allSatisfy { $0.values[0] == nil })
     }
 
+    func testColorAndStringCastsKeepTheirValueAndTurnOtherThingsIntoNa() throws {
+        let program = compile(
+            """
+            plot(na(color(na)) ? 1 : 0)
+            plot(color(color.red) == color.red ? 1 : 0)
+            plot(na(string(na)) ? 1 : 0)
+            plot(str.length(string("abc")))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1], [3]])
+    }
+
+    func testStrMatchReturnsTheFirstMatchOrAnEmptyString() throws {
+        let program = compile(
+            """
+            max_bars_back(close, 100)
+            plot(str.length(str.match("tf 15m", "[0-9]+")))
+            plot(str.length(str.match("tf", "^[0-9]+$")))
+            plot(str.length(str.match("abc", "(")))
+            plot(str.match("60", "^[0-9]+$") != "" ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[2], [0], [0], [1]])
+    }
+
+    func testTimeWithATimeframeIsTheOpenOfTheEnclosingBar() throws {
+        let program = compile(
+            """
+            plot(time("5"))
+            plot(ta.change(time("5")) != 0 ? 1 : 0)
+            plot(time == time("") ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        // One-minute bars from 0: the 5-minute bar opens at 0 and at 300,000 ms.
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars(Array(repeating: 1, count: 7)))
+            .output
+        XCTAssertEqual(output.plots[0].values, [0, 0, 0, 0, 0, 300_000, 300_000])
+        XCTAssertEqual(output.plots[1].values, [0, 0, 0, 0, 0, 1, 0])
+        XCTAssertEqual(output.plots[2].values, Array(repeating: 1, count: 7))
+    }
+
+    func testStrSplitReturnsAnArrayOfPieces() throws {
+        let program = compile(
+            """
+            parts = str.split("a,bb,,c", ",")
+            plot(array.size(parts))
+            plot(str.length(array.get(parts, 1)))
+            plot(str.length(array.get(parts, 2)))
+            letters = str.split("xyz", "")
+            plot(array.size(letters))
+            plot(na(str.split(na, ",")) ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[4], [2], [0], [3], [1]])
+    }
+
+    func testIntegerDivisionMayInitialiseAnIntButAFloatLiteralMayNot() {
+        XCTAssertTrue(compile("int half = 7 / 2\nplot(half)").isValid)
+        XCTAssertTrue(codes(compile("int bad = 1.5\nplot(bad)")).contains("PINE3030"))
+        XCTAssertTrue(codes(compile("int bad = close / 2\nplot(bad)")).contains("PINE3030"))
+    }
+
     func testTypeKeywordCanNameAVariable() throws {
         let program = compile(
             """

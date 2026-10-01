@@ -43,6 +43,10 @@ extension PineTypeChecker {
         case .member(let base, _, _):
             _ = infer(base, scope)
             return .unknown
+        case .methodCall(let receiver, _, let arguments, _, _):
+            _ = infer(receiver, scope)
+            for argument in arguments { _ = infer(argument.value, scope) }
+            return .unknown
         case .statementExpression(let statement, _):
             block([statement], scope)
             return .unknown
@@ -143,7 +147,13 @@ extension PineTypeChecker {
             if Self.isNumeric(x) && Self.isNumeric(y) {
                 return .known(x == .int && y == .int ? .int : .float, qualifier)
             }
-        case .divide, .power:
+        case .divide:
+            // Two ints may divide to an int in what TradingView accepts: xlWhYoco declares
+            // `int xc = x0 + (n - 1) * step / 2` and compiles there, so only a float operand is certain.
+            if Self.isNumeric(x) && Self.isNumeric(y) {
+                return x == .int && y == .int ? .unknown : .known(.float, qualifier)
+            }
+        case .power:
             if Self.isNumeric(x) && Self.isNumeric(y) { return .known(.float, qualifier) }
         }
         error(

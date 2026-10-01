@@ -13,6 +13,7 @@ extension PineExpression {
         case .history(let base, let offset, _): [base, offset]
         case .tuple(let values, _): values
         case .member(let base, _, _): [base]
+        case .methodCall(let receiver, _, let arguments, _, _): [receiver] + arguments.map(\.value)
         }
     }
 }

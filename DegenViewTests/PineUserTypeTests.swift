@@ -421,4 +421,53 @@ final class PineUserTypeTests: XCTestCase {
             "//@version=6\nlibrary(\"L\")\nexport type Zone\n    float top\n\nexport method grow(Zone this) =>\n    this.top += 1\n"
         XCTAssertTrue(PineCompiler.compile(source: source).isValid)
     }
+
+    // MARK: - Methods on call results
+
+    func testMethodOnACallResultCallsUserMethodsAndBuiltins() throws {
+        let plots = try values(
+            """
+            type Counter
+                int n
+
+            method bump(Counter this, int by = 1) =>
+                this.n += by
+
+            var array<Counter> counters = array.new<Counter>()
+            array.push(counters, Counter.new(0))
+            array.get(counters, 0).bump()
+            array.get(counters, 0).bump(by = 4)
+            var array<line> lines = array.new<line>()
+            array.push(lines, line.new(0, 1.0, 1, 2.0))
+            array.get(lines, 0).set_y2(9.0)
+            plot(array.get(counters, 0).n)
+            plot(array.get(lines, 0).get_y2())
+            """)
+        XCTAssertEqual(plots, [[5], [9]])
+    }
+
+    func testMethodOnAFieldOfACallResult() throws {
+        let plots = try values(
+            """
+            type Holder
+                array<float> xs
+
+            var map<int, Holder> holders = map.new<int, Holder>()
+            holders.put(1, Holder.new(array.from(3.0, 4.0)))
+            plot(holders.get(1).xs.get(1))
+            holders.get(1).xs.push(8.0)
+            plot(holders.get(1).xs.size())
+            """)
+        XCTAssertEqual(plots, [[4], [3]])
+    }
+
+    func testMethodOnANaOrUnsupportedReceiverIsARuntimeError() {
+        let header = "type Zone\n    float top\n\nvar array<Zone> zones = array.new<Zone>()\n"
+        let grow = header + "array.push(zones, na)\narray.get(zones, 0).grow()\nplot(close)"
+        XCTAssertEqual(runtimeError(grow), "PINE4018")
+        XCTAssertEqual(runtimeError("plot((1.5).foo())"), "PINE4007")
+        XCTAssertEqual(
+            runtimeError(header + "array.push(zones, Zone.new(1.0))\narray.get(zones, 0).grow()\nplot(close)"),
+            "PINE4007")
+    }
 }

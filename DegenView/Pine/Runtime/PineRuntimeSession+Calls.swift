@@ -8,6 +8,8 @@ extension PineRuntimeSession {
     static let exactHandlers: [String: CallHandler] = {
         var table: [String: CallHandler] = [
             "na": PineRuntimeSession.naCall, "nz": PineRuntimeSession.nzCall,
+            "max_bars_back": PineRuntimeSession.maxBarsBackCall, "time": PineRuntimeSession.timeCall,
+            "color": PineRuntimeSession.colorCast, "string": PineRuntimeSession.stringCast,
             "int": PineRuntimeSession.intCast, "float": PineRuntimeSession.floatCast,
             "bool": PineRuntimeSession.boolCast, "color.new": PineRuntimeSession.colorNew,
             "color.rgb": PineRuntimeSession.colorRGB, "str.tostring": PineRuntimeSession.toStringCall,
@@ -70,6 +72,35 @@ extension PineRuntimeSession {
             receiver = value
         }
         let receiverArgument = PineArgument(name: nil, value: .identifier(receiverName, call.range))
+        return try dispatchMethod(receiver, receiverArgument, member, call, &context)
+    }
+
+    /// `receiver.member(args)` where the receiver is any expression (`zones.get(k).kill()`): evaluated once,
+    /// then passed on as a literal.
+    func methodCallOnValue(
+        _ receiverExpression: PineExpression, _ member: String, _ arguments: [PineArgument], _ site: Int,
+        _ range: PineSourceRange, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let receiver = try eval(receiverExpression, &context)
+        let receiverArgument = PineArgument(name: nil, value: .literal(receiver, range))
+        let call = PineCall(name: member, arguments: arguments, site: site, range: range)
+        if let result = try dispatchMethod(receiver, receiverArgument, member, call, &context) {
+            return result
+        }
+        if receiver == .na {
+            throw PineDiagnostic.error(
+                "PINE4018", .runtime, "Cannot call '\(member)' on a value that is na.", range)
+        }
+        throw PineDiagnostic.error(
+            "PINE4007", .runtime, "Unknown or unsupported method '\(member)'.", range)
+    }
+
+    /// A user `method`, or the namespaced builtin for the receiver's kind (`array.get`, `map.put`…).
+    /// Nil when the receiver is not something with methods.
+    private func dispatchMethod(
+        _ receiver: PineRuntimeValue, _ receiverArgument: PineArgument, _ member: String,
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue? {
         if program.methodNames.contains(member), let function = functions[member] {
             let method = PineCall(
                 name: member, arguments: [receiverArgument] + call.arguments, site: call.site,

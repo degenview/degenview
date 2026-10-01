@@ -140,6 +140,12 @@ extension PineParser {
     private mutating func callSuffix(_ lhs: PineExpression) -> Extension {
         let arguments = callArguments()
         expect(.rightParen, "Expected ')'.")
+        if case .member(let receiver, let name, let range) = lhs {
+            callSite += 1
+            return .extended(
+                .methodCall(
+                    receiver: receiver, name: name, arguments: arguments, site: callSite, range: range))
+        }
         guard case .identifier(let name, let r) = lhs else {
             error("PINE2006", "Only named functions can be called.", lhs.range)
             return .finished(lhs)
