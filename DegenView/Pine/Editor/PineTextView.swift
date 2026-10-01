@@ -45,11 +45,61 @@ final class PineTextView: NSTextView {
         return PineWordRange.range(at: index, in: string as NSString)
     }
 
+    // MARK: - Editing assistance
+    //
+    // Each entry point asks a pure `PineEditor…` type for an edit and applies it as one undoable
+    // change (`PineTextView+Editing`). `nil`, marked text (IME composition) or a read-only view
+    // all fall through to AppKit's own behaviour.
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if replacementRange.location == NSNotFound, let edit = pairingEdit(forTyped: string) {
+            perform(edit)
+            return
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func insertNewline(_ sender: Any?) {
+        guard let context = editingContext else { return super.insertNewline(sender) }
+        perform(PineIndentationEngine.newline(in: context))
+    }
+
+    override func insertTab(_ sender: Any?) {
+        guard let context = editingContext else { return super.insertTab(sender) }
+        perform(PineIndentationEngine.indent(in: context), actionName: "Indent")
+    }
+
+    override func insertBacktab(_ sender: Any?) {
+        guard let context = editingContext else { return super.insertBacktab(sender) }
+        if let edit = PineIndentationEngine.outdent(in: context) { perform(edit, actionName: "Outdent") }
+    }
+
+    override func deleteBackward(_ sender: Any?) {
+        guard let context = editingContext, let edit = PineEditorPairing.backspace(in: context) else {
+            return super.deleteBackward(sender)
+        }
+        perform(edit)
+    }
+
+    override func paste(_ sender: Any?) {
+        guard let context = editingContext, let text = NSPasteboard.general.string(forType: .string),
+            let edit = PineIndentationEngine.reindentPaste(text, in: context)
+        else { return super.paste(sender) }
+        perform(edit, actionName: "Paste")
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         guard window?.firstResponder === self,
             let key = event.charactersIgnoringModifiers?.lowercased()
         else { return super.performKeyEquivalent(with: event) }
+
+        if let command = PineEditorShortcut(keyCode: event.keyCode, key: key, modifiers: modifiers),
+            let context = editingContext
+        {
+            if let edit = command.edit(in: context) { perform(edit, actionName: command.actionName) }
+            return true
+        }
 
         let action: NSTextFinder.Action?
         switch (key, modifiers) {

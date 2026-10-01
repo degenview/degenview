@@ -81,6 +81,7 @@ DegenView/
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
 │   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
+│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines

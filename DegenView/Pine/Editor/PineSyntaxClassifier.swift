@@ -2,50 +2,38 @@ import Foundation
 
 /// Splits Pine source into categorized UTF-16 ranges for the editor.
 ///
-/// Strings, comments and annotations are found first; everything the lexer yields afterwards is
-/// classified against `PineSymbolCatalog`. Builtins are matched as whole tokens (or whole dotted
-/// chains), never as substrings, and names the script declares stay plain identifiers.
+/// Strings, comments and annotations come from `PineLexicalSnapshot`; the lexer's remaining
+/// tokens, which never lie inside either, are classified against `PineSymbolCatalog`. Builtins are
+/// matched as whole tokens (or whole dotted chains), never as substrings, and names the script
+/// declares stay plain identifiers.
 enum PineSyntaxClassifier {
-    private static let protectedExpression = try! NSRegularExpression(
-        pattern: #"(\"(?:\\.|[^\"\\\r\n])*\"?)|(//[^\r\n]*)"#)
     private static let annotationExpression = try! NSRegularExpression(
         pattern: #"^//@[A-Za-z_]+(?:=\d+)?"#)
 
     static func classify(_ source: String) -> [PineHighlightSpan] {
-        var spans: [PineHighlightSpan] = []
-        let protected = lexicalSpans(in: source)
-        spans.append(contentsOf: protected)
-        let blocked = protected.map(\.range)
-
-        let normalized = PineCompiler.normalizeLineEndings(in: source)
-        let offsets = normalized == source ? nil : PineOffsetMap(original: source, normalized: normalized)
-        let tokens = PineLexer(source: normalized, limits: .default).lex().tokens
-        var run = TokenRun(tokens: tokens, offsets: offsets, blocked: blocked)
+        let snapshot = PineLexicalSnapshot.shared(for: source)
+        var spans = lexicalSpans(in: source, snapshot: snapshot)
+        var run = TokenRun(snapshot: snapshot)
         spans.append(contentsOf: run.classify())
         return spans
     }
 
     // MARK: - Strings, comments, annotations
 
-    private static func lexicalSpans(in source: String) -> [PineHighlightSpan] {
-        var spans: [PineHighlightSpan] = []
-        let text = source as NSString
-        let whole = NSRange(location: 0, length: text.length)
-        protectedExpression.enumerateMatches(in: source, range: whole) { match, _, _ in
-            guard let match else { return }
-            if match.range(at: 1).location != NSNotFound {
-                spans.append(.init(range: match.range, category: .string))
-                return
-            }
-            let annotation = annotationExpression.firstMatch(
-                in: source, range: match.range)?.range
-            guard let annotation else {
-                spans.append(.init(range: match.range, category: .comment))
-                return
+    /// Strings (either quote) come from the lexer's tokens, comments from the snapshot.
+    private static func lexicalSpans(
+        in source: String, snapshot: PineLexicalSnapshot
+    ) -> [PineHighlightSpan] {
+        var spans = snapshot.strings.map { PineHighlightSpan(range: $0.range, category: .string) }
+        for comment in snapshot.comments {
+            let annotation = annotationExpression.firstMatch(in: source, range: comment)?.range
+            guard let annotation, annotation.location != NSNotFound else {
+                spans.append(.init(range: comment, category: .comment))
+                continue
             }
             spans.append(.init(range: annotation, category: .annotation))
             let rest = NSRange(
-                location: NSMaxRange(annotation), length: NSMaxRange(match.range) - NSMaxRange(annotation))
+                location: NSMaxRange(annotation), length: NSMaxRange(comment) - NSMaxRange(annotation))
             if rest.length > 0 { spans.append(.init(range: rest, category: .comment)) }
         }
         return spans
@@ -55,16 +43,14 @@ enum PineSyntaxClassifier {
 /// One pass over the token stream.
 private struct TokenRun {
     let tokens: [PineToken]
-    let offsets: PineOffsetMap?
-    let blocked: [NSRange]
+    let snapshot: PineLexicalSnapshot
     var scopes = PineHighlightScopes()
     var parenDepth = 0
     var spans: [PineHighlightSpan] = []
 
-    init(tokens: [PineToken], offsets: PineOffsetMap?, blocked: [NSRange]) {
-        self.tokens = tokens
-        self.offsets = offsets
-        self.blocked = blocked
+    init(snapshot: PineLexicalSnapshot) {
+        tokens = snapshot.tokens
+        self.snapshot = snapshot
     }
 
     mutating func classify() -> [PineHighlightSpan] {
@@ -201,20 +187,10 @@ private struct TokenRun {
 
     private mutating func add(_ token: PineToken, _ category: PineSyntaxCategory) {
         guard let range = nsRange(of: token) else { return }
-        // Text inside a string or comment keeps that category.
-        if blocked.contains(where: { NSLocationInRange(range.location, $0) }) { return }
         spans.append(.init(range: range, category: category))
     }
 
     private func nsRange(of token: PineToken) -> NSRange? {
-        let start = token.range.start
-        let end = token.range.end
-        if let offsets {
-            guard let from = offsets.original(line: start.line, offset: start.offset),
-                let to = offsets.original(line: end.line, offset: end.offset)
-            else { return nil }
-            return NSRange(location: from, length: max(0, to - from))
-        }
-        return NSRange(location: start.offset, length: max(0, end.offset - start.offset))
+        snapshot.range(of: token)
     }
 }

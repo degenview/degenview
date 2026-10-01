@@ -87,7 +87,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             // An explicit TextKit 1 stack: the gutter and occurrence highlighting rely on
             // the layout manager, and `scrollableTextView()` caps horizontal growth.
             let storage = NSTextStorage()
-            let layoutManager = NSLayoutManager()
+            let layoutManager = PineLayoutManager()
             storage.addLayoutManager(layoutManager)
             let container = NSTextContainer(
                 size: NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
@@ -158,6 +158,12 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
                 name: NSView.boundsDidChangeNotification,
                 object: scrollView.contentView
             )
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(editorDidScroll),
+                name: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView
+            )
             // Showing or hiding the find bar moves the content view without scrolling it.
             scrollView.contentView.postsFrameChangedNotifications = true
             NotificationCenter.default.addObserver(
@@ -224,37 +230,16 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             PineSyntaxHighlighter.apply(to: textView, diagnostics: diagnostics)
         }
 
-        /// Tints the word under the caret (or the selected word) and every other
-        /// whole-word occurrence of it, so uses of a variable are easy to spot.
+        /// Refreshes the decorations that follow the caret: the matching bracket and other
+        /// occurrences of the identifier at it (`PineEditorDecorations`), the current-line band
+        /// and the active indentation guide (drawn by `PineTextView`).
         func updateOccurrenceHighlights() {
-            guard let layoutManager = textView.layoutManager else { return }
-            let source = textView.string as NSString
-            layoutManager.removeTemporaryAttribute(
-                .backgroundColor, forCharacterRange: NSRange(location: 0, length: source.length))
-
-            let selection = textView.selectedRange()
-            let token: NSRange?
-            if selection.length == 0 {
-                token =
-                    PineWordRange.range(at: selection.location, in: source)
-                    ?? PineWordRange.range(at: selection.location - 1, in: source)
-            } else if PineWordRange.range(at: selection.location, in: source) == selection {
-                token = selection
-            } else {
-                token = nil
-            }
-            guard let token else { return }
-
-            let word = source.substring(with: token)
-            let tint = NSColor.selectedTextBackgroundColor
-            for range in PineWordRange.occurrences(of: word, in: source) {
-                layoutManager.addTemporaryAttribute(
-                    .backgroundColor,
-                    value: tint.withAlphaComponent(range == token ? 0.7 : 0.45),
-                    forCharacterRange: range
-                )
-            }
+            PineEditorDecorations.update(in: textView)
+            textView.setNeedsDisplay(textView.visibleRect)
         }
+
+        /// Scrolling exposes text whose occurrences were not painted yet.
+        @objc private func editorDidScroll() { updateOccurrenceHighlights() }
     }
 
     final class LineNumberGutterView: NSView {
