@@ -30,6 +30,7 @@ extension PineStatement {
         case .switchStatement(let subject, let arms, _):
             (subject.map { [$0] } ?? []) + arms.compactMap(\.condition)
         case .loopControl, .function: []
+        case .typeDeclaration(_, let fields, _): fields.compactMap(\.defaultValue)
         }
     }
 
@@ -41,7 +42,7 @@ extension PineStatement {
             .whileLoop(_, let body, _), .function(_, _, let body, _):
             [body]
         case .switchStatement(_, let arms, _): arms.map(\.body)
-        case .declaration, .assignment, .expression, .tupleDeclaration, .loopControl: []
+        case .declaration, .assignment, .expression, .tupleDeclaration, .loopControl, .typeDeclaration: []
         }
     }
 

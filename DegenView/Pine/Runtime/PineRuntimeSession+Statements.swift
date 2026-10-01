@@ -46,7 +46,7 @@ extension PineRuntimeSession {
             return try runTupleDeclaration(names, value, &context)
         case .loopControl(let control, _):
             return Step(flow: control == .breakLoop ? .breakLoop : .continueLoop)
-        case .function: return Step()
+        case .function, .typeDeclaration: return Step()
         }
     }
 

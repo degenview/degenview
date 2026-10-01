@@ -107,11 +107,12 @@ struct PineTypeChecker {
                 var inner = scope
                 for parameter in parameters {
                     _ = parameter.defaultValue.map { infer($0, scope) }
-                    inner[parameter.name] = parameter.type.map { .known($0, nil) } ?? .unknown
+                    inner[parameter.name] =
+                        parameter.type.flatMap { $0 == .object ? nil : .known($0, nil) } ?? .unknown
                 }
                 check(body, &inner)
                 scope[name] = .unknown
-            case .loopControl: break
+            case .loopControl, .typeDeclaration: break
             }
         }
     }
@@ -135,7 +136,10 @@ struct PineTypeChecker {
                 "Cannot assign a \(Self.describe(actual)) value to a \(Self.describe(wanted)) variable '\(name)'.",
                 expression.range)
         }
-        if let declared = annotation.type {
+        if annotation.type == .object {
+            // Which type an object is, and whether a value fits it, is not tracked.
+            scope[name] = .unknown
+        } else if let declared = annotation.type {
             if !Self.fits(value, declared) {
                 error(
                     "PINE3030", "Cannot assign \(Self.describe(value)) to \(declared.rawValue) variable '\(name)'.",

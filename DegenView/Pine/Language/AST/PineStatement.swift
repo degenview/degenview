@@ -25,6 +25,8 @@ indirect enum PineStatement: Sendable {
     /// `[a, b] = expression`
     case tupleDeclaration(names: [String], value: PineExpression, range: PineSourceRange)
     case loopControl(PineLoopControl, PineSourceRange)
+    /// `type Name` and its indented field lines.
+    case typeDeclaration(name: String, fields: [PineTypeField], range: PineSourceRange)
     /// User-defined function. The body's last statement is the return value.
     case function(
         name: String, parameters: [PineParameter], body: [PineStatement], range: PineSourceRange)

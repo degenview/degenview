@@ -38,8 +38,13 @@ extension PineParser {
         switch current.kind {
         case .typeKeyword(let t): type = t
         case .identifier(let word):
-            guard let t = Self.objectTypes[word] else { return nil }
-            type = t
+            if let t = Self.objectTypes[word] {
+                type = t
+            } else if userTypes.contains(word) {
+                type = .object
+            } else {
+                return nil
+            }
         default: return nil
         }
         guard let next = peek(1) else { return nil }
@@ -87,7 +92,6 @@ extension PineParser {
     // MARK: - Declarations outside this release
 
     private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
-        "type": ("PINE9006", "User-defined types are not supported in this release."),
         "enum": ("PINE9007", "Enums are not supported in this release."),
         "import": ("PINE9008", "Library imports are not supported in this release."),
         "method": ("PINE9009", "User-defined methods are not supported in this release."),

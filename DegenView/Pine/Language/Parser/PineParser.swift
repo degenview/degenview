@@ -14,6 +14,9 @@ struct PineParser {
     /// Where `export` prefixed a statement. The keyword is only legal in a library, which the
     /// parser cannot know, so the compiler checks these against the declaration.
     private(set) var exportRanges: [PineSourceRange] = []
+    /// Names of the `type`s declared so far. Pine requires a type to precede its use, so the parser
+    /// can tell `Zone z = …` (a declaration) from an expression.
+    var userTypes: Set<String> = []
 
     init(tokens: [PineToken], limits: PineLimits) {
         self.tokens = tokens
