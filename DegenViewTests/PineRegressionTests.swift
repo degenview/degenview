@@ -233,6 +233,36 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map { $0.values.last ?? nil }, [60, 900, 30, 86_400, 1_209_600, 0])
     }
 
+    func testColorFromGradientInterpolatesEachChannelAndClamps() throws {
+        let program = compile(
+            """
+            low = color.rgb(0, 0, 0, 0)
+            high = color.rgb(200, 100, 50, 100)
+            bgcolor(color.from_gradient(close, 0, 10, low, high))
+            """)
+        let series = bars([-5, 0, 5, 10, 15])
+        let output = try PineRuntimeSession(program: program).evaluate(bars: series).output
+        let colors = output.backgrounds.first?.colors ?? []
+        let low: UInt32 = 0x0000_00FF
+        let high: UInt32 = 0xC864_32FF
+        // The alpha channel runs from 255 (transparency 0) to 0 (transparency 100): 128 halfway.
+        XCTAssertEqual(colors.count, 5)
+        XCTAssertEqual(colors[0], low)
+        XCTAssertEqual(colors[1], low)
+        XCTAssertEqual(colors[2], 0x6432_1980)
+        XCTAssertEqual(colors[3], high & 0xFFFF_FF00)
+        XCTAssertEqual(colors[4], high & 0xFFFF_FF00)
+    }
+
+    func testTimeframeChangeFlagsTheFirstBarOfEachPeriod() throws {
+        let program = compile("plot(timeframe.change(\"1D\") ? 1 : 0)\nplot(timeframe.change(\"60\") ? 1 : 0)")
+        // 12 half-day bars: a new day opens on the 1st, 3rd, 5th... and a new hour on every bar.
+        let series = bars(Array(repeating: 1, count: 6), spacing: 43_200)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: series).output
+        XCTAssertEqual(output.plots[0].values, [1, 0, 1, 0, 1, 0])
+        XCTAssertEqual(output.plots[1].values, [1, 1, 1, 1, 1, 1])
+    }
+
     func testTimeframeInSecondsRejectsAMalformedTimeframe() {
         let program = compile("plot(timeframe.in_seconds(\"5X\"))")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {

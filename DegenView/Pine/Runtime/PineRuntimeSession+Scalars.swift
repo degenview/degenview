@@ -72,6 +72,19 @@ extension PineRuntimeSession {
         return .color(PineBuiltins.withTransparency(c, transparency))
     }
 
+    func colorGradient(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["value", "bottom_value", "top_value", "bottom_color", "top_color"], &context)
+        guard let value = b["value"]?.number, let bottom = b["bottom_value"]?.number,
+            let top = b["top_value"]?.number, case .color(let low)? = b["bottom_color"],
+            case .color(let high)? = b["top_color"], value.isFinite
+        else { return .na }
+        return .color(
+            PineBuiltins.gradient(value, bottom: bottom, top: top, bottomColor: low, topColor: high))
+    }
+
     func colorRGB(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         .color(
             PineBuiltins.rgb(
@@ -124,6 +137,25 @@ extension PineRuntimeSession {
                 "PINE4017", .runtime, "timeframe.in_seconds() needs a timeframe such as \"60\" or \"1D\".",
                 call.range)
         }
+    }
+
+    /// `timeframe.change(tf)`: whether this bar opens a new `tf` period. The first bar always does.
+    /// Periods follow the same UTC calendar boundaries the app folds weekly and monthly candles on.
+    func timeframeChangeCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard case .string(let text) = try argument(call, 0, "timeframe", &context),
+            let seconds = PineTime.seconds(ofTimeframe: text)
+        else {
+            throw PineDiagnostic.error(
+                "PINE4017", .runtime, "timeframe.change() needs a timeframe such as \"60\" or \"1D\".",
+                call.range)
+        }
+        guard let previous = lastCommittedOpenTime else { return .bool(true) }
+        let now = context.bar.openTime
+        return .bool(
+            KlineData.bucketStart(of: now, interval: seconds)
+                != KlineData.bucketStart(of: previous, interval: seconds))
     }
 
     func timePartCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
