@@ -52,7 +52,7 @@ extension PineParser {
         case .identifier(let word):
             if let t = Self.objectTypes[word] {
                 type = t
-            } else if userTypes.contains(word) {
+            } else if userTypes.contains(word) || enumTypes.contains(word) {
                 type = .object
             } else {
                 return nil
@@ -104,7 +104,6 @@ extension PineParser {
     // MARK: - Declarations outside this release
 
     private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
-        "enum": ("PINE9007", "Enums are not supported in this release."),
         "import": ("PINE9008", "Library imports are not supported in this release."),
     ]
 

@@ -112,18 +112,13 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
     }
 
-    func testUnsupportedDeclarationsReportOnceAndSkipTheirBodies() {
+    func testAnImportIsReportedOnceAndSkipped() {
         let program = compile(
             """
-            enum Mode
-                fast
-                slow
-
             import someone/Library/1 as lib
             plot(close)
             """)
-        XCTAssertEqual(
-            program.diagnostics.map(\.code), ["PINE9007", "PINE9008"])
+        XCTAssertEqual(program.diagnostics.map(\.code), ["PINE9008"])
     }
 
     func testCommaSeparatedStatementsShareALine() throws {

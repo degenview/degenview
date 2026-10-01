@@ -48,7 +48,7 @@ extension PineRuntimeSession {
             return Step(flow: control == .breakLoop ? .breakLoop : .continueLoop)
         case .fieldAssignment(let target, let op, let value, let range):
             return try runFieldAssignment(target, op, value, range, &context)
-        case .function, .typeDeclaration: return Step()
+        case .function, .typeDeclaration, .enumDeclaration: return Step()
         }
     }
 

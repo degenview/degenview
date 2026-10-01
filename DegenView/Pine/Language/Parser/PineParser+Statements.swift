@@ -4,6 +4,7 @@ extension PineParser {
     mutating func statement() -> PineStatement? {
         if takeWord("export") { return exportedStatement() }
         if isTypeDeclaration() { return typeDeclaration() }
+        if isEnumDeclaration() { return enumDeclaration() }
         if isMethodDefinition() { return methodDefinition() }
         if skipUnsupportedDeclaration() { return nil }
         if take(.ifKeyword) { return ifStatement() }

@@ -56,7 +56,7 @@ struct PineStructureValidator {
                 validate(body, inherited: Set(parameters.map(\.name)), inLoop: false)
             case .conditional, .forRange, .forIn, .whileLoop, .switchStatement:
                 validateNested(statement, declared: declared, inLoop: inLoop)
-            case .expression, .typeDeclaration, .fieldAssignment: break
+            case .expression, .typeDeclaration, .enumDeclaration, .fieldAssignment: break
             }
         }
     }

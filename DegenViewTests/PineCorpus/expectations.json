@@ -25,8 +25,7 @@
   },
   "JWZj0b8O": {
     "codes": [
-      "PINE3010",
-      "PINE9007"
+      "PINE3010"
     ],
     "status": "compile-error"
   },

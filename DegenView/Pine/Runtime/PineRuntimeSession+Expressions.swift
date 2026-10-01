@@ -47,6 +47,14 @@ extension PineRuntimeSession {
         guard name.contains(".") else {
             throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
         }
+        if let dot = name.firstIndex(of: "."), let members = enums[String(name[..<dot])] {
+            let member = String(name[name.index(after: dot)...])
+            guard members.contains(where: { $0.name == member }) else {
+                throw PineDiagnostic.error(
+                    "PINE4025", .runtime, "Enum '\(name[..<dot])' has no member '\(member)'.", range)
+            }
+            return .string(name)
+        }
         if let field = try fieldPath(name, range) { return field }
         return .string(name)
     }

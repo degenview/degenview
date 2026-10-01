@@ -39,9 +39,10 @@ final class PineSyntaxClassifierTests: XCTestCase {
     // MARK: - Builtin variables
 
     func testBareBuiltinVariables() {
-        for name in ["open", "high", "low", "close", "volume", "bar_index", "hl2", "hlc3", "ohlc4",
-            "hlcc4", "time", "time_close", "last_bar_index"]
-        {
+        for name in [
+            "open", "high", "low", "close", "volume", "bar_index", "hl2", "hlc3", "ohlc4",
+            "hlcc4", "time", "time_close", "last_bar_index",
+        ] {
             assertCategory(.builtinVariable, name, in: name)
         }
     }
@@ -126,9 +127,10 @@ final class PineSyntaxClassifierTests: XCTestCase {
     }
 
     func testGlobalBuiltinFunctions() {
-        for name in ["indicator", "plotshape", "plotchar", "hline", "fill", "alert", "alertcondition",
-            "bgcolor", "barcolor", "nz", "timestamp"]
-        {
+        for name in [
+            "indicator", "plotshape", "plotchar", "hline", "fill", "alert", "alertcondition",
+            "bgcolor", "barcolor", "nz", "timestamp",
+        ] {
             assertCategory(.builtinFunction, name, in: "\(name)(x)")
         }
         assertCategory(.builtinFunction, "na", in: "na(x)")
@@ -151,9 +153,10 @@ final class PineSyntaxClassifierTests: XCTestCase {
     // MARK: - Keywords, types, qualifiers
 
     func testKeywords() {
-        for word in ["and", "or", "not", "if", "else", "var", "varip", "for", "while", "switch",
-            "break", "continue"]
-        {
+        for word in [
+            "and", "or", "not", "if", "else", "var", "varip", "for", "while", "switch",
+            "break", "continue",
+        ] {
             assertCategory(.keyword, word, in: "\(word) x")
         }
         for word in ["import", "export", "method", "type", "enum", "as"] {
@@ -298,7 +301,7 @@ final class PineSyntaxClassifierTests: XCTestCase {
     }
 
     func testOversizedSourceKeepsLexicalColoring() {
-        let source = "// c\n" + String(repeating: "x = close\n", count: 12_000)
+        let source = "// c\n" + String(repeating: "x = close\n", count: PineLimits.default.sourceCharacters / 10 + 100)
         let found = PineSyntaxClassifier.classify(source)
         XCTAssertEqual(found.map(\.category), [.comment])
     }
