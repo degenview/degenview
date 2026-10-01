@@ -35,11 +35,40 @@ extension PineRuntimeSession {
         return .ref(kind, id)
     }
 
-    private func requireBarIndex(_ b: [String: PineRuntimeValue], _ range: PineSourceRange) throws {
-        if b["xloc"].textValue == "xloc.bar_time" {
-            throw PineDiagnostic.error(
-                "PINE9004", .unsupported, "xloc.bar_time drawings are not supported yet.", range)
+    private func isTimeAnchored(_ b: [String: PineRuntimeValue]) -> Bool {
+        b["xloc"].textValue == "xloc.bar_time"
+    }
+
+    /// The bar index a time-anchored x coordinate stands for. Drawings are stored by bar index, so a
+    /// time is mapped when the drawing is made or changed: a time on or before the current bar to the
+    /// bar that contains it (extrapolating backwards past the first bar), a later time forwards by
+    /// whole bar lengths. The chart's bar length stands in for gaps such as weekends.
+    func barIndex(forTime milliseconds: Int, at bar: KlineData) -> Int {
+        let currentTime = PineTime.milliseconds(bar.openTime)
+        let step = Int(pine: barSeconds * 1000) ?? 0
+        let current = working.barIndex
+        if milliseconds >= currentTime {
+            guard step > 0 else { return current }
+            return current + Int((Double(milliseconds - currentTime) / Double(step)).rounded())
         }
+        let times = working.histories["time"] ?? []
+        var low = 0
+        var high = times.count
+        while low < high {
+            let middle = (low + high) / 2
+            if let time = times[middle].intValue, time <= milliseconds { low = middle + 1 } else { high = middle }
+        }
+        if low > 0 { return low - 1 }
+        guard step > 0, let first = times.first?.intValue else { return 0 }
+        return -Int((Double(first - milliseconds) / Double(step)).rounded(.up))
+    }
+
+    /// `value` as a bar index when the drawing is anchored to time.
+    private func xIndex(
+        _ value: PineRuntimeValue, anchoredToTime: Bool, _ context: PineRuntimeContext
+    ) -> PineRuntimeValue {
+        guard anchoredToTime, let milliseconds = value.intValue else { return value }
+        return .int(barIndex(forTime: milliseconds, at: context.bar))
     }
 
     // MARK: - Creation
@@ -47,16 +76,18 @@ extension PineRuntimeSession {
     private func newLine(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         let b = try bind(
             call, ["x1", "y1", "x2", "y2", "xloc", "extend", "color", "style", "width"], &context)
-        try requireBarIndex(b, call.range)
-        guard let x1 = b["x1"].intValue, let y1 = b["y1"]?.number, let x2 = b["x2"].intValue,
+        let timed = isTimeAnchored(b)
+        guard let rawX1 = b["x1"].intValue, let y1 = b["y1"]?.number, let rawX2 = b["x2"].intValue,
             let y2 = b["y2"]?.number
         else { return .na }
+        let x1 = timed ? barIndex(forTime: rawX1, at: context.bar) : rawX1
+        let x2 = timed ? barIndex(forTime: rawX2, at: context.bar) : rawX2
         return store(\.lines, kind: .line, limit: program.declaration.maxLinesCount) { id in
             PineLineOutput(
                 id: id, x1: x1, y1: y1, x2: x2, y2: y2,
                 color: b["color"].colorValue(fallback: Self.defaultColor) ?? 0,
                 width: b["width"].intValue ?? 1, style: .parse(b["style"].textValue, absent: .solid),
-                extend: .parse(b["extend"].textValue, absent: .none))
+                extend: .parse(b["extend"].textValue, absent: .none), timeAnchored: timed)
         }
     }
 
@@ -67,15 +98,17 @@ extension PineRuntimeSession {
                 "x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign",
                 "tooltip",
             ], &context)
-        try requireBarIndex(b, call.range)
-        guard let x = b["x"].intValue, let y = b["y"]?.number else { return .na }
+        let timed = isTimeAnchored(b)
+        guard let rawX = b["x"].intValue, let y = b["y"]?.number else { return .na }
+        let x = timed ? barIndex(forTime: rawX, at: context.bar) : rawX
         return store(\.labels, kind: .label, limit: program.declaration.maxLabelsCount) { id in
             PineLabelOutput(
                 id: id, x: x, y: y, text: b["text"].textValue ?? "",
                 color: b["color"].colorValue(fallback: Self.defaultColor),
                 textColor: b["textcolor"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 style: .parse(b["style"].textValue, absent: .labelDown, unknown: .labelCenter),
-                size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue)
+                size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue,
+                timeAnchored: timed)
         }
     }
 
@@ -86,16 +119,19 @@ extension PineRuntimeSession {
                 "left", "top", "right", "bottom", "border_color", "border_width", "border_style",
                 "extend", "xloc", "bgcolor",
             ], &context)
-        try requireBarIndex(b, call.range)
-        guard let left = b["left"].intValue, let top = b["top"]?.number, let right = b["right"].intValue,
-            let bottom = b["bottom"]?.number
+        let timed = isTimeAnchored(b)
+        guard let rawLeft = b["left"].intValue, let top = b["top"]?.number,
+            let rawRight = b["right"].intValue, let bottom = b["bottom"]?.number
         else { return .na }
+        let left = timed ? barIndex(forTime: rawLeft, at: context.bar) : rawLeft
+        let right = timed ? barIndex(forTime: rawRight, at: context.bar) : rawRight
         return store(\.boxes, kind: .box, limit: program.declaration.maxBoxesCount) { id in
             PineBoxOutput(
                 id: id, left: left, top: top, right: right, bottom: bottom,
                 borderColor: b["border_color"].colorValue(fallback: Self.defaultColor),
                 borderWidth: b["border_width"].intValue ?? 1,
-                backgroundColor: b["bgcolor"].colorValue(fallback: Self.defaultColor))
+                backgroundColor: b["bgcolor"].colorValue(fallback: Self.defaultColor),
+                timeAnchored: timed)
         }
     }
 
@@ -234,13 +270,20 @@ extension PineRuntimeSession {
         }
         switch call.name.split(separator: ".").first.map(String.init) {
         case "line":
-            return try withObject(\.lines, .line, target, member) { try Self.mutate(&$0, member, a, b, call) }
+            return try withObject(\.lines, .line, target, member) { line in
+                let x = xIndex(a, anchoredToTime: line.timeAnchored, context)
+                return try Self.mutate(&line, member, x, b, call)
+            }
         case "label":
-            return try withObject(\.labels, .label, target, member) {
-                try Self.mutate(&$0, member, a, b, call)
+            return try withObject(\.labels, .label, target, member) { label in
+                let x = xIndex(a, anchoredToTime: label.timeAnchored, context)
+                return try Self.mutate(&label, member, x, b, call)
             }
         case "box":
-            return try withObject(\.boxes, .box, target, member) { try Self.mutate(&$0, member, a, b, call) }
+            return try withObject(\.boxes, .box, target, member) { box in
+                let x = xIndex(a, anchoredToTime: box.timeAnchored, context)
+                return try Self.mutate(&box, member, x, b, call)
+            }
         case "table":
             return try withObject(\.tables, .table, target, member) { try Self.mutate(&$0, member, a, call) }
         case "linefill":

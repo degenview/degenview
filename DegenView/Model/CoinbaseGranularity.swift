@@ -56,10 +56,6 @@ struct CoinbaseGranularity: Equatable {
 
     /// End of the displayed candle that opens at `start`.
     func bucketEnd(after start: Date) -> Date {
-        // Months, quarters and years aren't a fixed length — find where the next one opens.
-        if target >= 2_419_200 {
-            return bucketStart(of: start.addingTimeInterval(target * 1.2))
-        }
-        return start.addingTimeInterval(target)
+        KlineData.bucketEnd(after: start, interval: target)
     }
 }

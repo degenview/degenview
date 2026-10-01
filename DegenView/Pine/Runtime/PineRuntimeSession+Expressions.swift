@@ -39,6 +39,7 @@ extension PineRuntimeSession {
         _ name: String, _ range: PineSourceRange, _ context: PineRuntimeContext
     ) throws -> PineRuntimeValue {
         if let value = working.variables[name] { return value }
+        if let value = securityGlobals?[name] { return value }
         if let value = market(name, context) { return value }
         if let flag = context.flags.value(named: name) { return .bool(flag) }
         if let color = PineBuiltins.colors[name] ?? chartColor(name) { return .color(color) }
@@ -109,12 +110,9 @@ extension PineRuntimeSession {
         _ base: PineExpression, _ offset: PineExpression, _ range: PineSourceRange,
         _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
-        guard case .identifier(let name, _) = base, let n = try eval(offset, &context).number,
-            n.isFinite
-        else {
+        guard let n = try eval(offset, &context).number, n.isFinite else {
             throw PineDiagnostic.error(
-                "PINE4006", .runtime,
-                "History offset must be a non-negative integer and base must be a series.", range)
+                "PINE4006", .runtime, "History offset must be a number.", range)
         }
         let negative = PineDiagnostic.error(
             "PINE4006", .runtime, "History offset cannot be negative.", range)
@@ -125,7 +123,16 @@ extension PineRuntimeSession {
         }
         guard i >= 0 else { throw negative }
         if i == 0 { return try eval(base, &context) }
-        let history = working.histories[name] ?? []
+        let key: String
+        if case .identifier(let name, _) = base {
+            key = name
+        } else {
+            // `ta.highest(high, 5)[1]`, `(a + b)[2]`: the value is recorded under the subscript's own key
+            // each bar it is reached, and read back from there.
+            key = "\(Self.internalPrefix)expr:\(siteKey(range.start.offset, context))"
+            working.expressionValues[key] = try eval(base, &context)
+        }
+        let history = working.histories[key] ?? []
         return i <= history.count ? history[history.count - i] : .na
     }
 }

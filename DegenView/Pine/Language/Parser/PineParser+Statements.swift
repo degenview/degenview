@@ -23,7 +23,7 @@ extension PineParser {
     /// `name := value` and the compound forms. Returns nil without consuming anything when the
     /// tokens are not an assignment; a malformed right-hand side also yields nil.
     private mutating func assignment() -> PineStatement? {
-        guard case .identifier(let name) = current.kind, let next = peek(1),
+        guard let name = variableName(current.kind), let next = peek(1),
             let op = PineAssignmentOperator(token: next.kind)
         else { return nil }
         let range = current.range

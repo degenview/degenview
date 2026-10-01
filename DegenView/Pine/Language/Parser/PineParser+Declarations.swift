@@ -11,6 +11,16 @@ extension PineParser {
         "const": .constant, "input": .input, "simple": .simple, "series": .series,
     ]
 
+    /// The variable a token names. A type keyword is allowed when nothing else claimed it as an
+    /// annotation (`color = …`): scripts do call their variables `color`.
+    func variableName(_ kind: PineTokenKind) -> String? {
+        switch kind {
+        case .identifier(let name): name
+        case .typeKeyword(let type): type.rawValue
+        default: nil
+        }
+    }
+
     /// `[var|varip] [type] name = expression`. Parsed speculatively: when the tokens do
     /// not form a declaration header the cursor is restored so they parse as an expression.
     mutating func declaration() -> PineStatement? {
@@ -19,7 +29,7 @@ extension PineParser {
         if take(.varKeyword) { mode = .variable } else if take(.varipKeyword) { mode = .intrabar }
         let qualifier = skipQualifier()
         let type = typeAnnotation()
-        guard case .identifier(let name) = current.kind, peek(1)?.kind == .assign else {
+        guard let name = variableName(current.kind), peek(1)?.kind == .assign else {
             index = start
             return nil
         }

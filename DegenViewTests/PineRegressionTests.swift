@@ -162,7 +162,7 @@ final class PineRegressionTests: XCTestCase {
     }
 
     func testRequestCallsAreFlaggedInsideExpressions() {
-        let program = compile("x = request.security(syminfo.tickerid, \"D\", close)\nplot(x)")
+        let program = compile("x = request.security_lower_tf(syminfo.tickerid, \"1\", close)\nplot(x)")
         XCTAssertTrue(codes(program).contains("PINE9003"), "\(codes(program))")
     }
 
@@ -326,6 +326,37 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
     }
 
+    func testXlocBarTimeMapsTimesToBarIndexesInConstructorsAndSetters() throws {
+        let program = compile(
+            """
+            var box b = na
+            var label l = na
+            var line ln = na
+            var box plain = na
+            var box early = na
+            if bar_index == 5
+                b := box.new(time[2], 10.0, time + 3 * 60000, 5.0, xloc = xloc.bar_time)
+                l := label.new(time[1], 9.0, "x", xloc = xloc.bar_time)
+                ln := line.new(time[5], 1.0, time, 2.0, xloc = xloc.bar_time)
+                plain := box.new(1, 3.0, 2, 2.0)
+                early := box.new(time - 8 * 60000 - 5 * 60000, 3.0, time, 2.0, xloc = xloc.bar_time)
+            if bar_index == 7
+                box.set_right(b, time)
+                label.set_x(l, time + 60000)
+                line.set_x2(ln, time[3])
+                box.set_right(plain, 4)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars(Array(repeating: 1, count: 8)))
+            .output
+        let boxes = output.boxes.sorted { $0.id < $1.id }
+        XCTAssertEqual([boxes[0].left, boxes[0].right], [3, 7], "time[2] is bar 3; time at bar 7 is bar 7")
+        XCTAssertEqual([boxes[1].left, boxes[1].right], [1, 4], "bar-index drawings are untouched")
+        XCTAssertEqual(boxes[2].left, -8, "before the first bar: extrapolated by bar length")
+        XCTAssertEqual(output.labels.first?.x, 8, "one bar after bar 7")
+        XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
+    }
+
     func testLabelTooltipIsStoredFromNewAndSetTooltip() throws {
         let program = compile(
             """
@@ -349,6 +380,70 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = false)").isValid)
         let behind = compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = true)")
         XCTAssertEqual(codes(behind), ["PINE9001"])
+    }
+
+    func testSubscriptOnACallOrExpressionReadsThatExpressionsHistory() throws {
+        let program = compile(
+            """
+            plot(ta.sma(close, 2)[1])
+            plot(ta.highest(high, 3)[1])
+            plot((close + 1)[2])
+            f(float x) => (x * 2)[1]
+            plot(f(close))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4])).output
+        XCTAssertEqual(output.plots[0].values, [nil, nil, 1.5, 2.5])
+        XCTAssertEqual(output.plots[1].values, [nil, nil, nil, 4], "highest(high, 3) is 4 on bar 2 and 5 on bar 3")
+        XCTAssertEqual(output.plots[2].values, [nil, nil, 2, 3])
+        XCTAssertEqual(output.plots[3].values, [nil, 2, 4, 6])
+    }
+
+    func testSubscriptedExpressionNotReachedOnABarKeepsItsSlot() throws {
+        let program = compile(
+            """
+            v = 0.0
+            if bar_index > 1
+                v := ta.sma(close, 1)[1]
+            plot(v)
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4, 5])).output
+        XCTAssertEqual(output.plots[0].values, [0, 0, nil, 3, 4])
+    }
+
+    func testDerivedPricesTimeAndBarIndexHaveHistory() throws {
+        let program = compile(
+            """
+            plot(hl2[1])
+            plot(hlc3[1])
+            plot(ohlc4[1])
+            plot(time[1])
+            plot(time_close[1])
+            plot(bar_index[1])
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([10, 20], spacing: 60)).output
+        // Bar 0: open 10, high 11, low 9, close 10.
+        let previous = output.plots.map { $0.values[1] }
+        XCTAssertEqual(previous, [10, 10, 10, 0, 60_000, 0])
+        XCTAssertTrue(output.plots.allSatisfy { $0.values[0] == nil })
+    }
+
+    func testTypeKeywordCanNameAVariable() throws {
+        let program = compile(
+            """
+            pick(float x) =>
+                color = x > 1 ? color.green : color.red
+                color
+            color = pick(close)
+            color := pick(close + 1)
+            plot(close, color = color)
+            int length = 3
+            plot(length)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([2])).output
+        XCTAssertEqual(output.plots[0].colors, [PineBuiltins.colors["color.green"]])
+        XCTAssertEqual(output.plots[1].values, [3])
     }
 
     func testLinefillJoinsTwoLinesAndFollowsThem() throws {

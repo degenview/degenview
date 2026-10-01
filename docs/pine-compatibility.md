@@ -162,7 +162,7 @@ row) → `PineAlertDispatcher` (channels).
   shows the pair it was created for; the Alerts center shows "Chart shows other symbol".
 - **Channels.** `PineAlertChannel` is the seam: a webhook would be one more conformance. Channels
   run independently and a failing one never reaches the script or blocks the others.
-- Drawing objects with `xloc.bar_index` coordinates: `line.new/set_*/get_*/delete`
+- Drawing objects with `xloc.bar_index` coordinates (or `xloc.bar_time`, see below): `line.new/set_*/get_*/delete`
   (style, extend), `label.new/set_*/get_*/delete` (bubble styles up/down/left/right/none),
   `box.new/set_*/get_*/delete`, and `table.new/cell/delete` pinned to any `position.*`.
 - Canvas order: backgrounds, volume, candles, fills, boxes, plots, lines, hlines,
@@ -204,6 +204,30 @@ row) → `PineAlertDispatcher` (channels).
   `table.merge_cells`, `table.clear`, the `table.set_*` setters, `label.set_tooltip` (stored, not yet
   shown), `chart.is_standard` and the other `chart.is_*` flags (plain candles), and
   `behind_chart = false` on the declaration (`true` is `PINE9001`).
+- **`request.security` for the chart's own symbol**, on a timeframe at least as long as the chart's
+  (`"60"`, `"D"`, `"3M"`, `timeframe.period`, `""` for the chart's own). The chart's bars are folded into
+  higher-timeframe candles on the UTC calendar the app already uses for weekly and monthly candles, and
+  the expression runs on that series in a state of its own: its histories, `var`s and `ta.*` calls are
+  not shared with the chart script, and a realtime tick rolls it back like any other state. Semantics as
+  implemented, **not checked against TradingView**: on history and confirmed bars the value is the
+  expression on the last higher-timeframe bar completed by the close of the chart bar (the chart bar
+  that closes the bucket completes it and sees its own value); on a realtime bar it is the developing
+  higher-timeframe bar, so it repaints. `lookahead_on` always returns the developing bar: that equals
+  Pine for the `expr[1]` idiom, but an expression that reads the current bar never sees the future.
+  `gaps_on` returns `na` except on the chart bar where a new value arrives. Main-script globals (inputs,
+  constants) are readable inside the expression; a global *series* is not recomputed on the higher
+  timeframe, and `myVar[1]` of a main variable is `na` there. A call inside a user function has its own
+  site. Other symbols (`PINE4022`), timeframes finer than the chart (`PINE4021`), a nested call
+  (`PINE4023`) and a missing argument (`PINE4024`) are runtime errors; the other `request.*` functions
+  are still `PINE9003` at compile time.
+- A subscript on a call or an expression (`ta.highest(high, 5)[1]`, `(a + b)[2]`) reads that
+  expression's own history, recorded each bar it is reached; `hl2`, `hlc3`, `ohlc4`, `time`,
+  `time_close` and `bar_index` keep a history too, so `time[1]` works.
+- `xloc.bar_time` lines, labels and boxes: times are mapped to bar indexes when the drawing is made and
+  when an x setter runs (a time on or before the current bar to the bar containing it, a later one
+  forwards by whole bar lengths, so a weekend gap in the chart is not modelled). Getters return bar
+  indexes.
+- A type keyword can name a variable (`color = x > 1 ? color.green : color.red`).
 - `enum` and `import` declarations are recognised and reported once (`PINE9007`, `PINE9008`) with
   their bodies skipped, rather than as a syntax error per line.
 
@@ -263,8 +287,9 @@ meets (`PINE4001`–`PINE4006`).
 
 The current grammar does not yet implement method calls on a call result, maps, matrices,
 enums (`PINE9007`), library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
-`max_polylines_count` declaration arguments, built-in types such as `footprint`, or `xloc.bar_time`
-drawings. A variable named like a type keyword (`color = …`) does not parse. Label `yloc` is treated as `yloc.price`.
+`max_polylines_count` declaration arguments, built-in types such as `footprint`, `request.security` for
+other symbols or finer timeframes, or `request.security_lower_tf` (the engine only sees the chart's own
+bars). Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
 but missing-value and conditional-call behavior needs a larger differential corpus. Non-overlay
@@ -274,10 +299,9 @@ and overlay values do not yet join price autoscaling. Plot style/location/size
 coverage is partial. Runtime byte accounting, recursion detection, and a compact bytecode
 lowering pass are planned; the current executable representation is the typed AST.
 
-`request.security`, libraries, and maps/matrices are
-intentionally outside this release and produce unsupported or
-unknown-function diagnostics; a `request.*` call is reported (`PINE9003`) wherever it
-appears, including inside an assignment or argument. Reading a plain identifier that is
+Libraries and maps/matrices are intentionally outside this release and produce unsupported or
+unknown-function diagnostics; a `request.*` call other than `request.security` is reported
+(`PINE9003`) wherever it appears, including inside an assignment or argument. Reading a plain identifier that is
 not a variable, series, or builtin raises `PINE4008` at runtime instead of silently
 evaluating to a string; dotted names such as `size.small` or `shape.circle` remain
 enumeration constants. An integer literal too large for an `int` is `PINE2014`. A REST refresh is
@@ -335,7 +359,8 @@ are claimed here.
 downloads the most popular open-source Pine v6 scripts (20 indicators, 10 libraries, in TradingView's
 default popularity order) into the gitignored `.pine-corpus/` directory. Their authors keep the licences, so the
 sources are never committed; `DegenViewTests/PineCorpus/manifest.json` records only metadata. The test skips when
-the cache is absent. Each script is compiled and run over 1,000 deterministic synthetic bars with default inputs,
+the cache is absent. Each script is compiled and run over 1,000 deterministic synthetic 1-minute bars with default inputs
+(1 minute so that default timeframes of 1 to 60 minutes are not finer than the chart),
 and the outcome is compared with `expectations.json`: a regression and a newly supported script both fail it.
 **"Compatible" here means compiles and runs to completion; no values were compared with TradingView.**
 
@@ -346,15 +371,18 @@ Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries tha
 | First run | 1 / 20 | 0 / 10 |
 | After the syntax and builtin fixes | 5 / 20 | 2 / 10 |
 | After user-defined types, methods, `linefill`, table calls | 9 / 20 | 5 / 10 |
+| After `request.security` (own symbol), expression subscripts, `xloc.bar_time` | 13 / 20 | 5 / 10 |
 
-The 16 that still fail are blocked by whole features, counted in scripts (a script can have several):
+The 12 that still fail are blocked by whole features, counted in scripts (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
-| `request.security` (`PINE9003`) | 10 |
+| `request.security` for another symbol (`PINE4022`) | 2 |
+| `request.security_lower_tf` (`PINE9003`) | 3 |
 | Library `import` (`PINE9008`) | 2 |
 | Source over the 100,000-character limit (`PINE8001`) | 2 |
-| Maps, matrices, `chart.point` / `polyline`, `scale=`, enums (`PINE9007`) | 5 |
+| Maps, matrices, `chart.point` / `polyline`, `scale=` | 4 |
+| Enums (`PINE9007`) | 1 |
 | Built-in `footprint` type and overloaded methods (`PINE3024`) | 1 |
 
 Libraries are checked only for compiling: `library()`, `export`, types and methods parse, but nothing

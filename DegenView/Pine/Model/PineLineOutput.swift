@@ -11,4 +11,6 @@ struct PineLineOutput: Sendable, Identifiable, Equatable {
     var width: Int
     var style: PineLineStyle
     var extend: PineLineExtend
+    /// Made with `xloc.bar_time`: setters take times, which are mapped to bar indexes.
+    var timeAnchored = false
 }
