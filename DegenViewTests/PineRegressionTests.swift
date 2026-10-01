@@ -381,6 +381,29 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.labels.map(\.tooltip), ["first", "second"])
     }
 
+    func testNaCountsAsFalseInConditionsButNumbersStillAreNot() throws {
+        let program = compile(
+            """
+            bool up = close > open
+            plot(not up[1] ? 1 : 0)
+            plot(up[1] ? 1 : 0)
+            plot(up[1] and true ? 1 : 0)
+            plot(up[1] or true ? 1 : 0)
+            float seen = 0.0
+            if up[1]
+                seen := 5.0
+            plot(seen)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        // Bar 0: `up[1]` reads na, which is false in v6; bar 1 reads bar 0's value (close > open is false here).
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots.map { $0.values[0] }, [1, 0, 0, 1, 0])
+        for source in ["if 1\n    x = 1", "plot(1 ? 1 : 0)", "plot(not 1 ? 1 : 0)"] {
+            let bad = compile(source + "\nplot(close)")
+            XCTAssertThrowsError(try PineRuntimeSession(program: bad).evaluate(bars: bars([1])), source)
+        }
+    }
+
     func testColorConstantsFoldThroughEarlierConstants() throws {
         let program = compile(
             """

@@ -12,7 +12,7 @@ extension PineRuntimeSession {
         case .binary(let left, let op, let right, let range):
             return try evalBinary(left, op, right, range, &context)
         case .ternary(let condition, let whenTrue, let whenFalse, let range):
-            guard case .bool(let test) = try eval(condition, &context) else {
+            guard let test = Self.truth(try eval(condition, &context)) else {
                 throw PineDiagnostic.error(
                     "PINE4005", .runtime, "Ternary condition must be bool.", range)
             }
@@ -76,6 +76,16 @@ extension PineRuntimeSession {
         }
     }
 
+    /// A value as a condition. In v6 a bool is never `na`: `na` (what a bool series reads before its first
+    /// bar, or an unreached branch) counts as false. Numbers and strings are not conditions.
+    static func truth(_ value: PineRuntimeValue) -> Bool? {
+        switch value {
+        case .bool(let b): b
+        case .na: false
+        default: nil
+        }
+    }
+
     // MARK: - Operators
 
     private func evalUnary(
@@ -87,7 +97,7 @@ extension PineRuntimeSession {
         case .negate: return PineOperators.negate(value)
         case .plus: return value
         case .not:
-            guard case .bool(let b) = value else {
+            guard let b = Self.truth(value) else {
                 throw PineDiagnostic.error("PINE4002", .runtime, "not requires bool.", range)
             }
             return .bool(!b)
@@ -114,9 +124,9 @@ extension PineRuntimeSession {
         let word = isAnd ? "and" : "or"
         let error = PineDiagnostic.error(
             isAnd ? "PINE4003" : "PINE4004", .runtime, "\(word) requires bool operands.", range)
-        guard case .bool(let left) = lhs else { throw error }
+        guard let left = Self.truth(lhs) else { throw error }
         if left != isAnd { return .bool(left) }
-        guard case .bool(let rhs) = try eval(right, &context) else { throw error }
+        guard let rhs = Self.truth(try eval(right, &context)) else { throw error }
         return .bool(rhs)
     }
 
