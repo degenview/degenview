@@ -60,6 +60,20 @@ final class PineRegressionTests: XCTestCase {
 
     // MARK: - Parser and compiler
 
+    func testGenericArrayConstructorMatchesTheTypedOne() throws {
+        let program = compile(
+            """
+            var array<float> a = array.new<float>(3, 2.5)
+            var array<int> b = array.new<int>()
+            array.push(b, 1)
+            plot(array.sum(a))
+            plot(array.size(b))
+            """)
+        XCTAssertTrue(program.isValid, "\(codes(program))")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
+    }
+
     func testOversizedIntegerLiteralIsADiagnosticNotACrash() {
         let program = compile("x = 99999999999999999999\nplot(x)")
         XCTAssertTrue(codes(program).contains("PINE2014"), "\(codes(program))")
