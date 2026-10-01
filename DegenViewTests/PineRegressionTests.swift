@@ -254,6 +254,21 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(colors[4], high & 0xFFFF_FF00)
     }
 
+    func testColorChannelReadersReturnWhatRGBPacked() throws {
+        let program = compile(
+            """
+            c = color.rgb(200, 100, 50, 40)
+            plot(color.r(c))
+            plot(color.g(c))
+            plot(color.b(c))
+            plot(color.t(c))
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        for (plot, expected) in zip(output.plots, [200.0, 100, 50, 40]) {
+            XCTAssertEqual(try XCTUnwrap(plot.values[0]), expected, accuracy: 0.5)
+        }
+    }
+
     func testTimeframeChangeFlagsTheFirstBarOfEachPeriod() throws {
         let program = compile("plot(timeframe.change(\"1D\") ? 1 : 0)\nplot(timeframe.change(\"60\") ? 1 : 0)")
         // 12 half-day bars: a new day opens on the 1st, 3rd, 5th... and a new hour on every bar.
@@ -261,6 +276,13 @@ final class PineRegressionTests: XCTestCase {
         let output = try PineRuntimeSession(program: program).evaluate(bars: series).output
         XCTAssertEqual(output.plots[0].values, [1, 0, 1, 0, 1, 0])
         XCTAssertEqual(output.plots[1].values, [1, 1, 1, 1, 1, 1])
+    }
+
+    func testTimeTradingDayIsMidnightUTCOfTheBarsDay() throws {
+        let program = compile("plot(time_tradingday)")
+        // Bars open at 0, 50,000 and 100,000 s; the third is past the first midnight at 86,400 s.
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3], spacing: 50_000)).output
+        XCTAssertEqual(output.plots[0].values, [0, 0, 86_400_000])
     }
 
     func testTimeframeInSecondsRejectsAMalformedTimeframe() {

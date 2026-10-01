@@ -88,7 +88,7 @@ enum PineSymbolCatalog {
     ]
 
     private static let reservedVariables: Set<String> = [
-        "hlcc4", "time_tradingday", "weekofyear",
+        "hlcc4", "weekofyear",
         "session.isfirstbar", "session.isfirstbar_regular", "session.islastbar",
         "session.islastbar_regular", "session.ismarket", "session.ispremarket",
         "session.ispostmarket", "syminfo.prefix", "syminfo.root", "syminfo.session",

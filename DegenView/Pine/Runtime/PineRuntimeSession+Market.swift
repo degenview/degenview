@@ -19,6 +19,9 @@ extension PineRuntimeSession {
         case "bar_index": return .int(working.barIndex)
         case "last_bar_index": return .int(lastBarIndex)
         case "last_bar_time": return lastBarTime.map { .int(PineTime.milliseconds($0)) } ?? .na
+        case "time_tradingday":
+            let day = KlineData.bucketStart(of: bar.openTime, interval: 86_400)
+            return .int(PineTime.milliseconds(day))
         case "timenow": return .int(PineTime.milliseconds(Date()))
         case "ta.tr": return .float(trueRange(bar))
         case "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek":

@@ -19,6 +19,8 @@ extension PineRuntimeSession {
             "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
             "timeframe.change": PineRuntimeSession.timeframeChangeCall,
             "color.from_gradient": PineRuntimeSession.colorGradient,
+            "color.r": PineRuntimeSession.colorComponent, "color.g": PineRuntimeSession.colorComponent,
+            "color.b": PineRuntimeSession.colorComponent, "color.t": PineRuntimeSession.colorComponent,
         ]
         for name in ["indicator", "strategy", "library"] { table[name] = PineRuntimeSession.declarationCall }
         for name in ["line", "label", "box", "table"] { table[name] = PineRuntimeSession.handleCast }

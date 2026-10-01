@@ -72,6 +72,19 @@ extension PineRuntimeSession {
         return .color(PineBuiltins.withTransparency(c, transparency))
     }
 
+    /// `color.r/g/b` read a channel (0-255); `color.t` the transparency (0-100, 0 opaque).
+    func colorComponent(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard case .color(let rgba) = try argument(call, 0, "color", &context) else { return .na }
+        switch call.name {
+        case "color.r": return .float(Double((rgba >> 24) & 0xFF))
+        case "color.g": return .float(Double((rgba >> 16) & 0xFF))
+        case "color.b": return .float(Double((rgba >> 8) & 0xFF))
+        default: return .float(100 - Double(rgba & 0xFF) / 2.55)
+        }
+    }
+
     func colorGradient(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {

@@ -15,9 +15,9 @@ enum PineBuiltinTypes {
     ]
 
     static let intSeries: Set<String> = [
-        "time", "time_close", "bar_index", "last_bar_index", "last_bar_time", "timenow", "year", "month",
-        "dayofmonth", "hour", "minute", "second", "dayofweek", "strategy.closedtrades",
-        "strategy.opentrades", "strategy.wintrades", "strategy.losstrades",
+        "time", "time_close", "bar_index", "last_bar_index", "last_bar_time", "timenow",
+        "time_tradingday", "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek",
+        "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades", "strategy.losstrades",
     ]
 
     static let simpleStrings: Set<String> = [
@@ -82,6 +82,7 @@ enum PineBuiltinTypes {
         var table: [String: PineValueType] = [
             "int": .int, "float": .float, "bool": .bool, "na": .bool, "timestamp": .int,
             "color.new": .color, "color.rgb": .color, "color.from_gradient": .color,
+            "color.r": .float, "color.g": .float, "color.b": .float, "color.t": .float,
             "str.length": .int, "str.tonumber": .float, "math.floor": .int, "math.ceil": .int,
         ]
         for name in [
