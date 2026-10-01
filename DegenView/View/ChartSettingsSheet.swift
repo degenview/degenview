@@ -38,7 +38,6 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
-    @State private var pineDraft: String
     @State private var savedScripts: [LocalScript] = []
     @State private var selectedScriptID: UUID?
     @State private var scriptLoadError: String?
@@ -113,9 +112,6 @@ struct ChartSettingsSheet: View {
         _predictionProvider = State(initialValue: viewModel.source == .kalshi ? .kalshi : .polymarket)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
-        _pineDraft = State(
-            initialValue: viewModel.pineConfiguration?.draftSource
-                ?? "//@version=6\nindicator(\"My Indicator\", overlay=true)\n\nplot(close)\n")
         _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
         // Open on the tab that matches what this chart already is.
         _selectedTab = State(initialValue: .ticker)
@@ -285,10 +281,6 @@ struct ChartSettingsSheet: View {
         }
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
-            onStyleChanged()
-        }
-        .onChange(of: pineDraft) { _, source in
-            viewModel.updatePineDraft(source)
             onStyleChanged()
         }
         .task { await loadSavedScripts() }
@@ -595,40 +587,65 @@ struct ChartSettingsSheet: View {
         }
     }
 
+    /// The picker and status stay pinned; the report, diagnostics and inputs scroll beneath them,
+    /// so a script with many inputs never pushes content past the sheet.
     private var scriptsTab: some View {
         VStack(alignment: .leading, spacing: 10) {
+            scriptsHeader
+                .padding([.horizontal, .top], 16)
+
+            ScrollView {
+                scriptsDetails
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
+    }
+
+    private var scriptsHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Picker("Saved script", selection: $selectedScriptID) {
-                    Text("Custom draft").tag(nil as UUID?)
+                Picker("Script", selection: $selectedScriptID) {
+                    Text("None").tag(nil as UUID?)
                     ForEach(savedScripts) { script in
                         Text(script.name).tag(script.id as UUID?)
                     }
                 }
                 .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
 
+                Button {
+                    openScriptManager()
+                } label: {
+                    Label("Script Manager", systemImage: "curlybraces")
+                }
+                .help("Open Script Manager in a new tab")
+
                 if let scriptLoadError {
                     Text(scriptLoadError).font(.caption).foregroundStyle(.red)
                 }
             }
 
-            LineNumberedTextEditorView(text: $pineDraft, diagnostics: viewModel.pineDiagnostics)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .frame(minHeight: 220)
-
-            HStack {
-                Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Button("Create Alert…") { showingPineAlertEditor = true }
-                    .disabled(viewModel.appliedSourceHash == nil)
-                    .help("Notify me when the applied script raises alert() on a live bar")
-                Button("Apply") {
-                    viewModel.updatePineDraft(pineDraft)
-                    if viewModel.applyPineDraft() { onStyleChanged() }
-                }.buttonStyle(.borderedProminent)
+            if selectedScriptID == nil {
+                Text("Choose a script, or create one in the Script Manager.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HStack {
+                    Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Create Alert…") { showingPineAlertEditor = true }
+                        .disabled(viewModel.appliedSourceHash == nil)
+                        .help("Notify me when the applied script raises alert() on a live bar")
+                }
+                .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
             }
-            .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
+        }
+    }
 
+    private var scriptsDetails: some View {
+        VStack(alignment: .leading, spacing: 12) {
             if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
                 PineStrategyReportView(
                     report: viewModel.pineOutput.strategy, alerts: viewModel.pineOutput.alerts)
@@ -669,12 +686,15 @@ struct ChartSettingsSheet: View {
                 let schema = PineCompiler.compile(source: source).inputSchema
                 ForEach(Array(pineInputGroups(schema).enumerated()), id: \.offset) { _, group in
                     if let title = group.title {
-                        Text(title).font(.caption.weight(.semibold)).padding(.top, 4)
+                        Text(title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 6)
                     }
                     ForEach(group.inputs) { input in pineInput(input) }
                 }
             }
-        }.padding(16)
+        }
     }
 
     @MainActor private func loadSavedScripts() async {
@@ -682,11 +702,14 @@ struct ChartSettingsSheet: View {
             savedScripts = try await ScriptStore.shared.allScripts()
             scriptLoadError = nil
             guard let selectedScriptID else { return }
-            if !savedScripts.contains(where: { $0.id == selectedScriptID }) {
+            guard let script = savedScripts.first(where: { $0.id == selectedScriptID }) else {
+                // Deleted in the Script Manager.
                 self.selectedScriptID = nil
-                viewModel.scriptInstances = []
-            } else if viewModel.scriptInstances.first?.scriptID == selectedScriptID {
-                selectSavedScript(selectedScriptID)
+                return
+            }
+            // Picks up edits saved in the Script Manager.
+            if script.source != viewModel.pineConfiguration?.appliedSource {
+                loadScript(script, inputs: viewModel.pineConfiguration?.inputs ?? [:])
             }
         } catch {
             scriptLoadError = error.localizedDescription
@@ -695,22 +718,32 @@ struct ChartSettingsSheet: View {
 
     private func selectSavedScript(_ id: UUID?) {
         guard let id else {
-            viewModel.scriptInstances = []
+            viewModel.unloadPineScript()
             onStyleChanged()
             return
         }
         guard let script = savedScripts.first(where: { $0.id == id }) else { return }
-        pineDraft = script.source
+        loadScript(script, inputs: [:])
+    }
+
+    private func loadScript(_ script: LocalScript, inputs: [String: PineInputValue]) {
+        viewModel.loadPineScript(source: script.source, inputs: inputs)
         if let revisionID = script.latestRevisionID {
             viewModel.scriptInstances = [
-                ChartScriptInstance(
-                    scriptID: script.id,
-                    loadedRevisionID: revisionID,
-                    inputs: viewModel.pineConfiguration?.inputs ?? [:]
-                )
+                ChartScriptInstance(scriptID: script.id, loadedRevisionID: revisionID, inputs: inputs)
             ]
         }
         onStyleChanged()
+    }
+
+    /// Closes this sheet, which would otherwise block the new tab, then opens the Script Manager.
+    private func openScriptManager() {
+        let scriptID = selectedScriptID
+        // While the sheet is key the coordinator falls back to the chart window beneath it.
+        WindowCoordinator.shared.prepareAuxiliaryTab()
+        cancelSearches()
+        dismiss()
+        DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
     }
 
     private func formatted(_ diagnostic: PineDiagnostic) -> String {
@@ -745,112 +778,135 @@ struct ChartSettingsSheet: View {
         return groups
     }
 
+    /// One script input as a card, matching the Indicators tab. The control sits on the right.
     @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
+        let title = input.title ?? input.id
         let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
         switch (input.type, current) {
         case (.bool, .bool(let value)):
-            Toggle(
-                input.title ?? input.id,
-                isOn: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.bool($0), id: input.id)
-                        onStyleChanged()
-                    }))
+            indicatorRow(title: title, icon: "switch.2", hint: input.tooltip) {
+                Toggle(
+                    title,
+                    isOn: Binding(
+                        get: { value },
+                        set: { setPineInput(.bool($0), for: input) })
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+            }
         case (.time, .int(let value)):
-            DatePicker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { Date(timeIntervalSince1970: Double(value) / 1000) },
-                    set: {
-                        viewModel.setPineInput(.int(Int($0.timeIntervalSince1970 * 1000)), id: input.id)
-                        onStyleChanged()
-                    }),
-                displayedComponents: [.date, .hourAndMinute])
+            indicatorRow(title: title, icon: "calendar", hint: input.tooltip) {
+                DatePicker(
+                    title,
+                    selection: Binding(
+                        get: { Date(timeIntervalSince1970: Double(value) / 1000) },
+                        set: { setPineInput(.int(Int($0.timeIntervalSince1970 * 1000)), for: input) }),
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .labelsHidden()
+            }
         case (.int, .int(let value)):
-            Stepper(
-                "\(input.title ?? input.id): \(value)",
-                value: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.int($0), id: input.id)
-                        onStyleChanged()
-                    }),
-                in: Int(input.minValue ?? Double(min(value, 1)))...Int(input.maxValue ?? Double(max(value, 10_000))),
-                step: Int(input.step ?? 1))
+            let lower = Int(input.minValue ?? Double(min(value, 1)))
+            let upper = Int(input.maxValue ?? Double(max(value, 10_000)))
+            indicatorRow(title: title, icon: "number", hint: input.tooltip) {
+                HStack(spacing: 8) {
+                    Text("\(value)")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                    Stepper(
+                        title,
+                        value: Binding(
+                            get: { value },
+                            set: { setPineInput(.int($0), for: input) }),
+                        in: lower...upper,
+                        step: Int(input.step ?? 1)
+                    )
+                    .labelsHidden()
+                }
+            }
         case (.float, .float(let value)):
-            HStack {
-                Text(input.title ?? input.id)
+            indicatorRow(title: title, icon: "number", hint: input.tooltip) {
                 TextField(
-                    "",
+                    title,
                     value: Binding(
                         get: { value },
-                        set: {
-                            viewModel.setPineInput(.float($0), id: input.id)
-                            onStyleChanged()
-                        }), format: .number
-                ).frame(width: 100)
+                        set: { setPineInput(.float($0), for: input) }),
+                    format: .number
+                )
+                .labelsHidden()
+                .multilineTextAlignment(.trailing)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 100)
             }
         case (.string, .string(let value)) where input.options != nil:
-            Picker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.string($0), id: input.id)
-                        onStyleChanged()
-                    })
-            ) {
-                ForEach(input.options ?? [], id: \.self) { option in
-                    if case .string(let text) = option { Text(text).tag(text) }
+            indicatorRow(title: title, icon: "list.bullet", hint: input.tooltip) {
+                Picker(
+                    title,
+                    selection: Binding(
+                        get: { value },
+                        set: { setPineInput(.string($0), for: input) })
+                ) {
+                    ForEach(input.options ?? [], id: \.self) { option in
+                        if case .string(let text) = option { Text(text).tag(text) }
+                    }
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
-            .pickerStyle(.menu)
         case (.string, .string(let value)):
-            HStack {
-                Text(input.title ?? input.id)
+            indicatorRow(title: title, icon: "textformat", hint: input.tooltip) {
                 TextField(
-                    "",
+                    title,
                     text: Binding(
                         get: { value },
-                        set: {
-                            viewModel.setPineInput(.string($0), id: input.id)
-                            onStyleChanged()
-                        }))
+                        set: { setPineInput(.string($0), for: input) })
+                )
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 140)
             }
         case (.color, .color(let value)):
-            ColorPicker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { Color(pineRGBA: value) },
-                    set: {
-                        guard let rgba = $0.pineRGBA else { return }
-                        viewModel.setPineInput(.color(rgba), id: input.id)
-                        onStyleChanged()
-                    }), supportsOpacity: true)
+            indicatorRow(title: title, icon: "paintpalette", hint: input.tooltip) {
+                ColorPicker(
+                    title,
+                    selection: Binding(
+                        get: { Color(pineRGBA: value) },
+                        set: {
+                            guard let rgba = $0.pineRGBA else { return }
+                            setPineInput(.color(rgba), for: input)
+                        }), supportsOpacity: true
+                )
+                .labelsHidden()
+            }
         case (.string, .source(let value)):
-            Picker(
-                input.title ?? input.id,
-                selection: Binding(
-                    get: { value },
-                    set: {
-                        viewModel.setPineInput(.source($0), id: input.id)
-                        onStyleChanged()
-                    })
-            ) {
-                ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
-                    Text($0.capitalized).tag($0)
+            indicatorRow(title: title, icon: "chart.xyaxis.line", hint: input.tooltip) {
+                Picker(
+                    title,
+                    selection: Binding(
+                        get: { value },
+                        set: { setPineInput(.source($0), for: input) })
+                ) {
+                    ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
+                        Text($0.capitalized).tag($0)
+                    }
                 }
+                .pickerStyle(.menu)
+                .labelsHidden()
             }
         default: EmptyView()
         }
+    }
+
+    private func setPineInput(_ value: PineInputValue, for input: PineInputDefinition) {
+        viewModel.setPineInput(value, id: input.id)
+        onStyleChanged()
     }
 
     /// A consistently aligned indicator card with its controls anchored to the right.
     private func indicatorRow<Control: View>(
         title: String,
         icon: String,
-        hint: String,
+        hint: String?,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(alignment: .center, spacing: 14) {
@@ -864,10 +920,12 @@ struct ChartSettingsSheet: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
 
-                Text(hint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let hint {
+                    Text(hint)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             Spacer(minLength: 16)

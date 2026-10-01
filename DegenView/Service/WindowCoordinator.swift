@@ -263,12 +263,13 @@ final class WindowCoordinator {
         return pendingScriptManagerSelection
     }
 
-    /// Opens (or focuses) the Script Manager with `scriptID` selected.
-    func openScriptManager(selecting scriptID: UUID) {
-        pendingScriptManagerSelection = scriptID
+    /// Opens (or focuses) the Script Manager, with `scriptID` selected when given.
+    func openScriptManager(selecting scriptID: UUID? = nil) {
+        if let scriptID { pendingScriptManagerSelection = scriptID }
         guard let openWindow = openWindowAction else { return }
         prepareAuxiliaryTab()
         openWindow(id: "script-manager")
+        guard let scriptID else { return }
         // Reaches an already-open manager; a new one reads the pending selection instead.
         NotificationCenter.default.post(name: .selectScriptInManager, object: scriptID)
     }

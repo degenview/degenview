@@ -53,9 +53,10 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   float, boolean, and string controls reevaluate a script without recompiling it
 - **Realtime series semantics** — Script state advances bar by bar with history references,
   persistent `var`, intrabar-persistent `varip`, realtime rollback, and `barstate.*`
-- **Safe script editing** — Each chart persists its draft, last successfully applied
-  source, and typed input values. Invalid drafts show line/column diagnostics while the
-  last valid plot remains active
+- **Script loading** — A chart's Scripts tab picks a saved script (or **None** to unload it)
+  and exposes its typed inputs; scripts are edited only in the Script Manager, which the tab
+  opens in a new tab. Each chart persists its applied source and input values. A script that
+  fails to compile shows line/column diagnostics while the last valid plot remains active
 - **Scripts as `.pine` files** — The Script Manager's library is a folder of plain `.pine`
   files in `~/Library/Application Support/DegenView/Scripts/`, editable with any tool.
   DegenView is the handler for `.pine`: opening one from elsewhere offers to copy it into

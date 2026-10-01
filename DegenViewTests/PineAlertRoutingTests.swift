@@ -35,7 +35,8 @@ final class PineAlertRoutingTests: XCTestCase {
         closes.enumerated().compactMap { offset, close in
             F.update(
                 controller.ingest(
-                    F.stream(F.bar(index, open: open, close: close, closed: closingLast && offset == closes.count - 1))))
+                    F.stream(
+                        F.bar(index, open: open, close: close, closed: closingLast && offset == closes.count - 1))))
         }
     }
 
@@ -68,7 +69,8 @@ final class PineAlertRoutingTests: XCTestCase {
 
     func testGreenCloseNotifiesOnceAndRedNever() throws {
         let controller = F.controller(
-            "if close > open\n    alert(\"Long \" + syminfo.ticker + \" @ \" + str.tostring(close), alert.freq_once_per_bar_close)")
+            "if close > open\n    alert(\"Long \" + syminfo.ticker + \" @ \" + str.tostring(close), "
+                + "alert.freq_once_per_bar_close)")
         _ = controller.rebuild(
             bars: F.history([100, 100, 100]) + [F.bar(3, open: 100, close: 99)], live: true, now: F.now(during: 3))
         var frequencyGuard = PineAlertFrequencyGuard()
@@ -246,6 +248,28 @@ final class PineAlertRoutingTests: XCTestCase {
         chart.updatePineDraft("//@version=6\nindicator(\"T\")\n\(source)")
         XCTAssertTrue(chart.applyPineDraft())
         return chart
+    }
+
+    func testLoadPineScriptAppliesAndUnloadForgetsIt() throws {
+        let chart = ChartViewModel(ticker: "BTC")
+        XCTAssertTrue(chart.loadPineScript(source: "//@version=6\nindicator(\"T\")\nplot(close)\n"))
+        XCTAssertNotNil(chart.appliedSourceHash)
+
+        chart.scriptInstances = [ChartScriptInstance(scriptID: UUID(), loadedRevisionID: UUID())]
+        chart.unloadPineScript()
+        XCTAssertNil(chart.pineConfiguration)
+        XCTAssertNil(chart.appliedSourceHash)
+        XCTAssertTrue(chart.scriptInstances.isEmpty)
+        XCTAssertTrue(chart.pineDiagnostics.isEmpty)
+        XCTAssertEqual(chart.pineStatus, "No script applied")
+    }
+
+    func testLoadPineScriptKeepsThePreviousScriptWhenTheNewOneFails() throws {
+        let chart = try appliedChart("plot(close)")
+        let applied = chart.pineConfiguration?.appliedSource
+        XCTAssertFalse(chart.loadPineScript(source: "plot(("))
+        XCTAssertEqual(chart.pineConfiguration?.appliedSource, applied)
+        XCTAssertFalse(chart.pineDiagnostics.isEmpty)
     }
 
     func testCoordinatorDeliversThenGoesQuietWhenTheScriptChanges() async throws {

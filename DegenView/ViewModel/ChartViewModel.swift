@@ -584,6 +584,23 @@ final class ChartViewModel: ObservableObject {
         return true
     }
 
+    /// Replaces the running script with `source`. Returns false when it does not compile, in which
+    /// case the previous output stays active.
+    @discardableResult func loadPineScript(source: String, inputs: [String: PineInputValue] = [:]) -> Bool {
+        pineConfiguration = PineConfiguration(
+            draftSource: source, appliedSource: pineConfiguration?.appliedSource, inputs: inputs)
+        return applyPineDraft()
+    }
+
+    /// Stops the running script and forgets its source and inputs.
+    func unloadPineScript() {
+        scriptInstances = []
+        pineConfiguration = nil
+        pineDiagnostics = []
+        pineStatus = "No script applied"
+        reevaluatePine()
+    }
+
     func setPineInput(_ value: PineInputValue, id: String) {
         pineConfiguration?.inputs[id] = value
         reevaluatePine()

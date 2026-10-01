@@ -64,6 +64,10 @@ plotshape(bullish, color=color.green)
 plotshape(bearish, color=color.red)
 ```
 
+The Scripts tab in chart settings loads a saved script onto the chart: pick one from **Script**,
+or **None** to unload it. Scripts are edited only in the Script Manager; the tab's **Script
+Manager** button opens it in a new tab, and saving a script there updates charts using it.
+
 Scripts declared with `strategy()` are backtested over the chart's bars: the Scripts tab
 shows net profit, win rate, profit factor, drawdown, an equity curve, and the trade list,
 and the chart marks each entry and exit. `alert()` and `alertcondition()` calls are listed
