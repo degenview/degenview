@@ -40,6 +40,27 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[8], [8], [7]])
     }
 
+    func testLineIndentedByANonMultipleOfFourContinuesThePreviousLine() throws {
+        let program = compile(
+            """
+            pick(float x) =>
+                x > 2 ? 10
+                     : x > 1 ? 20
+                     : 30
+            total = close
+              + 1
+            plot(pick(total))
+            plot(total)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([0.5, 1.5, 5])).output
+        XCTAssertEqual(output.plots.map(\.values), [[20, 10, 10], [1.5, 2.5, 6]])
+    }
+
+    func testMisindentedFirstLineStillReportsIndentation() {
+        XCTAssertTrue(codes(PineCompiler.compile(source: " //@version=6\n  x = 1\n")).contains("PINE1002"))
+    }
+
     func testUnterminatedSingleQuotedStringIsADiagnostic() {
         XCTAssertTrue(codes(compile("x = 'abc\nplot(close)")).contains("PINE1003"))
     }
