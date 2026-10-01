@@ -70,7 +70,7 @@ enum PineSymbolCatalog {
     static let qualifiers = Set(PineParser.qualifiers.keys)
 
     /// `line`, `label`, `box`, `table`, `array`, plus the handle and collection types Pine has.
-    static let objectTypes = Set(PineParser.objectTypes.keys).union(reservedObjectTypes)
+    static let objectTypes = Set(PineParser.objectTypes.keys)
 
     /// Keywords of Pine that need more than the parser gives them: `type`, `method` and `export` are
     /// parsed but only in their declaration forms; `import` and `enum` are reported as unsupported.
@@ -111,9 +111,7 @@ enum PineSymbolCatalog {
     ]
 
     private static let reservedNamespaces: Set<String> = [
-        "request", "session", "chart", "matrix", "log", "runtime",
+        "request", "session", "chart", "log", "runtime",
         "barmerge", "xloc", "yloc",
     ]
-
-    private static let reservedObjectTypes: Set<String> = ["matrix"]
 }

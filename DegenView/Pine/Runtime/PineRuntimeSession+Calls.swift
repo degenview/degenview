@@ -47,6 +47,7 @@ extension PineRuntimeSession {
         ("box.", PineRuntimeSession.drawingCall), ("table.", PineRuntimeSession.drawingCall),
         ("linefill.", PineRuntimeSession.drawingCall), ("map.", PineRuntimeSession.mapCall),
         ("polyline.", PineRuntimeSession.polylineCall),
+        ("matrix.", PineRuntimeSession.matrixCall),
     ]
 
     func call(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {

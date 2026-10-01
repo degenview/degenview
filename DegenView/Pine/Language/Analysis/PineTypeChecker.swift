@@ -108,7 +108,7 @@ struct PineTypeChecker {
                 for parameter in parameters {
                     _ = parameter.defaultValue.map { infer($0, scope) }
                     inner[parameter.name] =
-                        parameter.type.flatMap { $0 == .object || $0 == .map ? nil : .known($0, nil) } ?? .unknown
+                        parameter.type.flatMap { [.object, .map, .matrix].contains($0) ? nil : .known($0, nil) } ?? .unknown
                 }
                 check(body, &inner)
                 scope[name] = .unknown
@@ -139,7 +139,7 @@ struct PineTypeChecker {
                 "Cannot assign a \(Self.describe(actual)) value to a \(Self.describe(wanted)) variable '\(name)'.",
                 expression.range)
         }
-        if annotation.type == .object || annotation.type == .map {
+        if annotation.type == .object || annotation.type == .map || annotation.type == .matrix {
             // Which type an object is, and whether a value fits it, is not tracked.
             scope[name] = .unknown
         } else if let declared = annotation.type {

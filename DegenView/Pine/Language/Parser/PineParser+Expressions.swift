@@ -87,6 +87,7 @@ extension PineParser {
         if take(.dot) { return memberAccess(lhs) }
         if case .identifier("array.new", _) = lhs, at(.less) { return genericArrayConstructor(lhs) }
         if case .identifier("map.new", _) = lhs, at(.less) { return genericMapConstructor(lhs) }
+        if case .identifier("matrix.new", _) = lhs, at(.less) { return genericMatrixConstructor(lhs) }
         if take(.leftParen) { return callSuffix(lhs) }
         if take(.leftBracket) { return historySuffix(lhs) }
         if minBP <= Self.ternaryBindingPower, take(.question) { return ternarySuffix(lhs) }
@@ -128,6 +129,18 @@ extension PineParser {
         advance()
         _ = typeArgument()
         expect(.comma, "Expected ',' between the key and value types.")
+        _ = typeArgument()
+        expect(.greater, "Expected '>'.")
+        guard take(.leftParen) else {
+            error("PINE2008", "Expected '('.", current.range)
+            return .finished(lhs)
+        }
+        return callSuffix(lhs)
+    }
+
+    /// `matrix.new<float>(rows, columns, initial)`: the element type is not tracked at runtime.
+    private mutating func genericMatrixConstructor(_ lhs: PineExpression) -> Extension {
+        advance()
         _ = typeArgument()
         expect(.greater, "Expected '>'.")
         guard take(.leftParen) else {

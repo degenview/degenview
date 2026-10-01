@@ -20,6 +20,7 @@ struct PineRuntimeState {
     // together with the variables that point at them.
     var arrays: [Int: [PineRuntimeValue]] = [:]
     var maps: [Int: PineMap] = [:]
+    var matrices: [Int: PineMatrix] = [:]
     /// Instances of script-defined types, by handle.
     var instances: [Int: PineObject] = [:]
     /// `request.security` call sites, by call-site key. Each holds a state of its own, so this

@@ -4,7 +4,7 @@ extension PineParser {
     static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
         // Typed `.object` rather than a kind of its own: the checker does not track handles of this kind.
-        "linefill": .object, "map": .map, "polyline": .object,
+        "linefill": .object, "map": .map, "polyline": .object, "matrix": .matrix,
     ]
 
     static let qualifiers: [String: PineQualifier] = [
@@ -82,6 +82,13 @@ extension PineParser {
             _ = typeArgument()
             expect(.greater, "Expected '>'.")
             return .array
+        }
+        if type == .matrix, next.kind == .less {
+            advance()
+            advance()
+            _ = typeArgument()
+            expect(.greater, "Expected '>'.")
+            return .matrix
         }
         if type == .map, next.kind == .less {
             advance()
