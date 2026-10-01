@@ -230,6 +230,9 @@
 		D10000000000000000000003 /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000103 /* WindowCoordinator.swift */; };
 		D10000000000000000000004 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000104 /* WindowAccessor.swift */; };
 		E20000000000000000000001 /* AlpacaCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000101 /* AlpacaCredentials.swift */; };
+		KCP000000000000000000001 /* KeychainPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = KCP000000000000000000101 /* KeychainPolicy.swift */; };
+		KCP000000000000000000002 /* KeychainPolicy.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = KCP000000000000000000101 /* KeychainPolicy.swift */; };
+		KCP000000000000000000201 /* KeychainPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = KCP000000000000000000301 /* KeychainPolicyTests.swift */; };
 		E20000000000000000000002 /* AlpacaAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000102 /* AlpacaAPIService.swift */; };
 		E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000103 /* AlpacaWebSocketService.swift */; };
 		E20000000000000000000004 /* AppSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000104 /* AppSettingsView.swift */; };
@@ -689,6 +692,8 @@
 		D10000000000000000000103 /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
 		D10000000000000000000104 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		E20000000000000000000101 /* AlpacaCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaCredentials.swift; sourceTree = "<group>"; };
+		KCP000000000000000000101 /* KeychainPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainPolicy.swift; sourceTree = "<group>"; };
+		KCP000000000000000000301 /* KeychainPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainPolicyTests.swift; sourceTree = "<group>"; };
 		E20000000000000000000102 /* AlpacaAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaAPIService.swift; sourceTree = "<group>"; };
 		E20000000000000000000103 /* AlpacaWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaWebSocketService.swift; sourceTree = "<group>"; };
 		E20000000000000000000104 /* AppSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsView.swift; sourceTree = "<group>"; };
@@ -1036,6 +1041,7 @@
 				E30000000000000000000102 /* ReplayEngine.swift */,
 				F10000000000000000000102 /* FavoritesStore.swift */,
 				E20000000000000000000101 /* AlpacaCredentials.swift */,
+				KCP000000000000000000101 /* KeychainPolicy.swift */,
 				E20000000000000000000102 /* AlpacaAPIService.swift */,
 				E20000000000000000000103 /* AlpacaWebSocketService.swift */,
 				A00000000000000000000106 /* BinanceAPIService.swift */,
@@ -1173,6 +1179,7 @@
 				B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */,
 				B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */,
 				B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */,
+				KCP000000000000000000301 /* KeychainPolicyTests.swift */,
 				BPL000000000000000000106 /* BitcoinPowerLawTests.swift */,
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				SP0000000000000000000519 /* ScriptPreviewInputsStoreTests.swift */,
@@ -1608,6 +1615,7 @@
 				1DAC5FB0C81B58F9830D3762 /* AppDatabase.swift in Sources */,
 			BPL000000000000000000005 /* BitcoinPowerLaw.swift in Agent Sources */,
 			BA1100000000000000000021 /* BitcoinHistoryService.swift in Agent Sources */,
+			KCP000000000000000000002 /* KeychainPolicy.swift in Agent Sources */,
 			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
 			BA1100000000000000000001, BA1100000000000000000002, BA1100000000000000000003, BA1100000000000000000004,
 			BA1100000000000000000005, BA1100000000000000000006, BA1100000000000000000007, BA1100000000000000000008,
@@ -1691,6 +1699,7 @@
 				B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */,
 				B7A1E7000000000000000A16 /* PineAlertValidationTests.swift in Sources */,
 				3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */,
+				KCP000000000000000000201 /* KeychainPolicyTests.swift in Sources */,
 				BPL000000000000000000006 /* BitcoinPowerLawTests.swift in Sources */,
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				SP0000000000000000000019 /* ScriptPreviewInputsStoreTests.swift in Sources */,
@@ -1829,6 +1838,7 @@
 				F10000000000000000000002 /* FavoritesStore.swift in Sources */,
 				F10000000000000000000003 /* FavoritesSidebar.swift in Sources */,
 				E20000000000000000000001 /* AlpacaCredentials.swift in Sources */,
+				KCP000000000000000000001 /* KeychainPolicy.swift in Sources */,
 				E20000000000000000000002 /* AlpacaAPIService.swift in Sources */,
 				E20000000000000000000003 /* AlpacaWebSocketService.swift in Sources */,
 				E20000000000000000000004 /* AppSettingsView.swift in Sources */,

@@ -202,6 +202,11 @@ gitignored `.pine-corpus/`) and skips without them. Third-party sources are neve
 copied into tests; reproduce a failure with an original reduction in `PineRegressionTests`, then
 update `DegenViewTests/PineCorpus/expectations.json`. See `tools/pine-corpus/README.md`.
 
+Tests never touch Keychain: `KeychainPolicy.isDisabled` is true under XCTest, so the Alpaca and
+CoinMarketCap stores report "nothing saved". When an agent launches the app itself, set
+`DEGENVIEW_NO_KEYCHAIN=1` in the environment — otherwise a rebuilt, re-signed binary blocks on a
+Keychain access prompt.
+
 ### Linting
 
 - Every Swift file created or modified in a task must be linted before handoff, including

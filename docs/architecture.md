@@ -152,6 +152,8 @@ DegenView/
    fails to load disables writes instead of being replaced by an empty value. Small caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
    files; portfolio daily candles are the exception and live in SQLite (`candle`, `candle_coverage`). Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
    database; only CMC chart type, range, and display settings enter workspace state.
+   `KeychainPolicy.isDisabled` (XCTest, or `DEGENVIEW_NO_KEYCHAIN=1`) makes both stores behave as
+   "nothing saved" without touching Keychain, so a rebuilt ad hoc signed binary raises no access prompt.
    Each tab and named saved view also stores ordered `ChartColumn` membership by the
    stable `TickerConfig.chartID`. Older documents without columns are repaired into the
    former two-column row-major arrangement when loaded.

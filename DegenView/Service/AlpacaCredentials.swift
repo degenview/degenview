@@ -30,6 +30,12 @@ enum AlpacaCredentialsStore {
 
         if let cachedCredentials { return cachedCredentials }
 
+        if KeychainPolicy.isDisabled {
+            let empty = AlpacaCredentials(keyID: "", secretKey: "")
+            cachedCredentials = empty
+            return empty
+        }
+
         if let data = readData(account: credentialsAccount, shared: true)
             ?? readData(account: credentialsAccount, shared: false),
             let stored = try? JSONDecoder().decode(AlpacaCredentials.self, from: data)
@@ -50,6 +56,7 @@ enum AlpacaCredentialsStore {
         lock.lock()
         defer { lock.unlock() }
         if let cachedCredentials { return cachedCredentials.isConfigured }
+        if KeychainPolicy.isDisabled { return false }
         if let cachedExists { return cachedExists }
         let found = itemExists(shared: true) || itemExists(shared: false)
         cachedExists = found
@@ -64,7 +71,9 @@ enum AlpacaCredentialsStore {
 
         lock.lock()
         do {
-            if normalized.isConfigured {
+            if KeychainPolicy.isDisabled {
+                // Memory only: no Keychain write.
+            } else if normalized.isConfigured {
                 try writeData(JSONEncoder().encode(normalized), account: credentialsAccount)
             } else {
                 delete(account: credentialsAccount)
