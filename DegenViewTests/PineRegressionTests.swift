@@ -351,6 +351,24 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(codes(behind), ["PINE9001"])
     }
 
+    func testTypeKeywordCanNameAVariable() throws {
+        let program = compile(
+            """
+            pick(float x) =>
+                color = x > 1 ? color.green : color.red
+                color
+            color = pick(close)
+            color := pick(close + 1)
+            plot(close, color = color)
+            int length = 3
+            plot(length)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([2])).output
+        XCTAssertEqual(output.plots[0].colors, [PineBuiltins.colors["color.green"]])
+        XCTAssertEqual(output.plots[1].values, [3])
+    }
+
     func testLinefillJoinsTwoLinesAndFollowsThem() throws {
         let program = compile(
             """
