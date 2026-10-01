@@ -38,6 +38,13 @@ extension PineRuntimeSession {
             if case .tuple(let items, _) = expression { return .tuple(items.map { _ in .na }) }
             return .na
         }
+        return try serveSecurity(request, call, &context)
+    }
+
+    /// The expression on the higher-timeframe bar the chart bar belongs to, through the call site's own state.
+    private func serveSecurity(
+        _ request: SecurityRequest, _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
         let key = siteKey(call.site, context)
         var site = working.securities[key] ?? PineSecuritySite()
         let bar = context.bar
@@ -158,6 +165,11 @@ extension PineRuntimeSession {
     func securityLowerTimeframeCall(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
+        if securityGlobals != nil {
+            throw PineDiagnostic.error(
+                "PINE4023", .runtime, "request.security_lower_tf cannot be called inside request.security.",
+                call.range)
+        }
         let (values, expression) = try securityArguments(call, Self.lowerTimeframeParameters, &context)
         guard let expression else {
             throw PineDiagnostic.error(
@@ -172,20 +184,29 @@ extension PineRuntimeSession {
                 "request.security_lower_tf only supports the chart's own symbol in this release.", call.range)
         }
         let seconds = values["timeframe"].textValue.flatMap(PineTime.seconds(ofTimeframe:))
-        if (seconds ?? barSeconds) >= barSeconds, barSeconds > 0,
-            values["ignore_invalid_timeframe"] != .bool(true)
-        {
+        let usable = seconds.map { $0 <= barSeconds } ?? false
+        if !usable, barSeconds > 0, values["ignore_invalid_timeframe"] != .bool(true) {
             throw PineDiagnostic.error(
                 "PINE4021", .runtime,
-                "request.security_lower_tf needs a timeframe lower than the chart's.", call.range)
+                "request.security_lower_tf needs a timeframe no longer than the chart's.", call.range)
         }
-        func emptyArray() -> PineRuntimeValue {
+        func array(_ items: [PineRuntimeValue]) -> PineRuntimeValue {
             let id = allocate()
-            working.arrays[id] = []
+            working.arrays[id] = items
             return .ref(.array, id)
         }
-        if case .tuple(let items, _) = expression { return .tuple(items.map { _ in emptyArray() }) }
-        return emptyArray()
+        // The chart's own timeframe: each chart bar is its own single intrabar. A lower one has no data here.
+        var intrabars: PineRuntimeValue?
+        if let seconds, seconds == barSeconds {
+            intrabars = try serveSecurity(
+                SecurityRequest(interval: seconds, expression: expression, lookaheadOn: false, gapsOn: false),
+                call, &context)
+        }
+        if case .tuple(let items, _) = expression {
+            guard case .tuple(let values)? = intrabars else { return .tuple(items.map { _ in array([]) }) }
+            return .tuple(values.map { array([$0]) })
+        }
+        return array(intrabars.map { [$0] } ?? [])
     }
 
     private func requireChartSymbol(_ value: PineRuntimeValue?, _ range: PineSourceRange) throws {

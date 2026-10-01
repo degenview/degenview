@@ -219,6 +219,29 @@ final class PineSecurityTests: XCTestCase {
         XCTAssertEqual(values.map { $0[2] }, [0, 0, 1])
     }
 
+    func testLowerTimeframeRequestAtTheChartsOwnTimeframeIsOneIntrabarPerBar() throws {
+        let values = try plots(
+            """
+            single = request.security_lower_tf(syminfo.tickerid, "60", close)
+            [o, c] = request.security_lower_tf(syminfo.tickerid, "60", [open, close])
+            plot(array.size(single))
+            plot(array.get(single, 0))
+            plot(array.size(o) + array.size(c))
+            plot(array.get(c, 0) - array.get(o, 0))
+            """, bars: hourly(3))
+        XCTAssertEqual(values[0], [1, 1, 1])
+        XCTAssertEqual(values[1], [1, 2, 3], "the chart bar's own close")
+        XCTAssertEqual(values[2], [2, 2, 2])
+        XCTAssertEqual(values[3], [0, 0, 0], "hourly fixture bars open where they close")
+    }
+
+    func testLowerTimeframeRequestInsideRequestSecurityIsNested() {
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(syminfo.tickerid, \"D\", array.size(request.security_lower_tf(syminfo.tickerid, \"1\", close))))",
+                bars: hourly(24)), "PINE4023")
+    }
+
     func testLowerTimeframeRequestRejectsTheChartsOwnOrHigherTimeframeUnlessIgnored() throws {
         let series = hourly(3)
         XCTAssertEqual(
