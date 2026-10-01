@@ -24,6 +24,7 @@ struct PineChartLayer {
         drawBoxes(context: &context, plot: plot)
         drawCandles(context: &context, plot: plot)
         drawPlots(context: &context, plot: plot)
+        drawLinefills(context: &context, plot: plot)
         drawLines(context: &context, plot: plot)
         drawHorizontalLines(context: &context, plot: plot)
         drawMarkers(context: &context, plot: plot)

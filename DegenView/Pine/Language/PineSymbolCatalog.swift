@@ -72,8 +72,9 @@ enum PineSymbolCatalog {
     /// `line`, `label`, `box`, `table`, `array`, plus the handle and collection types Pine has.
     static let objectTypes = Set(PineParser.objectTypes.keys).union(reservedObjectTypes)
 
-    /// Keywords of Pine that DegenView's parser does not accept yet. They are highlighted so a
-    /// script written for full Pine reads correctly; the compiler still reports them.
+    /// Keywords of Pine that need more than the parser gives them: `type`, `method` and `export` are
+    /// parsed but only in their declaration forms; `import` and `enum` are reported as unsupported.
+    /// All are highlighted so a script written for full Pine reads correctly.
     static let reservedWords: Set<String> = ["import", "export", "method", "type", "enum", "as"]
 
     /// `in`, `to`, `by` are keywords only in a `for` header.
@@ -110,9 +111,9 @@ enum PineSymbolCatalog {
     ]
 
     private static let reservedNamespaces: Set<String> = [
-        "request", "session", "chart", "map", "matrix", "linefill", "polyline", "log", "runtime",
+        "request", "session", "chart", "map", "matrix", "polyline", "log", "runtime",
         "barmerge", "xloc", "yloc",
     ]
 
-    private static let reservedObjectTypes: Set<String> = ["linefill", "polyline", "map", "matrix"]
+    private static let reservedObjectTypes: Set<String> = ["polyline", "map", "matrix"]
 }

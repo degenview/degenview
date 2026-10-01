@@ -235,6 +235,10 @@ final class PineRuntimeSession {
             lines: working.lines.values.sorted { $0.id < $1.id },
             labels: working.labels.values.sorted { $0.id < $1.id },
             boxes: working.boxes.values.sorted { $0.id < $1.id },
+            // A linefill disappears with either of its lines.
+            linefills: working.linefills.values.filter {
+                working.lines[$0.line1] != nil && working.lines[$0.line2] != nil
+            }.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
             strategy: isStrategy ? working.broker.report() : nil)

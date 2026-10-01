@@ -3,6 +3,8 @@ import Foundation
 extension PineParser {
     static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
+        // Typed `.object` rather than a kind of its own: the checker does not track handles of this kind.
+        "linefill": .object,
     ]
 
     static let qualifiers: [String: PineQualifier] = [

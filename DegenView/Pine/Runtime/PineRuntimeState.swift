@@ -21,6 +21,7 @@ struct PineRuntimeState {
     var lines: [Int: PineLineOutput] = [:]
     var labels: [Int: PineLabelOutput] = [:]
     var boxes: [Int: PineBoxOutput] = [:]
+    var linefills: [Int: PineLinefillOutput] = [:]
     var tables: [Int: PineTableOutput] = [:]
     var candles: [Int: PineCandleOutput] = [:]
     var alerts: [PineAlertEvent] = []

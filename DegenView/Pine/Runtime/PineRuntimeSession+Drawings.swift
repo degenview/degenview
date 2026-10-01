@@ -11,6 +11,7 @@ extension PineRuntimeSession {
         case "label.new": return try newLabel(call, &context)
         case "box.new": return try newBox(call, &context)
         case "table.new": return try newTable(call, &context)
+        case "linefill.new": return try newLinefill(call, &context)
         case "table.cell": return try setTableCell(call, &context)
         case "table.merge_cells": return try mergeTableCells(call, &context)
         default: return try mutateDrawing(call, &context)
@@ -113,6 +114,21 @@ extension PineRuntimeSession {
         return .ref(.table, id)
     }
 
+    /// `linefill.new(line1, line2, color)`. Both arguments must be live lines.
+    private func newLinefill(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(call, ["line1", "line2", "color"], &context)
+        guard case .ref(.line, let first)? = b["line1"], case .ref(.line, let second)? = b["line2"],
+            working.lines[first] != nil, working.lines[second] != nil
+        else { return .na }
+        return store(\.linefills, kind: .linefill, limit: nil) { id in
+            PineLinefillOutput(
+                id: id, line1: first, line2: second,
+                color: b["color"].colorValue(fallback: Self.defaultColor) ?? 0)
+        }
+    }
+
     private func setTableCell(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
@@ -204,6 +220,10 @@ extension PineRuntimeSession {
             }
         case "box":
             return try withObject(\.boxes, .box, target, member) { try Self.mutate(&$0, member, a, b, call) }
+        case "linefill":
+            return try withObject(\.linefills, .linefill, target, member) {
+                try Self.mutate(&$0, member, a, call)
+            }
         default: throw call.unknownFunction
         }
     }
@@ -223,6 +243,19 @@ extension PineRuntimeSession {
         let result = try body(&object)
         working[keyPath: objects][id] = object
         return result
+    }
+
+    private static func mutate(
+        _ fill: inout PineLinefillOutput, _ member: String, _ a: PineRuntimeValue, _ call: PineCall
+    ) throws -> PineRuntimeValue {
+        switch member {
+        case "set_color":
+            if case .color(let color) = a { fill.color = color }
+            return .void
+        case "get_line1": return .ref(.line, fill.line1)
+        case "get_line2": return .ref(.line, fill.line2)
+        default: throw call.unknownFunction
+        }
     }
 
     private static func mutate(

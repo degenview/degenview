@@ -287,7 +287,9 @@
 		F2EF8A405664AE6BEA617705 /* PineBarPhase.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */; };
 		F36E6C80E0510F2722D8D513 /* PineBarPhase.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1AAC1CA4C85EBB8F8367820; };
 		F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70 /* PineBoxOutput.swift */; };
+		D71B6E4A77E84EEBDFD378B0 /* PineLinefillOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */; };
 		F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70; };
+		D7CF3B892D247C1478D8F040 /* PineLinefillOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D77F2392328AE7A5903714FC; };
 		F22699D174BF7AD998A0F2E9 /* PineCandleBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */; };
 		F301315B7D9CBC497B96BAF0 /* PineCandleBar.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F1DF7FECA85C3EF69DB81573; };
 		F25893DDA3AA157DDADF7383 /* PineCandleOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */; };
@@ -731,6 +733,7 @@
 		F1D56DF7067B2701DE5DB2BC /* PineBarEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBarEvent.swift; sourceTree = "<group>"; };
 		F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBarPhase.swift; sourceTree = "<group>"; };
 		F19084F629170F398B48BA70 /* PineBoxOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBoxOutput.swift; sourceTree = "<group>"; };
+		D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLinefillOutput.swift; sourceTree = "<group>"; };
 		F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleBar.swift; sourceTree = "<group>"; };
 		F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleOutput.swift; sourceTree = "<group>"; };
 		F171A9B196E8CCB53752887F /* PineChartTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartTheme.swift; sourceTree = "<group>"; };
@@ -1319,6 +1322,7 @@
 				F1D56DF7067B2701DE5DB2BC /* PineBarEvent.swift */,
 				F1AAC1CA4C85EBB8F8367820 /* PineBarPhase.swift */,
 				F19084F629170F398B48BA70 /* PineBoxOutput.swift */,
+				D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */,
 				F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */,
 				F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */,
 				F171A9B196E8CCB53752887F /* PineChartTheme.swift */,
@@ -1598,6 +1602,7 @@
 			F3CBE6041A115064C5E7FF0A /* PineBarEvent.swift in Agent Sources */,
 			F36E6C80E0510F2722D8D513 /* PineBarPhase.swift in Agent Sources */,
 			F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */,
+			D7CF3B892D247C1478D8F040 /* PineLinefillOutput.swift in Agent Sources */,
 			F301315B7D9CBC497B96BAF0 /* PineCandleBar.swift in Agent Sources */,
 			F37183215F3DCA7882EEAB33 /* PineCandleOutput.swift in Agent Sources */,
 			F3D76D46E0096EC225E28584 /* PineChartTheme.swift in Agent Sources */,
@@ -1918,6 +1923,7 @@
 				F20129750AD0CA387882DC7E /* PineBarEvent.swift in Sources */,
 				F2EF8A405664AE6BEA617705 /* PineBarPhase.swift in Sources */,
 				F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */,
+				D71B6E4A77E84EEBDFD378B0 /* PineLinefillOutput.swift in Sources */,
 				F22699D174BF7AD998A0F2E9 /* PineCandleBar.swift in Sources */,
 				F25893DDA3AA157DDADF7383 /* PineCandleOutput.swift in Sources */,
 				F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */,

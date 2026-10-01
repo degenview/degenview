@@ -326,6 +326,38 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertNil(PineTime.seconds(ofTimeframe: "0"))
     }
 
+    func testLinefillJoinsTwoLinesAndFollowsThem() throws {
+        let program = compile(
+            """
+            var line top = line.new(0, 10.0, 5, 12.0)
+            var line bottom = line.new(0, 2.0, 5, 4.0)
+            linefill gone = linefill.new(na, bottom, color.red)
+            var linefill band = linefill.new(top, bottom, color.new(color.blue, 80))
+            band.set_color(color.green)
+            plot(na(gone) ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots[0].values, [1, 1])
+        XCTAssertEqual(output.linefills.count, 1)
+        XCTAssertEqual(output.linefills.first?.color, PineBuiltins.colors["color.green"])
+        XCTAssertEqual(Set([output.linefills[0].line1, output.linefills[0].line2]), Set(output.lines.map(\.id)))
+    }
+
+    func testLinefillDisappearsWithEitherLine() throws {
+        let program = compile(
+            """
+            var line top = line.new(0, 10.0, 5, 12.0)
+            var line bottom = line.new(0, 2.0, 5, 4.0)
+            var linefill band = linefill.new(top, bottom, color.blue)
+            if bar_index == 1
+                line.delete(top)
+            """)
+        let session = PineRuntimeSession(program: program)
+        XCTAssertEqual(try session.evaluate(bars: bars([1])).output.linefills.count, 1)
+        XCTAssertEqual(try session.evaluate(bars: bars([1, 2])).output.linefills.count, 0)
+    }
+
     func testTableMergeCellsSpansTheStartCellAndDropsTheOnesItCovers() throws {
         let program = compile(
             """

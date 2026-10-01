@@ -24,6 +24,31 @@ extension PineChartLayer {
         }
     }
 
+    /// The quadrilateral between a linefill's two lines, under the lines themselves.
+    func drawLinefills(context: inout GraphicsContext, plot: ChartPlot) {
+        guard !pine.linefills.isEmpty else { return }
+        let slot = slotWidth(plot)
+        let lines = Dictionary(uniqueKeysWithValues: pine.lines.map { ($0.id, $0) })
+        func ends(_ line: PineLineOutput) -> (CGPoint, CGPoint) {
+            (
+                CGPoint(x: x(forBar: line.x1, plot: plot, slot: slot), y: plot.y(for: line.y1)),
+                CGPoint(x: x(forBar: line.x2, plot: plot, slot: slot), y: plot.y(for: line.y2))
+            )
+        }
+        for fill in pine.linefills {
+            guard let first = lines[fill.line1], let second = lines[fill.line2] else { continue }
+            let (a, b) = ends(first)
+            let (c, d) = ends(second)
+            var path = Path()
+            path.move(to: a)
+            path.addLine(to: b)
+            path.addLine(to: d)
+            path.addLine(to: c)
+            path.closeSubpath()
+            context.fill(path, with: .color(Color(pineRGBA: fill.color)))
+        }
+    }
+
     func drawLines(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
         for line in pine.lines {
