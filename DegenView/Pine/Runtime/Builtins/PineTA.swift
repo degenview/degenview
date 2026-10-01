@@ -36,6 +36,19 @@ enum PineTA {
         case "ta.mom", "ta.roc": result = momentum(state.inputs, length, isRate: name == "ta.roc")
         case "ta.rsi": result = rsi(state.inputs, length)
         case "ta.macd": result = macd(state)
+        case "ta.median": result = statistic(state.inputs, length) { median($0) }
+        case "ta.range": result = statistic(state.inputs, length) { ($0.max() ?? 0) - ($0.min() ?? 0) }
+        case "ta.variance": result = statistic(state.inputs, length) { variance($0) }
+        case "ta.dev": result = statistic(state.inputs, length) { meanDeviation($0) }
+        case "ta.swma": result = statistic(state.inputs, 4) { ($0[0] + 2 * $0[1] + 2 * $0[2] + $0[3]) / 6 }
+        case "ta.cmo": result = cmo(state.inputs, length)
+        case "ta.cci": result = cci(state.inputs, length)
+        case "ta.hma": result = hma(state.inputs, length)
+        case "ta.highestbars": result = extremumBars(state.inputs, length, highest: true)
+        case "ta.lowestbars": result = extremumBars(state.inputs, length, highest: false)
+        case "ta.percentrank": result = percentRank(state.inputs, length)
+        case "ta.max": result = runningExtreme(source, prior: state.results.last, pick: max)
+        case "ta.min": result = runningExtreme(source, prior: state.results.last, pick: min)
         case "ta.cross", "ta.crossover", "ta.crossunder":
             let crossed = cross(name, source, second, prior: state.results.last)
             state.results.append(.tuple([source, second]))
@@ -45,6 +58,15 @@ enum PineTA {
         state.results.append(result)
         return result
     }
+
+    /// The `ta.*` names `evaluate` computes from one source series and a length. Others that go through
+    /// the generic call (`ta.sar`, `ta.supertrend`…) are not implemented.
+    static let supported: Set<String> = [
+        "ta.sma", "ta.ema", "ta.rma", "ta.highest", "ta.lowest", "ta.change", "ta.wma", "ta.stdev",
+        "ta.rising", "ta.falling", "ta.mom", "ta.roc", "ta.rsi", "ta.macd", "ta.cross", "ta.crossover",
+        "ta.crossunder", "ta.median", "ta.range", "ta.variance", "ta.dev", "ta.swma", "ta.cmo", "ta.cci",
+        "ta.hma", "ta.highestbars", "ta.lowestbars", "ta.percentrank", "ta.max", "ta.min",
+    ]
 
     /// True range: the widest of the bar's range and its gaps from the previous close.
     static func trueRange(_ bar: KlineData, previousClose: Double?) -> Double {
@@ -191,4 +213,112 @@ enum PineTA {
             line.flatMap { l in signal.map { .float(l - $0) } } ?? .na,
         ])
     }
+
+    /// `ta.max` / `ta.min`: the highest or lowest value the series has had so far; `na` does not change it.
+    private static func runningExtreme(
+        _ source: PineRuntimeValue, prior: PineRuntimeValue?, pick: (Double, Double) -> Double
+    ) -> PineRuntimeValue {
+        let previous = prior?.number
+        guard let value = source.number else { return previous.map { .float($0) } ?? .na }
+        return .float(previous.map { pick($0, value) } ?? value)
+    }
+
+    // MARK: - Window statistics
+
+    /// `compute` over the last `length` inputs, all of which must be numbers.
+    private static func statistic(
+        _ inputs: [PineRuntimeValue], _ length: Int, _ compute: ([Double]) -> Double
+    ) -> PineRuntimeValue {
+        lastWindow(inputs, length).map { .float(compute($0)) } ?? .na
+    }
+
+    private static func median(_ values: [Double]) -> Double {
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        return sorted.count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+    }
+
+    /// The population variance, as `ta.variance` computes by default.
+    private static func variance(_ values: [Double]) -> Double {
+        let mean = values.reduce(0, +) / Double(values.count)
+        return values.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(values.count)
+    }
+
+    private static func meanDeviation(_ values: [Double]) -> Double {
+        let mean = values.reduce(0, +) / Double(values.count)
+        return values.reduce(0) { $0 + abs($1 - mean) } / Double(values.count)
+    }
+
+    /// Chande momentum oscillator: the share of the net movement in all movement over `length` changes.
+    private static func cmo(_ inputs: [PineRuntimeValue], _ length: Int) -> PineRuntimeValue {
+        guard length > 0, let window = lastWindow(inputs, length + 1) else { return .na }
+        let changes = zip(window.dropFirst(), window).map(-)
+        let up = changes.filter { $0 > 0 }.reduce(0, +)
+        let down = -changes.filter { $0 < 0 }.reduce(0, +)
+        return .float(up + down == 0 ? 0 : 100 * (up - down) / (up + down))
+    }
+
+    /// Commodity channel index: the distance from the mean in units of 0.015 mean deviations.
+    private static func cci(_ inputs: [PineRuntimeValue], _ length: Int) -> PineRuntimeValue {
+        guard let window = lastWindow(inputs, length), let current = window.last else { return .na }
+        let mean = window.reduce(0, +) / Double(length)
+        let deviation = meanDeviation(window)
+        return .float(deviation == 0 ? 0 : (current - mean) / (0.015 * deviation))
+    }
+
+    /// The weighted average of the `length` inputs ending at `end` (inclusive), or nil.
+    private static func weightedAverage(_ values: [Double?], endingAt end: Int, _ length: Int) -> Double? {
+        guard length > 0, end >= length - 1 else { return nil }
+        var weighted = 0.0
+        for (offset, index) in ((end - length + 1)...end).enumerated() {
+            guard let value = values[index] else { return nil }
+            weighted += Double(offset + 1) * value
+        }
+        return weighted / Double(length * (length + 1) / 2)
+    }
+
+    /// Hull moving average: a weighted average (length √n) of 2 · wma(n/2) − wma(n).
+    private static func hma(_ inputs: [PineRuntimeValue], _ length: Int) -> PineRuntimeValue {
+        guard length > 1 else { return .na }
+        let values = inputs.map(\.number)
+        let half = max(1, length / 2)
+        let smoothing = max(1, Int(Double(length).squareRoot()))
+        let last = values.count - 1
+        guard last - smoothing + 1 >= 0 else { return .na }
+        var difference: [Double?] = Array(repeating: nil, count: values.count)
+        for index in (last - smoothing + 1)...last {
+            if let fast = weightedAverage(values, endingAt: index, half),
+                let slow = weightedAverage(values, endingAt: index, length)
+            {
+                difference[index] = 2 * fast - slow
+            }
+        }
+        return weightedAverage(difference, endingAt: last, smoothing).map { .float($0) } ?? .na
+    }
+
+    /// Bars back to the highest (or lowest) of the last `length` inputs: 0 for the current bar, negative
+    /// further back, the most recent one on a tie.
+    private static func extremumBars(
+        _ inputs: [PineRuntimeValue], _ length: Int, highest: Bool
+    ) -> PineRuntimeValue {
+        guard let window = lastWindow(inputs, length) else { return .na }
+        var best = 0
+        for back in 0..<length {
+            let value = window[length - 1 - back]
+            let current = window[length - 1 - best]
+            if highest ? value > current : value < current { best = back }
+        }
+        return .int(-best)
+    }
+
+    /// The share, in percent, of the previous `length` values that are at or below the current one.
+    private static func percentRank(_ inputs: [PineRuntimeValue], _ length: Int) -> PineRuntimeValue {
+        guard length > 0, inputs.count > length, let current = inputs[inputs.count - 1].number else {
+            return .na
+        }
+        let previous = inputs[(inputs.count - 1 - length)..<(inputs.count - 1)].compactMap(\.number)
+        guard previous.count == length else { return .na }
+        return .float(Double(previous.filter { $0 <= current }.count) / Double(length) * 100)
+    }
 }
+
