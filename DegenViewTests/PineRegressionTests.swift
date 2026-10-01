@@ -121,6 +121,43 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots[0].values, [nil, nil])
     }
 
+    func testMethodSyntaxOnArraysMatchesTheNamespacedCalls() throws {
+        let program = compile(
+            """
+            var array<float> a = array.new<float>()
+            if barstate.isfirst
+                a.push(4.0)
+                a.push(5.0)
+                a.push(6.0)
+            a.set(0, 10.0)
+            a.remove(1)
+            total(array<float> values) => values.get(0) + values.get(values.size() - 1)
+            plot(total(a))
+            plot(a.size())
+            """)
+        XCTAssertTrue(program.isValid, "\(codes(program))")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[16], [2]])
+    }
+
+    func testMethodSyntaxOnDrawingHandlesMatchesTheNamespacedCalls() throws {
+        let program = compile(
+            """
+            var line ln = line.new(bar_index, 1.0, bar_index + 1, 2.0)
+            ln.set_y2(7.0)
+            """)
+        XCTAssertTrue(program.isValid, "\(codes(program))")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.lines.first?.y2, 7)
+    }
+
+    func testMethodCallOnANonHandleIsStillAnUnknownFunction() {
+        let program = compile("x = 1.0\nplot(x.get(0))")
+        XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {
+            XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE4007")
+        }
+    }
+
     func testUndefinedVariableIsARuntimeError() {
         let program = compile("plot(typo)")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {
