@@ -15,7 +15,8 @@ extension PineRuntimeSession {
         {
             return override
         }
-        return try argument(call, 0, nil, &context)
+        guard let defaultValue = call.arguments.inputDefault else { return .na }
+        return try eval(defaultValue.value, &context)
     }
 
     private func runtimeInput(_ value: PineInputValue?, _ context: PineRuntimeContext) -> PineRuntimeValue? {

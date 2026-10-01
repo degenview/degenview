@@ -186,6 +186,22 @@ final class PineRegressionTests: XCTestCase {
         }
     }
 
+    func testNamedDefvalIsTheInputDefaultEvenAfterANamedTitle() throws {
+        let program = compile(
+            """
+            show = input.bool(title="Show", defval=true, group="G")
+            length = input.int(title="Length", defval=5, minval=1)
+            label = input.string(defval="x", title="Label")
+            plot(show ? length : -1)
+            plot(str.length(label))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertEqual(
+            program.inputSchema.inputs.map(\.defaultValue), [.bool(true), .int(5), .string("x")])
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[5], [1]])
+    }
+
     func testUndefinedVariableIsARuntimeError() {
         let program = compile("plot(typo)")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {

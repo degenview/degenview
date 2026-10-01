@@ -45,7 +45,7 @@ extension PineCompiler {
             if case .declaration(let variable, _, _, .call(let name, let args, _, let range), _) = statement,
                 name.hasPrefix("input.")
             {
-                guard let first = args.first,
+                guard let first = args.inputDefault,
                     let defaultValue = inputValue(first.value, function: name, environment)
                 else {
                     diagnostics.append(
