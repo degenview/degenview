@@ -212,7 +212,7 @@ final class PineRuntimeSession {
         try run(program.statements, &context)
         if isStrategy { finishStrategyBar(event.candle) }
         if confirmed {
-            commitHistories(event.candle)
+            commitHistories(event.candle, releasingCommitted: true)
             committed = working
             intrabar = [:]
             lastCommittedOpenTime = openTime
@@ -265,7 +265,7 @@ final class PineRuntimeSession {
 
     /// Appends the confirmed bar's value of every series and variable to its history, which is
     /// what `x[n]` reads.
-    func commitHistories(_ bar: KlineData) {
+    func commitHistories(_ bar: KlineData, releasingCommitted: Bool = false) {
         var series: [String: PineRuntimeValue] = [
             "open": .float(bar.openPrice), "high": .float(bar.highPrice), "low": .float(bar.lowPrice),
             "close": .float(bar.closePrice), "volume": .float(bar.volume),
@@ -279,16 +279,23 @@ final class PineRuntimeSession {
         if isStrategy {
             for name in Self.strategySeries { series[name] = strategyValue(name, bar) }
         }
+        // `working` and `committed` share every history array, and appending to a shared array copies it:
+        // once per variable per bar, which made a long script quadratic. Letting go of the other holder
+        // first lets the appends happen in place.
+        var histories = working.histories
+        working.histories = [:]
+        if releasingCommitted { committed.histories = [:] }
         for (name, value) in series.merging(working.variables, uniquingKeysWith: { $1 })
         where !name.hasPrefix(Self.internalPrefix) {
-            working.histories[name, default: []].append(value)
+            histories[name, default: []].append(value)
         }
         // A subscripted expression that was not reached this bar still takes its slot, so offsets stay aligned.
-        let expressionKeys = Set(working.histories.keys.filter { $0.hasPrefix(Self.internalPrefix) })
+        let expressionKeys = Set(histories.keys.filter { $0.hasPrefix(Self.internalPrefix) })
             .union(working.expressionValues.keys)
         for key in expressionKeys {
-            working.histories[key, default: []].append(working.expressionValues[key] ?? .na)
+            histories[key, default: []].append(working.expressionValues[key] ?? .na)
         }
+        working.histories = histories
         working.expressionValues = [:]
     }
 

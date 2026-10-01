@@ -498,6 +498,22 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots[2].values, Array(repeating: 1, count: 7))
     }
 
+    func testTimeCloseWithATimeframeIsTheCloseOfTheEnclosingBar() throws {
+        let program = compile(
+            """
+            plot(time_close("5"))
+            plot(time_close == time_close("") ? 1 : 0)
+            plot(time_close == time_close("5") ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars(Array(repeating: 1, count: 6)))
+            .output
+        XCTAssertEqual(output.plots[0].values, [300_000, 300_000, 300_000, 300_000, 300_000, 600_000])
+        XCTAssertEqual(output.plots[1].values, Array(repeating: 1, count: 6))
+        XCTAssertEqual(
+            output.plots[2].values, [0, 0, 0, 0, 1, 0], "only the last 1-minute bar closes the 5-minute bar")
+    }
+
     func testStrSplitReturnsAnArrayOfPieces() throws {
         let program = compile(
             """

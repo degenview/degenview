@@ -9,6 +9,7 @@ extension PineRuntimeSession {
         var table: [String: CallHandler] = [
             "na": PineRuntimeSession.naCall, "nz": PineRuntimeSession.nzCall,
             "max_bars_back": PineRuntimeSession.maxBarsBackCall, "time": PineRuntimeSession.timeCall,
+            "time_close": PineRuntimeSession.timeCloseCall,
             "color": PineRuntimeSession.colorCast, "string": PineRuntimeSession.stringCast,
             "int": PineRuntimeSession.intCast, "float": PineRuntimeSession.floatCast,
             "bool": PineRuntimeSession.boolCast, "color.new": PineRuntimeSession.colorNew,

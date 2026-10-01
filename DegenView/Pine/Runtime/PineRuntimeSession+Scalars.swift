@@ -68,6 +68,19 @@ extension PineRuntimeSession {
         return .int(PineTime.milliseconds(start))
     }
 
+    /// `time_close(timeframe)`: the close of the `timeframe` bar that contains the current bar.
+    func timeCloseCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        guard case .string(let text) = try argument(call, 0, "timeframe", &context), !text.isEmpty else {
+            return market("time_close", context) ?? .na
+        }
+        guard let seconds = PineTime.seconds(ofTimeframe: text) else {
+            throw PineDiagnostic.error(
+                "PINE4021", .runtime, "time_close() needs a timeframe such as \"60\" or \"1D\".", call.range)
+        }
+        let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
+        return .int(PineTime.milliseconds(KlineData.bucketEnd(after: start, interval: seconds)))
+    }
+
     /// `max_bars_back(series, n)`: a hint about how much history to keep. The runtime keeps all of it.
     func maxBarsBackCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         .void
