@@ -175,8 +175,48 @@ final class PineSecurityTests: XCTestCase {
     }
 
     func testOtherRequestFunctionsAreStillReportedAtCompileTime() {
-        let program = compile("x = request.security_lower_tf(syminfo.tickerid, \"1\", close)\nplot(close)")
+        let program = compile("x = request.dividends(syminfo.tickerid)\nplot(close)")
         XCTAssertEqual(program.diagnostics.map(\.code), ["PINE9003"])
+    }
+
+    // MARK: - Lower timeframes
+
+    func testLowerTimeframeRequestsReturnEmptyArraysBecauseThereIsNoIntrabarData() throws {
+        let values = try plots(
+            """
+            [o, c, v] = request.security_lower_tf(syminfo.tickerid, "1", [open, close, volume])
+            single = request.security_lower_tf(syminfo.tickerid, "1", close)
+            plot(array.size(o) + array.size(c) + array.size(v))
+            plot(array.size(single))
+            plot(na(array.avg(single)) ? 1 : 0)
+            """, bars: hourly(3))
+        XCTAssertEqual(values.map { $0[2] }, [0, 0, 1])
+    }
+
+    func testLowerTimeframeRequestRejectsTheChartsOwnOrHigherTimeframeUnlessIgnored() throws {
+        let series = hourly(3)
+        XCTAssertEqual(
+            runtimeError("x = request.security_lower_tf(syminfo.tickerid, \"D\", close)\nplot(close)", bars: series),
+            "PINE4021")
+        let ignored = try plots(
+            """
+            x = request.security_lower_tf(syminfo.tickerid, "D", close, ignore_invalid_timeframe = true)
+            plot(array.size(x))
+            """, bars: series)
+        XCTAssertEqual(ignored, [[0, 0, 0]])
+    }
+
+    func testLowerTimeframeRequestForAnotherSymbolIsAnErrorUnlessIgnored() throws {
+        let series = hourly(2)
+        XCTAssertEqual(
+            runtimeError("x = request.security_lower_tf(\"BINANCE:ETHUSDT\", \"1\", close)\nplot(close)", bars: series),
+            "PINE4022")
+        let ignored = try plots(
+            """
+            x = request.security_lower_tf("BINANCE:ETHUSDT", "1", close, ignore_invalid_symbol = true)
+            plot(array.size(x))
+            """, bars: series)
+        XCTAssertEqual(ignored, [[0, 0]])
     }
 
     // MARK: - Realtime

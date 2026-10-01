@@ -174,7 +174,7 @@ final class PineRegressionTests: XCTestCase {
     }
 
     func testRequestCallsAreFlaggedInsideExpressions() {
-        let program = compile("x = request.security_lower_tf(syminfo.tickerid, \"1\", close)\nplot(x)")
+        let program = compile("x = request.dividends(syminfo.tickerid)\nplot(x)")
         XCTAssertTrue(codes(program).contains("PINE9003"), "\(codes(program))")
     }
 

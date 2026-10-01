@@ -82,22 +82,7 @@ extension PineRuntimeSession {
     private func securityRequest(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> SecurityRequest {
-        var values: [String: PineRuntimeValue] = [:]
-        var expression: PineExpression?
-        var position = 0
-        for argument in call.arguments {
-            var name = argument.name
-            if name == nil {
-                if position < Self.securityParameters.count { name = Self.securityParameters[position] }
-                position += 1
-            }
-            guard let name else { continue }
-            if name == "expression" {
-                expression = argument.value
-            } else {
-                values[name] = try eval(argument.value, &context)
-            }
-        }
+        let (values, expression) = try securityArguments(call, Self.securityParameters, &context)
         guard let expression else {
             throw PineDiagnostic.error(
                 "PINE4024", .runtime, "request.security needs a symbol, a timeframe and an expression.",
@@ -108,6 +93,73 @@ extension PineRuntimeSession {
             interval: try securityInterval(values["timeframe"], call.range), expression: expression,
             lookaheadOn: values["lookahead"] == .string("barmerge.lookahead_on"),
             gapsOn: values["gaps"] == .string("barmerge.gaps_on"))
+    }
+
+    /// The call's arguments by parameter name. `expression` stays unevaluated: it runs on another series.
+    private func securityArguments(
+        _ call: PineCall, _ parameters: [String], _ context: inout PineRuntimeContext
+    ) throws -> ([String: PineRuntimeValue], PineExpression?) {
+        var values: [String: PineRuntimeValue] = [:]
+        var expression: PineExpression?
+        var position = 0
+        for argument in call.arguments {
+            var name = argument.name
+            if name == nil {
+                if position < parameters.count { name = parameters[position] }
+                position += 1
+            }
+            guard let name else { continue }
+            if name == "expression" {
+                expression = argument.value
+            } else {
+                values[name] = try eval(argument.value, &context)
+            }
+        }
+        return (values, expression)
+    }
+
+    // MARK: - Lower timeframes
+
+    private static let lowerTimeframeParameters = [
+        "symbol", "timeframe", "expression", "ignore_invalid_symbol", "currency",
+        "ignore_invalid_timeframe", "calc_bars_count",
+    ]
+
+    /// `request.security_lower_tf`: the values of an expression on each intrabar of the chart bar. The engine
+    /// only has the chart's own bars, so there is no intrabar data: every array is empty, which is what
+    /// Pine returns when a timeframe cannot be served. A tuple expression gives a tuple of empty arrays.
+    /// An invalid symbol or timeframe is an error unless the script passed `ignore_invalid_*`, as in Pine.
+    func securityLowerTimeframeCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let (values, expression) = try securityArguments(call, Self.lowerTimeframeParameters, &context)
+        guard let expression else {
+            throw PineDiagnostic.error(
+                "PINE4024", .runtime,
+                "request.security_lower_tf needs a symbol, a timeframe and an expression.", call.range)
+        }
+        if case .string(let text)? = values["symbol"], !(text.isEmpty || text == symbol.tickerID),
+            values["ignore_invalid_symbol"] != .bool(true)
+        {
+            throw PineDiagnostic.error(
+                "PINE4022", .runtime,
+                "request.security_lower_tf only supports the chart's own symbol in this release.", call.range)
+        }
+        let seconds = values["timeframe"].textValue.flatMap(PineTime.seconds(ofTimeframe:))
+        if (seconds ?? barSeconds) >= barSeconds, barSeconds > 0,
+            values["ignore_invalid_timeframe"] != .bool(true)
+        {
+            throw PineDiagnostic.error(
+                "PINE4021", .runtime,
+                "request.security_lower_tf needs a timeframe lower than the chart's.", call.range)
+        }
+        func emptyArray() -> PineRuntimeValue {
+            let id = allocate()
+            working.arrays[id] = []
+            return .ref(.array, id)
+        }
+        if case .tuple(let items, _) = expression { return .tuple(items.map { _ in emptyArray() }) }
+        return emptyArray()
     }
 
     private func requireChartSymbol(_ value: PineRuntimeValue?, _ range: PineSourceRange) throws {
