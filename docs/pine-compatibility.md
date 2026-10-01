@@ -181,7 +181,8 @@ row) → `PineAlertDispatcher` (channels).
   `export` modifier (accepted in a `library()`, `PINE3037` elsewhere).
 - Method syntax on a variable holding an array or a `line`/`label`/`box`/`table` handle:
   `values.get(i)` is `array.get(values, i)`, `ln.set_y2(p)` is `line.set_y2(ln, p)`. The receiver must
-  be a plain variable; chained receivers such as `array.get(a, 0).field` are not parsed.
+  be a plain variable or a field path (`zone.box.get_top()`); a call result is not a receiver
+  (`array.get(a, 0).set_x(1)` reports `PINE2006`).
 - `input.*` defaults are read from `defval =` (or the leading positional argument), so
   `input.bool(title = "…", defval = true)` works.
 - `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday` (midnight UTC of the bar's day),
@@ -189,8 +190,22 @@ row) → `PineAlertDispatcher` (channels).
   `color.from_gradient`, and `color.r/g/b/t`. `timeframe.in_seconds` counts a month as 30 days, as
   `timeframe.period` assumes, and `timeframe.change` is true on the first bar; both are assumptions
   not checked against TradingView.
-- `type`, `enum`, `method` and `import` declarations are recognised and reported once
-  (`PINE9006`–`PINE9009`) with their bodies skipped, rather than as a syntax error per line.
+- **User-defined types.** `type Name` with typed fields and constant-or-expression defaults (also
+  `export type`), `Name.new(positional, named = …)`, field reads (`zone.top`, `zone.origin.y`,
+  `array.get(zones, i).top`), field assignment (`:=`, `+=`, also through a call result), `obj.copy()`
+  (shallow), and `array<Name>`. Objects are references: two variables can name one instance, and
+  instances live in the runtime state, so `var` persistence and realtime rollback behave as for
+  arrays. Reading a field of `na` is `PINE4018`, an unknown field `PINE4019`, assigning through a
+  non-object `PINE4020`. A type must be declared before its first use, as in Pine.
+- **Methods.** `method name(Type this, …) =>`; `value.name(args)` calls it with `value` first and a
+  method wins over a builtin of the same name. There is no overloading by receiver type: a second
+  `method update(…)` for another type is `PINE3024`.
+- `linefill.new/set_color/get_line1/get_line2/delete` (a fill disappears with either of its lines),
+  `table.merge_cells`, `table.clear`, the `table.set_*` setters, `label.set_tooltip` (stored, not yet
+  shown), `chart.is_standard` and the other `chart.is_*` flags (plain candles), and
+  `behind_chart = false` on the declaration (`true` is `PINE9001`).
+- `enum` and `import` declarations are recognised and reported once (`PINE9007`, `PINE9008`) with
+  their bodies skipped, rather than as a syntax error per line.
 
 ## Type checking
 
@@ -246,10 +261,9 @@ meets (`PINE4001`–`PINE4006`).
 
 ## Known incompatibilities
 
-The current grammar does not yet implement method calls on anything but array and drawing
-variables, maps, matrices, user-defined types and methods (`PINE9006`, `PINE9009`), enums
-(`PINE9007`), library `import` (`PINE9008`), `polyline`, `chart.point`, `linefill`,
-`table.merge_cells`, the `scale` and `max_polylines_count` declaration arguments, or `xloc.bar_time`
+The current grammar does not yet implement method calls on a call result, maps, matrices,
+enums (`PINE9007`), library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
+`max_polylines_count` declaration arguments, built-in types such as `footprint`, or `xloc.bar_time`
 drawings. A variable named like a type keyword (`color = …`) does not parse. Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
@@ -325,16 +339,25 @@ the cache is absent. Each script is compiled and run over 1,000 deterministic sy
 and the outcome is compared with `expectations.json`: a regression and a newly supported script both fail it.
 **"Compatible" here means compiles and runs to completion; no values were compared with TradingView.**
 
-Result of the first run against the 30 scripts fetched on 2026-10-01: 1 of 20 indicators and 0 of 10 libraries ran. After the fixes in this change, 5 of 20 indicators and 2 of 10 libraries compile and
-run. The rest are blocked by whole features, counted in scripts (a script can have several):
+Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries that run or compile):
+
+| | Indicators | Libraries |
+|---|---|---|
+| First run | 1 / 20 | 0 / 10 |
+| After the syntax and builtin fixes | 5 / 20 | 2 / 10 |
+| After user-defined types, methods, `linefill`, table calls | 9 / 20 | 5 / 10 |
+
+The 16 that still fail are blocked by whole features, counted in scripts (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
-| User-defined types (`PINE9006`), usually with methods (`PINE9009`) | 10 |
 | `request.security` (`PINE9003`) | 10 |
 | Library `import` (`PINE9008`) | 2 |
 | Source over the 100,000-character limit (`PINE8001`) | 2 |
-| `chart.point` / `polyline`, matrices, enums (`PINE9007`), `table.merge_cells`, `scale=` | 5 |
+| Maps, matrices, `chart.point` / `polyline`, `scale=`, enums (`PINE9007`) | 5 |
+| Built-in `footprint` type and overloaded methods (`PINE3024`) | 1 |
 
-Libraries are checked only for compiling: `library()` and `export` parse, but nothing runs a
-library's exports, and `import` is unsupported.
+Libraries are checked only for compiling: `library()`, `export`, types and methods parse, but nothing
+runs a library's exports, and `import` is unsupported. An indicator that runs on synthetic bars has not
+necessarily reached every branch (for example the code that constructs its objects); the unit tests in
+`PineUserTypeTests` cover the semantics.
