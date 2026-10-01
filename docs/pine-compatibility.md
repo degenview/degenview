@@ -191,6 +191,17 @@ row) → `PineAlertDispatcher` (channels).
 - Casts and helpers: `color(x)` and `string(x)` (a value of that type passes through, anything else is
   `na`), `max_bars_back` (a no-op: all history is kept), `str.match` (first match or `""`), `str.split`,
   `str.repeat`, `array.sort_indices`, `color.from_gradient`, `color.r/g/b/t`.
+- In a condition (`if`, `while`, `?:`, `not`, `and`/`or`) `na` is false, as in v6 where a bool is never `na`:
+  a bool series read before its first bar, or a branch not reached, is false. Numbers and strings are still
+  not conditions (`PINE4001`–`PINE4005`).
+- The legacy generic `input(defval, …)` is accepted; its type is the default's (a series name makes it a
+  source input). `runtime.error(message)` stops the script with `PINE4030` and the script's message.
+  `ticker.new/standard/modify/inherit` build symbol ids; since only the chart's own symbol can be served,
+  `standard`, `modify` and `inherit` return what they are given.
+- Declaration arguments `behind_chart` (either value), `explicit_plot_zorder` and `dynamic_requests` are
+  accepted and ignored; `max_polylines_count` is honoured. Arguments that change behaviour (`scale`,
+  margin and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
+  (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
 - `import` declarations are recognised and reported once (`PINE9008`) with their body skipped, rather
   than as a syntax error per line.
 
@@ -241,8 +252,22 @@ row) → `PineAlertDispatcher` (channels).
   *Differences*; an invalid symbol or timeframe is `na` when the script passes
   `ignore_invalid_symbol` / `ignore_invalid_timeframe`, otherwise `PINE4022` / `PINE4021`. A nested call
   is `PINE4023`, a missing argument `PINE4024`.
-- **`request.security_lower_tf`** returns empty arrays (a tuple expression a tuple of empty arrays).
-  Every other `request.*` function is `PINE9003` at compile time.
+- **`request.security_lower_tf`**: at the chart's own timeframe each chart bar is its own single intrabar, so
+  it returns one-element arrays (a tuple expression a tuple of them); at a shorter timeframe there is no
+  intrabar data and it returns empty arrays; a longer or malformed timeframe is `PINE4021` unless the script
+  passes `ignore_invalid_timeframe`. Every other `request.*` function is `PINE9003` at compile time.
+
+### Technical analysis and library functions
+
+- `ta.sma/ema/rma/wma/stdev/highest/lowest/change/rising/falling/mom/roc/rsi/macd/cross*/atr/tr/bb/cum/
+  barssince/pivothigh/pivotlow` (the original set) and `ta.median/range/variance/dev/swma/cmo/cci/hma/
+  highestbars/lowestbars/percentrank/correlation/vwap/dmi/sar/max/min`. `ta.highest/lowest/highestbars/
+  lowestbars` accept the length-only form (reading `high` / `low`). **A `ta.*` function not listed is
+  `PINE4007`**; it used to evaluate to `na` silently.
+- `math.sum` (a sliding sum), `array.median/mode/range/variance/stdev/percentile_nearest_rank/
+  percentile_linear_interpolation/covariance` (`na` entries ignored; population figures unless
+  `biased = false`), `array.sort_indices`, and `str.format_time(time, format, timezone)` (Unicode date
+  patterns; an IANA zone, `UTC`, `UTC+3` or `GMT-05:30`; UTC without one).
 
 ### Drawings
 
@@ -251,7 +276,16 @@ row) → `PineAlertDispatcher` (channels).
   `polyline.new/delete` with `chart.point.from_index/from_time/now/new` (points are ordinary objects with
   `index`, `time` and `price` fields); `max_polylines_count` limits how many are kept.
   `table.merge_cells`, `table.clear`, `table.set_position/bgcolor/border_color/frame_color/border_width/
-  frame_width`, `label.set_tooltip`, and `behind_chart = false` on the declaration.
+  frame_width`, `label.set_tooltip`.
+- Every `label.style_*`: bubbles with a pointer (`label_up/down/left/right` and the four `label_lower/upper_
+  left/right` corners), `label_center`, `circle`/`square`/`diamond` shapes holding the text, the glyph styles
+  `cross`, `xcross`, `flag`, `triangleup/down`, `arrowup/down`, `none` and `text_outline`.
+- Boxes take `text`, `text_size`, `text_color`, `text_halign/valign` and `border_style`, with `box.set_*` for each;
+  lines draw `line.style_arrow_left/right/both` heads; labels keep `textalign` / `label.set_textalign`.
+- Drawings made from points: `line.new(first_point, second_point, …)`, `label.new(point, …)`,
+  `box.new(top_left, bottom_right, …)`, `line.set_first_point/set_second_point`, `label.set_point`,
+  `box.set_top_left_point/set_bottom_right_point`. A drawing made with `na` coordinates
+  (`line.new(na, na, na, na)`) exists, its getters read `na`, and it is drawn once every coordinate is known.
 
 ## Type checking
 
@@ -322,7 +356,11 @@ the corpus run (below) only shows that scripts compile and run.
 | Higher-timeframe data | Built by folding the chart's own bars (UTC calendar; weeks start Monday; months, quarters and years follow the calendar). | The series is only as deep as the chart's history, so a 1,000-bar chart yields few daily, weekly or monthly bars and indicators with a long warm-up show `na` for a long time. A chart with missing bars gives incomplete higher-timeframe bars. TradingView uses the provider's own higher-timeframe history. | No |
 | `request.security` arguments | `symbol`, `timeframe`, `expression`, `gaps`, `lookahead`, `ignore_invalid_symbol`, `ignore_invalid_timeframe`. | `currency` and `calc_bars_count` are accepted and ignored. Only the chart's own symbol and timeframes at least as long as the chart's are served. | n/a |
 | Globals inside the expression | Inputs and constants are readable. | A global *series* is not recomputed on the higher timeframe, and `myVar[1]` of a main variable is `na` there. Pine re-evaluates what the expression depends on in the other context. | No |
-| `request.security_lower_tf` | Empty arrays. | There is no intrabar data, so scripts that rely on it (delta, intrabar volume profile) run but show nothing for it. Pine returns empty arrays only when a timeframe cannot be served. | Partly (the empty result is Pine's documented behaviour for an unserved timeframe) |
+| `request.security_lower_tf` | One-element arrays at the chart's own timeframe; empty arrays at a shorter one. | There is no intrabar data, so scripts that rely on it (delta, intrabar volume profile) run but show nothing for it. Pine returns empty arrays only when a timeframe cannot be served; whether it accepts the chart's own timeframe (here: yes) is an assumption. | Partly (the empty result is Pine's documented behaviour for an unserved timeframe) |
+| `ta.*` definitions | `median`, `range`, `variance`, `dev`, `swma`, `cmo`, `cci`, `hma`, `highestbars`, `lowestbars`, `percentrank`, `correlation`, `vwap`, `dmi`, `sar` follow Pine's documented formulas. | Checked against an independent implementation of the formulas on a fixed fixture, not against TradingView: ties in `highestbars`/`lowestbars` take the most recent bar, `percentrank` counts the previous `length` values at or below the current one, `vwap` restarts at UTC midnight and uses the bar's own volume, `sar` follows the equivalent Pine code in the reference manual. `sma` and a few older functions skip `na` inside a window; the new ones return `na` if any value in it is `na`. | No (formulas only) |
+| `str.format_time` | Unicode (ICU) date patterns, UTC by default. | Pine documents Java-style patterns; the common letters (`yyyy MM MMM dd HH hh mm ss SSS a EEE Z`) agree, rarer ones may not. An unknown zone name falls back to UTC. | No |
+| Conditions | `na` is false in `if`, `while`, `?:`, `not`, `and`, `or`. | Matches the v6 rule that a bool is never `na`; the runtime does not know a variable's declared type, so it cannot tell a bool `na` from a number `na` and rejects only numbers and strings. | Per the v6 manual |
+| `ta.*` and other missing functions | An unimplemented `ta.*` function, `table.cell_set_*` and similar are `PINE4007` at run time. | A script is not rejected at compile time for calling them, so one that only reaches them on some bars fails late. | n/a |
 | Timeframe strings | `"30S"`, `"5"`/`"60"` (minutes), `"1D"`, `"2W"`, `"3M"`, bare units. | A month is 30 days for `timeframe.in_seconds` and `time(tf)` length arithmetic. `"2W"` buckets as one week, not two. | No |
 | `timeframe.change(tf)` | True on the first bar of a `tf` period, and on the first bar of the chart. | The first-bar rule is an assumption. | No |
 | `time(tf)`, `time_close(tf)` | Open and close of the `tf` bar containing the current bar, on the same UTC calendar. | The session and time-zone arguments are ignored. `time_tradingday` is midnight UTC of the bar's day. | No |
@@ -337,8 +375,10 @@ the corpus run (below) only shows that scripts compile and run.
 | Matrices | The operations listed above. | No element-wise arithmetic, `matrix.mult`, determinants, inverses, `matrix.reshape` or `concat`. | No |
 | Polylines and linefills | Straight segments, filled when closed with a fill color; a linefill disappears with either of its lines and at most 50 are kept. | `curved = true` is not drawn curved; `chart.point.from_index` leaves `time` as `na`; the drawing code has no unit test. | No |
 | Tables | `new`, `cell`, `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules; the drawing code has no unit test. | No |
-| Labels | `label.set_tooltip` and `tooltip =` are stored. | The chart does not show tooltips. | No |
-| Declaration | `behind_chart = false`, `max_polylines_count`. | `behind_chart = true` is `PINE9001` (drawings are always above the candles); `scale` is `PINE9001`. | n/a |
+| Labels | Every `label.style_*`; `label.set_tooltip` / `tooltip =` and `textalign` are stored. | The chart does not show tooltips and does not apply multi-line alignment. The shape and glyph styles (`circle`, `square`, `diamond`, `cross`, `xcross`, `flag`, `triangle*`, `arrow*`) are simplified drawings with the text above, below or inside; `text_outline` is plain text. Placement is unit-tested, the drawing is not. | No |
+| Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
+| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context. `scale` is `PINE9001`. | n/a |
+| Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
 | Libraries | `library()`, `export`, types, methods and enums compile. | Nothing runs a library's exports and `import` is unsupported, so a library is only checked for compiling. | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |
 
@@ -415,34 +455,41 @@ are claimed here.
 ### Real-world script corpus
 
 `PineCorpusTests` runs published community scripts through the engine. `tools/pine-corpus/fetch.py`
-downloads the most popular open-source Pine v6 scripts (20 indicators, 10 libraries, in TradingView's
-default popularity order) into the gitignored `.pine-corpus/` directory. Their authors keep the licences, so the
+downloads open-source Pine v6 scripts in TradingView's default popularity order (`--append` adds more
+without replacing what the manifest lists, because that order moves daily) into the gitignored `.pine-corpus/` directory. Their authors keep the licences, so the
 sources are never committed; `DegenViewTests/PineCorpus/manifest.json` records only metadata. The test skips when
 the cache is absent. Each script is compiled and run over 1,000 deterministic synthetic 1-minute bars with default inputs
 (1 minute so that default timeframes of 1 to 60 minutes are not finer than the chart),
 and the outcome is compared with `expectations.json`: a regression and a newly supported script both fail it.
 **"Compatible" here means compiles and runs to completion; no values were compared with TradingView.**
 
-Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries that run or compile):
+The first 30 scripts were fetched on 2026-10-01 and 30 more later the same day (60: 40 indicators, 20 libraries).
+Indicators / libraries that run or compile:
 
 | | Indicators | Libraries |
 |---|---|---|
-| First run | 1 / 20 | 0 / 10 |
+| First run, first 30 | 1 / 20 | 0 / 10 |
 | After the syntax and builtin fixes | 5 / 20 | 2 / 10 |
 | After user-defined types, methods, `linefill`, table calls | 9 / 20 | 5 / 10 |
 | After `request.security` (own symbol), expression subscripts, `xloc.bar_time` | 13 / 20 | 5 / 10 |
 | After the 500k source limit and enums | 14 / 20 | 6 / 10 |
 | After maps and methods on call results | 16 / 20 | 6 / 10 |
-| After empty-intrabar `request.security_lower_tf`, polylines, matrices, a 20M per-bar guard | 18 / 20 | 7 / 10 |
+| After lower-timeframe requests, polylines, matrices, a 20M per-bar guard | 18 / 20 | 7 / 10 |
+| The 30 added scripts, first run (before the work on them) | 8 / 20 | 6 / 10 |
+| All 60 after the work on them | 37 / 40 | 15 / 20 |
 
-The 5 that still fail are blocked by whole features (a script can have several):
+The 8 that still fail are blocked by whole features (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
-| `request.security` for another symbol (`PINE4022`) | 2 |
-| Library `import` (`PINE9008`) | 2 |
+| `request.security` for another symbol (`PINE4022`) | 3 (`UyBliO8S`, `MPypFZJS`, `tY9RZ0MY`) |
+| Library `import` (`PINE9008`) | 3 |
 | `scale=` declaration argument | 1 |
-| Built-in `footprint` type and overloaded methods (`PINE3024`) | 1 |
+| Built-in `footprint` type | 1 |
+| Data-dependent runtime error (`array.get` with an `na` index inside a profile function, `UTgFqITU`) | 1, not investigated |
+
+The corpus test takes about 40 s on the machine it was written on, most of it two scripts (`xlWhYoco`, ~7 s, and
+`VEvpsGHa`); a slow machine can report `PINE8007` for those.
 
 Libraries are checked only for compiling: `library()`, `export`, types and methods parse, but nothing
 runs a library's exports, and `import` is unsupported. An indicator that runs on synthetic bars has not
