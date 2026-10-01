@@ -68,6 +68,15 @@ The Scripts tab in chart settings loads a saved script onto the chart: pick one 
 or **None** to unload it. Scripts are edited only in the Script Manager; the tab's **Script
 Manager** button opens it in a new tab, and saving a script there updates charts using it.
 
+The Script Manager also runs the script you are editing. A live chart sits beside the code (use
+the toolbar's position menu to put it left of, above or below the editor, or hide it with ⌥⌘P):
+it re-runs a moment after you stop typing, and while the code does not compile it keeps showing
+the last working version. Pick the market from the header — crypto or US stocks (stocks need
+Alpaca keys in Settings) — and a timeframe, scroll over the chart to zoom, and drag its price
+axis to make the candles taller or shorter (double-click resets). The bar under the chart opens **Inputs** (every `input.*` declaration as a control; values are remembered per
+script, **Reset to Defaults** clears them), **Report** (strategy results and alerts) and
+**Problems**. Hide the script list with ⌃⌘S. Previews never raise alerts.
+
 Scripts declared with `strategy()` are backtested over the chart's bars: the Scripts tab
 shows net profit, win rate, profit factor, drawdown, an equity curve, and the trade list,
 and the chart marks each entry and exit. `alert()` and `alertcondition()` calls are listed

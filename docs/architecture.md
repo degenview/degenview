@@ -20,17 +20,21 @@ DegenView/
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
+│   ├── PreviewMarket.swift            # A crypto or stock market the Script Manager preview charts
+│   ├── ScriptPreviewLayout.swift      # ChartPosition: preview chart left of / above / below the code
 │   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
 │   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
+│   ├── ScriptPreviewViewModel.swift   # Script Manager preview: one chart, market, timeframe, inputs, refresh
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
 │   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
 │   ├── PineAlertCoordinator.swift     # Routes a chart's Pine alerts; pauses/re-arms subscriptions
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
 │   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
+│   ├── ChartIconView.swift            # A chart's market icon with its source logo badge
 │   ├── CandleChartView.swift          # AppKit Canvas candlestick renderer
 │   ├── LineChartView.swift            # Prediction-market and multi-series renderer
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
@@ -43,6 +47,15 @@ DegenView/
 │   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
+│   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
+│   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
+│   ├── ScriptPreviewPane.swift        # Live preview: market, timeframe, zoom, chart, drawer bar
+│   ├── ScriptPreviewDrawer.swift      # Inputs / Report / Problems under the preview chart
+│   ├── ScriptPreviewMarketPicker.swift # Crypto-and-stock-only market popover
+│   ├── PineInputsView.swift           # A script's `input.*` declarations as controls (chart settings + preview)
+│   ├── SettingsCardRow.swift          # Icon, title, hint and trailing control card
+│   ├── PriceAxisDragMonitor.swift     # Drag a price axis to scale candles (chart tabs and the preview)
+│   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
@@ -70,6 +83,8 @@ DegenView/
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
+    ├── ChartLiveFeed.swift            # Opens the Binance/Coinbase/Alpaca streams for a set of charts
+    ├── ScriptPreviewInputsStore.swift # Input values tried in the Script Manager preview, per script
     ├── BinanceWebSocketService.swift  # Binance live klines
     ├── CoinbaseAPIService.swift       # Coinbase REST candles (paged, 1w/1M folded from daily) + product search
     ├── CoinbaseWebSocketService.swift # Coinbase live trades (ticker channel → CoinbaseTick)

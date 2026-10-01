@@ -612,6 +612,14 @@ final class ChartViewModel: ObservableObject {
         reevaluatePine()
     }
 
+    /// `overlay=false` scripts get their own pane under the candles; the line chart draws no scripts.
+    var showsPinePane: Bool { !usesLineChart && !pineOutput.overlay }
+
+    /// Height of that pane out of a chart area `chartHeight` tall — the candles keep the rest.
+    func pinePaneHeight(forChartHeight chartHeight: CGFloat) -> CGFloat {
+        showsPinePane ? (chartHeight * 0.3).rounded() : 0
+    }
+
     /// The market the applied script runs on.
     var pineAlertDataset: PineDatasetKey { pineDataset(for: requestedRange ?? .oneDay) }
 

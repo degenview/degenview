@@ -62,6 +62,9 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   DegenView is the handler for `.pine`: opening one from elsewhere offers to copy it into
   the library and opens it in the Script Manager. Errors are underlined in the editor;
   hover the underline for the message
+- **Live script preview** — The Script Manager charts the script being edited on a real
+  crypto or stock market, left of, above or below the code, and re-runs it as you type. Its
+  inputs are editable in a panel under the chart; the script list collapses
 - **Per-chart appearance** — Custom bullish and bearish colors plus automatic or fixed
   Y-axis decimal precision
 - **Independent price zoom** — Drag a chart's Y-axis to adjust its vertical scale

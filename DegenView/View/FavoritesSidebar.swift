@@ -100,7 +100,6 @@ private struct FavoriteRow: View {
     let item: FavoriteItem
     let onSelect: () -> Void
     @StateObject private var viewModel: ChartViewModel
-    @State private var iconURL: URL?
     @State private var showTitleTooltip = false
     @State private var titleTooltipTask: Task<Void, Never>?
 
@@ -119,7 +118,7 @@ private struct FavoriteRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 8) {
-                TickerIconView(symbol: viewModel.baseSymbol, url: iconURL)
+                ChartIconView(viewModel: viewModel, showsSource: false)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(item.name)
@@ -174,14 +173,6 @@ private struct FavoriteRow: View {
         .buttonStyle(.plain)
         .task {
             await viewModel.fetchData(for: .oneDay, count: TimeRange.oneDay.dataPointLimit, silent: true)
-        }
-        .task(id: viewModel.iconKey) {
-            iconURL = nil
-            iconURL = await IconResolver.shared.iconURL(
-                ticker: viewModel.ticker,
-                source: viewModel.source,
-                baseSymbol: viewModel.baseSymbol
-            )
         }
         .onDisappear {
             titleTooltipTask?.cancel()

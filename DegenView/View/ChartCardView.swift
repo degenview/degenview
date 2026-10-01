@@ -40,7 +40,6 @@ struct ChartCardView: View {
     var onPaperClose: (PaperPosition) -> Void = { _ in }
 
     @State private var showSettings = false
-    @State private var iconURL: URL?
     @State private var showAlertEditor = false
     @StateObject private var portfolioStore = PortfolioStore.shared
     @Environment(\.colorScheme) private var colorScheme
@@ -101,14 +100,6 @@ struct ChartCardView: View {
         .task(id: viewModel.iconKey) {
             await viewModel.resolveCoinSymbol()
         }
-        .task(id: viewModel.iconKey) {
-            iconURL = nil
-            iconURL = await IconResolver.shared.iconURL(
-                ticker: viewModel.ticker,
-                source: viewModel.source,
-                baseSymbol: viewModel.baseSymbol
-            )
-        }
         .sheet(isPresented: $showSettings) {
             ChartSettingsSheet(
                 viewModel: viewModel,
@@ -138,8 +129,7 @@ struct ChartCardView: View {
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        TickerIconView(
-                            symbol: viewModel.baseSymbol, url: iconURL, source: viewModel.source)
+                        ChartIconView(viewModel: viewModel)
                         // Market questions are long — keep the header on one line.
                         Text(viewModel.title)
                             .font(.headline)
@@ -269,14 +259,9 @@ struct ChartCardView: View {
 
     // MARK: - Chart Area
 
-    /// `overlay=false` scripts get their own pane; the line chart draws no scripts.
-    private var showsPinePane: Bool {
-        !viewModel.usesLineChart && !viewModel.pineOutput.overlay
-    }
+    private var showsPinePane: Bool { viewModel.showsPinePane }
 
-    private var pinePaneHeight: CGFloat {
-        showsPinePane ? (chartHeight * 0.3).rounded() : 0
-    }
+    private var pinePaneHeight: CGFloat { viewModel.pinePaneHeight(forChartHeight: chartHeight) }
 
     @ViewBuilder
     private var chartArea: some View {

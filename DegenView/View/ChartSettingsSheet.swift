@@ -41,7 +41,7 @@ struct ChartSettingsSheet: View {
     @State private var savedScripts: [LocalScript] = []
     @State private var selectedScriptID: UUID?
     @State private var scriptLoadError: String?
-    @State private var copiedPineDiagnostics = false
+    @State private var pineInputSchema = PineInputSchema()
     @State private var showingPineAlertEditor = false
 
     @Environment(\.dismiss) private var dismiss
@@ -526,7 +526,7 @@ struct ChartSettingsSheet: View {
 
                 // Line sources report one price per timestamp and no turnover at all.
                 if !viewModel.usesLineChart {
-                    indicatorRow(
+                    SettingsCardRow(
                         title: "Volume Bars",
                         icon: "chart.bar.fill",
                         hint: volumeHint
@@ -542,13 +542,13 @@ struct ChartSettingsSheet: View {
 
                 // Every source shares KlineData. Line sources carry flat OHLC points,
                 // whose point-to-point gaps still provide Supertrend's true range.
-                indicatorRow(title: "RSI (\(RSI.period))", icon: "waveform.path.ecg", hint: rsiHint) {
+                SettingsCardRow(title: "RSI (\(RSI.period))", icon: "waveform.path.ecg", hint: rsiHint) {
                     Toggle("RSI (\(RSI.period))", isOn: $showRSI)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(title: "EMA", icon: "chart.line.uptrend.xyaxis", hint: emaHint) {
+                SettingsCardRow(title: "EMA", icon: "chart.line.uptrend.xyaxis", hint: emaHint) {
                     HStack(spacing: 10) {
                         Picker("Period", selection: $emaPeriod) {
                             ForEach(Indicator.emaPeriods, id: \.self) { period in
@@ -566,13 +566,13 @@ struct ChartSettingsSheet: View {
                     }
                 }
 
-                indicatorRow(title: "Bollinger Bands", icon: "lines.measurement.horizontal", hint: bollingerHint) {
+                SettingsCardRow(title: "Bollinger Bands", icon: "lines.measurement.horizontal", hint: bollingerHint) {
                     Toggle("Bollinger Bands", isOn: $showBollinger)
                         .labelsHidden()
                         .toggleStyle(.switch)
                 }
 
-                indicatorRow(
+                SettingsCardRow(
                     title: "Trend Flips",
                     icon: "arrow.triangle.2.circlepath",
                     hint: trendFlipsHint
@@ -652,48 +652,21 @@ struct ChartSettingsSheet: View {
             }
 
             if !viewModel.pineDiagnostics.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text("Diagnostics").font(.caption.weight(.semibold))
-                        Spacer()
-                        Button {
-                            copyPineDiagnostics()
-                        } label: {
-                            Label(
-                                copiedPineDiagnostics ? "Copied" : "Copy Errors",
-                                systemImage: copiedPineDiagnostics ? "checkmark" : "doc.on.doc")
-                        }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                    }
-
-                    ScrollView {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ForEach(viewModel.pineDiagnostics) { diagnostic in
-                                Text(formatted(diagnostic))
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(diagnostic.severity == .error ? .red : .orange)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .textSelection(.enabled)
-                            }
-                        }
-                    }
-                    .frame(maxHeight: 90)
-                }
+                PineDiagnosticsListView(diagnostics: viewModel.pineDiagnostics)
             }
 
-            if let source = viewModel.pineConfiguration?.appliedSource {
-                let schema = PineCompiler.compile(source: source).inputSchema
-                ForEach(Array(pineInputGroups(schema).enumerated()), id: \.offset) { _, group in
-                    if let title = group.title {
-                        Text(title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 6)
-                    }
-                    ForEach(group.inputs) { input in pineInput(input) }
+            if let inputs = viewModel.pineConfiguration?.inputs {
+                PineInputsView(schema: pineInputSchema, values: inputs) { value, id in
+                    viewModel.setPineInput(value, id: id)
+                    onStyleChanged()
                 }
             }
+        }
+        // Compiled once per applied source, not on every render.
+        .task(id: viewModel.pineConfiguration?.appliedSource) {
+            let source = viewModel.pineConfiguration?.appliedSource
+            pineInputSchema =
+                source.map { PineCompiler.compile(source: $0).inputSchema } ?? PineInputSchema()
         }
     }
 
@@ -744,203 +717,6 @@ struct ChartSettingsSheet: View {
         cancelSearches()
         dismiss()
         DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
-    }
-
-    private func formatted(_ diagnostic: PineDiagnostic) -> String {
-        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
-    }
-
-    private func copyPineDiagnostics() {
-        let errors = viewModel.pineDiagnostics.filter { $0.severity == .error }
-        let diagnostics = errors.isEmpty ? viewModel.pineDiagnostics : errors
-        let text = diagnostics.map(formatted).joined(separator: "\n")
-
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-        copiedPineDiagnostics = true
-        Task {
-            try? await Task.sleep(for: .seconds(2))
-            copiedPineDiagnostics = false
-        }
-    }
-
-    /// Inputs sectioned by their `group`, in the order each group first appears.
-    private func pineInputGroups(_ schema: PineInputSchema) -> [(title: String?, inputs: [PineInputDefinition])] {
-        var groups: [(title: String?, inputs: [PineInputDefinition])] = []
-        for input in schema.inputs {
-            if let index = groups.firstIndex(where: { $0.title == input.group }) {
-                groups[index].inputs.append(input)
-            } else {
-                groups.append((input.group, [input]))
-            }
-        }
-        return groups
-    }
-
-    /// One script input as a card, matching the Indicators tab. The control sits on the right.
-    @ViewBuilder private func pineInput(_ input: PineInputDefinition) -> some View {
-        let title = input.title ?? input.id
-        let current = viewModel.pineConfiguration?.inputs[input.id] ?? input.defaultValue
-        switch (input.type, current) {
-        case (.bool, .bool(let value)):
-            indicatorRow(title: title, icon: "switch.2", hint: input.tooltip) {
-                Toggle(
-                    title,
-                    isOn: Binding(
-                        get: { value },
-                        set: { setPineInput(.bool($0), for: input) })
-                )
-                .labelsHidden()
-                .toggleStyle(.switch)
-            }
-        case (.time, .int(let value)):
-            indicatorRow(title: title, icon: "calendar", hint: input.tooltip) {
-                DatePicker(
-                    title,
-                    selection: Binding(
-                        get: { Date(timeIntervalSince1970: Double(value) / 1000) },
-                        set: { setPineInput(.int(Int($0.timeIntervalSince1970 * 1000)), for: input) }),
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-                .labelsHidden()
-            }
-        case (.int, .int(let value)):
-            let lower = Int(input.minValue ?? Double(min(value, 1)))
-            let upper = Int(input.maxValue ?? Double(max(value, 10_000)))
-            indicatorRow(title: title, icon: "number", hint: input.tooltip) {
-                HStack(spacing: 8) {
-                    Text("\(value)")
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                    Stepper(
-                        title,
-                        value: Binding(
-                            get: { value },
-                            set: { setPineInput(.int($0), for: input) }),
-                        in: lower...upper,
-                        step: Int(input.step ?? 1)
-                    )
-                    .labelsHidden()
-                }
-            }
-        case (.float, .float(let value)):
-            indicatorRow(title: title, icon: "number", hint: input.tooltip) {
-                TextField(
-                    title,
-                    value: Binding(
-                        get: { value },
-                        set: { setPineInput(.float($0), for: input) }),
-                    format: .number
-                )
-                .labelsHidden()
-                .multilineTextAlignment(.trailing)
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 100)
-            }
-        case (.string, .string(let value)) where input.options != nil:
-            indicatorRow(title: title, icon: "list.bullet", hint: input.tooltip) {
-                Picker(
-                    title,
-                    selection: Binding(
-                        get: { value },
-                        set: { setPineInput(.string($0), for: input) })
-                ) {
-                    ForEach(input.options ?? [], id: \.self) { option in
-                        if case .string(let text) = option { Text(text).tag(text) }
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-        case (.string, .string(let value)):
-            indicatorRow(title: title, icon: "textformat", hint: input.tooltip) {
-                TextField(
-                    title,
-                    text: Binding(
-                        get: { value },
-                        set: { setPineInput(.string($0), for: input) })
-                )
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 140)
-            }
-        case (.color, .color(let value)):
-            indicatorRow(title: title, icon: "paintpalette", hint: input.tooltip) {
-                ColorPicker(
-                    title,
-                    selection: Binding(
-                        get: { Color(pineRGBA: value) },
-                        set: {
-                            guard let rgba = $0.pineRGBA else { return }
-                            setPineInput(.color(rgba), for: input)
-                        }), supportsOpacity: true
-                )
-                .labelsHidden()
-            }
-        case (.string, .source(let value)):
-            indicatorRow(title: title, icon: "chart.xyaxis.line", hint: input.tooltip) {
-                Picker(
-                    title,
-                    selection: Binding(
-                        get: { value },
-                        set: { setPineInput(.source($0), for: input) })
-                ) {
-                    ForEach(["open", "high", "low", "close", "volume"], id: \.self) {
-                        Text($0.capitalized).tag($0)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-            }
-        default: EmptyView()
-        }
-    }
-
-    private func setPineInput(_ value: PineInputValue, for input: PineInputDefinition) {
-        viewModel.setPineInput(value, id: input.id)
-        onStyleChanged()
-    }
-
-    /// A consistently aligned indicator card with its controls anchored to the right.
-    private func indicatorRow<Control: View>(
-        title: String,
-        icon: String,
-        hint: String?,
-        @ViewBuilder control: () -> Control
-    ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
-                .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-
-                if let hint {
-                    Text(hint)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            Spacer(minLength: 16)
-
-            control()
-                .fixedSize()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
-        }
     }
 
     private var volumeHint: String {
