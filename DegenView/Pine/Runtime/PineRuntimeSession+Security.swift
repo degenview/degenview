@@ -30,7 +30,14 @@ extension PineRuntimeSession {
                 "PINE4023", .runtime, "request.security cannot be called inside another request.security.",
                 call.range)
         }
-        let request = try securityRequest(call, &context)
+        let request: SecurityRequest
+        switch try securityRequest(call, &context) {
+        case .serve(let served): request = served
+        case .unserved(let expression):
+            // An invalid symbol or timeframe the script asked to ignore: na, shaped like the expression.
+            if case .tuple(let items, _) = expression { return .tuple(items.map { _ in .na }) }
+            return .na
+        }
         let key = siteKey(call.site, context)
         var site = working.securities[key] ?? PineSecuritySite()
         let bar = context.bar
@@ -79,20 +86,39 @@ extension PineRuntimeSession {
     }
 
     /// Reads the call's arguments. `expression` is kept unevaluated: it runs on the higher timeframe.
+    private enum SecurityOutcome {
+        case serve(SecurityRequest)
+        /// The symbol or timeframe cannot be served and the script passed `ignore_invalid_*`.
+        case unserved(PineExpression)
+    }
+
     private func securityRequest(
         _ call: PineCall, _ context: inout PineRuntimeContext
-    ) throws -> SecurityRequest {
+    ) throws -> SecurityOutcome {
         let (values, expression) = try securityArguments(call, Self.securityParameters, &context)
         guard let expression else {
             throw PineDiagnostic.error(
                 "PINE4024", .runtime, "request.security needs a symbol, a timeframe and an expression.",
                 call.range)
         }
-        try requireChartSymbol(values["symbol"], call.range)
-        return SecurityRequest(
-            interval: try securityInterval(values["timeframe"], call.range), expression: expression,
-            lookaheadOn: values["lookahead"] == .string("barmerge.lookahead_on"),
-            gapsOn: values["gaps"] == .string("barmerge.gaps_on"))
+        do {
+            try requireChartSymbol(values["symbol"], call.range)
+        } catch {
+            if values["ignore_invalid_symbol"] == .bool(true) { return .unserved(expression) }
+            throw error
+        }
+        let interval: TimeInterval
+        do {
+            interval = try securityInterval(values["timeframe"], call.range)
+        } catch {
+            if values["ignore_invalid_timeframe"] == .bool(true) { return .unserved(expression) }
+            throw error
+        }
+        return .serve(
+            SecurityRequest(
+                interval: interval, expression: expression,
+                lookaheadOn: values["lookahead"] == .string("barmerge.lookahead_on"),
+                gapsOn: values["gaps"] == .string("barmerge.gaps_on")))
     }
 
     /// The call's arguments by parameter name. `expression` stays unevaluated: it runs on another series.

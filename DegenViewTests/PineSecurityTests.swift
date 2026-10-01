@@ -179,6 +179,32 @@ final class PineSecurityTests: XCTestCase {
         XCTAssertEqual(program.diagnostics.map(\.code), ["PINE9003"])
     }
 
+    func testInvalidSymbolOrTimeframeIsNaWhenTheScriptAsksToIgnoreIt() throws {
+        let result = try plots(
+            """
+            other = request.security("BINANCE:ETHUSDT", "D", close, ignore_invalid_symbol = true)
+            finer = request.security(syminfo.tickerid, "1", close, ignore_invalid_timeframe = true)
+            [a, b] = request.security("BINANCE:ETHUSDT", "D", [open, close], ignore_invalid_symbol = true)
+            plot(na(other) ? 1 : 0)
+            plot(na(finer) ? 1 : 0)
+            plot(na(a) and na(b) ? 1 : 0)
+            """, bars: hourly(3))
+        XCTAssertEqual(result.map { $0[2] }, [1, 1, 1])
+    }
+
+    func testIgnoreFlagsDoNotHideTheOtherKindOfInvalidRequest() {
+        let series = hourly(3)
+        // Ignoring an invalid timeframe does not excuse another symbol, and the reverse.
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(\"BINANCE:ETHUSDT\", \"D\", close, ignore_invalid_timeframe = true))",
+                bars: series), "PINE4022")
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(syminfo.tickerid, \"1\", close, ignore_invalid_symbol = true))",
+                bars: series), "PINE4021")
+    }
+
     // MARK: - Lower timeframes
 
     func testLowerTimeframeRequestsReturnEmptyArraysBecauseThereIsNoIntrabarData() throws {
