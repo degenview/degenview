@@ -168,6 +168,15 @@ extension KlineData {
         }
     }
 
+    /// Open of the bucket after the one that opens at `start`. Months, quarters and years are not a
+    /// fixed length, so the next one is found by stepping past the end and asking where that lands.
+    static func bucketEnd(after start: Date, interval: TimeInterval) -> Date {
+        if interval >= 2_419_200 {
+            return bucketStart(of: start.addingTimeInterval(interval * 1.2), interval: interval)
+        }
+        return start.addingTimeInterval(interval)
+    }
+
     private static func quarterStart(of date: Date) -> Date {
         let parts = utcCalendar.dateComponents([.year, .month], from: date)
         guard let year = parts.year, let month = parts.month else { return date }
