@@ -29,6 +29,11 @@ enum PineStrings {
             return .string(subject.replacingOccurrences(of: target, with: replacement))
         case "str.substring": return try substring(subject, values, range)
         case "str.match": return .string(firstMatch(of: text(1), in: subject))
+        case "str.repeat":
+            // str.repeat(source, repeat, separator = ""): `na` for a negative count, "" for zero.
+            guard let count = values.count > 1 ? values[1].intValue : nil, count >= 0 else { return .na }
+            let separator = text(2) ?? ""
+            return .string(Array(repeating: subject, count: count).joined(separator: separator))
         case "str.tonumber":
             return Double(subject.trimmingCharacters(in: .whitespaces)).map(PineRuntimeValue.float) ?? .na
         case "str.format":

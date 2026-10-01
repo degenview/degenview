@@ -532,6 +532,30 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[1], [3], [0], [0], [30]])
     }
 
+    func testARunawayLoopStopsAtThePerBarInstructionLimit() {
+        var limits = PineLimits.default
+        limits.instructionsPerBar = 5_000
+        let program = compile("var int n = 0\nwhile true\n    n += 1\nplot(n)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertThrowsError(try PineRuntimeSession(program: program, limits: limits).evaluate(bars: bars([1]))) {
+            XCTAssertEqual(($0 as? PineDiagnostic)?.code, "PINE8004")
+        }
+        XCTAssertGreaterThanOrEqual(PineLimits.default.instructionsPerBar, 5_000_000)
+    }
+
+    func testStrRepeatJoinsCopiesWithAnOptionalSeparator() throws {
+        let program = compile(
+            """
+            plot(str.length(str.repeat("ab", 3)))
+            plot(str.length(str.repeat("ab", 3, "-")))
+            plot(str.length(str.repeat("ab", 0)))
+            plot(na(str.repeat("ab", -1)) ? 1 : 0)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[6], [8], [0], [1]])
+    }
+
     func testStrSplitReturnsAnArrayOfPieces() throws {
         let program = compile(
             """
