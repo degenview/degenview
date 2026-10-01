@@ -75,6 +75,17 @@ extension PineCompiler {
         if metadata.type == .strategy { supported.formUnion(strategyArguments) }
         for arg in args {
             guard let name = arg.name else { continue }
+            if name == "behind_chart" {
+                // Drawings are always painted above the candles, which is `behind_chart = false`.
+                if constantValue(arg.value, environment) != .bool(false) {
+                    diagnostics.append(
+                        .error(
+                            "PINE9001", .unsupported,
+                            "\(declaration.name)() argument 'behind_chart' is only supported as false: "
+                                + "drawings are always painted above the candles.", arg.value.range))
+                }
+                continue
+            }
             guard supported.contains(name) else {
                 diagnostics.append(
                     .error(

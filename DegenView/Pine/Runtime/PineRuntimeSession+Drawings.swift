@@ -14,6 +14,7 @@ extension PineRuntimeSession {
         case "linefill.new": return try newLinefill(call, &context)
         case "table.cell": return try setTableCell(call, &context)
         case "table.merge_cells": return try mergeTableCells(call, &context)
+        case "table.clear": return try clearTableCells(call, &context)
         default: return try mutateDrawing(call, &context)
         }
     }
@@ -61,8 +62,11 @@ extension PineRuntimeSession {
 
     private func newLabel(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         let b = try bind(
-            call, ["x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign"],
-            &context)
+            call,
+            [
+                "x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign",
+                "tooltip",
+            ], &context)
         try requireBarIndex(b, call.range)
         guard let x = b["x"].intValue, let y = b["y"]?.number else { return .na }
         return store(\.labels, kind: .label, limit: program.declaration.maxLabelsCount) { id in
@@ -71,7 +75,7 @@ extension PineRuntimeSession {
                 color: b["color"].colorValue(fallback: Self.defaultColor),
                 textColor: b["textcolor"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 style: .parse(b["style"].textValue, absent: .labelDown, unknown: .labelCenter),
-                size: .parse(b["size"].textValue, absent: .normal))
+                size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue)
         }
     }
 
@@ -195,6 +199,23 @@ extension PineRuntimeSession {
         return .void
     }
 
+    /// `table.clear(table, start_column, start_row, end_column, end_row)`: drops the cells in the
+    /// range. Without a range, every cell goes.
+    private func clearTableCells(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let b = try bind(
+            call, ["table_id", "start_column", "start_row", "end_column", "end_row"], &context)
+        guard case .ref(.table, let id)? = b["table_id"], var table = working.tables[id] else {
+            return .void
+        }
+        let columns = (b["start_column"].intValue ?? 0)...(b["end_column"].intValue ?? table.columns - 1)
+        let rows = (b["start_row"].intValue ?? 0)...(b["end_row"].intValue ?? table.rows - 1)
+        table.cells.removeAll { columns.contains($0.column) && rows.contains($0.row) }
+        working.tables[id] = table
+        return .void
+    }
+
     // MARK: - Mutation
 
     /// `line.set_*`, `label.set_*`, `box.set_*`, getters and `*.delete`. Operations on an `na`
@@ -220,6 +241,8 @@ extension PineRuntimeSession {
             }
         case "box":
             return try withObject(\.boxes, .box, target, member) { try Self.mutate(&$0, member, a, b, call) }
+        case "table":
+            return try withObject(\.tables, .table, target, member) { try Self.mutate(&$0, member, a, call) }
         case "linefill":
             return try withObject(\.linefills, .linefill, target, member) {
                 try Self.mutate(&$0, member, a, call)
@@ -243,6 +266,21 @@ extension PineRuntimeSession {
         let result = try body(&object)
         working[keyPath: objects][id] = object
         return result
+    }
+
+    private static func mutate(
+        _ table: inout PineTableOutput, _ member: String, _ a: PineRuntimeValue, _ call: PineCall
+    ) throws -> PineRuntimeValue {
+        switch member {
+        case "set_position": table.position = .parse(a.textValue, absent: table.position)
+        case "set_bgcolor": table.backgroundColor = Optional(a).colorValue(fallback: nil)
+        case "set_border_color": table.borderColor = Optional(a).colorValue(fallback: nil)
+        case "set_frame_color": table.frameColor = Optional(a).colorValue(fallback: nil)
+        case "set_border_width": table.borderWidth = a.intValue ?? table.borderWidth
+        case "set_frame_width": table.frameWidth = a.intValue ?? table.frameWidth
+        default: throw call.unknownFunction
+        }
+        return .void
     }
 
     private static func mutate(
@@ -302,6 +340,7 @@ extension PineRuntimeSession {
         case "set_style":
             label.style = a.textValue.map { PineLabelStyle(pineName: $0) ?? .labelCenter } ?? label.style
         case "set_size": label.size = PineSize(pineName: a.textValue) ?? label.size
+        case "set_tooltip": label.tooltip = a.textValue
         case "get_x": return .int(label.x)
         case "get_y": return .float(label.y)
         case "get_text": return .string(label.text)

@@ -41,8 +41,20 @@ extension PineRuntimeSession {
         }
     }
 
+    /// The chart is always plain candles: a standard type, and none of the derived ones.
+    private func chartType(_ name: String) -> PineRuntimeValue? {
+        switch name {
+        case "chart.is_standard": .bool(true)
+        case "chart.is_heikinashi", "chart.is_renko", "chart.is_kagi", "chart.is_linebreak",
+            "chart.is_pnf", "chart.is_range":
+            .bool(false)
+        default: nil
+        }
+    }
+
     private func namespaced(_ name: String, _ bar: KlineData) -> PineRuntimeValue? {
         if name.hasPrefix("strategy.") { return strategyValue(name, bar) }
+        if name.hasPrefix("chart.is_") { return chartType(name) }
         if name.hasPrefix("timeframe.") { return PineTime.timeframe(name, barSeconds: barSeconds) }
         return nil
     }
