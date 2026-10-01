@@ -6,7 +6,11 @@ only) so `PineCorpusTests` can check the engine against real-world code.
 ```bash
 python3 tools/pine-corpus/fetch.py              # 20 indicators + 10 libraries
 python3 tools/pine-corpus/fetch.py --indicators 50 --libraries 20
+python3 tools/pine-corpus/fetch.py --append --indicators 20 --libraries 10   # 20 + 10 not yet in the manifest
 ```
+
+TradingView's popularity order changes daily, so a plain re-run may return different scripts than the
+manifest lists (and rewrites it). Use `--append` to widen the corpus without losing what is there.
 
 - Sources are written to `.pine-corpus/` at the repo root, which is **gitignored**. Scripts
   carry their authors' licences (mostly MPL-2.0, some custom); this repo is GPL-3.0, so third-party

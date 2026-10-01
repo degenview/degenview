@@ -381,6 +381,19 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.labels.map(\.tooltip), ["first", "second"])
     }
 
+    func testColorConstantsFoldThroughEarlierConstants() throws {
+        let program = compile(
+            """
+            const color BASE = #2962FF
+            const int FADE = 88
+            tint = input.color(color.new(BASE, FADE), "Tint")
+            plot(close, color = tint)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertEqual(
+            program.inputSchema.inputs.first?.defaultValue, .color(PineBuiltins.withTransparency(0x2962_FFFF, 88)))
+    }
+
     func testChartTypeFlagsDescribePlainCandles() throws {
         let program = compile(
             "plot(chart.is_standard ? 1 : 0)\nplot(chart.is_heikinashi or chart.is_renko or chart.is_range ? 1 : 0)")
@@ -388,10 +401,16 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[1], [0]])
     }
 
-    func testBehindChartIsAcceptedOnlyAsFalse() {
-        XCTAssertTrue(compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = false)").isValid)
-        let behind = compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = true)")
-        XCTAssertEqual(codes(behind), ["PINE9001"])
+    func testDeclarationArgumentsThatOnlyAffectDrawingOrderAreAccepted() {
+        for argument in ["behind_chart = false", "behind_chart = true", "explicit_plot_zorder = true"] {
+            let header = "indicator(\"T\", overlay = true, \(argument))"
+            XCTAssertTrue(compile("plot(close)", header: header).isValid, argument)
+        }
+        let library = PineCompiler.compile(source: "//@version=6\nlibrary(\"L\", dynamic_requests = true)\n")
+        XCTAssertTrue(library.isValid, "\(library.diagnostics)")
+        XCTAssertEqual(
+            codes(compile("plot(close)", header: "indicator(\"T\", scale = scale.none)")), ["PINE9001"],
+            "arguments that change behaviour stay unsupported")
     }
 
     func testInputDefaultMayBeANamedConstantAndOptionsMayBePositional() throws {

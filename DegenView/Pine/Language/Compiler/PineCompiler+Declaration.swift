@@ -11,6 +11,9 @@ extension PineCompiler {
     private static let commonArguments: Set<String> = [
         "title", "shorttitle", "overlay", "format", "precision", "max_bars_back",
         "max_lines_count", "max_labels_count", "max_boxes_count", "max_polylines_count",
+        // Accepted and ignored: drawings always paint above the candles in the app's own order, and
+        // request.* calls are never restricted to the "dynamic" contexts Pine requires a flag for.
+        "behind_chart", "explicit_plot_zorder", "dynamic_requests",
     ]
 
     private static let strategyArguments: Set<String> = [
@@ -75,17 +78,6 @@ extension PineCompiler {
         if metadata.type == .strategy { supported.formUnion(strategyArguments) }
         for arg in args {
             guard let name = arg.name else { continue }
-            if name == "behind_chart" {
-                // Drawings are always painted above the candles, which is `behind_chart = false`.
-                if constantValue(arg.value, environment) != .bool(false) {
-                    diagnostics.append(
-                        .error(
-                            "PINE9001", .unsupported,
-                            "\(declaration.name)() argument 'behind_chart' is only supported as false: "
-                                + "drawings are always painted above the candles.", arg.value.range))
-                }
-                continue
-            }
             guard supported.contains(name) else {
                 diagnostics.append(
                     .error(

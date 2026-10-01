@@ -2,6 +2,7 @@
 """Download the most popular open-source TradingView scripts into a local, untracked cache.
 
     python3 tools/pine-corpus/fetch.py [--indicators 20] [--libraries 10]
+    python3 tools/pine-corpus/fetch.py --append --indicators 20 --libraries 10   # 20 + 10 more
 
 Sources land in `.pine-corpus/<kind>/<slug>.pine` (gitignored). Only metadata is written to
 `DegenViewTests/PineCorpus/manifest.json`, which is committed. See README.md for the rules.
@@ -95,13 +96,17 @@ def describe(url, pub, kind):
     return entry, None
 
 
-def collect(kind, singular, wanted):
+def collect(kind, singular, wanted, known):
+    """The next `wanted` usable scripts of a kind, skipping slugs already in `known`."""
     entries = []
     taken = 0
     for page in range(1, MAX_PAGES + 1):
         for url, pub in listing(kind, page):
             if taken >= wanted:
                 return entries
+            ids = SLUG.search(url)
+            if ids is not None and ids.group("id") in known:
+                continue
             try:
                 entry, source = describe(url, pub, singular)
             except (urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
@@ -124,15 +129,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--indicators", type=int, default=20)
     parser.add_argument("--libraries", type=int, default=10)
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="keep the manifest's scripts and fetch this many more (the popularity order moves daily)",
+    )
     args = parser.parse_args()
 
     entries = []
+    if args.append and os.path.exists(MANIFEST):
+        with open(MANIFEST) as handle:
+            entries = json.load(handle)
+    known = {entry["slug"] for entry in entries}
     for kind, singular, wanted in (
         ("indicators", "indicator", args.indicators),
         ("libraries", "library", args.libraries),
     ):
-        print("%s (top %d, pine v%d only)" % (kind, wanted, SUPPORTED_VERSION))
-        entries += collect(kind, singular, wanted)
+        print("%s (%d %s, pine v%d only)" % (kind, wanted, "more" if args.append else "top", SUPPORTED_VERSION))
+        entries += collect(kind, singular, wanted, known)
 
     os.makedirs(os.path.dirname(MANIFEST), exist_ok=True)
     with open(MANIFEST, "w") as handle:
