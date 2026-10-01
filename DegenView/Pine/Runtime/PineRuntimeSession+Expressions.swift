@@ -44,6 +44,7 @@ extension PineRuntimeSession {
         guard name.contains(".") else {
             throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
         }
+        if let field = try fieldPath(name, range) { return field }
         return .string(name)
     }
 

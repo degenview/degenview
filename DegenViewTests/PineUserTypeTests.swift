@@ -83,4 +83,127 @@ final class PineUserTypeTests: XCTestCase {
         XCTAssertTrue(PineCompiler.compile(source: source).isValid)
         XCTAssertTrue(codes(compile("export type Zone\n    float top\n")).contains("PINE3037"))
     }
+
+    // MARK: - Objects
+
+    private func values(_ body: String, bars series: [Double] = [1]) throws -> [[Double?]] {
+        let program = compile(body)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        return try PineRuntimeSession(program: program).evaluate(bars: bars(series)).output.plots.map(\.values)
+    }
+
+    private func runtimeError(_ body: String) -> String? {
+        let program = compile(body)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        do {
+            _ = try PineRuntimeSession(program: program).evaluate(bars: bars([1]))
+            return nil
+        } catch {
+            return (error as? PineDiagnostic)?.code
+        }
+    }
+
+    func testConstructorTakesPositionalNamedAndDefaultFields() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+                float bottom = 2.0 * 3
+                int bars = 4
+                string label
+
+            a = Zone.new(1.5, 2.5, 3)
+            b = Zone.new(bars = 9, top = 7.0)
+            c = Zone.new()
+            plot(a.top)
+            plot(a.bottom)
+            plot(a.bars)
+            plot(b.top)
+            plot(b.bottom)
+            plot(b.bars)
+            plot(na(c.top) ? 1 : 0)
+            plot(c.bars)
+            plot(na(c.label) ? 1 : 0)
+            """)
+        XCTAssertEqual(plots.map { $0[0] }, [1.5, 2.5, 3, 7, 6, 9, 1, 4, 1])
+    }
+
+    func testVarObjectIsCreatedOnceAndPersists() throws {
+        let plots = try values(
+            """
+            type Anchor
+                int born
+
+            var Anchor anchor = Anchor.new(bar_index)
+            plot(anchor.born)
+            """, bars: [1, 2, 3])
+        XCTAssertEqual(plots, [[0, 0, 0]])
+    }
+
+    func testNestedObjectsAndHandlesAreReachableThroughFieldPaths() throws {
+        let plots = try values(
+            """
+            type Point
+                float x
+                float y
+
+            type Marker
+                Point origin
+                line ln
+
+            m = Marker.new(Point.new(1.0, 2.0), line.new(0, 1.0, 1, 2.0))
+            m.ln.set_y2(9.0)
+            plot(m.origin.y)
+            """)
+        XCTAssertEqual(plots, [[2]])
+        let program = compile(
+            """
+            type Marker
+                line ln
+
+            m = Marker.new(line.new(0, 1.0, 1, 2.0))
+            m.ln.set_y2(9.0)
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.lines.first?.y2, 9)
+    }
+
+    func testObjectsStoredInAnArrayComeBackAsObjects() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, Zone.new(5.0))
+            array.push(zones, Zone.new(8.0))
+            Zone second = array.get(zones, 1)
+            plot(second.top)
+            plot(array.size(zones))
+            """)
+        XCTAssertEqual(plots, [[8], [2]])
+    }
+
+    func testReadingAFieldOfNaIsARuntimeError() {
+        let error = runtimeError(
+            """
+            type Zone
+                float top
+
+            Zone z = na
+            plot(z.top)
+            """)
+        XCTAssertEqual(error, "PINE4018")
+    }
+
+    func testUnknownFieldAndUnknownConstructorArgumentAreRuntimeErrors() {
+        let header = "type Zone\n    float top\n\n"
+        XCTAssertEqual(runtimeError(header + "z = Zone.new(1.0)\nplot(z.bottom)"), "PINE4019")
+        XCTAssertEqual(runtimeError(header + "z = Zone.new(bottom = 1.0)\nplot(close)"), "PINE4019")
+    }
+
+    func testMethodsOnNonObjectsAndUnknownMembersStillFail() {
+        let header = "type Zone\n    float top\n\n"
+        XCTAssertEqual(runtimeError(header + "z = Zone.new(1.0)\nplot(z.nothing())"), "PINE4007")
+    }
 }

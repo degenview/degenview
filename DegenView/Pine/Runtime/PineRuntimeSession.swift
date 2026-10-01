@@ -12,6 +12,8 @@ final class PineRuntimeSession {
     let theme: PineChartTheme
     let symbol: PineSymbolInfo
     let functions: [String: PineRuntimeFunction]
+    /// Fields of each script-defined `type`, by type name.
+    let types: [String: [PineTypeField]]
     /// Variable each top-level `input.*` call site initialises, so input overrides stay keyed
     /// by name even when titles change.
     let inputVariables: [Int: String]
@@ -60,8 +62,11 @@ final class PineRuntimeSession {
         self.mintick = usableMintick ?? Self.defaultMintick
         var functions: [String: PineRuntimeFunction] = [:]
         var inputVariables: [Int: String] = [:]
+        var types: [String: [PineTypeField]] = [:]
         for statement in program.statements {
             switch statement {
+            case .typeDeclaration(let name, let fields, _):
+                types[name] = fields
             case .function(let name, let parameters, let body, _):
                 functions[name] = .init(parameters: parameters, body: body)
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
@@ -70,6 +75,7 @@ final class PineRuntimeSession {
             }
         }
         self.functions = functions
+        self.types = types
         self.inputVariables = inputVariables
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue
