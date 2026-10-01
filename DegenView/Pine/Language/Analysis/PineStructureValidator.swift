@@ -32,6 +32,7 @@ struct PineStructureValidator {
             switch statement {
             case .declaration(let name, let annotation, _, let value, let range):
                 declare(name, &declared, range)
+                checkName(name, range)
                 if annotation.type == .bool, case .literal(.na, _) = value {
                     report("PINE3021", .semantic, "Boolean values cannot be na in Pine v6.", range)
                 }
@@ -40,7 +41,10 @@ struct PineStructureValidator {
                     report("PINE3022", .semantic, "Cannot reassign undeclared variable '\(name)'.", range)
                 }
             case .tupleDeclaration(let names, _, let range):
-                for name in names where name != "_" { declare(name, &declared, range) }
+                for name in names where name != "_" {
+                    declare(name, &declared, range)
+                    checkName(name, range)
+                }
             case .loopControl(_, let range):
                 if !inLoop {
                     report(
@@ -51,6 +55,8 @@ struct PineStructureValidator {
                     report("PINE3024", .semantic, "Function '\(name)' is already declared.", range)
                 }
                 declared.insert(name)
+                checkName(name, range)
+                for parameter in parameters { checkName(parameter.name, range) }
                 // Function bodies are their own scope: locals may reuse global names, and
                 // globals cannot be reassigned from inside a function.
                 validate(body, inherited: Set(parameters.map(\.name)), inLoop: false)
@@ -67,10 +73,12 @@ struct PineStructureValidator {
         var inherited = declared
         var loop = inLoop
         switch statement {
-        case .forRange(let variable, _, _, _, _, _):
+        case .forRange(let variable, _, _, _, _, let range):
+            checkName(variable, range)
             inherited.insert(variable)
             loop = true
-        case .forIn(let index, let value, _, _, _):
+        case .forIn(let index, let value, _, _, let range):
+            for name in [index, value].compactMap({ $0 }) { checkName(name, range) }
             inherited.formUnion([index, value].compactMap { $0 })
             loop = true
         case .whileLoop: loop = true
@@ -84,6 +92,11 @@ struct PineStructureValidator {
             report("PINE3020", .semantic, "Variable '\(name)' is already declared in this scope.", range)
         }
         declared.insert(name)
+    }
+
+    private mutating func checkName(_ name: String, _ range: PineSourceRange) {
+        guard let violation = PineIdentifierRules.violation(for: name) else { return }
+        report(violation.code, .semantic, violation.message, range)
     }
 
     private mutating func report(

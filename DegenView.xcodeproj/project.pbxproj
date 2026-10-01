@@ -55,6 +55,7 @@
 		P10000000000000000000004 /* PineEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P10000000000000000000104 /* PineEngineTests.swift */; };
 		P20000000000000000000004 /* PineStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000104 /* PineStrategyTests.swift */; };
 		P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000102 /* PineTypeCheckerTests.swift */; };
+		F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */; };
 		P20000000000000000000002 /* PineTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000102 /* PineTimestamp.swift */; };
 		P30000000000000000000001 /* PineTypeChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000101 /* PineTypeChecker.swift */; };
 		P20000000000000000000001 /* PineBrokerEmulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000101 /* PineBrokerEmulator.swift */; };
@@ -272,6 +273,7 @@
 		F28389140591DA72F90BB80E /* PineOperators.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16BDE4F9317BCB826A51646 /* PineOperators.swift */; };
 		F2D0A3332B1F076A5C5B0579 /* PineSyntaxTraversal.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1DD6FC8F559376BA0CEBFEB /* PineSyntaxTraversal.swift */; };
 		F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */; };
+		F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000A2 /* PineIdentifierRules.swift */; };
 		F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1200A8B9DA384EA78D57845 /* PineCompiler+Constants.swift */; };
 		F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1492E39849F65BA51ECF1BD /* PineCompiler+Declaration.swift */; };
 		F2DAAC4A7BBA2961E517621F /* PineCompiler+Inputs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10180C8BEB258415D79C88D /* PineCompiler+Inputs.swift */; };
@@ -531,6 +533,7 @@
 		P10000000000000000000104 /* PineEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEngineTests.swift; sourceTree = "<group>"; };
 		P20000000000000000000104 /* PineStrategyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyTests.swift; sourceTree = "<group>"; };
 		P30000000000000000000102 /* PineTypeCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeCheckerTests.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRulesTests.swift; sourceTree = "<group>"; };
 		P20000000000000000000102 /* PineTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTimestamp.swift; sourceTree = "<group>"; };
 		P30000000000000000000101 /* PineTypeChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeChecker.swift; sourceTree = "<group>"; };
 		P20000000000000000000101 /* PineBrokerEmulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBrokerEmulator.swift; sourceTree = "<group>"; };
@@ -714,6 +717,7 @@
 		F16BDE4F9317BCB826A51646 /* PineOperators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineOperators.swift; sourceTree = "<group>"; };
 		F1DD6FC8F559376BA0CEBFEB /* PineSyntaxTraversal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSyntaxTraversal.swift; sourceTree = "<group>"; };
 		F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStructureValidator.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000A2 /* PineIdentifierRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRules.swift; sourceTree = "<group>"; };
 		F1200A8B9DA384EA78D57845 /* PineCompiler+Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Constants.swift"; sourceTree = "<group>"; };
 		F1492E39849F65BA51ECF1BD /* PineCompiler+Declaration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Declaration.swift"; sourceTree = "<group>"; };
 		F10180C8BEB258415D79C88D /* PineCompiler+Inputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Inputs.swift"; sourceTree = "<group>"; };
@@ -1157,6 +1161,7 @@
 				F10AE320F35F4637D8C22ECA /* PineExecutionModelTests.swift */,
 				F17F3E7D8CAC2AEA7F05446A /* PineExecutionFixtures.swift */,
 				P30000000000000000000102 /* PineTypeCheckerTests.swift */,
+				F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
 				C50000000000000000000101 /* JSONStoreTests.swift */,
@@ -1239,6 +1244,7 @@
 				B7A1E7000000000000000B14 /* PineAlertCallSite.swift */,
 				F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */,
 				F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */,
+				F3A1D00000000000000000A2 /* PineIdentifierRules.swift */,
 				F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */,
 				P30000000000000000000101 /* PineTypeChecker.swift */,
 			);
@@ -1652,6 +1658,7 @@
 				P10000000000000000000004 /* PineEngineTests.swift in Sources */,
 				P20000000000000000000004 /* PineStrategyTests.swift in Sources */,
 				P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */,
+				F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
@@ -1888,6 +1895,7 @@
 				F28389140591DA72F90BB80E /* PineOperators.swift in Sources */,
 				F2D0A3332B1F076A5C5B0579 /* PineSyntaxTraversal.swift in Sources */,
 				F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */,
+				F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */,
 				F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */,
 				F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */,
 				F2DAAC4A7BBA2961E517621F /* PineCompiler+Inputs.swift in Sources */,
