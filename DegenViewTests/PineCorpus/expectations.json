@@ -16,12 +16,6 @@
   },
   "L6HQo7bR": {
     "codes": [
-      "PINE3010"
-    ],
-    "status": "compile-error"
-  },
-  "LgMUWAyo": {
-    "codes": [
       "PINE4007"
     ],
     "status": "runtime-error"

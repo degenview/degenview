@@ -25,7 +25,9 @@ extension PineCompiler {
         case .identifier(let name, _):
             if let value = environment[name] { return value }
             if let value = PineBuiltins.constants[name] { return value }
-            return PineBuiltins.colors[name].map(PineRuntimeValue.color)
+            if let color = PineBuiltins.colors[name] { return .color(color) }
+            // `size.small`, `shape.circle`: a named constant is the string of its own name.
+            return PineSymbolCatalog.constants.contains(name) ? .string(name) : nil
         case .unary(.negate, let inner, _):
             switch constantValue(inner, environment) {
             case .int(let x)?: return .int(0 &- x)

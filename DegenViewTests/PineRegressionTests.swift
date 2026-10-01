@@ -369,6 +369,65 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
     }
 
+    func testLegacyInputFunctionTakesItsTypeFromTheDefault() throws {
+        let program = compile(
+            """
+            on = input(title = "On", defval = true, group = "G")
+            n = input(5, "Length", minval = 1)
+            f = input(1.5, "Factor")
+            s = input("abc", "Text")
+            c = input(color.red, "Color")
+            src = input(close, "Source")
+            plot(on ? n * f : 0)
+            plot(src)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let inputs = program.inputSchema.inputs
+        XCTAssertEqual(inputs.map(\.type), [.bool, .int, .float, .string, .color, .string])
+        XCTAssertEqual(inputs.last?.defaultValue, .source("close"))
+        let output = try PineRuntimeSession(program: program, inputs: ["n": .int(2)]).evaluate(bars: bars([4])).output
+        XCTAssertEqual(output.plots.map(\.values), [[3], [4]])
+    }
+
+    func testRuntimeErrorStopsTheScriptWithItsMessage() {
+        let program = compile("if close > 1\n    runtime.error(\"bad input: \" + str.tostring(close))\nplot(close)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertNoThrow(try PineRuntimeSession(program: program).evaluate(bars: bars([1])))
+        XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2]))) {
+            let diagnostic = $0 as? PineDiagnostic
+            XCTAssertEqual(diagnostic?.code, "PINE4030")
+            XCTAssertEqual(diagnostic?.message, "bad input: 2")
+        }
+    }
+
+    func testTickerFunctionsBuildSymbolIds() throws {
+        let program = compile(
+            """
+            plot(str.length(ticker.new("BINANCE", "BTCUSDT")))
+            plot(str.length(ticker.standard("AB")))
+            plot(str.length(ticker.modify("ABC")))
+            plot(str.length(ticker.inherit("XXXXX", "AB")))
+            plot(str.length(ticker.new("", "BTC")))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[15], [2], [3], [2], [3]])
+    }
+
+    func testNamedConstantsFoldThroughConstVariablesIntoInputs() throws {
+        let program = compile(
+            """
+            const string TINY = size.tiny
+            const string BIG = size.large
+            pick = input.string(TINY, "Size", options = [TINY, size.small, BIG])
+            plot(close)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let input = try XCTUnwrap(program.inputSchema.inputs.first)
+        XCTAssertEqual(input.defaultValue, .string("size.tiny"))
+        XCTAssertEqual(input.options, [.string("size.tiny"), .string("size.small"), .string("size.large")])
+    }
+
     func testBoxTextBorderStyleAndLabelAlignmentAreStoredAndSettable() throws {
         let program = compile(
             """

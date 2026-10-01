@@ -43,6 +43,18 @@ enum PineBuiltins {
     }()
 
     /// The value type an `input.*` function declares; anything unlisted is a string.
+    /// The legacy `input(defval, …)` has the type of its default.
+    static func inputType(function: String, default value: PineInputValue) -> PineValueType {
+        guard function == "input" else { return inputType(function: function) }
+        switch value {
+        case .int: return .int
+        case .float: return .float
+        case .bool: return .bool
+        case .color: return .color
+        case .string, .source: return .string
+        }
+    }
+
     static func inputType(function: String) -> PineValueType {
         switch function {
         case "input.int": .int

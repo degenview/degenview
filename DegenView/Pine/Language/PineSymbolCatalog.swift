@@ -135,11 +135,11 @@ enum PineSymbolCatalog {
     }()
 
     private static let reservedFunctions: Set<String> = [
-        "input", "fixnan", "plotarrow", "plotbar",
+        "fixnan", "plotarrow", "plotbar",
     ]
 
     private static let reservedNamespaces: Set<String> = [
-        "request", "session", "chart", "log", "runtime", "barmerge", "xloc", "yloc", "scale", "adjustment",
+        "request", "session", "chart", "log", "runtime", "ticker", "barmerge", "xloc", "yloc", "scale", "adjustment",
         "backadjustment", "settlement_as_close", "font", "text", "currency", "plot", "hline",
     ]
 }

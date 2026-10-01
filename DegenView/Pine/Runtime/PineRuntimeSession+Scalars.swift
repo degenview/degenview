@@ -81,6 +81,27 @@ extension PineRuntimeSession {
         return .int(PineTime.milliseconds(KlineData.bucketEnd(after: start, interval: seconds)))
     }
 
+    /// `runtime.error(message)`: stops the script with the message the script chose.
+    func runtimeErrorCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let message = try argument(call, 0, "message", &context).textValue ?? "runtime.error()"
+        throw PineDiagnostic.error("PINE4030", .runtime, message, call.range)
+    }
+
+    /// `ticker.*` build a symbol id. Only the chart's own symbol can be served, so `standard`, `modify` and
+    /// `inherit` hand back the symbol they were given (`inherit` the one it takes over), and `new` joins
+    /// `prefix:symbol`.
+    func tickerCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let values = try allArguments(call, &context)
+        switch call.name {
+        case "ticker.new":
+            guard case .string(let prefix)? = values.first, case .string(let name)? = values.dropFirst().first
+            else { return .na }
+            return .string(prefix.isEmpty ? name : "\(prefix):\(name)")
+        case "ticker.inherit": return values.dropFirst().first ?? .na
+        default: return values.first ?? .na
+        }
+    }
+
     /// `max_bars_back(series, n)`: a hint about how much history to keep. The runtime keeps all of it.
     func maxBarsBackCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         .void
