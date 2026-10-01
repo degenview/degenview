@@ -48,17 +48,28 @@ extension PineRuntimeSession {
         let parts = name.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count > 1, var current = working.variables[String(parts[0])] else { return nil }
         for part in parts.dropFirst() {
-            guard case .ref(.object, let id) = current else {
-                if current == .na { throw naObject(String(part), range) }
+            if case .ref(.object, _) = current {
+                current = try readField(String(part), of: current, range)
+            } else if current == .na {
+                throw naObject(String(part), range)
+            } else {
                 return nil
             }
-            guard let object = working.instances[id] else { throw naObject(String(part), range) }
-            guard let value = object.fields[String(part)] else {
-                throw noSuchField(String(part), in: object.typeName, range)
-            }
-            current = value
         }
         return current
+    }
+
+    /// `holder.field` for an object handle. `na` and unknown fields are runtime errors.
+    func readField(
+        _ field: String, of holder: PineRuntimeValue, _ range: PineSourceRange
+    ) throws -> PineRuntimeValue {
+        guard case .ref(.object, let id) = holder, let object = working.instances[id] else {
+            throw naObject(field, range)
+        }
+        guard let value = object.fields[field] else {
+            throw noSuchField(field, in: object.typeName, range)
+        }
+        return value
     }
 
     /// `target := value` / `target += value` where `target` is a field path.
@@ -66,13 +77,21 @@ extension PineRuntimeSession {
         _ target: PineExpression, _ op: PineAssignmentOperator, _ expression: PineExpression,
         _ range: PineSourceRange, _ context: inout PineRuntimeContext
     ) throws -> Step {
-        guard case .identifier(let path, _) = target, let dot = path.lastIndex(of: ".") else {
-            throw PineDiagnostic.error(
-                "PINE2016", .runtime, "Only a variable or a field can be assigned to.", range)
+        let owner: String
+        let field: String
+        let holder: PineRuntimeValue?
+        switch target {
+        case .identifier(let path, _):
+            guard let dot = path.lastIndex(of: ".") else { throw notAssignable(range) }
+            owner = String(path[..<dot])
+            field = String(path[path.index(after: dot)...])
+            holder = owner.contains(".") ? try fieldPath(owner, range) : working.variables[owner]
+        case .member(let base, let name, _):
+            owner = "value"
+            field = name
+            holder = try eval(base, &context)
+        default: throw notAssignable(range)
         }
-        let owner = String(path[..<dot])
-        let field = String(path[path.index(after: dot)...])
-        let holder = owner.contains(".") ? try fieldPath(owner, range) : working.variables[owner]
         guard case .ref(.object, let id)? = holder, var object = working.instances[id] else {
             if holder == .na { throw naObject(field, range) }
             throw PineDiagnostic.error(
@@ -84,6 +103,10 @@ extension PineRuntimeSession {
         object.fields[field] = value
         working.instances[id] = object
         return Step(value: value)
+    }
+
+    private func notAssignable(_ range: PineSourceRange) -> PineDiagnostic {
+        .error("PINE2016", .runtime, "Only a variable or a field can be assigned to.", range)
     }
 
     private func noSuchField(

@@ -102,9 +102,9 @@ extension PineParser {
             return .finished(lhs)
         }
         advance()
+        // A plain name stays one dotted identifier (`ta.ema`, `zone.top`); anything else is a field read.
         guard case .identifier(let base, let r) = lhs else {
-            error("PINE2005", "Member access requires a namespace.", lhs.range)
-            return .finished(lhs)
+            return .extended(.member(base: lhs, name: member, range: lhs.range))
         }
         return .extended(.identifier(base + "." + member, r))
     }

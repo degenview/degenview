@@ -82,6 +82,7 @@ extension PineParser {
         advance()
         switch target {
         case .identifier(let name, _) where name.contains("."): break
+        case .member: break
         default:
             error("PINE2016", "Only a variable or a field can be assigned to.", target.range)
             return nil

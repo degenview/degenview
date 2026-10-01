@@ -12,6 +12,8 @@ indirect enum PineExpression: Sendable {
     case call(name: String, arguments: [PineArgument], site: Int, range: PineSourceRange)
     case history(base: PineExpression, offset: PineExpression, range: PineSourceRange)
     case tuple([PineExpression], PineSourceRange)
+    /// `array.get(a, i).field`: a field read from something that is not a plain variable path.
+    case member(base: PineExpression, name: String, range: PineSourceRange)
     /// `x = if …` / `x = switch …`: a block statement used for its value.
     case statementExpression(PineStatement, PineSourceRange)
 
@@ -19,7 +21,7 @@ indirect enum PineExpression: Sendable {
         switch self {
         case .literal(_, let r), .identifier(_, let r), .unary(_, _, let r), .binary(_, _, _, let r),
             .ternary(_, _, _, let r), .call(_, _, _, let r), .history(_, _, let r), .tuple(_, let r),
-            .statementExpression(_, let r):
+            .member(_, _, let r), .statementExpression(_, let r):
             return r
         }
     }

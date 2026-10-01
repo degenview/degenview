@@ -308,4 +308,56 @@ final class PineUserTypeTests: XCTestCase {
         XCTAssertTrue(compile("ta.ema(close, 3) = 1\nplot(close)").diagnostics.contains { $0.severity == .error })
         XCTAssertTrue(compile("x = ta.ema(close, 3)\nplot(x)").isValid)
     }
+
+    // MARK: - Field access on expressions
+
+    func testFieldReadAfterACallAndInsideAnExpression() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+                int side
+
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, Zone.new(5.0, 1))
+            array.push(zones, Zone.new(8.0, -1))
+            n = array.size(zones)
+            plot(array.get(zones, n - 1).top)
+            plot(array.get(zones, 0).side == 1 and array.get(zones, 1).side == -1 ? 1 : 0)
+            plot(array.get(zones, 0).top * 2 + array.get(zones, 1).top)
+            """)
+        XCTAssertEqual(plots, [[8], [1], [18]])
+    }
+
+    func testFieldAssignmentThroughACallResult() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, Zone.new(5.0))
+            array.get(zones, 0).top := 7.0
+            array.get(zones, 0).top += 1.0
+            plot(array.get(zones, 0).top)
+            """)
+        XCTAssertEqual(plots, [[8]])
+    }
+
+    func testFieldReadOfNaFromACallIsARuntimeError() {
+        let error = runtimeError(
+            """
+            type Zone
+                float top
+
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, na)
+            plot(array.get(zones, 0).top)
+            """)
+        XCTAssertEqual(error, "PINE4018")
+    }
+
+    func testAMemberOnALiteralIsNotAnObjectField() {
+        XCTAssertEqual(runtimeError("plot((1.5).top)"), "PINE4018")
+    }
 }
