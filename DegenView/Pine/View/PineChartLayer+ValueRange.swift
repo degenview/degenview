@@ -35,9 +35,9 @@ extension PineChartLayer {
         let visibleBars = (pine.barCount - candles.count)...(pine.barCount - 1)
         func inView(_ a: Int, _ b: Int) -> Bool { visibleBars.overlaps(min(a, b)...max(a, b)) }
         var values: [Double] = []
-        for box in pine.boxes where inView(box.left, box.right) { values += [box.top, box.bottom] }
-        for line in pine.lines where inView(line.x1, line.x2) { values += [line.y1, line.y2] }
-        for label in pine.labels where visibleBars.contains(label.x) { values.append(label.y) }
+        for box in pine.boxes where box.isComplete && inView(box.left, box.right) { values += [box.top, box.bottom] }
+        for line in pine.lines where line.isComplete && inView(line.x1, line.x2) { values += [line.y1, line.y2] }
+        for label in pine.labels where label.isComplete && visibleBars.contains(label.x) { values.append(label.y) }
         for polyline in pine.polylines {
             let indexes = polyline.points.map(\.index)
             guard let first = indexes.min(), let last = indexes.max(), inView(first, last) else { continue }

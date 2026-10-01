@@ -302,7 +302,9 @@
 		F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70 /* PineBoxOutput.swift */; };
 		D72FE2CFD27DFCFC5C5EC019 /* PinePolylineOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D762BF2D36DB9FCDF4631741 /* PinePolylineOutput.swift */; };
 		D71B6E4A77E84EEBDFD378B0 /* PineLinefillOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */; };
+		D71E73F7A1987D039AD9644E /* PineDrawingCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A565120F66539001CAEC84 /* PineDrawingCoordinate.swift */; };
 		F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = F19084F629170F398B48BA70; };
+		D7F3BB66B587A189659605E6 /* PineDrawingCoordinate.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D7A565120F66539001CAEC84; };
 		D75C199492843E63F783DD64 /* PineTextAlign.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D74F246EAB771B07F92C778A; };
 		D783F127C913699D1CD4935D /* PinePolylineOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D762BF2D36DB9FCDF4631741; };
 		D7CF3B892D247C1478D8F040 /* PineLinefillOutput.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = D77F2392328AE7A5903714FC; };
@@ -796,6 +798,7 @@
 		F19084F629170F398B48BA70 /* PineBoxOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBoxOutput.swift; sourceTree = "<group>"; };
 		D762BF2D36DB9FCDF4631741 /* PinePolylineOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinePolylineOutput.swift; sourceTree = "<group>"; };
 		D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLinefillOutput.swift; sourceTree = "<group>"; };
+		D7A565120F66539001CAEC84 /* PineDrawingCoordinate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDrawingCoordinate.swift; sourceTree = "<group>"; };
 		F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleBar.swift; sourceTree = "<group>"; };
 		F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCandleOutput.swift; sourceTree = "<group>"; };
 		F171A9B196E8CCB53752887F /* PineChartTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartTheme.swift; sourceTree = "<group>"; };
@@ -1454,6 +1457,7 @@
 				F19084F629170F398B48BA70 /* PineBoxOutput.swift */,
 				D762BF2D36DB9FCDF4631741 /* PinePolylineOutput.swift */,
 				D77F2392328AE7A5903714FC /* PineLinefillOutput.swift */,
+				D7A565120F66539001CAEC84 /* PineDrawingCoordinate.swift */,
 				F1DF7FECA85C3EF69DB81573 /* PineCandleBar.swift */,
 				F104AEA3B7776906DB6A2648 /* PineCandleOutput.swift */,
 				F171A9B196E8CCB53752887F /* PineChartTheme.swift */,
@@ -1744,6 +1748,7 @@
 			F3CBE6041A115064C5E7FF0A /* PineBarEvent.swift in Agent Sources */,
 			F36E6C80E0510F2722D8D513 /* PineBarPhase.swift in Agent Sources */,
 			F3AE8D9D9EE2D281F748E16F /* PineBoxOutput.swift in Agent Sources */,
+			D7F3BB66B587A189659605E6 /* PineDrawingCoordinate.swift in Agent Sources */,
 			D75C199492843E63F783DD64 /* PineTextAlign.swift in Agent Sources */,
 			D783F127C913699D1CD4935D /* PinePolylineOutput.swift in Agent Sources */,
 			D7CF3B892D247C1478D8F040 /* PineLinefillOutput.swift in Agent Sources */,
@@ -2089,6 +2094,7 @@
 				F2A373B3F0DB650BC0574B5C /* PineBoxOutput.swift in Sources */,
 				D72FE2CFD27DFCFC5C5EC019 /* PinePolylineOutput.swift in Sources */,
 				D71B6E4A77E84EEBDFD378B0 /* PineLinefillOutput.swift in Sources */,
+				D71E73F7A1987D039AD9644E /* PineDrawingCoordinate.swift in Sources */,
 				F22699D174BF7AD998A0F2E9 /* PineCandleBar.swift in Sources */,
 				F25893DDA3AA157DDADF7383 /* PineCandleOutput.swift in Sources */,
 				F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */,

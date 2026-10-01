@@ -7,7 +7,7 @@ extension PineChartLayer {
 
     func drawBoxes(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
-        for box in pine.boxes {
+        for box in pine.boxes where box.isComplete {
             let left = x(forBar: box.left, plot: plot, slot: slot)
             let right = x(forBar: box.right, plot: plot, slot: slot)
             let top = plot.y(for: box.top)
@@ -49,7 +49,9 @@ extension PineChartLayer {
             )
         }
         for fill in pine.linefills {
-            guard let first = lines[fill.line1], let second = lines[fill.line2] else { continue }
+            guard let first = lines[fill.line1], let second = lines[fill.line2], first.isComplete,
+                second.isComplete
+            else { continue }
             let (a, b) = ends(first)
             let (c, d) = ends(second)
             var path = Path()
@@ -89,7 +91,7 @@ extension PineChartLayer {
 
     func drawLines(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
-        for line in pine.lines {
+        for line in pine.lines where line.isComplete {
             let start = CGPoint(x: x(forBar: line.x1, plot: plot, slot: slot), y: plot.y(for: line.y1))
             let end = CGPoint(x: x(forBar: line.x2, plot: plot, slot: slot), y: plot.y(for: line.y2))
             let (from, to) = extended(start, end, by: line.extend, in: plot.plotRect)
@@ -139,7 +141,7 @@ extension PineChartLayer {
     /// above the anchor, `label_up` below it; a transparent label color leaves just text.
     func drawLabels(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
-        for label in pine.labels {
+        for label in pine.labels where label.isComplete {
             let anchor = CGPoint(x: x(forBar: label.x, plot: plot, slot: slot), y: plot.y(for: label.y))
             let text = context.resolve(
                 Text(label.text)

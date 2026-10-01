@@ -121,4 +121,91 @@ final class PinePolylineTests: XCTestCase {
         XCTAssertEqual(result.plots[0].values, [1])
         XCTAssertEqual(result.polylines.first?.points.count, 2)
     }
+
+    // MARK: - Drawings made from points
+
+    func testLineLabelAndBoxCanBeMadeFromChartPoints() throws {
+        let result = try output(
+            """
+            a = chart.point.from_index(1, 10.0)
+            b = chart.point.from_index(4, 12.0)
+            line.new(a, b, color = color.red, width = 3)
+            label.new(b, "tip", color = color.blue, style = label.style_label_down)
+            box.new(a, b, border_color = color.green)
+            """, count: 1)
+        let line = try XCTUnwrap(result.lines.first)
+        XCTAssertEqual([line.x1, line.x2, line.width], [1, 4, 3])
+        XCTAssertEqual([line.y1, line.y2], [10, 12])
+        XCTAssertEqual(line.color, PineBuiltins.colors["color.red"])
+        let label = try XCTUnwrap(result.labels.first)
+        XCTAssertEqual(label.x, 4)
+        XCTAssertEqual(label.text, "tip")
+        XCTAssertEqual(label.y, 12)
+        XCTAssertEqual(label.color, PineBuiltins.colors["color.blue"])
+        let box = try XCTUnwrap(result.boxes.first)
+        XCTAssertEqual([box.left, box.right], [1, 4])
+        XCTAssertEqual([box.top, box.bottom], [10, 12])
+        XCTAssertEqual(box.borderColor, PineBuiltins.colors["color.green"])
+    }
+
+    func testPointDrawingsHonourTimeAnchors() throws {
+        let result = try output(
+            """
+            if barstate.islast
+                a = chart.point.from_time(time[3], 1.0)
+                b = chart.point.from_time(time, 2.0)
+                line.new(a, b, xloc = xloc.bar_time)
+            """)
+        XCTAssertEqual(result.lines.count, 1)
+        XCTAssertEqual([result.lines[0].x1, result.lines[0].x2], [2, 5])
+        XCTAssertTrue(result.lines[0].isComplete)
+    }
+
+    func testDrawingsMadeWithNaCoordinatesExistButStayHiddenUntilComplete() throws {
+        let result = try output(
+            """
+            var line ln = line.new(na, na, na, na, color = color.red)
+            var label lb = label.new(na, na, "t")
+            var box bx = box.new(na, na, na, na)
+            var line fromPoint = line.new(chart.point.from_index(0, na), chart.point.from_index(2, 3.0))
+            plot(na(ln) ? 1 : 0)
+            plot(na(ln.get_x1()) ? 1 : 0)
+            if bar_index == 2
+                ln.set_first_point(chart.point.from_index(1, 5.0))
+                lb.set_point(chart.point.from_index(2, 6.0))
+                bx.set_top_left_point(chart.point.from_index(0, 9.0))
+            """, count: 3)
+        XCTAssertEqual(result.plots[0].values, [0, 0, 0], "the line object exists")
+        XCTAssertEqual(result.plots[1].values, [1, 1, 1], "a coordinate it was made without reads as na")
+        let line = try XCTUnwrap(result.lines.first)
+        XCTAssertFalse(line.isComplete, "x2 and y2 are still missing")
+        XCTAssertEqual(line.x1, 1)
+        XCTAssertEqual(line.y1, 5)
+        XCTAssertTrue(try XCTUnwrap(result.labels.first).isComplete)
+        XCTAssertFalse(try XCTUnwrap(result.boxes.first).isComplete, "the bottom right is still missing")
+        XCTAssertFalse(result.lines[1].isComplete, "a point without a price leaves the line hidden")
+    }
+
+    func testPointSettersMoveEndsAndAnchors() throws {
+        let result = try output(
+            """
+            var line ln = line.new(0, 1.0, 1, 2.0)
+            var label lb = label.new(0, 1.0, "t")
+            var box bx = box.new(0, 4.0, 1, 3.0)
+            if bar_index == 2
+                ln.set_first_point(chart.point.from_index(7, 9.0))
+                ln.set_second_point(chart.point.from_index(8, 10.0))
+                lb.set_point(chart.point.from_index(5, 6.0))
+                bx.set_top_left_point(chart.point.from_index(2, 20.0))
+                bx.set_bottom_right_point(chart.point.from_index(6, 15.0))
+            """, count: 3)
+        let line = try XCTUnwrap(result.lines.first)
+        XCTAssertEqual([line.x1, line.x2], [7, 8])
+        XCTAssertEqual([line.y1, line.y2], [9, 10])
+        let label = try XCTUnwrap(result.labels.first)
+        XCTAssertEqual([Double(label.x), label.y], [5, 6])
+        let box = try XCTUnwrap(result.boxes.first)
+        XCTAssertEqual([box.left, box.right], [2, 6])
+        XCTAssertEqual([box.top, box.bottom], [20, 15])
+    }
 }

@@ -195,6 +195,33 @@ extension PineRuntimeSession {
         return out
     }
 
+    /// Like `bind`, for the Pine overloads that take `chart.point`s instead of coordinates
+    /// (`line.new(first_point, second_point, …)`): when the first positional argument is a point, or a
+    /// point parameter is named, `point` names the positions; otherwise `plain` does.
+    func bindOverload(
+        _ call: PineCall, plain: [String], point: [String], _ context: inout PineRuntimeContext
+    ) throws -> (values: [String: PineRuntimeValue], isPoint: Bool) {
+        var out: [String: PineRuntimeValue] = [:]
+        var names = plain
+        var isPoint = false
+        var position = 0
+        for argument in call.arguments {
+            let value = try eval(argument.value, &context)
+            if let name = argument.name {
+                out[name] = value
+                if point.first == name { isPoint = true }
+                continue
+            }
+            if position == 0, isChartPoint(value) {
+                isPoint = true
+                names = point
+            }
+            if position < names.count { out[names[position]] = value }
+            position += 1
+        }
+        return (out, isPoint)
+    }
+
     /// Offsets a call site's key inside a user function so each call site of the function
     /// keeps its own histories.
     func siteKey(_ site: Int, _ context: PineRuntimeContext) -> Int {

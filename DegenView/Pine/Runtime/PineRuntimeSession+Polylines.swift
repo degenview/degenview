@@ -29,6 +29,28 @@ extension PineRuntimeSession {
                 fields: ["index": index ?? .na, "time": time ?? .na, "price": price]))
     }
 
+    func isChartPoint(_ value: PineRuntimeValue) -> Bool {
+        guard case .ref(.object, let id) = value else { return false }
+        return working.instances[id]?.typeName == Self.chartPointType
+    }
+
+    /// The bar index and price of a `chart.point`: its `time` when the drawing is anchored to time, else its
+    /// `index` (or its time when it has no index). Nil when `value` is not a point; a coordinate the point does
+    /// not have is `PineDrawingCoordinate.missingIndex` / `NaN`, which keeps a drawing hidden.
+    func pointCoordinates(
+        _ value: PineRuntimeValue?, anchoredToTime: Bool, at bar: KlineData
+    ) -> (index: Int, price: Double)? {
+        guard case .ref(.object, let id)? = value, let object = working.instances[id],
+            object.typeName == Self.chartPointType
+        else { return nil }
+        let price = object.fields["price"]?.number ?? .nan
+        let time = object.fields["time"].intValue
+        let index = object.fields["index"].intValue
+        let fromTime = time.map { barIndex(forTime: $0, at: bar) }
+        let resolved = anchoredToTime ? (fromTime ?? index) : (index ?? fromTime)
+        return (resolved ?? PineDrawingCoordinate.missingIndex, price)
+    }
+
     func polylineCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         switch call.name {
         case "polyline.new": return try newPolyline(call, &context)
@@ -54,16 +76,10 @@ extension PineRuntimeSession {
         let timed = b["xloc"].textValue == "xloc.bar_time"
         var points: [PinePolylineOutput.Point] = []
         for item in items {
-            guard case .ref(.object, let id) = item, let object = working.instances[id],
-                object.typeName == Self.chartPointType, let price = object.fields["price"]?.number
+            guard let point = pointCoordinates(item, anchoredToTime: timed, at: context.bar),
+                PineDrawingCoordinate.isKnown(point.index), PineDrawingCoordinate.isKnown(point.price)
             else { continue }
-            let index: Int?
-            if timed, let milliseconds = object.fields["time"].intValue {
-                index = barIndex(forTime: milliseconds, at: context.bar)
-            } else {
-                index = object.fields["index"].intValue
-            }
-            if let index { points.append(.init(index: index, price: price)) }
+            points.append(.init(index: point.index, price: point.price))
         }
         let lineColor = b["line_color"].colorValue(fallback: Self.defaultColor)
         let fillColor = b["fill_color"].colorValue(fallback: nil)

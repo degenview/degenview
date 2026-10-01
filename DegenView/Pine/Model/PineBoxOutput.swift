@@ -9,6 +9,10 @@ struct PineBoxOutput: Sendable, Identifiable, Equatable {
     var borderColor: UInt32?
     var borderWidth: Int
     var backgroundColor: UInt32?
+    var isComplete: Bool {
+        PineDrawingCoordinate.isKnown(left) && PineDrawingCoordinate.isKnown(right)
+            && PineDrawingCoordinate.isKnown(top) && PineDrawingCoordinate.isKnown(bottom)
+    }
     var borderStyle: PineLineStyle = .solid
     /// Text inside the box (`text =` or `box.set_text`). Wrap, font family and formatting are not modelled.
     var text = ""
