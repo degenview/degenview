@@ -180,9 +180,21 @@ row) → `PineAlertDispatcher` (channels).
   line separated by commas (`a := 1, b := 2`), generic constructors (`array.new<float>(n)`), and the
   `export` modifier (accepted in a `library()`, `PINE3037` elsewhere).
 - Method syntax on a variable holding an array or a `line`/`label`/`box`/`table` handle:
-  `values.get(i)` is `array.get(values, i)`, `ln.set_y2(p)` is `line.set_y2(ln, p)`. The receiver must
-  be a plain variable or a field path (`zone.box.get_top()`); a call result is not a receiver
-  (`array.get(a, 0).set_x(1)` reports `PINE2006`).
+  `values.get(i)` is `array.get(values, i)`, `ln.set_y2(p)` is `line.set_y2(ln, p)`. The receiver may
+  be a plain variable, a field path (`zone.box.get_top()`) or any expression
+  (`zones.get(k).kill()`, `holders.get(1).xs.push(8.0)`): it is evaluated once and passed on. A user
+  `method`, the builtin of the receiver's kind or `copy()` is called; a `na` receiver is `PINE4018`.
+- **Maps.** `map<K, V>` (also nested, `map<string, array<float>>`), `map.new<K, V>()` and `put`, `get`,
+  `contains`, `remove`, `size`, `clear`, `keys`, `values`, `copy`, `put_all`, as functions or methods,
+  including through fields (`book.levels.put(k, v)`). Maps keep insertion order; a whole float and the
+  int of the same value are one key; `na` and handles are not keys (`PINE4027`); `for [k, v] in map`
+  iterates a snapshot of the pairs. Not supported: enum-keyed maps beyond what strings give.
+- `color(x)` and `string(x)` casts (a value of that type passes through, anything else is `na`),
+  `max_bars_back` (a no-op: all history is kept), `str.match` (first match or `""`), `str.split`,
+  `time(timeframe)` and `time_close(timeframe)` (open and close of the `timeframe` bar containing the
+  current bar; the session and time-zone arguments are ignored).
+- Typing: `int / int` is not typed as float, because a script that compiles on TradingView
+  (`int xc = x0 + (n - 1) * step / 2`) declares an int from one; a float operand still is.
 - `input.*` defaults are read from `defval =` (or the leading positional argument), so
   `input.bool(title = "…", defval = true)` works.
 - `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday` (midnight UTC of the bar's day),
@@ -290,12 +302,14 @@ meets (`PINE4001`–`PINE4006`).
   stop-limit fills to the tick. Results will not match TradingView exactly. The runtime
   copies its history arrays each bar, so evaluation time grows quadratically with bar count:
   about 2 s for 1,500 bars of a script this size, and it reaches the 10-second deadline
-  somewhere before 5,000 bars.
+  somewhere before 5,000 bars. (Appending to histories is now done in place, which took
+  about 20% off a 379-variable script; it is still interpretation-bound, and that script, the
+  corpus's `xlWhYoco`, needs about two thirds of the deadline for 1,000 bars on the machine it was
+  measured on, so it can report `PINE8007` on a slower one.)
 
 ## Known incompatibilities
 
-The current grammar does not yet implement method calls on a call result (`zones.get(k).kill()`), maps,
-matrices, library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
+The current grammar does not yet implement matrices, library `import` (`PINE9008`), `polyline`, `chart.point`, the `scale` and
 `max_polylines_count` declaration arguments, built-in types such as `footprint`, `request.security` for
 other symbols or finer timeframes, or `request.security_lower_tf` (the engine only sees the chart's own
 bars). Label `yloc` is treated as `yloc.price`.
@@ -382,15 +396,15 @@ Results against the 30 scripts fetched on 2026-10-01 (indicators / libraries tha
 | After user-defined types, methods, `linefill`, table calls | 9 / 20 | 5 / 10 |
 | After `request.security` (own symbol), expression subscripts, `xloc.bar_time` | 13 / 20 | 5 / 10 |
 | After the 500k source limit and enums | 14 / 20 | 6 / 10 |
+| After maps and methods on call results | 16 / 20 | 6 / 10 |
 
-The 10 that still fail are blocked by whole features, counted in scripts (a script can have several):
+The 8 that still fail are blocked by whole features, counted in scripts (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 2 |
 | `request.security_lower_tf` (`PINE9003`) | 3 |
 | Library `import` (`PINE9008`) | 2 |
-| Maps, and methods on a call result | 2 |
 | Matrices | 1 |
 | `chart.point` / `polyline` | 2 |
 | `scale=` declaration argument | 1 |
