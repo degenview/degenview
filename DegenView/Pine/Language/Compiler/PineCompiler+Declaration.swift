@@ -10,7 +10,7 @@ extension PineCompiler {
 
     private static let commonArguments: Set<String> = [
         "title", "shorttitle", "overlay", "format", "precision", "max_bars_back",
-        "max_lines_count", "max_labels_count", "max_boxes_count",
+        "max_lines_count", "max_labels_count", "max_boxes_count", "max_polylines_count",
     ]
 
     private static let strategyArguments: Set<String> = [
@@ -110,6 +110,7 @@ extension PineCompiler {
         case ("max_lines_count", .int(let v)): metadata.maxLinesCount = v
         case ("max_labels_count", .int(let v)): metadata.maxLabelsCount = v
         case ("max_boxes_count", .int(let v)): metadata.maxBoxesCount = v
+        case ("max_polylines_count", .int(let v)): metadata.maxPolylinesCount = v
         default: applyStrategySetting(name, value, &metadata)
         }
     }

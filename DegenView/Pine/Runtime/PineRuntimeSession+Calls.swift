@@ -8,6 +8,10 @@ extension PineRuntimeSession {
     static let exactHandlers: [String: CallHandler] = {
         var table: [String: CallHandler] = [
             "na": PineRuntimeSession.naCall, "nz": PineRuntimeSession.nzCall,
+            "chart.point.from_index": PineRuntimeSession.chartPointCall,
+            "chart.point.from_time": PineRuntimeSession.chartPointCall,
+            "chart.point.now": PineRuntimeSession.chartPointCall,
+            "chart.point.new": PineRuntimeSession.chartPointCall,
             "max_bars_back": PineRuntimeSession.maxBarsBackCall, "time": PineRuntimeSession.timeCall,
             "time_close": PineRuntimeSession.timeCloseCall,
             "color": PineRuntimeSession.colorCast, "string": PineRuntimeSession.stringCast,
@@ -42,6 +46,7 @@ extension PineRuntimeSession {
         ("line.", PineRuntimeSession.drawingCall), ("label.", PineRuntimeSession.drawingCall),
         ("box.", PineRuntimeSession.drawingCall), ("table.", PineRuntimeSession.drawingCall),
         ("linefill.", PineRuntimeSession.drawingCall), ("map.", PineRuntimeSession.mapCall),
+        ("polyline.", PineRuntimeSession.polylineCall),
     ]
 
     func call(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {

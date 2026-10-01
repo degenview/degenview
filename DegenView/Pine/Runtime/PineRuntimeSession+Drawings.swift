@@ -20,7 +20,7 @@ extension PineRuntimeSession {
     }
 
     /// Stores a new object, drops the oldest beyond the script's limit, and returns its handle.
-    private func store<T>(
+    func store<T>(
         _ objects: WritableKeyPath<PineRuntimeState, [Int: T]>, kind: PineRefKind, limit: Int?,
         _ make: (Int) -> T
     ) -> PineRuntimeValue {

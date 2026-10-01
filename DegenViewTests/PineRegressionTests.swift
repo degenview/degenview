@@ -514,6 +514,24 @@ final class PineRegressionTests: XCTestCase {
             output.plots[2].values, [0, 0, 0, 0, 1, 0], "only the last 1-minute bar closes the 5-minute bar")
     }
 
+    func testSortIndicesReturnsThePermutationThatSorts() throws {
+        let program = compile(
+            """
+            values = array.from(30.0, 10.0, 20.0, 10.0)
+            ascending = array.sort_indices(values)
+            descending = array.sort_indices(values, order.descending)
+            plot(array.get(ascending, 0))
+            plot(array.get(ascending, 1))
+            plot(array.get(ascending, 3))
+            plot(array.get(descending, 0))
+            plot(array.get(values, 0))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        // Ties (the two 10s at 1 and 3) keep their order; the source array is untouched.
+        XCTAssertEqual(output.plots.map(\.values), [[1], [3], [0], [0], [30]])
+    }
+
     func testStrSplitReturnsAnArrayOfPieces() throws {
         let program = compile(
             """

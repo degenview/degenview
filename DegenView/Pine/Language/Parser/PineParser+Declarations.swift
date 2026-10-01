@@ -4,7 +4,7 @@ extension PineParser {
     static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
         // Typed `.object` rather than a kind of its own: the checker does not track handles of this kind.
-        "linefill": .object, "map": .map,
+        "linefill": .object, "map": .map, "polyline": .object,
     ]
 
     static let qualifiers: [String: PineQualifier] = [
@@ -49,6 +49,12 @@ extension PineParser {
         var type: PineValueType
         switch current.kind {
         case .typeKeyword(let t): type = t
+        case .identifier("chart") where isChartPointAnnotation():
+            // `chart.point p = …`
+            advance()
+            advance()
+            advance()
+            return .object
         case .identifier(let word):
             if let t = Self.objectTypes[word] {
                 type = t
@@ -87,6 +93,14 @@ extension PineParser {
             return .map
         }
         return nil
+    }
+
+    /// `chart.point name`: the dotted type name followed by a variable name.
+    private func isChartPointAnnotation() -> Bool {
+        guard peek(1)?.kind == .dot, case .identifier("point")? = peek(2)?.kind,
+            case .identifier? = peek(3)?.kind
+        else { return false }
+        return true
     }
 
     /// One type argument of `array<…>` or `map<…, …>`: a type name, a dotted one (`chart.point`), or a nested
@@ -129,20 +143,16 @@ extension PineParser {
 
     // MARK: - Declarations outside this release
 
-    private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
-        "import": ("PINE9008", "Library imports are not supported in this release."),
-    ]
-
-    /// `type Name`, `enum Name`, `method name(…) =>` and `import user/lib/1 as alias` are valid Pine
-    /// the engine does not implement. Reporting the declaration once and skipping its body keeps one
-    /// clear diagnostic from turning into one syntax error per field line. Returns whether it consumed
-    /// anything; ordinary code that merely uses one of these words as a name is left alone.
+    /// `import user/lib/1 as alias` is valid Pine the engine does not implement. Reporting the declaration
+    /// once and skipping any indented body keeps one clear diagnostic from turning into one syntax error
+    /// per line. Returns whether it consumed anything; ordinary code that merely uses `import` as a name
+    /// is left alone.
     mutating func skipUnsupportedDeclaration() -> Bool {
-        guard case .identifier(let word) = current.kind,
-            let entry = Self.unsupportedDeclarations[word],
-            let next = peek(1), case .identifier = next.kind
+        guard case .identifier("import") = current.kind, let next = peek(1), case .identifier = next.kind
         else { return false }
-        diagnostics.append(.error(entry.code, .unsupported, entry.message, current.range))
+        diagnostics.append(
+            .error(
+                "PINE9008", .unsupported, "Library imports are not supported in this release.", current.range))
         skipToLineEnd()
         guard at(.newline), peek(1)?.kind == .indent else { return true }
         advance()

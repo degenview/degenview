@@ -49,6 +49,36 @@ extension PineChartLayer {
         }
     }
 
+    /// Straight segments through each polyline's points: filled when it is closed and has a fill color,
+    /// stroked in its line color. Under the lines, over the linefills.
+    func drawPolylines(context: inout GraphicsContext, plot: ChartPlot) {
+        guard !pine.polylines.isEmpty else { return }
+        let slot = slotWidth(plot)
+        for polyline in pine.polylines where polyline.points.count > 1 {
+            var path = Path()
+            for (offset, point) in polyline.points.enumerated() {
+                let location = CGPoint(
+                    x: x(forBar: point.index, plot: plot, slot: slot), y: plot.y(for: point.price))
+                if offset == 0 { path.move(to: location) } else { path.addLine(to: location) }
+            }
+            if polyline.closed { path.closeSubpath() }
+            if polyline.closed, let fill = polyline.fillColor {
+                context.fill(path, with: .color(Color(pineRGBA: fill)))
+            }
+            guard let color = polyline.lineColor, polyline.width > 0 else { continue }
+            let dash: [CGFloat] =
+                switch polyline.style {
+                case .dashed: [6, 4]
+                case .dotted: [1, 3]
+                default: []
+                }
+            context.stroke(
+                path, with: .color(Color(pineRGBA: color)),
+                style: StrokeStyle(
+                    lineWidth: CGFloat(polyline.width), lineCap: .round, lineJoin: .round, dash: dash))
+        }
+    }
+
     func drawLines(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
         for line in pine.lines {

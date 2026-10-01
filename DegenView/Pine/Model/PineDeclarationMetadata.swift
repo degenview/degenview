@@ -12,6 +12,7 @@ struct PineDeclarationMetadata: Codable, Equatable, Sendable {
     var maxLinesCount: Int? = nil
     var maxLabelsCount: Int? = nil
     var maxBoxesCount: Int? = nil
+    var maxPolylinesCount: Int? = nil
     /// Present for `strategy()` scripts.
     var strategy: PineStrategySettings? = nil
 }

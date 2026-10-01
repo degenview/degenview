@@ -248,6 +248,7 @@ final class PineRuntimeSession {
             linefills: working.linefills.values.filter {
                 working.lines[$0.line1] != nil && working.lines[$0.line2] != nil
             }.sorted { $0.id < $1.id },
+            polylines: working.polylines.values.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
             strategy: isStrategy ? working.broker.report() : nil)

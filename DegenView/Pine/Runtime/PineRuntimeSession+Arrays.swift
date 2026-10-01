@@ -7,7 +7,7 @@ extension PineRuntimeSession {
         "array.includes": ["id", "value"], "array.indexof": ["id", "value"],
         "array.get": ["id", "index"], "array.remove": ["id", "index"],
         "array.set": ["id", "index", "value"], "array.insert": ["id", "index", "value"],
-        "array.sort": ["id", "order"], "array.join": ["id", "separator"],
+        "array.sort": ["id", "order"], "array.sort_indices": ["id", "order"], "array.join": ["id", "separator"],
         "array.concat": ["id", "other"], "array.slice": ["id", "index_from", "index_to"],
     ]
 
@@ -90,16 +90,29 @@ extension PineRuntimeSession {
     /// Numbers first (ascending or descending), then everything else by its text; `na` last.
     private func sort(_ items: inout [PineRuntimeValue], descending: Bool) {
         let mintick = self.mintick
-        items.sort { lhs, rhs in
-            switch (lhs.number, rhs.number) {
-            case (let x?, let y?): return descending ? x > y : x < y
-            case (nil, _?): return false
-            case (_?, nil): return true
-            default:
-                return PineFormat.format(lhs, nil, mintick: mintick)
-                    < PineFormat.format(rhs, nil, mintick: mintick)
-            }
+        items.sort { Self.precedes($0, $1, descending: descending, mintick: mintick) }
+    }
+
+    private static func precedes(
+        _ lhs: PineRuntimeValue, _ rhs: PineRuntimeValue, descending: Bool, mintick: Double
+    ) -> Bool {
+        switch (lhs.number, rhs.number) {
+        case (let x?, let y?): return descending ? x > y : x < y
+        case (nil, _?): return false
+        case (_?, nil): return true
+        default:
+            return PineFormat.format(lhs, nil, mintick: mintick) < PineFormat.format(rhs, nil, mintick: mintick)
         }
+    }
+
+    /// `array.sort_indices`: the indexes that would sort `items`, ties keeping their original order.
+    private func sortedIndices(_ items: [PineRuntimeValue], descending: Bool) -> [PineRuntimeValue] {
+        let mintick = self.mintick
+        return items.indices.sorted { a, b in
+            if Self.precedes(items[a], items[b], descending: descending, mintick: mintick) { return true }
+            if Self.precedes(items[b], items[a], descending: descending, mintick: mintick) { return false }
+            return a < b
+        }.map(PineRuntimeValue.int)
     }
 
     /// Operations that only read `items`. Returns nil when `call` is not one of them.
@@ -110,6 +123,8 @@ extension PineRuntimeSession {
         switch call.name {
         case "array.get": return items[try arrayIndex(call, b["index"], count: items.count)]
         case "array.size": return .int(items.count)
+        case "array.sort_indices":
+            return newArray(sortedIndices(items, descending: b["order"].textValue == "order.descending"))
         case "array.first": return items.first ?? .na
         case "array.last": return items.last ?? .na
         case "array.includes": return .bool(items.contains(value))

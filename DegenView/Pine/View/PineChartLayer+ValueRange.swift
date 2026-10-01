@@ -38,6 +38,11 @@ extension PineChartLayer {
         for box in pine.boxes where inView(box.left, box.right) { values += [box.top, box.bottom] }
         for line in pine.lines where inView(line.x1, line.x2) { values += [line.y1, line.y2] }
         for label in pine.labels where visibleBars.contains(label.x) { values.append(label.y) }
+        for polyline in pine.polylines {
+            let indexes = polyline.points.map(\.index)
+            guard let first = indexes.min(), let last = indexes.max(), inView(first, last) else { continue }
+            values += polyline.points.map(\.price)
+        }
         return values
     }
 }
