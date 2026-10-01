@@ -442,6 +442,7 @@
 		F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */; };
 		F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */; };
 		F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F414E00390468E456A83EB64 /* PineRegressionTests.swift */; };
+		D74CD4848452EC50A8749F71 /* PineLabelGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7EA99CA1EE58214CE74E135 /* PineLabelGeometryTests.swift */; };
 		D7ACD33945C7A8375870BC4B /* PineDocumentedDifferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D730EC80E66FC650E20C85D8 /* PineDocumentedDifferencesTests.swift */; };
 		D710FCB801EB7CAD8ABFF729 /* PineMatrixTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A38963552C1A04909FAED3 /* PineMatrixTests.swift */; };
 		D7949B94764EA0E2C96A2778 /* PinePolylineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7DF522F79EC2664CDED670B /* PinePolylineTests.swift */; };
@@ -464,6 +465,7 @@
 		F2B381C5D5B9AD2305AC8C93 /* PineChartLayer+Markers.swift in Sources */ = {isa = PBXBuildFile; fileRef = F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */; };
 		F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */; };
 		F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */ = {isa = PBXBuildFile; fileRef = F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */; };
+		D71DEFB6F15BA006D62AF859 /* PineLabelGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D6AE7AFD5B9943159A5527 /* PineLabelGeometry.swift */; };
 		F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */; };
 		F25ED63FDE194961A2638C76 /* PineEquityCurveView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */; };
 		F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16CDF90684319BAC522DBEA /* PineReportColors.swift */; };
@@ -876,6 +878,7 @@
 		F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntimeState.swift; sourceTree = "<group>"; };
 		F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCalendar.swift; sourceTree = "<group>"; };
 		F414E00390468E456A83EB64 /* PineRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRegressionTests.swift; sourceTree = "<group>"; };
+		D7EA99CA1EE58214CE74E135 /* PineLabelGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLabelGeometryTests.swift; sourceTree = "<group>"; };
 		D730EC80E66FC650E20C85D8 /* PineDocumentedDifferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDocumentedDifferencesTests.swift; sourceTree = "<group>"; };
 		D7A38963552C1A04909FAED3 /* PineMatrixTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMatrixTests.swift; sourceTree = "<group>"; };
 		D7DF522F79EC2664CDED670B /* PinePolylineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinePolylineTests.swift; sourceTree = "<group>"; };
@@ -898,6 +901,7 @@
 		F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Markers.swift"; sourceTree = "<group>"; };
 		F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Plots.swift"; sourceTree = "<group>"; };
 		F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+Tables.swift"; sourceTree = "<group>"; };
+		D7D6AE7AFD5B9943159A5527 /* PineLabelGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLabelGeometry.swift; sourceTree = "<group>"; };
 		F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineChartLayer+ValueRange.swift"; sourceTree = "<group>"; };
 		F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEquityCurveView.swift; sourceTree = "<group>"; };
 		F16CDF90684319BAC522DBEA /* PineReportColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportColors.swift; sourceTree = "<group>"; };
@@ -1261,6 +1265,7 @@
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				P20000000000000000000104 /* PineStrategyTests.swift */,
 				F414E00390468E456A83EB64 /* PineRegressionTests.swift */,
+				D7EA99CA1EE58214CE74E135 /* PineLabelGeometryTests.swift */,
 				D730EC80E66FC650E20C85D8 /* PineDocumentedDifferencesTests.swift */,
 				D7A38963552C1A04909FAED3 /* PineMatrixTests.swift */,
 				D7DF522F79EC2664CDED670B /* PinePolylineTests.swift */,
@@ -1559,6 +1564,7 @@
 				F116BEFDF4901322DC821C11 /* PineChartLayer+Markers.swift */,
 				F13437D72D1E6AF0D2EF9EF5 /* PineChartLayer+Plots.swift */,
 				F105552D2C7D15333283E083 /* PineChartLayer+Tables.swift */,
+				D7D6AE7AFD5B9943159A5527 /* PineLabelGeometry.swift */,
 				F1BE18605BD8886DC60A7B13 /* PineChartLayer+ValueRange.swift */,
 				D20000000000000000000101 /* PineChartLayer.swift */,
 				F150302CA6BC990E74EB409C /* PineEquityCurveView.swift */,
@@ -1837,6 +1843,7 @@
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
 				F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */,
+				D74CD4848452EC50A8749F71 /* PineLabelGeometryTests.swift in Sources */,
 				D7ACD33945C7A8375870BC4B /* PineDocumentedDifferencesTests.swift in Sources */,
 				D710FCB801EB7CAD8ABFF729 /* PineMatrixTests.swift in Sources */,
 				D7949B94764EA0E2C96A2778 /* PinePolylineTests.swift in Sources */,
@@ -2165,6 +2172,7 @@
 				F2B381C5D5B9AD2305AC8C93 /* PineChartLayer+Markers.swift in Sources */,
 				F2334B49299DDE150D926FAC /* PineChartLayer+Plots.swift in Sources */,
 				F2C370D46BA20A95049A384C /* PineChartLayer+Tables.swift in Sources */,
+				D71DEFB6F15BA006D62AF859 /* PineLabelGeometry.swift in Sources */,
 				F2F6942A71287753BD097A61 /* PineChartLayer+ValueRange.swift in Sources */,
 				F25ED63FDE194961A2638C76 /* PineEquityCurveView.swift in Sources */,
 				F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */,

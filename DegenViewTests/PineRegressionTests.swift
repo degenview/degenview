@@ -369,6 +369,21 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual([output.lines[0].x1, output.lines[0].x2], [0, 4])
     }
 
+    func testEveryLabelStyleConstantResolvesAndIsStored() throws {
+        let styles = [
+            "none", "label_down", "label_up", "label_left", "label_right", "label_center", "label_lower_left",
+            "label_lower_right", "label_upper_left", "label_upper_right", "circle", "square", "diamond", "cross",
+            "xcross", "flag", "triangleup", "triangledown", "arrowup", "arrowdown", "text_outline",
+        ]
+        let program = compile(
+            styles.map { "label.new(bar_index, close, \"x\", style = label.style_\($0))" }.joined(separator: "\n"))
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.labels.count, styles.count)
+        XCTAssertEqual(
+            output.labels.map { $0.style.rawValue }, styles, "each style survives creation with its own name")
+    }
+
     func testLabelTooltipIsStoredFromNewAndSetTooltip() throws {
         let program = compile(
             """

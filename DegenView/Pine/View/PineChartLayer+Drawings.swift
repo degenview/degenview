@@ -133,50 +133,84 @@ extension PineChartLayer {
             let size = CGSize(
                 width: measured.width + Self.labelPadding.width,
                 height: measured.height + Self.labelPadding.height)
-            let (bubble, tip) = labelGeometry(label.style, anchor: anchor, size: size)
-            if let fill = label.color, fill & 0xFF != 0, label.style != .none {
-                var shape = Path(roundedRect: bubble, cornerRadius: 3)
-                if !tip.isEmpty {
-                    shape.move(to: tip[0])
-                    shape.addLine(to: tip[1])
-                    shape.addLine(to: tip[2])
-                    shape.closeSubpath()
-                }
-                context.fill(shape, with: .color(Color(pineRGBA: fill)))
+            let layout = PineLabelGeometry.layout(
+                label.style, anchor: anchor, size: size, pointer: Self.labelPointer)
+            if let fill = label.color, fill & 0xFF != 0 {
+                drawLabelShape(layout, fill: Color(pineRGBA: fill), in: &context)
             }
-            context.draw(text, at: CGPoint(x: bubble.midX, y: bubble.midY))
+            context.draw(text, at: CGPoint(x: layout.body.midX, y: layout.body.midY))
         }
     }
 
-    /// The bubble rectangle for a label of `size` anchored at `anchor`, and the three points of
-    /// its pointer (empty when it has none).
-    private func labelGeometry(
-        _ style: PineLabelStyle, anchor: CGPoint, size: CGSize
-    ) -> (bubble: CGRect, tip: [CGPoint]) {
-        let p = Self.labelPointer
-        var bubble = CGRect(origin: .zero, size: size)
-        func verticalTip(baseY: CGFloat) -> [CGPoint] {
-            [CGPoint(x: anchor.x - p, y: baseY), anchor, CGPoint(x: anchor.x + p, y: baseY)]
+    private func drawLabelShape(
+        _ layout: PineLabelGeometry.Layout, fill: Color, in context: inout GraphicsContext
+    ) {
+        switch layout.shape {
+        case .bubble(let pointer):
+            var shape = Path(roundedRect: layout.body, cornerRadius: 3)
+            if !pointer.isEmpty {
+                shape.move(to: pointer[0])
+                shape.addLine(to: pointer[1])
+                shape.addLine(to: pointer[2])
+                shape.closeSubpath()
+            }
+            context.fill(shape, with: .color(fill))
+        case .ellipse: context.fill(Path(ellipseIn: layout.body), with: .color(fill))
+        case .rectangle: context.fill(Path(roundedRect: layout.body, cornerRadius: 2), with: .color(fill))
+        case .diamond:
+            let box = layout.body
+            var shape = Path()
+            shape.move(to: CGPoint(x: box.midX, y: box.minY))
+            shape.addLine(to: CGPoint(x: box.maxX, y: box.midY))
+            shape.addLine(to: CGPoint(x: box.midX, y: box.maxY))
+            shape.addLine(to: CGPoint(x: box.minX, y: box.midY))
+            shape.closeSubpath()
+            context.fill(shape, with: .color(fill))
+        case .marker(let marker):
+            guard let glyph = layout.glyph else { return }
+            drawMarker(marker, in: glyph, fill: fill, context: &context)
+        case .textOnly: break
         }
-        func horizontalTip(baseX: CGFloat) -> [CGPoint] {
-            [CGPoint(x: baseX, y: anchor.y - p), anchor, CGPoint(x: baseX, y: anchor.y + p)]
+    }
+
+    /// Simplified glyphs for the marker label styles.
+    private func drawMarker(
+        _ marker: PineLabelGeometry.Marker, in box: CGRect, fill: Color, context: inout GraphicsContext
+    ) {
+        var path = Path()
+        switch marker {
+        case .triangleUp, .arrowUp:
+            path.move(to: CGPoint(x: box.midX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.minX, y: box.maxY))
+            path.closeSubpath()
+        case .triangleDown, .arrowDown:
+            path.move(to: CGPoint(x: box.midX, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.minX, y: box.minY))
+            path.closeSubpath()
+        case .flag:
+            path.move(to: CGPoint(x: box.minX, y: box.maxY))
+            path.addLine(to: CGPoint(x: box.minX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.minY + box.height / 3))
+            path.addLine(to: CGPoint(x: box.minX, y: box.midY))
+            context.stroke(path, with: .color(fill), lineWidth: 2)
+            return
+        case .cross:
+            path.move(to: CGPoint(x: box.midX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.midX, y: box.maxY))
+            path.move(to: CGPoint(x: box.minX, y: box.midY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.midY))
+            context.stroke(path, with: .color(fill), lineWidth: 2)
+            return
+        case .xcross:
+            path.move(to: CGPoint(x: box.minX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.maxX, y: box.maxY))
+            path.move(to: CGPoint(x: box.maxX, y: box.minY))
+            path.addLine(to: CGPoint(x: box.minX, y: box.maxY))
+            context.stroke(path, with: .color(fill), lineWidth: 2)
+            return
         }
-        switch style {
-        case .labelDown:
-            bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y - p - size.height)
-            return (bubble, verticalTip(baseY: bubble.maxY))
-        case .labelUp:
-            bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y + p)
-            return (bubble, verticalTip(baseY: bubble.minY))
-        case .labelLeft:
-            bubble.origin = CGPoint(x: anchor.x + p, y: anchor.y - size.height / 2)
-            return (bubble, horizontalTip(baseX: bubble.minX))
-        case .labelRight:
-            bubble.origin = CGPoint(x: anchor.x - p - size.width, y: anchor.y - size.height / 2)
-            return (bubble, horizontalTip(baseX: bubble.maxX))
-        case .labelCenter, .none:
-            bubble.origin = CGPoint(x: anchor.x - size.width / 2, y: anchor.y - size.height / 2)
-            return (bubble, [])
-        }
+        context.fill(path, with: .color(fill))
     }
 }
