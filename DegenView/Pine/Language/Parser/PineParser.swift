@@ -11,6 +11,9 @@ struct PineParser {
     let limits: PineLimits
     /// Statements produced so far, at any nesting depth; bounded by `limits.astNodes`.
     private var statementCount = 0
+    /// Where `export` prefixed a statement. The keyword is only legal in a library, which the
+    /// parser cannot know, so the compiler checks these against the declaration.
+    private(set) var exportRanges: [PineSourceRange] = []
 
     init(tokens: [PineToken], limits: PineLimits) {
         self.tokens = tokens
@@ -50,6 +53,12 @@ struct PineParser {
         }
         if untilDedent { _ = take(.dedent) }
         return out
+    }
+
+    /// Notes an `export` prefix and parses the statement it applies to.
+    mutating func exportedStatement() -> PineStatement? {
+        exportRanges.append(previous.range)
+        return statement()
     }
 
     /// A statement must end the line. Block statements (`if`, `for`, block functions) end

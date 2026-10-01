@@ -19,6 +19,11 @@ enum PineCompiler {
         let environment = constantEnvironment(statements)
         let metadata = declarationMetadata(
             statements, version: version, environment: environment, &diagnostics)
+        if metadata.type != .library {
+            diagnostics += parser.exportRanges.map {
+                .error("PINE3037", .semantic, "export is only allowed in a library().", $0)
+            }
+        }
         var schema = PineInputSchema()
         collectInputs(statements, environment, &schema, &diagnostics)
         diagnostics += PineStructureValidator.validate(statements)

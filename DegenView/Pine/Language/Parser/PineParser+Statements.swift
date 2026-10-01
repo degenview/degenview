@@ -2,6 +2,7 @@ import Foundation
 
 extension PineParser {
     mutating func statement() -> PineStatement? {
+        if takeWord("export") { return exportedStatement() }
         if take(.ifKeyword) { return ifStatement() }
         if take(.forKeyword) { return forStatement() }
         if take(.whileKeyword) { return whileStatement() }

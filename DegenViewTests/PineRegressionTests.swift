@@ -74,6 +74,13 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
     }
 
+    func testExportIsAcceptedInALibraryAndRejectedElsewhere() {
+        let body = "export const int answer = 42\nexport double(float x) =>\n    x * 2\n"
+        let library = PineCompiler.compile(source: "//@version=6\nlibrary(\"Lib\")\n" + body)
+        XCTAssertTrue(library.isValid, "\(library.diagnostics)")
+        XCTAssertEqual(codes(compile(body)).filter { $0 == "PINE3037" }.count, 2)
+    }
+
     func testOversizedIntegerLiteralIsADiagnosticNotACrash() {
         let program = compile("x = 99999999999999999999\nplot(x)")
         XCTAssertTrue(codes(program).contains("PINE2014"), "\(codes(program))")
