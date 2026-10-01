@@ -109,8 +109,11 @@ struct PineInputsView: View {
                         get: { value },
                         set: { set(.string($0), for: input) })
                 ) {
-                    ForEach(input.options ?? [], id: \.self) { option in
-                        if case .string(let text) = option { Text(text).tag(text) }
+                    ForEach(Array((input.options ?? []).enumerated()), id: \.offset) { index, option in
+                        if case .string(let text) = option {
+                            Text(input.optionTitles.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? text)
+                                .tag(text)
+                        }
                     }
                 }
                 .pickerStyle(.menu)

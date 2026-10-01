@@ -31,6 +31,8 @@ indirect enum PineStatement: Sendable {
     case loopControl(PineLoopControl, PineSourceRange)
     /// `type Name` and its indented field lines.
     case typeDeclaration(name: String, fields: [PineTypeField], range: PineSourceRange)
+    /// `enum Name` and its indented member lines.
+    case enumDeclaration(name: String, members: [PineEnumMember], range: PineSourceRange)
     /// User-defined function. The body's last statement is the return value.
     case function(
         name: String, parameters: [PineParameter], body: [PineStatement], range: PineSourceRange)

@@ -246,6 +246,7 @@
 		F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* PaperChartTradingOverlay.swift */; };
 		F26B67F079C53D2F57A4B72B /* PineArgument.swift in Sources */ = {isa = PBXBuildFile; fileRef = F148F629EBFF0115EFB81F88 /* PineArgument.swift */; };
 		D7E95FB62E602E0C7BABEAAD /* PineTypeDeclaration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7CA8ACB02C35F37FEC2E708 /* PineTypeDeclaration.swift */; };
+		D7E2F17D67A7DA2D4F295B56 /* PineEnumDeclaration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7424D14866A79B021398D83 /* PineEnumDeclaration.swift */; };
 		F27A65FF93CF5A6196530F98 /* PineDeclarationMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11D0D497E7B6F833F3BA6D6 /* PineDeclarationMode.swift */; };
 		F243CD07141C5E19A07897D1 /* PineExpression.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13339CC7220761F1E7DF749 /* PineExpression.swift */; };
 		F2637264D711B2A3F4013C7E /* PineLoopControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13857DB8B3C20D74482DC39 /* PineLoopControl.swift */; };
@@ -270,6 +271,7 @@
 		F2EBD0923B5C1E12CD21A3B9 /* PineUnaryOperator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F194F06847736977C19F4E97 /* PineUnaryOperator.swift */; };
 		F2E8B930B5C76839ECA3A6EA /* PineParser+Declarations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B92A15C8D79FF8A5F31373 /* PineParser+Declarations.swift */; };
 		D7FCCC71251F12775529B890 /* PineParser+Types.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7792B7535BE4DF2EE5D3585 /* PineParser+Types.swift */; };
+		D78D720F73FF79C751510445 /* PineParser+Enums.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7537BB6E9E6966B86346D8F /* PineParser+Enums.swift */; };
 		F23BA99DD415FB7C9476492B /* PineParser+Expressions.swift in Sources */ = {isa = PBXBuildFile; fileRef = F101E0E537176C3A3A7F026C /* PineParser+Expressions.swift */; };
 		F24D1A70F63B35FEBC503C15 /* PineParser+Statements.swift in Sources */ = {isa = PBXBuildFile; fileRef = F125A65EFF32027DA3B6A1BC /* PineParser+Statements.swift */; };
 		F28389140591DA72F90BB80E /* PineOperators.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16BDE4F9317BCB826A51646 /* PineOperators.swift */; };
@@ -422,6 +424,7 @@
 		F2E86649A94B4D2070918EA8 /* PineRuntimeState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */; };
 		F2790A8FE76FC06BAF30E135 /* PineCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */; };
 		F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F414E00390468E456A83EB64 /* PineRegressionTests.swift */; };
+		D7506BF4B613858F9EA87BE1 /* PineEnumTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72FF92016909DE96FB8FD4A /* PineEnumTests.swift */; };
 		D72EFD31037CC8184D81D118 /* PineSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7841D0532DF6F4CEFBE1F9D /* PineSecurityTests.swift */; };
 		D7F03D16D6996E8AC02DEACD /* PineUserTypeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D76A65673EB029F69E0024D1 /* PineUserTypeTests.swift */; };
 		F2CDBC9DDD808A7838F753DC /* PineExecutionLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BC0513BCA649B9EBE99F7C /* PineExecutionLifecycleTests.swift */; };
@@ -699,6 +702,7 @@
 		F30000000000000000000107 /* PaperChartTradingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartTradingOverlay.swift; sourceTree = "<group>"; };
 		F148F629EBFF0115EFB81F88 /* PineArgument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineArgument.swift; sourceTree = "<group>"; };
 		D7CA8ACB02C35F37FEC2E708 /* PineTypeDeclaration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeDeclaration.swift; sourceTree = "<group>"; };
+		D7424D14866A79B021398D83 /* PineEnumDeclaration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEnumDeclaration.swift; sourceTree = "<group>"; };
 		F11D0D497E7B6F833F3BA6D6 /* PineDeclarationMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDeclarationMode.swift; sourceTree = "<group>"; };
 		F13339CC7220761F1E7DF749 /* PineExpression.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExpression.swift; sourceTree = "<group>"; };
 		F13857DB8B3C20D74482DC39 /* PineLoopControl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLoopControl.swift; sourceTree = "<group>"; };
@@ -723,6 +727,7 @@
 		F194F06847736977C19F4E97 /* PineUnaryOperator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineUnaryOperator.swift; sourceTree = "<group>"; };
 		F1B92A15C8D79FF8A5F31373 /* PineParser+Declarations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Declarations.swift"; sourceTree = "<group>"; };
 		D7792B7535BE4DF2EE5D3585 /* PineParser+Types.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Types.swift"; sourceTree = "<group>"; };
+		D7537BB6E9E6966B86346D8F /* PineParser+Enums.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Enums.swift"; sourceTree = "<group>"; };
 		F101E0E537176C3A3A7F026C /* PineParser+Expressions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Expressions.swift"; sourceTree = "<group>"; };
 		F125A65EFF32027DA3B6A1BC /* PineParser+Statements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Statements.swift"; sourceTree = "<group>"; };
 		F16BDE4F9317BCB826A51646 /* PineOperators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineOperators.swift; sourceTree = "<group>"; };
@@ -818,6 +823,7 @@
 		F19C2D50E4905B8AA413350A /* PineRuntimeState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRuntimeState.swift; sourceTree = "<group>"; };
 		F18B9F718C9FC0082F3B61A7 /* PineCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCalendar.swift; sourceTree = "<group>"; };
 		F414E00390468E456A83EB64 /* PineRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineRegressionTests.swift; sourceTree = "<group>"; };
+		D72FF92016909DE96FB8FD4A /* PineEnumTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEnumTests.swift; sourceTree = "<group>"; };
 		D7841D0532DF6F4CEFBE1F9D /* PineSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSecurityTests.swift; sourceTree = "<group>"; };
 		D76A65673EB029F69E0024D1 /* PineUserTypeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineUserTypeTests.swift; sourceTree = "<group>"; };
 		F1BC0513BCA649B9EBE99F7C /* PineExecutionLifecycleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExecutionLifecycleTests.swift; sourceTree = "<group>"; };
@@ -1173,6 +1179,7 @@
 				P10000000000000000000104 /* PineEngineTests.swift */,
 				P20000000000000000000104 /* PineStrategyTests.swift */,
 				F414E00390468E456A83EB64 /* PineRegressionTests.swift */,
+				D72FF92016909DE96FB8FD4A /* PineEnumTests.swift */,
 				D7841D0532DF6F4CEFBE1F9D /* PineSecurityTests.swift */,
 				D76A65673EB029F69E0024D1 /* PineUserTypeTests.swift */,
 				F1BC0513BCA649B9EBE99F7C /* PineExecutionLifecycleTests.swift */,
@@ -1243,6 +1250,7 @@
 			children = (
 				F148F629EBFF0115EFB81F88 /* PineArgument.swift */,
 				D7CA8ACB02C35F37FEC2E708 /* PineTypeDeclaration.swift */,
+				D7424D14866A79B021398D83 /* PineEnumDeclaration.swift */,
 				F14F7C9726DA6D66EA3D0CC1 /* PineAssignmentOperator.swift */,
 				F1B807D04F1D462B8E3E194A /* PineBinaryOperator.swift */,
 				F11D0D497E7B6F833F3BA6D6 /* PineDeclarationMode.swift */,
@@ -1299,6 +1307,7 @@
 			children = (
 				F1B92A15C8D79FF8A5F31373 /* PineParser+Declarations.swift */,
 				D7792B7535BE4DF2EE5D3585 /* PineParser+Types.swift */,
+				D7537BB6E9E6966B86346D8F /* PineParser+Enums.swift */,
 				F101E0E537176C3A3A7F026C /* PineParser+Expressions.swift */,
 				F125A65EFF32027DA3B6A1BC /* PineParser+Statements.swift */,
 				F10BEC91102FD2902D06354E /* PineParser.swift */,
@@ -1710,6 +1719,7 @@
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
 				F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */,
+				D7506BF4B613858F9EA87BE1 /* PineEnumTests.swift in Sources */,
 				D72EFD31037CC8184D81D118 /* PineSecurityTests.swift in Sources */,
 				D7F03D16D6996E8AC02DEACD /* PineUserTypeTests.swift in Sources */,
 				F2CDBC9DDD808A7838F753DC /* PineExecutionLifecycleTests.swift in Sources */,
@@ -1896,6 +1906,7 @@
 				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,
 				F26B67F079C53D2F57A4B72B /* PineArgument.swift in Sources */,
 				D7E95FB62E602E0C7BABEAAD /* PineTypeDeclaration.swift in Sources */,
+				D7E2F17D67A7DA2D4F295B56 /* PineEnumDeclaration.swift in Sources */,
 				F27A65FF93CF5A6196530F98 /* PineDeclarationMode.swift in Sources */,
 				F243CD07141C5E19A07897D1 /* PineExpression.swift in Sources */,
 				F2637264D711B2A3F4013C7E /* PineLoopControl.swift in Sources */,
@@ -1920,6 +1931,7 @@
 				F2EBD0923B5C1E12CD21A3B9 /* PineUnaryOperator.swift in Sources */,
 				F2E8B930B5C76839ECA3A6EA /* PineParser+Declarations.swift in Sources */,
 				D7FCCC71251F12775529B890 /* PineParser+Types.swift in Sources */,
+				D78D720F73FF79C751510445 /* PineParser+Enums.swift in Sources */,
 				F23BA99DD415FB7C9476492B /* PineParser+Expressions.swift in Sources */,
 				F24D1A70F63B35FEBC503C15 /* PineParser+Statements.swift in Sources */,
 				F28389140591DA72F90BB80E /* PineOperators.swift in Sources */,

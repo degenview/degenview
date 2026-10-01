@@ -118,8 +118,16 @@ extension PineRuntimeSession {
 
     func toStringCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
         let value = try argument(call, 0, nil, &context)
+        if case .string(let text) = value, let title = enumTitle(of: text) { return .string(title) }
         let pattern = try argument(call, 1, "format", &context).textValue
         return .string(PineFormat.format(value, pattern, mintick: mintick))
+    }
+
+    /// The title of the enum member a `"Enum.member"` string names, if any.
+    private func enumTitle(of text: String) -> String? {
+        guard let dot = text.firstIndex(of: "."), let members = enums[String(text[..<dot])] else { return nil }
+        let member = String(text[text.index(after: dot)...])
+        return members.first { $0.name == member }?.title
     }
 
     // MARK: - Time

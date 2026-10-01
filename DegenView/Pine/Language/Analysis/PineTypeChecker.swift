@@ -115,7 +115,7 @@ struct PineTypeChecker {
             case .fieldAssignment(let target, _, let value, _):
                 _ = infer(target, scope)
                 _ = infer(value, scope)
-            case .loopControl, .typeDeclaration: break
+            case .loopControl, .typeDeclaration, .enumDeclaration: break
             }
         }
     }

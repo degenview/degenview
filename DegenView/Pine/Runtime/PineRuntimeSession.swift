@@ -14,6 +14,8 @@ final class PineRuntimeSession {
     let functions: [String: PineRuntimeFunction]
     /// Fields of each script-defined `type`, by type name.
     let types: [String: [PineTypeField]]
+    /// Members of each script-defined `enum`, by enum name.
+    let enums: [String: [PineEnumMember]]
     /// Variable each top-level `input.*` call site initialises, so input overrides stay keyed
     /// by name even when titles change.
     let inputVariables: [Int: String]
@@ -66,10 +68,13 @@ final class PineRuntimeSession {
         var functions: [String: PineRuntimeFunction] = [:]
         var inputVariables: [Int: String] = [:]
         var types: [String: [PineTypeField]] = [:]
+        var enums: [String: [PineEnumMember]] = [:]
         for statement in program.statements {
             switch statement {
             case .typeDeclaration(let name, let fields, _):
                 types[name] = fields
+            case .enumDeclaration(let name, let members, _):
+                enums[name] = members
             case .function(let name, let parameters, let body, _):
                 functions[name] = .init(parameters: parameters, body: body)
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
@@ -79,6 +84,7 @@ final class PineRuntimeSession {
         }
         self.functions = functions
         self.types = types
+        self.enums = enums
         self.inputVariables = inputVariables
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue

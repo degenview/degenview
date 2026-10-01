@@ -33,6 +33,7 @@ extension PineStatement {
             (subject.map { [$0] } ?? []) + arms.compactMap(\.condition)
         case .loopControl, .function: []
         case .typeDeclaration(_, let fields, _): fields.compactMap(\.defaultValue)
+        case .enumDeclaration: []
         }
     }
 
@@ -45,7 +46,7 @@ extension PineStatement {
             [body]
         case .switchStatement(_, let arms, _): arms.map(\.body)
         case .declaration, .assignment, .expression, .tupleDeclaration, .loopControl, .typeDeclaration,
-            .fieldAssignment:
+            .enumDeclaration, .fieldAssignment:
             []
         }
     }

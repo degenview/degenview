@@ -70,6 +70,23 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(codes(program).contains("PINE1004"))
     }
 
+    func testLargePublishedScriptsFitTheDefaultSourceLimit() throws {
+        let filler = String(repeating: "// padding, as in a long published script, to make this long\n", count: 2_600)
+        XCTAssertGreaterThan(filler.count, 150_000)
+        let program = compile("\(filler)plot(close)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots[0].values, [1, 2])
+    }
+
+    func testSourceBeyondTheDefaultLimitIsReportedNotParsed() {
+        let filler = String(repeating: "// padding, as in a long published script, to make this long\n", count: 9_000)
+        XCTAssertGreaterThan(filler.count, PineLimits.default.sourceCharacters)
+        let program = compile("\(filler)plot(close)")
+        XCTAssertEqual(codes(program).filter { $0 == "PINE8001" }, ["PINE8001"])
+        XCTAssertFalse(program.isValid)
+    }
+
     func testOversizedSourceIsADiagnosticNotACrash() {
         var limits = PineLimits.default
         limits.sourceCharacters = 20
@@ -95,18 +112,13 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots.map(\.values), [[7.5], [1]])
     }
 
-    func testUnsupportedDeclarationsReportOnceAndSkipTheirBodies() {
+    func testAnImportIsReportedOnceAndSkipped() {
         let program = compile(
             """
-            enum Mode
-                fast
-                slow
-
             import someone/Library/1 as lib
             plot(close)
             """)
-        XCTAssertEqual(
-            program.diagnostics.map(\.code), ["PINE9007", "PINE9008"])
+        XCTAssertEqual(program.diagnostics.map(\.code), ["PINE9008"])
     }
 
     func testCommaSeparatedStatementsShareALine() throws {
@@ -380,6 +392,21 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertTrue(compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = false)").isValid)
         let behind = compile("plot(close)", header: "indicator(\"T\", overlay = true, behind_chart = true)")
         XCTAssertEqual(codes(behind), ["PINE9001"])
+    }
+
+    func testInputDefaultMayBeANamedConstantAndOptionsMayBePositional() throws {
+        let program = compile(
+            """
+            tagSize = input.string(size.small, "Tag size", [size.tiny, size.small, size.normal], group = "G")
+            label.new(0, 1.0, "x", size = tagSize)
+            plot(close)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let input = try XCTUnwrap(program.inputSchema.inputs.first)
+        XCTAssertEqual(input.defaultValue, .string("size.small"))
+        XCTAssertEqual(input.options, [.string("size.tiny"), .string("size.small"), .string("size.normal")])
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.labels.first?.size, .small)
     }
 
     func testSubscriptOnACallOrExpressionReadsThatExpressionsHistory() throws {
