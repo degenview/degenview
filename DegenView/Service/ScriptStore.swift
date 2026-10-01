@@ -25,7 +25,7 @@ actor ScriptStore {
     static let shared = ScriptStore(
         scriptsDirectory: AppSupport.directory.appendingPathComponent("Scripts", isDirectory: true),
         metadataDirectory: AppSupport.directory.appendingPathComponent("ScriptMetadata", isDirectory: true))
-    static let compilerVersion = "pine-local-2"
+    static let compilerVersion = "pine-local-3"
     static let fileExtension = "pine"
     static let idAttribute = "com.cryptocharts.script-id"
 

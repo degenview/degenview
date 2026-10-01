@@ -227,6 +227,22 @@ meets (`PINE4001`–`PINE4006`).
   about 2 s for 1,500 bars of a script this size, and it reaches the 10-second deadline
   somewhere before 5,000 bars.
 
+## Identifier rules
+
+`PineIdentifierRules` checks every name a script declares: variables, tuple names, function names
+and parameters, and `for` counters. Codes follow TradingView's numbering.
+
+| Code | Rule |
+|---|---|
+| `CE10090` | A declared name contains `.`: `math.max = 44`. |
+| `CE10190` | A declared name shadows a builtin variable or function: `close = 5`, `f(high) =>`, `plot = 1`. |
+
+A bare namespace is not a builtin variable, so `math = 44`, `ta = 1` and `color = 44` are allowed,
+as are the object-type names `line`, `label`, `box` and `table`. `_` is always allowed. TradingView
+only errors on `CE10190` when the script has already used the builtin and otherwise warns
+(`CW10011`); DegenView always errors. Dotted `:=` (`obj.field := 1`) is not a declaration and stays a
+syntax error until user-defined types exist.
+
 ## Known incompatibilities
 
 The current grammar does not yet implement method call syntax (`arr.push(x)`), maps,
