@@ -146,6 +146,22 @@ final class ScriptPreviewViewModelTests: XCTestCase {
         XCTAssertFalse(model.isShowingStaleOutput)
     }
 
+    func testUndoingTheErrorClearsTheStaleBanner() async {
+        let model = makeModel()
+        model.bind(scriptID: UUID(), type: .indicator)
+        model.sourceChanged(Self.source)
+        await waitUntil(model.chart.pineConfiguration?.appliedSource != nil)
+
+        model.sourceChanged("indicator(")
+        await waitUntil(model.isShowingStaleOutput)
+        XCTAssertTrue(model.isShowingStaleOutput)
+
+        // Fixing it by restoring the text the chart already shows is not a new source to apply.
+        model.sourceChanged(Self.source)
+        XCTAssertFalse(model.isShowingStaleOutput)
+        XCTAssertEqual(model.chart.pineConfiguration?.appliedSource, Self.source)
+    }
+
     func testLibrariesNeverRun() async {
         let model = makeModel()
         model.bind(scriptID: UUID(), type: .library)

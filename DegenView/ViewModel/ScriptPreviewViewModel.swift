@@ -123,8 +123,13 @@ final class ScriptPreviewViewModel: ObservableObject {
     /// The editor's text changed. Applies it once typing pauses, if it compiles.
     func sourceChanged(_ source: String) {
         latestSource = source
-        guard unsupportedReason == nil, !source.isEmpty, source != appliedSource else { return }
+        guard unsupportedReason == nil, !source.isEmpty else { return }
         applyTask?.cancel()
+        // Back to the text the chart already shows (an error undone): nothing is stale any more.
+        if source == appliedSource {
+            isShowingStaleOutput = false
+            return
+        }
         let delay = applyDelay
         applyTask = Task { [weak self] in
             // The first source after opening a script applies at once; later edits wait for a pause.

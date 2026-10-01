@@ -67,7 +67,7 @@ struct ScriptPreviewPane: View {
             HStack(spacing: 10) {
                 marketButton
                 Spacer(minLength: 8)
-                timeframePicker.frame(width: 230)
+                timeframePicker
             }
             VStack(alignment: .leading, spacing: 8) {
                 marketButton
@@ -134,6 +134,9 @@ struct ScriptPreviewPane: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+        // Six segments are wider than any fixed frame we'd pick; a narrower frame lets the control
+        // swing between a squeezed and its natural width on every relayout (zoom, save).
+        .fixedSize()
         .padding(.trailing, 8)
     }
 
@@ -223,13 +226,14 @@ struct ScriptPreviewPane: View {
             } label: {
                 Label(
                     "Fix the errors to update the chart — showing the last working version",
-                    systemImage: "xmark.octagon.fill")
-                    .font(.caption)
-                    .lineLimit(1)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(Color.red.opacity(0.5), lineWidth: 1))
+                    systemImage: "xmark.octagon.fill"
+                )
+                .font(.caption)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Color.red.opacity(0.5), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
