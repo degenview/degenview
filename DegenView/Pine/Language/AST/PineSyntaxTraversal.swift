@@ -23,6 +23,7 @@ extension PineStatement {
         case .declaration(_, _, _, let value, _), .assignment(_, _, let value, _),
             .tupleDeclaration(_, let value, _):
             [value]
+        case .fieldAssignment(let target, _, let value, _): [target, value]
         case .expression(let expression): [expression]
         case .conditional(let condition, _, _, _), .whileLoop(let condition, _, _): [condition]
         case .forRange(_, let from, let to, let step, _, _): [from, to] + (step.map { [$0] } ?? [])
@@ -42,7 +43,9 @@ extension PineStatement {
             .whileLoop(_, let body, _), .function(_, _, let body, _):
             [body]
         case .switchStatement(_, let arms, _): arms.map(\.body)
-        case .declaration, .assignment, .expression, .tupleDeclaration, .loopControl, .typeDeclaration: []
+        case .declaration, .assignment, .expression, .tupleDeclaration, .loopControl, .typeDeclaration,
+            .fieldAssignment:
+            []
         }
     }
 

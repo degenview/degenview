@@ -50,4 +50,43 @@ extension PineParser {
         }
         return PineTypeField(name: name, type: type, defaultValue: defaultValue)
     }
+
+    // MARK: - Field assignment
+
+    /// Whether the line is `path.to.field := value` (or a compound form): a dotted target, then an
+    /// assignment operator outside any brackets. Looked at before parsing, so ordinary statements that
+    /// start with a namespace (`ta.ema(close, 3)`) are parsed exactly once.
+    func isFieldAssignment() -> Bool {
+        guard case .identifier = current.kind, peek(1)?.kind == .dot else { return false }
+        var depth = 0
+        for token in tokens[index...] {
+            switch token.kind {
+            case .leftParen, .leftBracket: depth += 1
+            case .rightParen, .rightBracket: depth -= 1
+            case .newline, .eof, .indent, .dedent: return false
+            case .comma where depth == 0: return false
+            default:
+                if depth == 0, PineAssignmentOperator(token: token.kind) != nil { return true }
+            }
+        }
+        return false
+    }
+
+    mutating func fieldAssignment() -> PineStatement? {
+        let range = current.range
+        guard let target = expression() else { return nil }
+        guard let op = PineAssignmentOperator(token: current.kind) else {
+            error("PINE2013", "Expected end of statement; found unexpected token.", current.range)
+            return nil
+        }
+        advance()
+        switch target {
+        case .identifier(let name, _) where name.contains("."): break
+        default:
+            error("PINE2016", "Only a variable or a field can be assigned to.", target.range)
+            return nil
+        }
+        guard let value = expression() else { return nil }
+        return .fieldAssignment(target: target, op: op, value: value, range: range)
+    }
 }

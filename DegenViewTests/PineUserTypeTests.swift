@@ -206,4 +206,106 @@ final class PineUserTypeTests: XCTestCase {
         let header = "type Zone\n    float top\n\n"
         XCTAssertEqual(runtimeError(header + "z = Zone.new(1.0)\nplot(z.nothing())"), "PINE4007")
     }
+
+    // MARK: - Field assignment
+
+    func testFieldAssignmentAndCompoundAssignmentUpdateTheObject() throws {
+        let plots = try values(
+            """
+            type Counter
+                int n
+                float total = 1.0
+
+            var Counter c = Counter.new(0)
+            c.n += 1
+            c.total *= 2.0
+            c.total := c.total + 0.5
+            plot(c.n)
+            plot(c.total)
+            """, bars: [1, 2, 3])
+        XCTAssertEqual(plots, [[1, 2, 3], [2.5, 5.5, 11.5]])
+    }
+
+    func testObjectsAreSharedByReferenceAndCopyIsIndependent() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+
+            a = Zone.new(1.0)
+            b = a
+            b.top := 5.0
+            c = a.copy()
+            c.top := 9.0
+            plot(a.top)
+            plot(c.top)
+            """)
+        XCTAssertEqual(plots, [[5], [9]])
+    }
+
+    func testMutationThroughAnArrayElementIsVisibleEverywhere() throws {
+        let plots = try values(
+            """
+            type Zone
+                float top
+
+            z = Zone.new(1.0)
+            var array<Zone> zones = array.new<Zone>()
+            array.push(zones, z)
+            Zone same = array.get(zones, 0)
+            same.top := 9.0
+            plot(z.top)
+            """)
+        XCTAssertEqual(plots, [[9]])
+    }
+
+    func testNestedFieldAssignment() throws {
+        let plots = try values(
+            """
+            type Point
+                float x
+
+            type Marker
+                Point origin
+
+            m = Marker.new(Point.new(1.0))
+            m.origin.x := 4.0
+            plot(m.origin.x)
+            """)
+        XCTAssertEqual(plots, [[4]])
+    }
+
+    func testAssigningAnUnknownFieldOrThroughNaIsARuntimeError() {
+        let header = "type Zone\n    float top\n\n"
+        XCTAssertEqual(runtimeError(header + "z = Zone.new(1.0)\nz.bottom := 1.0\nplot(close)"), "PINE4019")
+        XCTAssertEqual(runtimeError(header + "Zone z = na\nz.top := 1.0\nplot(close)"), "PINE4018")
+        XCTAssertEqual(runtimeError(header + "x = 1.0\nx.top := 1.0\nplot(close)"), "PINE4020")
+    }
+
+    func testRealtimeTicksRollBackFieldMutations() throws {
+        typealias F = PineExecutionFixtures
+        let controller = F.controller(
+            """
+            type Counter
+                int n
+
+            var Counter c = Counter.new(0)
+            c.n += 1
+            plot(c.n)
+            """)
+        let closes = (0..<5).map { Double($0) + 1 }
+        _ = F.update(controller.rebuild(bars: F.history(closes), live: false))
+        // Three ticks of realtime bar 5: each runs on the committed state, so n is 6 every time.
+        let updates = [105.0, 106, 107].enumerated().compactMap { offset, close in
+            F.update(controller.ingest(F.stream(F.bar(5, open: 105, close: close, closed: offset == 2))))
+        }
+        XCTAssertEqual(updates.map { F.last($0.output) }, [6, 6, 6])
+        let next = try XCTUnwrap(F.update(controller.ingest(F.stream(F.bar(6, open: 107, close: 108)))))
+        XCTAssertEqual(F.last(next.output), 7)
+    }
+
+    func testAssignmentTargetsThatAreNotFieldsStayOrdinarySyntaxErrors() {
+        XCTAssertTrue(compile("ta.ema(close, 3) = 1\nplot(close)").diagnostics.contains { $0.severity == .error })
+        XCTAssertTrue(compile("x = ta.ema(close, 3)\nplot(x)").isValid)
+    }
 }

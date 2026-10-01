@@ -6,6 +6,10 @@ indirect enum PineStatement: Sendable {
         value: PineExpression, range: PineSourceRange)
     case assignment(
         name: String, op: PineAssignmentOperator, value: PineExpression, range: PineSourceRange)
+    /// `zone.top := value`, `a.get(i).count += 1`: assignment to a field of a user-defined type.
+    case fieldAssignment(
+        target: PineExpression, op: PineAssignmentOperator, value: PineExpression,
+        range: PineSourceRange)
     case expression(PineExpression)
     case conditional(
         condition: PineExpression, whenTrue: [PineStatement], whenFalse: [PineStatement],

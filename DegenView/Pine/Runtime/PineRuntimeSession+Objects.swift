@@ -61,6 +61,31 @@ extension PineRuntimeSession {
         return current
     }
 
+    /// `target := value` / `target += value` where `target` is a field path.
+    func runFieldAssignment(
+        _ target: PineExpression, _ op: PineAssignmentOperator, _ expression: PineExpression,
+        _ range: PineSourceRange, _ context: inout PineRuntimeContext
+    ) throws -> Step {
+        guard case .identifier(let path, _) = target, let dot = path.lastIndex(of: ".") else {
+            throw PineDiagnostic.error(
+                "PINE2016", .runtime, "Only a variable or a field can be assigned to.", range)
+        }
+        let owner = String(path[..<dot])
+        let field = String(path[path.index(after: dot)...])
+        let holder = owner.contains(".") ? try fieldPath(owner, range) : working.variables[owner]
+        guard case .ref(.object, let id)? = holder, var object = working.instances[id] else {
+            if holder == .na { throw naObject(field, range) }
+            throw PineDiagnostic.error(
+                "PINE4020", .runtime, "'\(owner)' is not an object, so '\(field)' cannot be assigned.", range)
+        }
+        guard let old = object.fields[field] else { throw noSuchField(field, in: object.typeName, range) }
+        let rhs = try eval(expression, &context)
+        let value = PineOperators.apply(op, old: old, rhs)
+        object.fields[field] = value
+        working.instances[id] = object
+        return Step(value: value)
+    }
+
     private func noSuchField(
         _ field: String, in typeName: String, _ range: PineSourceRange
     ) -> PineDiagnostic {

@@ -14,6 +14,7 @@ extension PineParser {
         if take(.continueKeyword) { return .loopControl(.continueLoop, previous.range) }
         if isFunctionDefinition() { return functionDefinition() }
         if let declaration = declaration() { return declaration }
+        if isFieldAssignment() { return fieldAssignment() }
         if let assignment = assignment() { return assignment }
         return expression().map(PineStatement.expression)
     }
