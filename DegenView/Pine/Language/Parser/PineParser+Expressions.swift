@@ -86,6 +86,7 @@ extension PineParser {
     private mutating func extend(_ lhs: PineExpression, _ minBP: Int) -> Extension {
         if take(.dot) { return memberAccess(lhs) }
         if case .identifier("array.new", _) = lhs, at(.less) { return genericArrayConstructor(lhs) }
+        if case .identifier("map.new", _) = lhs, at(.less) { return genericMapConstructor(lhs) }
         if take(.leftParen) { return callSuffix(lhs) }
         if take(.leftBracket) { return historySuffix(lhs) }
         if minBP <= Self.ternaryBindingPower, take(.question) { return ternarySuffix(lhs) }
@@ -113,21 +114,27 @@ extension PineParser {
     /// runtime, so the element type only picks the name the builtin dispatch already knows.
     private mutating func genericArrayConstructor(_ lhs: PineExpression) -> Extension {
         advance()
-        let element: String
-        switch current.kind {
-        case .typeKeyword(let type): element = type.rawValue
-        case .identifier(let word): element = word
-        default:
-            error("PINE2012", "Expected an element type.", current.range)
-            return .finished(lhs)
-        }
-        advance()
+        guard let element = typeArgument() else { return .finished(lhs) }
         expect(.greater, "Expected '>'.")
         guard take(.leftParen), case .identifier(_, let range) = lhs else {
             error("PINE2008", "Expected '('.", current.range)
             return .finished(lhs)
         }
         return callSuffix(.identifier("array.new_" + element, range))
+    }
+
+    /// `map.new<K, V>()`: the key and value types are not tracked at runtime.
+    private mutating func genericMapConstructor(_ lhs: PineExpression) -> Extension {
+        advance()
+        _ = typeArgument()
+        expect(.comma, "Expected ',' between the key and value types.")
+        _ = typeArgument()
+        expect(.greater, "Expected '>'.")
+        guard take(.leftParen) else {
+            error("PINE2008", "Expected '('.", current.range)
+            return .finished(lhs)
+        }
+        return callSuffix(lhs)
     }
 
     private mutating func callSuffix(_ lhs: PineExpression) -> Extension {

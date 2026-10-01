@@ -111,9 +111,9 @@ enum PineSymbolCatalog {
     ]
 
     private static let reservedNamespaces: Set<String> = [
-        "request", "session", "chart", "map", "matrix", "polyline", "log", "runtime",
+        "request", "session", "chart", "matrix", "polyline", "log", "runtime",
         "barmerge", "xloc", "yloc",
     ]
 
-    private static let reservedObjectTypes: Set<String> = ["polyline", "map", "matrix"]
+    private static let reservedObjectTypes: Set<String> = ["polyline", "matrix"]
 }
