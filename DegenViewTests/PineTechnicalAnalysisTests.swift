@@ -257,6 +257,30 @@ final class PineTechnicalAnalysisTests: XCTestCase {
         XCTAssertEqual(result[1], [10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10])
     }
 
+    func testLinearRegression() throws {
+        // Reference: least squares over each 5-bar window (cross-checked with numpy.polyfit on one window).
+        let result = try plots(
+            """
+            plot(ta.linreg(close, 5, 0))
+            plot(ta.linreg(close, 5, 2))
+            plot(ta.linreg(close, 5, -1))
+            plot(ta.linreg(close, 1))
+            """)
+        assertSeries(
+            result[0], [nil, nil, nil, nil, 14.6, 14.0, 15.4, 16.8, 17.8, 19.2, 20.4, 20.6], "linreg offset 0")
+        assertSeries(
+            result[1], [nil, nil, nil, nil, 12.4, 13.0, 13.8, 15.2, 15.6, 16.6, 18.2, 19.0], "linreg offset 2")
+        assertSeries(
+            result[2], [nil, nil, nil, nil, 15.7, 14.5, 16.2, 17.6, 18.9, 20.5, 21.5, 21.4], "linreg offset -1")
+        assertSeries(result[3], closes.map { Optional($0) }, "a one-bar regression is the value itself")
+    }
+
+    func testLinearRegressionWithNoWindowIsNa() throws {
+        let result = try plots("plot(ta.linreg(close, 0))\nplot(ta.linreg(close, 100))")
+        XCTAssertTrue(result[0].allSatisfy { $0 == nil })
+        XCTAssertTrue(result[1].allSatisfy { $0 == nil })
+    }
+
     func testAnUnimplementedTaFunctionIsAnErrorNotNa() {
         let program = PineCompiler.compile(source: "//@version=6\nindicator(\"T\")\nplot(ta.supertrend(3, 10))")
         XCTAssertTrue(program.isValid)

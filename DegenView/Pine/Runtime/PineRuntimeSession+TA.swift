@@ -276,5 +276,13 @@ extension PineRuntimeSession {
         working.calls[site] = [.tuple([sar, extreme, acceleration, below ? 1 : 0].map(PineRuntimeValue.float))]
         return .float(sar)
     }
+
+    /// `ta.linreg(source, length, offset)`.
+    func linregCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let b = try bind(call, ["source", "length", "offset"], &context)
+        return evaluateTA(
+            "ta.linreg", source: b["source"] ?? .na, second: b["offset"] ?? .int(0),
+            length: b["length"].intValue ?? 0, site: siteKey(call.site, context))
+    }
 }
 

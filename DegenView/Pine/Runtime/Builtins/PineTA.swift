@@ -47,6 +47,7 @@ enum PineTA {
         case "ta.highestbars": result = extremumBars(state.inputs, length, highest: true)
         case "ta.lowestbars": result = extremumBars(state.inputs, length, highest: false)
         case "ta.percentrank": result = percentRank(state.inputs, length)
+        case "ta.linreg": result = linreg(state.inputs, length, offset: second.intValue ?? 0)
         case "math.sum": result = statistic(state.inputs, length) { $0.reduce(0, +) }
         case "ta.max": result = runningExtreme(source, prior: state.results.last, pick: max)
         case "ta.min": result = runningExtreme(source, prior: state.results.last, pick: min)
@@ -213,6 +214,25 @@ enum PineTA {
             line.map(PineRuntimeValue.float) ?? .na, signal.map(PineRuntimeValue.float) ?? .na,
             line.flatMap { l in signal.map { .float(l - $0) } } ?? .na,
         ])
+    }
+
+    /// `ta.linreg(source, length, offset)`: the least-squares line through the last `length` values, read
+    /// `offset` bars before the newest (0 is the current bar, a negative offset projects forward).
+    private static func linreg(_ inputs: [PineRuntimeValue], _ length: Int, offset: Int) -> PineRuntimeValue {
+        guard let window = lastWindow(inputs, length) else { return .na }
+        let count = Double(length)
+        let meanX = (count - 1) / 2
+        let meanY = window.reduce(0, +) / count
+        var covariance = 0.0
+        var spread = 0.0
+        for (index, value) in window.enumerated() {
+            let dx = Double(index) - meanX
+            covariance += dx * (value - meanY)
+            spread += dx * dx
+        }
+        let slope = spread == 0 ? 0 : covariance / spread
+        let intercept = meanY - slope * meanX
+        return .float(intercept + slope * (count - 1 - Double(offset)))
     }
 
     /// `ta.max` / `ta.min`: the highest or lowest value the series has had so far; `na` does not change it.

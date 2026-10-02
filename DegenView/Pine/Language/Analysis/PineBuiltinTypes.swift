@@ -68,7 +68,7 @@ enum PineBuiltinTypes {
             "ta.sma", "ta.ema", "ta.rma", "ta.wma", "ta.rsi", "ta.atr", "ta.tr", "ta.stdev",
             "ta.highest", "ta.lowest", "ta.mom", "ta.roc", "ta.cum", "ta.pivothigh", "ta.pivotlow",
             "ta.median", "ta.range", "ta.variance", "ta.dev", "ta.swma", "ta.cmo", "ta.cci", "ta.hma",
-            "ta.percentrank", "ta.correlation",
+            "ta.percentrank", "ta.correlation", "ta.linreg",
         ] {
             table[name] = .float
         }
