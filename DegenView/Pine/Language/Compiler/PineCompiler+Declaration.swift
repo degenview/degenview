@@ -14,6 +14,8 @@ extension PineCompiler {
         // Accepted and ignored: drawings always paint above the candles in the app's own order, and
         // request.* calls are never restricted to the "dynamic" contexts Pine requires a flag for.
         "behind_chart", "explicit_plot_zorder", "dynamic_requests",
+        // Which price scale an overlay joins (left, right, none): the chart has one value axis.
+        "scale",
     ]
 
     private static let strategyArguments: Set<String> = [

@@ -199,8 +199,7 @@ row) → `PineAlertDispatcher` (channels).
   `ticker.new/standard/modify/inherit` build symbol ids; since only the chart's own symbol can be served,
   `standard`, `modify` and `inherit` return what they are given.
 - Declaration arguments `behind_chart` (either value), `explicit_plot_zorder` and `dynamic_requests` are
-  accepted and ignored; `max_polylines_count` is honoured. Arguments that change behaviour (`scale`,
-  margin and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
+  accepted and ignored; `max_polylines_count` is honoured. Arguments that change behaviour (`margin_*` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
   (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
 
 ### Types, methods and collections
@@ -397,15 +396,14 @@ the corpus run (below) only shows that scripts compile and run.
 | Tables | `new`, `cell`, `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules; the drawing code has no unit test. | No |
 | Labels | Every `label.style_*`; `label.set_tooltip` / `tooltip =` and `textalign` are stored. | The chart does not show tooltips and does not apply multi-line alignment. The shape and glyph styles (`circle`, `square`, `diamond`, `cross`, `xcross`, `flag`, `triangle*`, `arrow*`) are simplified drawings with the text above, below or inside; `text_outline` is plain text. Placement is unit-tested, the drawing is not. | No |
 | Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
-| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context. `scale` is `PINE9001`. | n/a |
+| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. `margin_*` is `PINE9001`. | n/a |
 | Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
 | Libraries | `library()`, `export` and `import` work as described under "Libraries and `import`". | Only the libraries in the Script Manager are available: nothing is downloaded from TradingView, and a path is matched on its library name alone, so the user and version parts are accepted and ignored (two versions of one library cannot coexist). The name is the script's file name, or else the title in its `library("…")`. A library constant that builds a collection is rebuilt on every read. A compiled importer holds the library as it was at compile time: after editing a library, an importer that is already running picks the change up when it is next recompiled (saved, or its chart reloaded). | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |
 
 ## Known incompatibilities
 
-The current grammar does not yet implement the `scale` declaration
-argument, values of the built-in `footprint` and `volume_row` types (the names parse in signatures and
+The current grammar does not yet implement values of the built-in `footprint` and `volume_row` types (the names parse in signatures and
 declarations, but `request.footprint` is unsupported and `footprint.*` calls are `PINE4007`), `request.security` for other symbols or finer
 timeframes, or real intrabar data for `request.security_lower_tf` (the engine only sees the chart's own
 bars). The table above lists where implemented features differ from TradingView. Label `yloc` is treated as `yloc.price`.
@@ -505,7 +503,6 @@ The 7 that still fail are blocked by whole features (a script can have several):
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 3 (`UyBliO8S`, `MPypFZJS`, `tY9RZ0MY`) |
 | Library `import` of a library that is not in the corpus (`PINE3040`; the imports are other authors' libraries, which the corpus does not contain) | 3 |
-| `scale=` declaration argument | 1 |
 | Data-dependent runtime error (`array.get` with an `na` index inside a profile function, `UTgFqITU`) | 1, not investigated |
 
 The corpus test takes about 40 s on the machine it was written on, most of it two scripts (`xlWhYoco`, ~7 s, and

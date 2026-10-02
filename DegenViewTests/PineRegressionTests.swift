@@ -574,14 +574,17 @@ final class PineRegressionTests: XCTestCase {
     }
 
     func testDeclarationArgumentsThatOnlyAffectDrawingOrderAreAccepted() {
-        for argument in ["behind_chart = false", "behind_chart = true", "explicit_plot_zorder = true"] {
+        for argument in [
+            "behind_chart = false", "behind_chart = true", "explicit_plot_zorder = true", "scale = scale.none",
+            "scale = scale.left",
+        ] {
             let header = "indicator(\"T\", overlay = true, \(argument))"
             XCTAssertTrue(compile("plot(close)", header: header).isValid, argument)
         }
         let library = PineCompiler.compile(source: "//@version=6\nlibrary(\"L\", dynamic_requests = true)\n")
         XCTAssertTrue(library.isValid, "\(library.diagnostics)")
         XCTAssertEqual(
-            codes(compile("plot(close)", header: "indicator(\"T\", scale = scale.none)")), ["PINE9001"],
+            codes(compile("plot(close)", header: "indicator(\"T\", margin_top = 5)")), ["PINE9001"],
             "arguments that change behaviour stay unsupported")
     }
 
