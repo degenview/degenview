@@ -26,7 +26,7 @@ struct DegenViewApp: App {
         Window("Alerts", id: "alerts") {
             AlertsCenterView()
         }
-        .defaultSize(width: 780, height: 520)
+        .defaultSize(width: 880, height: 620)
 
         Window("Script Manager", id: "script-manager") { ScriptManagerView() }
             .defaultSize(width: 900, height: 600)

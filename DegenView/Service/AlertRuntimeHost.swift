@@ -141,7 +141,7 @@ actor AlertRuntimeHost {
             content.title =
                 event.origin == .catchUp
                 ? "Delayed \(event.asset.symbol) price alert" : "\(event.asset.symbol) price alert"
-            content.body = "Reached \(event.target) \(event.currency.rawValue)"
+            content.body = "Reached \(event.currency.formatAlertPrice(event.target))"
             content.userInfo = ["alertID": event.alertID.uuidString, "eventID": event.id.uuidString]
             if snapshot.settings.soundEnabled { content.sound = .default }
             do {

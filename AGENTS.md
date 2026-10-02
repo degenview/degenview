@@ -271,6 +271,11 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
     Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own
     labelled bubble, apart from the Favorites button
+13b. Alerts window (bell in the tool strip): tabs Active / Triggered / Paused / All / History / Scripts
+    with counts, each row showing the coin artwork with its source logo. Search matches symbol and name;
+    a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
+    Delete and Clear History ask first. History groups by day; prices read `$67,432.19`, `$1.2346`,
+    `$0.00000278` — never a long decimal tail — in rows, the banner and the macOS notification
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket

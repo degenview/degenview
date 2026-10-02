@@ -1,5 +1,7 @@
+import AppKit
 import SwiftUI
 
+/// The Alerts window: every price alert by state, what has fired, and the Pine script alerts.
 struct AlertsCenterView: View {
     enum Filter: String, CaseIterable {
         case active = "Active"
@@ -7,159 +9,274 @@ struct AlertsCenterView: View {
         case paused = "Paused"
         case all = "All"
         case history = "History"
-        case script = "Script Alerts"
+        case script = "Scripts"
+
+        var systemImage: String {
+            switch self {
+            case .active: "bell.badge"
+            case .triggered: "checkmark.circle"
+            case .paused: "pause.circle"
+            case .all: "list.bullet"
+            case .history: "clock.arrow.circlepath"
+            case .script: "curlybraces"
+            }
+        }
     }
+
     @StateObject private var store = AlertStore.shared
+    @StateObject private var pineStore = PineAlertStore.shared
+    @StateObject private var info = PortfolioAssetInfoViewModel()
     @State private var filter: Filter = .active
     @State private var search = ""
     @State private var editing: PriceAlert?
+    @State private var pendingDelete: PriceAlert?
+    @State private var confirmingClear = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Picker("View", selection: $filter) {
-                    ForEach(Filter.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                TextField("Search assets", text: $search).textFieldStyle(.roundedBorder).frame(width: 190)
-            }.padding()
+            header
+            if store.health.notificationPermission == .denied { notificationsOffNotice }
             Divider()
-            switch filter {
-            case .history: historyList
-            case .script: PineAlertListView(search: search)
-            default: alertList
-            }
-            Divider()
-            HStack {
-                Label(
-                    store.health.serviceState == .enabled ? "Background agent active" : "Foreground evaluation only",
-                    systemImage: store.health.serviceState == .enabled ? "checkmark.circle" : "desktopcomputer"
-                ).font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                if filter == .history { Button("Clear History") { Task { await store.clearHistory() } } }
-            }.padding(10)
+            content
         }
-        .frame(minWidth: 720, minHeight: 430)
+        .frame(minWidth: 760, minHeight: 480)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .task(id: assetKeys) { info.load(assets) }
         .sheet(item: $editing) { PriceAlertEditor(asset: $0.asset, existing: $0) }
+        .confirmationDialog(
+            "Delete this alert?",
+            isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+            presenting: pendingDelete
+        ) { alert in
+            Button("Delete", role: .destructive) { Task { await store.delete(alert.id) } }
+        } message: { alert in
+            Text("The \(alert.asset.displayTicker) alert is removed. Its trigger history is kept.")
+        }
+        .confirmationDialog("Clear all trigger history?", isPresented: $confirmingClear) {
+            Button("Clear History", role: .destructive) { Task { await store.clearHistory() } }
+        } message: {
+            Text("This can't be undone. Your alerts are kept.")
+        }
     }
-    private var filtered: [PriceAlert] {
-        store.alerts.filter { alert in
-            let stateOK =
-                filter == .all || (filter == .active && alert.state == .active)
-                || (filter == .paused && alert.state == .paused) || (filter == .triggered && alert.state == .triggered)
-            return stateOK
-                && (search.isEmpty || alert.asset.symbol.localizedCaseInsensitiveContains(search)
-                    || alert.asset.name.localizedCaseInsensitiveContains(search))
-        }.sorted { $0.updatedAt > $1.updatedAt }
-    }
-    private var alertList: some View {
-        List(filtered) { alert in
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 14) {
+                Image(systemName: "bell.badge")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 44, height: 44)
+                    .background(
+                        Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Alerts").font(.title2.weight(.semibold))
+                    Text(summary).font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                runtimeBadge
+                PortfolioSearchField(text: $search, prompt: "Search asset or name")
+            }
             HStack {
-                VStack(alignment: .leading) {
-                    Text(alert.asset.symbol).font(.headline)
-                    Text(alert.note.isEmpty ? alert.asset.source.displayName : alert.note).font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                VStack(alignment: .trailing) {
-                    Text("\(alert.condition.target?.description ?? "Unsupported") \(alert.currency.rawValue)")
-                        .monospacedDigit()
-                    Text(status(alert)).font(.caption).foregroundStyle(.secondary)
-                }
-                Menu {
-                    Button("Edit") { editing = alert }
-                    if alert.state == .active {
-                        Button("Pause") { Task { await store.pause(alert.id) } }
-                    } else {
-                        Button("Resume") { Task { await store.resume(alert.id) } }
+                IconTabBar(items: tabs, selection: $filter, isCompact: true)
+                Spacer(minLength: 12)
+                if filter == .script {
+                    Button("Open Script Manager", systemImage: "curlybraces") {
+                        WindowCoordinator.shared.openScriptManager()
                     }
-                    Button("Duplicate") {
-                        var copy = alert
-                        copy = PriceAlert(
-                            asset: copy.asset, condition: copy.condition, currency: copy.currency,
-                            frequency: copy.frequency, note: copy.note)
-                        store.save(copy)
-                    }
-                    Divider()
-                    Button("Delete", role: .destructive) { Task { await store.delete(alert.id) } }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+                    .controlSize(.small)
+                    .help("Write and manage the scripts whose alert() calls appear here")
                 }
-            }.padding(.vertical, 5)
-        }.overlay { if filtered.isEmpty { ContentUnavailableView("No Alerts", systemImage: "bell") } }
-    }
-    private var historyList: some View {
-        List(store.history.filter { search.isEmpty || $0.asset.symbol.localizedCaseInsensitiveContains(search) }) {
-            event in
-            HStack {
-                Text(event.asset.symbol).font(.headline)
-                if event.origin == .catchUp { Text("Delayed").font(.caption).foregroundStyle(.orange) }
-                Spacer()
-                Text(verbatim: "\(event.observedValue) \(event.currency.rawValue)").monospacedDigit()
-                Text(event.timestamp, style: .relative).foregroundStyle(.secondary)
-            }
-        }.overlay { if store.history.isEmpty { ContentUnavailableView("No Trigger History", systemImage: "clock") } }
-    }
-    private func status(_ alert: PriceAlert) -> String {
-        if alert.state == .active && !alert.armed { return "Waiting to re-arm" }
-        if store.latestQuotes[alert.asset.key]?.isFresh != true && alert.state == .active {
-            return "Waiting for current market data"
-        }
-        return alert.state.rawValue.capitalized
-    }
-}
-
-struct GlobalAlertBanner: View {
-    @StateObject private var store = AlertStore.shared
-    @StateObject private var pineStore = PineAlertStore.shared
-    var body: some View {
-        VStack(spacing: 6) {
-            priceBanner
-            pineBanner
-        }
-    }
-
-    @ViewBuilder private var priceBanner: some View {
-        if let event = store.bannerEvent {
-            HStack(spacing: 10) {
-                Image(systemName: "bell.fill").foregroundStyle(.orange)
-                Text("\(event.asset.symbol) reached \(event.target.description) \(event.currency.rawValue)")
-                Button {
-                    store.bannerEvent = nil
-                } label: {
-                    Image(systemName: "xmark")
-                }.buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(.regularMaterial, in: Capsule()).shadow(radius: 5).padding(.top, 8)
-            .task(id: event.id) {
-                try? await Task.sleep(for: .seconds(6))
-                if store.bannerEvent?.id == event.id { store.bannerEvent = nil }
-            }
-        }
-    }
-
-    @ViewBuilder private var pineBanner: some View {
-        if let alert = pineStore.banner {
-            HStack(spacing: 10) {
-                Image(systemName: "bell.badge.fill").foregroundStyle(.orange)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(alert.title).font(.caption).foregroundStyle(.secondary)
-                    Text(alert.message.isEmpty ? "Alert" : alert.message)
+                if filter == .history, !store.history.isEmpty {
+                    Button("Clear History", systemImage: "trash") { confirmingClear = true }
+                        .controlSize(.small)
                 }
-                Button {
-                    pineStore.banner = nil
-                } label: {
-                    Image(systemName: "xmark")
-                }.buttonStyle(.plain)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 9)
-            .background(.regularMaterial, in: Capsule()).shadow(radius: 5).padding(.top, 8)
-            .task(id: alert.id) {
-                try? await Task.sleep(for: .seconds(6))
-                if pineStore.banner?.id == alert.id { pineStore.banner = nil }
             }
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 18)
+        .padding(.bottom, 14)
+    }
+
+    private var tabs: [IconTabBar<Filter>.Item] {
+        Filter.allCases.map { tab in
+            .init(value: tab, title: tab.rawValue, systemImage: tab.systemImage, count: count(of: tab))
+        }
+    }
+
+    private func count(of tab: Filter) -> Int? {
+        switch tab {
+        case .active: store.alerts.filter { $0.state == .active }.count
+        case .triggered: store.alerts.filter { $0.state == .triggered }.count
+        case .paused: store.alerts.filter { $0.state == .paused }.count
+        case .all: store.alerts.count
+        case .history: store.history.count
+        case .script: pineStore.subscriptions.count
+        }
+    }
+
+    private var summary: String {
+        let parts = [(Filter.active, "active"), (.triggered, "triggered"), (.paused, "paused")]
+            .compactMap { tab, word in count(of: tab).flatMap { $0 > 0 ? "\($0) \(word)" : nil } }
+        return parts.isEmpty ? "No price alerts yet" : parts.joined(separator: " · ")
+    }
+
+    private var runtimeBadge: some View {
+        let background = store.health.serviceState == .enabled
+        return SettingsStatusBadge(
+            text: background ? "Background agent active" : "Foreground evaluation only",
+            tone: background ? .good : .warning
+        )
+        .help(
+            background
+                ? "Alerts keep being checked when DegenView is closed."
+                : "Alerts are only checked while DegenView is open.")
+    }
+
+    private var notificationsOffNotice: some View {
+        NoticeCard(
+            systemImage: "bell.slash.fill", tint: .orange, title: "Notifications are turned off",
+            detail:
+                "Alerts still fire and are logged here, but macOS will not show them. Allow DegenView in System Settings.",
+            actionTitle: "Open Settings"
+        ) {
+            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+    }
+
+    // MARK: - Content
+
+    @ViewBuilder private var content: some View {
+        switch filter {
+        case .history: historyContent
+        case .script: PineAlertListView(search: search)
+        default: ruleContent
+        }
+    }
+
+    private var ruleContent: some View {
+        let fired = lastFiredByRule
+        return AlertCardScroll {
+            ForEach(filteredRules) { alert in
+                AlertRuleRow(
+                    alert: alert, info: info, quote: store.latestQuotes[alert.asset.key], lastFired: fired[alert.id],
+                    onEdit: { editing = alert },
+                    onToggle: { Task { await toggle(alert) } },
+                    onDuplicate: { duplicate(alert) },
+                    onDelete: { pendingDelete = alert })
+            }
+        }
+        .overlay {
+            if filteredRules.isEmpty { emptyState(hasAnyInTab: store.alerts.contains(where: matchesTab)) }
+        }
+    }
+
+    private var historyContent: some View {
+        let byID = Dictionary(store.alerts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return AlertHistoryList(events: filteredHistory, info: info, rules: byID)
+            .overlay {
+                if filteredHistory.isEmpty { emptyState(hasAnyInTab: !store.history.isEmpty) }
+            }
+    }
+
+    @ViewBuilder private func emptyState(hasAnyInTab: Bool) -> some View {
+        if hasAnyInTab && !search.isEmpty {
+            ContentUnavailableView.search(text: search)
+        } else {
+            switch filter {
+            case .active:
+                ContentUnavailableView(
+                    "No Active Alerts", systemImage: "bell.slash",
+                    description: Text("Click the bell on a chart to alert on a price."))
+            case .triggered:
+                ContentUnavailableView(
+                    "Nothing Triggered", systemImage: "checkmark.circle",
+                    description: Text("An alert that fires once waits here until you re-enable it."))
+            case .paused:
+                ContentUnavailableView(
+                    "Nothing Paused", systemImage: "pause.circle",
+                    description: Text("Paused alerts wait here until you resume them."))
+            case .all, .script:
+                ContentUnavailableView(
+                    "No Alerts", systemImage: "bell",
+                    description: Text("Click the bell on a chart to alert on a price."))
+            case .history:
+                ContentUnavailableView(
+                    "No Trigger History", systemImage: "clock.arrow.circlepath",
+                    description: Text("Every time an alert fires it is logged here."))
+            }
+        }
+    }
+
+    // MARK: - Data
+
+    private var rules: [PriceAlert] {
+        store.alerts.filter(matchesSearch).sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// The rules of this tab, before the search narrows them.
+    private var filteredRules: [PriceAlert] { rules.filter(matchesTab) }
+
+    private var filteredHistory: [AlertTriggerEvent] {
+        store.history.filter { matchesSearch($0.asset) }
+    }
+
+    private var lastFiredByRule: [UUID: AlertTriggerEvent] {
+        Dictionary(
+            store.history.map { ($0.alertID, $0) }, uniquingKeysWith: { a, b in a.timestamp > b.timestamp ? a : b })
+    }
+
+    private func matchesTab(_ alert: PriceAlert) -> Bool {
+        switch filter {
+        case .active: alert.state == .active
+        case .triggered: alert.state == .triggered
+        case .paused: alert.state == .paused
+        case .all: true
+        case .history, .script: false
+        }
+    }
+
+    private func matchesSearch(_ alert: PriceAlert) -> Bool { matchesSearch(alert.asset) }
+
+    private func matchesSearch(_ asset: PortfolioAsset) -> Bool {
+        search.isEmpty
+            || [asset.symbol, asset.name, asset.displayTicker, info.subtitle(for: asset)].contains {
+                $0.localizedCaseInsensitiveContains(search)
+            }
+    }
+
+    /// Every asset the lists show, once: the rules' and the history's.
+    private var assets: [PortfolioAsset] {
+        var byKey: [String: PortfolioAsset] = [:]
+        for asset in store.alerts.map(\.asset) + store.history.map(\.asset) where byKey[asset.key] == nil {
+            byKey[asset.key] = asset
+        }
+        return Array(byKey.values)
+    }
+
+    private var assetKeys: [String] { assets.map(\.key).sorted() }
+
+    // MARK: - Actions
+
+    private func toggle(_ alert: PriceAlert) async {
+        if alert.state == .active {
+            await store.pause(alert.id)
+        } else {
+            await store.resume(alert.id)
+        }
+    }
+
+    private func duplicate(_ alert: PriceAlert) {
+        store.save(
+            PriceAlert(
+                asset: alert.asset, condition: alert.condition, currency: alert.currency,
+                frequency: alert.frequency, note: alert.note))
     }
 }

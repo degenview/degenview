@@ -40,10 +40,22 @@
 		AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000561 /* PortfolioPerformerCard.swift */; };
 		AA1000000000000000000460 /* IconTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000560 /* IconTabBar.swift */; };
 		AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000503 /* PortfolioHoldingsView.swift */; };
+		AC0200000000000000000007 /* AlertAssetIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000006 /* AlertAssetIcon.swift */; };
+		AC0200000000000000000009 /* AlertConditionChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000008 /* AlertConditionChip.swift */; };
+		AC020000000000000000000B /* AlertRuleRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000A /* AlertRuleRow.swift */; };
+		AC020000000000000000000D /* AlertHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000C /* AlertHistoryRow.swift */; };
+		AC020000000000000000000F /* AlertCardScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000E /* AlertCardScroll.swift */; };
+		AC0200000000000000000011 /* AlertDayHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000010 /* AlertDayHeader.swift */; };
+		AC0200000000000000000013 /* AlertHistoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000012 /* AlertHistoryList.swift */; };
+		AC0200000000000000000015 /* AlertCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000014 /* AlertCardStyle.swift */; };
+		AC0200000000000000000017 /* PineAlertCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000016 /* PineAlertCard.swift */; };
+		AC0200000000000000000019 /* GlobalAlertBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000018 /* GlobalAlertBanner.swift */; };
 		AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000502 /* PortfolioNumericCell.swift */; };
 		AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000501 /* PortfolioSearchField.swift */; };
 		AA1000000000000000000400 /* PortfolioTableChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000500 /* PortfolioTableChrome.swift */; };
 		AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000311 /* PortfolioStatisticsTests.swift */; };
+		AC020000000000000000001B /* AlertPriceFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000001A /* AlertPriceFormatTests.swift */; };
+		AC020000000000000000001D /* AlertDayGroupingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000001C /* AlertDayGroupingTests.swift */; };
 		AA1000000000000000000210 /* PortfolioStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000310 /* PortfolioStatisticsView.swift */; };
 		AA1000000000000000000209 /* PortfolioTransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000309 /* PortfolioTransactionsView.swift */; };
 		AA1000000000000000000208 /* PortfolioOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000308 /* PortfolioOverviewView.swift */; };
@@ -201,6 +213,8 @@
 		AA1000000000000000000008 /* PortfolioTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000108 /* PortfolioTabView.swift */; };
 		AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */; };
 		AA1000000000000000000001 /* PortfolioModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000101 /* PortfolioModels.swift */; };
+		AC0200000000000000000002 /* PortfolioCurrency+AlertPrice.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000001 /* PortfolioCurrency+AlertPrice.swift */; };
+		AC0300000000000000000003 /* PortfolioCurrency+AlertPrice.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000001 /* PortfolioCurrency+AlertPrice.swift */; };
 		AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA2000000000000000000101 /* PortfolioValueChange.swift */; };
 		AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000102 /* PortfolioAccountingEngine.swift */; };
 		AA1000000000000000000003 /* PortfolioLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000103 /* PortfolioLedger.swift */; };
@@ -288,6 +302,7 @@
 		A0000000000000000000041A /* WindowFrame.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000041B /* WindowFrame.swift */; };
 		E777DD8DE100A21A8EB9D22A /* JSONStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */; };
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
+		AC0200000000000000000005 /* AlertDayGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000004 /* AlertDayGrouping.swift */; };
 		F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* PaperTradingFormatter.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
 		D30000000000000000000001 /* ChartColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000101 /* ChartColumn.swift */; };
@@ -652,10 +667,22 @@
 		AA1000000000000000000561 /* PortfolioPerformerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioPerformerCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000000560 /* IconTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconTabBar.swift; sourceTree = "<group>"; };
 		AA1000000000000000000503 /* PortfolioHoldingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHoldingsView.swift; sourceTree = "<group>"; };
+		AC0100000000000000000006 /* AlertAssetIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertAssetIcon.swift; sourceTree = "<group>"; };
+		AC0100000000000000000008 /* AlertConditionChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertConditionChip.swift; sourceTree = "<group>"; };
+		AC010000000000000000000A /* AlertRuleRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRuleRow.swift; sourceTree = "<group>"; };
+		AC010000000000000000000C /* AlertHistoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertHistoryRow.swift; sourceTree = "<group>"; };
+		AC010000000000000000000E /* AlertCardScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardScroll.swift; sourceTree = "<group>"; };
+		AC0100000000000000000010 /* AlertDayHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayHeader.swift; sourceTree = "<group>"; };
+		AC0100000000000000000012 /* AlertHistoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertHistoryList.swift; sourceTree = "<group>"; };
+		AC0100000000000000000014 /* AlertCardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardStyle.swift; sourceTree = "<group>"; };
+		AC0100000000000000000016 /* PineAlertCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCard.swift; sourceTree = "<group>"; };
+		AC0100000000000000000018 /* GlobalAlertBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalAlertBanner.swift; sourceTree = "<group>"; };
 		AA1000000000000000000502 /* PortfolioNumericCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioNumericCell.swift; sourceTree = "<group>"; };
 		AA1000000000000000000501 /* PortfolioSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioSearchField.swift; sourceTree = "<group>"; };
 		AA1000000000000000000500 /* PortfolioTableChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTableChrome.swift; sourceTree = "<group>"; };
 		AA1000000000000000000311 /* PortfolioStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsTests.swift; sourceTree = "<group>"; };
+		AC010000000000000000001A /* AlertPriceFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertPriceFormatTests.swift; sourceTree = "<group>"; };
+		AC010000000000000000001C /* AlertDayGroupingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayGroupingTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000000310 /* PortfolioStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000309 /* PortfolioTransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTransactionsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000308 /* PortfolioOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioOverviewView.swift; sourceTree = "<group>"; };
@@ -772,6 +799,7 @@
 		AA1000000000000000000108 /* PortfolioTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabView.swift; sourceTree = "<group>"; };
 		AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetAutoMapper.swift; sourceTree = "<group>"; };
 		AA1000000000000000000101 /* PortfolioModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioModels.swift; sourceTree = "<group>"; };
+		AC0100000000000000000001 /* PortfolioCurrency+AlertPrice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PortfolioCurrency+AlertPrice.swift"; sourceTree = "<group>"; };
 		AA2000000000000000000101 /* PortfolioValueChange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioValueChange.swift; sourceTree = "<group>"; };
 		AA1000000000000000000102 /* PortfolioAccountingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAccountingEngine.swift; sourceTree = "<group>"; };
 		AA1000000000000000000103 /* PortfolioLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioLedger.swift; sourceTree = "<group>"; };
@@ -786,6 +814,7 @@
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D30000000000000000000102 /* ChartGridDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartGridDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
+		AC0100000000000000000004 /* AlertDayGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayGrouping.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
 		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
 		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
@@ -1196,6 +1225,7 @@
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
+				AC0100000000000000000001 /* PortfolioCurrency+AlertPrice.swift */,
 				AA1000000000000000000300 /* PortfolioStatistics.swift */,
 				AA1000000000000000000301 /* PortfolioHistoryRange.swift */,
 				AA1000000000000000001300 /* RecentMarket.swift */,
@@ -1364,6 +1394,16 @@
 				AA1000000000000000000501 /* PortfolioSearchField.swift */,
 				AA1000000000000000000502 /* PortfolioNumericCell.swift */,
 				AA1000000000000000000503 /* PortfolioHoldingsView.swift */,
+				AC0100000000000000000006 /* AlertAssetIcon.swift */,
+				AC0100000000000000000008 /* AlertConditionChip.swift */,
+				AC010000000000000000000A /* AlertRuleRow.swift */,
+				AC010000000000000000000C /* AlertHistoryRow.swift */,
+				AC010000000000000000000E /* AlertCardScroll.swift */,
+				AC0100000000000000000010 /* AlertDayHeader.swift */,
+				AC0100000000000000000012 /* AlertHistoryList.swift */,
+				AC0100000000000000000014 /* AlertCardStyle.swift */,
+				AC0100000000000000000016 /* PineAlertCard.swift */,
+				AC0100000000000000000018 /* GlobalAlertBanner.swift */,
 				AA1000000000000000000560 /* IconTabBar.swift */,
 				AA1000000000000000000561 /* PortfolioPerformerCard.swift */,
 				AA1000000000000000000701 /* PortfolioCreateSheet.swift */,
@@ -1430,6 +1470,7 @@
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
 				AA1000000000000000000302 /* PortfolioValueFormatter.swift */,
 				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
+				AC0100000000000000000004 /* AlertDayGrouping.swift */,
 				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
 				C10000000000000000000109 /* SearchDebouncer.swift */,
 				A0000000000000000000041B /* WindowFrame.swift */,
@@ -1506,6 +1547,8 @@
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
 				AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */,
 				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
+				AC010000000000000000001A /* AlertPriceFormatTests.swift */,
+				AC010000000000000000001C /* AlertDayGroupingTests.swift */,
 				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
 				AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */,
@@ -1947,6 +1990,7 @@
 			BA1000000000000000000001 /* AlertAgentMain.swift in Sources */,
 			BA1100000000000000000001, BA1100000000000000000002, BA1100000000000000000003, BA1100000000000000000004,
 			BA1100000000000000000005, BA1100000000000000000006, BA1100000000000000000007, BA1100000000000000000008,
+			AC0300000000000000000003 /* PortfolioCurrency+AlertPrice.swift in Agent Sources */,
 			BA1100000000000000000009, BA110000000000000000000A, BA110000000000000000000B, BA110000000000000000000C,
 			BA110000000000000000000D, BA110000000000000000000E, BA110000000000000000000F, BA1100000000000000000010,
 			BA1100000000000000000011, BA1100000000000000000012, BA1100000000000000000013, BA1100000000000000000014,
@@ -2072,6 +2116,8 @@
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
 				AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */,
 				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
+				AC020000000000000000001B /* AlertPriceFormatTests.swift in Sources */,
+				AC020000000000000000001D /* AlertDayGroupingTests.swift in Sources */,
 				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
 				AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */,
@@ -2195,6 +2241,16 @@
 				AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */,
 				AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */,
 				AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */,
+				AC0200000000000000000007 /* AlertAssetIcon.swift in Sources */,
+				AC0200000000000000000009 /* AlertConditionChip.swift in Sources */,
+				AC020000000000000000000B /* AlertRuleRow.swift in Sources */,
+				AC020000000000000000000D /* AlertHistoryRow.swift in Sources */,
+				AC020000000000000000000F /* AlertCardScroll.swift in Sources */,
+				AC0200000000000000000011 /* AlertDayHeader.swift in Sources */,
+				AC0200000000000000000013 /* AlertHistoryList.swift in Sources */,
+				AC0200000000000000000015 /* AlertCardStyle.swift in Sources */,
+				AC0200000000000000000017 /* PineAlertCard.swift in Sources */,
+				AC0200000000000000000019 /* GlobalAlertBanner.swift in Sources */,
 				AA1000000000000000000460 /* IconTabBar.swift in Sources */,
 				AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */,
 				AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */,
@@ -2220,6 +2276,7 @@
 				AA1000000000000000002200 /* WindowTabIcon.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
+				AC0200000000000000000002 /* PortfolioCurrency+AlertPrice.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,
 				AA1000000000000000000002 /* PortfolioAccountingEngine.swift in Sources */,
 				AA1000000000000000000003 /* PortfolioLedger.swift in Sources */,
@@ -2320,6 +2377,7 @@
 				E274692C02A7CF2744AA19E6 /* Comparable+Clamped.swift in Sources */,
 				A0000000000000000000041A /* WindowFrame.swift in Sources */,
 				E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */,
+				AC0200000000000000000005 /* AlertDayGrouping.swift in Sources */,
 				D10000000000000000000001 /* ChartTab.swift in Sources */,
 				D30000000000000000000001 /* ChartColumn.swift in Sources */,
 				D10000000000000000000002 /* TabsStore.swift in Sources */,
