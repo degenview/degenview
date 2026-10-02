@@ -654,6 +654,8 @@ final class ChartViewModel: ObservableObject {
         let symbol = PineSymbolInfo(
             ticker: ticker, tickerID: dataset.symbolKey,
             type: self.source == .alpaca ? "stock" : self.source.isPredictionMarket ? "prediction" : "crypto")
+        let securityChart = PineSecurityTarget.Chart(
+            tickerID: dataset.symbolKey, source: self.source, apiSymbol: apiSymbol)
         let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
         pineFeed = feed
         pineDataset = dataset
@@ -672,8 +674,12 @@ final class ChartViewModel: ObservableObject {
                         host = nil
                         continue
                     }
+                    let securityData = await PineSecurityFeed.prepare(
+                        program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
+                        bars: bars)
                     let fresh = PineExecutionHost(
-                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol)
+                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
+                        securityData: securityData)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):

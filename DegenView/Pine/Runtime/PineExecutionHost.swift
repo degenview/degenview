@@ -8,11 +8,13 @@ actor PineExecutionHost {
 
     init(
         program: PineCompiledProgram, dataset: PineDatasetKey, inputs: [String: PineInputValue],
-        theme: PineChartTheme, symbol: PineSymbolInfo
+        theme: PineChartTheme, symbol: PineSymbolInfo,
+        securityData: PineSecurityDataProvider? = nil
     ) {
         self.dataset = dataset
         controller = PineExecutionController(
-            program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol)
+            program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
+            securityData: securityData)
     }
 
     func rebuild(bars: [KlineData], live: Bool) -> PineExecutionOutcome {
