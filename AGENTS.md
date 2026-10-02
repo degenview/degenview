@@ -90,6 +90,10 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - A DEXScreener pair lookup also yields the base token symbol, which the symbol-keyed
   steps then reuse — the ticker itself is a contract address
 - All CoinGecko traffic (OHLC *and* icons) queues behind `CGRateLimiter.shared`
+- The same `/coins/markets` snapshot and `ids=` batch also carry the coin **name**
+  (`IconResolver.coinName(forSymbol:)` / `coinName(forCoinID:)`); `PortfolioAssetInfoViewModel`
+  uses it for portfolio subtitles ("Bitcoin"), falling back to the stored label. DEX tickers are
+  deliberately not name-resolved by symbol — they collide with unrelated coins
 - `nil` is not a failure state for the UI: `TickerIconView` draws a monogram, so the
   20×20 slot is occupied either way and card headers stay aligned
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
@@ -171,6 +175,12 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   re-init of the enclosing view even though only the first value is kept
 - The tab label **is** `window.title`. `ContentViewModel.tabName` drives it through
   `navigationTitle` plus an explicit `WindowCoordinator.syncTitle`
+- The tab's icon (charts / portfolio / script manager) is **not** drawn by us: `WindowTabIcon` puts an
+  SF Symbol attachment in `window.tab.attributedTitle`, and `WindowTabDecorator` re-applies it after
+  a title change, when the window joins or leaves a tab group (one run-loop turn later — the bar
+  ignores a label set before its items exist) and from `refreshTabBars()`. Anything that rebuilds
+  tabs or titles must leave that path intact. The system draws the tab shape; its corner radius
+  isn't customisable.
 - `WindowAccessor` is how a view gets its `NSWindow`. Three things need it: tab-group
   registration, scoping the scroll monitor, and occlusion gating
 - Restore is ours, not AppKit's: windows are `isRestorable = false` and rebuilt from
@@ -190,7 +200,7 @@ Three things broke when a second instance appeared — check for this shape when
 ### State management
 - `ContentViewModel.markChanged()` sets `hasUnsavedChanges = true` (skipped during `loadView`)
 - `isApplyingView` flag prevents false unsaved-change detection on view load
-- `isHydrating` guards `syncTab()` during `init` — `layoutMode`'s `didSet` would otherwise
+- `isHydrating` guards `syncTab()` during `init` — a `didSet` that reached it would otherwise
   write the tab back before `chartViewModels` is populated and erase it
 - `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the database write
 - `@AppStorage("appTheme")` for theme preference
@@ -239,7 +249,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 
 1. Launch app, add BTC from Binance, then BTC/USD from Coinbase (live ticks should move its last candle)
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
-3. Switch timeframes, toggle log scale, switch layout
+3. Switch timeframes, toggle log scale
 4. Scroll-zoom on chart, verify candle count changes
 5. Save view, add a ticker, verify unsaved changes indicator
 6. Load saved view, verify state restores
@@ -248,7 +258,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 9. Both ⌘T and the tab bar's `+` open an empty tab named "Unnamed" — never a second view
    onto an existing tab — with the toolbar present and every saved view listed for
    one-click loading
-10. Give the two tabs different timeframes and layouts; confirm neither follows the other,
+10. Give the two tabs different timeframes; confirm neither follows the other,
    and that scrolling one doesn't zoom the other
 11. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab
@@ -257,6 +267,10 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     against the price axis and its bar count against the candles inside. One more click
     puts it away — on that chart only. Switching tool or timeframe drops it, and it never
     comes back after a relaunch
+13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
+    and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
+    Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own
+    labelled bubble, apart from the Favorites button
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket

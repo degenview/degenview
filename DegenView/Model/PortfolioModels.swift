@@ -11,6 +11,65 @@ enum PortfolioCurrency: String, Codable, CaseIterable, Identifiable, Sendable {
         default: value.formatted(.currency(code: rawValue).precision(.fractionLength(2)))
         }
     }
+
+    /// The currency's own sign, for badges: `$`, `€`, `£`, `¥`, `Fr`, `₿`.
+    var glyph: String {
+        switch self {
+        case .USD: "$"
+        case .EUR: "€"
+        case .GBP: "£"
+        case .JPY: "¥"
+        case .CHF: "Fr"
+        case .BTC: "₿"
+        }
+    }
+
+    /// "US Dollar" in the user's language; Bitcoin isn't an ISO currency, so it is named here.
+    var displayName: String {
+        if self == .BTC { return "Bitcoin" }
+        guard let name = Locale.current.localizedString(forCurrencyCode: rawValue), let first = name.first else {
+            return rawValue
+        }
+        return first.uppercased() + name.dropFirst()
+    }
+
+    /// A per-unit price. Same as `format`, except under one unit it keeps up to eight decimals,
+    /// so a micro-cap token reads `$0.00002` rather than `$0.00`.
+    func formatPrice(_ value: Decimal) -> String {
+        guard self != .BTC, value != 0, abs(value) < 1 else { return format(value) }
+        return value.formatted(.currency(code: rawValue).precision(.fractionLength(2...8)))
+    }
+
+    /// Short form for chart axes: `135.84K`. The currency is stated beside the chart, and a
+    /// suffix glued after a trailing currency sign (`135,84 US$K`) reads wrongly.
+    func formatCompact(_ value: Decimal) -> String {
+        guard self != .BTC else { return format(value) }
+        let units: [(Decimal, String)] = [(1_000_000_000, "B"), (1_000_000, "M"), (1_000, "K")]
+        let digits = Decimal.FormatStyle.number.precision(.fractionLength(0...2))
+        for (divisor, suffix) in units where abs(value) >= divisor {
+            return (value / divisor).formatted(digits) + suffix
+        }
+        return value.formatted(digits)
+    }
+}
+
+/// Rules for the name typed into the create-portfolio sheet.
+enum PortfolioNameCheck {
+    static let maxLength = 40
+
+    /// Trimmed, and cut to `maxLength`.
+    static func normalized(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxLength))
+    }
+
+    static func isValid(_ name: String) -> Bool { !normalized(name).isEmpty }
+
+    /// Whether another portfolio already has this name (ignoring case and surrounding spaces).
+    static func isDuplicate(_ name: String, among existing: [String]) -> Bool {
+        let wanted = normalized(name)
+        guard !wanted.isEmpty else { return false }
+        return existing.contains { normalized($0).caseInsensitiveCompare(wanted) == .orderedSame }
+    }
 }
 
 enum PortfolioSource: String, Codable, CaseIterable, Sendable {
@@ -74,6 +133,30 @@ struct PortfolioAsset: Codable, Hashable, Identifiable, Sendable {
             symbol: searchResult.symbol, name: searchResult.symbol,
             source: searchResult.source, quoteCurrency: currency,
             metadata: searchResult.metadata)
+    }
+
+    /// Separates an equity ticker from its company name in a search label ("AAPL — Apple Inc.").
+    private static let nameSeparator = " — "
+
+    /// The ticker alone, without trading pair or company name: `BTC/USDT` → `BTC`.
+    var displayTicker: String {
+        let label = symbol.components(separatedBy: Self.nameSeparator).first ?? symbol
+        let base = label.split(separator: "/", maxSplits: 1).first.map(String.init) ?? label
+        return base.trimmingCharacters(in: .whitespaces).uppercased()
+    }
+
+    /// A name the symbol itself carries (Alpaca labels equities "AAPL — Apple Inc."), if any.
+    var embeddedName: String? {
+        guard let range = symbol.range(of: Self.nameSeparator) else { return nil }
+        let name = symbol[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+}
+
+extension Decimal {
+    /// An asset quantity: grouped, at most eight decimals (a satoshi), no trailing zeros.
+    var portfolioQuantity: String {
+        formatted(.number.grouping(.automatic).precision(.fractionLength(0...8)))
     }
 }
 

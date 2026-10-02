@@ -3,30 +3,15 @@ import SwiftUI
 
 // MARK: - ChartSettingsSheet
 
+/// Look and indicators for one chart. Every control writes through to the chart as it changes, so
+/// there is nothing to save; a chart's market can't be changed here — remove it and add another.
 struct ChartSettingsSheet: View {
     @ObservedObject var viewModel: ChartViewModel
-    /// (symbol, source, displayName, pmSeries) — `displayName` is nil for crypto sources,
-    /// whose symbol already reads fine on the card.
-    let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onRemove: () -> Void
     let onStyleChanged: () -> Void
 
-    @StateObject private var searchVM = TickerSearchViewModel(logPrefix: "[ChartSettings]")
-    @StateObject private var stockVM = TickerSearchViewModel(
-        logPrefix: "[ChartSettings/Stocks]",
-        sources: { [DataSourceFactory.shared.alpaca] }
-    )
-    @StateObject private var polymarketVM = PredictionMarketSearchViewModel(
-        provider: .polymarket, logPrefix: "[ChartSettings/Polymarket]")
-    @StateObject private var kalshiVM = PredictionMarketSearchViewModel(
-        provider: .kalshi, logPrefix: "[ChartSettings/Kalshi]")
-    @State private var predictionProvider: DataSourceType
-
     @State private var selectedTab: Tab
-    @State private var searchText = ""
-    @State private var predictionMarketText = ""
-    @State private var stockText = ""
-    @State private var assetType: ChartAssetType
+    @State private var showRemoveConfirmation = false
 
     // Appearance state — initialized from viewModel
     @State private var bullishColor: Color
@@ -47,10 +32,17 @@ struct ChartSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     enum Tab: String, CaseIterable {
-        case ticker = "Ticker"
         case appearance = "Appearance"
         case indicators = "Indicators"
         case scripts = "Scripts"
+
+        var systemImage: String {
+            switch self {
+            case .appearance: "paintpalette"
+            case .indicators: "waveform.path.ecg"
+            case .scripts: "curlybraces"
+            }
+        }
     }
 
     enum DecimalMode: String, CaseIterable, Identifiable {
@@ -93,12 +85,12 @@ struct ChartSettingsSheet: View {
 
     init(
         viewModel: ChartViewModel,
-        onUpdateTicker: @escaping (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void,
+        initialTab: Tab = .appearance,
         onRemove: @escaping () -> Void,
         onStyleChanged: @escaping () -> Void
     ) {
         self.viewModel = viewModel
-        self.onUpdateTicker = onUpdateTicker
+        _selectedTab = State(initialValue: initialTab)
         self.onRemove = onRemove
         self.onStyleChanged = onStyleChanged
         _bullishColor = State(initialValue: viewModel.bullishColor)
@@ -108,124 +100,43 @@ struct ChartSettingsSheet: View {
         _showRSI = State(initialValue: viewModel.showRSI)
         _showEMA = State(initialValue: viewModel.showEMA)
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
-        // Polymarket unless this chart is already a Kalshi one.
-        _predictionProvider = State(initialValue: viewModel.source == .kalshi ? .kalshi : .polymarket)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
         _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
-        // Open on the tab that matches what this chart already is.
-        _selectedTab = State(initialValue: .ticker)
-        _assetType = State(
-            initialValue: viewModel.source.isPredictionMarket
-                ? .predictionMarket : (viewModel.source == .alpaca ? .stock : .crypto))
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Title row with native-style close button
-            HStack(spacing: 0) {
-                HStack(spacing: 8) {
-                    Button {
-                        cancelSearches()
-                        dismiss()
-                    } label: {
-                        Circle()
-                            .fill(Color(nsColor: .systemRed))
-                            .frame(width: 12, height: 12)
-                    }
-                    .buttonStyle(.plain)
-
-                    Circle()
-                        .fill(Color(nsColor: .systemYellow).opacity(0.35))
-                        .frame(width: 12, height: 12)
-                        .help("Minimize unavailable for settings")
-
-                    Circle()
-                        .fill(Color(nsColor: .systemGreen).opacity(0.35))
-                        .frame(width: 12, height: 12)
-                        .help("Zoom unavailable for settings")
-                }
-
-                Spacer()
-
-                Text("\(viewModel.title) Settings")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer()
-
-                // Balance the close button so the title stays centered.
-                HStack(spacing: 8) {
-                    Circle().frame(width: 12, height: 12)
-                    Circle().frame(width: 12, height: 12)
-                    Circle().frame(width: 12, height: 12)
-                }
-                .opacity(0)
+            SheetHeader(
+                title: viewModel.title,
+                subtitle: "\(viewModel.source.displayName) · Changes apply as you make them"
+            ) {
+                ChartIconView(viewModel: viewModel, size: 44)
+                    .frame(width: 46, height: 46)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 24)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
-            // Tab picker
-            Picker("", selection: $selectedTab) {
-                ForEach(Tab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
+            IconTabBar(
+                items: Tab.allCases.map { .init(value: $0, title: $0.rawValue, systemImage: $0.systemImage) },
+                selection: $selectedTab
+            )
+            .padding(.bottom, 16)
 
             Divider()
 
-            switch selectedTab {
-            case .ticker:
-                tickerTab
-            case .appearance:
-                appearanceTab
-            case .indicators:
-                indicatorsTab
-            case .scripts:
-                scriptsTab
+            Group {
+                switch selectedTab {
+                case .appearance: appearanceTab
+                case .indicators: indicatorsTab
+                case .scripts: scriptsTab
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
             Divider()
-
-            // Bottom buttons
-            HStack {
-                Button(role: .destructive) {
-                    dismiss()
-                    onRemove()
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                }
-
-                Spacer()
-
-                if selectedTab == .ticker, let selected = pendingTickerSelection {
-                    SelectedResultBanner(prefix: "New", result: selected)
-                        .frame(maxWidth: 320)
-                }
-
-                Button("Save") {
-                    let selected =
-                        assetType == .crypto
-                        ? searchVM.selectedResult
-                        : assetType == .stock
-                            ? stockVM.selectedResult
-                            : predictionVM.selectedResult
-                    if selectedTab == .ticker, let selected {
-                        apply(selected)
-                    } else {
-                        cancelSearches()
-                        dismiss()
-                    }
-                }
-                .keyboardShortcut(.return)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            footer
         }
         .frame(
             minWidth: UI.chartSettingsSheetMinWidth,
@@ -240,13 +151,22 @@ struct ChartSettingsSheet: View {
                     width: UI.chartSettingsSheetMinWidth,
                     height: UI.chartSettingsSheetMinHeight
                 )
-                window.standardWindowButton(.miniaturizeButton)?.isEnabled = false
-                window.standardWindowButton(.zoomButton)?.isEnabled = false
             }
         }
-        .onDisappear {
-            cancelSearches()
+        .confirmationDialog(
+            "Remove \(viewModel.title)?", isPresented: $showRemoveConfirmation, titleVisibility: .visible
+        ) {
+            Button("Remove Chart", role: .destructive) {
+                dismiss()
+                onRemove()
+            }
+        } message: {
+            Text(
+                "The chart leaves this tab; its drawings are kept. "
+                    + "To change a chart's market, remove it and add a new one."
+            )
         }
+        .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
             onStyleChanged()
@@ -289,241 +209,113 @@ struct ChartSettingsSheet: View {
         }
     }
 
-    // MARK: - Ticker Tab
+    // MARK: - Footer
 
-    private var tickerTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Choose a ticker")
-                    .font(.title3.weight(.semibold))
-                Text("Search for the market that should replace the current chart, then Save your selection.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+    private var footer: some View {
+        HStack {
+            Button(role: .destructive) {
+                showRemoveConfirmation = true
+            } label: {
+                Label("Remove Chart", systemImage: "trash")
             }
-            .padding(.horizontal, 16)
+            .controlSize(.large)
 
-            currentChartRow
+            Spacer()
 
-            Picker("Chart type", selection: $assetType) {
-                ForEach(ChartAssetType.allCases) { type in Text(type.rawValue).tag(type) }
-            }
-            .padding(.horizontal, 16)
-
-            switch assetType {
-            case .crypto: cryptoTickerSearch
-            case .stock: stockTickerSearch
-            case .predictionMarket: predictionMarketTab
-            }
+            Button("Done") { dismiss() }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
         }
-        .padding(.top, 16)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
     }
 
-    private var cryptoTickerSearch: some View {
-        VStack(spacing: 12) {
-            SearchFieldRow(
-                placeholder: "New ticker symbol (e.g. BTC or PEPE)",
-                text: $searchText,
-                isSearching: searchVM.isSearching,
-                onChange: { searchVM.scheduleSearch(query: $0) },
-                onSubmit: {
-                    if let first = searchVM.firstAvailableResult {
-                        searchVM.selectedResult = first
-                    }
-                }
-            )
-            .padding(.horizontal, 16)
-
-            // Search results
-            if !searchVM.searchResults.isEmpty {
-                TickerSearchResultList(
-                    searchVM: searchVM,
-                    sources: searchVM.orderedSources,
-                    sizing: .fillAvailable
-                )
-                .padding(.horizontal, 16)
-            }
+    /// A settings page: titled sections of cards, scrolling when the sheet is short.
+    private func page<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) { content() }
+                .padding(24)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxHeight: .infinity, alignment: .top)
     }
 
-    private var stockTickerSearch: some View {
-        VStack(spacing: 12) {
-            SearchFieldRow(
-                placeholder: "US stock symbol or company name",
-                text: $stockText,
-                isSearching: stockVM.isSearching,
-                onChange: { stockVM.scheduleSearch(query: $0) },
-                onSubmit: { stockVM.selectedResult = stockVM.firstAvailableResult }
-            )
-            .padding(.horizontal, 16)
-
-            if !AlpacaCredentialsStore.isConfigured {
-                Text("Configure Alpaca in Settings before changing this chart to a stock.")
-                    .font(.caption).foregroundStyle(.orange).padding(.horizontal, 16)
-            }
-
-            if let results = stockVM.searchResults[.alpaca], !results.isEmpty {
-                TickerSearchResultList(
-                    searchVM: stockVM,
-                    sources: [.alpaca],
-                    sizing: .fillAvailable
-                )
-                .padding(.horizontal, 16)
-            }
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    // MARK: - Prediction Markets Tab
-
-    /// View model behind whichever prediction-market provider is selected.
-    private var predictionVM: PredictionMarketSearchViewModel {
-        PredictionMarketPicker.viewModel(
-            for: predictionProvider, polymarket: polymarketVM, kalshi: kalshiVM)
-    }
-
-    private var predictionMarketTab: some View {
-        VStack(spacing: 12) {
-            PredictionMarketPicker(
-                provider: $predictionProvider,
-                polymarketVM: polymarketVM,
-                kalshiVM: kalshiVM,
-                searchText: $predictionMarketText,
-                sizing: .fillAvailable
-            )
-            .padding(.horizontal, 16)
-
-        }
-        .frame(maxHeight: .infinity)
-    }
-
-    /// What this chart currently tracks — shown above both search panes.
-    private var currentChartRow: some View {
-        HStack(spacing: 12) {
-            SourceLogoView(source: viewModel.source, size: 24)
-                .frame(width: 28)
+    private func section<Content: View>(
+        _ title: String, subtitle: String? = nil, @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Current chart")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(viewModel.title)
-                    .font(.body.weight(.semibold))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                Text(title).font(.title3.weight(.semibold))
+                if let subtitle {
+                    Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+                }
             }
-            Spacer(minLength: 0)
+            content()
         }
-        .padding(12)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-        .padding(.horizontal, 16)
-    }
-
-    private var pendingTickerSelection: TickerSearchResult? {
-        switch assetType {
-        case .crypto: searchVM.selectedResult
-        case .stock: stockVM.selectedResult
-        case .predictionMarket: predictionVM.selectedResult
-        }
-    }
-
-    // MARK: - Apply
-
-    private func cancelSearches() {
-        searchVM.cancelSearch()
-        stockVM.cancelSearch()
-        polymarketVM.cancelSearch()
-        kalshiVM.cancelSearch()
-    }
-
-    private func apply(_ selected: TickerSearchResult) {
-        // The search payload already carried the market artwork; seed the resolver so
-        // the card repaints without another round trip.
-        if selected.source.isPredictionMarket {
-            let ticker = selected.fullSymbol
-            let source = selected.source
-            let url = selected.imageURL
-            Task { await IconResolver.shared.remember(ticker: ticker, source: source, url: url) }
-        }
-
-        cancelSearches()
-        dismiss()
-
-        let displayName: String? = {
-            guard selected.source.isPredictionMarket else { return nil }
-            return selected.eventTitle ?? selected.question ?? selected.symbol
-        }()
-
-        onUpdateTicker(selected.fullSymbol, selected.source, displayName, selected.pmSeries)
     }
 
     // MARK: - Appearance Tab
 
     private var appearanceTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(viewModel.usesLineChart ? "Line Up" : "Bullish Candle")
-                        .font(.subheadline.weight(.medium))
-                    ColorPicker("", selection: $bullishColor)
-                        .labelsHidden()
+        page {
+            section("Colors", subtitle: "Used for rising and falling prices.") {
+                SettingsCardRow(
+                    title: viewModel.usesLineChart ? "Line up" : "Bullish candle", icon: "arrow.up.right",
+                    hint: viewModel.usesLineChart
+                        ? "Stretches where the price rises." : "Price closed higher than it opened."
+                ) {
+                    ColorPicker("", selection: $bullishColor).labelsHidden()
                 }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(viewModel.usesLineChart ? "Line Down" : "Bearish Candle")
-                        .font(.subheadline.weight(.medium))
-                    ColorPicker("", selection: $bearishColor)
-                        .labelsHidden()
+                SettingsCardRow(
+                    title: viewModel.usesLineChart ? "Line down" : "Bearish candle", icon: "arrow.down.right",
+                    hint: viewModel.usesLineChart
+                        ? "Stretches where the price falls." : "Price closed lower than it opened."
+                ) {
+                    ColorPicker("", selection: $bearishColor).labelsHidden()
                 }
-            }
-
-            Button("Reset Default Colors") {
-                bullishColor = .green
-                bearishColor = .red
-            }
-            .buttonStyle(.borderless)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            Divider()
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Y-Axis Decimal Places")
-                    .font(.subheadline.weight(.medium))
-
-                Picker("Decimals", selection: $decimalPlacesMode) {
-                    ForEach(DecimalMode.allCases) { mode in
-                        Text(mode.rawValue).tag(mode)
+                HStack(spacing: 16) {
+                    CandleColorPreview(bullish: bullishColor, bearish: bearishColor, isLine: viewModel.usesLineChart)
+                        .padding(10)
+                        .background(
+                            .background.opacity(0.6), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Preview").font(.subheadline.weight(.semibold))
+                        Text("The chart behind this window updates as you pick.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 16)
+                    Button("Reset Colors") {
+                        bullishColor = .green
+                        bearishColor = .red
                     }
                 }
-                .pickerStyle(.menu)
-                .frame(minWidth: 100)
-
-                Text(decimalHint)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 12))
+                .overlay { RoundedRectangle(cornerRadius: 12).stroke(.separator.opacity(0.45), lineWidth: 1) }
             }
 
-            Spacer()
+            section("Price axis") {
+                SettingsCardRow(title: "Decimal places", icon: "number", hint: decimalHint) {
+                    Picker("Decimals", selection: $decimalPlacesMode) {
+                        ForEach(DecimalMode.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 90)
+                }
+            }
         }
-        .padding(16)
     }
 
     // MARK: - Indicators Tab
 
     private var indicatorsTab: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Chart Indicators")
-                        .font(.title3.weight(.semibold))
-
-                    Text("Add context to the chart without changing its underlying data.")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.bottom, 4)
-
+        page {
+            section("Indicators", subtitle: "Add context to the chart without changing its underlying data.") {
                 // Line sources report one price per timestamp and no turnover at all.
                 if !viewModel.usesLineChart {
                     SettingsCardRow(
@@ -582,66 +374,66 @@ struct ChartSettingsSheet: View {
                         .toggleStyle(.switch)
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    /// The picker and status stay pinned; the report, diagnostics and inputs scroll beneath them,
-    /// so a script with many inputs never pushes content past the sheet.
+    // MARK: - Scripts Tab
+
     private var scriptsTab: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            scriptsHeader
-                .padding([.horizontal, .top], 16)
+        page {
+            section("Script", subtitle: "Run a Pine script on this chart and tune its inputs.") {
+                if let scriptLoadError {
+                    NoticeCard(
+                        systemImage: "xmark.octagon.fill", tint: .red, title: "Couldn't load your scripts",
+                        detail: scriptLoadError)
+                }
 
-            ScrollView {
-                scriptsDetails
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
+                SettingsCardRow(title: "Applied script", icon: "curlybraces", hint: scriptHint) {
+                    Picker("Script", selection: $selectedScriptID) {
+                        Text("None").tag(nil as UUID?)
+                        ForEach(savedScripts) { script in
+                            Text(script.name).tag(script.id as UUID?)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 180)
+                    .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
+                }
 
-    private var scriptsHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Picker("Script", selection: $selectedScriptID) {
-                    Text("None").tag(nil as UUID?)
-                    ForEach(savedScripts) { script in
-                        Text(script.name).tag(script.id as UUID?)
+                if savedScripts.isEmpty && scriptLoadError == nil {
+                    NoticeCard(
+                        systemImage: "info.circle.fill", tint: .blue, title: "No scripts yet",
+                        detail: "Write one in the Script Manager and it will show up here.",
+                        actionTitle: "Open Script Manager", action: openScriptManager)
+                } else {
+                    HStack(spacing: 10) {
+                        Button {
+                            openScriptManager()
+                        } label: {
+                            Label("Script Manager", systemImage: "curlybraces.square")
+                        }
+                        .help("Open Script Manager in a new tab")
+
+                        if selectedScriptID != nil {
+                            Button {
+                                showingPineAlertEditor = true
+                            } label: {
+                                Label("Create Alert…", systemImage: "bell")
+                            }
+                            .disabled(viewModel.appliedSourceHash == nil)
+                            .help("Notify me when the applied script raises alert() on a live bar")
+                        }
                     }
                 }
-                .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
-
-                Button {
-                    openScriptManager()
-                } label: {
-                    Label("Script Manager", systemImage: "curlybraces")
-                }
-                .help("Open Script Manager in a new tab")
-
-                if let scriptLoadError {
-                    Text(scriptLoadError).font(.caption).foregroundStyle(.red)
-                }
             }
 
-            if selectedScriptID == nil {
-                Text("Choose a script, or create one in the Script Manager.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                HStack {
-                    Text(viewModel.pineStatus).font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Create Alert…") { showingPineAlertEditor = true }
-                        .disabled(viewModel.appliedSourceHash == nil)
-                        .help("Notify me when the applied script raises alert() on a live bar")
-                }
-                .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
-            }
+            scriptsDetails
         }
+    }
+
+    private var scriptHint: String {
+        selectedScriptID == nil ? "Choose a script to draw on this chart." : viewModel.pineStatus
     }
 
     private var scriptsDetails: some View {
@@ -666,7 +458,8 @@ struct ChartSettingsSheet: View {
         .task(id: viewModel.pineConfiguration?.appliedSource) {
             let source = viewModel.pineConfiguration?.appliedSource
             pineInputSchema =
-                source.map { PineCompiler.compile(source: $0, libraries: PineLibraryRegistry.shared).inputSchema } ?? PineInputSchema()
+                source.map { PineCompiler.compile(source: $0, libraries: PineLibraryRegistry.shared).inputSchema }
+                ?? PineInputSchema()
         }
     }
 
@@ -714,7 +507,6 @@ struct ChartSettingsSheet: View {
         let scriptID = selectedScriptID
         // While the sheet is key the coordinator falls back to the chart window beneath it.
         WindowCoordinator.shared.prepareAuxiliaryTab()
-        cancelSearches()
         dismiss()
         DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
     }
@@ -765,7 +557,6 @@ struct ChartSettingsSheet: View {
     let vm = ChartViewModel(ticker: "BTC")
     ChartSettingsSheet(
         viewModel: vm,
-        onUpdateTicker: { _, _, _, _ in },
         onRemove: {},
         onStyleChanged: {}
     )

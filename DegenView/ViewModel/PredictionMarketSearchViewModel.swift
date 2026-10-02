@@ -22,15 +22,26 @@ final class PredictionMarketSearchViewModel: ObservableObject {
     /// Per-market-id checked state for multi-choice groups. False by default — user opts in.
     @Published var checkedChoices: [String: Bool] = [:]
     @Published private(set) var expandedGroupIDs: Set<String> = []
+    /// True while `groups` holds the provider's trending events rather than search results.
+    @Published private(set) var isShowingTrending = false
     private var resultSetID = ""
 
     private let debouncer = SearchDebouncer()
     private let logPrefix: String
     let provider: DataSourceType
+    private let service: () -> TickerDataSource
+    private let now: () -> Date
+    private var trendingTask: Task<Void, Never>?
+    private var cachedTrending: (results: [TickerSearchResult], fetched: Date)?
 
-    init(provider: DataSourceType = .polymarket, logPrefix: String = "[PredictionMarketSearch]") {
+    init(
+        provider: DataSourceType = .polymarket, logPrefix: String = "[PredictionMarketSearch]",
+        service: (() -> TickerDataSource)? = nil, now: @escaping () -> Date = Date.init
+    ) {
         self.provider = provider
         self.logPrefix = logPrefix
+        self.service = service ?? { DataSourceFactory.shared.service(for: provider) }
+        self.now = now
     }
 
     var hasResults: Bool { !groups.isEmpty }
@@ -149,14 +160,16 @@ final class PredictionMarketSearchViewModel: ObservableObject {
         let text = query.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else {
             debouncer.cancel()
-            groups = []
             selectedResult = nil
             checkedChoices = [:]
             expandedGroupIDs = []
             resultSetID = ""
             errorMessage = nil
+            showTrending()
             return
         }
+        trendingTask?.cancel()
+        isShowingTrending = false
         debouncer.schedule { [weak self] in
             await self?.runSearch(text)
         }
@@ -165,13 +178,59 @@ final class PredictionMarketSearchViewModel: ObservableObject {
     /// Cancel any in-flight search.
     func cancelSearch() {
         debouncer.cancel()
+        trendingTask?.cancel()
+    }
+
+    // MARK: - Trending
+
+    /// With no query, list what the provider says is busiest — when it can say. Providers that
+    /// can't (Kalshi) get an empty list. A fetch failure also leaves the list empty, quietly:
+    /// trending is an extra, not something the user asked for.
+    func showTrending() {
+        trendingTask?.cancel()
+        guard service() is TrendingMarketsDataSource else {
+            isShowingTrending = false
+            groups = []
+            return
+        }
+        if let cached = cachedTrending, now().timeIntervalSince(cached.fetched) < Polymarket.trendingCacheTTL {
+            applyTrending(cached.results)
+            return
+        }
+        isShowingTrending = true
+        groups = []
+        isSearching = true
+        trendingTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isSearching = false }
+            guard let source = self.service() as? TrendingMarketsDataSource else { return }
+            do {
+                let results = try await source.trendingMarkets(limit: Polymarket.trendingLimit)
+                guard !Task.isCancelled else { return }
+                self.cachedTrending = (results, self.now())
+                self.applyTrending(results)
+            } catch {
+                guard !Task.isCancelled else { return }
+                #if DEBUG
+                    print("\(self.logPrefix) trending failed: \(error.localizedDescription)")
+                #endif
+                self.isShowingTrending = false
+                self.groups = []
+            }
+        }
+    }
+
+    private func applyTrending(_ results: [TickerSearchResult]) {
+        isShowingTrending = !results.isEmpty
+        groups = Self.group(results)
+        updateAfterSearch()
     }
 
     private func runSearch(_ query: String) async {
         isSearching = true
         defer { isSearching = false }
 
-        let service = DataSourceFactory.shared.service(for: provider)
+        let service = service()
 
         do {
             let results = try await service.searchTickers(query: query)

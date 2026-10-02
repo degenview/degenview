@@ -33,10 +33,6 @@ final class ChartPlotTests: XCTestCase {
 
     func testChartHeightBudgetingUsesEqualCardHeights() {
         XCTAssertEqual(
-            ChartLayout.verticalPlotHeight(available: 500, cardCount: 3),
-            106.3333333333, accuracy: 0.0001
-        )
-        XCTAssertEqual(
             ChartLayout.gridPlotHeight(available: 500, cardCount: 3),
             183, accuracy: 0.0001
         )

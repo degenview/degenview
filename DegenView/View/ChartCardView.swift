@@ -24,7 +24,6 @@ struct ChartCardView: View {
     var crosshair: CrosshairTracker? = nil
     /// Called when the pointer leaves this card — the mouse monitor can't see that.
     var onCrosshairExit: () -> Void = {}
-    let onUpdateTicker: (String, DataSourceType, String?, [PmSeriesConfig]?) -> Void
     let onStyleChanged: () -> Void
     var onSettingsPresented: ((Bool) -> Void)? = nil
     var onLineEditorPresented: ((Bool) -> Void)? = nil
@@ -103,7 +102,6 @@ struct ChartCardView: View {
         .sheet(isPresented: $showSettings) {
             ChartSettingsSheet(
                 viewModel: viewModel,
-                onUpdateTicker: { sym, src, name, series in onUpdateTicker(sym, src, name, series) },
                 onRemove: onRemove,
                 onStyleChanged: onStyleChanged
             )
@@ -826,7 +824,7 @@ private struct PortfolioAllocationMiniChart: View {
                         ForEach(Array(sorted.enumerated()), id: \.element.id) { index, holding in
                             HStack {
                                 Circle().fill(colors[index % colors.count]).frame(width: 8, height: 8)
-                                Text(holding.asset.symbol).bold()
+                                Text(holding.asset.displayTicker).bold()
                                 Spacer()
                                 Text(
                                     privacy
@@ -1540,7 +1538,6 @@ struct PriceAxisRegion: NSViewRepresentable {
         onToggleFavorite: {},
         onZoomRegion: { _ in },
         onAxisRegion: { _ in },
-        onUpdateTicker: { _, _, _, _ in },
         onStyleChanged: {}
     )
     .frame(width: 400)

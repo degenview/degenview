@@ -5,7 +5,7 @@ import Foundation
 ///
 /// A "ticker" here is a CLOB token id for a market's YES outcome, and its price is a
 /// probability in 0…1 rather than a currency amount.
-final class PolymarketService: PredictionMarketDataSource {
+final class PolymarketService: PredictionMarketDataSource, TrendingMarketsDataSource {
     let type: DataSourceType = .polymarket
 
     /// Market metadata and search.
@@ -49,42 +49,72 @@ final class PolymarketService: PredictionMarketDataSource {
 
         // Flatten events into their markets — one row per chartable bet, keeping the
         // API's relevance order so sections stay grouped by event.
-        return events.flatMap { event -> [TickerSearchResult] in
-            let eventTitle = event.title ?? ""
+        return events.flatMap(Self.results(for:))
+    }
 
-            // Collect all tradable choices upfront so multi-choice events can carry the
-            // full list on every result row (selecting any row picks all choices).
-            let tradable = (event.markets ?? []).compactMap {
-                market -> (tokenID: String, label: String, market: PolymarketMarket)? in
-                guard market.isTradable,
-                    let tokenID = market.yesTokenID,
-                    let label = market.shortTitle, !label.isEmpty
-                else { return nil }
-                return (tokenID, label, market)
-            }
+    /// One row per chartable market in `event`.
+    ///
+    /// All tradable choices are collected upfront so multi-choice events carry the full list on
+    /// every row (selecting any row picks all choices).
+    static func results(for event: PolymarketEvent) -> [TickerSearchResult] {
+        let eventTitle = event.title ?? ""
 
-            let allSeries: [PmSeriesConfig]? =
-                tradable.count > 1
-                ? tradable.map { PmSeriesConfig(tokenID: $0.tokenID, label: $0.label, enabled: true) }
-                : nil
-
-            return tradable.compactMap { (tokenID, label, market) in
-                let artwork = market.artworkURL ?? event.artworkURL
-                var result = TickerSearchResult(
-                    symbol: label,
-                    fullSymbol: tokenID,
-                    source: .polymarket,
-                    price: market.displayedYesPrice,
-                    metadata: [
-                        "eventTitle": eventTitle,
-                        "question": market.question ?? label,
-                        "imageURL": artwork?.absoluteString ?? "",
-                    ]
-                )
-                result.pmSeries = allSeries
-                return result
-            }
+        let tradable = (event.markets ?? []).compactMap {
+            market -> (tokenID: String, label: String, market: PolymarketMarket)? in
+            guard market.isTradable,
+                let tokenID = market.yesTokenID,
+                let label = market.shortTitle, !label.isEmpty
+            else { return nil }
+            return (tokenID, label, market)
         }
+
+        let allSeries: [PmSeriesConfig]? =
+            tradable.count > 1
+            ? tradable.map { PmSeriesConfig(tokenID: $0.tokenID, label: $0.label, enabled: true) }
+            : nil
+
+        return tradable.compactMap { (tokenID, label, market) in
+            let artwork = market.artworkURL ?? event.artworkURL
+            var result = TickerSearchResult(
+                symbol: label,
+                fullSymbol: tokenID,
+                source: .polymarket,
+                price: market.displayedYesPrice,
+                metadata: [
+                    "eventTitle": eventTitle,
+                    "question": market.question ?? label,
+                    "imageURL": artwork?.absoluteString ?? "",
+                ]
+            )
+            result.pmSeries = allSeries
+            return result
+        }
+    }
+
+    // MARK: - Trending
+
+    /// The most-traded live events of the last 24 hours, flattened like search results.
+    func trendingMarkets(limit: Int) async throws -> [TickerSearchResult] {
+        guard var components = URLComponents(string: "\(Self.gammaBase)/events") else {
+            throw PolymarketError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "active", value: "true"),
+            URLQueryItem(name: "closed", value: "false"),
+            URLQueryItem(name: "order", value: "volume24hr"),
+            URLQueryItem(name: "ascending", value: "false"),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        guard let url = components.url else { throw PolymarketError.invalidURL }
+
+        #if DEBUG
+            print("[Polymarket] Trending")
+        #endif
+
+        let (data, response) = try await session.data(from: url)
+        try Self.validate(response)
+        let events = try JSONDecoder().decode([PolymarketEvent].self, from: data)
+        return events.flatMap(Self.results(for:))
     }
 
     // MARK: - Price history

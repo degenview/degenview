@@ -31,7 +31,7 @@ final class AppDatabaseTests: XCTestCase {
 
         let views = ["B", "A"].map {
             SavedView(
-                name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, layoutMode: .grid, createdAt: Date(),
+                name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, createdAt: Date(),
                 tickerConfigs: [TickerConfig(symbol: "BTCUSDT", source: .binance)],
                 candleCount: TimeRange.oneDay.dataPointLimit)
         }

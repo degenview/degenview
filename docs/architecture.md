@@ -14,6 +14,9 @@ DegenView/
 │   ├── ChartColumn.swift              # Persisted grid columns and legacy layout repair
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
 │   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
+│   ├── RecentMarket.swift             # A picked market, remembered for the Add Chart sheet
+│   ├── PortfolioStatistics.swift      # Derived stats (best/worst, 24h, extremes, fees) + PortfolioPeriodChange
+│   ├── PortfolioHistoryRange.swift    # Overview chart ranges (1D … ALL) and snapshot filtering
 │   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
@@ -32,6 +35,7 @@ DegenView/
 │   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
 │   ├── PineAlertCoordinator.swift     # Routes a chart's Pine alerts; pauses/re-arms subscriptions
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
+│   ├── PortfolioAssetInfoViewModel.swift # Portfolio asset coin names and artwork, via IconResolver
 │   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
 │   ├── ChartIconView.swift            # A chart's market icon with its source logo badge
@@ -46,7 +50,7 @@ DegenView/
 │   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
 │   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
-│   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
+│   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
 │   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
 │   ├── ScriptPreviewPane.swift        # Live preview: market, timeframe, zoom, chart, drawer bar
@@ -58,10 +62,42 @@ DegenView/
 │   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
+│   ├── AppToolbar.swift               # Portfolio + Script Manager title-bar buttons, shared by every tab kind
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
+│   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings
+│   ├── RecentMarketsCard.swift        # Add Chart: the last picked markets, under the suggestions
+│   ├── CandleColorPreview.swift       # Tiny candle/line preview of the chosen chart colors
+│   ├── ChoiceCard.swift               # Selectable option card (icon, title, description, radio mark)
+│   ├── IconTabBar.swift          # Icon + title section switcher (portfolio tabs, Add Chart sources)
+│   ├── PortfolioPerformerCard.swift   # Best/worst performer card (icon, return %, total P&L)
+│   ├── PortfolioCreateSheet.swift     # New-portfolio sheet: name field + base-currency tiles
+│   ├── PortfolioManageSheet.swift     # Manage portfolios: rename, reorder, duplicate, delete
+│   ├── PortfolioCoinMarketCapImportSheet.swift # CMC import step 1: match tickers to markets, resolve fee FX
+│   ├── PortfolioImportPreviewSheet.swift # Import step 2: transaction table, errors/warnings, confirm
+│   ├── SheetHeader.swift     # Icon badge + title + subtitle atop the sheets
+│   ├── NoticeCard.swift      # Tinted error/warning callout with optional line list and action
+│   ├── PortfolioHoldingsView.swift    # Portfolio tab: positions Table (sortable headers persist the portfolio's sort)
+│   ├── PortfolioTableChrome.swift     # Shared Table look: zebra rows, hairline border, side margin
+│   ├── PortfolioSearchField.swift     # Rounded search box above the portfolio tables
+│   ├── PortfolioNumericCell.swift     # Right-aligned monospaced-digit table cell
+│   ├── PortfolioTransactionsView.swift # Portfolio tab: searchable/filterable/sortable transactions Table
+│   ├── PortfolioStatisticsView.swift  # Portfolio tab: performance, value range, activity, P&L-by-asset bars
+│   ├── PortfolioAssetDetailView.swift # One asset's position stats and transactions table (sheet)
+│   ├── PortfolioHistoryChart.swift    # Hand-drawn portfolio value line with hover tooltip
+│   ├── PortfolioAllocationChart.swift # Allocation donut + legend (top slices, rest folded into "Other")
+│   ├── PortfolioCard.swift            # Titled rounded panel used across the portfolio tabs
+│   ├── PortfolioStatCard.swift        # Labelled figure with optional caption line
+│   ├── PortfolioTransactionTypeBadge.swift # Tinted pill for a transaction type
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
-│   └── AppSettingsView.swift          # Theme, provider credentials, notifications
+│   ├── AppSettingsView.swift          # Settings window shell: badge sidebar + selected page
+│   ├── AppearanceSettingsView.swift   # Settings ▸ Appearance: theme previews
+│   ├── AlpacaSettingsView.swift       # Settings ▸ Alpaca: API keys with status and remove
+│   ├── CoinMarketCapSettingsView.swift # Settings ▸ CoinMarketCap: optional API key, connection test
+│   ├── NotificationSettingsView.swift # Settings ▸ Notifications: delivery toggles, agent health
+│   ├── SettingsPage.swift             # Settings page shell + SettingsSection / SettingsCard
+│   ├── SettingsField.swift            # Labelled text/secret field for settings
+│   └── SettingsStatusBadge.swift      # Status dot + word, and the Save result line
 ├── Pine/                              # Pine Script feature: language, runtime, broker, editor, views
 │   ├── Language/
 │   │   ├── Lexer/                     # PineLexer (+Tokens), PineSourceLine, tokens
@@ -108,6 +144,7 @@ DegenView/
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PredictionMarketDataSource.swift # Shared protocol: YES probability history by TimeRange
+    ├── TrendingMarketsDataSource.swift # Optional capability: busiest events (Polymarket 24h volume)
     ├── PolymarketService.swift        # Event search and probability history
     ├── KalshiService.swift            # Series-index search, candlestick history, live YES ask
     ├── KalshiSeriesIndex.swift        # Cached /series list + local keyword ranking
@@ -118,6 +155,7 @@ DegenView/
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
+    ├── WindowTabIcon.swift            # Per-kind tab icon (SF Symbol in the tab's attributed title) + decorator
     ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database
     ├── AppDatabase+Schema.swift       # Schema creation, document and setting helpers
     ├── AppDatabase+Workspace.swift    # Tabs, saved views, and drawings tables
@@ -330,8 +368,8 @@ titles, redo invalidation, persistence, and isolated window histories over a sha
 
 ## Dashboard layout and drag flow
 
-- Vertical mode continues to use the tab's flat chart order. Grid mode renders explicit,
-  equal-width `ChartColumn` stacks; switching modes preserves the grid arrangement.
+- The dashboard is always a grid of explicit, equal-width `ChartColumn` stacks; there is
+  no alternative layout mode.
 - A chart drag exposes column insertion positions and, when enough width remains, a
   trailing add-column rail. Holding over that rail expands a temporary outlined column
   and shrinks the existing columns without changing model or persisted state.

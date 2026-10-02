@@ -7,6 +7,54 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002301 /* WindowTabIconTests.swift */; };
+		AA1000000000000000002200 /* WindowTabIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002300 /* WindowTabIcon.swift */; };
+		AA1000000000000000002009 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002109 /* SettingsTabTests.swift */; };
+		AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002106 /* NotificationSettingsView.swift */; };
+		AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */; };
+		AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002104 /* AlpacaSettingsView.swift */; };
+		AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002103 /* AppearanceSettingsView.swift */; };
+		AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002102 /* SettingsStatusBadge.swift */; };
+		AA1000000000000000002001 /* SettingsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002101 /* SettingsField.swift */; };
+		AA1000000000000000002000 /* SettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002100 /* SettingsPage.swift */; };
+		AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001901 /* ChartSettingsSheetTests.swift */; };
+		AA1000000000000000001800 /* CandleColorPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001900 /* CandleColorPreview.swift */; };
+		AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001700 /* PredictionTrendingTests.swift */; };
+		AA1000000000000000001400 /* TrendingMarketsDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500 /* TrendingMarketsDataSource.swift */; };
+		AA1000000000000000001401 /* TrendingMarketsDataSource.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500; };
+		AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001303 /* RecentMarketsStoreTests.swift */; };
+		AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001302 /* RecentMarketsCard.swift */; };
+		AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001301 /* RecentMarketsStore.swift */; };
+		AA1000000000000000001200 /* RecentMarket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001300 /* RecentMarket.swift */; };
+		AA1000000000000000001000 /* ChoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001100 /* ChoiceCard.swift */; };
+		AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */; };
+		AA1000000000000000000802 /* PortfolioImportPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */; };
+		AA1000000000000000000801 /* NoticeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000901 /* NoticeCard.swift */; };
+		AA1000000000000000000800 /* SheetHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000900 /* SheetHeader.swift */; };
+		AA1000000000000000000603 /* PortfolioManageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000703 /* PortfolioManageSheet.swift */; };
+		AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */; };
+		AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000701 /* PortfolioCreateSheet.swift */; };
+		AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000561 /* PortfolioPerformerCard.swift */; };
+		AA1000000000000000000460 /* IconTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000560 /* IconTabBar.swift */; };
+		AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000503 /* PortfolioHoldingsView.swift */; };
+		AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000502 /* PortfolioNumericCell.swift */; };
+		AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000501 /* PortfolioSearchField.swift */; };
+		AA1000000000000000000400 /* PortfolioTableChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000500 /* PortfolioTableChrome.swift */; };
+		AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000311 /* PortfolioStatisticsTests.swift */; };
+		AA1000000000000000000210 /* PortfolioStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000310 /* PortfolioStatisticsView.swift */; };
+		AA1000000000000000000209 /* PortfolioTransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000309 /* PortfolioTransactionsView.swift */; };
+		AA1000000000000000000208 /* PortfolioOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000308 /* PortfolioOverviewView.swift */; };
+		AA1000000000000000000207 /* PortfolioAllocationChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000307 /* PortfolioAllocationChart.swift */; };
+		AA1000000000000000000206 /* PortfolioHistoryChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000306 /* PortfolioHistoryChart.swift */; };
+		AA1000000000000000000205 /* PortfolioTransactionTypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */; };
+		AA1000000000000000000204 /* PortfolioStatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000304 /* PortfolioStatCard.swift */; };
+		AA1000000000000000000203 /* PortfolioCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000303 /* PortfolioCard.swift */; };
+		AA1000000000000000000202 /* PortfolioValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000302 /* PortfolioValueFormatter.swift */; };
+		AA1000000000000000000201 /* PortfolioHistoryRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000301 /* PortfolioHistoryRange.swift */; };
+		AA1000000000000000000200 /* PortfolioStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000300 /* PortfolioStatistics.swift */; };
+		AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */; };
+		AA1000000000000000000012 /* PortfolioAssetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000112 /* PortfolioAssetDetailView.swift */; };
+		AA1000000000000000000011 /* PortfolioAssetInfoViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */; };
 		ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */; };
 		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
 		C4D1A0000000000000000001 /* AppDatabase+Candles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D1A0000000000000000101 /* AppDatabase+Candles.swift */; };
@@ -162,7 +210,6 @@
 		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
-		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
 		D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000102 /* ChartGridDropDelegate.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
 		44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */; };
@@ -224,6 +271,7 @@
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
 		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
+		D5A00000000000000000AB01 /* AppToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A00000000000000000AB02 /* AppToolbar.swift */; };
 		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A00000000000000000000F01 /* SourceLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F02 /* SourceLogoView.swift */; };
@@ -567,6 +615,53 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000002301 /* WindowTabIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIconTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002300 /* WindowTabIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIcon.swift; sourceTree = "<group>"; };
+		AA1000000000000000002109 /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002106 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002104 /* AlpacaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002103 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002102 /* SettingsStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusBadge.swift; sourceTree = "<group>"; };
+		AA1000000000000000002101 /* SettingsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsField.swift; sourceTree = "<group>"; };
+		AA1000000000000000002100 /* SettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPage.swift; sourceTree = "<group>"; };
+		AA1000000000000000001901 /* ChartSettingsSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheetTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000001900 /* CandleColorPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleColorPreview.swift; sourceTree = "<group>"; };
+		AA1000000000000000001700 /* PredictionTrendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionTrendingTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000001500 /* TrendingMarketsDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingMarketsDataSource.swift; sourceTree = "<group>"; };
+		AA1000000000000000001303 /* RecentMarketsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStoreTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000001302 /* RecentMarketsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000001301 /* RecentMarketsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStore.swift; sourceTree = "<group>"; };
+		AA1000000000000000001300 /* RecentMarket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarket.swift; sourceTree = "<group>"; };
+		AA1000000000000000001100 /* ChoiceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChoiceCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCoinMarketCapImportSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioImportPreviewSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000901 /* NoticeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoticeCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000900 /* SheetHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetHeader.swift; sourceTree = "<group>"; };
+		AA1000000000000000000703 /* PortfolioManageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioManageSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheetTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000701 /* PortfolioCreateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000561 /* PortfolioPerformerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioPerformerCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000560 /* IconTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconTabBar.swift; sourceTree = "<group>"; };
+		AA1000000000000000000503 /* PortfolioHoldingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHoldingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000502 /* PortfolioNumericCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioNumericCell.swift; sourceTree = "<group>"; };
+		AA1000000000000000000501 /* PortfolioSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioSearchField.swift; sourceTree = "<group>"; };
+		AA1000000000000000000500 /* PortfolioTableChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTableChrome.swift; sourceTree = "<group>"; };
+		AA1000000000000000000311 /* PortfolioStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000310 /* PortfolioStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000309 /* PortfolioTransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTransactionsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000308 /* PortfolioOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioOverviewView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000307 /* PortfolioAllocationChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAllocationChart.swift; sourceTree = "<group>"; };
+		AA1000000000000000000306 /* PortfolioHistoryChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHistoryChart.swift; sourceTree = "<group>"; };
+		AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTransactionTypeBadge.swift; sourceTree = "<group>"; };
+		AA1000000000000000000304 /* PortfolioStatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000303 /* PortfolioCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000302 /* PortfolioValueFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioValueFormatter.swift; sourceTree = "<group>"; };
+		AA1000000000000000000301 /* PortfolioHistoryRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHistoryRange.swift; sourceTree = "<group>"; };
+		AA1000000000000000000300 /* PortfolioStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatistics.swift; sourceTree = "<group>"; };
+		AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetDisplayTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000112 /* PortfolioAssetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetDetailView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetInfoViewModel.swift; sourceTree = "<group>"; };
 		54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PaperTrading.swift"; sourceTree = "<group>"; };
 		343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Portfolio.swift"; sourceTree = "<group>"; };
 		C4D1A0000000000000000101 /* AppDatabase+Candles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Candles.swift"; sourceTree = "<group>"; };
@@ -680,7 +775,6 @@
 		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
-		26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReorderDropDelegate.swift; sourceTree = "<group>"; };
 		D30000000000000000000102 /* ChartGridDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartGridDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
@@ -743,6 +837,7 @@
 		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
+		D5A00000000000000000AB02 /* AppToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppToolbar.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A00000000000000000000F02 /* SourceLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLogoView.swift; sourceTree = "<group>"; };
@@ -1091,6 +1186,9 @@
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
+				AA1000000000000000000300 /* PortfolioStatistics.swift */,
+				AA1000000000000000000301 /* PortfolioHistoryRange.swift */,
+				AA1000000000000000001300 /* RecentMarket.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
@@ -1149,6 +1247,8 @@
 				B90000000000000000000103 /* FXRateService.swift */,
 				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
 				AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */,
+				AA1000000000000000001301 /* RecentMarketsStore.swift */,
+				AA1000000000000000002300 /* WindowTabIcon.swift */,
 				AA1000000000000000000102 /* PortfolioAccountingEngine.swift */,
 				AA1000000000000000000103 /* PortfolioLedger.swift */,
 				AA1000000000000000000104 /* PortfolioStore.swift */,
@@ -1178,6 +1278,7 @@
 				A0000000000000000000011B /* DEXScreenerService.swift */,
 				C10000000000000000000102 /* PolymarketService.swift */,
 				C10000000000000000000214 /* PredictionMarketDataSource.swift */,
+				AA1000000000000000001500 /* TrendingMarketsDataSource.swift */,
 				C10000000000000000000213 /* KalshiSeriesIndex.swift */,
 				C10000000000000000000212 /* KalshiService.swift */,
 				CMC000000000000000000101 /* CoinMarketCapService.swift */,
@@ -1199,6 +1300,7 @@
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
 				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
+				AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */,
 				B90000000000000000000105 /* AlertStore.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
@@ -1236,6 +1338,37 @@
 				SM0000000000000000000107 /* LineNumberedTextEditorView.swift */,
 				B90000000000000000000106 /* PriceAlertEditor.swift */,
 				B90000000000000000000107 /* AlertsCenterView.swift */,
+				AA1000000000000000000112 /* PortfolioAssetDetailView.swift */,
+				AA1000000000000000000303 /* PortfolioCard.swift */,
+				AA1000000000000000000304 /* PortfolioStatCard.swift */,
+				AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */,
+				AA1000000000000000000306 /* PortfolioHistoryChart.swift */,
+				AA1000000000000000000307 /* PortfolioAllocationChart.swift */,
+				AA1000000000000000000308 /* PortfolioOverviewView.swift */,
+				AA1000000000000000000309 /* PortfolioTransactionsView.swift */,
+				AA1000000000000000000310 /* PortfolioStatisticsView.swift */,
+				AA1000000000000000000500 /* PortfolioTableChrome.swift */,
+				AA1000000000000000000501 /* PortfolioSearchField.swift */,
+				AA1000000000000000000502 /* PortfolioNumericCell.swift */,
+				AA1000000000000000000503 /* PortfolioHoldingsView.swift */,
+				AA1000000000000000000560 /* IconTabBar.swift */,
+				AA1000000000000000000561 /* PortfolioPerformerCard.swift */,
+				AA1000000000000000000701 /* PortfolioCreateSheet.swift */,
+				AA1000000000000000000703 /* PortfolioManageSheet.swift */,
+				AA1000000000000000000900 /* SheetHeader.swift */,
+				AA1000000000000000000901 /* NoticeCard.swift */,
+				AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */,
+				AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */,
+				AA1000000000000000001100 /* ChoiceCard.swift */,
+				AA1000000000000000001302 /* RecentMarketsCard.swift */,
+				AA1000000000000000001900 /* CandleColorPreview.swift */,
+				AA1000000000000000002100 /* SettingsPage.swift */,
+				AA1000000000000000002101 /* SettingsField.swift */,
+				AA1000000000000000002102 /* SettingsStatusBadge.swift */,
+				AA1000000000000000002103 /* AppearanceSettingsView.swift */,
+				AA1000000000000000002104 /* AlpacaSettingsView.swift */,
+				AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */,
+				AA1000000000000000002106 /* NotificationSettingsView.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
@@ -1246,6 +1379,7 @@
 				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
+				D5A00000000000000000AB02 /* AppToolbar.swift */,
 				A0000000000000000000011F /* TickerIconView.swift */,
 				A00000000000000000000F02 /* SourceLogoView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
@@ -1256,7 +1390,6 @@
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
-				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
 				C10000000000000000000107 /* PredictionMarketResultRow.swift */,
@@ -1282,6 +1415,7 @@
 				A0000000000000000000011D /* ColorHex.swift */,
 				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
+				AA1000000000000000000302 /* PortfolioValueFormatter.swift */,
 				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
 				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
 				C10000000000000000000109 /* SearchDebouncer.swift */,
@@ -1356,6 +1490,14 @@
 				C50000000000000000000105 /* KlineCacheTests.swift */,
 				CMC000000000000000000103 /* CoinMarketCapTests.swift */,
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
+				AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */,
+				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
+				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
+				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
+				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
+				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
+				AA1000000000000000002109 /* SettingsTabTests.swift */,
+				AA1000000000000000002301 /* WindowTabIconTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -1798,6 +1940,7 @@
 			BA110000000000000000001C, BA110000000000000000001E,
 			BA110000000000000000001F, BA1100000000000000000020,
 			BA1100000000000000000025,
+			AA1000000000000000001401,
 			BA1100000000000000000024,
 			BA1100000000000000000023,
 			CB1100000000000000000002,
@@ -1911,6 +2054,14 @@
 				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
 				CMC000000000000000000003 /* CoinMarketCapTests.swift in Sources */,
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
+				AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */,
+				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
+				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
+				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
+				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
+				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
+				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
+				AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2006,10 +2157,48 @@
 				B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */,
 				B90000000000000000000003 /* FXRateService.swift in Sources */,
 				B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */,
+				AA1000000000000000000011 /* PortfolioAssetInfoViewModel.swift in Sources */,
 				B90000000000000000000005 /* AlertStore.swift in Sources */,
 				B90000000000000000000006 /* PriceAlertEditor.swift in Sources */,
 				B90000000000000000000007 /* AlertsCenterView.swift in Sources */,
 				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
+				AA1000000000000000000012 /* PortfolioAssetDetailView.swift in Sources */,
+				AA1000000000000000000200 /* PortfolioStatistics.swift in Sources */,
+				AA1000000000000000000201 /* PortfolioHistoryRange.swift in Sources */,
+				AA1000000000000000000202 /* PortfolioValueFormatter.swift in Sources */,
+				AA1000000000000000000203 /* PortfolioCard.swift in Sources */,
+				AA1000000000000000000204 /* PortfolioStatCard.swift in Sources */,
+				AA1000000000000000000205 /* PortfolioTransactionTypeBadge.swift in Sources */,
+				AA1000000000000000000206 /* PortfolioHistoryChart.swift in Sources */,
+				AA1000000000000000000207 /* PortfolioAllocationChart.swift in Sources */,
+				AA1000000000000000000208 /* PortfolioOverviewView.swift in Sources */,
+				AA1000000000000000000209 /* PortfolioTransactionsView.swift in Sources */,
+				AA1000000000000000000210 /* PortfolioStatisticsView.swift in Sources */,
+				AA1000000000000000000400 /* PortfolioTableChrome.swift in Sources */,
+				AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */,
+				AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */,
+				AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */,
+				AA1000000000000000000460 /* IconTabBar.swift in Sources */,
+				AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */,
+				AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */,
+				AA1000000000000000000603 /* PortfolioManageSheet.swift in Sources */,
+				AA1000000000000000000800 /* SheetHeader.swift in Sources */,
+				AA1000000000000000000801 /* NoticeCard.swift in Sources */,
+				AA1000000000000000000802 /* PortfolioImportPreviewSheet.swift in Sources */,
+				AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */,
+				AA1000000000000000001000 /* ChoiceCard.swift in Sources */,
+				AA1000000000000000001200 /* RecentMarket.swift in Sources */,
+				AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */,
+				AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */,
+				AA1000000000000000001800 /* CandleColorPreview.swift in Sources */,
+				AA1000000000000000002000 /* SettingsPage.swift in Sources */,
+				AA1000000000000000002001 /* SettingsField.swift in Sources */,
+				AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */,
+				AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */,
+				AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */,
+				AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */,
+				AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */,
+				AA1000000000000000002200 /* WindowTabIcon.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,
@@ -2045,6 +2234,7 @@
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
 				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
+				D5A00000000000000000AB01 /* AppToolbar.swift in Sources */,
 				A00000000000000000000909 /* Crosshair.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
@@ -2064,6 +2254,7 @@
 				C10000000000000000000002 /* PolymarketService.swift in Sources */,
 				C10000000000000000000205 /* PredictionMarketPicker.swift in Sources */,
 				C10000000000000000000204 /* PredictionMarketDataSource.swift in Sources */,
+				AA1000000000000000001400 /* TrendingMarketsDataSource.swift in Sources */,
 				C10000000000000000000203 /* KalshiSeriesIndex.swift in Sources */,
 				C10000000000000000000202 /* KalshiService.swift in Sources */,
 				C10000000000000000000201 /* KalshiModels.swift in Sources */,
@@ -2116,7 +2307,6 @@
 				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
 				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
-				133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */,
 				D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */,
 				A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */,
 				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,

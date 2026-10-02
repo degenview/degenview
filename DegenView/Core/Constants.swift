@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Layout Constants
 
 enum ChartLayout {
-    /// Gap between chart cards in vertical/grid layout.
+    /// Gap between chart cards in the grid.
     static let cardGap: CGFloat = 8
     /// Estimated non-chart chrome per card (header + padding + spacing).
     static let cardChrome: CGFloat = 55
@@ -20,13 +20,6 @@ enum ChartLayout {
     /// Normal outer and per-card padding in the fixed-height grid.
     static let gridOuterPadding: CGFloat = 4
     static let gridCardPadding: CGFloat = 4
-
-    /// Common plot height that lets all vertically stacked cards fit when possible.
-    static func verticalPlotHeight(available: CGFloat, cardCount: Int) -> CGFloat {
-        guard cardCount > 0 else { return available }
-        let gaps = CGFloat(max(0, cardCount - 1)) * cardGap
-        return (available - gaps) / CGFloat(cardCount) - cardChrome
-    }
 
     /// Common plot height for a two-column grid.
     static func gridPlotHeight(
@@ -156,6 +149,10 @@ enum Polymarket {
     static let cacheTTL: TimeInterval = 60
     /// Longest market title kept intact in a search row before truncation.
     static let maxTitleLength = 90
+    /// Events listed under "Trending" on the Add Chart sheet.
+    static let trendingLimit = 8
+    /// How long a trending list is reused before it is fetched again (seconds).
+    static let trendingCacheTTL: TimeInterval = 600
 }
 
 // MARK: - Kalshi Constants
@@ -339,8 +336,10 @@ enum UI {
     /// "Prediction Markets" (~138 pt each, ~828 pt) plus the sheet's 24 pt padding on
     /// both sides. The height fits the tallest static tab (CoinMarketCap), and search
     /// results scroll within whatever is left.
+    /// Height shared by a search box and the controls beside it.
+    static let searchFieldHeight: CGFloat = 36
     static let addTickerSheetWidth: CGFloat = 900
-    static let addTickerSheetHeight: CGFloat = 560
+    static let addTickerSheetHeight: CGFloat = 620
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.

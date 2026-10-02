@@ -36,7 +36,7 @@ final class ChartColumnTests: XCTestCase {
             ChartColumn(chartIDs: [configs[0].chartID, configs[2].chartID]),
             ChartColumn(chartIDs: [configs[1].chartID]),
         ]
-        let tab = ChartTab(tickerConfigs: configs, chartColumns: columns, layoutMode: .grid)
+        let tab = ChartTab(tickerConfigs: configs, chartColumns: columns)
 
         let decoded = try JSONDecoder().decode(ChartTab.self, from: JSONEncoder().encode(tab))
 

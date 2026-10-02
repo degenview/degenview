@@ -2,25 +2,6 @@ import AppKit
 import Foundation
 import SwiftUI
 
-enum LayoutMode: String, CaseIterable, Codable {
-    case vertical
-    case grid
-
-    var icon: String {
-        switch self {
-        case .vertical: return "rectangle.stack"
-        case .grid: return "rectangle.grid.1x2"
-        }
-    }
-
-    var next: LayoutMode {
-        switch self {
-        case .vertical: return .grid
-        case .grid: return .vertical
-        }
-    }
-}
-
 /// State for one tab. Every window owns exactly one of these, hydrated from the
 /// `ChartTab` that `TabsStore` holds for its id and written back on every change.
 @MainActor
@@ -65,9 +46,6 @@ final class ContentViewModel: ObservableObject {
         }
     }
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
-    @Published var layoutMode: LayoutMode = .vertical {
-        didSet { markChanged() }
-    }
     @Published var isRefreshing = false
 
     @Published var savedViews: [SavedView] = []
@@ -84,8 +62,8 @@ final class ContentViewModel: ObservableObject {
 
     private var currentViewID: UUID?
     private var isApplyingView = false
-    /// Set while `init` assigns the tab's fields. `layoutMode`'s `didSet` would
-    /// otherwise write the tab back before `chartViewModels` is populated,
+    /// Set while `init` assigns the tab's fields. A `didSet` that reaches `syncTab()`
+    /// would otherwise write the tab back before `chartViewModels` is populated,
     /// erasing the very charts being restored.
     private var isHydrating = true
 
@@ -174,7 +152,6 @@ final class ContentViewModel: ObservableObject {
         selectedTimeRange = tab.timeRange
         // Assigned after the range, whose didSet would otherwise reset it.
         candleCount = tab.candleCount
-        layoutMode = tab.layoutMode
         chartViewModels = tab.tickerConfigs.map { config in
             let vm = ChartViewModel(ticker: config.symbol, source: config.source)
             vm.applyConfig(config)
@@ -1112,13 +1089,6 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
-    /// Reorder tickers via drag-and-drop.
-    func moveTicker(from source: IndexSet, to destination: Int) {
-        chartViewModels.move(fromOffsets: source, toOffset: destination)
-        persistTickers()
-        markChanged()
-    }
-
     /// Charts in a persisted column, in their explicit vertical order.
     func charts(in column: ChartColumn) -> [ChartViewModel] {
         let byID = Dictionary(uniqueKeysWithValues: chartViewModels.map { ($0.chartID, $0) })
@@ -1217,7 +1187,6 @@ final class ContentViewModel: ObservableObject {
             tab.tickerConfigs = configs
             tab.chartColumns = chartColumns
             tab.timeRange = selectedTimeRange
-            tab.layoutMode = layoutMode
             tab.candleCount = candleCount
             tab.replaySession = replay.session
         }
@@ -1243,7 +1212,6 @@ final class ContentViewModel: ObservableObject {
             name: name,
             tickers: chartViewModels.map { $0.ticker },
             timeRange: selectedTimeRange,
-            layoutMode: layoutMode,
             createdAt: Date(),
             tickerConfigs: configs,
             chartColumns: chartColumns,
@@ -1277,7 +1245,6 @@ final class ContentViewModel: ObservableObject {
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
         candleCount = view.candleCount
-        layoutMode = view.layoutMode
 
         let configs = view.tickerConfigs
         chartViewModels = configs.map { config in

@@ -5,7 +5,6 @@ struct SavedView: Identifiable, Codable, Equatable {
     var name: String
     var tickers: [String]
     var timeRange: TimeRange
-    var layoutMode: LayoutMode
     var createdAt: Date
     /// Per-ticker data source configs, in the order of `tickers`.
     var tickerConfigs: [TickerConfig]
