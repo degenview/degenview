@@ -232,6 +232,41 @@ final class ScriptPreviewViewModelTests: XCTestCase {
         XCTAssertEqual(model.candleCount, Candle.maxCandles)
     }
 
+    func testZoomIsRemembered() {
+        let model = makeModel()
+        model.zoom(steps: 2)
+        XCTAssertNotEqual(model.candleCount, TimeRange.oneDay.dataPointLimit)
+
+        XCTAssertEqual(makeModel().candleCount, model.candleCount)
+    }
+
+    func testRememberedZoomIsClampedToLimits() {
+        defaults.set(1_000_000, forKey: ScriptPreviewViewModel.candleCountKey)
+        XCTAssertEqual(makeModel().candleCount, Candle.maxCandles)
+        defaults.set(-5, forKey: ScriptPreviewViewModel.candleCountKey)
+        XCTAssertEqual(makeModel().candleCount, Candle.minCandles)
+    }
+
+    func testChangingTimeframeStoresItsDefaultZoom() {
+        let model = makeModel()
+        model.zoom(steps: 2)
+        model.setTimeRange(.oneWeek)
+
+        XCTAssertEqual(makeModel().candleCount, TimeRange.oneWeek.dataPointLimit)
+    }
+
+    func testRememberedPriceScaleIsRestoredAndClamped() {
+        defaults.set(2.5, forKey: ScriptPreviewViewModel.yZoomKey)
+        XCTAssertEqual(makeModel().chart.yZoom, 2.5)
+
+        defaults.set(1_000.0, forKey: ScriptPreviewViewModel.yZoomKey)
+        XCTAssertEqual(makeModel().chart.yZoom, PriceZoom.maxFactor)
+    }
+
+    func testPriceScaleDefaultsToOne() {
+        XCTAssertEqual(makeModel().chart.yZoom, 1)
+    }
+
     // MARK: - Lifecycle
 
     func testPollsOnlyWhileActive() async {

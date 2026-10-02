@@ -22,7 +22,14 @@ final class ScriptManagerViewModel: ObservableObject {
     @Published var scripts: [LocalScript] = []
     /// False until the first fetch lands, so an empty `scripts` isn't mistaken for "no scripts yet".
     @Published private(set) var hasLoaded = false
-    @Published var selection: UUID?
+    /// Remembered across launches. Writes wait for the first fetch, so the initial nil can't
+    /// overwrite the script restored by it.
+    @Published var selection: UUID? {
+        didSet {
+            guard hasLoaded, selection != oldValue else { return }
+            defaults.set(selection?.uuidString, forKey: Self.selectionKey)
+        }
+    }
     @Published var query = ""
     @Published var errorMessage: String?
     @Published private var collapsedGroups: Set<String> = []
@@ -31,6 +38,13 @@ final class ScriptManagerViewModel: ObservableObject {
     /// enter rename mode.
     @Published var renamingRowID: String?
     private var lastRowClick: (rowID: String, date: Date)?
+
+    static let selectionKey = "scriptManager.selectedScriptID"
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     /// Finder-style "slow double click" rename: a second click on an already-selected
     /// row, spaced out enough that AppKit wouldn't treat it as a real double click.
@@ -185,7 +199,13 @@ final class ScriptManagerViewModel: ObservableObject {
         do {
             scripts = try await ScriptStore.shared.allScripts()
             hasLoaded = true
-            if let id { selection = id }
+            if let id {
+                selection = id
+            } else if selection == nil, let stored = defaults.string(forKey: Self.selectionKey).flatMap(UUID.init),
+                scripts.contains(where: { $0.id == stored })
+            {
+                selection = stored
+            }
             // The file may have been deleted or renamed away outside the app.
             if let current = selection, !scripts.contains(where: { $0.id == current }) { selection = nil }
         } catch { errorMessage = error.localizedDescription }

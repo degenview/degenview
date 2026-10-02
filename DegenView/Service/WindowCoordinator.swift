@@ -28,6 +28,11 @@ final class WindowCoordinator {
     private var pendingPortfolioAssets: [UUID: PortfolioAsset] = [:]
     private weak var pendingAuxiliaryAnchor: NSWindow?
 
+    /// The Script Manager's window while it is open. Not `isVisible`: an unselected tab in a
+    /// group reports false, so closing is tracked from `willClose` instead.
+    private weak var scriptManagerWindow: NSWindow?
+    private var scriptManagerCloseObserver: NSObjectProtocol?
+
     /// Whether the launch window has already claimed the persisted session.
     /// Everything opened afterwards without a tab id — the tab bar's `+`,
     /// File ▸ New Window — is a *new* tab, not a second view onto an old one.
@@ -80,6 +85,7 @@ final class WindowCoordinator {
         window.tabbingMode = .preferred
         window.isRestorable = false
         WindowTabDecorator.decorate(window, with: .scriptManager)
+        trackScriptManager(window)
         let anchor =
             pendingAuxiliaryAnchor
             ?? NSApp.windows.first(where: { tabID(for: $0) != nil && $0 !== window })
@@ -90,6 +96,21 @@ final class WindowCoordinator {
         }
         ensureTabBarVisible(window)
         WindowTabDecorator.refresh(window)
+    }
+
+    private func trackScriptManager(_ window: NSWindow) {
+        guard scriptManagerWindow !== window else { return }
+        scriptManagerWindow = window
+        scriptManagerCloseObserver.map(NotificationCenter.default.removeObserver)
+        scriptManagerCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            // Quitting closes every window; that must not read as the user closing the manager.
+            Task { @MainActor [weak self] in
+                guard let self, !isTerminating else { return }
+                scriptManagerWindow = nil
+            }
+        }
     }
 
     func register(_ window: NSWindow, for tabID: UUID) {
@@ -356,8 +377,14 @@ final class WindowCoordinator {
             await awaitRegistration(of: id)
         }
 
+        let managerWasSelected = await restoreScriptManager(fallbackAnchor: adopted, using: openWindow)
+
         // The adopted window ends up behind the ones opened after it.
-        window(for: adopted)?.makeKeyAndOrderFront(nil)
+        if managerWasSelected, let manager = scriptManagerWindow {
+            manager.makeKeyAndOrderFront(nil)
+        } else {
+            window(for: adopted)?.makeKeyAndOrderFront(nil)
+        }
     }
 
     /// The next tab may need to anchor on this one, so it has to exist first.
@@ -407,7 +434,38 @@ final class WindowCoordinator {
     func applicationWillTerminate() {
         isTerminating = true
         captureGrouping()
+        captureScriptManager()
         TabsStore.shared.persist()
+    }
+
+    /// The manager isn't a persisted tab, so what `captureGrouping()` records for chart tabs
+    /// is recorded here on its own.
+    private func captureScriptManager() {
+        guard let window = scriptManagerWindow else {
+            ScriptManagerSession(isOpen: false, anchorTabID: nil, wasSelected: false).save()
+            return
+        }
+        let group = window.tabGroup
+        ScriptManagerSession(
+            isOpen: true,
+            anchorTabID: group?.windows.lazy.compactMap { self.tabID(for: $0) }.first,
+            wasSelected: group.map { $0.selectedWindow === window } ?? window.isKeyWindow
+        ).save()
+    }
+
+    /// Put the manager back where it was, once the chart tabs it anchors on exist.
+    private func restoreScriptManager(fallbackAnchor: UUID, using openWindow: OpenWindowAction) async -> Bool {
+        // Already open: a cold launch from a `.pine` file got there first.
+        guard let session = ScriptManagerSession.load(), session.isOpen, scriptManagerWindow == nil else {
+            return false
+        }
+        pendingAuxiliaryAnchor = session.anchorTabID.flatMap { window(for: $0) } ?? window(for: fallbackAnchor)
+        openWindow(id: "script-manager")
+        for _ in 0..<40 {  // ~2 s ceiling
+            if scriptManagerWindow != nil { break }
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return session.wasSelected
     }
 }
 

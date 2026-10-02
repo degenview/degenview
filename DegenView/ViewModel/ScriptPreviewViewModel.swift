@@ -47,6 +47,8 @@ final class ScriptPreviewViewModel: ObservableObject {
     static let marketKey = "scriptPreview.market"
     static let recentsKey = "scriptPreview.recents"
     static let timeRangeKey = "scriptPreview.timeRange"
+    static let candleCountKey = "scriptPreview.candleCount"
+    static let yZoomKey = "scriptPreview.yZoom"
     static let recentsLimit = 5
 
     init(
@@ -69,14 +71,23 @@ final class ScriptPreviewViewModel: ObservableObject {
         let range = defaults.string(forKey: Self.timeRangeKey).flatMap(TimeRange.init(rawValue:)) ?? .oneDay
         self.market = market
         self.timeRange = range
-        self.candleCount = range.dataPointLimit
+        self.candleCount =
+            (defaults.object(forKey: Self.candleCountKey) as? Int)?
+            .clamped(to: Candle.minCandles...Candle.maxCandles) ?? range.dataPointLimit
         self.recents =
             (Self.load([PreviewMarket].self, key: Self.recentsKey, from: defaults) ?? [])
             .filter { PreviewMarket.isSupported($0.source) }
         self.chart = chart ?? ChartViewModel(ticker: market.ticker, source: market.source)
         self.chart.setVisibleCount(candleCount)
+        if let yZoom = defaults.object(forKey: Self.yZoomKey) as? Double, yZoom.isFinite {
+            self.chart.yZoom = yZoom.clamped(to: PriceZoom.minFactor...PriceZoom.maxFactor)
+        }
 
         scrollZoom.onScroll = { [weak self] steps in self?.zoom(steps: steps) }
+        axisDrag.onChangeEnded = { [weak self] in
+            guard let self else { return }
+            defaults.set(self.chart.yZoom, forKey: Self.yZoomKey)
+        }
     }
 
     // MARK: - Script
@@ -227,6 +238,7 @@ final class ScriptPreviewViewModel: ObservableObject {
         candleCount = range.dataPointLimit
         chart.setVisibleCount(candleCount)
         defaults.set(range.rawValue, forKey: Self.timeRangeKey)
+        defaults.set(candleCount, forKey: Self.candleCountKey)
         reload()
     }
 
@@ -242,6 +254,7 @@ final class ScriptPreviewViewModel: ObservableObject {
         let newCount = (candleCount - steps * zoomStep).clamped(to: Candle.minCandles...Candle.maxCandles)
         guard newCount != candleCount else { return }
         candleCount = newCount
+        defaults.set(newCount, forKey: Self.candleCountKey)
         // Redraw from the buffer straight away; the refetch only tops it back up.
         chart.setVisibleCount(newCount)
         zoomTask?.cancel()
