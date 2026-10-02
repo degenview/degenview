@@ -13,11 +13,24 @@ import Foundation
 struct PineStructureValidator {
     private var diagnostics: [PineDiagnostic] = []
 
-    static func validate(_ statements: [PineStatement]) -> [PineDiagnostic] {
+    /// What picks one definition of a method: the type of its first (receiver) parameter.
+    private struct ReceiverSignature: Hashable {
+        var type: PineValueType?
+        var typeName: String?
+    }
+
+    /// Names declared with `method`: unlike functions, they may be defined again for another receiver type.
+    private var methods: Set<String> = []
+    private var methodReceivers: [String: Set<ReceiverSignature>] = [:]
+
+    static func validate(_ statements: [PineStatement], methods: Set<String> = []) -> [PineDiagnostic] {
         var validator = PineStructureValidator()
+        validator.methods = methods
         validator.validate(statements, inherited: [], inLoop: false)
         PineStatement.forEachCall(in: statements) { name, range in
-            guard name.hasPrefix("request."), name != "request.security" else { return }
+            guard name.hasPrefix("request."), name != "request.security",
+                name != "request.security_lower_tf"
+            else { return }
             validator.report(
                 "PINE9003", .unsupported, "Feature '\(name)' is not supported in this release.", range)
         }
@@ -47,9 +60,16 @@ struct PineStructureValidator {
                         "PINE3023", .semantic, "break and continue are only allowed inside a loop.", range)
                 }
             case .function(let name, let parameters, let body, let range):
+                let receiver = ReceiverSignature(
+                    type: parameters.first?.type, typeName: parameters.first?.typeName)
                 if declared.contains(name) {
-                    report("PINE3024", .semantic, "Function '\(name)' is already declared.", range)
+                    // A method may be defined again for a different receiver type, not for the same one.
+                    let overload = methods.contains(name) && methodReceivers[name]?.contains(receiver) == false
+                    if !overload {
+                        report("PINE3024", .semantic, "Function '\(name)' is already declared.", range)
+                    }
                 }
+                if methods.contains(name) { methodReceivers[name, default: []].insert(receiver) }
                 declared.insert(name)
                 // Function bodies are their own scope: locals may reuse global names, and
                 // globals cannot be reassigned from inside a function.

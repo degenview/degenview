@@ -569,7 +569,7 @@ final class ChartViewModel: ObservableObject {
 
     @discardableResult func applyPineDraft() -> Bool {
         guard var config = pineConfiguration else { return false }
-        let compiled = PineCompiler.compile(source: config.draftSource)
+        let compiled = PineCompiler.compile(source: config.draftSource, libraries: PineLibraryRegistry.shared)
         pineDiagnostics = compiled.diagnostics
         guard compiled.isValid else {
             pineStatus = "Compile failed — last valid output remains active"
@@ -654,6 +654,8 @@ final class ChartViewModel: ObservableObject {
         let symbol = PineSymbolInfo(
             ticker: ticker, tickerID: dataset.symbolKey,
             type: self.source == .alpaca ? "stock" : self.source.isPredictionMarket ? "prediction" : "crypto")
+        let securityChart = PineSecurityTarget.Chart(
+            tickerID: dataset.symbolKey, source: self.source, apiSymbol: apiSymbol)
         let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
         pineFeed = feed
         pineDataset = dataset
@@ -665,15 +667,19 @@ final class ChartViewModel: ObservableObject {
                 var outcome: PineExecutionOutcome
                 switch operation {
                 case .rebuild:
-                    let program = compiled ?? PineCompiler.compile(source: source)
+                    let program = compiled ?? PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
                     compiled = program
                     guard program.isValid else {
                         await self?.applyPine(program: program, outcome: nil, generation: generation)
                         host = nil
                         continue
                     }
+                    let securityData = await PineSecurityFeed.prepare(
+                        program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
+                        bars: bars)
                     let fresh = PineExecutionHost(
-                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol)
+                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
+                        securityData: securityData)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):

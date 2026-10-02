@@ -52,19 +52,27 @@ extension PineRuntimeSession {
         try argument(call, 0, nil, &context).number.map(PineRuntimeValue.float) ?? .na
     }
 
-    /// `time(timeframe)`: the open time of the `timeframe` bar that contains the current bar, so
-    /// `ta.change(time("D"))` marks a new day. Sessions and time zones are not modelled: the argument
-    /// after the timeframe is ignored. Without a usable timeframe it is the bar's own `time`.
+    /// `time(timeframe, session, timezone)`: the open time of the `timeframe` bar that contains the current
+    /// bar, so `ta.change(time("D"))` marks a new day. With a `session` it is `na` unless that bar opens
+    /// inside the session, read in `timezone` (UTC when omitted). Without a usable timeframe it is the
+    /// bar's own `time`.
     func timeCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        let open = PineTime.milliseconds(context.bar.openTime)
-        guard case .string(let text) = try argument(call, 0, "timeframe", &context), !text.isEmpty else {
-            return .int(open)
+        let b = try bind(call, ["timeframe", "session", "timezone"], &context)
+        var start = context.bar.openTime
+        if case .string(let text)? = b["timeframe"], !text.isEmpty {
+            guard let seconds = PineTime.seconds(ofTimeframe: text) else {
+                throw PineDiagnostic.error(
+                    "PINE4021", .runtime, "time() needs a timeframe such as \"60\" or \"1D\".", call.range)
+            }
+            // The chart's own timeframe keeps the bar's real open, whatever the epoch alignment.
+            if seconds != barSeconds { start = KlineData.bucketStart(of: start, interval: seconds) }
         }
-        guard let seconds = PineTime.seconds(ofTimeframe: text) else {
-            throw PineDiagnostic.error(
-                "PINE4021", .runtime, "time() needs a timeframe such as \"60\" or \"1D\".", call.range)
+        if case .string(let text)? = b["session"], !text.isEmpty {
+            guard let session = PineSession(text) else { return .na }
+            let zone = PineTime.timeZone(named: b["timezone"].textValue)
+            let stamp = PineTime.milliseconds(start)
+            guard session.contains(PineTime.components(milliseconds: stamp, zone: zone)) else { return .na }
         }
-        let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
         return .int(PineTime.milliseconds(start))
     }
 
@@ -79,6 +87,27 @@ extension PineRuntimeSession {
         }
         let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
         return .int(PineTime.milliseconds(KlineData.bucketEnd(after: start, interval: seconds)))
+    }
+
+    /// `runtime.error(message)`: stops the script with the message the script chose.
+    func runtimeErrorCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let message = try argument(call, 0, "message", &context).textValue ?? "runtime.error()"
+        throw PineDiagnostic.error("PINE4030", .runtime, message, call.range)
+    }
+
+    /// `ticker.*` build a symbol id. Only the chart's own symbol can be served, so `standard`, `modify` and
+    /// `inherit` hand back the symbol they were given (`inherit` the one it takes over), and `new` joins
+    /// `prefix:symbol`.
+    func tickerCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let values = try allArguments(call, &context)
+        switch call.name {
+        case "ticker.new":
+            guard case .string(let prefix)? = values.first, case .string(let name)? = values.dropFirst().first
+            else { return .na }
+            return .string(prefix.isEmpty ? name : "\(prefix):\(name)")
+        case "ticker.inherit": return values.dropFirst().first ?? .na
+        default: return values.first ?? .na
+        }
     }
 
     /// `max_bars_back(series, n)`: a hint about how much history to keep. The runtime keeps all of it.
@@ -156,10 +185,24 @@ extension PineRuntimeSession {
     // MARK: - math, str
 
     func mathCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        PineMath.call(call.name, try allArguments(call, &context), mintick: mintick)
+        if call.name == "math.sum" {
+            // The sliding sum of the last `length` values: a series function with a history per call site.
+            let source = try argument(call, 0, "source", &context)
+            let length = try argument(call, 1, "length", &context).intValue ?? 0
+            return evaluateTA("math.sum", source: source, length: length, site: siteKey(call.site, context))
+        }
+        return PineMath.call(call.name, try allArguments(call, &context), mintick: mintick)
     }
 
     func stringCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        if call.name == "str.format_time" {
+            let b = try bind(call, ["time", "format", "timezone"], &context)
+            guard let milliseconds = b["time"].intValue else { return .na }
+            return .string(
+                PineTime.formatted(
+                    milliseconds: milliseconds, format: b["format"].textValue,
+                    zone: b["timezone"].textValue))
+        }
         if call.name == "str.split" {
             let values = try allArguments(call, &context)
             guard case .string(let text)? = values.first, case .string(let separator)? = values.dropFirst().first
@@ -240,10 +283,13 @@ extension PineRuntimeSession {
     }
 
     func timePartCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let b = try bind(call, ["time", "timezone"], &context)
+        let zone = b["timezone"].textValue.map { PineTime.timeZone(named: $0) }
         if call.arguments.isEmpty {
-            return PineTime.part(call.name, milliseconds: PineTime.milliseconds(context.bar.openTime))
+            return PineTime.part(
+                call.name, milliseconds: PineTime.milliseconds(context.bar.openTime), zone: zone)
         }
-        guard let stamp = try argument(call, 0, nil, &context).intValue else { return .na }
-        return PineTime.part(call.name, milliseconds: stamp)
+        guard let stamp = b["time"].intValue else { return .na }
+        return PineTime.part(call.name, milliseconds: stamp, zone: zone)
     }
 }

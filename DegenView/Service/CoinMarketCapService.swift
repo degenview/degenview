@@ -17,6 +17,7 @@ enum CoinMarketCapCredentialStore {
         lock.lock()
         defer { lock.unlock() }
         if loaded { return cached }
+        if KeychainPolicy.isDisabled { return nil }
         loaded = true
         var item: CFTypeRef?
         let query: [String: Any] = [
@@ -40,6 +41,7 @@ enum CoinMarketCapCredentialStore {
         lock.lock()
         defer { lock.unlock() }
         if loaded { return cached != nil }
+        if KeychainPolicy.isDisabled { return false }
         if let exists { return exists }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -66,14 +68,16 @@ enum CoinMarketCapCredentialStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account,
         ]
-        let status = SecItemUpdate(identity as CFDictionary, [kSecValueData as String: data] as CFDictionary)
-        if status == errSecItemNotFound {
-            var item = identity
-            item[kSecValueData as String] = data
-            let add = SecItemAdd(item as CFDictionary, nil)
-            guard add == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(add)) }
-        } else if status != errSecSuccess {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        if !KeychainPolicy.isDisabled {
+            let status = SecItemUpdate(identity as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if status == errSecItemNotFound {
+                var item = identity
+                item[kSecValueData as String] = data
+                let add = SecItemAdd(item as CFDictionary, nil)
+                guard add == errSecSuccess else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(add)) }
+            } else if status != errSecSuccess {
+                throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+            }
         }
         lock.lock()
         cached = value
@@ -87,9 +91,11 @@ enum CoinMarketCapCredentialStore {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account,
         ]
-        let status = SecItemDelete(query as CFDictionary)
-        guard status == errSecSuccess || status == errSecItemNotFound else {
-            throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+        if !KeychainPolicy.isDisabled {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw NSError(domain: NSOSStatusErrorDomain, code: Int(status))
+            }
         }
         lock.lock()
         cached = nil

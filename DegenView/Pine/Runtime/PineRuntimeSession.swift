@@ -12,6 +12,8 @@ final class PineRuntimeSession {
     let theme: PineChartTheme
     let symbol: PineSymbolInfo
     let functions: [String: PineRuntimeFunction]
+    /// Every definition of each `method`, in source order: a name may be defined for several receiver types.
+    let methods: [String: [PineRuntimeFunction]]
     /// Fields of each script-defined `type`, by type name.
     let types: [String: [PineTypeField]]
     /// Members of each script-defined `enum`, by enum name.
@@ -19,6 +21,16 @@ final class PineRuntimeSession {
     /// Variable each top-level `input.*` call site initialises, so input overrides stay keyed
     /// by name even when titles change.
     let inputVariables: [Int: String]
+    /// The imported libraries' functions, types, enums and constants, flattened out of the import graph.
+    let linkage: PineLibraryLinkage
+    /// Where `request.security` finds series the chart does not carry. Nil: only the chart's own symbol.
+    let securityData: PineSecurityDataProvider?
+    /// What the provider answered per series, so it is asked once per run rather than once per bar.
+    var securitySeries: [PineSecurityKey: [KlineData]?] = [:]
+    /// Library constants already evaluated, by `"<path>::<name>"`. Only plain values: a constant that builds a
+    /// collection is rebuilt on each read so it never aliases state across bars.
+    var libraryConstants: [String: PineRuntimeValue] = [:]
+    var constantsInProgress: Set<String> = []
     var committed = PineRuntimeState()
     var working = PineRuntimeState()
     /// `varip` values, which survive the rollback between realtime ticks of one bar.
@@ -55,8 +67,9 @@ final class PineRuntimeSession {
     init(
         program: PineCompiledProgram, inputs: [String: PineInputValue] = [:],
         limits: PineLimits = .default, mintick: Double? = nil, theme: PineChartTheme = .dark,
-        symbol: PineSymbolInfo = PineSymbolInfo()
+        symbol: PineSymbolInfo = PineSymbolInfo(), securityData: PineSecurityDataProvider? = nil
     ) {
+        self.securityData = securityData
         self.program = program
         self.symbol = symbol
         self.inputs = inputs
@@ -66,9 +79,11 @@ final class PineRuntimeSession {
         self.suppliedMintick = usableMintick
         self.mintick = usableMintick ?? Self.defaultMintick
         var functions: [String: PineRuntimeFunction] = [:]
+        var methods: [String: [PineRuntimeFunction]] = [:]
         var inputVariables: [Int: String] = [:]
         var types: [String: [PineTypeField]] = [:]
         var enums: [String: [PineEnumMember]] = [:]
+        let linkage = PineLibraryLinkage(program)
         for statement in program.statements {
             switch statement {
             case .typeDeclaration(let name, let fields, _):
@@ -76,15 +91,20 @@ final class PineRuntimeSession {
             case .enumDeclaration(let name, let members, _):
                 enums[name] = members
             case .function(let name, let parameters, let body, _):
-                functions[name] = .init(parameters: parameters, body: body)
+                let function = PineRuntimeFunction(
+                    parameters: parameters.map { linkage.canonical($0, scope: "") }, body: body)
+                functions[name] = function
+                if program.methodNames.contains(name) { methods[name, default: []].append(function) }
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
                 inputVariables[site] = name
             default: break
             }
         }
-        self.functions = functions
-        self.types = types
-        self.enums = enums
+        self.linkage = linkage
+        self.functions = functions.merging(linkage.functions) { script, _ in script }
+        self.methods = methods.merging(linkage.methods) { script, library in script + library }
+        self.types = types.merging(linkage.types) { script, _ in script }
+        self.enums = enums.merging(linkage.enums) { script, _ in script }
         self.inputVariables = inputVariables
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue
@@ -248,6 +268,7 @@ final class PineRuntimeSession {
             linefills: working.linefills.values.filter {
                 working.lines[$0.line1] != nil && working.lines[$0.line2] != nil
             }.sorted { $0.id < $1.id },
+            polylines: working.polylines.values.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
             strategy: isStrategy ? working.broker.report() : nil)

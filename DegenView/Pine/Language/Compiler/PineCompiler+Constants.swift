@@ -25,7 +25,9 @@ extension PineCompiler {
         case .identifier(let name, _):
             if let value = environment[name] { return value }
             if let value = PineBuiltins.constants[name] { return value }
-            return PineBuiltins.colors[name].map(PineRuntimeValue.color)
+            if let color = PineBuiltins.colors[name] { return .color(color) }
+            // `size.small`, `shape.circle`: a named constant is the string of its own name.
+            return PineSymbolCatalog.constants.contains(name) ? .string(name) : nil
         case .unary(.negate, let inner, _):
             switch constantValue(inner, environment) {
             case .int(let x)?: return .int(0 &- x)
@@ -41,7 +43,7 @@ extension PineCompiler {
         case .call("timestamp", let arguments, _, _):
             return constantTimestamp(arguments, environment)
         case .call("color.new", _, _, _), .call("color.rgb", _, _, _):
-            return constantColor(e).map(PineRuntimeValue.color)
+            return constantColor(e, environment).map(PineRuntimeValue.color)
         default: return nil
         }
     }
@@ -58,29 +60,34 @@ extension PineCompiler {
         return PineTimestamp.evaluate(positional: positional, named: named).map(PineRuntimeValue.int)
     }
 
-    /// Folds compile-time color expressions: literals, `color.*` constants, and
-    /// `color.new`/`color.rgb` with constant arguments.
-    static func constantColor(_ e: PineExpression) -> UInt32? {
+    /// Folds compile-time color expressions: literals, `color.*` constants, earlier constants, and
+    /// `color.new`/`color.rgb` with constant arguments (`color.new(BASE, 88)`).
+    static func constantColor(_ e: PineExpression, _ environment: [String: PineRuntimeValue]) -> UInt32? {
         switch e {
         case .literal(.color(let rgba), _): return rgba
-        case .identifier(let name, _): return PineBuiltins.colors[name]
+        case .identifier:
+            if case .color(let rgba)? = constantValue(e, environment) { return rgba }
+            return nil
         case .call("color.new", let arguments, _, _):
-            guard arguments.count >= 2, let base = constantColor(arguments[0].value),
-                let transparency = constantNumber(arguments[1].value)
+            guard arguments.count >= 2, let base = constantColor(arguments[0].value, environment),
+                let transparency = constantNumber(arguments[1].value, environment)
             else { return nil }
             return PineBuiltins.withTransparency(base, transparency)
         case .call("color.rgb", let arguments, _, _):
-            let numbers = arguments.compactMap { constantNumber($0.value) }
+            let numbers = arguments.compactMap { constantNumber($0.value, environment) }
             guard numbers.count == arguments.count, numbers.count >= 3 else { return nil }
             return PineBuiltins.rgb(numbers[0], numbers[1], numbers[2], numbers.count > 3 ? numbers[3] : 0)
         default: return nil
         }
     }
 
-    private static func constantNumber(_ e: PineExpression) -> Double? {
+    private static func constantNumber(
+        _ e: PineExpression, _ environment: [String: PineRuntimeValue]
+    ) -> Double? {
         switch e {
         case .literal(let value, _): return value.number
-        case .unary(.negate, let inner, _): return constantNumber(inner).map { -$0 }
+        case .identifier: return constantValue(e, environment)?.number
+        case .unary(.negate, let inner, _): return constantNumber(inner, environment).map { -$0 }
         default: return nil
         }
     }

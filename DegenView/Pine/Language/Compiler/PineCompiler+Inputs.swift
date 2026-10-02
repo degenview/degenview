@@ -45,7 +45,7 @@ extension PineCompiler {
         let enums = enums ?? enumDeclarations(in: statements)
         for statement in statements {
             if case .declaration(let variable, _, _, .call(let name, let args, _, let range), _) = statement,
-                name.hasPrefix("input.")
+                name.hasPrefix("input.") || name == "input"
             {
                 if name == "input.enum" {
                     if let input = enumInput(variable, args, enums, environment) {
@@ -68,7 +68,7 @@ extension PineCompiler {
                 let lookup = InputArguments(arguments: args, environment: environment)
                 schema.inputs.append(
                     .init(
-                        id: variable, type: PineBuiltins.inputType(function: name),
+                        id: variable, type: PineBuiltins.inputType(function: name, default: defaultValue),
                         defaultValue: defaultValue, title: lookup.title,
                         tooltip: lookup.string("tooltip"), group: lookup.string("group"),
                         inline: lookup.string("inline"), confirm: lookup.boolean("confirm"),
@@ -135,14 +135,11 @@ extension PineCompiler {
     private static func inputValue(
         _ e: PineExpression, function: String, _ environment: [String: PineRuntimeValue]
     ) -> PineInputValue? {
-        if function == "input.source", case .identifier(let name, _) = e {
-            return .source(name)
-        }
-        // A named constant such as `size.small` is the string of its own name at runtime.
-        if case .identifier(let name, _) = e, constantValue(e, environment) == nil,
-            PineSymbolCatalog.constants.contains(name)
-        {
-            return .string(name)
+        if case .identifier(let name, _) = e {
+            // `input.source(close)`, and the legacy `input(close)`, whose default decides its kind.
+            if function == "input.source" || (function == "input" && PineBuiltinTypes.floatSeries.contains(name)) {
+                return .source(name)
+            }
         }
         switch constantValue(e, environment) {
         case .int(let x)?: return .int(x)

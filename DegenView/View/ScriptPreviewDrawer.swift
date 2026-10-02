@@ -159,9 +159,9 @@ struct ScriptPreviewDrawerBar: View {
                 if candidate == .problems, problemCount > 0 {
                     Text("\(problemCount)")
                         .font(.caption2.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(.white)
+                        .foregroundStyle(hasErrors ? .white : .black)
                         .padding(.horizontal, 5)
-                        .background(hasErrors ? Color.red : Color.orange, in: Capsule())
+                        .background((hasErrors ? PineDiagnosticSeverity.error : .warning).color, in: Capsule())
                 }
             }
             .font(.caption.weight(selected ? .semibold : .regular))

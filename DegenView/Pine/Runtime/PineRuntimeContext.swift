@@ -43,6 +43,12 @@ struct PineRuntimeContext {
     /// called in the body keep separate histories per call site.
     var sitePrefix = 0
     var depth = 0
+    /// The library whose code is running (its `user/name/version` key); nil for the script itself. Names resolve
+    /// against that library's own functions, types, enums and constants first.
+    var scope: String?
+    /// Inside a library function: the names that are variables there (parameters and what the body declares).
+    /// Anything else is the library's own constant or a builtin, never one of the importing script's variables.
+    var locals: Set<String>?
 
     init(bar: KlineData, flags: PineBarFlags) {
         self.bar = bar

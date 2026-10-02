@@ -20,7 +20,7 @@ extension PineRuntimeSession {
     }
 
     /// Stores a new object, drops the oldest beyond the script's limit, and returns its handle.
-    private func store<T>(
+    func store<T>(
         _ objects: WritableKeyPath<PineRuntimeState, [Int: T]>, kind: PineRefKind, limit: Int?,
         _ make: (Int) -> T
     ) -> PineRuntimeValue {
@@ -74,14 +74,27 @@ extension PineRuntimeSession {
     // MARK: - Creation
 
     private func newLine(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        let b = try bind(
-            call, ["x1", "y1", "x2", "y2", "xloc", "extend", "color", "style", "width"], &context)
+        let (b, isPoint) = try bindOverload(
+            call, plain: ["x1", "y1", "x2", "y2", "xloc", "extend", "color", "style", "width"],
+            point: ["first_point", "second_point", "xloc", "extend", "color", "style", "width"], &context)
         let timed = isTimeAnchored(b)
-        guard let rawX1 = b["x1"].intValue, let y1 = b["y1"]?.number, let rawX2 = b["x2"].intValue,
-            let y2 = b["y2"]?.number
-        else { return .na }
-        let x1 = timed ? barIndex(forTime: rawX1, at: context.bar) : rawX1
-        let x2 = timed ? barIndex(forTime: rawX2, at: context.bar) : rawX2
+        let x1: Int
+        let y1: Double
+        let x2: Int
+        let y2: Double
+        if isPoint {
+            guard let first = pointCoordinates(b["first_point"], anchoredToTime: timed, at: context.bar),
+                let second = pointCoordinates(b["second_point"], anchoredToTime: timed, at: context.bar)
+            else { return .na }
+            (x1, y1, x2, y2) = (first.index, first.price, second.index, second.price)
+        } else {
+            x1 = b["x1"].intValue.map { timed ? barIndex(forTime: $0, at: context.bar) : $0 }
+                ?? PineDrawingCoordinate.missingIndex
+            x2 = b["x2"].intValue.map { timed ? barIndex(forTime: $0, at: context.bar) : $0 }
+                ?? PineDrawingCoordinate.missingIndex
+            y1 = b["y1"]?.number ?? .nan
+            y2 = b["y2"]?.number ?? .nan
+        }
         return store(\.lines, kind: .line, limit: program.declaration.maxLinesCount) { id in
             PineLineOutput(
                 id: id, x1: x1, y1: y1, x2: x2, y2: y2,
@@ -92,15 +105,22 @@ extension PineRuntimeSession {
     }
 
     private func newLabel(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        let b = try bind(
-            call,
-            [
-                "x", "y", "text", "xloc", "yloc", "color", "style", "textcolor", "size", "textalign",
-                "tooltip",
-            ], &context)
+        let tail = ["xloc", "yloc", "color", "style", "textcolor", "size", "textalign", "tooltip"]
+        let (b, isPoint) = try bindOverload(
+            call, plain: ["x", "y", "text"] + tail, point: ["point", "text"] + tail, &context)
         let timed = isTimeAnchored(b)
-        guard let rawX = b["x"].intValue, let y = b["y"]?.number else { return .na }
-        let x = timed ? barIndex(forTime: rawX, at: context.bar) : rawX
+        let x: Int
+        let y: Double
+        if isPoint {
+            guard let point = pointCoordinates(b["point"], anchoredToTime: timed, at: context.bar) else {
+                return .na
+            }
+            (x, y) = (point.index, point.price)
+        } else {
+            x = b["x"].intValue.map { timed ? barIndex(forTime: $0, at: context.bar) : $0 }
+                ?? PineDrawingCoordinate.missingIndex
+            y = b["y"]?.number ?? .nan
+        }
         return store(\.labels, kind: .label, limit: program.declaration.maxLabelsCount) { id in
             PineLabelOutput(
                 id: id, x: x, y: y, text: b["text"].textValue ?? "",
@@ -108,30 +128,48 @@ extension PineRuntimeSession {
                 textColor: b["textcolor"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 style: .parse(b["style"].textValue, absent: .labelDown, unknown: .labelCenter),
                 size: .parse(b["size"].textValue, absent: .normal), tooltip: b["tooltip"].textValue,
-                timeAnchored: timed)
+                textAlign: .parse(b["textalign"].textValue, absent: .center), timeAnchored: timed)
         }
     }
 
     private func newBox(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        let b = try bind(
-            call,
-            [
-                "left", "top", "right", "bottom", "border_color", "border_width", "border_style",
-                "extend", "xloc", "bgcolor",
-            ], &context)
+        let tail = [
+            "border_color", "border_width", "border_style", "extend", "xloc", "bgcolor", "text", "text_size",
+            "text_color", "text_halign", "text_valign",
+        ]
+        let (b, isPoint) = try bindOverload(
+            call, plain: ["left", "top", "right", "bottom"] + tail, point: ["top_left", "bottom_right"] + tail,
+            &context)
         let timed = isTimeAnchored(b)
-        guard let rawLeft = b["left"].intValue, let top = b["top"]?.number,
-            let rawRight = b["right"].intValue, let bottom = b["bottom"]?.number
-        else { return .na }
-        let left = timed ? barIndex(forTime: rawLeft, at: context.bar) : rawLeft
-        let right = timed ? barIndex(forTime: rawRight, at: context.bar) : rawRight
+        let left: Int
+        let top: Double
+        let right: Int
+        let bottom: Double
+        if isPoint {
+            guard let first = pointCoordinates(b["top_left"], anchoredToTime: timed, at: context.bar),
+                let second = pointCoordinates(b["bottom_right"], anchoredToTime: timed, at: context.bar)
+            else { return .na }
+            (left, top, right, bottom) = (first.index, first.price, second.index, second.price)
+        } else {
+            left = b["left"].intValue.map { timed ? barIndex(forTime: $0, at: context.bar) : $0 }
+                ?? PineDrawingCoordinate.missingIndex
+            right = b["right"].intValue.map { timed ? barIndex(forTime: $0, at: context.bar) : $0 }
+                ?? PineDrawingCoordinate.missingIndex
+            top = b["top"]?.number ?? .nan
+            bottom = b["bottom"]?.number ?? .nan
+        }
         return store(\.boxes, kind: .box, limit: program.declaration.maxBoxesCount) { id in
             PineBoxOutput(
                 id: id, left: left, top: top, right: right, bottom: bottom,
                 borderColor: b["border_color"].colorValue(fallback: Self.defaultColor),
                 borderWidth: b["border_width"].intValue ?? 1,
                 backgroundColor: b["bgcolor"].colorValue(fallback: Self.defaultColor),
-                timeAnchored: timed)
+                borderStyle: .parse(b["border_style"].textValue, absent: .solid),
+                text: b["text"].textValue ?? "",
+                textColor: b["text_color"].colorValue(fallback: Self.opaqueBlack) ?? 0,
+                textSize: .parse(b["text_size"].textValue, absent: .normal),
+                textHorizontalAlign: .parse(b["text_halign"].textValue, absent: .center),
+                textVerticalAlign: .parse(b["text_valign"].textValue, absent: .center), timeAnchored: timed)
         }
     }
 
@@ -271,16 +309,35 @@ extension PineRuntimeSession {
         switch call.name.split(separator: ".").first.map(String.init) {
         case "line":
             return try withObject(\.lines, .line, target, member) { line in
+                if let (alias, point) = pointSetter(
+                    member, ["set_first_point": "set_xy1", "set_second_point": "set_xy2"])
+                {
+                    return try setPoint(alias, a, anchoredToTime: line.timeAnchored, context) { x, y in
+                        try Self.mutate(&line, point, x, y, call)
+                    }
+                }
                 let x = xIndex(a, anchoredToTime: line.timeAnchored, context)
                 return try Self.mutate(&line, member, x, b, call)
             }
         case "label":
             return try withObject(\.labels, .label, target, member) { label in
+                if member == "set_point" {
+                    return try setPoint(member, a, anchoredToTime: label.timeAnchored, context) { x, y in
+                        try Self.mutate(&label, "set_xy", x, y, call)
+                    }
+                }
                 let x = xIndex(a, anchoredToTime: label.timeAnchored, context)
                 return try Self.mutate(&label, member, x, b, call)
             }
         case "box":
             return try withObject(\.boxes, .box, target, member) { box in
+                if let (alias, point) = pointSetter(
+                    member, ["set_top_left_point": "set_lefttop", "set_bottom_right_point": "set_rightbottom"])
+                {
+                    return try setPoint(alias, a, anchoredToTime: box.timeAnchored, context) { x, y in
+                        try Self.mutate(&box, point, x, y, call)
+                    }
+                }
                 let x = xIndex(a, anchoredToTime: box.timeAnchored, context)
                 return try Self.mutate(&box, member, x, b, call)
             }
@@ -292,6 +349,22 @@ extension PineRuntimeSession {
             }
         default: throw call.unknownFunction
         }
+    }
+
+    /// `(member, coordinate setter)` when `member` is one of the point setters in `table`.
+    private func pointSetter(_ member: String, _ table: [String: String]) -> (String, String)? {
+        table[member].map { (member, $0) }
+    }
+
+    /// Runs a coordinate setter with the bar index and price of the `chart.point` in `value`.
+    private func setPoint(
+        _ member: String, _ value: PineRuntimeValue, anchoredToTime: Bool, _ context: PineRuntimeContext,
+        _ apply: (PineRuntimeValue, PineRuntimeValue) throws -> PineRuntimeValue
+    ) throws -> PineRuntimeValue {
+        guard let point = pointCoordinates(value, anchoredToTime: anchoredToTime, at: context.bar) else {
+            return .void
+        }
+        return try apply(.int(point.index), .float(point.price))
     }
 
     /// Looks the handle up, handles `delete`, runs `body` on a copy and writes it back.
@@ -309,6 +382,15 @@ extension PineRuntimeSession {
         let result = try body(&object)
         working[keyPath: objects][id] = object
         return result
+    }
+
+    /// A coordinate getter's result: `na` for one the drawing was made without.
+    private static func known(_ index: Int) -> PineRuntimeValue {
+        PineDrawingCoordinate.isKnown(index) ? .int(index) : .na
+    }
+
+    private static func known(_ price: Double) -> PineRuntimeValue {
+        PineDrawingCoordinate.isKnown(price) ? .float(price) : .na
     }
 
     private static func mutate(
@@ -358,10 +440,10 @@ extension PineRuntimeSession {
         case "set_width": line.width = a.intValue ?? line.width
         case "set_style": line.style = PineLineStyle(pineName: a.textValue) ?? line.style
         case "set_extend": line.extend = PineLineExtend(pineName: a.textValue) ?? line.extend
-        case "get_x1": return .int(line.x1)
-        case "get_x2": return .int(line.x2)
-        case "get_y1": return .float(line.y1)
-        case "get_y2": return .float(line.y2)
+        case "get_x1": return Self.known(line.x1)
+        case "get_x2": return Self.known(line.x2)
+        case "get_y1": return Self.known(line.y1)
+        case "get_y2": return Self.known(line.y2)
         default: throw call.unknownFunction
         }
         return .void
@@ -384,8 +466,10 @@ extension PineRuntimeSession {
             label.style = a.textValue.map { PineLabelStyle(pineName: $0) ?? .labelCenter } ?? label.style
         case "set_size": label.size = PineSize(pineName: a.textValue) ?? label.size
         case "set_tooltip": label.tooltip = a.textValue
-        case "get_x": return .int(label.x)
-        case "get_y": return .float(label.y)
+        case "set_textalign": label.textAlign = .parse(a.textValue, absent: label.textAlign)
+        case "set_text_font_family", "set_text_formatting": break  // accepted; fonts are not modelled
+        case "get_x": return Self.known(label.x)
+        case "get_y": return Self.known(label.y)
         case "get_text": return .string(label.text)
         default: throw call.unknownFunction
         }
@@ -410,10 +494,17 @@ extension PineRuntimeSession {
         case "set_bgcolor": box.backgroundColor = Optional(a).colorValue(fallback: nil)
         case "set_border_color": box.borderColor = Optional(a).colorValue(fallback: nil)
         case "set_border_width": box.borderWidth = a.intValue ?? box.borderWidth
-        case "get_left": return .int(box.left)
-        case "get_right": return .int(box.right)
-        case "get_top": return .float(box.top)
-        case "get_bottom": return .float(box.bottom)
+        case "set_border_style": box.borderStyle = .parse(a.textValue, absent: box.borderStyle)
+        case "set_text": box.text = a.textValue ?? ""
+        case "set_text_color": box.textColor = Optional(a).colorValue(fallback: nil) ?? 0
+        case "set_text_size": box.textSize = .parse(a.textValue, absent: box.textSize)
+        case "set_text_halign": box.textHorizontalAlign = .parse(a.textValue, absent: box.textHorizontalAlign)
+        case "set_text_valign": box.textVerticalAlign = .parse(a.textValue, absent: box.textVerticalAlign)
+        case "set_text_wrap", "set_text_font_family", "set_text_formatting": break  // accepted; not modelled
+        case "get_left": return Self.known(box.left)
+        case "get_right": return Self.known(box.right)
+        case "get_top": return Self.known(box.top)
+        case "get_bottom": return Self.known(box.bottom)
         default: throw call.unknownFunction
         }
         return .void

@@ -11,6 +11,11 @@ struct PineLineOutput: Sendable, Identifiable, Equatable {
     var width: Int
     var style: PineLineStyle
     var extend: PineLineExtend
+    /// Whether all four coordinates are known; a line missing one is not drawn.
+    var isComplete: Bool {
+        PineDrawingCoordinate.isKnown(x1) && PineDrawingCoordinate.isKnown(x2)
+            && PineDrawingCoordinate.isKnown(y1) && PineDrawingCoordinate.isKnown(y2)
+    }
     /// Made with `xloc.bar_time`: setters take times, which are mapped to bar indexes.
     var timeAnchored = false
 }

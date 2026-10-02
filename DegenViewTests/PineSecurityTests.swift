@@ -175,8 +175,97 @@ final class PineSecurityTests: XCTestCase {
     }
 
     func testOtherRequestFunctionsAreStillReportedAtCompileTime() {
-        let program = compile("x = request.security_lower_tf(syminfo.tickerid, \"1\", close)\nplot(close)")
+        let program = compile("x = request.dividends(syminfo.tickerid)\nplot(close)")
         XCTAssertEqual(program.diagnostics.map(\.code), ["PINE9003"])
+    }
+
+    func testInvalidSymbolOrTimeframeIsNaWhenTheScriptAsksToIgnoreIt() throws {
+        let result = try plots(
+            """
+            other = request.security("BINANCE:ETHUSDT", "D", close, ignore_invalid_symbol = true)
+            finer = request.security(syminfo.tickerid, "1", close, ignore_invalid_timeframe = true)
+            [a, b] = request.security("BINANCE:ETHUSDT", "D", [open, close], ignore_invalid_symbol = true)
+            plot(na(other) ? 1 : 0)
+            plot(na(finer) ? 1 : 0)
+            plot(na(a) and na(b) ? 1 : 0)
+            """, bars: hourly(3))
+        XCTAssertEqual(result.map { $0[2] }, [1, 1, 1])
+    }
+
+    func testIgnoreFlagsDoNotHideTheOtherKindOfInvalidRequest() {
+        let series = hourly(3)
+        // Ignoring an invalid timeframe does not excuse another symbol, and the reverse.
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(\"BINANCE:ETHUSDT\", \"D\", close, ignore_invalid_timeframe = true))",
+                bars: series), "PINE4022")
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(syminfo.tickerid, \"1\", close, ignore_invalid_symbol = true))",
+                bars: series), "PINE4021")
+    }
+
+    // MARK: - Lower timeframes
+
+    func testLowerTimeframeRequestsReturnEmptyArraysBecauseThereIsNoIntrabarData() throws {
+        let values = try plots(
+            """
+            [o, c, v] = request.security_lower_tf(syminfo.tickerid, "1", [open, close, volume])
+            single = request.security_lower_tf(syminfo.tickerid, "1", close)
+            plot(array.size(o) + array.size(c) + array.size(v))
+            plot(array.size(single))
+            plot(na(array.avg(single)) ? 1 : 0)
+            """, bars: hourly(3))
+        XCTAssertEqual(values.map { $0[2] }, [0, 0, 1])
+    }
+
+    func testLowerTimeframeRequestAtTheChartsOwnTimeframeIsOneIntrabarPerBar() throws {
+        let values = try plots(
+            """
+            single = request.security_lower_tf(syminfo.tickerid, "60", close)
+            [o, c] = request.security_lower_tf(syminfo.tickerid, "60", [open, close])
+            plot(array.size(single))
+            plot(array.get(single, 0))
+            plot(array.size(o) + array.size(c))
+            plot(array.get(c, 0) - array.get(o, 0))
+            """, bars: hourly(3))
+        XCTAssertEqual(values[0], [1, 1, 1])
+        XCTAssertEqual(values[1], [1, 2, 3], "the chart bar's own close")
+        XCTAssertEqual(values[2], [2, 2, 2])
+        XCTAssertEqual(values[3], [0, 0, 0], "hourly fixture bars open where they close")
+    }
+
+    func testLowerTimeframeRequestInsideRequestSecurityIsNested() {
+        XCTAssertEqual(
+            runtimeError(
+                "plot(request.security(syminfo.tickerid, \"D\", array.size(request.security_lower_tf(syminfo.tickerid, \"1\", close))))",
+                bars: hourly(24)), "PINE4023")
+    }
+
+    func testLowerTimeframeRequestRejectsTheChartsOwnOrHigherTimeframeUnlessIgnored() throws {
+        let series = hourly(3)
+        XCTAssertEqual(
+            runtimeError("x = request.security_lower_tf(syminfo.tickerid, \"D\", close)\nplot(close)", bars: series),
+            "PINE4021")
+        let ignored = try plots(
+            """
+            x = request.security_lower_tf(syminfo.tickerid, "D", close, ignore_invalid_timeframe = true)
+            plot(array.size(x))
+            """, bars: series)
+        XCTAssertEqual(ignored, [[0, 0, 0]])
+    }
+
+    func testLowerTimeframeRequestForAnotherSymbolIsAnErrorUnlessIgnored() throws {
+        let series = hourly(2)
+        XCTAssertEqual(
+            runtimeError("x = request.security_lower_tf(\"BINANCE:ETHUSDT\", \"1\", close)\nplot(close)", bars: series),
+            "PINE4022")
+        let ignored = try plots(
+            """
+            x = request.security_lower_tf("BINANCE:ETHUSDT", "1", close, ignore_invalid_symbol = true)
+            plot(array.size(x))
+            """, bars: series)
+        XCTAssertEqual(ignored, [[0, 0]])
     }
 
     // MARK: - Realtime

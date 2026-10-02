@@ -8,7 +8,14 @@ extension PineRuntimeSession {
     static let exactHandlers: [String: CallHandler] = {
         var table: [String: CallHandler] = [
             "na": PineRuntimeSession.naCall, "nz": PineRuntimeSession.nzCall,
+            "chart.point.from_index": PineRuntimeSession.chartPointCall,
+            "chart.point.from_time": PineRuntimeSession.chartPointCall,
+            "chart.point.now": PineRuntimeSession.chartPointCall,
+            "chart.point.new": PineRuntimeSession.chartPointCall,
             "max_bars_back": PineRuntimeSession.maxBarsBackCall, "time": PineRuntimeSession.timeCall,
+            "input": PineRuntimeSession.inputCall, "runtime.error": PineRuntimeSession.runtimeErrorCall,
+            "ticker.standard": PineRuntimeSession.tickerCall, "ticker.modify": PineRuntimeSession.tickerCall,
+            "ticker.inherit": PineRuntimeSession.tickerCall, "ticker.new": PineRuntimeSession.tickerCall,
             "time_close": PineRuntimeSession.timeCloseCall,
             "color": PineRuntimeSession.colorCast, "string": PineRuntimeSession.stringCast,
             "int": PineRuntimeSession.intCast, "float": PineRuntimeSession.floatCast,
@@ -18,9 +25,12 @@ extension PineRuntimeSession {
             "alertcondition": PineRuntimeSession.alertCall, "ta.atr": PineRuntimeSession.atrCall,
             "ta.tr": PineRuntimeSession.trueRangeCall, "ta.pivothigh": PineRuntimeSession.pivotCall,
             "ta.pivotlow": PineRuntimeSession.pivotCall, "ta.barssince": PineRuntimeSession.barsSinceCall,
-            "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
+            "ta.correlation": PineRuntimeSession.correlationCall, "ta.vwap": PineRuntimeSession.vwapCall,
+            "ta.dmi": PineRuntimeSession.dmiCall, "ta.sar": PineRuntimeSession.sarCall,
+            "ta.linreg": PineRuntimeSession.linregCall, "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
             "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
             "request.security": PineRuntimeSession.securityCall,
+            "request.security_lower_tf": PineRuntimeSession.securityLowerTimeframeCall,
             "timeframe.change": PineRuntimeSession.timeframeChangeCall,
             "color.from_gradient": PineRuntimeSession.colorGradient,
             "color.r": PineRuntimeSession.colorComponent, "color.g": PineRuntimeSession.colorComponent,
@@ -41,10 +51,15 @@ extension PineRuntimeSession {
         ("line.", PineRuntimeSession.drawingCall), ("label.", PineRuntimeSession.drawingCall),
         ("box.", PineRuntimeSession.drawingCall), ("table.", PineRuntimeSession.drawingCall),
         ("linefill.", PineRuntimeSession.drawingCall), ("map.", PineRuntimeSession.mapCall),
+        ("polyline.", PineRuntimeSession.polylineCall),
+        ("matrix.", PineRuntimeSession.matrixCall),
     ]
 
     func call(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        if let function = functions[call.name] { return try invoke(function, call, &context) }
+        if let overloads = methods[call.name], overloads.count > 1 {
+            return try callOverloadedMethod(overloads, call, &context)
+        }
+        if let function = try scopedFunction(call.name, call.range, context) { return try invoke(function, call, &context) }
         if let handler = Self.exactHandlers[call.name] { return try handler(self)(call, &context) }
         if let entry = Self.namespaceHandlers.first(where: { call.name.hasPrefix($0.prefix) }) {
             return try entry.handler(self)(call, &context)
@@ -66,8 +81,14 @@ extension PineRuntimeSession {
         let member = String(call.name[call.name.index(after: dot)...])
         let receiver: PineRuntimeValue
         if receiverName.contains(".") {
-            guard let value = try fieldPath(receiverName, call.range) else { return nil }
-            receiver = value
+            if let value = try fieldPath(receiverName, call.range) {
+                receiver = value
+            } else if let member = try enumMember(receiverName, call.range, context) {
+                // `Mode.slow.label()`: an enum member as the receiver.
+                receiver = member
+            } else {
+                return nil
+            }
         } else {
             guard let value = working.variables[receiverName] else { return nil }
             receiver = value
@@ -96,13 +117,39 @@ extension PineRuntimeSession {
             "PINE4007", .runtime, "Unknown or unsupported method '\(member)'.", range)
     }
 
+    /// `name(receiver, args)` for a method defined for several receiver types: the first argument picks the
+    /// definition. It is evaluated once and passed on as a literal.
+    private func callOverloadedMethod(
+        _ overloads: [PineRuntimeFunction], _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        guard let first = call.arguments.first else { throw call.unknownFunction }
+        let receiver = try eval(first.value, &context)
+        guard
+            let function = overloads.first(where: {
+                ($0.isExported || $0.scope == context.scope)
+                    && $0.acceptsReceiver(receiver, instances: working.instances)
+            })
+        else {
+            throw PineDiagnostic.error(
+                "PINE4029", .runtime, "No definition of '\(call.name)' accepts that first argument.", call.range)
+        }
+        var arguments = call.arguments
+        arguments[0] = PineArgument(name: first.name, value: .literal(receiver, call.range))
+        return try invoke(
+            function, PineCall(name: call.name, arguments: arguments, site: call.site, range: call.range),
+            &context)
+    }
+
     /// A user `method`, or the namespaced builtin for the receiver's kind (`array.get`, `map.put`…).
     /// Nil when the receiver is not something with methods.
     private func dispatchMethod(
         _ receiver: PineRuntimeValue, _ receiverArgument: PineArgument, _ member: String,
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue? {
-        if program.methodNames.contains(member), let function = functions[member] {
+        if let function = methods[member]?.first(where: {
+            ($0.isExported || $0.scope == context.scope)
+                && $0.acceptsReceiver(receiver, instances: working.instances)
+        }) {
             let method = PineCall(
                 name: member, arguments: [receiverArgument] + call.arguments, site: call.site,
                 range: call.range)
@@ -152,6 +199,33 @@ extension PineRuntimeSession {
         return out
     }
 
+    /// Like `bind`, for the Pine overloads that take `chart.point`s instead of coordinates
+    /// (`line.new(first_point, second_point, …)`): when the first positional argument is a point, or a
+    /// point parameter is named, `point` names the positions; otherwise `plain` does.
+    func bindOverload(
+        _ call: PineCall, plain: [String], point: [String], _ context: inout PineRuntimeContext
+    ) throws -> (values: [String: PineRuntimeValue], isPoint: Bool) {
+        var out: [String: PineRuntimeValue] = [:]
+        var names = plain
+        var isPoint = false
+        var position = 0
+        for argument in call.arguments {
+            let value = try eval(argument.value, &context)
+            if let name = argument.name {
+                out[name] = value
+                if point.first == name { isPoint = true }
+                continue
+            }
+            if position == 0, isChartPoint(value) {
+                isPoint = true
+                names = point
+            }
+            if position < names.count { out[names[position]] = value }
+            position += 1
+        }
+        return (out, isPoint)
+    }
+
     /// Offsets a call site's key inside a user function so each call site of the function
     /// keeps its own histories.
     func siteKey(_ site: Int, _ context: PineRuntimeContext) -> Int {
@@ -160,7 +234,7 @@ extension PineRuntimeSession {
 
     // MARK: - User functions
 
-    private func invoke(
+    func invoke(
         _ function: PineRuntimeFunction, _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
         guard context.depth < limits.callDepth else {
@@ -179,11 +253,15 @@ extension PineRuntimeSession {
         for (parameter, value) in bound { working.variables[parameter] = value }
 
         let callerPrefix = context.sitePrefix
+        let callerScope = (context.scope, context.locals)
         context.sitePrefix = prefix
         context.depth += 1
+        context.scope = function.scope
+        context.locals = function.scope == nil ? nil : function.locals
         defer {
             context.sitePrefix = callerPrefix
             context.depth -= 1
+            (context.scope, context.locals) = callerScope
         }
         let (_, value) = try run(function.body, &context)
 
@@ -207,7 +285,7 @@ extension PineRuntimeSession {
             } else if i < positional.count {
                 bound[parameter.name] = try eval(positional[i].value, &context)
             } else if let fallback = parameter.defaultValue {
-                bound[parameter.name] = try eval(fallback, &context)
+                bound[parameter.name] = try evaluate(fallback, inScopeOf: function, &context)
             } else {
                 bound[parameter.name] = .na
             }

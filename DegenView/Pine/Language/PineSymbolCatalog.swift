@@ -70,7 +70,7 @@ enum PineSymbolCatalog {
     static let qualifiers = Set(PineParser.qualifiers.keys)
 
     /// `line`, `label`, `box`, `table`, `array`, plus the handle and collection types Pine has.
-    static let objectTypes = Set(PineParser.objectTypes.keys).union(reservedObjectTypes)
+    static let objectTypes = Set(PineParser.objectTypes.keys)
 
     /// Keywords of Pine that need more than the parser gives them: `type`, `method` and `export` are
     /// parsed but only in their declaration forms; `import` and `enum` are reported as unsupported.
@@ -88,32 +88,60 @@ enum PineSymbolCatalog {
         PineSize.pineNames, PineLabelStyle.pineNames,
     ]
 
+    /// Pine variables DegenView does not implement. Reading one gives `na` rather than failing the script:
+    /// they describe an exchange, a session or a chart window the engine has no model of.
     private static let reservedVariables: Set<String> = [
-        "hlcc4", "weekofyear",
-        "session.isfirstbar", "session.isfirstbar_regular", "session.islastbar",
+        "weekofyear", "session.isfirstbar", "session.isfirstbar_regular", "session.islastbar",
         "session.islastbar_regular", "session.ismarket", "session.ispremarket",
-        "session.ispostmarket", "syminfo.prefix", "syminfo.root", "syminfo.session",
-        "syminfo.timezone", "syminfo.pointvalue", "syminfo.mincontract", "syminfo.basecurrency",
-        "syminfo.description", "syminfo.volumetype",
+        "session.ispostmarket", "syminfo.session", "syminfo.mincontract", "syminfo.basecurrency",
+        "syminfo.description", "syminfo.volumetype", "chart.left_visible_bar_time",
+        "chart.right_visible_bar_time",
     ]
 
-    private static let reservedConstants: Set<String> = [
-        "session.regular", "session.extended", "xloc.bar_index", "xloc.bar_time", "yloc.price",
-        "yloc.abovebar", "yloc.belowbar", "barmerge.gaps_on", "barmerge.gaps_off",
-        "barmerge.lookahead_on", "barmerge.lookahead_off", "plot.style_line",
-        "plot.style_stepline", "plot.style_steplinebr", "plot.style_histogram",
-        "plot.style_cross", "plot.style_area", "plot.style_areabr", "plot.style_columns",
-        "plot.style_circles", "hline.style_solid", "hline.style_dotted", "hline.style_dashed",
-    ]
+    /// Whether `name` is a Pine variable this release does not implement (it evaluates to `na`).
+    static func isUnimplementedVariable(_ name: String) -> Bool { reservedVariables.contains(name) }
+
+    /// Pine's named constants that DegenView's tables do not own. Each evaluates to its own name, so the
+    /// property is only that a name outside this catalog (a typo) is an error rather than a string.
+    private static let reservedConstants: Set<String> = {
+        var names: Set<String> = [
+            "session.regular", "session.extended", "xloc.bar_index", "xloc.bar_time", "yloc.price",
+            "yloc.abovebar", "yloc.belowbar", "barmerge.gaps_on", "barmerge.gaps_off",
+            "barmerge.lookahead_on", "barmerge.lookahead_off", "scale.left", "scale.right", "scale.none",
+            "adjustment.none", "adjustment.splits", "adjustment.dividends", "backadjustment.inherit",
+            "backadjustment.off", "backadjustment.on", "settlement_as_close.inherit",
+            "settlement_as_close.off", "settlement_as_close.on", "font.family_default",
+            "font.family_monospace", "text.align_left", "text.align_center", "text.align_right",
+            "text.align_top", "text.align_bottom", "text.format_none", "text.format_bold",
+            "text.format_italic", "text.wrap_none", "text.wrap_auto", "display.pine_screener",
+        ]
+        for style in [
+            "line", "linebr", "stepline", "stepline_diamond", "steplinebr", "histogram", "columns",
+            "circles", "cross", "area", "areabr",
+        ] {
+            names.insert("plot.style_\(style)")
+        }
+        for style in ["solid", "dotted", "dashed"] {
+            names.insert("plot.linestyle_\(style)")
+            names.insert("hline.style_\(style)")
+        }
+        for code in [
+            "AED", "ARS", "AUD", "BDT", "BHD", "BRL", "BTC", "CAD", "CHF", "CLP", "CNY", "COP", "CZK", "DKK",
+            "EGP", "ETH", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KES", "KRW", "KWD",
+            "LKR", "MAD", "MXN", "MYR", "NGN", "NOK", "NONE", "NZD", "PEN", "PHP", "PKR", "PLN", "QAR", "RON",
+            "RUB", "SAR", "SEK", "SGD", "THB", "TND", "TRY", "TWD", "UAH", "USD", "USDT", "UYU", "VND", "ZAR",
+        ] {
+            names.insert("currency.\(code)")
+        }
+        return names
+    }()
 
     private static let reservedFunctions: Set<String> = [
-        "input", "fixnan", "plotarrow", "plotbar",
+        "fixnan", "plotarrow", "plotbar",
     ]
 
     private static let reservedNamespaces: Set<String> = [
-        "request", "session", "chart", "matrix", "polyline", "log", "runtime",
-        "barmerge", "xloc", "yloc",
+        "request", "session", "chart", "log", "runtime", "ticker", "barmerge", "xloc", "yloc", "scale", "adjustment",
+        "backadjustment", "settlement_as_close", "font", "text", "currency", "plot", "hline",
     ]
-
-    private static let reservedObjectTypes: Set<String> = ["polyline", "matrix"]
 }

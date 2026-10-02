@@ -7,6 +7,8 @@ enum PineValueType: String, Codable, Hashable, Sendable {
     case object
     /// `map<K, V>`; key and value types are not tracked.
     case map
+    /// `matrix<T>`; the element type is not tracked.
+    case matrix
     /// `input.time`: a millisecond timestamp carried as an `int`.
     case time
 }

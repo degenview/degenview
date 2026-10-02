@@ -7,8 +7,12 @@ extension PineRuntimeSession {
         "array.includes": ["id", "value"], "array.indexof": ["id", "value"],
         "array.get": ["id", "index"], "array.remove": ["id", "index"],
         "array.set": ["id", "index", "value"], "array.insert": ["id", "index", "value"],
-        "array.sort": ["id", "order"], "array.join": ["id", "separator"],
+        "array.sort": ["id", "order"], "array.sort_indices": ["id", "order"], "array.join": ["id", "separator"],
         "array.concat": ["id", "other"], "array.slice": ["id", "index_from", "index_to"],
+        "array.variance": ["id", "biased"], "array.stdev": ["id", "biased"],
+        "array.percentile_nearest_rank": ["id", "percentage"],
+        "array.percentile_linear_interpolation": ["id", "percentage"],
+        "array.covariance": ["id", "id2", "biased"],
     ]
 
     func arrayCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
@@ -90,16 +94,29 @@ extension PineRuntimeSession {
     /// Numbers first (ascending or descending), then everything else by its text; `na` last.
     private func sort(_ items: inout [PineRuntimeValue], descending: Bool) {
         let mintick = self.mintick
-        items.sort { lhs, rhs in
-            switch (lhs.number, rhs.number) {
-            case (let x?, let y?): return descending ? x > y : x < y
-            case (nil, _?): return false
-            case (_?, nil): return true
-            default:
-                return PineFormat.format(lhs, nil, mintick: mintick)
-                    < PineFormat.format(rhs, nil, mintick: mintick)
-            }
+        items.sort { Self.precedes($0, $1, descending: descending, mintick: mintick) }
+    }
+
+    private static func precedes(
+        _ lhs: PineRuntimeValue, _ rhs: PineRuntimeValue, descending: Bool, mintick: Double
+    ) -> Bool {
+        switch (lhs.number, rhs.number) {
+        case (let x?, let y?): return descending ? x > y : x < y
+        case (nil, _?): return false
+        case (_?, nil): return true
+        default:
+            return PineFormat.format(lhs, nil, mintick: mintick) < PineFormat.format(rhs, nil, mintick: mintick)
         }
+    }
+
+    /// `array.sort_indices`: the indexes that would sort `items`, ties keeping their original order.
+    private func sortedIndices(_ items: [PineRuntimeValue], descending: Bool) -> [PineRuntimeValue] {
+        let mintick = self.mintick
+        return items.indices.sorted { a, b in
+            if Self.precedes(items[a], items[b], descending: descending, mintick: mintick) { return true }
+            if Self.precedes(items[b], items[a], descending: descending, mintick: mintick) { return false }
+            return a < b
+        }.map(PineRuntimeValue.int)
     }
 
     /// Operations that only read `items`. Returns nil when `call` is not one of them.
@@ -110,6 +127,8 @@ extension PineRuntimeSession {
         switch call.name {
         case "array.get": return items[try arrayIndex(call, b["index"], count: items.count)]
         case "array.size": return .int(items.count)
+        case "array.sort_indices":
+            return newArray(sortedIndices(items, descending: b["order"].textValue == "order.descending"))
         case "array.first": return items.first ?? .na
         case "array.last": return items.last ?? .na
         case "array.includes": return .bool(items.contains(value))
@@ -121,6 +140,10 @@ extension PineRuntimeSession {
         case "array.copy": return newArray(items)
         case "array.slice": return try slice(call, b, items)
         case "array.sum", "array.avg", "array.max", "array.min": return aggregate(call.name, items)
+        case "array.median", "array.mode", "array.range", "array.variance", "array.stdev",
+            "array.percentile_nearest_rank", "array.percentile_linear_interpolation":
+            return statistic(call.name, b, items)
+        case "array.covariance": return try covariance(call, b, items)
         default: return nil
         }
     }
@@ -135,6 +158,66 @@ extension PineRuntimeSession {
                 "PINE4010", .runtime, "array.slice end index \(to) is out of bounds.", call.range)
         }
         return newArray(Array(items[from..<to]))
+    }
+
+    /// The statistics over the numbers in the array (`na` entries are ignored); `na` when there are none.
+    /// `variance`, `stdev` and `covariance` are the population figures unless `biased = false`.
+    private func statistic(
+        _ name: String, _ b: [String: PineRuntimeValue], _ items: [PineRuntimeValue]
+    ) -> PineRuntimeValue {
+        let numbers = items.compactMap(\.number).sorted()
+        guard !numbers.isEmpty else { return .na }
+        let count = Double(numbers.count)
+        switch name {
+        case "array.median":
+            let middle = numbers.count / 2
+            return .float(
+                numbers.count % 2 == 1 ? numbers[middle] : (numbers[middle - 1] + numbers[middle]) / 2)
+        case "array.mode":
+            var best = numbers[0]
+            var bestCount = 0
+            var run = 0
+            for (index, value) in numbers.enumerated() {
+                run = index > 0 && numbers[index - 1] == value ? run + 1 : 1
+                if run > bestCount {
+                    best = value
+                    bestCount = run
+                }
+            }
+            return .float(best)
+        case "array.range": return .float((numbers.last ?? 0) - numbers[0])
+        case "array.variance", "array.stdev":
+            let mean = numbers.reduce(0, +) / count
+            let squares = numbers.reduce(0) { $0 + ($1 - mean) * ($1 - mean) }
+            let biased = b["biased"]?.bool ?? true
+            guard biased || numbers.count > 1 else { return .na }
+            let variance = squares / (biased ? count : count - 1)
+            return .float(name == "array.variance" ? variance : variance.squareRoot())
+        case "array.percentile_nearest_rank":
+            guard let percentage = b["percentage"]?.number else { return .na }
+            let rank = max(1, Int((percentage / 100 * count).rounded(.up)))
+            return .float(numbers[min(numbers.count, rank) - 1])
+        default:  // percentile_linear_interpolation
+            guard let percentage = b["percentage"]?.number else { return .na }
+            let position = min(max(percentage, 0), 100) / 100 * (count - 1)
+            let lower = Int(position.rounded(.down))
+            let upper = min(numbers.count - 1, lower + 1)
+            return .float(numbers[lower] + (numbers[upper] - numbers[lower]) * (position - Double(lower)))
+        }
+    }
+
+    /// `array.covariance(id1, id2, biased)` over the first `min(size)` pairs.
+    private func covariance(
+        _ call: PineCall, _ b: [String: PineRuntimeValue], _ items: [PineRuntimeValue]
+    ) throws -> PineRuntimeValue {
+        let other = try requireArray(call, b["id2"])
+        let pairs = zip(items, other).compactMap { x, y in x.number.flatMap { a in y.number.map { (a, $0) } } }
+        guard pairs.count > 1 || (pairs.count == 1 && (b["biased"]?.bool ?? true)) else { return .na }
+        let count = Double(pairs.count)
+        let meanX = pairs.reduce(0) { $0 + $1.0 } / count
+        let meanY = pairs.reduce(0) { $0 + $1.1 } / count
+        let total = pairs.reduce(0) { $0 + ($1.0 - meanX) * ($1.1 - meanY) }
+        return .float(total / ((b["biased"]?.bool ?? true) ? count : count - 1))
     }
 
     private func aggregate(_ name: String, _ items: [PineRuntimeValue]) -> PineRuntimeValue {

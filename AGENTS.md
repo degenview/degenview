@@ -95,6 +95,25 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
   `updateTicker` by design and would pin the old coin's artwork to a renamed card
 
+### Pine editor assistance
+- Pure logic, no AppKit: `PineEditorPairing` (auto-pair, overtype, empty-pair Backspace, wrap),
+  `PineIndentationEngine` (Return, Tab/Shift-Tab, closing-delimiter alignment, paste),
+  `PineEditorCommands` (⌘/, ⌥↑↓ move, ⇧⌥↑↓ duplicate), `PineDelimiterMatcher`. Each takes a
+  `PineEditorContext` (text + selection + `PineLexicalSnapshot`, all UTF-16) and returns one
+  `PineEditorEdit`; `PineTextView.perform(_:)` applies it as a single undoable change. New
+  assistance goes there, not into `PineTextView` or the `Coordinator`
+- `PineLexicalSnapshot` is the one lex per text version (cached; the classifier uses it too).
+  Strings are lexer tokens, comments are `//` runs between them, brackets are lexer tokens —
+  so nothing inside a string or comment can pair. Never use `.indent`/`.dedent` tokens for
+  indentation decisions: an unclosed `(` mid-typing erases them
+- Indent unit is four spaces (the lexer reads other widths as wrapped lines). Pine has no
+  braces, so `{}` is deliberately not paired
+- Decorations that follow the caret are never stored text attributes (`PineSyntaxHighlighter`
+  rewrites storage attributes every edit): bracket match and occurrences are layout-manager
+  temporary attributes (`PineEditorDecorations`, one owner of `.backgroundColor`); current-line
+  band and indent guides draw in `PineLayoutManager.drawBackground(forGlyphRange:at:)`
+- Everything is skipped while `hasMarkedText()` (IME) — keep that guard in `editingContext`
+
 ### Script Manager preview
 - The Script Manager window is a `SplitContainer` (sidebar | `ScriptWorkspaceView`); the
   workspace splits the editor and `ScriptPreviewPane` left/top/bottom. `SplitLayout` is a real
@@ -202,6 +221,11 @@ gitignored `.pine-corpus/`) and skips without them. Third-party sources are neve
 copied into tests; reproduce a failure with an original reduction in `PineRegressionTests`, then
 update `DegenViewTests/PineCorpus/expectations.json`. See `tools/pine-corpus/README.md`.
 
+Tests never touch Keychain: `KeychainPolicy.isDisabled` is true under XCTest, so the Alpaca and
+CoinMarketCap stores report "nothing saved". When an agent launches the app itself, set
+`DEGENVIEW_NO_KEYCHAIN=1` in the environment — otherwise a rebuilt, re-signed binary blocks on a
+Keychain access prompt.
+
 ### Linting
 
 - Every Swift file created or modified in a task must be linted before handoff, including
@@ -233,6 +257,10 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     against the price axis and its bar count against the candles inside. One more click
     puts it away — on that chart only. Switching tool or timeframe drops it, and it never
     comes back after a relaunch
+14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
+    text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
+    multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket
+    tints its partner; guides and the current-line band follow scrolling and don't eat clicks
 14. Script Manager: collapse the sidebar (⌃⌘S) and relaunch — it stays collapsed. Open an
     indicator: the preview chart appears left of the code. Type — the plot updates after a pause;
     break the syntax — the banner appears and the last plot stays. Move the chart left/top/bottom

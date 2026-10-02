@@ -101,7 +101,7 @@ extension PineRuntimeSession {
     private func requireBool(
         _ value: PineRuntimeValue, _ message: String, _ range: PineSourceRange
     ) throws -> Bool {
-        guard case .bool(let test) = value else {
+        guard let test = Self.truth(value) else {
             throw PineDiagnostic.error("PINE4001", .runtime, message, range)
         }
         return test

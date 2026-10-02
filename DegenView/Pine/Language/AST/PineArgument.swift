@@ -3,6 +3,8 @@ import Foundation
 struct PineArgument: Sendable {
     var name: String?
     var value: PineExpression
+    /// Where the `name =` label sits, for diagnostics about the argument itself.
+    var nameRange: PineSourceRange? = nil
 }
 
 extension Array where Element == PineArgument {

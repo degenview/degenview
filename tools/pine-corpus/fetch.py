@@ -2,6 +2,7 @@
 """Download the most popular open-source TradingView scripts into a local, untracked cache.
 
     python3 tools/pine-corpus/fetch.py [--indicators 20] [--libraries 10]
+    python3 tools/pine-corpus/fetch.py --append --indicators 20 --libraries 10   # 20 + 10 more
 
 Sources land in `.pine-corpus/<kind>/<slug>.pine` (gitignored). Only metadata is written to
 `DegenViewTests/PineCorpus/manifest.json`, which is committed. See README.md for the rules.
@@ -95,13 +96,17 @@ def describe(url, pub, kind):
     return entry, None
 
 
-def collect(kind, singular, wanted):
+def collect(kind, singular, wanted, known):
+    """The next `wanted` usable scripts of a kind, skipping slugs already in `known`."""
     entries = []
     taken = 0
     for page in range(1, MAX_PAGES + 1):
         for url, pub in listing(kind, page):
             if taken >= wanted:
                 return entries
+            ids = SLUG.search(url)
+            if ids is not None and ids.group("id") in known:
+                continue
             try:
                 entry, source = describe(url, pub, singular)
             except (urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
@@ -120,19 +125,111 @@ def collect(kind, singular, wanted):
     return entries
 
 
+IMPORT_LINE = re.compile(r"^import[ \t]+(?P<user>[\w.-]+)/(?P<name>[\w.-]+)/(?P<version>\d+)", re.M)
+SEARCH_URL = "https://www.tradingview.com/scripts/search/{name}/?script_type=libraries"
+IMPORTS_DIR = os.path.join(CACHE_DIR, "imports")
+IMPORTS_MANIFEST = os.path.join(ROOT, "DegenViewTests", "PineCorpus", "imports.json")
+
+
+def squash(text):
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def import_paths(source):
+    return {"%s/%s/%s" % m.group("user", "name", "version") for m in IMPORT_LINE.finditer(source)}
+
+
+def fetch_import(path):
+    """One imported library, found by its name on the search page and fetched at the imported version.
+    Returns (manifest entry, source or None)."""
+    user, name, version = path.split("/")
+    entry = {"path": path, "fetchedAt": datetime.date.today().isoformat()}
+    html = get(SEARCH_URL.format(name=urllib.parse.quote(name)))
+    for match in ENTRY.finditer(html):
+        ids = SLUG.search(match.group("url"))
+        if ids is None or squash(ids.group("slug") or "") != squash(name):
+            continue
+        pub = match.group("pub")
+        url = SOURCE_URL.replace("/last", "/" + version).format(pub=urllib.parse.quote(pub, safe=""))
+        info = json.loads(get(url))
+        source = info.get("source") or ""
+        entry.update(url=match.group("url"), tradingViewID=pub, licence=licence_of(source))
+        if info.get("scriptAccess") != "open_no_auth":
+            entry["status"] = "skipped: not open source"
+            return entry, None
+        entry["status"] = "fetched"
+        return entry, source
+    entry["status"] = "skipped: not found"
+    return entry, None
+
+
+def fetch_imports():
+    """Fetches the libraries the cached scripts import (and those they import), into `.pine-corpus/imports/`,
+    so the corpus run can resolve `import` the way the app resolves it from the Script Manager."""
+    known = {}
+    if os.path.exists(IMPORTS_MANIFEST):
+        with open(IMPORTS_MANIFEST) as handle:
+            known = {entry["path"]: entry for entry in json.load(handle)}
+    pending = set()
+    for directory, _, files in os.walk(CACHE_DIR):
+        for name in files:
+            if name.endswith(".pine"):
+                with open(os.path.join(directory, name)) as handle:
+                    pending |= import_paths(handle.read())
+    while pending:
+        path = sorted(pending)[0]
+        pending.discard(path)
+        target = os.path.join(IMPORTS_DIR, path + ".pine")
+        if path in known and (os.path.exists(target) or known[path]["status"] != "fetched"):
+            continue
+        try:
+            entry, source = fetch_import(path)
+        except (urllib.error.URLError, ValueError, json.JSONDecodeError) as error:
+            print("  ! %s: %s" % (path, error), file=sys.stderr)
+            continue
+        known[path] = entry
+        print("  %-70s %s" % (path, entry["status"]))
+        if source is not None:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w") as handle:
+                handle.write(source)
+            pending |= {nested for nested in import_paths(source) if nested not in known}
+    with open(IMPORTS_MANIFEST, "w") as handle:
+        json.dump(sorted(known.values(), key=lambda entry: entry["path"]), handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+    print("wrote %s (%d entries)" % (os.path.relpath(IMPORTS_MANIFEST, ROOT), len(known)))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--indicators", type=int, default=20)
     parser.add_argument("--libraries", type=int, default=10)
+    parser.add_argument(
+        "--append",
+        action="store_true",
+        help="keep the manifest's scripts and fetch this many more (the popularity order moves daily)",
+    )
+    parser.add_argument(
+        "--imports",
+        action="store_true",
+        help="fetch the libraries the cached scripts import, instead of more scripts",
+    )
     args = parser.parse_args()
+    if args.imports:
+        fetch_imports()
+        return
 
     entries = []
+    if args.append and os.path.exists(MANIFEST):
+        with open(MANIFEST) as handle:
+            entries = json.load(handle)
+    known = {entry["slug"] for entry in entries}
     for kind, singular, wanted in (
         ("indicators", "indicator", args.indicators),
         ("libraries", "library", args.libraries),
     ):
-        print("%s (top %d, pine v%d only)" % (kind, wanted, SUPPORTED_VERSION))
-        entries += collect(kind, singular, wanted)
+        print("%s (%d %s, pine v%d only)" % (kind, wanted, "more" if args.append else "top", SUPPORTED_VERSION))
+        entries += collect(kind, singular, wanted, known)
 
     os.makedirs(os.path.dirname(MANIFEST), exist_ok=True)
     with open(MANIFEST, "w") as handle:

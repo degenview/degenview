@@ -9,6 +9,10 @@ struct PineSecuritySite {
     var accumulated: KlineData?
     /// Whether `accumulated` holds bars whose bucket has not been completed yet.
     var hasPendingBars = false
+    /// Whether the history from before the chart's first bar has been fed in.
+    var isWarmedUp = false
+    /// Another symbol's series: how many of its candles have been completed and evaluated.
+    var completedCandles = 0
     /// The expression's state as of the last completed higher-timeframe bar: histories, `var`s and the
     /// `ta.*` calls it made, none of which are shared with the chart script.
     var state = PineRuntimeState()

@@ -67,7 +67,7 @@ DegenView/
 │   │   ├── Lexer/                     # PineLexer (+Tokens), PineSourceLine, tokens
 │   │   ├── AST/                       # Expressions, statements, typed operators, traversal helpers
 │   │   ├── Parser/                    # PineParser (+Statements, +Declarations, +Expressions)
-│   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs)
+│   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs), PineLibraryLinker (`import`)
 │   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
 │   │   ├── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
 │   │   └── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above (editor highlighting)
@@ -81,6 +81,7 @@ DegenView/
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
 │   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
+│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
@@ -152,6 +153,8 @@ DegenView/
    fails to load disables writes instead of being replaced by an empty value. Small caches (klines, icons, FX, BTC history, quotes) remain `JSONStore`
    files; portfolio daily candles are the exception and live in SQLite (`candle`, `candle_coverage`). Alpaca and optional CoinMarketCap secrets live in Keychain rather than the
    database; only CMC chart type, range, and display settings enter workspace state.
+   `KeychainPolicy.isDisabled` (XCTest, or `DEGENVIEW_NO_KEYCHAIN=1`) makes both stores behave as
+   "nothing saved" without touching Keychain, so a rebuilt ad hoc signed binary raises no access prompt.
    Each tab and named saved view also stores ordered `ChartColumn` membership by the
    stable `TickerConfig.chartID`. Older documents without columns are repaired into the
    former two-column row-major arrangement when loaded.
@@ -160,6 +163,9 @@ DegenView/
    `ScriptMetadata/<id>/`. A file finds its id through the `com.cryptocharts.script-id`
    extended attribute, falling back to `ScriptMetadata/index.json` when an editor's atomic
    save drops it; `ScriptFolderMonitor` refreshes views when the folder changes.
+   Every `ScriptStore` mutation republishes its library scripts to `PineLibraryRegistry`, the
+   synchronous `PineLibraryResolver` every app-side `PineCompiler.compile` passes, so
+   `import user/Library/version` resolves to a Script Manager library by name.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
    timestamp and one cancellable playback task.
@@ -201,7 +207,9 @@ DegenView/
     `PineStructureValidator`, `PineTypeChecker`) → `PineRuntimeSession`. The session's call
     router maps each builtin name or namespace to one handler in a per-family extension;
     the pure parts (`PineMath`, `PineStrings`, `PineTA`, `PineOperators`…) hold no session
-    state. `Pine/Model` and `Model/Script` must stay free of compiler/runtime types: the
+    state. A script's `import`s are linked by `PineLibraryLinker` into the compiled program;
+    `PineLibraryLinkage` flattens them for the session, which runs each library in its own
+    scope (`PineRuntimeContext.scope`, names registered as `path::Name`). `Pine/Model` and `Model/Script` must stay free of compiler/runtime types: the
     alert agent target compiles them.
 12. A CMC card stores a stable `CoinMarketCapChartType` identifier in `TickerConfig`.
     `ChartViewModel.fetchCoinMarketCap` uses generation checks and task cancellation so a

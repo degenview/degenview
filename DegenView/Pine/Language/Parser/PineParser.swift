@@ -16,15 +16,25 @@ struct PineParser {
     private(set) var exportRanges: [PineSourceRange] = []
     /// Names of the `type`s declared so far. Pine requires a type to precede its use, so the parser
     /// can tell `Zone z = …` (a declaration) from an expression.
-    var userTypes: Set<String> = []
+    /// Seeded with TradingView's opaque built-in types, which scripts name in signatures (`footprint fp`,
+    /// `array<volume_row>`) although this release has no values of them.
+    var userTypes: Set<String> = ["footprint", "volume_row"]
     /// Names of the `enum`s declared so far; like types, they may annotate a variable or parameter.
     var enumTypes: Set<String> = []
+    /// The name `typeAnnotation()` last matched when it was a script-defined type, an enum or `chart.point`.
+    var annotatedTypeName: String?
     /// Names declared with `method`.
     var methodNames: Set<String> = []
 
-    init(tokens: [PineToken], limits: PineLimits) {
+    /// Aliases of the libraries the script imports: `alias.Type` can annotate a variable or parameter.
+    let importAliases: Set<String>
+    /// Names declared with `export`.
+    private(set) var exportedNames: Set<String> = []
+
+    init(tokens: [PineToken], limits: PineLimits, importAliases: Set<String> = []) {
         self.tokens = tokens
         self.limits = limits
+        self.importAliases = importAliases
     }
 
     mutating func parse() -> ([PineStatement], [PineDiagnostic]) {
@@ -72,7 +82,14 @@ struct PineParser {
     /// Notes an `export` prefix and parses the statement it applies to.
     mutating func exportedStatement() -> PineStatement? {
         exportRanges.append(previous.range)
-        return statement()
+        let exported = statement()
+        switch exported {
+        case .function(let name, _, _, _)?, .declaration(let name, _, _, _, _)?,
+            .typeDeclaration(let name, _, _)?, .enumDeclaration(let name, _, _)?:
+            exportedNames.insert(name)
+        default: break
+        }
+        return exported
     }
 
     /// A statement must end the line. Block statements (`if`, `for`, block functions) end

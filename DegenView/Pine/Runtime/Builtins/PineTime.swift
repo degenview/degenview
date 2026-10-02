@@ -17,8 +17,15 @@ enum PineTime {
 
     static func milliseconds(_ date: Date) -> Int { Int(pine: date.timeIntervalSince1970 * 1000) ?? 0 }
 
-    static func part(_ name: String, milliseconds stamp: Int) -> PineRuntimeValue {
-        let c = PineCalendar.components(milliseconds: stamp)
+    /// The calendar fields of `stamp` in `zone`, UTC when none is given.
+    static func components(milliseconds stamp: Int, zone: TimeZone? = nil) -> PineCalendar.Components {
+        guard let zone else { return PineCalendar.components(milliseconds: stamp) }
+        let offset = zone.secondsFromGMT(for: Date(timeIntervalSince1970: Double(stamp) / 1000))
+        return PineCalendar.components(milliseconds: stamp + offset * 1000)
+    }
+
+    static func part(_ name: String, milliseconds stamp: Int, zone: TimeZone? = nil) -> PineRuntimeValue {
+        let c = components(milliseconds: stamp, zone: zone)
         switch name {
         case "year": return .int(c.year)
         case "month": return .int(c.month)
@@ -79,5 +86,33 @@ enum PineTime {
         case "timeframe.isticks": return .bool(false)
         default: return nil
         }
+    }
+
+    /// `str.format_time`: `format` is a Unicode date pattern (the letters Pine and Java share: `yyyy`, `MM`,
+    /// `MMM`, `dd`, `HH`, `hh`, `mm`, `ss`, `SSS`, `a`, `EEE`, `Z`…), `zone` an IANA name, `UTC`, or
+    /// `UTC+3` / `GMT-05:30`. Without a zone it is UTC, which is what the engine reports as the exchange zone.
+    static func formatted(milliseconds: Int, format: String?, zone: String?) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone(named: zone)
+        formatter.dateFormat = format ?? "yyyy-MM-dd'T'HH:mm:ssZ"
+        return formatter.string(from: Date(timeIntervalSince1970: Double(milliseconds) / 1000))
+    }
+
+    static func timeZone(named name: String?) -> TimeZone {
+        guard let name, !name.isEmpty else { return TimeZone(secondsFromGMT: 0) ?? .current }
+        if let zone = TimeZone(identifier: name) { return zone }
+        let parts = name.uppercased().replacingOccurrences(of: " ", with: "")
+        for prefix in ["UTC", "GMT"] where parts.hasPrefix(prefix) {
+            let offset = parts.dropFirst(prefix.count)
+            guard let sign = offset.first, sign == "+" || sign == "-" else { break }
+            let digits = offset.dropFirst().split(separator: ":", omittingEmptySubsequences: false)
+            guard let hours = digits.first.flatMap({ Int($0) }) else { break }
+            let minutes = digits.count > 1 ? Int(digits[1]) ?? 0 : 0
+            let seconds = (hours * 3600 + minutes * 60) * (sign == "-" ? -1 : 1)
+            if let zone = TimeZone(secondsFromGMT: seconds) { return zone }
+        }
+        return TimeZone(secondsFromGMT: 0) ?? .current
     }
 }

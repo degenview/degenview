@@ -4,7 +4,7 @@ extension PineParser {
     static let objectTypes: [String: PineValueType] = [
         "line": .line, "label": .label, "box": .box, "table": .table, "array": .array,
         // Typed `.object` rather than a kind of its own: the checker does not track handles of this kind.
-        "linefill": .object, "map": .map,
+        "linefill": .object, "map": .map, "polyline": .object, "matrix": .matrix,
     ]
 
     static let qualifiers: [String: PineQualifier] = [
@@ -46,14 +46,30 @@ extension PineParser {
     /// they are followed by a name (or `[]`/`<`), so `line.new(...)` and `int(x)` still
     /// parse as expressions.
     mutating func typeAnnotation() -> PineValueType? {
+        annotatedTypeName = nil
         var type: PineValueType
         switch current.kind {
         case .typeKeyword(let t): type = t
+        case .identifier(let alias) where importAliases.contains(alias) && isLibraryTypeAnnotation():
+            // `alias.Type name`
+            advance()
+            advance()
+            if case .identifier(let name) = current.kind { annotatedTypeName = "\(alias).\(name)" }
+            advance()
+            return .object
+        case .identifier("chart") where isChartPointAnnotation():
+            // `chart.point p = …`
+            advance()
+            advance()
+            advance()
+            annotatedTypeName = "chart.point"
+            return .object
         case .identifier(let word):
             if let t = Self.objectTypes[word] {
                 type = t
             } else if userTypes.contains(word) || enumTypes.contains(word) {
                 type = .object
+                annotatedTypeName = word
             } else {
                 return nil
             }
@@ -77,6 +93,13 @@ extension PineParser {
             expect(.greater, "Expected '>'.")
             return .array
         }
+        if type == .matrix, next.kind == .less {
+            advance()
+            advance()
+            _ = typeArgument()
+            expect(.greater, "Expected '>'.")
+            return .matrix
+        }
         if type == .map, next.kind == .less {
             advance()
             advance()
@@ -87,6 +110,22 @@ extension PineParser {
             return .map
         }
         return nil
+    }
+
+    /// `alias.Type name`: an imported type followed by a variable name.
+    private func isLibraryTypeAnnotation() -> Bool {
+        guard peek(1)?.kind == .dot, case .identifier? = peek(2)?.kind, case .identifier? = peek(3)?.kind else {
+            return false
+        }
+        return true
+    }
+
+    /// `chart.point name`: the dotted type name followed by a variable name.
+    private func isChartPointAnnotation() -> Bool {
+        guard peek(1)?.kind == .dot, case .identifier("point")? = peek(2)?.kind,
+            case .identifier? = peek(3)?.kind
+        else { return false }
+        return true
     }
 
     /// One type argument of `array<…>` or `map<…, …>`: a type name, a dotted one (`chart.point`), or a nested
@@ -127,31 +166,14 @@ extension PineParser {
         }
     }
 
-    // MARK: - Declarations outside this release
+    // MARK: - Imports
 
-    private static let unsupportedDeclarations: [String: (code: String, message: String)] = [
-        "import": ("PINE9008", "Library imports are not supported in this release."),
-    ]
-
-    /// `type Name`, `enum Name`, `method name(…) =>` and `import user/lib/1 as alias` are valid Pine
-    /// the engine does not implement. Reporting the declaration once and skipping its body keeps one
-    /// clear diagnostic from turning into one syntax error per field line. Returns whether it consumed
-    /// anything; ordinary code that merely uses one of these words as a name is left alone.
-    mutating func skipUnsupportedDeclaration() -> Bool {
-        guard case .identifier(let word) = current.kind,
-            let entry = Self.unsupportedDeclarations[word],
-            let next = peek(1), case .identifier = next.kind
+    /// `import user/lib/1 as alias`: the compiler reads these lines itself (a library path is not an
+    /// expression), so the parser only steps over one.
+    mutating func skipImportDeclaration() -> Bool {
+        guard case .identifier("import") = current.kind, let next = peek(1), case .identifier = next.kind
         else { return false }
-        diagnostics.append(.error(entry.code, .unsupported, entry.message, current.range))
         skipToLineEnd()
-        guard at(.newline), peek(1)?.kind == .indent else { return true }
-        advance()
-        advance()
-        var depth = 1
-        while depth > 0, !at(.eof) {
-            if at(.indent) { depth += 1 } else if at(.dedent) { depth -= 1 }
-            advance()
-        }
         return true
     }
 }

@@ -12,7 +12,7 @@ extension PineRuntimeSession {
         case .binary(let left, let op, let right, let range):
             return try evalBinary(left, op, right, range, &context)
         case .ternary(let condition, let whenTrue, let whenFalse, let range):
-            guard case .bool(let test) = try eval(condition, &context) else {
+            guard let test = Self.truth(try eval(condition, &context)) else {
                 throw PineDiagnostic.error(
                     "PINE4005", .runtime, "Ternary condition must be bool.", range)
             }
@@ -37,15 +37,19 @@ extension PineRuntimeSession {
     /// Variables first, then series and symbol facts, `barstate.*`, colors and named constants.
     /// A dotted name that matches nothing is an enumeration constant (`size.small`,
     /// `shape.circle`…) and stands for itself; a plain name that matches nothing is a typo.
-    private func resolveIdentifier(
+    func resolveIdentifier(
         _ name: String, _ range: PineSourceRange, _ context: PineRuntimeContext
     ) throws -> PineRuntimeValue {
-        if let value = working.variables[name] { return value }
+        if let value = try libraryIdentifier(name, range, context) { return value }
+        let isolated = isolatedFromScript(name, context)
+        if !isolated, let value = working.variables[name] { return value }
         if let value = securityGlobals?[name] { return value }
         if let value = market(name, context) { return value }
         if let flag = context.flags.value(named: name) { return .bool(flag) }
         if let color = PineBuiltins.colors[name] ?? chartColor(name) { return .color(color) }
         if let constant = PineBuiltins.constants[name] { return constant }
+        // Pine defines it but this release does not model it (a session, an exchange, the visible window).
+        if PineSymbolCatalog.isUnimplementedVariable(name) { return .na }
         guard name.contains(".") else {
             throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
         }
@@ -57,7 +61,12 @@ extension PineRuntimeSession {
             }
             return .string(name)
         }
-        if let field = try fieldPath(name, range) { return field }
+        if !isolated, let field = try fieldPath(name, range) { return field }
+        // A named constant of Pine's (`size.small`, `shape.circle`) stands for its own name; any other
+        // dotted name is a typo or something this release lacks, and says so instead of becoming a string.
+        guard PineSymbolCatalog.constants.contains(name) else {
+            throw PineDiagnostic.error("PINE4008", .runtime, "Undefined variable '\(name)'.", range)
+        }
         return .string(name)
     }
 
@@ -65,6 +74,16 @@ extension PineRuntimeSession {
         switch name {
         case "chart.fg_color": theme.foreground
         case "chart.bg_color": theme.background
+        default: nil
+        }
+    }
+
+    /// A value as a condition. In v6 a bool is never `na`: `na` (what a bool series reads before its first
+    /// bar, or an unreached branch) counts as false. Numbers and strings are not conditions.
+    static func truth(_ value: PineRuntimeValue) -> Bool? {
+        switch value {
+        case .bool(let b): b
+        case .na: false
         default: nil
         }
     }
@@ -80,7 +99,7 @@ extension PineRuntimeSession {
         case .negate: return PineOperators.negate(value)
         case .plus: return value
         case .not:
-            guard case .bool(let b) = value else {
+            guard let b = Self.truth(value) else {
                 throw PineDiagnostic.error("PINE4002", .runtime, "not requires bool.", range)
             }
             return .bool(!b)
@@ -107,9 +126,9 @@ extension PineRuntimeSession {
         let word = isAnd ? "and" : "or"
         let error = PineDiagnostic.error(
             isAnd ? "PINE4003" : "PINE4004", .runtime, "\(word) requires bool operands.", range)
-        guard case .bool(let left) = lhs else { throw error }
+        guard let left = Self.truth(lhs) else { throw error }
         if left != isAnd { return .bool(left) }
-        guard case .bool(let rhs) = try eval(right, &context) else { throw error }
+        guard let rhs = Self.truth(try eval(right, &context)) else { throw error }
         return .bool(rhs)
     }
 
