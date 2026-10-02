@@ -33,7 +33,7 @@ final class PineCorpusTests: XCTestCase {
     /// that starts well before the chart and runs past its end, like a data feed with more history than the
     /// chart shows.
     private final class SyntheticSecurityData: PineSecurityDataProvider, @unchecked Sendable {
-        private static let history = 300
+        private static let history = 500
         private let range: ClosedRange<Date>
         private let lock = NSLock()
         private var cache: [PineSecurityKey: [KlineData]] = [:]
@@ -76,6 +76,14 @@ final class PineCorpusTests: XCTestCase {
         }
     }
 
+    /// The app's limits, except a longer deadline: the test target is a Debug build, which interprets several
+    /// times slower than the app, and the question here is whether a script runs to completion, not how fast.
+    private static let limits: PineLimits = {
+        var limits = PineLimits.default
+        limits.deadline = 60
+        return limits
+    }()
+
     private static let barCount = 1_000
     private static let repositoryRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
@@ -93,7 +101,12 @@ final class PineCorpusTests: XCTestCase {
         let expectations = try JSONDecoder().decode(
             [String: Expectation].self,
             from: Data(contentsOf: Self.corpusDirectory.appendingPathComponent("expectations.json")))
-        let fetched = manifest.filter { $0.status == "fetched" }
+        // `PINE_CORPUS_ONLY=slug,slug` runs just those scripts, for profiling one; the expectations check is
+        // then skipped for the rest.
+        let only = ProcessInfo.processInfo.environment["PINE_CORPUS_ONLY"].map {
+            Set($0.split(separator: ",").map(String.init))
+        }
+        let fetched = manifest.filter { $0.status == "fetched" && (only?.contains($0.slug) ?? true) }
         try XCTSkipIf(
             !FileManager.default.fileExists(atPath: cacheDirectory.path),
             "No corpus cache; run tools/pine-corpus/fetch.py")
@@ -145,7 +158,8 @@ final class PineCorpusTests: XCTestCase {
             return (.init(status: "compile-error", codes: codes(of: compileErrors)), describe(compileErrors))
         }
         do {
-            let result = try PineRuntimeSession(program: program, securityData: securityData).evaluate(bars: bars)
+            let result = try PineRuntimeSession(program: program, limits: Self.limits, securityData: securityData)
+                .evaluate(bars: bars)
             let runtimeErrors = errors(in: result.diagnostics)
             return runtimeErrors.isEmpty
                 ? (.init(status: "ok", codes: []), [])
