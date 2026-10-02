@@ -16,9 +16,9 @@ struct AddTickerSheet: View {
         sources: { [DataSourceFactory.shared.alpaca] }
     )
     @StateObject private var polymarketVM = PredictionMarketSearchViewModel(
-        provider: .polymarket, logPrefix: "[AddTicker/Polymarket]")
+        provider: .polymarket, logPrefix: "[AddTicker/Polymarket]", offersTrending: true)
     @StateObject private var kalshiVM = PredictionMarketSearchViewModel(
-        provider: .kalshi, logPrefix: "[AddTicker/Kalshi]")
+        provider: .kalshi, logPrefix: "[AddTicker/Kalshi]", offersTrending: true)
 
     @State private var selectedTab: Tab = .crypto
     @State private var inputText = ""
@@ -57,6 +57,20 @@ struct AddTickerSheet: View {
         self.onAddBitcoinPowerLaw = onAddBitcoinPowerLaw
         self.onAdd = onAdd
     }
+
+    /// Starting points for the Predictions tab; each searches the selected provider for `query`.
+    private static let predictionTopics: [SuggestionChipGrid.Item] = [
+        .init(title: "Fed decision", query: "fed", icon: .symbol("building.columns")),
+        .init(title: "Bitcoin price", query: "bitcoin", icon: .symbol("bitcoinsign.circle")),
+        .init(title: "Ethereum price", query: "ethereum", icon: .symbol("diamond")),
+        .init(title: "Inflation", query: "inflation", icon: .symbol("chart.line.uptrend.xyaxis")),
+        .init(title: "Recession", query: "recession", icon: .symbol("arrow.down.right.circle")),
+        .init(title: "Election", query: "election", icon: .symbol("checkmark.seal")),
+        .init(title: "Trump", query: "trump", icon: .symbol("person.crop.circle")),
+        .init(title: "Oil & gold", query: "oil", icon: .symbol("flame")),
+        .init(title: "Super Bowl", query: "super bowl", icon: .symbol("sportscourt")),
+        .init(title: "Weather", query: "temperature", icon: .symbol("cloud.sun")),
+    ]
 
     private let suggestions = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
     private let stockSuggestions = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD"]
@@ -141,6 +155,7 @@ struct AddTickerSheet: View {
                             searchText: $predictionMarketText,
                             sizing: .fillAvailable,
                             showsStatus: false,
+                            suggestions: Self.predictionTopics,
                             onCommitResult: { addTicker($0) }
                         )
                     case .coinMarketCap:

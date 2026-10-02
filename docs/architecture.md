@@ -135,6 +135,7 @@ DegenView/
     ├── PortfolioCSVService.swift      # Native and CoinMarketCap CSV import/export
     ├── PortfolioAssetAutoMapper.swift # Currency-pair asset resolution for imports
     ├── PredictionMarketDataSource.swift # Shared protocol: YES probability history by TimeRange
+    ├── TrendingMarketsDataSource.swift # Optional capability: busiest events (Polymarket 24h volume)
     ├── PolymarketService.swift        # Event search and probability history
     ├── KalshiService.swift            # Series-index search, candlestick history, live YES ask
     ├── KalshiSeriesIndex.swift        # Cached /series list + local keyword ranking

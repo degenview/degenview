@@ -11,6 +11,7 @@ struct PredictionMarketPicker: View {
     @Binding var searchText: String
     var sizing: SearchResultListSizing
     var showsStatus = true
+    var suggestions: [SuggestionChipGrid.Item]? = nil
     var onCommitResult: ((TickerSearchResult) -> Void)? = nil
 
     /// View model behind `provider`.
@@ -33,6 +34,7 @@ struct PredictionMarketPicker: View {
             sizing: sizing,
             showsStatus: showsStatus,
             provider: $provider,
+            suggestions: suggestions,
             onCommitResult: onCommitResult
         )
         .onChange(of: provider) { oldValue, newValue in

@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001700 /* PredictionTrendingTests.swift */; };
+		AA1000000000000000001400 /* TrendingMarketsDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500 /* TrendingMarketsDataSource.swift */; };
+		AA1000000000000000001401 /* TrendingMarketsDataSource.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500; };
 		AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001303 /* RecentMarketsStoreTests.swift */; };
 		AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001302 /* RecentMarketsCard.swift */; };
 		AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001301 /* RecentMarketsStore.swift */; };
@@ -600,6 +603,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000001700 /* PredictionTrendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionTrendingTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000001500 /* TrendingMarketsDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingMarketsDataSource.swift; sourceTree = "<group>"; };
 		AA1000000000000000001303 /* RecentMarketsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStoreTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001302 /* RecentMarketsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000001301 /* RecentMarketsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStore.swift; sourceTree = "<group>"; };
@@ -1248,6 +1253,7 @@
 				A0000000000000000000011B /* DEXScreenerService.swift */,
 				C10000000000000000000102 /* PolymarketService.swift */,
 				C10000000000000000000214 /* PredictionMarketDataSource.swift */,
+				AA1000000000000000001500 /* TrendingMarketsDataSource.swift */,
 				C10000000000000000000213 /* KalshiSeriesIndex.swift */,
 				C10000000000000000000212 /* KalshiService.swift */,
 				CMC000000000000000000101 /* CoinMarketCapService.swift */,
@@ -1455,6 +1461,7 @@
 				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
 				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
+				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -1897,6 +1904,7 @@
 			BA110000000000000000001C, BA110000000000000000001E,
 			BA110000000000000000001F, BA1100000000000000000020,
 			BA1100000000000000000025,
+			AA1000000000000000001401,
 			BA1100000000000000000024,
 			BA1100000000000000000023,
 			CB1100000000000000000002,
@@ -2014,6 +2022,7 @@
 				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
 				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
+				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2196,6 +2205,7 @@
 				C10000000000000000000002 /* PolymarketService.swift in Sources */,
 				C10000000000000000000205 /* PredictionMarketPicker.swift in Sources */,
 				C10000000000000000000204 /* PredictionMarketDataSource.swift in Sources */,
+				AA1000000000000000001400 /* TrendingMarketsDataSource.swift in Sources */,
 				C10000000000000000000203 /* KalshiSeriesIndex.swift in Sources */,
 				C10000000000000000000202 /* KalshiService.swift in Sources */,
 				C10000000000000000000201 /* KalshiModels.swift in Sources */,

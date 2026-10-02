@@ -103,11 +103,40 @@ private struct SearchResultListSizeModifier: ViewModifier {
 
 /// Quick-fill suggestion chips shown before the user has typed a query.
 struct SuggestionChipGrid: View {
+    /// One chip: what it says, what it searches for, and the icon in front of it.
+    struct Item: Hashable {
+        enum Icon: Hashable {
+            /// A coin or company logo, looked up for the chip's title as a ticker of the source.
+            case logo(DataSourceType)
+            case symbol(String)
+            case none
+        }
+
+        let title: String
+        let query: String
+        var icon: Icon = .none
+    }
+
     let caption: String
-    let items: [String]
-    /// The source the suggestions are tickers of; when set, each chip leads with its logo.
-    var iconSource: DataSourceType?
-    let onSelect: (String) -> Void
+    let items: [Item]
+    let onSelect: (Item) -> Void
+
+    init(caption: String, items: [Item], onSelect: @escaping (Item) -> Void) {
+        self.caption = caption
+        self.items = items
+        self.onSelect = onSelect
+    }
+
+    /// Tickers that search for themselves; with `iconSource`, each leads with its logo.
+    init(
+        caption: String, items: [String], iconSource: DataSourceType? = nil,
+        onSelect: @escaping (String) -> Void
+    ) {
+        self.init(
+            caption: caption,
+            items: items.map { Item(title: $0, query: $0, icon: iconSource.map { .logo($0) } ?? .none) },
+            onSelect: { onSelect($0.query) })
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -119,7 +148,7 @@ struct SuggestionChipGrid: View {
                 columns: Array(repeating: .init(.flexible(), spacing: 8), count: UI.suggestionGridColumns), spacing: 8
             ) {
                 ForEach(items, id: \.self) { item in
-                    SuggestionChip(title: item, iconSource: iconSource) { onSelect(item) }
+                    SuggestionChip(item: item) { onSelect(item) }
                 }
             }
         }
@@ -131,8 +160,7 @@ struct SuggestionChipGrid: View {
 }
 
 private struct SuggestionChip: View {
-    let title: String
-    let iconSource: DataSourceType?
+    let item: SuggestionChipGrid.Item
     let action: () -> Void
     @State private var isHovered = false
     @State private var iconURL: URL?
@@ -140,15 +168,8 @@ private struct SuggestionChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 7) {
-                if let iconSource {
-                    TickerIconView(symbol: title, url: iconURL, size: 18)
-                        .task(id: title) {
-                            iconURL = await IconResolver.shared.iconURL(
-                                ticker: Self.marketTicker(title, source: iconSource), source: iconSource,
-                                baseSymbol: title)
-                        }
-                }
-                Text(title)
+                icon
+                Text(item.title).lineLimit(1)
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.primary)
@@ -164,6 +185,25 @@ private struct SuggestionChip: View {
         }
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder private var icon: some View {
+        switch item.icon {
+        case .logo(let source):
+            TickerIconView(symbol: item.title, url: iconURL, size: 18)
+                .task(id: item.title) {
+                    iconURL = await IconResolver.shared.iconURL(
+                        ticker: Self.marketTicker(item.title, source: source), source: source,
+                        baseSymbol: item.title)
+                }
+        case .symbol(let name):
+            Image(systemName: name)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18, height: 18)
+        case .none:
+            EmptyView()
+        }
     }
 
     /// The id the source knows the ticker by: Binance lists "BTC" as "BTCUSDT".
@@ -212,7 +252,7 @@ struct SearchFieldRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 9)
+        .frame(minHeight: UI.searchFieldHeight)
         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -289,6 +329,8 @@ struct PredictionMarketSearchPane: View {
     var showsStatus = true
     /// When set, a provider dropdown (Polymarket / Kalshi) leads the search field.
     var provider: Binding<DataSourceType>? = nil
+    /// Topic chips shown while the search box is empty; nil leaves the pane bare (Chart Settings).
+    var suggestions: [SuggestionChipGrid.Item]? = nil
     var onCommitResult: ((TickerSearchResult) -> Void)? = nil
 
     private var resultHeight: CGFloat {
@@ -305,19 +347,13 @@ struct PredictionMarketSearchPane: View {
         return calculated
     }
 
+    private var isQueryEmpty: Bool { searchText.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
         VStack(spacing: 16) {
             HStack(spacing: 8) {
                 if let provider {
-                    Picker("Provider", selection: provider) {
-                        ForEach(DataSourceType.predictionMarkets, id: \.self) { source in
-                            Text(source.displayName).tag(source)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .fixedSize()
-                    .help("Prediction market provider")
+                    PredictionProviderMenu(provider: provider)
                 }
 
                 SearchFieldRow(
@@ -333,8 +369,31 @@ struct PredictionMarketSearchPane: View {
                 )
             }
 
+            if let suggestions, isQueryEmpty {
+                SuggestionChipGrid(caption: "Popular topics", items: suggestions) { item in
+                    // Typing fills the box; the field's own change handler runs the search.
+                    searchText = item.query
+                }
+                if searchVM.isShowingTrending && !searchVM.hasResults {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading trending markets…").font(.caption).foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+                }
+            }
+
             if searchVM.hasResults {
                 List {
+                    if searchVM.isShowingTrending {
+                        Label("Trending on \(searchVM.provider.displayName)", systemImage: "flame.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(.init(top: 8, leading: 10, bottom: 2, trailing: 10))
+                    }
                     ForEach(Array(searchVM.groups.enumerated()), id: \.element.id) { index, group in
                         groupHeader(for: group)
                             .listRowSeparator(.hidden)
@@ -376,6 +435,10 @@ struct PredictionMarketSearchPane: View {
             }
         }
         .frame(maxHeight: .infinity, alignment: .top)
+        .task {
+            // First appearance with nothing typed: fetch the trending list.
+            if suggestions != nil, isQueryEmpty, !searchVM.hasResults { searchVM.scheduleSearch(query: "") }
+        }
     }
 
     @ViewBuilder
@@ -468,5 +531,47 @@ private struct PredictionMarketListSizeModifier: ViewModifier {
         case .fillAvailable:
             content.frame(maxHeight: .infinity)
         }
+    }
+}
+
+/// The Polymarket / Kalshi switch: styled like the search box beside it, at the same height,
+/// with the provider's logo and a single chevron (the system menu indicator is hidden).
+private struct PredictionProviderMenu: View {
+    @Binding var provider: DataSourceType
+
+    var body: some View {
+        Menu {
+            ForEach(DataSourceType.predictionMarkets, id: \.self) { source in
+                Button {
+                    provider = source
+                } label: {
+                    if source == provider {
+                        Label(source.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(source.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                SourceLogoView(source: provider, size: 18)
+                    .frame(width: 18, height: 18)
+                Text(provider.displayName).font(.body.weight(.medium)).foregroundStyle(.primary)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: UI.searchFieldHeight)
+            .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Prediction market provider")
+        .accessibilityLabel("Provider, \(provider.displayName)")
     }
 }

@@ -156,6 +156,10 @@ enum Polymarket {
     static let cacheTTL: TimeInterval = 60
     /// Longest market title kept intact in a search row before truncation.
     static let maxTitleLength = 90
+    /// Events listed under "Trending" on the Add Chart sheet.
+    static let trendingLimit = 8
+    /// How long a trending list is reused before it is fetched again (seconds).
+    static let trendingCacheTTL: TimeInterval = 600
 }
 
 // MARK: - Kalshi Constants
@@ -339,6 +343,8 @@ enum UI {
     /// "Prediction Markets" (~138 pt each, ~828 pt) plus the sheet's 24 pt padding on
     /// both sides. The height fits the tallest static tab (CoinMarketCap), and search
     /// results scroll within whatever is left.
+    /// Height shared by a search box and the controls beside it.
+    static let searchFieldHeight: CGFloat = 36
     static let addTickerSheetWidth: CGFloat = 900
     static let addTickerSheetHeight: CGFloat = 620
     /// Width of the optional favorites rail on the right.
