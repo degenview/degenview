@@ -2,11 +2,15 @@ import Foundation
 
 // MARK: - API models
 
-/// `/coins/markets` row, trimmed to the icon fields.
+/// `/coins/markets` row, trimmed to the icon and label fields.
 private struct MarketCoin: Decodable {
     let id: String
     let symbol: String
     let image: String
+    /// Optional so a payload without it still decodes; the name is a label, never identity.
+    let name: String?
+
+    var displayName: String? { name.flatMap { $0.isEmpty ? nil : $0 } }
 }
 
 // MARK: - Cache
@@ -22,6 +26,11 @@ private struct IconCache: Codable {
     /// CoinGecko coin id → uppercased ticker symbol ("bitcoin" → "BTC"), so a chart that only
     /// stores the id can be labelled `BTC/USD`. Optional so caches written before it existed decode.
     var symbolByID: [String: String]?
+    /// Base symbol → coin name ("btc" → "Bitcoin"), from the same snapshot. Optional so caches
+    /// written before names were kept decode — and are refreshed once to fill it.
+    var nameBySymbol: [String: String]?
+    /// CoinGecko coin id → coin name ("bitcoin" → "Bitcoin").
+    var nameByID: [String: String]?
     var marketUpdatedAt: Date = .distantPast
     /// Optional so caches written before stock-specific resolution still decode.
     var stockResolverVersion: Int?
@@ -83,6 +92,10 @@ actor IconResolver {
         self.rateLimiter = rateLimiter
         store = JSONStore<IconCache>(filename: "icon_cache.json", directory: directory)
         cache = store.load() ?? IconCache()
+        if cache.nameBySymbol == nil {
+            // Names ride on the snapshot, so a cache that predates them re-fetches it once.
+            cache.marketUpdatedAt = .distantPast
+        }
         if cache.stockResolverVersion != Icon.stockResolverVersion {
             cache.entries = cache.entries.filter { key, _ in
                 !key.hasPrefix("\(DataSourceType.alpaca.rawValue):")
@@ -250,16 +263,24 @@ actor IconResolver {
         var symbols: [String: String] = [:]
         var ids: [String: String] = [:]
         var symbolByID = cache.symbolByID ?? [:]
+        var namesBySymbol: [String: String] = [:]
+        var namesByID = cache.nameByID ?? [:]
         for coin in coins {
             let symbol = coin.symbol.lowercased()
-            if symbols[symbol] == nil { symbols[symbol] = coin.image }
+            if symbols[symbol] == nil {
+                symbols[symbol] = coin.image
+                if let name = coin.displayName { namesBySymbol[symbol] = name }
+            }
             ids[coin.id.lowercased()] = coin.image
             symbolByID[coin.id.lowercased()] = coin.symbol.uppercased()
+            if let name = coin.displayName { namesByID[coin.id.lowercased()] = name }
         }
 
         cache.symbolMap = symbols
         cache.idMap = ids
         cache.symbolByID = symbolByID
+        cache.nameBySymbol = namesBySymbol
+        cache.nameByID = namesByID
         cache.marketUpdatedAt = Date()
         save()
     }
@@ -314,14 +335,17 @@ actor IconResolver {
 
         var found: [String: MarketCoin] = [:]
         var symbolByID = cache.symbolByID ?? [:]
+        var namesByID = cache.nameByID ?? [:]
         for coin in coins {
             let id = coin.id.lowercased()
             found[id] = coin
             // Worth keeping: these coins sit outside the snapshot entirely.
             cache.idMap[id] = coin.image
             symbolByID[id] = coin.symbol.uppercased()
+            if let name = coin.displayName { namesByID[id] = name }
         }
         cache.symbolByID = symbolByID
+        cache.nameByID = namesByID
         save()
         return found
     }
@@ -344,6 +368,31 @@ actor IconResolver {
 
         // Another card's batch can complete first and carry this id's answer in the cache.
         if let known = cache.symbolByID?[coinID] { return known }
+        unlistedSymbolIDs[coinID] = Date()
+        return nil
+    }
+
+    // MARK: - Coin names
+
+    /// The coin name for a base symbol (`"BTC"` → `"Bitcoin"`), from the market snapshot. The
+    /// highest-cap coin owns a symbol, the same rule icons follow; nil when it isn't ranked.
+    func coinName(forSymbol symbol: String) async -> String? {
+        await refreshMarketMapIfNeeded()
+        return cache.nameBySymbol?[symbol.lowercased()]
+    }
+
+    /// The coin name for a CoinGecko coin id. Answers from the persisted map; otherwise joins the
+    /// next batched lookup, like `symbol(forCoinID:)`.
+    func coinName(forCoinID id: String) async -> String? {
+        let coinID = id.lowercased()
+        if let known = cache.nameByID?[coinID] { return known }
+        if let missed = unlistedSymbolIDs[coinID], Date().timeIntervalSince(missed) < Icon.negativeTTL {
+            return nil
+        }
+
+        guard let coins = await coinGeckoCoins(including: coinID) else { return nil }
+        if let name = coins[coinID]?.displayName { return name }
+        if let known = cache.nameByID?[coinID] { return known }
         unlistedSymbolIDs[coinID] = Date()
         return nil
     }

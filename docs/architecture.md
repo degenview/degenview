@@ -14,6 +14,8 @@ DegenView/
 │   ├── ChartColumn.swift              # Persisted grid columns and legacy layout repair
 │   ├── ChartTab.swift                 # Persisted per-tab state and restored session
 │   ├── PortfolioModels.swift          # Portfolios, assets, transactions, holdings, snapshots
+│   ├── PortfolioStatistics.swift      # Derived stats (best/worst, 24h, extremes, fees) + PortfolioPeriodChange
+│   ├── PortfolioHistoryRange.swift    # Overview chart ranges (1D … ALL) and snapshot filtering
 │   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
@@ -32,6 +34,7 @@ DegenView/
 │   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
 │   ├── PineAlertCoordinator.swift     # Routes a chart's Pine alerts; pauses/re-arms subscriptions
 │   ├── TickerSearchViewModel.swift    # Parallel crypto and stock search
+│   ├── PortfolioAssetInfoViewModel.swift # Portfolio asset coin names and artwork, via IconResolver
 │   └── PredictionMarketSearchViewModel.swift  # Polymarket/Kalshi event search, grouped by event
 ├── View/
 │   ├── ChartIconView.swift            # A chart's market icon with its source logo badge
@@ -60,6 +63,21 @@ DegenView/
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
+│   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings
+│   ├── PortfolioTabBar.swift          # Icon + title section switcher for the portfolio tabs
+│   ├── PortfolioPerformerCard.swift   # Best/worst performer card (icon, return %, total P&L)
+│   ├── PortfolioHoldingsView.swift    # Portfolio tab: positions Table (sortable headers persist the portfolio's sort)
+│   ├── PortfolioTableChrome.swift     # Shared Table look: zebra rows, hairline border, side margin
+│   ├── PortfolioSearchField.swift     # Rounded search box above the portfolio tables
+│   ├── PortfolioNumericCell.swift     # Right-aligned monospaced-digit table cell
+│   ├── PortfolioTransactionsView.swift # Portfolio tab: searchable/filterable/sortable transactions Table
+│   ├── PortfolioStatisticsView.swift  # Portfolio tab: performance, value range, activity, P&L-by-asset bars
+│   ├── PortfolioAssetDetailView.swift # One asset's position stats and transactions table (sheet)
+│   ├── PortfolioHistoryChart.swift    # Hand-drawn portfolio value line with hover tooltip
+│   ├── PortfolioAllocationChart.swift # Allocation donut + legend (top slices, rest folded into "Other")
+│   ├── PortfolioCard.swift            # Titled rounded panel used across the portfolio tabs
+│   ├── PortfolioStatCard.swift        # Labelled figure with optional caption line
+│   ├── PortfolioTransactionTypeBadge.swift # Tinted pill for a transaction type
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
 │   └── AppSettingsView.swift          # Theme, provider credentials, notifications
 ├── Pine/                              # Pine Script feature: language, runtime, broker, editor, views

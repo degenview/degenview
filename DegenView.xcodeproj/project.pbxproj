@@ -7,6 +7,27 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000561 /* PortfolioPerformerCard.swift */; };
+		AA1000000000000000000460 /* PortfolioTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000560 /* PortfolioTabBar.swift */; };
+		AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000503 /* PortfolioHoldingsView.swift */; };
+		AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000502 /* PortfolioNumericCell.swift */; };
+		AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000501 /* PortfolioSearchField.swift */; };
+		AA1000000000000000000400 /* PortfolioTableChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000500 /* PortfolioTableChrome.swift */; };
+		AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000311 /* PortfolioStatisticsTests.swift */; };
+		AA1000000000000000000210 /* PortfolioStatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000310 /* PortfolioStatisticsView.swift */; };
+		AA1000000000000000000209 /* PortfolioTransactionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000309 /* PortfolioTransactionsView.swift */; };
+		AA1000000000000000000208 /* PortfolioOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000308 /* PortfolioOverviewView.swift */; };
+		AA1000000000000000000207 /* PortfolioAllocationChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000307 /* PortfolioAllocationChart.swift */; };
+		AA1000000000000000000206 /* PortfolioHistoryChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000306 /* PortfolioHistoryChart.swift */; };
+		AA1000000000000000000205 /* PortfolioTransactionTypeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */; };
+		AA1000000000000000000204 /* PortfolioStatCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000304 /* PortfolioStatCard.swift */; };
+		AA1000000000000000000203 /* PortfolioCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000303 /* PortfolioCard.swift */; };
+		AA1000000000000000000202 /* PortfolioValueFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000302 /* PortfolioValueFormatter.swift */; };
+		AA1000000000000000000201 /* PortfolioHistoryRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000301 /* PortfolioHistoryRange.swift */; };
+		AA1000000000000000000200 /* PortfolioStatistics.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000300 /* PortfolioStatistics.swift */; };
+		AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */; };
+		AA1000000000000000000012 /* PortfolioAssetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000112 /* PortfolioAssetDetailView.swift */; };
+		AA1000000000000000000011 /* PortfolioAssetInfoViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */; };
 		ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */; };
 		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
 		C4D1A0000000000000000001 /* AppDatabase+Candles.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4D1A0000000000000000101 /* AppDatabase+Candles.swift */; };
@@ -567,6 +588,27 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000000561 /* PortfolioPerformerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioPerformerCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000560 /* PortfolioTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabBar.swift; sourceTree = "<group>"; };
+		AA1000000000000000000503 /* PortfolioHoldingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHoldingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000502 /* PortfolioNumericCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioNumericCell.swift; sourceTree = "<group>"; };
+		AA1000000000000000000501 /* PortfolioSearchField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioSearchField.swift; sourceTree = "<group>"; };
+		AA1000000000000000000500 /* PortfolioTableChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTableChrome.swift; sourceTree = "<group>"; };
+		AA1000000000000000000311 /* PortfolioStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000310 /* PortfolioStatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatisticsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000309 /* PortfolioTransactionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTransactionsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000308 /* PortfolioOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioOverviewView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000307 /* PortfolioAllocationChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAllocationChart.swift; sourceTree = "<group>"; };
+		AA1000000000000000000306 /* PortfolioHistoryChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHistoryChart.swift; sourceTree = "<group>"; };
+		AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTransactionTypeBadge.swift; sourceTree = "<group>"; };
+		AA1000000000000000000304 /* PortfolioStatCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000303 /* PortfolioCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000302 /* PortfolioValueFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioValueFormatter.swift; sourceTree = "<group>"; };
+		AA1000000000000000000301 /* PortfolioHistoryRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHistoryRange.swift; sourceTree = "<group>"; };
+		AA1000000000000000000300 /* PortfolioStatistics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioStatistics.swift; sourceTree = "<group>"; };
+		AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetDisplayTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000112 /* PortfolioAssetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetDetailView.swift; sourceTree = "<group>"; };
+		AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioAssetInfoViewModel.swift; sourceTree = "<group>"; };
 		54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PaperTrading.swift"; sourceTree = "<group>"; };
 		343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Portfolio.swift"; sourceTree = "<group>"; };
 		C4D1A0000000000000000101 /* AppDatabase+Candles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Candles.swift"; sourceTree = "<group>"; };
@@ -1091,6 +1133,8 @@
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
 				AA1000000000000000000101 /* PortfolioModels.swift */,
+				AA1000000000000000000300 /* PortfolioStatistics.swift */,
+				AA1000000000000000000301 /* PortfolioHistoryRange.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
@@ -1199,6 +1243,7 @@
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
 				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
+				AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */,
 				B90000000000000000000105 /* AlertStore.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
@@ -1236,6 +1281,21 @@
 				SM0000000000000000000107 /* LineNumberedTextEditorView.swift */,
 				B90000000000000000000106 /* PriceAlertEditor.swift */,
 				B90000000000000000000107 /* AlertsCenterView.swift */,
+				AA1000000000000000000112 /* PortfolioAssetDetailView.swift */,
+				AA1000000000000000000303 /* PortfolioCard.swift */,
+				AA1000000000000000000304 /* PortfolioStatCard.swift */,
+				AA1000000000000000000305 /* PortfolioTransactionTypeBadge.swift */,
+				AA1000000000000000000306 /* PortfolioHistoryChart.swift */,
+				AA1000000000000000000307 /* PortfolioAllocationChart.swift */,
+				AA1000000000000000000308 /* PortfolioOverviewView.swift */,
+				AA1000000000000000000309 /* PortfolioTransactionsView.swift */,
+				AA1000000000000000000310 /* PortfolioStatisticsView.swift */,
+				AA1000000000000000000500 /* PortfolioTableChrome.swift */,
+				AA1000000000000000000501 /* PortfolioSearchField.swift */,
+				AA1000000000000000000502 /* PortfolioNumericCell.swift */,
+				AA1000000000000000000503 /* PortfolioHoldingsView.swift */,
+				AA1000000000000000000560 /* PortfolioTabBar.swift */,
+				AA1000000000000000000561 /* PortfolioPerformerCard.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
@@ -1282,6 +1342,7 @@
 				A0000000000000000000011D /* ColorHex.swift */,
 				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
+				AA1000000000000000000302 /* PortfolioValueFormatter.swift */,
 				763ED08073ED0807493107C6 /* PriceFormatter.swift */,
 				CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */,
 				C10000000000000000000109 /* SearchDebouncer.swift */,
@@ -1356,6 +1417,8 @@
 				C50000000000000000000105 /* KlineCacheTests.swift */,
 				CMC000000000000000000103 /* CoinMarketCapTests.swift */,
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
+				AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */,
+				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -1911,6 +1974,8 @@
 				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
 				CMC000000000000000000003 /* CoinMarketCapTests.swift in Sources */,
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
+				AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */,
+				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2006,10 +2071,29 @@
 				B90000000000000000000002 /* LocalPriceAlertEngine.swift in Sources */,
 				B90000000000000000000003 /* FXRateService.swift in Sources */,
 				B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */,
+				AA1000000000000000000011 /* PortfolioAssetInfoViewModel.swift in Sources */,
 				B90000000000000000000005 /* AlertStore.swift in Sources */,
 				B90000000000000000000006 /* PriceAlertEditor.swift in Sources */,
 				B90000000000000000000007 /* AlertsCenterView.swift in Sources */,
 				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
+				AA1000000000000000000012 /* PortfolioAssetDetailView.swift in Sources */,
+				AA1000000000000000000200 /* PortfolioStatistics.swift in Sources */,
+				AA1000000000000000000201 /* PortfolioHistoryRange.swift in Sources */,
+				AA1000000000000000000202 /* PortfolioValueFormatter.swift in Sources */,
+				AA1000000000000000000203 /* PortfolioCard.swift in Sources */,
+				AA1000000000000000000204 /* PortfolioStatCard.swift in Sources */,
+				AA1000000000000000000205 /* PortfolioTransactionTypeBadge.swift in Sources */,
+				AA1000000000000000000206 /* PortfolioHistoryChart.swift in Sources */,
+				AA1000000000000000000207 /* PortfolioAllocationChart.swift in Sources */,
+				AA1000000000000000000208 /* PortfolioOverviewView.swift in Sources */,
+				AA1000000000000000000209 /* PortfolioTransactionsView.swift in Sources */,
+				AA1000000000000000000210 /* PortfolioStatisticsView.swift in Sources */,
+				AA1000000000000000000400 /* PortfolioTableChrome.swift in Sources */,
+				AA1000000000000000000401 /* PortfolioSearchField.swift in Sources */,
+				AA1000000000000000000402 /* PortfolioNumericCell.swift in Sources */,
+				AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */,
+				AA1000000000000000000460 /* PortfolioTabBar.swift in Sources */,
+				AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,

@@ -826,7 +826,7 @@ private struct PortfolioAllocationMiniChart: View {
                         ForEach(Array(sorted.enumerated()), id: \.element.id) { index, holding in
                             HStack {
                                 Circle().fill(colors[index % colors.count]).frame(width: 8, height: 8)
-                                Text(holding.asset.symbol).bold()
+                                Text(holding.asset.displayTicker).bold()
                                 Spacer()
                                 Text(
                                     privacy

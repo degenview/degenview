@@ -90,6 +90,10 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - A DEXScreener pair lookup also yields the base token symbol, which the symbol-keyed
   steps then reuse — the ticker itself is a contract address
 - All CoinGecko traffic (OHLC *and* icons) queues behind `CGRateLimiter.shared`
+- The same `/coins/markets` snapshot and `ids=` batch also carry the coin **name**
+  (`IconResolver.coinName(forSymbol:)` / `coinName(forCoinID:)`); `PortfolioAssetInfoViewModel`
+  uses it for portfolio subtitles ("Bitcoin"), falling back to the stored label. DEX tickers are
+  deliberately not name-resolved by symbol — they collide with unrelated coins
 - `nil` is not a failure state for the UI: `TickerIconView` draws a monogram, so the
   20×20 slot is occupied either way and card headers stay aligned
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
