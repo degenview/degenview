@@ -126,4 +126,33 @@ final class PineDocumentedDifferencesTests: XCTestCase {
         // An int receiver also satisfies the earlier `float` definition, so it wins.
         XCTAssertEqual(result, [[1], [1]])
     }
+
+    func testAnImportPathIsMatchedOnTheLibraryNameAlone() {
+        let registry = PineLibraryRegistry()
+        let source = "//@version=6\nlibrary(\"MathLib\")\nexport one() =>\n    1.0\n"
+        registry.publish([
+            LocalScript(
+                id: UUID(), name: "MathLib", type: .library, source: source, latestRevisionID: nil,
+                createdAt: Date(), modifiedAt: Date(), lastOpenedAt: nil, isFavorite: false, compileRecord: nil)
+        ])
+        for path in ["me/MathLib/1", "someone-else/MathLib/42"] {
+            let program = PineCompiler.compile(
+                source: "//@version=6\nindicator(\"T\")\nimport \(path) as m\nplot(m.one())", libraries: registry)
+            XCTAssertTrue(program.isValid, "\(path): \(program.diagnostics)")
+        }
+    }
+
+    func testAnImporterCompiledBeforeItsLibraryExistsStaysUnresolvedUntilRecompiled() {
+        let registry = PineLibraryRegistry()
+        let importer = "//@version=6\nindicator(\"T\")\nimport me/MathLib/1 as m\nplot(m.one())"
+        XCTAssertEqual(
+            PineCompiler.compile(source: importer, libraries: registry).diagnostics.map(\.code), ["PINE3040"])
+        registry.publish([
+            LocalScript(
+                id: UUID(), name: "MathLib", type: .library,
+                source: "//@version=6\nlibrary(\"MathLib\")\nexport one() =>\n    1.0\n", latestRevisionID: nil,
+                createdAt: Date(), modifiedAt: Date(), lastOpenedAt: nil, isFavorite: false, compileRecord: nil)
+        ])
+        XCTAssertTrue(PineCompiler.compile(source: importer, libraries: registry).isValid)
+    }
 }

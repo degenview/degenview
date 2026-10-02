@@ -21,6 +21,12 @@ final class PineRuntimeSession {
     /// Variable each top-level `input.*` call site initialises, so input overrides stay keyed
     /// by name even when titles change.
     let inputVariables: [Int: String]
+    /// The imported libraries' functions, types, enums and constants, flattened out of the import graph.
+    let linkage: PineLibraryLinkage
+    /// Library constants already evaluated, by `"<path>::<name>"`. Only plain values: a constant that builds a
+    /// collection is rebuilt on each read so it never aliases state across bars.
+    var libraryConstants: [String: PineRuntimeValue] = [:]
+    var constantsInProgress: Set<String> = []
     var committed = PineRuntimeState()
     var working = PineRuntimeState()
     /// `varip` values, which survive the rollback between realtime ticks of one bar.
@@ -72,6 +78,7 @@ final class PineRuntimeSession {
         var inputVariables: [Int: String] = [:]
         var types: [String: [PineTypeField]] = [:]
         var enums: [String: [PineEnumMember]] = [:]
+        let linkage = PineLibraryLinkage(program)
         for statement in program.statements {
             switch statement {
             case .typeDeclaration(let name, let fields, _):
@@ -79,7 +86,8 @@ final class PineRuntimeSession {
             case .enumDeclaration(let name, let members, _):
                 enums[name] = members
             case .function(let name, let parameters, let body, _):
-                let function = PineRuntimeFunction(parameters: parameters, body: body)
+                let function = PineRuntimeFunction(
+                    parameters: parameters.map { linkage.canonical($0, scope: "") }, body: body)
                 functions[name] = function
                 if program.methodNames.contains(name) { methods[name, default: []].append(function) }
             case .declaration(let name, _, _, .call(_, _, let site, _), _):
@@ -87,10 +95,11 @@ final class PineRuntimeSession {
             default: break
             }
         }
-        self.functions = functions
-        self.methods = methods
-        self.types = types
-        self.enums = enums
+        self.linkage = linkage
+        self.functions = functions.merging(linkage.functions) { script, _ in script }
+        self.methods = methods.merging(linkage.methods) { script, library in script + library }
+        self.types = types.merging(linkage.types) { script, _ in script }
+        self.enums = enums.merging(linkage.enums) { script, _ in script }
         self.inputVariables = inputVariables
         for input in program.inputSchema.inputs where self.inputs[input.id] == nil {
             self.inputs[input.id] = input.defaultValue

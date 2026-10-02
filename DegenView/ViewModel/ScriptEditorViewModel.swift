@@ -51,7 +51,7 @@ final class ScriptEditorViewModel: ObservableObject {
         }
     }
     func compile() {
-        let result = PineCompiler.compile(source: source)
+        let result = PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
         diagnostics = result.diagnostics
         status =
             result.diagnostics.contains { $0.severity == .error }

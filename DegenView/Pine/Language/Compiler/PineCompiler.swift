@@ -6,15 +6,32 @@ enum PineCompiler {
     private static let versionAnnotation = "//@version="
     private static let supportedVersion = "6"
 
-    static func compile(source: String, limits: PineLimits = .default) -> PineCompiledProgram {
+    /// `libraries` finds the source of each `import`; without it every import is `PINE3040`.
+    static func compile(
+        source: String, limits: PineLimits = .default, libraries: PineLibraryResolver = PineNoLibraries()
+    ) -> PineCompiledProgram {
+        compile(source: source, limits: limits, libraries: libraries, importStack: [])
+    }
+
+    /// `importStack` is the chain of library paths being compiled, so a cycle is found rather than followed.
+    static func compile(
+        source: String, limits: PineLimits, libraries: PineLibraryResolver, importStack: [String]
+    ) -> PineCompiledProgram {
         let normalizedSource = normalizeLineEndings(in: source)
         var diagnostics: [PineDiagnostic] = []
         let version = declaredVersion(in: normalizedSource, &diagnostics)
         let lexed = PineLexer(source: normalizedSource, limits: limits).lex()
         diagnostics += lexed.diagnostics
-        var parser = PineParser(tokens: lexed.tokens, limits: limits)
+        let scanned = PineLibraryLinker.scan(normalizedSource)
+        diagnostics += scanned.diagnostics
+        var parser = PineParser(
+            tokens: lexed.tokens, limits: limits, importAliases: Set(scanned.declarations.map(\.alias)))
         let (statements, parseDiagnostics) = parser.parse()
         diagnostics += parseDiagnostics
+        let linked = PineLibraryLinker.link(
+            scanned.declarations, resolver: libraries, limits: limits, stack: importStack)
+        diagnostics += linked.diagnostics
+        diagnostics += PineLibraryLinker.validateUsage(statements, imports: linked.imports)
 
         let environment = constantEnvironment(statements)
         let metadata = declarationMetadata(
@@ -34,7 +51,8 @@ enum PineCompiler {
         }
         return .init(
             source: normalizedSource, statements: statements, declaration: metadata,
-            inputSchema: schema, diagnostics: diagnostics, methodNames: parser.methodNames)
+            inputSchema: schema, diagnostics: diagnostics, methodNames: parser.methodNames,
+            exportedNames: parser.exportedNames, imports: linked.imports)
     }
 
     /// Text copied from browsers and editors can contain CR-only or Unicode line separators.

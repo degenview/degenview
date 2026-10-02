@@ -666,7 +666,7 @@ struct ChartSettingsSheet: View {
         .task(id: viewModel.pineConfiguration?.appliedSource) {
             let source = viewModel.pineConfiguration?.appliedSource
             pineInputSchema =
-                source.map { PineCompiler.compile(source: $0).inputSchema } ?? PineInputSchema()
+                source.map { PineCompiler.compile(source: $0, libraries: PineLibraryRegistry.shared).inputSchema } ?? PineInputSchema()
         }
     }
 

@@ -91,7 +91,7 @@ struct PineAlertEditor: View {
 
     private func load() async {
         guard let source = viewModel.pineConfiguration?.appliedSource, !source.isEmpty else { return }
-        let program = PineCompiler.compile(source: source)
+        let program = PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
         callSites = program.alertCallSites
         if let id = viewModel.scriptInstances.first?.scriptID,
             let saved = try? await ScriptStore.shared.script(id: id)

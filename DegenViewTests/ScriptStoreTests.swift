@@ -26,6 +26,24 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), script.source)
     }
 
+    func testSavingAnImporterCompilesAgainstTheStoresLibraries() async throws {
+        let root = try temporaryDirectory()
+        let registry = PineLibraryRegistry()
+        let store = ScriptStore(
+            scriptsDirectory: root.appendingPathComponent("Scripts", isDirectory: true),
+            metadataDirectory: root.appendingPathComponent("ScriptMetadata", isDirectory: true),
+            libraries: registry)
+        let lib = try await store.create(
+            name: "MathLib", type: .library,
+            source: "//@version=6\nlibrary(\"MathLib\")\nexport twice(float x) =>\n    x * 2\n")
+        let user = try await store.create(
+            name: "User", type: .indicator,
+            source: "//@version=6\nindicator(\"U\")\nimport me/MathLib/1 as m\nplot(m.twice(close))\n")
+        let saved = try await store.save(id: user.id, source: user.source)
+        XCTAssertEqual(saved.compileRecord?.status, .valid)
+        XCTAssertNotNil(registry.source(forLibrary: "me/\(lib.name)/1"))
+    }
+
     func testRenameMovesFileAndKeepsID() async throws {
         let (store, scripts, _) = try makeStore()
         let script = try await store.create(name: "Alpha", type: .indicator)

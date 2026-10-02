@@ -24,9 +24,15 @@ struct PineParser {
     /// Names declared with `method`.
     var methodNames: Set<String> = []
 
-    init(tokens: [PineToken], limits: PineLimits) {
+    /// Aliases of the libraries the script imports: `alias.Type` can annotate a variable or parameter.
+    let importAliases: Set<String>
+    /// Names declared with `export`.
+    private(set) var exportedNames: Set<String> = []
+
+    init(tokens: [PineToken], limits: PineLimits, importAliases: Set<String> = []) {
         self.tokens = tokens
         self.limits = limits
+        self.importAliases = importAliases
     }
 
     mutating func parse() -> ([PineStatement], [PineDiagnostic]) {
@@ -74,7 +80,14 @@ struct PineParser {
     /// Notes an `export` prefix and parses the statement it applies to.
     mutating func exportedStatement() -> PineStatement? {
         exportRanges.append(previous.range)
-        return statement()
+        let exported = statement()
+        switch exported {
+        case .function(let name, _, _, _)?, .declaration(let name, _, _, _, _)?,
+            .typeDeclaration(let name, _, _)?, .enumDeclaration(let name, _, _)?:
+            exportedNames.insert(name)
+        default: break
+        }
+        return exported
     }
 
     /// A statement must end the line. Block statements (`if`, `for`, block functions) end

@@ -59,7 +59,7 @@ extension PineRuntimeSession {
         if let overloads = methods[call.name], overloads.count > 1 {
             return try callOverloadedMethod(overloads, call, &context)
         }
-        if let function = functions[call.name] { return try invoke(function, call, &context) }
+        if let function = try scopedFunction(call.name, call.range, context) { return try invoke(function, call, &context) }
         if let handler = Self.exactHandlers[call.name] { return try handler(self)(call, &context) }
         if let entry = Self.namespaceHandlers.first(where: { call.name.hasPrefix($0.prefix) }) {
             return try entry.handler(self)(call, &context)
@@ -83,9 +83,9 @@ extension PineRuntimeSession {
         if receiverName.contains(".") {
             if let value = try fieldPath(receiverName, call.range) {
                 receiver = value
-            } else if let dot = receiverName.firstIndex(of: "."), enums[String(receiverName[..<dot])] != nil {
+            } else if let member = try enumMember(receiverName, call.range, context) {
                 // `Mode.slow.label()`: an enum member as the receiver.
-                receiver = try resolveIdentifier(receiverName, call.range, context)
+                receiver = member
             } else {
                 return nil
             }
@@ -126,7 +126,8 @@ extension PineRuntimeSession {
         let receiver = try eval(first.value, &context)
         guard
             let function = overloads.first(where: {
-                $0.acceptsReceiver(receiver, instances: working.instances)
+                ($0.isExported || $0.scope == context.scope)
+                    && $0.acceptsReceiver(receiver, instances: working.instances)
             })
         else {
             throw PineDiagnostic.error(
@@ -146,7 +147,8 @@ extension PineRuntimeSession {
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue? {
         if let function = methods[member]?.first(where: {
-            $0.acceptsReceiver(receiver, instances: working.instances)
+            ($0.isExported || $0.scope == context.scope)
+                && $0.acceptsReceiver(receiver, instances: working.instances)
         }) {
             let method = PineCall(
                 name: member, arguments: [receiverArgument] + call.arguments, site: call.site,
@@ -232,7 +234,7 @@ extension PineRuntimeSession {
 
     // MARK: - User functions
 
-    private func invoke(
+    func invoke(
         _ function: PineRuntimeFunction, _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
         guard context.depth < limits.callDepth else {
@@ -251,11 +253,15 @@ extension PineRuntimeSession {
         for (parameter, value) in bound { working.variables[parameter] = value }
 
         let callerPrefix = context.sitePrefix
+        let callerScope = (context.scope, context.locals)
         context.sitePrefix = prefix
         context.depth += 1
+        context.scope = function.scope
+        context.locals = function.scope == nil ? nil : function.locals
         defer {
             context.sitePrefix = callerPrefix
             context.depth -= 1
+            (context.scope, context.locals) = callerScope
         }
         let (_, value) = try run(function.body, &context)
 
@@ -279,7 +285,7 @@ extension PineRuntimeSession {
             } else if i < positional.count {
                 bound[parameter.name] = try eval(positional[i].value, &context)
             } else if let fallback = parameter.defaultValue {
-                bound[parameter.name] = try eval(fallback, &context)
+                bound[parameter.name] = try evaluate(fallback, inScopeOf: function, &context)
             } else {
                 bound[parameter.name] = .na
             }

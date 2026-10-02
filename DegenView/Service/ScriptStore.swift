@@ -24,7 +24,8 @@ enum ScriptStoreError: LocalizedError, Equatable {
 actor ScriptStore {
     static let shared = ScriptStore(
         scriptsDirectory: AppSupport.directory.appendingPathComponent("Scripts", isDirectory: true),
-        metadataDirectory: AppSupport.directory.appendingPathComponent("ScriptMetadata", isDirectory: true))
+        metadataDirectory: AppSupport.directory.appendingPathComponent("ScriptMetadata", isDirectory: true),
+        libraries: .shared)
     static let compilerVersion = "pine-local-2"
     static let fileExtension = "pine"
     static let idAttribute = "com.cryptocharts.script-id"
@@ -64,12 +65,20 @@ actor ScriptStore {
     private let fm: FileManager
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
-    private var metadata: [UUID: LocalScript] = [:]
+    private var metadata: [UUID: LocalScript] = [:] {
+        didSet { libraries.publish(Array(metadata.values)) }
+    }
+    /// The library scripts, offered to every compile as `import` targets.
+    private let libraries: PineLibraryRegistry
     /// Script id → file name inside `scriptsDirectory`; persisted as `index.json`.
     private var fileNames: [UUID: String] = [:]
     private var loaded = false
 
-    init(scriptsDirectory: URL, metadataDirectory: URL, fileManager: FileManager = .default) {
+    init(
+        scriptsDirectory: URL, metadataDirectory: URL, fileManager: FileManager = .default,
+        libraries: PineLibraryRegistry = PineLibraryRegistry()
+    ) {
+        self.libraries = libraries
         self.scriptsDirectory = scriptsDirectory
         metadataRoot = metadataDirectory
         fm = fileManager
@@ -143,7 +152,7 @@ actor ScriptStore {
         try loadIfNeeded()
         guard var script = metadata[id] else { throw ScriptStoreError.missingScript }
         // Invalid source saves too; its errors are recorded in the compile record.
-        let compiled = PineCompiler.compile(source: source)
+        let compiled = PineCompiler.compile(source: source, libraries: libraries)
         let status = Self.status(for: compiled.diagnostics)
         let now = Date()
         if source != script.source || script.latestRevisionID == nil {

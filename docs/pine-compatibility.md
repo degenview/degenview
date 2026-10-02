@@ -202,8 +202,6 @@ row) → `PineAlertDispatcher` (channels).
   accepted and ignored; `max_polylines_count` is honoured. Arguments that change behaviour (`scale`,
   margin and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
   (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
-- `import` declarations are recognised and reported once (`PINE9008`) with their body skipped, rather
-  than as a syntax error per line.
 
 ### Types, methods and collections
 
@@ -237,6 +235,28 @@ row) → `PineAlertDispatcher` (channels).
   `PINE4019`; assigning through a non-object `PINE4020`; a member the enum lacks `PINE4025`; a `na`
   map or matrix `PINE4026`/`PINE4028`; a `na` map key `PINE4027`; no method definition fits the receiver
   `PINE4029`.
+
+### Libraries and `import`
+
+- **`import user/Library/version as alias`** (alias optional, defaulting to the library name) links another
+  script's `library()` into the importing script. The compiler resolves the path through a
+  `PineLibraryResolver`; the app's resolver is `PineLibraryRegistry`, which offers the library scripts of the
+  Script Manager. Without a resolver (the alert agent, a bare `PineCompiler.compile`) every import is
+  `PINE3040`.
+- **What a library exports** is reached as `alias.name`: functions (`alias.f(x)`), constants
+  (`alias.RATE`), types (`alias.Pt.new(…)`, and `alias.Pt` as an annotation, a field type or a generic argument),
+  enum members (`alias.Mode.fast`) and methods (`point.scaled(2)`, picked by the receiver's type like any
+  method). Anything the library does not mark `export` is private: `alias.helper(x)` is `PINE3044` at compile
+  time (`PINE4031` if it only shows at run time).
+- **A library runs in its own scope.** Its functions call their private helpers, its default parameter values
+  and type field defaults evaluate in the library, and its code can see only its own locals and constants,
+  never the importing script's variables. A library and the script (or two libraries) may define the same
+  names; an instance of a library type is a different type from the script's own of the same name.
+- **Libraries may import libraries**, up to 8 levels deep. A cycle is `PINE3041`, a deeper chain `PINE3047`.
+- **Diagnostics at the `import` line:** `PINE3040` library not found, `PINE3042` malformed import (the path
+  must be `user/Library/version` with a numeric version), `PINE3043` the script is not a library or the library
+  has errors (the first one is quoted), `PINE3045` an alias that is already taken or names a Pine namespace
+  (`math`, `ta`, …). `PINE4032`: a library constant defined in terms of itself.
 
 ### Time, timeframes and other series
 
@@ -379,12 +399,12 @@ the corpus run (below) only shows that scripts compile and run.
 | Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
 | Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context. `scale` is `PINE9001`. | n/a |
 | Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
-| Libraries | `library()`, `export`, types, methods and enums compile. | Nothing runs a library's exports and `import` is unsupported, so a library is only checked for compiling. | n/a |
+| Libraries | `library()`, `export` and `import` work as described under "Libraries and `import`". | Only the libraries in the Script Manager are available: nothing is downloaded from TradingView, and a path is matched on its library name alone, so the user and version parts are accepted and ignored (two versions of one library cannot coexist). The name is the script's file name, or else the title in its `library("…")`. A library constant that builds a collection is rebuilt on every read. A compiled importer holds the library as it was at compile time: after editing a library, an importer that is already running picks the change up when it is next recompiled (saved, or its chart reloaded). | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |
 
 ## Known incompatibilities
 
-The current grammar does not yet implement library `import` (`PINE9008`), the `scale` declaration
+The current grammar does not yet implement the `scale` declaration
 argument, built-in types such as `footprint`, `request.security` for other symbols or finer
 timeframes, or real intrabar data for `request.security_lower_tf` (the engine only sees the chart's own
 bars). The table above lists where implemented features differ from TradingView. Label `yloc` is treated as `yloc.price`.
@@ -397,8 +417,7 @@ and overlay values do not yet join price autoscaling. Plot style/location/size
 coverage is partial. Runtime byte accounting, recursion detection, and a compact bytecode
 lowering pass are planned; the current executable representation is the typed AST.
 
-Library `import` is intentionally outside this release and produces an unsupported diagnostic; a
-`request.*` call other than `request.security` and `request.security_lower_tf` is reported
+A `request.*` call other than `request.security` and `request.security_lower_tf` is reported
 (`PINE9003`) wherever it appears, including inside an assignment or argument. Reading a plain identifier that is
 not a variable, series, or builtin raises `PINE4008` at runtime instead of silently
 evaluating to a string; a dotted name is accepted only when it is a variable, a field path, an enum
@@ -483,7 +502,7 @@ The 8 that still fail are blocked by whole features (a script can have several):
 | Blocker | Scripts |
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 3 (`UyBliO8S`, `MPypFZJS`, `tY9RZ0MY`) |
-| Library `import` (`PINE9008`) | 3 |
+| Library `import` of a library that is not in the corpus (`PINE3040`; the imports are other authors' libraries, which the corpus does not contain) | 3 |
 | `scale=` declaration argument | 1 |
 | Built-in `footprint` type | 1 |
 | Data-dependent runtime error (`array.get` with an `na` index inside a profile function, `UTgFqITU`) | 1, not investigated |
@@ -491,7 +510,7 @@ The 8 that still fail are blocked by whole features (a script can have several):
 The corpus test takes about 40 s on the machine it was written on, most of it two scripts (`xlWhYoco`, ~7 s, and
 `VEvpsGHa`); a slow machine can report `PINE8007` for those.
 
-Libraries are checked only for compiling: `library()`, `export`, types and methods parse, but nothing
-runs a library's exports, and `import` is unsupported. An indicator that runs on synthetic bars has not
+Corpus libraries are checked only for compiling; their exports are exercised by `PineLibraryImportTests`
+against stub libraries. An indicator that runs on synthetic bars has not
 necessarily reached every branch (for example the code that constructs its objects); the unit tests in
 `PineUserTypeTests` cover the semantics.

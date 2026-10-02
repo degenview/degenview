@@ -6,21 +6,20 @@ extension PineRuntimeSession {
     func constructorCall(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue? {
-        guard call.name.hasSuffix(".new"), let fields = types[String(call.name.dropLast(4))] else {
-            return nil
-        }
-        let typeName = String(call.name.dropLast(4))
+        guard call.name.hasSuffix(".new") else { return nil }
+        let written = String(call.name.dropLast(4))
+        guard let typeName = try typeKey(written, call.range, context), let fields = types[typeName] else { return nil }
         let names = fields.map(\.name)
         let supplied = try bind(call, names, &context)
         if let unknown = supplied.keys.sorted().first(where: { !names.contains($0) }) {
-            throw noSuchField(unknown, in: typeName, call.range)
+            throw noSuchField(unknown, in: written, call.range)
         }
         var values: [String: PineRuntimeValue] = [:]
         for field in fields {
             if let value = supplied[field.name] {
                 values[field.name] = value
             } else if let initial = field.defaultValue {
-                values[field.name] = try eval(initial, &context)
+                values[field.name] = try evaluate(initial, inLibrary: Self.library(of: typeName), &context)
             } else {
                 values[field.name] = .na
             }

@@ -6,7 +6,7 @@ extension PineParser {
         if isTypeDeclaration() { return typeDeclaration() }
         if isEnumDeclaration() { return enumDeclaration() }
         if isMethodDefinition() { return methodDefinition() }
-        if skipUnsupportedDeclaration() { return nil }
+        if skipImportDeclaration() { return nil }
         if take(.ifKeyword) { return ifStatement() }
         if take(.forKeyword) { return forStatement() }
         if take(.whileKeyword) { return whileStatement() }

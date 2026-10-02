@@ -141,7 +141,7 @@ final class ScriptPreviewViewModel: ObservableObject {
 
     private func applyLatest() {
         guard let source = latestSource, source != appliedSource else { return }
-        let compiled = PineCompiler.compile(source: source)
+        let compiled = PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
         guard compiled.isValid else {
             // The engine keeps the last valid output on screen; say so.
             isShowingStaleOutput = appliedSource != nil

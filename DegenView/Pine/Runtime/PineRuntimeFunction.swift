@@ -8,6 +8,10 @@ struct PineRuntimeFunction {
     let locals: Set<String>
     /// `var`/`varip` locals, which persist per call site between calls.
     let persistentLocals: Set<String>
+    /// The library that defines the function; its body runs in that library's scope.
+    var scope: String?
+    /// Whether the importing script may call it (a library's helpers are private).
+    var isExported = true
 
     init(parameters: [PineParameter], body: [PineStatement]) {
         var locals = Set(parameters.map(\.name))

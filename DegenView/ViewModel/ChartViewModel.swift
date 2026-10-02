@@ -569,7 +569,7 @@ final class ChartViewModel: ObservableObject {
 
     @discardableResult func applyPineDraft() -> Bool {
         guard var config = pineConfiguration else { return false }
-        let compiled = PineCompiler.compile(source: config.draftSource)
+        let compiled = PineCompiler.compile(source: config.draftSource, libraries: PineLibraryRegistry.shared)
         pineDiagnostics = compiled.diagnostics
         guard compiled.isValid else {
             pineStatus = "Compile failed — last valid output remains active"
@@ -665,7 +665,7 @@ final class ChartViewModel: ObservableObject {
                 var outcome: PineExecutionOutcome
                 switch operation {
                 case .rebuild:
-                    let program = compiled ?? PineCompiler.compile(source: source)
+                    let program = compiled ?? PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
                     compiled = program
                     guard program.isValid else {
                         await self?.applyPine(program: program, outcome: nil, generation: generation)
