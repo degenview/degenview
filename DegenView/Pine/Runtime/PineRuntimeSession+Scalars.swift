@@ -52,19 +52,27 @@ extension PineRuntimeSession {
         try argument(call, 0, nil, &context).number.map(PineRuntimeValue.float) ?? .na
     }
 
-    /// `time(timeframe)`: the open time of the `timeframe` bar that contains the current bar, so
-    /// `ta.change(time("D"))` marks a new day. Sessions and time zones are not modelled: the argument
-    /// after the timeframe is ignored. Without a usable timeframe it is the bar's own `time`.
+    /// `time(timeframe, session, timezone)`: the open time of the `timeframe` bar that contains the current
+    /// bar, so `ta.change(time("D"))` marks a new day. With a `session` it is `na` unless that bar opens
+    /// inside the session, read in `timezone` (UTC when omitted). Without a usable timeframe it is the
+    /// bar's own `time`.
     func timeCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
-        let open = PineTime.milliseconds(context.bar.openTime)
-        guard case .string(let text) = try argument(call, 0, "timeframe", &context), !text.isEmpty else {
-            return .int(open)
+        let b = try bind(call, ["timeframe", "session", "timezone"], &context)
+        var start = context.bar.openTime
+        if case .string(let text)? = b["timeframe"], !text.isEmpty {
+            guard let seconds = PineTime.seconds(ofTimeframe: text) else {
+                throw PineDiagnostic.error(
+                    "PINE4021", .runtime, "time() needs a timeframe such as \"60\" or \"1D\".", call.range)
+            }
+            // The chart's own timeframe keeps the bar's real open, whatever the epoch alignment.
+            if seconds != barSeconds { start = KlineData.bucketStart(of: start, interval: seconds) }
         }
-        guard let seconds = PineTime.seconds(ofTimeframe: text) else {
-            throw PineDiagnostic.error(
-                "PINE4021", .runtime, "time() needs a timeframe such as \"60\" or \"1D\".", call.range)
+        if case .string(let text)? = b["session"], !text.isEmpty {
+            guard let session = PineSession(text) else { return .na }
+            let zone = PineTime.timeZone(named: b["timezone"].textValue)
+            let stamp = PineTime.milliseconds(start)
+            guard session.contains(PineTime.components(milliseconds: stamp, zone: zone)) else { return .na }
         }
-        let start = KlineData.bucketStart(of: context.bar.openTime, interval: seconds)
         return .int(PineTime.milliseconds(start))
     }
 
@@ -275,10 +283,13 @@ extension PineRuntimeSession {
     }
 
     func timePartCall(_ call: PineCall, _ context: inout PineRuntimeContext) throws -> PineRuntimeValue {
+        let b = try bind(call, ["time", "timezone"], &context)
+        let zone = b["timezone"].textValue.map { PineTime.timeZone(named: $0) }
         if call.arguments.isEmpty {
-            return PineTime.part(call.name, milliseconds: PineTime.milliseconds(context.bar.openTime))
+            return PineTime.part(
+                call.name, milliseconds: PineTime.milliseconds(context.bar.openTime), zone: zone)
         }
-        guard let stamp = try argument(call, 0, nil, &context).intValue else { return .na }
-        return PineTime.part(call.name, milliseconds: stamp)
+        guard let stamp = b["time"].intValue else { return .na }
+        return PineTime.part(call.name, milliseconds: stamp, zone: zone)
     }
 }

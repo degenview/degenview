@@ -588,6 +588,106 @@ final class PineRegressionTests: XCTestCase {
             "arguments that change behaviour stay unsupported")
     }
 
+    func testStrategyMarginArgumentsAreAcceptedAndIgnored() {
+        let strategy = "strategy(\"T\", margin_long = 10, margin_short = 10, slippage = 1)"
+        let program = compile("plot(close)", header: strategy)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertEqual(
+            codes(compile("plot(close)", header: "indicator(\"T\", margin_long = 10)")), ["PINE9001"],
+            "margin_long belongs to strategy()")
+    }
+
+    func testUnsupportedArgumentDiagnosticCoversTheArgumentName() throws {
+        let source = "//@version=6\nindicator(\"T\", margin_top = 5)\nplot(close)\n"
+        let diagnostic = try XCTUnwrap(
+            PineCompiler.compile(source: source).diagnostics.first { $0.code == "PINE9001" })
+        let name = (source as NSString).range(of: "margin_top")
+        XCTAssertEqual(diagnostic.range.start.offset, name.location)
+        XCTAssertEqual(diagnostic.range.end.offset, name.location + name.length)
+    }
+
+    func testSessionStringsParseAndContainMinutes() throws {
+        func at(_ hour: Int, _ minute: Int, weekday: Int = 2) -> PineCalendar.Components {
+            .init(year: 2025, month: 1, day: 6, hour: hour, minute: minute, second: 0, weekday: weekday)
+        }
+        let day = try XCTUnwrap(PineSession("0930-1100"))
+        XCTAssertTrue(day.contains(at(9, 30)))
+        XCTAssertTrue(day.contains(at(10, 59)))
+        XCTAssertFalse(day.contains(at(11, 0)), "the end is exclusive")
+        XCTAssertFalse(day.contains(at(9, 29)))
+        let overnight = try XCTUnwrap(PineSession("1800-0600"))
+        XCTAssertTrue(overnight.contains(at(23, 0)))
+        XCTAssertTrue(overnight.contains(at(5, 59)))
+        XCTAssertFalse(overnight.contains(at(12, 0)))
+        let weekdays = try XCTUnwrap(PineSession("0930-1600:23456"))
+        XCTAssertTrue(weekdays.contains(at(10, 0, weekday: 6)))
+        XCTAssertFalse(weekdays.contains(at(10, 0, weekday: 7)), "Saturday")
+        let fridayNight = try XCTUnwrap(PineSession("1800-0600:23456"))
+        XCTAssertTrue(fridayNight.contains(at(2, 0, weekday: 7)), "Friday's session runs into Saturday")
+        XCTAssertFalse(fridayNight.contains(at(2, 0, weekday: 2)), "Sunday night has no Monday morning")
+        let split = try XCTUnwrap(PineSession("0930-1130, 1300-1600"))
+        XCTAssertTrue(split.contains(at(14, 0)))
+        XCTAssertFalse(split.contains(at(12, 0)))
+        XCTAssertNotNil(PineSession("24x7"))
+        for bad in ["", "0930", "0930-2500", "0960-1000", "0930-1100:8", "0930-1100:", "abc-defg"] {
+            XCTAssertNil(PineSession(bad), bad)
+        }
+    }
+
+    func testTimeWithSessionAndZoneIsNaOutsideTheSession() throws {
+        let program = compile(
+            """
+            ok = not na(time(timeframe.period, "0930-1100", "America/New_York"))
+            plot(ok ? 1 : 0)
+            plot(hour(time, "America/New_York"))
+            plot(hour(time))
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        func run(_ start: Date) throws -> [[Double?]] {
+            let candles = (0..<6).map { i in
+                KlineData(
+                    openTime: start.addingTimeInterval(Double(i) * 1800), openPrice: 1, highPrice: 2,
+                    lowPrice: 0, closePrice: 1, volume: 1)
+            }
+            let output = try PineRuntimeSession(program: program).evaluate(bars: candles).output
+            return output.plots.map(\.values)
+        }
+        // Bars open 08:30, 09:00, 09:30, 10:00, 10:30, 11:00 New York.
+        // January is EST (UTC-5), July is EDT (UTC-4): the same New York clock needs a different UTC start.
+        for text in ["2025-01-06T13:30:00Z", "2025-07-07T12:30:00Z"] {
+            let start = try XCTUnwrap(ISO8601DateFormatter().date(from: text))
+            let plots = try run(start)
+            XCTAssertEqual(plots[0], [0, 0, 1, 1, 1, 0], text)
+            XCTAssertEqual(plots[1].first, 8, text)
+            XCTAssertNotEqual(plots[1].first, plots[2].first, "UTC differs from New York")
+        }
+    }
+
+    func testStrategyWithMarginSessionAndZoneInputsCompilesAndRuns() throws {
+        let program = compile(
+            """
+            sess = input.session("0930-1100", "Entry window")
+            inWindow = not na(time(timeframe.period, sess, "America/New_York"))
+            etMin = hour(time, "America/New_York") * 60 + minute(time, "America/New_York")
+            if inWindow and strategy.position_size == 0
+                strategy.entry("Long", strategy.long)
+            if etMin >= 960 and strategy.position_size != 0
+                strategy.close_all(comment = "Session flat")
+            strategy.exit("Stop", from_entry = "Long", stop = na, trail_price = na, trail_offset = na,
+                 comment_loss = "Hard stop", comment_trailing = "Trail stop")
+            plot(etMin)
+            """,
+            header: """
+                strategy("T", overlay = false, pyramiding = 0, initial_capital = 100000,
+                     default_qty_type = strategy.fixed, default_qty_value = 1,
+                     commission_type = strategy.commission.cash_per_contract, commission_value = 2.1,
+                     slippage = 1, margin_long = 10, margin_short = 10, process_orders_on_close = false)
+                """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        XCTAssertEqual(program.inputSchema.inputs.first?.defaultValue, .string("0930-1100"))
+        _ = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2, 3, 4], spacing: 600))
+    }
+
     func testInputDefaultMayBeANamedConstantAndOptionsMayBePositional() throws {
         let program = compile(
             """

@@ -17,8 +17,15 @@ enum PineTime {
 
     static func milliseconds(_ date: Date) -> Int { Int(pine: date.timeIntervalSince1970 * 1000) ?? 0 }
 
-    static func part(_ name: String, milliseconds stamp: Int) -> PineRuntimeValue {
-        let c = PineCalendar.components(milliseconds: stamp)
+    /// The calendar fields of `stamp` in `zone`, UTC when none is given.
+    static func components(milliseconds stamp: Int, zone: TimeZone? = nil) -> PineCalendar.Components {
+        guard let zone else { return PineCalendar.components(milliseconds: stamp) }
+        let offset = zone.secondsFromGMT(for: Date(timeIntervalSince1970: Double(stamp) / 1000))
+        return PineCalendar.components(milliseconds: stamp + offset * 1000)
+    }
+
+    static func part(_ name: String, milliseconds stamp: Int, zone: TimeZone? = nil) -> PineRuntimeValue {
+        let c = components(milliseconds: stamp, zone: zone)
         switch name {
         case "year": return .int(c.year)
         case "month": return .int(c.month)
@@ -109,4 +116,3 @@ enum PineTime {
         return TimeZone(secondsFromGMT: 0) ?? .current
     }
 }
-

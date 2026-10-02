@@ -199,7 +199,7 @@ row) → `PineAlertDispatcher` (channels).
   `ticker.new/standard/modify/inherit` build symbol ids; since only the chart's own symbol can be served,
   `standard`, `modify` and `inherit` return what they are given.
 - Declaration arguments `behind_chart` (either value), `explicit_plot_zorder` and `dynamic_requests` are
-  accepted and ignored; `max_polylines_count` is honoured. Arguments that change behaviour (`margin_*` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
+  accepted and ignored; `max_polylines_count` is honoured. `margin_long` and `margin_short` are accepted and ignored (the broker has no margin model); other arguments that change behaviour (`margin_top` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
   (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
 
 ### Types, methods and collections
@@ -260,7 +260,7 @@ row) → `PineAlertDispatcher` (channels).
 ### Time, timeframes and other series
 
 - `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday`, `timeframe.isticks`,
-  `timeframe.in_seconds([tf])`, `timeframe.change(tf)`, `time(timeframe)` and `time_close(timeframe)`,
+  `timeframe.in_seconds([tf])`, `timeframe.change(tf)`, `time(timeframe, session, timezone)` and `time_close(timeframe)`,
   `syminfo.root`, `syminfo.prefix`, `syminfo.timezone`, `syminfo.pointvalue`, `chart.is_standard` and
   the other `chart.is_*` flags.
 - **`request.security` for the chart's own symbol**, on a timeframe at least as long as the chart's
@@ -352,8 +352,8 @@ meets (`PINE4001`–`PINE4006`).
 `initial_capital`, `default_qty_type`/`default_qty_value` (fixed, cash, percent of equity),
 `commission_type`/`commission_value` (percent, cash per order, cash per contract), `slippage`
 (ticks), `pyramiding`, `process_orders_on_close`, `calc_on_every_tick`, and `currency`.
-`calc_on_order_fills`, `close_entries_rule`, `margin_*`,
-`use_bar_magnifier` and other arguments report `PINE9001`.
+`margin_long` and `margin_short` are accepted and ignored. `calc_on_order_fills`,
+`close_entries_rule`, `use_bar_magnifier` and other arguments report `PINE9001`.
 
 - Orders queued on bar N fill on bar N+1 (or at bar N's close with `process_orders_on_close`).
   Market orders fill at the open; stop and limit orders fill where the bar's price path
@@ -399,7 +399,7 @@ the corpus run (below) only shows that scripts compile and run.
 | `ta.*` and other missing functions | An unimplemented `ta.*` function, `table.cell_set_*` and similar are `PINE4007` at run time. | A script is not rejected at compile time for calling them, so one that only reaches them on some bars fails late. | n/a |
 | Timeframe strings | `"30S"`, `"5"`/`"60"` (minutes), `"1D"`, `"2W"`, `"3M"`, bare units. | A month is 30 days for `timeframe.in_seconds` and `time(tf)` length arithmetic. `"2W"` buckets as one week, not two. | No |
 | `timeframe.change(tf)` | True on the first bar of a `tf` period, and on the first bar of the chart. | The first-bar rule is an assumption. | No |
-| `time(tf)`, `time_close(tf)` | Open and close of the `tf` bar containing the current bar, on the same UTC calendar. | The session and time-zone arguments are ignored. `time_tradingday` is midnight UTC of the bar's day. | No |
+| `time(tf, session, tz)`, `time_close(tf)` | Open and close of the `tf` bar containing the current bar, on the same UTC calendar. `time` takes a session (`"0930-1600"`, overnight `"1800-0600"`, comma lists, `:23456` day filters, `"24x7"`) and an IANA or `UTC+3` zone, and is `na` when the bar opens outside the session. `hour`, `minute`, `dayofweek`… take a zone too. | `time_close` ignores sessions. A session is tested against the bar's open only, and holidays and exchange calendars are not modelled. `time_tradingday` is midnight UTC of the bar's day. | No |
 | `xloc.bar_time` | Times are mapped to bar indexes when a drawing is made or an x setter runs: the containing bar for a time at or before the current bar; later times forward by whole bar lengths. | Weekend and holiday gaps are not modelled. Getters return bar indexes, not times. | No |
 | Variables the engine does not model | `session.*`, `syminfo.session/basecurrency/description/volumetype/mincontract`, `chart.left_visible_bar_time`, `chart.right_visible_bar_time`, `weekofyear` are `na`. | Pine always gives them a value. `syminfo.timezone` is `Etc/UTC` for crypto and `na` otherwise; `syminfo.prefix` is the exchange part of the ticker id when there is one; `syminfo.pointvalue` is 1. | No |
 | Unknown dotted names | A dotted name that is not a variable, field, enum member or Pine named constant is `PINE4008`. | The constant catalogue is hand-maintained; a real Pine constant missing from it is reported as undefined. | n/a |
@@ -413,10 +413,26 @@ the corpus run (below) only shows that scripts compile and run.
 | Tables | `new`, `cell`, `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules; the drawing code has no unit test. | No |
 | Labels | Every `label.style_*`; `label.set_tooltip` / `tooltip =` and `textalign` are stored. | The chart does not show tooltips and does not apply multi-line alignment. The shape and glyph styles (`circle`, `square`, `diamond`, `cross`, `xcross`, `flag`, `triangle*`, `arrow*`) are simplified drawings with the text above, below or inside; `text_outline` is plain text. Placement is unit-tested, the drawing is not. | No |
 | Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
-| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. `margin_*` is `PINE9001`. | n/a |
+| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. Other `margin_*` arguments are `PINE9001`. | n/a |
 | Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
 | Libraries | `library()`, `export` and `import` work as described under "Libraries and `import`". | Only the libraries in the Script Manager are available: nothing is downloaded from TradingView, and a path is matched on its library name alone, so the user and version parts are accepted and ignored (two versions of one library cannot coexist). The name is the script's file name, or else the title in its `library("…")`. A library constant that builds a collection is rebuilt on every read. A compiled importer holds the library as it was at compile time: after editing a library, an importer that is already running picks the change up when it is next recompiled (saved, or its chart reloaded). | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |
+
+## Ignored features are warned about
+
+A TradingView argument, function or variable that the engine accepts but does not act on raises a
+**warning**: it is underlined in yellow in the Script Manager editor and listed, with what happens
+instead, in the Problems tab. A warning never makes a script invalid. The list lives in
+`Pine/Language/PineIgnoredFeatures.swift`; add a feature there when ignoring it can change what the
+user sees or what a strategy does, and remove it when the engine starts to honour it. Pure hints with
+no observable effect (`max_bars_back`, `dynamic_requests`) are not warned about.
+
+| Code | Warning |
+|---|---|
+| `PINE7001` | an argument that has no effect, e.g. `hline(linestyle = …)`, `strategy.close(comment = …)`, `margin_long` |
+| `PINE7002` | a function that does nothing: `strategy.risk.*` |
+| `PINE7003` | a variable that is always `na` (see "Variables the engine does not model") |
+| `PINE7004` | an argument value drawn as something else, e.g. `plot.style_linebr` |
 
 ## Known incompatibilities
 

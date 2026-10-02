@@ -66,8 +66,8 @@ private struct ScriptStatusChip: View {
         switch status {
         case .notCompiled: .secondary
         case .valid: .green
-        case .warning: .orange
-        case .error: .red
+        case .warning: PineDiagnosticSeverity.warning.color
+        case .error: PineDiagnosticSeverity.error.color
         }
     }
 }

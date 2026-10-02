@@ -22,6 +22,8 @@ extension PineCompiler {
         "initial_capital", "default_qty_type", "default_qty_value", "commission_type",
         "commission_value", "slippage", "pyramiding", "currency", "process_orders_on_close",
         "calc_on_order_fills", "calc_on_every_tick", "close_entries_rule",
+        // Accepted and ignored: the broker has no margin model, so no margin call is ever raised.
+        "margin_long", "margin_short",
     ]
 
     /// Upper bound for integer settings read from a script, well inside `Int` range.
@@ -84,7 +86,8 @@ extension PineCompiler {
                 diagnostics.append(
                     .error(
                         "PINE9001", .unsupported,
-                        "Unsupported \(declaration.name)() argument '\(name)'.", arg.value.range))
+                        "Unsupported \(declaration.name)() argument '\(name)'.",
+                        arg.nameRange ?? arg.value.range))
                 continue
             }
             guard let value = constantValue(arg.value, environment) else { continue }

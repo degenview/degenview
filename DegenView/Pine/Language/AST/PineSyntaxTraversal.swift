@@ -89,4 +89,24 @@ extension PineStatement {
         }
         for child in expression.children { forEachCall(in: child, visit) }
     }
+
+    /// Visits every plain or dotted name read in `statements`, at any depth.
+    static func forEachIdentifier(
+        in statements: [PineStatement], _ visit: (_ name: String, _ range: PineSourceRange) -> Void
+    ) {
+        for statement in statements {
+            for expression in statement.expressions { forEachIdentifier(in: expression, visit) }
+            for block in statement.nestedBlocks { forEachIdentifier(in: block, visit) }
+        }
+    }
+
+    private static func forEachIdentifier(
+        in expression: PineExpression, _ visit: (String, PineSourceRange) -> Void
+    ) {
+        if case .identifier(let name, let range) = expression { visit(name, range) }
+        if case .statementExpression(let statement, _) = expression {
+            forEachIdentifier(in: [statement], visit)
+        }
+        for child in expression.children { forEachIdentifier(in: child, visit) }
+    }
 }

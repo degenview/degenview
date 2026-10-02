@@ -172,9 +172,10 @@ extension PineParser {
         var arguments: [PineArgument] = []
         guard !at(.rightParen) else { return arguments }
         repeat {
+            let labelRange = current.range
             let name = argumentName()
             guard let value = expression() else { break }
-            arguments.append(.init(name: name, value: value))
+            arguments.append(.init(name: name, value: value, nameRange: name == nil ? nil : labelRange))
         } while take(.comma)
         return arguments
     }

@@ -23,12 +23,17 @@ struct PineDiagnosticsListView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
-                    ForEach(diagnostics) { diagnostic in
-                        Text(Self.format(diagnostic))
-                            .font(.caption.monospaced())
-                            .foregroundStyle(diagnostic.severity == .error ? .red : .orange)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
+                    ForEach(Self.ordered(diagnostics)) { diagnostic in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: diagnostic.severity.symbol)
+                                .foregroundStyle(diagnostic.severity.color)
+                            Text(Self.format(diagnostic))
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
+                        .font(.caption.monospaced())
                     }
                 }
             }
@@ -40,10 +45,24 @@ struct PineDiagnosticsListView: View {
         Button {
             copy()
         } label: {
-            Label(copied ? "Copied" : "Copy Errors", systemImage: copied ? "checkmark" : "doc.on.doc")
+            Label(copied ? "Copied" : copyTitle, systemImage: copied ? "checkmark" : "doc.on.doc")
         }
         .buttonStyle(.borderless)
         .font(.caption)
+    }
+
+    private var copyTitle: String {
+        diagnostics.contains { $0.severity == .error } ? "Copy Errors" : "Copy Problems"
+    }
+
+    /// Errors first, then warnings; source order within each.
+    static func ordered(_ diagnostics: [PineDiagnostic]) -> [PineDiagnostic] {
+        diagnostics.enumerated()
+            .sorted { lhs, rhs in
+                if lhs.element.severity != rhs.element.severity { return lhs.element.severity == .error }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
     }
 
     static func format(_ diagnostic: PineDiagnostic) -> String {

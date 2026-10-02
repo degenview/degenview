@@ -200,7 +200,7 @@ extension PineTypeChecker {
         switch name {
         case "input.float": accepted = [.float, .int]
         case "input.bool": accepted = [.bool]
-        case "input.string": accepted = [.string]
+        case "input.string", "input.session": accepted = [.string]
         case "input.color": accepted = [.color]
         default: accepted = [.int]
         }

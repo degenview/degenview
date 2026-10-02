@@ -52,7 +52,7 @@ enum PineBuiltinTypes {
         case "input.int", "input.time": .int
         case "input.float", "input.source": .float
         case "input.bool": .bool
-        case "input.string": .string
+        case "input.string", "input.session": .string
         case "input.color": .color
         default: nil
         }

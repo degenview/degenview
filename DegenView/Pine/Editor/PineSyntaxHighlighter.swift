@@ -53,7 +53,7 @@ enum PineSyntaxHighlighter {
             storage.addAttributes(
                 [
                     .underlineStyle: NSUnderlineStyle.single.rawValue,
-                    .underlineColor: diagnostic.severity == .error ? NSColor.systemRed : NSColor.systemOrange,
+                    .underlineColor: diagnostic.severity.nsColor,
                 ], range: diagnosticRange)
             if messages[diagnosticRange] == nil { order.append(diagnosticRange) }
             messages[diagnosticRange, default: []].append(diagnostic.message)
