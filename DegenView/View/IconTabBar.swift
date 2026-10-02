@@ -8,6 +8,8 @@ struct IconTabBar<Value: Hashable>: View {
         let value: Value
         let title: String
         let systemImage: String
+        /// A tally shown after the title; nil or zero draws nothing.
+        var count: Int?
         var id: String { title }
     }
 
@@ -43,6 +45,15 @@ struct IconTabBar<Value: Hashable>: View {
                     .font(.system(size: isCompact ? 12.5 : 14, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Color.primary : .secondary)
                     .lineLimit(1)
+                if let count = item.count, count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: isCompact ? 10.5 : 11.5, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(
+                            (isSelected ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
+                }
             }
             .padding(.horizontal, isCompact ? 11 : 16)
             .padding(.vertical, isCompact ? 6 : 8)

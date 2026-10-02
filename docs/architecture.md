@@ -18,6 +18,7 @@ DegenView/
 │   ├── PortfolioStatistics.swift      # Derived stats (best/worst, 24h, extremes, fees) + PortfolioPeriodChange
 │   ├── PortfolioHistoryRange.swift    # Overview chart ranges (1D … ALL) and snapshot filtering
 │   ├── PriceAlertModels.swift         # Alert rules, runtime state, quotes, history, settings
+│   ├── PortfolioCurrency+AlertPrice.swift # `formatAlertPrice`: magnitude-aware alert price text (also in the agent)
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
@@ -46,9 +47,16 @@ DegenView/
 │   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
-│   ├── AlertsCenterView.swift         # App-wide rule/history center and trigger banner
+│   ├── AlertsCenterView.swift         # Alerts window: header, IconTabBar tabs, rule/history lists
+│   ├── AlertRuleRow.swift             # Price-alert card: logo, condition, target, status, actions
+│   ├── AlertHistoryRow.swift          # Trigger card: price vs target, delayed/failed marks
+│   ├── AlertHistoryList.swift         # History grouped by day (`AlertDayGrouping`)
+│   ├── AlertAssetIcon.swift           # Coin artwork + source logo badge for alert rows
+│   ├── AlertConditionChip.swift       # "Crosses above" / "Falls 5%" pill
+│   ├── AlertCardStyle.swift           # Shared card chrome; AlertCardScroll / AlertDayHeader lay them out
+│   ├── GlobalAlertBanner.swift        # Trigger banner overlaid on every tab
 │   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
-│   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
+│   ├── PineAlertListView.swift        # "Scripts" tab of the alerts center (rows use PineAlertCard)
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace

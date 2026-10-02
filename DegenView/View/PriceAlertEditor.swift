@@ -19,7 +19,7 @@ struct PriceAlertEditor: View {
             Text(existing == nil ? "Create Price Alert" : "Edit Price Alert").font(.title2.bold())
             Text("\(asset.name) · \(asset.source.displayName)").foregroundStyle(.secondary)
             if let quote = store.latestQuotes[asset.key] {
-                Text("Current: \(quote.price.formatted(.currency(code: quote.currency.rawValue)))")
+                Text("Current: \(quote.currency.formatAlertPrice(quote.price))")
                     .monospacedDigit()
             }
             Picker("Condition", selection: $direction) {
