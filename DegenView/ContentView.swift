@@ -252,67 +252,29 @@ struct ContentView: View {
                 )
             } else {
                 VStack(spacing: 0) {
-                    // Chart list (vertical) or grid — fills remaining height, scrolls if needed
+                    // Chart grid — fills the remaining height
                     GeometryReader { geometry in
                         let available = geometry.size.height
-                        let cardCount = contentViewModel.chartViewModels.count
                         let gridColumnCount =
                             contentViewModel.chartColumns.count
                             + (previewedNewColumnChartID == nil ? 0 : 1)
                         let maxGridRows = contentViewModel.chartColumns.map(\.chartIDs.count).max() ?? 0
                         let gridSizingCount = maxGridRows * max(1, gridColumnCount)
 
-                        let naturalHeight: CGFloat = {
-                            if contentViewModel.layoutMode == .vertical {
-                                return ChartLayout.verticalPlotHeight(
-                                    available: available, cardCount: cardCount
-                                )
-                            } else {
-                                return ChartLayout.gridPlotHeight(
-                                    available: available,
-                                    cardCount: gridSizingCount,
-                                    columnCount: max(1, gridColumnCount)
-                                )
-                            }
-                        }()
+                        // Cards may shrink so every row remains visible.
+                        let chartHeight = ChartLayout.gridPlotHeight(
+                            available: available,
+                            cardCount: gridSizingCount,
+                            columnCount: max(1, gridColumnCount)
+                        )
 
-                        // Vertical cards retain their readable minimum and scroll.
-                        // Grid cards may shrink further so every row remains visible.
-                        let chartHeight =
-                            contentViewModel.layoutMode == .vertical
-                            ? max(ChartLayout.chartMinHeight, naturalHeight)
-                            : naturalHeight
-
-                        if contentViewModel.layoutMode == .vertical {
-                            ScrollView {
-                                VStack(spacing: ChartLayout.cardGap) {
-                                    ForEach(contentViewModel.chartViewModels, id: \.uniqueID) { vm in
-                                        chartCard(vm, height: chartHeight)
-                                            .onDrag {
-                                                NSItemProvider(object: vm.uniqueID as NSString)
-                                            }
-                                            .onDrop(
-                                                of: [.utf8PlainText],
-                                                delegate: ReorderDropDelegate(
-                                                    targetTicker: vm.uniqueID,
-                                                    viewModel: contentViewModel
-                                                )
-                                            )
-                                    }
-                                }
-                                .padding(4)
-                            }
-                            .frame(height: available)
-                            .scrollIndicators(.never)
-                        } else {
-                            chartGrid(
-                                availableHeight: available,
-                                availableWidth: geometry.size.width,
-                                chartHeight: chartHeight,
-                                sizingCardCount: gridSizingCount,
-                                columnCount: max(1, gridColumnCount)
-                            )
-                        }
+                        chartGrid(
+                            availableHeight: available,
+                            availableWidth: geometry.size.width,
+                            chartHeight: chartHeight,
+                            sizingCardCount: gridSizingCount,
+                            columnCount: max(1, gridColumnCount)
+                        )
                     }
                 }
             }
@@ -391,16 +353,6 @@ struct ContentView: View {
             .onChange(of: contentViewModel.selectedTimeRange) { _, newValue in
                 contentViewModel.setTimeRange(newValue)
             }
-        }
-        ToolbarItem(placement: .automatic) {
-            Button {
-                contentViewModel.layoutMode = contentViewModel.layoutMode.next
-            } label: {
-                Image(systemName: contentViewModel.layoutMode.icon)
-            }
-            .accessibilityLabel(
-                contentViewModel.layoutMode == .vertical
-                    ? "Grid layout" : "Vertical layout")
         }
         ToolbarItem(placement: .automatic) {
             Menu {

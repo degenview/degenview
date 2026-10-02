@@ -14,8 +14,7 @@
    1, move to preview its levels, and click again for Point 2. Select a completed Fib to
    drag its handles or body, open its settings, or delete it. Press Escape to cancel an
    incomplete drawing and Delete/Backspace to remove a selected drawing.
-5. Switch between the vertical and grid layouts, then drag cards to reorder them within
-   or across columns. Hold a card at the grid's right edge until the outlined preview
+5. Drag cards to reorder them within or across columns. Hold a card at the grid's right edge until the outlined preview
    column appears, then release it to create that column. The option appears only when
    the window is wide enough to keep every resulting column readable.
 6. Save the dashboard as a named view. Use the folder menu to load or delete views and to

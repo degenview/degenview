@@ -221,11 +221,11 @@ iPad:
 
 ### Dashboard layout
 
-Preserve vertical and grid layout choices adaptively:
+Keep the single grid layout, adapted to width:
 
-- Compact-width portrait: one chart column; grid mode may become a tighter single-column presentation.
-- Compact-width landscape: grid may use two columns when each chart remains readable.
-- Regular width: vertical mode uses one column; grid mode uses two adaptive columns.
+- Compact-width portrait: one chart column.
+- Compact-width landscape: two columns when each chart remains readable.
+- Regular width: two adaptive columns.
 - Chart cards use content-driven minimum heights instead of macOS window minimum sizes.
 - Reordering uses drag-and-drop where practical and an explicit Edit/Reorder mode as the accessible fallback.
 - Favorites appear in the iPad sidebar and as a dedicated destination or drawer on iPhone.
@@ -369,7 +369,7 @@ Cover:
 - First launch and blank workspace creation.
 - Add, edit, remove, and reorder tickers from every source.
 - Save/load/rename workspaces and unsaved-change indication.
-- Vertical/grid layout across portrait, landscape, iPad Split View, and Stage Manager sizes.
+- Grid layout across portrait, landscape, iPad Split View, and Stage Manager sizes.
 - Pinch candle zoom and Y-axis price zoom.
 - Crosshair, trend line, ruler, replay selection, and cancellation behavior.
 - Portfolio import/export and transaction editing.

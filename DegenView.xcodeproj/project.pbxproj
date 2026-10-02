@@ -210,7 +210,6 @@
 		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
-		133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */; };
 		D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000102 /* ChartGridDropDelegate.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
 		44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */; };
@@ -776,7 +775,6 @@
 		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
-		26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReorderDropDelegate.swift; sourceTree = "<group>"; };
 		D30000000000000000000102 /* ChartGridDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartGridDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
@@ -1392,7 +1390,6 @@
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
-				26162A9C17DCE8969A3E56B8 /* ReorderDropDelegate.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
 				C10000000000000000000107 /* PredictionMarketResultRow.swift */,
@@ -2310,7 +2307,6 @@
 				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
 				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
-				133084E1F720D328F33F7A4E /* ReorderDropDelegate.swift in Sources */,
 				D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */,
 				A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */,
 				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,

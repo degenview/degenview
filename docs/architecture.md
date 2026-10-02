@@ -368,8 +368,8 @@ titles, redo invalidation, persistence, and isolated window histories over a sha
 
 ## Dashboard layout and drag flow
 
-- Vertical mode continues to use the tab's flat chart order. Grid mode renders explicit,
-  equal-width `ChartColumn` stacks; switching modes preserves the grid arrangement.
+- The dashboard is always a grid of explicit, equal-width `ChartColumn` stacks; there is
+  no alternative layout mode.
 - A chart drag exposes column insertion positions and, when enough width remains, a
   trailing add-column rail. Holding over that rail expands a temporary outlined column
   and shrinks the existing columns without changing model or persisted state.

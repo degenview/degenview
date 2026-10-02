@@ -17,7 +17,6 @@ struct ChartTab: Identifiable, Codable, Equatable {
     var tickerConfigs: [TickerConfig]
     var chartColumns: [ChartColumn]?
     var timeRange: TimeRange
-    var layoutMode: LayoutMode
     var candleCount: Int
     var replaySession: ReplaySession?
     var kind: ChartTabKind
@@ -29,7 +28,6 @@ struct ChartTab: Identifiable, Codable, Equatable {
         tickerConfigs: [TickerConfig] = [],
         chartColumns: [ChartColumn]? = nil,
         timeRange: TimeRange = .oneDay,
-        layoutMode: LayoutMode = .vertical,
         candleCount: Int? = nil,
         replaySession: ReplaySession? = nil,
         kind: ChartTabKind = .charts
@@ -40,14 +38,13 @@ struct ChartTab: Identifiable, Codable, Equatable {
         self.tickerConfigs = tickerConfigs
         self.chartColumns = chartColumns
         self.timeRange = timeRange
-        self.layoutMode = layoutMode
         self.candleCount = candleCount ?? timeRange.dataPointLimit
         self.replaySession = replaySession
         self.kind = kind
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, savedViewID, tickerConfigs, chartColumns, timeRange, layoutMode, candleCount, replaySession, kind
+        case id, name, savedViewID, tickerConfigs, chartColumns, timeRange, candleCount, replaySession, kind
     }
 
     init(from decoder: Decoder) throws {
@@ -58,7 +55,6 @@ struct ChartTab: Identifiable, Codable, Equatable {
         tickerConfigs = try values.decode([TickerConfig].self, forKey: .tickerConfigs)
         chartColumns = try values.decodeIfPresent([ChartColumn].self, forKey: .chartColumns)
         timeRange = try values.decode(TimeRange.self, forKey: .timeRange)
-        layoutMode = try values.decode(LayoutMode.self, forKey: .layoutMode)
         candleCount = try values.decode(Int.self, forKey: .candleCount)
         replaySession = try values.decodeIfPresent(ReplaySession.self, forKey: .replaySession)
         kind = try values.decodeIfPresent(ChartTabKind.self, forKey: .kind) ?? .charts

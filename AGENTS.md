@@ -200,7 +200,7 @@ Three things broke when a second instance appeared — check for this shape when
 ### State management
 - `ContentViewModel.markChanged()` sets `hasUnsavedChanges = true` (skipped during `loadView`)
 - `isApplyingView` flag prevents false unsaved-change detection on view load
-- `isHydrating` guards `syncTab()` during `init` — `layoutMode`'s `didSet` would otherwise
+- `isHydrating` guards `syncTab()` during `init` — a `didSet` that reached it would otherwise
   write the tab back before `chartViewModels` is populated and erase it
 - `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the database write
 - `@AppStorage("appTheme")` for theme preference
@@ -249,7 +249,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 
 1. Launch app, add BTC from Binance, then BTC/USD from Coinbase (live ticks should move its last candle)
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
-3. Switch timeframes, toggle log scale, switch layout
+3. Switch timeframes, toggle log scale
 4. Scroll-zoom on chart, verify candle count changes
 5. Save view, add a ticker, verify unsaved changes indicator
 6. Load saved view, verify state restores
@@ -258,7 +258,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 9. Both ⌘T and the tab bar's `+` open an empty tab named "Unnamed" — never a second view
    onto an existing tab — with the toolbar present and every saved view listed for
    one-click loading
-10. Give the two tabs different timeframes and layouts; confirm neither follows the other,
+10. Give the two tabs different timeframes; confirm neither follows the other,
    and that scrolling one doesn't zoom the other
 11. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab

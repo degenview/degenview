@@ -3,7 +3,7 @@ import Foundation
 // MARK: - Layout Constants
 
 enum ChartLayout {
-    /// Gap between chart cards in vertical/grid layout.
+    /// Gap between chart cards in the grid.
     static let cardGap: CGFloat = 8
     /// Estimated non-chart chrome per card (header + padding + spacing).
     static let cardChrome: CGFloat = 55
@@ -20,13 +20,6 @@ enum ChartLayout {
     /// Normal outer and per-card padding in the fixed-height grid.
     static let gridOuterPadding: CGFloat = 4
     static let gridCardPadding: CGFloat = 4
-
-    /// Common plot height that lets all vertically stacked cards fit when possible.
-    static func verticalPlotHeight(available: CGFloat, cardCount: Int) -> CGFloat {
-        guard cardCount > 0 else { return available }
-        let gaps = CGFloat(max(0, cardCount - 1)) * cardGap
-        return (available - gaps) / CGFloat(cardCount) - cardChrome
-    }
 
     /// Common plot height for a two-column grid.
     static func gridPlotHeight(
