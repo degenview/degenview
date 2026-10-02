@@ -78,6 +78,7 @@
 		SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SM0000000000000000000106 /* ScriptStoreTests.swift */; };
 		SP0000000000000000000019 /* ScriptPreviewInputsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000519 /* ScriptPreviewInputsStoreTests.swift */; };
 		SP0000000000000000000018 /* ScriptPreviewViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */; };
+		SP0000000000000000000903 /* ScriptManagerViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000902 /* ScriptManagerViewModelTests.swift */; };
 		SP0000000000000000000017 /* SplitMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000517 /* SplitMetricsTests.swift */; };
 		PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = PW0000000000000000000106 /* PineWordRangeTests.swift */; };
 		E73CA6C25AF343A6F394AE95 /* PineTextViewEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7B1BB1779CCA9B58E5E6EFD /* PineTextViewEditingTests.swift */; };
@@ -264,6 +265,7 @@
 		A00000000000000000000017 /* DataSourceType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* DataSourceType.swift */; };
 		SP0000000000000000000016 /* PreviewMarket.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000516 /* PreviewMarket.swift */; };
 		SP0000000000000000000015 /* ScriptPreviewLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000515 /* ScriptPreviewLayout.swift */; };
+		SP0000000000000000000901 /* ScriptManagerSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000900 /* ScriptManagerSession.swift */; };
 		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
 		SP0000000000000000000014 /* ScriptPreviewInputsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000514 /* ScriptPreviewInputsStore.swift */; };
 		SP0000000000000000000013 /* ChartLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000513 /* ChartLiveFeed.swift */; };
@@ -683,6 +685,7 @@
 		SM0000000000000000000106 /* ScriptStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptStoreTests.swift; sourceTree = "<group>"; };
 		SP0000000000000000000519 /* ScriptPreviewInputsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewInputsStoreTests.swift; sourceTree = "<group>"; };
 		SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewViewModelTests.swift; sourceTree = "<group>"; };
+		SP0000000000000000000902 /* ScriptManagerViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerViewModelTests.swift; sourceTree = "<group>"; };
 		SP0000000000000000000517 /* SplitMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SplitMetricsTests.swift; sourceTree = "<group>"; };
 		PW0000000000000000000106 /* PineWordRangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWordRangeTests.swift; sourceTree = "<group>"; };
 		E7B1BB1779CCA9B58E5E6EFD /* PineTextViewEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineTextViewEditingTests.swift"; sourceTree = "<group>"; };
@@ -831,6 +834,7 @@
 		A00000000000000000000118 /* DataSourceType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceType.swift; sourceTree = "<group>"; };
 		SP0000000000000000000516 /* PreviewMarket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewMarket.swift; sourceTree = "<group>"; };
 		SP0000000000000000000515 /* ScriptPreviewLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewLayout.swift; sourceTree = "<group>"; };
+		SP0000000000000000000900 /* ScriptManagerSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptManagerSession.swift; sourceTree = "<group>"; };
 		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
 		SP0000000000000000000514 /* ScriptPreviewInputsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewInputsStore.swift; sourceTree = "<group>"; };
 		SP0000000000000000000513 /* ChartLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLiveFeed.swift; sourceTree = "<group>"; };
@@ -1214,6 +1218,7 @@
 				A00000000000000000000118 /* DataSourceType.swift */,
 				SP0000000000000000000516 /* PreviewMarket.swift */,
 				SP0000000000000000000515 /* ScriptPreviewLayout.swift */,
+				SP0000000000000000000900 /* ScriptManagerSession.swift */,
 				CB1000000000000000000105 /* MarketSymbol.swift */,
 				C10000000000000000000101 /* PolymarketModels.swift */,
 				C10000000000000000000211 /* KalshiModels.swift */,
@@ -1445,6 +1450,7 @@
 				SM0000000000000000000106 /* ScriptStoreTests.swift */,
 				SP0000000000000000000519 /* ScriptPreviewInputsStoreTests.swift */,
 				SP0000000000000000000518 /* ScriptPreviewViewModelTests.swift */,
+				SP0000000000000000000902 /* ScriptManagerViewModelTests.swift */,
 				SP0000000000000000000517 /* SplitMetricsTests.swift */,
 				PW0000000000000000000106 /* PineWordRangeTests.swift */,
 				E7B1BB1779CCA9B58E5E6EFD /* PineTextViewEditingTests.swift */,
@@ -2030,6 +2036,7 @@
 				SM0000000000000000000006 /* ScriptStoreTests.swift in Sources */,
 				SP0000000000000000000019 /* ScriptPreviewInputsStoreTests.swift in Sources */,
 				SP0000000000000000000018 /* ScriptPreviewViewModelTests.swift in Sources */,
+				SP0000000000000000000903 /* ScriptManagerViewModelTests.swift in Sources */,
 				SP0000000000000000000017 /* SplitMetricsTests.swift in Sources */,
 				PW0000000000000000000006 /* PineWordRangeTests.swift in Sources */,
 				E73CA6C25AF343A6F394AE95 /* PineTextViewEditingTests.swift in Sources */,
@@ -2293,6 +2300,7 @@
 				A00000000000000000000017 /* DataSourceType.swift in Sources */,
 				SP0000000000000000000016 /* PreviewMarket.swift in Sources */,
 				SP0000000000000000000015 /* ScriptPreviewLayout.swift in Sources */,
+				SP0000000000000000000901 /* ScriptManagerSession.swift in Sources */,
 				A00000000000000000000018 /* TickerDataSource.swift in Sources */,
 				SP0000000000000000000014 /* ScriptPreviewInputsStore.swift in Sources */,
 				SP0000000000000000000013 /* ChartLiveFeed.swift in Sources */,
