@@ -275,7 +275,9 @@ final class ScriptPreviewViewModelTests: XCTestCase {
         XCTAssertFalse(model.isActive, "nothing runs until the pane is on screen")
 
         model.setPaneVisible(true)
-        await waitUntil(stub.fetches >= 3)
+        // Each refresh runs the whole chart pipeline on the main actor, so under load the first three
+        // take seconds, not the 150 ms the interval suggests. Returns the moment the third lands.
+        await waitUntil(stub.fetches >= 3, timeout: .seconds(20))
         XCTAssertGreaterThanOrEqual(stub.fetches, 3)
         XCTAssertFalse(model.chart.klineData.isEmpty)
 

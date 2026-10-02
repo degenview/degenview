@@ -8,7 +8,8 @@ extension PortfolioCurrency {
     /// from 1,000 up, two to four from one unit, and below one four significant figures (trailing
     /// zeros trimmed, never fewer than two decimals). `Decimal.description` prints none of this.
     func formatAlertPrice(_ value: Decimal, locale: Locale = .current) -> String {
-        let digits = Self.alertFractionDigits(for: abs(value), wholeUnits: self == .JPY, minimum: self == .BTC ? 0 : nil)
+        let digits = Self.alertFractionDigits(
+            for: abs(value), wholeUnits: self == .JPY, minimum: self == .BTC ? 0 : nil)
         if self == .BTC {
             return "BTC " + value.formatted(.number.precision(.fractionLength(digits)).locale(locale))
         }

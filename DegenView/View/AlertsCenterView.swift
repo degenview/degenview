@@ -68,7 +68,9 @@ struct AlertsCenterView: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(.tint)
                     .frame(width: 44, height: 44)
-                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(
+                        Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    )
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Alerts").font(.title2.weight(.semibold))
@@ -81,6 +83,13 @@ struct AlertsCenterView: View {
             HStack {
                 IconTabBar(items: tabs, selection: $filter, isCompact: true)
                 Spacer(minLength: 12)
+                if filter == .script {
+                    Button("Open Script Manager", systemImage: "curlybraces") {
+                        WindowCoordinator.shared.openScriptManager()
+                    }
+                    .controlSize(.small)
+                    .help("Write and manage the scripts whose alert() calls appear here")
+                }
                 if filter == .history, !store.history.isEmpty {
                     Button("Clear History", systemImage: "trash") { confirmingClear = true }
                         .controlSize(.small)
@@ -130,7 +139,8 @@ struct AlertsCenterView: View {
     private var notificationsOffNotice: some View {
         NoticeCard(
             systemImage: "bell.slash.fill", tint: .orange, title: "Notifications are turned off",
-            detail: "Alerts still fire and are logged here, but macOS will not show them. Allow DegenView in System Settings.",
+            detail:
+                "Alerts still fire and are logged here, but macOS will not show them. Allow DegenView in System Settings.",
             actionTitle: "Open Settings"
         ) {
             if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") {
@@ -219,7 +229,8 @@ struct AlertsCenterView: View {
     }
 
     private var lastFiredByRule: [UUID: AlertTriggerEvent] {
-        Dictionary(store.history.map { ($0.alertID, $0) }, uniquingKeysWith: { a, b in a.timestamp > b.timestamp ? a : b })
+        Dictionary(
+            store.history.map { ($0.alertID, $0) }, uniquingKeysWith: { a, b in a.timestamp > b.timestamp ? a : b })
     }
 
     private func matchesTab(_ alert: PriceAlert) -> Bool {

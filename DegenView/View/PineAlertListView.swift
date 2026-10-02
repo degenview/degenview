@@ -116,7 +116,10 @@ struct PineAlertListView: View {
                 if let source = symbolKey.source {
                     SourceLogoView(source: source, size: badge)
                         .padding(1)
-                        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: badge * 0.28))
+                        .background(
+                            Color(nsColor: .windowBackgroundColor),
+                            in: RoundedRectangle(cornerRadius: badge * 0.28)
+                        )
                         .offset(x: badge * 0.3, y: badge * 0.3)
                 }
             }

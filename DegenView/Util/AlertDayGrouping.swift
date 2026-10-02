@@ -18,7 +18,8 @@ enum AlertDayGrouping {
         let ordered = items.sorted { date($0) > date($1) }
         let byDay = Dictionary(grouping: ordered) { calendar.startOfDay(for: date($0)) }
         return byDay.keys.sorted(by: >).map { day in
-            Section(day: day, title: title(for: day, today: today, calendar: calendar, locale: locale), items: byDay[day] ?? [])
+            let heading = title(for: day, today: today, calendar: calendar, locale: locale)
+            return Section(day: day, title: heading, items: byDay[day] ?? [])
         }
     }
 
