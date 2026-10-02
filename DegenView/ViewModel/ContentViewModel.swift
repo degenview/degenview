@@ -1264,6 +1264,11 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
+    /// Re-read the saved views, which another tab may have added to since this one opened.
+    func reloadSavedViews() {
+        savedViews = AppDatabase.shared.savedViews()
+    }
+
     /// Delete a saved view. Tabs sitting on it keep their charts but lose the link.
     func deleteView(_ view: SavedView) {
         savedViews.removeAll { $0.id == view.id }

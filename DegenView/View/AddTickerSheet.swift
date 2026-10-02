@@ -72,8 +72,8 @@ struct AddTickerSheet: View {
         .init(title: "Weather", query: "temperature", icon: .symbol("cloud.sun")),
     ]
 
-    private let suggestions = ["BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK"]
-    private let stockSuggestions = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD"]
+    private let suggestions = MarketSuggestions.crypto
+    private let stockSuggestions = MarketSuggestions.stocks
 
     enum Tab: String, CaseIterable {
         case crypto = "Crypto"
