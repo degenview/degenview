@@ -80,7 +80,10 @@ struct ContentView: View {
             // The title is the tab label, and an empty tab still needs the
             // toolbar — both belong outside the empty/non-empty branch.
             .navigationTitle(contentViewModel.tabName)
-            .toolbar { toolbarContent }
+            .toolbar {
+                AppToolbar()
+                toolbarContent
+            }
             .frame(
                 minWidth: UI.windowMinWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
                 idealWidth: UI.windowIdealWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
@@ -378,14 +381,6 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .automatic) {
-            Button {
-                WindowCoordinator.shared.openPortfolio(beside: contentViewModel.tabID)
-            } label: {
-                Label("Portfolio", systemImage: "briefcase")
-            }
-            .help("Portfolio Tracker")
-        }
-        ToolbarItem(placement: .automatic) {
             Picker("Timeframe", selection: $contentViewModel.selectedTimeRange) {
                 ForEach(TimeRange.allCases) { range in
                     Text(range.rawValue).tag(range)
@@ -471,13 +466,18 @@ struct ContentView: View {
             .accessibilityLabel(showFavorites ? "Hide Favorites" : "Show Favorites")
             .help(showFavorites ? "Hide Favorites" : "Show Favorites")
         }
+        // Its own bubble and a text label, so it isn't mistaken for the tab bar's `+`.
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
+        }
         ToolbarItem(placement: .primaryAction) {
             Button {
                 showAddSheet = true
             } label: {
-                Image(systemName: "plus")
+                Label("Add Chart", systemImage: "plus")
+                    .labelStyle(.titleAndIcon)
             }
-            .accessibilityLabel("Add Ticker")
+            .help("Add Chart")
         }
     }
 

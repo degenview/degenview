@@ -2,9 +2,9 @@ import AppKit
 import SwiftUI
 
 /// Dedicated content for a portfolio tab. It deliberately has no chart toolbar,
-/// ticker-add action, chart state, replay controls, or drawing-event monitors.
+/// ticker-add action, chart state, replay controls, or drawing-event monitors — only
+/// the app-wide `AppToolbar` buttons.
 struct PortfolioTabView: View {
-    @Environment(\.openWindow) private var openWindow
     let tabID: UUID
     @StateObject private var lifecycle: PortfolioTabLifecycle
     @StateObject private var store = PortfolioStore.shared
@@ -22,15 +22,7 @@ struct PortfolioTabView: View {
             isTab: true
         )
         .navigationTitle("Portfolio")
-        .toolbar {
-            ToolbarItem {
-                Button {
-                    openWindow(id: "alerts")
-                } label: {
-                    Label("Price Alerts", systemImage: "bell")
-                }
-            }
-        }
+        .toolbar { AppToolbar() }
         .background(
             WindowAccessor { window in lifecycle.attach(to: window) }
                 .frame(width: 0, height: 0)

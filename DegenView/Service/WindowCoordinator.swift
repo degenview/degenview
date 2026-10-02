@@ -299,7 +299,7 @@ final class WindowCoordinator {
 
     /// Opens the single portfolio workspace as a real AppKit tab. Repeated requests
     /// focus the existing tab instead of creating duplicate portfolio workspaces.
-    func openPortfolio(beside anchorID: UUID, initialAsset: PortfolioAsset? = nil) {
+    func openPortfolio(beside anchorID: UUID? = nil, initialAsset: PortfolioAsset? = nil) {
         guard let openWindow = openWindowAction else { return }
         let tab = TabsStore.shared.portfolioTab ?? TabsStore.shared.makePortfolioTab()
         if let initialAsset { pendingPortfolioAssets[tab.id] = initialAsset }
@@ -313,8 +313,16 @@ final class WindowCoordinator {
             return
         }
 
-        pendingJoins[tab.id] = anchorID
+        if let anchor = anchorID ?? frontmostTabID() ?? tabIDInKeyWindowGroup() {
+            pendingJoins[tab.id] = anchor
+        }
         openWindow(value: tab.id)
+    }
+
+    /// A registered tab sharing the key window's tab group. The Script Manager scene is
+    /// not registered, so from there this is how a new tab finds a group to join.
+    private func tabIDInKeyWindowGroup() -> UUID? {
+        NSApp.keyWindow?.tabGroup?.windows.lazy.compactMap { self.tabID(for: $0) }.first
     }
 
     func takeInitialPortfolioAsset(for tabID: UUID) -> PortfolioAsset? {

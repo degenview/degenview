@@ -267,6 +267,10 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     against the price axis and its bar count against the candles inside. One more click
     puts it away — on that chart only. Switching tool or timeframe drops it, and it never
     comes back after a relaunch
+13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
+    and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
+    Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own
+    labelled bubble, apart from the Favorites button
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket

@@ -26,6 +26,7 @@ struct ScriptManagerView: View {
         // tab's controls must disappear here, but removing toolbar content entirely collapses the
         // titlebar and makes the window jump vertically.
         .toolbar {
+            AppToolbar()
             ToolbarItem(placement: .navigation) {
                 Button {
                     withAnimation(.snappy) { sidebarVisible.toggle() }

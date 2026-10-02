@@ -62,6 +62,7 @@ DegenView/
 │   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
+│   ├── AppToolbar.swift               # Portfolio + Script Manager title-bar buttons, shared by every tab kind
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings

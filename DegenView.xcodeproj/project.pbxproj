@@ -272,6 +272,7 @@
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
 		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
+		D5A00000000000000000AB01 /* AppToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A00000000000000000AB02 /* AppToolbar.swift */; };
 		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A00000000000000000000F01 /* SourceLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F02 /* SourceLogoView.swift */; };
@@ -838,6 +839,7 @@
 		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
+		D5A00000000000000000AB02 /* AppToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppToolbar.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A00000000000000000000F02 /* SourceLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLogoView.swift; sourceTree = "<group>"; };
@@ -1379,6 +1381,7 @@
 				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
+				D5A00000000000000000AB02 /* AppToolbar.swift */,
 				A0000000000000000000011F /* TickerIconView.swift */,
 				A00000000000000000000F02 /* SourceLogoView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
@@ -2234,6 +2237,7 @@
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
 				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
+				D5A00000000000000000AB01 /* AppToolbar.swift in Sources */,
 				A00000000000000000000909 /* Crosshair.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
