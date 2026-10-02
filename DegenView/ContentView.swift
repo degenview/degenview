@@ -138,7 +138,10 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showAddFavoriteSheet) {
-            AddTickerSheet(title: "Add Favorite", actionLabel: "Favorite") { selected in
+            AddTickerSheet(
+                title: "Add Favorite", actionLabel: "Favorite",
+                subtitle: "Save a market to your favorites sidebar.", systemImage: "star.fill"
+            ) { selected in
                 try favoritesStore.add(selected)
             }
         }

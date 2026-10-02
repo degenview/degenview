@@ -14,8 +14,10 @@ struct PredictionMarketResultRow: View {
     var onToggle: (() -> Void)? = nil
     var onCommit: (() -> Void)? = nil
 
+    @State private var isHovered = false
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if let checked = isChecked {
                 Image(systemName: checked ? "checkmark.square.fill" : "square")
                     .foregroundStyle(checked ? Color.accentColor : Color.secondary)
@@ -36,30 +38,38 @@ struct PredictionMarketResultRow: View {
 
             if let price = result.price {
                 Text(PriceFormatter.format(price, scale: .probability))
-                    .font(.caption.weight(.medium))
+                    .font(.callout.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
 
-            if isSelected {
-                Image(systemName: "checkmark")
-                    .font(.caption.weight(.semibold))
+            if isChecked == nil {
+                Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(Color.accentColor)
+                    .opacity(isSelected ? 1 : 0)
                     .accessibilityLabel("Selected")
+                    .accessibilityHidden(!isSelected)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .contentShape(Rectangle())
         .modifier(PredictionMarketRowTapModifier(
             onSelect: { if isChecked != nil { onToggle?() } else { onSelect() } },
             onCommit: onCommit
         ))
-        .background(
-            isSelected
-                ? Color.accentColor.opacity(0.15)
-                : Color.clear
+        .background(rowFill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : .clear)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .onHover { isHovered = $0 }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var rowFill: Color {
+        if isSelected { return Color.accentColor.opacity(0.12) }
+        return isHovered ? Color.primary.opacity(0.06) : .clear
     }
 }
 

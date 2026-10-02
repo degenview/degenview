@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The top of a portfolio sheet: a tinted icon badge, a title and a one-line description.
-struct PortfolioSheetHeader: View {
+struct SheetHeader: View {
     let systemImage: String
     let title: String
     let subtitle: String

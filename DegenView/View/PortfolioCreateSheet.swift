@@ -31,7 +31,7 @@ struct PortfolioCreateSheet: View {
     // MARK: - Header
 
     private var header: some View {
-        PortfolioSheetHeader(
+        SheetHeader(
             systemImage: "briefcase.fill", title: "New Portfolio",
             subtitle: "Group transactions and track them together.")
     }

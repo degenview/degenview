@@ -340,7 +340,7 @@ enum UI {
     /// both sides. The height fits the tallest static tab (CoinMarketCap), and search
     /// results scroll within whatever is left.
     static let addTickerSheetWidth: CGFloat = 900
-    static let addTickerSheetHeight: CGFloat = 560
+    static let addTickerSheetHeight: CGFloat = 620
     /// Width of the optional favorites rail on the right.
     static let favoritesSidebarWidth: CGFloat = 260
     /// Sheet frame dimensions for Chart Settings.

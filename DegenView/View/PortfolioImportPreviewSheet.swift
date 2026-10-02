@@ -15,7 +15,7 @@ struct PortfolioImportPreviewSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 16) {
-                PortfolioSheetHeader(
+                SheetHeader(
                     systemImage: "doc.text.magnifyingglass", title: "Import Preview",
                     subtitle: preview.transactions.isEmpty
                         ? "Nothing to import yet." : "Review what will be added to your portfolio.")
@@ -48,19 +48,19 @@ struct PortfolioImportPreviewSheet: View {
 
     @ViewBuilder private var notices: some View {
         if !preview.errors.isEmpty {
-            PortfolioNoticeCard(
+            NoticeCard(
                 systemImage: "xmark.octagon.fill", tint: .red,
                 title: "\(preview.errors.count) \(preview.errors.count == 1 ? "problem requires" : "problems require") attention",
                 detail: "Fix the source data and import again.", lines: preview.errors, maxListHeight: 90)
         }
         if !preview.warnings.isEmpty {
-            PortfolioNoticeCard(
+            NoticeCard(
                 systemImage: "exclamationmark.triangle.fill", tint: .orange,
                 title: "\(preview.warnings.count) \(preview.warnings.count == 1 ? "warning" : "warnings")",
                 detail: "Warnings don't block the import.", lines: preview.warnings, maxListHeight: 70)
         }
         if let importFailure {
-            PortfolioNoticeCard(
+            NoticeCard(
                 systemImage: "exclamationmark.triangle.fill", tint: .red, title: "Import failed",
                 detail: importFailure + "\n\nNo transactions were imported. Correct the source data, "
                     + "or restart the CoinMarketCap import and skip the affected ticker or item.")

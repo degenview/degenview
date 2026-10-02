@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The portfolio's section switcher: a pill-shaped segmented control with an icon and title per
+/// A section switcher (portfolio tabs, Add Chart sources): a pill-shaped segmented control with an icon and title per
 /// segment. Built by hand because the system segmented control draws neither icons beside text
 /// nor a size beyond "regular".
-struct PortfolioTabBar<Value: Hashable>: View {
+struct IconTabBar<Value: Hashable>: View {
     struct Item: Identifiable {
         let value: Value
         let title: String
@@ -13,6 +13,8 @@ struct PortfolioTabBar<Value: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Value
+    /// Smaller type and padding, for sheets where six segments share one row.
+    var isCompact = false
     @Namespace private var highlight
 
     var body: some View {
@@ -33,16 +35,17 @@ struct PortfolioTabBar<Value: Hashable>: View {
         return Button {
             withAnimation(.easeOut(duration: 0.18)) { selection = item.value }
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: isCompact ? 5 : 7) {
                 Image(systemName: item.systemImage)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: isCompact ? 12 : 14, weight: .medium))
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
                 Text(item.title)
-                    .font(.system(size: 14, weight: isSelected ? .semibold : .medium))
+                    .font(.system(size: isCompact ? 12.5 : 14, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Color.primary : .secondary)
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.horizontal, isCompact ? 11 : 16)
+            .padding(.vertical, isCompact ? 6 : 8)
             .contentShape(Rectangle())
             .background {
                 if isSelected {

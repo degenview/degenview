@@ -3,6 +3,8 @@ import SwiftUI
 struct AddTickerSheet: View {
     let title: String
     let actionLabel: String
+    let subtitle: String
+    let systemImage: String
     let onAdd: @MainActor (TickerSearchResult) async throws -> Void
     let onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)?
     let onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)?
@@ -26,6 +28,7 @@ struct AddTickerSheet: View {
     @State private var addError: String?
     @State private var needsAlpacaSetup = false
     @StateObject private var portfolioStore = PortfolioStore.shared
+    @ObservedObject private var recents = RecentMarketsStore.shared
     @State private var portfolioID: UUID?
     @State private var portfolioKind: PortfolioChartKind = .valueChart
     @State private var cmcType: CoinMarketCapChartType = .altcoinSeasonHistorical
@@ -36,6 +39,9 @@ struct AddTickerSheet: View {
     init(
         title: String = "Add Chart",
         actionLabel: String = "Add",
+        subtitle: String = "Search a market, stock or index and add it as a live chart.",
+        systemImage: String = "chart.xyaxis.line",
+        initialTab: Tab = .crypto,
         onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)? = nil,
         onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)? = nil,
         onAddBitcoinPowerLaw: (@MainActor () -> Void)? = nil,
@@ -43,6 +49,9 @@ struct AddTickerSheet: View {
     ) {
         self.title = title
         self.actionLabel = actionLabel
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        _selectedTab = State(initialValue: initialTab)
         self.onAddPortfolio = onAddPortfolio
         self.onAddCoinMarketCap = onAddCoinMarketCap
         self.onAddBitcoinPowerLaw = onAddBitcoinPowerLaw
@@ -59,6 +68,20 @@ struct AddTickerSheet: View {
         case coinMarketCap = "CoinMarketCap"
         case portfolio = "Portfolio"
         case models = "Models"
+
+        /// Shorter than the case name where six segments have to share one row.
+        var title: String { self == .predictionMarkets ? "Predictions" : rawValue }
+
+        var systemImage: String {
+            switch self {
+            case .crypto: "bitcoinsign.circle"
+            case .stocks: "building.columns"
+            case .predictionMarkets: "percent"
+            case .coinMarketCap: "gauge.with.dots.needle.50percent"
+            case .portfolio: "briefcase"
+            case .models: "function"
+            }
+        }
     }
 
     /// View model behind whichever prediction-market provider is selected.
@@ -77,96 +100,66 @@ struct AddTickerSheet: View {
         }
     }
 
-    private var tabPicker: some View {
-        Picker("", selection: $selectedTab) {
-            ForEach(
-                Tab.allCases.filter {
-                    ($0 != .portfolio || onAddPortfolio != nil)
-                        && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
-                        && ($0 != .models || onAddBitcoinPowerLaw != nil)
-                }, id: \.self
-            ) { tab in
-                Text(tab.rawValue).tag(tab)
-            }
+    private var visibleTabs: [Tab] {
+        Tab.allCases.filter {
+            ($0 != .portfolio || onAddPortfolio != nil)
+                && ($0 != .coinMarketCap || onAddCoinMarketCap != nil)
+                && ($0 != .models || onAddBitcoinPowerLaw != nil)
         }
-        .pickerStyle(.segmented)
+    }
+
+    private var canCommit: Bool {
+        switch selectedTab {
+        case .portfolio: !portfolioStore.activePortfolios.isEmpty
+        case .coinMarketCap, .models: true
+        case .crypto, .stocks, .predictionMarkets: activeSelection != nil
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label(title, systemImage: "plus.circle.fill")
-                .font(.headline)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
+                SheetHeader(systemImage: systemImage, title: title, subtitle: subtitle)
 
-            // Pinned at its natural size: on a selection change the segmented control reverts
-            // to equal-width segments, so any narrower proposed width makes it jump between
-            // the two layouts and drag the rest of the sheet's content with it.
-            tabPicker
-                .fixedSize()
+                IconTabBar(
+                    items: visibleTabs.map { .init(value: $0, title: $0.title, systemImage: $0.systemImage) },
+                    selection: $selectedTab, isCompact: true
+                )
                 .frame(maxWidth: .infinity)
 
-            ZStack(alignment: .topLeading) {
-                switch selectedTab {
-                case .crypto:
-                    cryptoTab
-                case .stocks:
-                    stockTab
-                case .predictionMarkets:
-                    PredictionMarketPicker(
-                        provider: $predictionProvider,
-                        polymarketVM: polymarketVM,
-                        kalshiVM: kalshiVM,
-                        searchText: $predictionMarketText,
-                        sizing: .fillAvailable,
-                        showsStatus: false,
-                        onCommitResult: { addTicker($0) }
-                    )
-                case .coinMarketCap:
-                    coinMarketCapTab
-                case .portfolio:
-                    portfolioTab
-                case .models:
-                    modelsTab
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-
-            statusRows
-
-            Divider()
-
-            HStack(spacing: 12) {
-                if let selected = activeSelection {
-                    SelectedResultBanner(prefix: "Selected", result: selected)
-                        .frame(maxWidth: 340)
-                }
-                Spacer(minLength: 0)
-                Button("Cancel") {
-                    cancelSearches()
-                    dismiss()
-                }
-                .keyboardShortcut(.escape)
-
-                Button(actionLabel) {
-                    if selectedTab == .portfolio {
-                        addPortfolio()
-                    } else if selectedTab == .coinMarketCap {
-                        addCoinMarketCap()
-                    } else if selectedTab == .models {
-                        addBitcoinPowerLaw()
-                    } else if let selected = activeSelection {
-                        addTicker(selected)
+                ZStack(alignment: .topLeading) {
+                    switch selectedTab {
+                    case .crypto:
+                        cryptoTab
+                    case .stocks:
+                        stockTab
+                    case .predictionMarkets:
+                        PredictionMarketPicker(
+                            provider: $predictionProvider,
+                            polymarketVM: polymarketVM,
+                            kalshiVM: kalshiVM,
+                            searchText: $predictionMarketText,
+                            sizing: .fillAvailable,
+                            showsStatus: false,
+                            onCommitResult: { addTicker($0) }
+                        )
+                    case .coinMarketCap:
+                        coinMarketCapTab
+                    case .portfolio:
+                        portfolioTab
+                    case .models:
+                        modelsTab
                     }
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(
-                    selectedTab == .portfolio
-                        ? portfolioStore.activePortfolios.isEmpty
-                        : selectedTab == .coinMarketCap || selectedTab == .models ? false : activeSelection == nil
-                )
-                .keyboardShortcut(.return)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+
+                statusRows
             }
+            .padding(24)
+
+            Divider()
+            footer
         }
-        .padding(24)
         // Fixed rather than content-hugging, so switching tabs never changes the sheet's size.
         .frame(width: UI.addTickerSheetWidth, height: UI.addTickerSheetHeight)
         .animation(.easeInOut(duration: 0.18), value: searchVM.searchResults.values.reduce(0) { $0 + $1.count })
@@ -182,16 +175,46 @@ struct AddTickerSheet: View {
         }
     }
 
-    private var modelsTab: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Bitcoin Power Law", systemImage: "chart.xyaxis.line").font(.headline)
-            Text(
-                "Bitstamp BTC/USD history on logarithmic time and price axes, with an editable power-law corridor and ten-year projection."
-            )
-            .font(.caption).foregroundStyle(.secondary)
+    private var footer: some View {
+        HStack(spacing: 12) {
+            if let selected = activeSelection {
+                SelectedResultBanner(prefix: "Selected", result: selected)
+                    .frame(maxWidth: 380)
+            }
+            Spacer(minLength: 0)
+            Button("Cancel") {
+                cancelSearches()
+                dismiss()
+            }
+            .keyboardShortcut(.cancelAction)
+            .controlSize(.large)
+
+            Button(actionLabel) {
+                switch selectedTab {
+                case .portfolio: addPortfolio()
+                case .coinMarketCap: addCoinMarketCap()
+                case .models: addBitcoinPowerLaw()
+                case .crypto, .stocks, .predictionMarkets:
+                    if let selected = activeSelection { addTicker(selected) }
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(!canCommit)
+            .keyboardShortcut(.defaultAction)
         }
-        .padding(12).frame(maxWidth: .infinity, minHeight: 130, alignment: .topLeading)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 24)
+        .padding(.vertical, 14)
+    }
+
+    private var modelsTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            ChoiceCard(
+                title: "Bitcoin Power Law",
+                subtitle: "Bitstamp BTC/USD history on logarithmic time and price axes, with an editable "
+                    + "power-law corridor and ten-year projection.",
+                systemImage: "chart.xyaxis.line", isSelected: true, action: {})
+        }
     }
 
     private func addBitcoinPowerLaw() {
@@ -208,23 +231,51 @@ struct AddTickerSheet: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 150)
             } else {
-                Picker("Portfolio", selection: $portfolioID) {
-                    Text("All Portfolios").tag(UUID?.none)
-                    ForEach(portfolioStore.activePortfolios) { portfolio in
-                        Text(portfolio.name).tag(Optional(portfolio.id))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Portfolio").font(.subheadline.weight(.medium))
+                    Picker("Portfolio", selection: $portfolioID) {
+                        Text("All Portfolios").tag(UUID?.none)
+                        ForEach(portfolioStore.activePortfolios) { portfolio in
+                            Text(portfolio.name).tag(Optional(portfolio.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Show").font(.subheadline.weight(.medium))
+                    ForEach(PortfolioChartKind.allCases) { kind in
+                        ChoiceCard(
+                            title: kind.rawValue, subtitle: portfolioKindDescription(kind),
+                            systemImage: portfolioKindIcon(kind), isSelected: portfolioKind == kind
+                        ) { portfolioKind = kind }
                     }
                 }
-                Picker("Show", selection: $portfolioKind) {
-                    ForEach(PortfolioChartKind.allCases) { kind in Text(kind.rawValue).tag(kind) }
-                }
-                .pickerStyle(.radioGroup)
                 Text(
-                    "Portfolio value charts include their own 1D, 1W, 1M, 1Y, and all-time range control. Portfolio cards do not support market indicators."
+                    "Portfolio value charts include their own 1D, 1W, 1M, 1Y and all-time range control. "
+                        + "Portfolio cards do not support market indicators."
                 )
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .task { await portfolioStore.refresh() }
+    }
+
+    private func portfolioKindIcon(_ kind: PortfolioChartKind) -> String {
+        switch kind {
+        case .valueChart: "chart.line.uptrend.xyaxis"
+        case .value: "dollarsign.circle"
+        case .allocation: "chart.pie"
+        }
+    }
+
+    private func portfolioKindDescription(_ kind: PortfolioChartKind) -> String {
+        switch kind {
+        case .valueChart: "Value over time, with 1D to all-time ranges"
+        case .value: "The current total as a big number"
+        case .allocation: "How the portfolio splits across assets"
+        }
     }
 
     private func addPortfolio() {
@@ -239,25 +290,25 @@ struct AddTickerSheet: View {
     }
 
     private var coinMarketCapTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("Market-wide CoinMarketCap indices").font(.caption).foregroundStyle(.secondary)
-            ForEach(CoinMarketCapChartType.allCases) { type in
-                Button {
-                    cmcType = type
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(type.title).fontWeight(.semibold)
-                            Text(cmcDescription(type)).font(.caption).foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                        Image(systemName: cmcType == type ? "checkmark.circle.fill" : "circle")
-                            .foregroundStyle(cmcType == type ? .blue : .secondary)
-                    }.padding(10).background(
-                        cmcType == type ? Color.accentColor.opacity(0.1) : Color.secondary.opacity(0.06),
-                        in: RoundedRectangle(cornerRadius: 8))
-                }.buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Market-wide CoinMarketCap indices").font(.subheadline.weight(.medium))
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                ForEach(CoinMarketCapChartType.allCases) { type in
+                    ChoiceCard(
+                        title: type.title, subtitle: cmcDescription(type), systemImage: cmcIcon(type),
+                        isSelected: cmcType == type
+                    ) { cmcType = type }
+                }
             }
+        }
+    }
+
+    private func cmcIcon(_ type: CoinMarketCapChartType) -> String {
+        switch type {
+        case .altcoinSeasonHistorical: "chart.xyaxis.line"
+        case .altcoinSeasonLatest: "gauge.with.dots.needle.67percent"
+        case .fearAndGreedHistorical: "waveform.path.ecg"
+        case .fearAndGreedLatest: "gauge.with.needle"
         }
     }
 
@@ -282,16 +333,24 @@ struct AddTickerSheet: View {
                 onSubmit: { stockVM.selectedResult = stockVM.firstAvailableResult }
             )
 
-            if stockVM.searchResults.isEmpty && !stockVM.isSearching {
-                SuggestionChipGrid(
-                    caption: "Popular US stocks and ETFs · free IEX feed",
-                    items: stockSuggestions
-                ) { symbol in
-                    stockText = symbol
-                    stockVM.selectedResult = TickerSearchResult(
-                        symbol: symbol, fullSymbol: symbol, source: .alpaca, price: nil
-                    )
-                    if AlpacaCredentialsStore.isConfigured { stockVM.scheduleSearch(query: symbol) }
+            if isQueryEmpty(stockText) {
+                idleContent {
+                    SuggestionChipGrid(
+                        caption: "Popular US stocks and ETFs · free IEX feed",
+                        items: stockSuggestions,
+                        iconSource: .alpaca
+                    ) { symbol in
+                        stockVM.selectedResult = TickerSearchResult(
+                            symbol: symbol, fullSymbol: symbol, source: .alpaca, price: nil
+                        )
+                        // Only search when there is a feed to ask: the text would hide the chips,
+                        // leaving an empty pane.
+                        if AlpacaCredentialsStore.isConfigured {
+                            stockText = symbol
+                            stockVM.scheduleSearch(query: symbol)
+                        }
+                    }
+                    recentMarkets
                 }
             }
 
@@ -322,11 +381,14 @@ struct AddTickerSheet: View {
                 }
             )
 
-            // Suggestions
-            if searchVM.searchResults.isEmpty && !searchVM.isSearching {
-                SuggestionChipGrid(caption: "Suggestions", items: suggestions) { ticker in
-                    inputText = ticker
-                    searchVM.scheduleSearch(query: ticker)
+            // Suggestions and recents give way to results the moment something is typed.
+            if isQueryEmpty(inputText) {
+                idleContent {
+                    SuggestionChipGrid(caption: "Suggestions", items: suggestions, iconSource: .binance) { ticker in
+                        inputText = ticker
+                        searchVM.scheduleSearch(query: ticker)
+                    }
+                    recentMarkets
                 }
             }
 
@@ -344,9 +406,8 @@ struct AddTickerSheet: View {
             if !searchVM.isSearching && !inputText.trimmingCharacters(in: .whitespaces).isEmpty
                 && searchVM.searchResults.isEmpty
             {
-                Text("No results found")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                ContentUnavailableView.search(text: inputText)
+                    .frame(maxHeight: .infinity)
             }
 
         }
@@ -355,9 +416,8 @@ struct AddTickerSheet: View {
     @ViewBuilder
     private var statusRows: some View {
         if let error = addError ?? (selectedTab == .predictionMarkets ? predictionVM.errorMessage : nil) {
-            Label(error, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            NoticeCard(
+                systemImage: "exclamationmark.triangle.fill", tint: addError == nil ? .orange : .red, title: error)
         } else if selectedTab == .predictionMarkets, !predictionVM.isSearching,
             !predictionMarketText.trimmingCharacters(in: .whitespaces).isEmpty,
             !predictionVM.hasResults
@@ -368,17 +428,47 @@ struct AddTickerSheet: View {
         }
 
         if needsAlpacaSetup {
-            HStack {
-                Label("Set up Alpaca before adding a stock chart.", systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button("Open Settings") {
+            NoticeCard(
+                systemImage: "exclamationmark.triangle.fill", tint: .orange,
+                title: "Set up Alpaca before adding a stock chart.",
+                actionTitle: "Open Settings",
+                action: {
                     UserDefaults.standard.set(SettingsTab.alpaca.rawValue, forKey: "settingsTab")
                     openSettings()
-                }
-                .controlSize(.small)
-            }
+                })
+        }
+    }
+
+    // MARK: - Recents
+
+    /// Suggestions plus ten recents can outgrow the pane; they scroll rather than push the sheet.
+    private func idleContent<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        ScrollView {
+            VStack(spacing: 16) { content() }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private func isQueryEmpty(_ text: String) -> Bool { text.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    @ViewBuilder private var recentMarkets: some View {
+        if !recents.items.isEmpty {
+            RecentMarketsCard(
+                markets: recents.items,
+                selected: selectedTab == .stocks ? stockVM.selectedResult : searchVM.selectedResult,
+                onSelect: pickRecent, onCommit: { addTicker($0) },
+                onRemove: { recents.remove($0) }, onClear: { recents.clear() })
+        }
+    }
+
+    /// Selects the market on the tab that owns its source, switching to it when needed.
+    private func pickRecent(_ result: TickerSearchResult) {
+        if result.source == .alpaca {
+            selectedTab = .stocks
+            stockVM.selectedResult = result
+        } else {
+            selectedTab = .crypto
+            searchVM.selectedResult = result
         }
     }
 
@@ -411,6 +501,7 @@ struct AddTickerSheet: View {
                 }
 
                 try await onAdd(selected)
+                recents.record(selected)
                 dismiss()
             } catch {
                 addError = error.localizedDescription

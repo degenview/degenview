@@ -5,6 +5,17 @@ enum SearchResultListSizing {
     case fillAvailable
 }
 
+extension View {
+    /// Result lists sit in a quiet rounded well, like the portfolio tables.
+    fileprivate func searchResultsChrome() -> some View {
+        self
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(.quaternary.opacity(0.25), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+    }
+}
+
 /// Shared source-grouped result list used by Add Ticker and Chart Settings.
 struct TickerSearchResultList: View {
     let searchVM: TickerSearchViewModel
@@ -27,11 +38,17 @@ struct TickerSearchResultList: View {
                     HStack(spacing: 6) {
                         SourceLogoView(source: source, size: 14)
                         Text(source.displayName)
+                        Text("\(results.count)")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1)
+                            .background(.quaternary, in: Capsule())
                     }
-                    .font(.caption)
+                    .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(.init(top: 4, leading: 8, bottom: 2, trailing: 8))
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(.init(top: 8, leading: 10, bottom: 2, trailing: 10))
 
                     ForEach(results) { result in
                         SearchResultRow(
@@ -41,18 +58,20 @@ struct TickerSearchResultList: View {
                             onCommit: onCommitResult.map { commit in { commit(result) } }
                         )
                         .listRowSeparator(.hidden)
-                        .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
                     }
 
                     if hasNonemptySource(after: index) {
                         Divider()
                             .listRowSeparator(.hidden)
-                            .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(.init(top: 4, leading: 10, bottom: 2, trailing: 10))
                     }
                 }
             }
         }
-        .listStyle(.inset)
+        .searchResultsChrome()
         .modifier(
             SearchResultListSizeModifier(
                 sizing: sizing, rowCount: rowCount, sectionCount: sectionCount))
@@ -86,39 +105,70 @@ private struct SearchResultListSizeModifier: ViewModifier {
 struct SuggestionChipGrid: View {
     let caption: String
     let items: [String]
+    /// The source the suggestions are tickers of; when set, each chip leads with its logo.
+    var iconSource: DataSourceType?
     let onSelect: (String) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(caption)
-                .font(.caption)
+        VStack(alignment: .leading, spacing: 10) {
+            Label(caption, systemImage: "sparkles")
+                .font(.subheadline.weight(.medium))
                 .foregroundStyle(.secondary)
 
             LazyVGrid(
-                columns: Array(repeating: .init(.flexible()), count: UI.suggestionGridColumns), spacing: 8
+                columns: Array(repeating: .init(.flexible(), spacing: 8), count: UI.suggestionGridColumns), spacing: 8
             ) {
                 ForEach(items, id: \.self) { item in
-                    Button(item) { onSelect(item) }
-                        .buttonStyle(SuggestionChipButtonStyle())
+                    SuggestionChip(title: item, iconSource: iconSource) { onSelect(item) }
                 }
             }
         }
-        .padding(12)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator.opacity(0.5)))
     }
 }
 
-private struct SuggestionChipButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.caption.weight(.medium))
+private struct SuggestionChip: View {
+    let title: String
+    let iconSource: DataSourceType?
+    let action: () -> Void
+    @State private var isHovered = false
+    @State private var iconURL: URL?
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if let iconSource {
+                    TickerIconView(symbol: title, url: iconURL, size: 18)
+                        .task(id: title) {
+                            iconURL = await IconResolver.shared.iconURL(
+                                ticker: Self.marketTicker(title, source: iconSource), source: iconSource,
+                                baseSymbol: title)
+                        }
+                }
+                Text(title)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.primary)
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .frame(maxWidth: .infinity)
             .background(
-                Color.secondary.opacity(configuration.isPressed ? 0.22 : 0.14), in: Capsule()
+                Color.primary.opacity(isHovered ? 0.09 : 0.05),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
             )
-            .foregroundStyle(.primary)
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(.separator.opacity(0.6)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    /// The id the source knows the ticker by: Binance lists "BTC" as "BTCUSDT".
+    private static func marketTicker(_ symbol: String, source: DataSourceType) -> String {
+        source == .binance ? symbol + "USDT" : symbol
     }
 }
 
@@ -131,37 +181,44 @@ struct SearchFieldRow: View {
     let isSearching: Bool
     let onChange: (String) -> Void
     let onSubmit: () -> Void
+    @FocusState private var focused: Bool
 
     var body: some View {
         HStack(spacing: 8) {
-            ZStack(alignment: .trailing) {
-                TextField(placeholder, text: $text)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body)
-                    .padding(.trailing, text.isEmpty ? 0 : 28)
-                    .onChange(of: text) { onChange(text) }
-                    .onSubmit { onSubmit() }
-
-                if !text.isEmpty {
-                    Button {
-                        text = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.trailing, 6)
-                    .help("Clear search")
-                    .accessibilityLabel("Clear search")
-                }
-            }
-
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(focused ? Color.accentColor : .secondary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .focused($focused)
+                .onChange(of: text) { onChange(text) }
+                .onSubmit { onSubmit() }
             if isSearching {
                 ProgressView()
-                    .scaleEffect(0.7)
-                    .frame(width: 20, height: 20)
+                    .controlSize(.small)
+                    .scaleEffect(0.8)
+                    .frame(width: 16, height: 16)
+            }
+            if !text.isEmpty {
+                Button {
+                    text = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear search")
+                .accessibilityLabel("Clear search")
             }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(focused ? Color.accentColor.opacity(0.7) : Color.primary.opacity(0.12))
+        )
+        .onAppear { focused = true }
     }
 }
 
@@ -185,28 +242,36 @@ struct SelectedResultBanner: View {
     }
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             if let url = result.imageURL {
                 TickerIconView(symbol: result.symbol, url: url)
             } else {
                 SourceLogoView(source: result.source)
             }
 
-            Text("\(prefix): \(displayLabel)")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(prefix).font(.caption2).foregroundStyle(.secondary)
+                Text(displayLabel)
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+            }
 
             if let price = result.price {
                 Text(PriceFormatter.headline(price, scale: result.source.priceScale))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .monospacedDigit()
             }
 
             Spacer(minLength: 0)
         }
-        .padding(8)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.accentColor.opacity(0.35)))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(prefix): \(displayLabel)")
     }
 }
 
@@ -273,24 +338,27 @@ struct PredictionMarketSearchPane: View {
                     ForEach(Array(searchVM.groups.enumerated()), id: \.element.id) { index, group in
                         groupHeader(for: group)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(.init(top: 4, leading: 8, bottom: 2, trailing: 8))
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(.init(top: 6, leading: 10, bottom: 2, trailing: 10))
 
                         if searchVM.isExpanded(group) {
                             ForEach(group.results) { result in
                                 marketRow(result, in: group)
                                     .listRowSeparator(.hidden)
-                                    .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                                    .listRowBackground(Color.clear)
+                                    .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
                             }
                         }
 
                         if index < searchVM.groups.count - 1 {
                             Divider()
                                 .listRowSeparator(.hidden)
-                                .listRowInsets(.init(top: 2, leading: 8, bottom: 2, trailing: 8))
+                                .listRowBackground(Color.clear)
+                                .listRowInsets(.init(top: 4, leading: 10, bottom: 2, trailing: 10))
                         }
                     }
                 }
-                .listStyle(.inset)
+                .searchResultsChrome()
                 .modifier(PredictionMarketListSizeModifier(sizing: sizing, height: resultHeight))
             }
 

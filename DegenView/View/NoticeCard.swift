@@ -1,13 +1,16 @@
 import SwiftUI
 
 /// A tinted callout for errors, failures and warnings, with an optional scrolling list of lines.
-struct PortfolioNoticeCard: View {
+struct NoticeCard: View {
     let systemImage: String
     let tint: Color
     let title: String
     var detail: String?
     var lines: [String] = []
     var maxListHeight: CGFloat = 110
+    /// A trailing button for the one thing that resolves the notice ("Open Settings").
+    var actionTitle: String?
+    var action: (() -> Void)?
     private static let inlineLimit = 3
 
     private var list: some View {
@@ -39,6 +42,10 @@ struct PortfolioNoticeCard: View {
                         list
                     }
                 }
+            }
+            if let actionTitle, let action {
+                Spacer(minLength: 8)
+                Button(actionTitle, action: action).controlSize(.small)
             }
         }
         .padding(12)

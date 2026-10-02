@@ -43,7 +43,7 @@ struct PortfolioDashboardView: View {
             header
             if store.isChangingReportingCurrency || store.isLoadingInitialValues { reportingProgress }
             Divider()
-            PortfolioTabBar(
+            IconTabBar(
                 items: Tab.allCases.map { .init(value: $0, title: $0.rawValue, systemImage: $0.systemImage) },
                 selection: $tab
             )
@@ -70,7 +70,10 @@ struct PortfolioDashboardView: View {
         .sheet(isPresented: $showCreate) { PortfolioCreateSheet(store: store) }
         .sheet(isPresented: $showManage) { PortfolioManageSheet(store: store) }
         .sheet(isPresented: $showAssetSearch) {
-            AddTickerSheet(title: "Add Asset", actionLabel: "Continue") { result in
+            AddTickerSheet(
+                title: "Add Asset", actionLabel: "Continue",
+                subtitle: "Choose the asset this transaction is for.", systemImage: "plus.magnifyingglass"
+            ) { result in
                 editor = .new(asset: PortfolioAsset(searchResult: result), portfolioID: destinationPortfolioID)
             }
         }
@@ -79,7 +82,10 @@ struct PortfolioDashboardView: View {
             PortfolioAssetDetailView(store: store, assetKey: holding.asset.key, info: assetInfo)
         }
         .sheet(item: $remappingHolding) { holding in
-            AddTickerSheet(title: "Remap \(holding.asset.displayTicker)", actionLabel: "Use Asset") { result in
+            AddTickerSheet(
+                title: "Remap \(holding.asset.displayTicker)", actionLabel: "Use Asset",
+                subtitle: "Move this asset's transactions to a different market.", systemImage: "arrow.triangle.swap"
+            ) { result in
                 try await store.remapAsset(
                     from: holding.asset.key,
                     to: PortfolioAsset(searchResult: result),

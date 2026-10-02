@@ -41,7 +41,7 @@ struct PortfolioCoinMarketCapImportSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            PortfolioSheetHeader(
+            SheetHeader(
                 systemImage: "square.and.arrow.down.on.square.fill", title: "Import from CoinMarketCap",
                 subtitle: "\(preview.rows.count) transactions · \(preview.symbols.count) assets"
             )
@@ -51,7 +51,7 @@ struct PortfolioCoinMarketCapImportSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if !preview.errors.isEmpty {
-                        PortfolioNoticeCard(
+                        NoticeCard(
                             systemImage: "xmark.octagon.fill", tint: .red,
                             title: "\(preview.errors.count) CSV \(preview.errors.count == 1 ? "error requires" : "errors require") attention",
                             lines: preview.errors, maxListHeight: 100)
@@ -66,7 +66,7 @@ struct PortfolioCoinMarketCapImportSheet: View {
                         .font(.caption)
                     }
                     if !preview.warnings.isEmpty {
-                        PortfolioNoticeCard(
+                        NoticeCard(
                             systemImage: "exclamationmark.triangle.fill", tint: .orange,
                             title: "\(preview.warnings.count) \(preview.warnings.count == 1 ? "warning" : "warnings")",
                             lines: preview.warnings, maxListHeight: 80)
@@ -80,7 +80,10 @@ struct PortfolioCoinMarketCapImportSheet: View {
         }
         .frame(width: 700, height: 640)
         .sheet(isPresented: Binding(get: { mappingSymbol != nil }, set: { if !$0 { mappingSymbol = nil } })) {
-            AddTickerSheet(title: "Map \(mappingSymbol ?? "Token")", actionLabel: "Use Asset") { result in
+            AddTickerSheet(
+                title: "Match \(mappingSymbol ?? "Token")", actionLabel: "Use Asset",
+                subtitle: "Pick the market that matches this CoinMarketCap ticker.", systemImage: "link"
+            ) { result in
                 guard let symbol = mappingSymbol else { return }
                 mappings[symbol] = PortfolioAsset(searchResult: result)
                 skippedSymbols.remove(symbol)

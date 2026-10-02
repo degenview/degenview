@@ -55,7 +55,7 @@ struct PortfolioManageSheet: View {
     // MARK: - Header
 
     private var header: some View {
-        PortfolioSheetHeader(
+        SheetHeader(
             systemImage: "square.stack.3d.up.fill", title: "Manage Portfolios",
             subtitle: (portfolios.count == 1 ? "1 portfolio" : "\(portfolios.count) portfolios")
                 + " · Drag to reorder, click a name to rename.")
