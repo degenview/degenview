@@ -32,6 +32,7 @@ struct ContentView: View {
     @State private var showAddFavoriteSheet = false
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var favoritesStore = FavoritesStore.shared
+    @ObservedObject private var recents = RecentMarketsStore.shared
     @State private var showSaveAlert = false
     @State private var saveViewName = ""
     @State private var showRenameAlert = false
@@ -189,6 +190,20 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Empty state
+
+    /// Add a market picked on the empty state to this tab, and put it at the front of the recents.
+    private func openMarket(_ result: TickerSearchResult) {
+        Task { @MainActor in
+            do {
+                try await contentViewModel.addTicker(symbol: result.fullSymbol, source: result.source)
+                recents.record(result)
+            } catch {
+                // Same as a favorite: a failed add leaves the tab as it was.
+            }
+        }
+    }
+
     // MARK: - Chart Column
 
     /// Everything right of the tool strip.
@@ -246,10 +261,24 @@ struct ContentView: View {
 
             if contentViewModel.chartViewModels.isEmpty {
                 EmptyStateView(
-                    savedViews: contentViewModel.savedViews,
+                    suggestions: EmptyStateSuggestions(
+                        favorites: favoritesStore.items, recents: recents.items,
+                        savedViews: contentViewModel.savedViews),
+                    offersStocks: AlpacaCredentialsStore.isConfigured,
                     onAddTapped: { showAddSheet = true },
-                    onOpenView: { contentViewModel.loadView($0) }
+                    onOpenFavorite: contentViewModel.openFavorite,
+                    onOpenRecent: { openMarket($0.result) },
+                    onOpenView: { contentViewModel.loadView($0) },
+                    onOpenSuggestion: openMarket,
+                    onRemoveRecent: { recents.remove($0) },
+                    onClearRecents: { recents.clear() },
+                    onShowFavorites: { withAnimation { showFavorites = true } }
                 )
+                // Another tab may have saved a view since this one opened.
+                .onAppear { contentViewModel.reloadSavedViews() }
+                .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                    contentViewModel.reloadSavedViews()
+                }
             } else {
                 VStack(spacing: 0) {
                     // Chart grid — fills the remaining height

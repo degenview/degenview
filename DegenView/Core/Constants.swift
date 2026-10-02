@@ -372,9 +372,13 @@ enum UI {
     static let suggestionGridColumns = 5
     /// Market artwork edge length in a prediction-market search row.
     static let predictionMarketRowImageSize: CGFloat = 24
-    /// Saved-view shortcut list on an empty tab.
-    static let emptyStateViewListMaxHeight: CGFloat = 200
-    static let emptyStateViewListWidth: CGFloat = 280
+    /// Empty-tab landing page: content column width, search launcher height, and the
+    /// minimum widths at which market chips and saved-view cards wrap to a new column.
+    static let emptyStateMaxWidth: CGFloat = 640
+    static let emptyStateLauncherHeight: CGFloat = 44
+    static let emptyStateChipMinWidth: CGFloat = 160
+    static let emptyStateStarterChipMinWidth: CGFloat = 104
+    static let emptyStateCardMinWidth: CGFloat = 200
     /// Named view sentinel.
     static let unnamedView = "Unnamed"
 }

@@ -23,9 +23,12 @@
 		AA1000000000000000001400 /* TrendingMarketsDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500 /* TrendingMarketsDataSource.swift */; };
 		AA1000000000000000001401 /* TrendingMarketsDataSource.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500; };
 		AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001303 /* RecentMarketsStoreTests.swift */; };
+		AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */; };
 		AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001302 /* RecentMarketsCard.swift */; };
 		AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001301 /* RecentMarketsStore.swift */; };
 		AA1000000000000000001200 /* RecentMarket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001300 /* RecentMarket.swift */; };
+		AA1000000000000000009000 /* EmptyStateSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009100 /* EmptyStateSuggestions.swift */; };
+		AA1000000000000000009002 /* MarketSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009102 /* MarketSuggestions.swift */; };
 		AA1000000000000000001000 /* ChoiceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001100 /* ChoiceCard.swift */; };
 		AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */; };
 		AA1000000000000000000802 /* PortfolioImportPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */; };
@@ -630,9 +633,12 @@
 		AA1000000000000000001700 /* PredictionTrendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionTrendingTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001500 /* TrendingMarketsDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingMarketsDataSource.swift; sourceTree = "<group>"; };
 		AA1000000000000000001303 /* RecentMarketsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStoreTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateSuggestionsTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001302 /* RecentMarketsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000001301 /* RecentMarketsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStore.swift; sourceTree = "<group>"; };
 		AA1000000000000000001300 /* RecentMarket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarket.swift; sourceTree = "<group>"; };
+		AA1000000000000000009100 /* EmptyStateSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateSuggestions.swift; sourceTree = "<group>"; };
+		AA1000000000000000009102 /* MarketSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketSuggestions.swift; sourceTree = "<group>"; };
 		AA1000000000000000001100 /* ChoiceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChoiceCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCoinMarketCapImportSheet.swift; sourceTree = "<group>"; };
 		AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioImportPreviewSheet.swift; sourceTree = "<group>"; };
@@ -1189,6 +1195,8 @@
 				AA1000000000000000000300 /* PortfolioStatistics.swift */,
 				AA1000000000000000000301 /* PortfolioHistoryRange.swift */,
 				AA1000000000000000001300 /* RecentMarket.swift */,
+				AA1000000000000000009100 /* EmptyStateSuggestions.swift */,
+				AA1000000000000000009102 /* MarketSuggestions.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
@@ -1494,6 +1502,7 @@
 				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
 				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
+				AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */,
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
@@ -2058,6 +2067,7 @@
 				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
 				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
+				AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */,
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
@@ -2188,6 +2198,8 @@
 				AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */,
 				AA1000000000000000001000 /* ChoiceCard.swift in Sources */,
 				AA1000000000000000001200 /* RecentMarket.swift in Sources */,
+				AA1000000000000000009000 /* EmptyStateSuggestions.swift in Sources */,
+				AA1000000000000000009002 /* MarketSuggestions.swift in Sources */,
 				AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */,
 				AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */,
 				AA1000000000000000001800 /* CandleColorPreview.swift in Sources */,
