@@ -79,6 +79,7 @@ final class WindowCoordinator {
         window.tabbingIdentifier = Self.tabbingIdentifier
         window.tabbingMode = .preferred
         window.isRestorable = false
+        WindowTabDecorator.decorate(window, with: .scriptManager)
         let anchor =
             pendingAuxiliaryAnchor
             ?? NSApp.windows.first(where: { tabID(for: $0) != nil && $0 !== window })
@@ -88,6 +89,7 @@ final class WindowCoordinator {
             window.makeKeyAndOrderFront(nil)
         }
         ensureTabBarVisible(window)
+        WindowTabDecorator.refresh(window)
     }
 
     func register(_ window: NSWindow, for tabID: UUID) {
@@ -97,6 +99,8 @@ final class WindowCoordinator {
         // would reopen a second set on top.
         window.isRestorable = false
         windows[tabID] = WeakWindow(window)
+        WindowTabDecorator.decorate(
+            window, with: WindowTabIcon(kind: TabsStore.shared.tab(tabID)?.kind ?? .charts))
 
         var joinedTabGroup = false
         if let anchorID = pendingJoins.removeValue(forKey: tabID),
@@ -118,6 +122,7 @@ final class WindowCoordinator {
         // The bar carries the `+` button and is the only place a lone tab can be
         // renamed or dragged from, so it stays up even at one tab.
         ensureTabBarVisible(window)
+        WindowTabDecorator.refresh(window)
     }
 
     /// Whether the window whose frame is remembered has been placed yet.
@@ -187,6 +192,7 @@ final class WindowCoordinator {
         for box in windows.values {
             guard let window = box.window, window.isVisible else { continue }
             ensureTabBarVisible(window)
+            WindowTabDecorator.refresh(window)
         }
     }
 

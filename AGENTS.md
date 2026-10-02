@@ -175,6 +175,12 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   re-init of the enclosing view even though only the first value is kept
 - The tab label **is** `window.title`. `ContentViewModel.tabName` drives it through
   `navigationTitle` plus an explicit `WindowCoordinator.syncTitle`
+- The tab's icon (charts / portfolio / script manager) is **not** drawn by us: `WindowTabIcon` puts an
+  SF Symbol attachment in `window.tab.attributedTitle`, and `WindowTabDecorator` re-applies it after
+  a title change, when the window joins or leaves a tab group (one run-loop turn later — the bar
+  ignores a label set before its items exist) and from `refreshTabBars()`. Anything that rebuilds
+  tabs or titles must leave that path intact. The system draws the tab shape; its corner radius
+  isn't customisable.
 - `WindowAccessor` is how a view gets its `NSWindow`. Three things need it: tab-group
   registration, scoping the scroll monitor, and occlusion gating
 - Restore is ours, not AppKit's: windows are `isRestorable = false` and rebuilt from

@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002301 /* WindowTabIconTests.swift */; };
+		AA1000000000000000002200 /* WindowTabIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002300 /* WindowTabIcon.swift */; };
 		AA1000000000000000002009 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002109 /* SettingsTabTests.swift */; };
 		AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002106 /* NotificationSettingsView.swift */; };
 		AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */; };
@@ -613,6 +615,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000002301 /* WindowTabIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIconTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002300 /* WindowTabIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIcon.swift; sourceTree = "<group>"; };
 		AA1000000000000000002109 /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000002106 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapSettingsView.swift; sourceTree = "<group>"; };
@@ -1244,6 +1248,7 @@
 				B90000000000000000000104 /* MarketQuoteCoordinator.swift */,
 				AA1000000000000000000109 /* PortfolioAssetAutoMapper.swift */,
 				AA1000000000000000001301 /* RecentMarketsStore.swift */,
+				AA1000000000000000002300 /* WindowTabIcon.swift */,
 				AA1000000000000000000102 /* PortfolioAccountingEngine.swift */,
 				AA1000000000000000000103 /* PortfolioLedger.swift */,
 				AA1000000000000000000104 /* PortfolioStore.swift */,
@@ -1492,6 +1497,7 @@
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
+				AA1000000000000000002301 /* WindowTabIconTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -2055,6 +2061,7 @@
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
+				AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2191,6 +2198,7 @@
 				AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */,
 				AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */,
 				AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */,
+				AA1000000000000000002200 /* WindowTabIcon.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,

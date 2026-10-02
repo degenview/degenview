@@ -154,6 +154,7 @@ DegenView/
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
+    ├── WindowTabIcon.swift            # Per-kind tab icon (SF Symbol in the tab's attributed title) + decorator
     ├── AppDatabase.swift              # Shared SQLite (GRDB, WAL) database
     ├── AppDatabase+Schema.swift       # Schema creation, document and setting helpers
     ├── AppDatabase+Workspace.swift    # Tabs, saved views, and drawings tables
