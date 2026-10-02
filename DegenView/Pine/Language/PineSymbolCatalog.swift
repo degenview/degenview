@@ -113,7 +113,7 @@ enum PineSymbolCatalog {
             "settlement_as_close.off", "settlement_as_close.on", "font.family_default",
             "font.family_monospace", "text.align_left", "text.align_center", "text.align_right",
             "text.align_top", "text.align_bottom", "text.format_none", "text.format_bold",
-            "text.format_italic", "text.wrap_none", "text.wrap_auto",
+            "text.format_italic", "text.wrap_none", "text.wrap_auto", "display.pine_screener",
         ]
         for style in [
             "line", "linebr", "stepline", "stepline_diamond", "steplinebr", "histogram", "columns",
@@ -126,8 +126,10 @@ enum PineSymbolCatalog {
             names.insert("hline.style_\(style)")
         }
         for code in [
-            "AUD", "BTC", "CAD", "CHF", "CNY", "ETH", "EUR", "GBP", "HKD", "INR", "JPY", "KRW", "MYR",
-            "NOK", "NONE", "NZD", "RUB", "SEK", "SGD", "TRY", "USD", "USDT", "ZAR",
+            "AED", "ARS", "AUD", "BDT", "BHD", "BRL", "BTC", "CAD", "CHF", "CLP", "CNY", "COP", "CZK", "DKK",
+            "EGP", "ETH", "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KES", "KRW", "KWD",
+            "LKR", "MAD", "MXN", "MYR", "NGN", "NOK", "NONE", "NZD", "PEN", "PHP", "PKR", "PLN", "QAR", "RON",
+            "RUB", "SAR", "SEK", "SGD", "THB", "TND", "TRY", "TWD", "UAH", "USD", "USDT", "UYU", "VND", "ZAR",
         ] {
             names.insert("currency.\(code)")
         }
