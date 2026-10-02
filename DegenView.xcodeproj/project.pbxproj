@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000002009 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002109 /* SettingsTabTests.swift */; };
+		AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002106 /* NotificationSettingsView.swift */; };
+		AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */; };
+		AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002104 /* AlpacaSettingsView.swift */; };
+		AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002103 /* AppearanceSettingsView.swift */; };
+		AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002102 /* SettingsStatusBadge.swift */; };
+		AA1000000000000000002001 /* SettingsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002101 /* SettingsField.swift */; };
+		AA1000000000000000002000 /* SettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002100 /* SettingsPage.swift */; };
 		AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001901 /* ChartSettingsSheetTests.swift */; };
 		AA1000000000000000001800 /* CandleColorPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001900 /* CandleColorPreview.swift */; };
 		AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001700 /* PredictionTrendingTests.swift */; };
@@ -605,6 +613,14 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000002109 /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002106 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002104 /* AlpacaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002103 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002102 /* SettingsStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusBadge.swift; sourceTree = "<group>"; };
+		AA1000000000000000002101 /* SettingsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsField.swift; sourceTree = "<group>"; };
+		AA1000000000000000002100 /* SettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPage.swift; sourceTree = "<group>"; };
 		AA1000000000000000001901 /* ChartSettingsSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheetTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001900 /* CandleColorPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleColorPreview.swift; sourceTree = "<group>"; };
 		AA1000000000000000001700 /* PredictionTrendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionTrendingTests.swift; sourceTree = "<group>"; };
@@ -1341,6 +1357,13 @@
 				AA1000000000000000001100 /* ChoiceCard.swift */,
 				AA1000000000000000001302 /* RecentMarketsCard.swift */,
 				AA1000000000000000001900 /* CandleColorPreview.swift */,
+				AA1000000000000000002100 /* SettingsPage.swift */,
+				AA1000000000000000002101 /* SettingsField.swift */,
+				AA1000000000000000002102 /* SettingsStatusBadge.swift */,
+				AA1000000000000000002103 /* AppearanceSettingsView.swift */,
+				AA1000000000000000002104 /* AlpacaSettingsView.swift */,
+				AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */,
+				AA1000000000000000002106 /* NotificationSettingsView.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
@@ -1468,6 +1491,7 @@
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
+				AA1000000000000000002109 /* SettingsTabTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -2030,6 +2054,7 @@
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
+				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2159,6 +2184,13 @@
 				AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */,
 				AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */,
 				AA1000000000000000001800 /* CandleColorPreview.swift in Sources */,
+				AA1000000000000000002000 /* SettingsPage.swift in Sources */,
+				AA1000000000000000002001 /* SettingsField.swift in Sources */,
+				AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */,
+				AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */,
+				AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */,
+				AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */,
+				AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,

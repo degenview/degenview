@@ -89,7 +89,14 @@ DegenView/
 │   ├── PortfolioStatCard.swift        # Labelled figure with optional caption line
 │   ├── PortfolioTransactionTypeBadge.swift # Tinted pill for a transaction type
 │   ├── PortfolioTabView.swift         # Dedicated non-chart native tab lifecycle
-│   └── AppSettingsView.swift          # Theme, provider credentials, notifications
+│   ├── AppSettingsView.swift          # Settings window shell: badge sidebar + selected page
+│   ├── AppearanceSettingsView.swift   # Settings ▸ Appearance: theme previews
+│   ├── AlpacaSettingsView.swift       # Settings ▸ Alpaca: API keys with status and remove
+│   ├── CoinMarketCapSettingsView.swift # Settings ▸ CoinMarketCap: optional API key, connection test
+│   ├── NotificationSettingsView.swift # Settings ▸ Notifications: delivery toggles, agent health
+│   ├── SettingsPage.swift             # Settings page shell + SettingsSection / SettingsCard
+│   ├── SettingsField.swift            # Labelled text/secret field for settings
+│   └── SettingsStatusBadge.swift      # Status dot + word, and the Save result line
 ├── Pine/                              # Pine Script feature: language, runtime, broker, editor, views
 │   ├── Language/
 │   │   ├── Lexer/                     # PineLexer (+Tokens), PineSourceLine, tokens
