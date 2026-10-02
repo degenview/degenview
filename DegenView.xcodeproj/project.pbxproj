@@ -430,6 +430,7 @@
 		D734C91BC1B264251478E6A0 /* PineMatrix.swift in Sources */ = {isa = PBXBuildFile; fileRef = D77B63AF913D180388F0E88E /* PineMatrix.swift */; };
 		D7A9843AD3FD16C48C578D81 /* PineSecuritySite.swift in Sources */ = {isa = PBXBuildFile; fileRef = D700A06F52BC8EEE8E6E8316 /* PineSecuritySite.swift */; };
 		D7B19B44BB8C548A0DE828EA /* PineSecurityDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D72FE1729FA3A59D1FBAA641 /* PineSecurityDataProvider.swift */; };
+		D7D22646AFED06967661CDAD /* PineReferenceExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7E06BC68B3710C7E140A8ED /* PineReferenceExport.swift */; };
 		F2C5D4201FD30A5DC9AB52BB /* PineRuntimeSession+Alerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16161BAD23C7F3AFB4D0DCF /* PineRuntimeSession+Alerts.swift */; };
 		F2D55AC397A82EF86945D9CA /* PineRuntimeSession+Arrays.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15160C3BE4C4D1360EE2B73 /* PineRuntimeSession+Arrays.swift */; };
 		D77BEC0DCDA487CA7EAD4F7C /* PineRuntimeSession+Objects.swift in Sources */ = {isa = PBXBuildFile; fileRef = D71079C86A968B9A33F100CC /* PineRuntimeSession+Objects.swift */; };
@@ -879,6 +880,7 @@
 		D77B63AF913D180388F0E88E /* PineMatrix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineMatrix.swift; sourceTree = "<group>"; };
 		D700A06F52BC8EEE8E6E8316 /* PineSecuritySite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSecuritySite.swift; sourceTree = "<group>"; };
 		D72FE1729FA3A59D1FBAA641 /* PineSecurityDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSecurityDataProvider.swift; sourceTree = "<group>"; };
+		D7E06BC68B3710C7E140A8ED /* PineReferenceExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReferenceExport.swift; sourceTree = "<group>"; };
 		F16161BAD23C7F3AFB4D0DCF /* PineRuntimeSession+Alerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineRuntimeSession+Alerts.swift"; sourceTree = "<group>"; };
 		F15160C3BE4C4D1360EE2B73 /* PineRuntimeSession+Arrays.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineRuntimeSession+Arrays.swift"; sourceTree = "<group>"; };
 		D71079C86A968B9A33F100CC /* PineRuntimeSession+Objects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineRuntimeSession+Objects.swift"; sourceTree = "<group>"; };
@@ -1571,6 +1573,7 @@
 				D77B63AF913D180388F0E88E /* PineMatrix.swift */,
 				D700A06F52BC8EEE8E6E8316 /* PineSecuritySite.swift */,
 				D72FE1729FA3A59D1FBAA641 /* PineSecurityDataProvider.swift */,
+				D7E06BC68B3710C7E140A8ED /* PineReferenceExport.swift */,
 				F16161BAD23C7F3AFB4D0DCF /* PineRuntimeSession+Alerts.swift */,
 				F15160C3BE4C4D1360EE2B73 /* PineRuntimeSession+Arrays.swift */,
 				D71079C86A968B9A33F100CC /* PineRuntimeSession+Objects.swift */,
@@ -2196,6 +2199,7 @@
 				D734C91BC1B264251478E6A0 /* PineMatrix.swift in Sources */,
 				D7A9843AD3FD16C48C578D81 /* PineSecuritySite.swift in Sources */,
 				D7B19B44BB8C548A0DE828EA /* PineSecurityDataProvider.swift in Sources */,
+				D7D22646AFED06967661CDAD /* PineReferenceExport.swift in Sources */,
 				F2C5D4201FD30A5DC9AB52BB /* PineRuntimeSession+Alerts.swift in Sources */,
 				F2D55AC397A82EF86945D9CA /* PineRuntimeSession+Arrays.swift in Sources */,
 				D77BEC0DCDA487CA7EAD4F7C /* PineRuntimeSession+Objects.swift in Sources */,

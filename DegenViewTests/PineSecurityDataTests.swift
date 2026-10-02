@@ -120,4 +120,42 @@ final class PineSecurityDataTests: XCTestCase {
         let source = "plot(request.security(syminfo.tickerid, \"5\", close))"
         XCTAssertEqual(try run(source, bars: bars(5), data: data), [[3, 3, 3, 3, 5]])
     }
+
+    // MARK: - Collections and objects
+
+    func testAnArrayReturnedByTheExpressionIsCopiedIntoTheChart() throws {
+        let source = """
+            mine = array.from(111.0)
+            theirs = request.security(syminfo.tickerid, "5", array.from(close, close * 2))
+            plot(na(theirs) ? na : array.get(theirs, 1))
+            plot(array.get(mine, 0))
+            """
+        let result = try run(source, bars: bars(10))
+        XCTAssertEqual(result[0], [nil, nil, nil, nil, 10, 10, 10, 10, 10, 20])
+        XCTAssertEqual(result[1], Array(repeating: 111, count: 10), "the chart's own array is left alone")
+    }
+
+    func testAnInstanceAndItsArrayFieldAreCopiedIntoTheChart() throws {
+        let source = """
+            type Box
+                float top
+                array<float> levels
+
+            make() =>
+                Box.new(close, array.from(close, close + 1))
+            box = request.security(syminfo.tickerid, "5", make())
+            plot(na(box) ? na : box.top + array.get(box.levels, 1))
+            """
+        XCTAssertEqual(try run(source, bars: bars(10))[0], [nil, nil, nil, nil, 11, 11, 11, 11, 11, 21])
+    }
+
+    func testAnotherSymbolsCollectionsAreCopiedToo() throws {
+        let other = (0..<5).map { candle(first + Double($0) * 60, close: Double(($0 + 1) * 10)) }
+        let data = [PineSecurityKey(symbol: "OTHER", interval: 60): other]
+        let source = """
+            theirs = request.security("OTHER", "1", array.from(close, 1.0))
+            plot(array.get(theirs, 0))
+            """
+        XCTAssertEqual(try run(source, bars: bars(5), data: data)[0], [10, 20, 30, 40, 50])
+    }
 }

@@ -289,7 +289,7 @@ extension PineRuntimeSession {
     func evaluateHigherTimeframe(
         _ site: inout PineSecuritySite, _ candle: KlineData, _ request: SecurityRequest, commit: Bool
     ) throws -> PineRuntimeValue {
-        let chart = working
+        var chart = working
         let chartBarSeconds = barSeconds
         securityGlobals = chart.variables
         working = site.state
@@ -305,7 +305,10 @@ extension PineRuntimeSession {
             isFirst: working.barIndex == 0, isLast: false, isHistory: commit, isRealtime: !commit,
             isNew: true, isConfirmed: commit, isLastConfirmedHistory: false)
         var context = PineRuntimeContext(bar: candle, flags: flags)
-        let value = try eval(request.expression, &context)
+        let evaluated = try eval(request.expression, &context)
+        // A returned collection or object lives in this site's state; the chart gets a copy of its own.
+        var exporter = PineReferenceExport(from: working)
+        let value = exporter.export(evaluated, into: &chart)
         if commit {
             commitHistories(candle)
             site.state = working
