@@ -66,6 +66,12 @@ DegenView/
 │   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings
 │   ├── PortfolioTabBar.swift          # Icon + title section switcher for the portfolio tabs
 │   ├── PortfolioPerformerCard.swift   # Best/worst performer card (icon, return %, total P&L)
+│   ├── PortfolioCreateSheet.swift     # New-portfolio sheet: name field + base-currency tiles
+│   ├── PortfolioManageSheet.swift     # Manage portfolios: rename, reorder, duplicate, delete
+│   ├── PortfolioCoinMarketCapImportSheet.swift # CMC import step 1: match tickers to markets, resolve fee FX
+│   ├── PortfolioImportPreviewSheet.swift # Import step 2: transaction table, errors/warnings, confirm
+│   ├── PortfolioSheetHeader.swift     # Icon badge + title + subtitle atop the portfolio sheets
+│   ├── PortfolioNoticeCard.swift      # Tinted error/warning callout with optional line list
 │   ├── PortfolioHoldingsView.swift    # Portfolio tab: positions Table (sortable headers persist the portfolio's sort)
 │   ├── PortfolioTableChrome.swift     # Shared Table look: zebra rows, hairline border, side margin
 │   ├── PortfolioSearchField.swift     # Rounded search box above the portfolio tables

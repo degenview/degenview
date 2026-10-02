@@ -12,6 +12,27 @@ enum PortfolioCurrency: String, Codable, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// The currency's own sign, for badges: `$`, `€`, `£`, `¥`, `Fr`, `₿`.
+    var glyph: String {
+        switch self {
+        case .USD: "$"
+        case .EUR: "€"
+        case .GBP: "£"
+        case .JPY: "¥"
+        case .CHF: "Fr"
+        case .BTC: "₿"
+        }
+    }
+
+    /// "US Dollar" in the user's language; Bitcoin isn't an ISO currency, so it is named here.
+    var displayName: String {
+        if self == .BTC { return "Bitcoin" }
+        guard let name = Locale.current.localizedString(forCurrencyCode: rawValue), let first = name.first else {
+            return rawValue
+        }
+        return first.uppercased() + name.dropFirst()
+    }
+
     /// A per-unit price. Same as `format`, except under one unit it keeps up to eight decimals,
     /// so a micro-cap token reads `$0.00002` rather than `$0.00`.
     func formatPrice(_ value: Decimal) -> String {
@@ -29,6 +50,25 @@ enum PortfolioCurrency: String, Codable, CaseIterable, Identifiable, Sendable {
             return (value / divisor).formatted(digits) + suffix
         }
         return value.formatted(digits)
+    }
+}
+
+/// Rules for the name typed into the create-portfolio sheet.
+enum PortfolioNameCheck {
+    static let maxLength = 40
+
+    /// Trimmed, and cut to `maxLength`.
+    static func normalized(_ name: String) -> String {
+        String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(maxLength))
+    }
+
+    static func isValid(_ name: String) -> Bool { !normalized(name).isEmpty }
+
+    /// Whether another portfolio already has this name (ignoring case and surrounding spaces).
+    static func isDuplicate(_ name: String, among existing: [String]) -> Bool {
+        let wanted = normalized(name)
+        guard !wanted.isEmpty else { return false }
+        return existing.contains { normalized($0).caseInsensitiveCompare(wanted) == .orderedSame }
     }
 }
 

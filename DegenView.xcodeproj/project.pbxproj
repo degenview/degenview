@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */; };
+		AA1000000000000000000802 /* PortfolioImportPreviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */; };
+		AA1000000000000000000801 /* PortfolioNoticeCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000901 /* PortfolioNoticeCard.swift */; };
+		AA1000000000000000000800 /* PortfolioSheetHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000900 /* PortfolioSheetHeader.swift */; };
+		AA1000000000000000000603 /* PortfolioManageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000703 /* PortfolioManageSheet.swift */; };
+		AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */; };
+		AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000701 /* PortfolioCreateSheet.swift */; };
 		AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000561 /* PortfolioPerformerCard.swift */; };
 		AA1000000000000000000460 /* PortfolioTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000560 /* PortfolioTabBar.swift */; };
 		AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000503 /* PortfolioHoldingsView.swift */; };
@@ -588,6 +595,13 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCoinMarketCapImportSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioImportPreviewSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000901 /* PortfolioNoticeCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioNoticeCard.swift; sourceTree = "<group>"; };
+		AA1000000000000000000900 /* PortfolioSheetHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioSheetHeader.swift; sourceTree = "<group>"; };
+		AA1000000000000000000703 /* PortfolioManageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioManageSheet.swift; sourceTree = "<group>"; };
+		AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheetTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000000701 /* PortfolioCreateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheet.swift; sourceTree = "<group>"; };
 		AA1000000000000000000561 /* PortfolioPerformerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioPerformerCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000000560 /* PortfolioTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioTabBar.swift; sourceTree = "<group>"; };
 		AA1000000000000000000503 /* PortfolioHoldingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioHoldingsView.swift; sourceTree = "<group>"; };
@@ -1296,6 +1310,12 @@
 				AA1000000000000000000503 /* PortfolioHoldingsView.swift */,
 				AA1000000000000000000560 /* PortfolioTabBar.swift */,
 				AA1000000000000000000561 /* PortfolioPerformerCard.swift */,
+				AA1000000000000000000701 /* PortfolioCreateSheet.swift */,
+				AA1000000000000000000703 /* PortfolioManageSheet.swift */,
+				AA1000000000000000000900 /* PortfolioSheetHeader.swift */,
+				AA1000000000000000000901 /* PortfolioNoticeCard.swift */,
+				AA1000000000000000000902 /* PortfolioImportPreviewSheet.swift */,
+				AA1000000000000000000903 /* PortfolioCoinMarketCapImportSheet.swift */,
 				AA1000000000000000000108 /* PortfolioTabView.swift */,
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
@@ -1419,6 +1439,7 @@
 				B90000000000000000000108 /* LocalPriceAlertEngineTests.swift */,
 				AA1000000000000000000113 /* PortfolioAssetDisplayTests.swift */,
 				AA1000000000000000000311 /* PortfolioStatisticsTests.swift */,
+				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
@@ -1976,6 +1997,7 @@
 				B90000000000000000000008 /* LocalPriceAlertEngineTests.swift in Sources */,
 				AA1000000000000000000013 /* PortfolioAssetDisplayTests.swift in Sources */,
 				AA1000000000000000000211 /* PortfolioStatisticsTests.swift in Sources */,
+				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
@@ -2094,6 +2116,12 @@
 				AA1000000000000000000403 /* PortfolioHoldingsView.swift in Sources */,
 				AA1000000000000000000460 /* PortfolioTabBar.swift in Sources */,
 				AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */,
+				AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */,
+				AA1000000000000000000603 /* PortfolioManageSheet.swift in Sources */,
+				AA1000000000000000000800 /* PortfolioSheetHeader.swift in Sources */,
+				AA1000000000000000000801 /* PortfolioNoticeCard.swift in Sources */,
+				AA1000000000000000000802 /* PortfolioImportPreviewSheet.swift in Sources */,
+				AA1000000000000000000803 /* PortfolioCoinMarketCapImportSheet.swift in Sources */,
 				AA1000000000000000000008 /* PortfolioTabView.swift in Sources */,
 				AA1000000000000000000001 /* PortfolioModels.swift in Sources */,
 				AA2000000000000000000001 /* PortfolioValueChange.swift in Sources */,
