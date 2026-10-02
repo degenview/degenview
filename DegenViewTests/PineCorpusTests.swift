@@ -29,6 +29,53 @@ final class PineCorpusTests: XCTestCase {
         let milliseconds: [String: Int]
     }
 
+    /// Candles for any series a script asks `request.security` for: a deterministic random walk per symbol
+    /// that starts well before the chart and runs past its end, like a data feed with more history than the
+    /// chart shows.
+    private final class SyntheticSecurityData: PineSecurityDataProvider, @unchecked Sendable {
+        private static let history = 300
+        private let range: ClosedRange<Date>
+        private let lock = NSLock()
+        private var cache: [PineSecurityKey: [KlineData]] = [:]
+
+        init(chart bars: [KlineData]) {
+            range = bars[0].openTime...bars[bars.count - 1].openTime
+        }
+
+        func candles(for key: PineSecurityKey) -> [KlineData]? {
+            lock.withLock {
+                if let cached = cache[key] { return cached }
+                let made = make(key)
+                cache[key] = made
+                return made
+            }
+        }
+
+        private func make(_ key: PineSecurityKey) -> [KlineData] {
+            var state = key.symbol.utf8.reduce(UInt64(0xcbf2_9ce4_8422_2325)) { ($0 ^ UInt64($1)) &* 0x100_0000_01b3 }
+            func next() -> Double {
+                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+                return Double(state >> 11) / Double(1 << 53)
+            }
+            var open = KlineData.bucketStart(
+                of: range.lowerBound.addingTimeInterval(-Double(Self.history) * key.interval),
+                interval: key.interval)
+            var close = 100.0
+            var candles: [KlineData] = []
+            while open <= range.upperBound {
+                let start = close
+                close = max(1, start * (1 + (next() - 0.5) * 0.04))
+                candles.append(
+                    KlineData(
+                        openTime: open, openPrice: start, highPrice: max(start, close) * (1 + next() * 0.01),
+                        lowPrice: min(start, close) * (1 - next() * 0.01), closePrice: close,
+                        volume: 100 + next() * 900, isClosed: true))
+                open = KlineData.bucketEnd(after: open, interval: key.interval)
+            }
+            return candles
+        }
+    }
+
     private static let barCount = 1_000
     private static let repositoryRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
@@ -52,6 +99,7 @@ final class PineCorpusTests: XCTestCase {
             "No corpus cache; run tools/pine-corpus/fetch.py")
 
         let bars = Self.syntheticBars(count: Self.barCount)
+        let securityData = SyntheticSecurityData(chart: bars)
         var observed: [String: Expectation] = [:]
         var details: [String: [String]] = [:]
         var timings: [String: Int] = [:]
@@ -60,7 +108,7 @@ final class PineCorpusTests: XCTestCase {
             let url = cacheDirectory.appendingPathComponent("\(entry.kind)/\(entry.slug).pine")
             let source = try String(contentsOf: url, encoding: .utf8)
             let start = Date()
-            let (outcome, messages) = Self.run(source, bars: bars)
+            let (outcome, messages) = Self.run(source, bars: bars, securityData: securityData)
             let milliseconds = Int(Date().timeIntervalSince(start) * 1000)
             observed[entry.slug] = outcome
             details[entry.slug] = messages
@@ -88,14 +136,16 @@ final class PineCorpusTests: XCTestCase {
     }
 
     /// Compiles `source` and, when it is valid, runs it over `bars` with default inputs.
-    private static func run(_ source: String, bars: [KlineData]) -> (Expectation, [String]) {
+    private static func run(
+        _ source: String, bars: [KlineData], securityData: PineSecurityDataProvider
+    ) -> (Expectation, [String]) {
         let program = PineCompiler.compile(source: source)
         let compileErrors = errors(in: program.diagnostics)
         guard compileErrors.isEmpty else {
             return (.init(status: "compile-error", codes: codes(of: compileErrors)), describe(compileErrors))
         }
         do {
-            let result = try PineRuntimeSession(program: program).evaluate(bars: bars)
+            let result = try PineRuntimeSession(program: program, securityData: securityData).evaluate(bars: bars)
             let runtimeErrors = errors(in: result.diagnostics)
             return runtimeErrors.isEmpty
                 ? (.init(status: "ok", codes: []), [])
