@@ -496,17 +496,21 @@ Indicators / libraries that run or compile:
 | The 30 added scripts, first run (before the work on them) | 8 / 20 | 6 / 10 |
 | All 60 after the work on them | 37 / 40 | 15 / 20 |
 | After the `footprint` / `volume_row` type names | 37 / 40 | 16 / 20 |
+| After `request.security` data for other symbols and history, collections out of `request.security`, `import` | 40 / 40 | 18 / 20 |
 
-The 7 that still fail are blocked by whole features (a script can have several):
+The 2 that still fail (both libraries, checked only for compiling) import a library that cannot be fetched:
+`EYTRloVr` and `O3hhBZjY` import `TradersEdgeUSA/TEMath_WilderSuperTrend_TickGridValueArea/1`, which TradingView's
+search does not return (`PINE3040`). `sLM1Lmui`'s import (`XZ_Table_Primitives`) is fetched by
+`fetch.py --imports` into `.pine-corpus/imports/` and resolved by the corpus run.
 
-| Blocker | Scripts |
-|---|---|
-| `request.security` for another symbol (`PINE4022`) | 3 (`UyBliO8S`, `MPypFZJS`, `tY9RZ0MY`) |
-| Library `import` of a library that is not in the corpus (`PINE3040`; the imports are other authors' libraries, which the corpus does not contain) | 3 |
-| Data-dependent runtime error (`array.get` with an `na` index inside a profile function, `UTgFqITU`) | 1, not investigated |
+The corpus run is not the app: it feeds `request.security` synthetic candles for any symbol and timeframe
+(a random walk that starts 500 bars before the chart), because the question is whether a script runs to
+completion. It also uses a 60 s deadline instead of the app's 10 s, since the test target is a Debug build.
+Only `UTgFqITU` needs that: about 20 s in Debug. It also reads daily and weekly series and needs hundreds of
+bars of history before the chart's first bar, which the provider gives it.
 
-The corpus test takes about 40 s on the machine it was written on, most of it two scripts (`xlWhYoco`, ~7 s, and
-`VEvpsGHa`); a slow machine can report `PINE8007` for those.
+The corpus test takes about 70 s on the machine it was written on, most of it `UTgFqITU` (~20 s), `xlWhYoco`
+(~9 s), `hQDYur25`, `VEvpsGHa` and `L6HQo7bR` (4–5 s each).
 
 Corpus libraries are checked only for compiling; their exports are exercised by `PineLibraryImportTests`
 against stub libraries. An indicator that runs on synthetic bars has not

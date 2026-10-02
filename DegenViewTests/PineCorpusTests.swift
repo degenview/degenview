@@ -84,6 +84,14 @@ final class PineCorpusTests: XCTestCase {
         return limits
     }()
 
+    /// Resolves `import` from the libraries `tools/pine-corpus/fetch.py --imports` cached beside the scripts.
+    private struct CachedLibraries: PineLibraryResolver {
+        let directory: URL
+        func source(forLibrary path: String) -> String? {
+            try? String(contentsOf: directory.appendingPathComponent(path + ".pine"), encoding: .utf8)
+        }
+    }
+
     private static let barCount = 1_000
     private static let repositoryRoot = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent()
@@ -113,6 +121,7 @@ final class PineCorpusTests: XCTestCase {
 
         let bars = Self.syntheticBars(count: Self.barCount)
         let securityData = SyntheticSecurityData(chart: bars)
+        let libraries = CachedLibraries(directory: cacheDirectory.appendingPathComponent("imports"))
         var observed: [String: Expectation] = [:]
         var details: [String: [String]] = [:]
         var timings: [String: Int] = [:]
@@ -121,7 +130,7 @@ final class PineCorpusTests: XCTestCase {
             let url = cacheDirectory.appendingPathComponent("\(entry.kind)/\(entry.slug).pine")
             let source = try String(contentsOf: url, encoding: .utf8)
             let start = Date()
-            let (outcome, messages) = Self.run(source, bars: bars, securityData: securityData)
+            let (outcome, messages) = Self.run(source, bars: bars, securityData: securityData, libraries: libraries)
             let milliseconds = Int(Date().timeIntervalSince(start) * 1000)
             observed[entry.slug] = outcome
             details[entry.slug] = messages
@@ -150,9 +159,10 @@ final class PineCorpusTests: XCTestCase {
 
     /// Compiles `source` and, when it is valid, runs it over `bars` with default inputs.
     private static func run(
-        _ source: String, bars: [KlineData], securityData: PineSecurityDataProvider
+        _ source: String, bars: [KlineData], securityData: PineSecurityDataProvider,
+        libraries: PineLibraryResolver
     ) -> (Expectation, [String]) {
-        let program = PineCompiler.compile(source: source)
+        let program = PineCompiler.compile(source: source, limits: Self.limits, libraries: libraries)
         let compileErrors = errors(in: program.diagnostics)
         guard compileErrors.isEmpty else {
             return (.init(status: "compile-error", codes: codes(of: compileErrors)), describe(compileErrors))

@@ -10,11 +10,5 @@
       "PINE3040"
     ],
     "status": "compile-error"
-  },
-  "sLM1Lmui": {
-    "codes": [
-      "PINE3040"
-    ],
-    "status": "compile-error"
   }
 }

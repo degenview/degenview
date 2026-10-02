@@ -1,0 +1,15 @@
+[
+  {
+    "path": "Steel-Sovereign/XZ_Table_Primitives/11",
+    "fetchedAt": "2026-10-02",
+    "url": "https://www.tradingview.com/script/592r4vCs-XZ-Table-Primitives/",
+    "tradingViewID": "PUB;ec18f9439b25436aada937e94156dc38",
+    "licence": "MPL-2.0",
+    "status": "fetched"
+  },
+  {
+    "path": "TradersEdgeUSA/TEMath_WilderSuperTrend_TickGridValueArea/1",
+    "fetchedAt": "2026-10-02",
+    "status": "skipped: not found"
+  }
+]
