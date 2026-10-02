@@ -117,6 +117,18 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(program.diagnostics.map(\.code), ["PINE3040"])
     }
 
+    func testTheFootprintTypeNamesParseInSignaturesAndDeclarations() {
+        let program = PineCompiler.compile(
+            source: """
+                //@version=6
+                library("FP")
+                export edge(footprint fp, int rows) =>
+                    array<volume_row> list = array.new<volume_row>()
+                    rows
+                """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+    }
+
     func testCommaSeparatedStatementsShareALine() throws {
         let program = compile(
             """

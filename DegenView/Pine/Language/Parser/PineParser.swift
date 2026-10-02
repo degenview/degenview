@@ -16,7 +16,9 @@ struct PineParser {
     private(set) var exportRanges: [PineSourceRange] = []
     /// Names of the `type`s declared so far. Pine requires a type to precede its use, so the parser
     /// can tell `Zone z = …` (a declaration) from an expression.
-    var userTypes: Set<String> = []
+    /// Seeded with TradingView's opaque built-in types, which scripts name in signatures (`footprint fp`,
+    /// `array<volume_row>`) although this release has no values of them.
+    var userTypes: Set<String> = ["footprint", "volume_row"]
     /// Names of the `enum`s declared so far; like types, they may annotate a variable or parameter.
     var enumTypes: Set<String> = []
     /// The name `typeAnnotation()` last matched when it was a script-defined type, an enum or `chart.point`.

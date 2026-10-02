@@ -405,7 +405,8 @@ the corpus run (below) only shows that scripts compile and run.
 ## Known incompatibilities
 
 The current grammar does not yet implement the `scale` declaration
-argument, built-in types such as `footprint`, `request.security` for other symbols or finer
+argument, values of the built-in `footprint` and `volume_row` types (the names parse in signatures and
+declarations, but `request.footprint` is unsupported and `footprint.*` calls are `PINE4007`), `request.security` for other symbols or finer
 timeframes, or real intrabar data for `request.security_lower_tf` (the engine only sees the chart's own
 bars). The table above lists where implemented features differ from TradingView. Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
@@ -496,15 +497,15 @@ Indicators / libraries that run or compile:
 | After lower-timeframe requests, polylines, matrices, a 20M per-bar guard | 18 / 20 | 7 / 10 |
 | The 30 added scripts, first run (before the work on them) | 8 / 20 | 6 / 10 |
 | All 60 after the work on them | 37 / 40 | 15 / 20 |
+| After the `footprint` / `volume_row` type names | 37 / 40 | 16 / 20 |
 
-The 8 that still fail are blocked by whole features (a script can have several):
+The 7 that still fail are blocked by whole features (a script can have several):
 
 | Blocker | Scripts |
 |---|---|
 | `request.security` for another symbol (`PINE4022`) | 3 (`UyBliO8S`, `MPypFZJS`, `tY9RZ0MY`) |
 | Library `import` of a library that is not in the corpus (`PINE3040`; the imports are other authors' libraries, which the corpus does not contain) | 3 |
 | `scale=` declaration argument | 1 |
-| Built-in `footprint` type | 1 |
 | Data-dependent runtime error (`array.get` with an `na` index inside a profile function, `UTgFqITU`) | 1, not investigated |
 
 The corpus test takes about 40 s on the machine it was written on, most of it two scripts (`xlWhYoco`, ~7 s, and
