@@ -23,6 +23,10 @@ final class PineRuntimeSession {
     let inputVariables: [Int: String]
     /// The imported libraries' functions, types, enums and constants, flattened out of the import graph.
     let linkage: PineLibraryLinkage
+    /// Where `request.security` finds series the chart does not carry. Nil: only the chart's own symbol.
+    let securityData: PineSecurityDataProvider?
+    /// What the provider answered per series, so it is asked once per run rather than once per bar.
+    var securitySeries: [PineSecurityKey: [KlineData]?] = [:]
     /// Library constants already evaluated, by `"<path>::<name>"`. Only plain values: a constant that builds a
     /// collection is rebuilt on each read so it never aliases state across bars.
     var libraryConstants: [String: PineRuntimeValue] = [:]
@@ -63,8 +67,9 @@ final class PineRuntimeSession {
     init(
         program: PineCompiledProgram, inputs: [String: PineInputValue] = [:],
         limits: PineLimits = .default, mintick: Double? = nil, theme: PineChartTheme = .dark,
-        symbol: PineSymbolInfo = PineSymbolInfo()
+        symbol: PineSymbolInfo = PineSymbolInfo(), securityData: PineSecurityDataProvider? = nil
     ) {
+        self.securityData = securityData
         self.program = program
         self.symbol = symbol
         self.inputs = inputs

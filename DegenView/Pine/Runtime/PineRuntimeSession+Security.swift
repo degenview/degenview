@@ -1,10 +1,14 @@
 import Foundation
 
-/// `request.security` for the chart's own symbol.
+/// `request.security`.
 ///
-/// The expression runs against a higher-timeframe series built by folding the chart's bars, in a
-/// state of its own (`PineSecuritySite.state`) swapped in for `working` while it evaluates.
-/// Semantics, as implemented (not checked against TradingView):
+/// For the chart's own symbol the expression runs against a higher-timeframe series built by folding the
+/// chart's bars, in a state of its own (`PineSecuritySite.state`) swapped in for `working` while it
+/// evaluates. If the session's `PineSecurityDataProvider` has that timeframe, its candles from before the
+/// chart's first bar are fed in first, so the series has the history it would have on TradingView. Another
+/// symbol is read from the candles the provider supplies, and is an error when it supplies none (see
+/// `PineRuntimeSession+ForeignSecurity`).
+/// Semantics for the chart's own symbol, as implemented (not checked against TradingView):
 /// - history and confirmed bars: the value on the last higher-timeframe bar completed by the close of
 ///   the chart bar; a chart bar that closes its bucket completes it and returns its own value;
 /// - realtime bars: the developing higher-timeframe bar;
@@ -12,11 +16,13 @@ import Foundation
 ///   looks ahead;
 /// - `gaps_on`: `na` except on the chart bar where a new value arrives.
 extension PineRuntimeSession {
-    private struct SecurityRequest {
+    struct SecurityRequest {
         var interval: TimeInterval
         var expression: PineExpression
         var lookaheadOn: Bool
         var gapsOn: Bool
+        /// The candles of another symbol's series; nil for the chart's own.
+        var foreign: [KlineData]?
     }
 
     private static let securityParameters = [
@@ -38,6 +44,7 @@ extension PineRuntimeSession {
             if case .tuple(let items, _) = expression { return .tuple(items.map { _ in .na }) }
             return .na
         }
+        if let candles = request.foreign { return try serveForeign(request, candles, call, &context) }
         return try serveSecurity(request, call, &context)
     }
 
@@ -49,6 +56,7 @@ extension PineRuntimeSession {
         var site = working.securities[key] ?? PineSecuritySite()
         let bar = context.bar
         if site.processedBar == bar.openTime { return site.barResult }
+        if !site.isWarmedUp { try warmUp(&site, request, before: bar.openTime) }
 
         let start = KlineData.bucketStart(of: bar.openTime, interval: request.interval)
         var fresh = false
@@ -108,24 +116,65 @@ extension PineRuntimeSession {
                 "PINE4024", .runtime, "request.security needs a symbol, a timeframe and an expression.",
                 call.range)
         }
-        do {
-            try requireChartSymbol(values["symbol"], call.range)
-        } catch {
-            if values["ignore_invalid_symbol"] == .bool(true) { return .unserved(expression) }
-            throw error
+        let ignoreSymbol = values["ignore_invalid_symbol"] == .bool(true)
+        guard case .string(let name)? = values["symbol"] else {
+            if ignoreSymbol { return .unserved(expression) }
+            throw unservedSymbol("", call.range)
+        }
+        let isChartSymbol = name.isEmpty || name == symbol.tickerID
+        if !isChartSymbol, securityData == nil {
+            if ignoreSymbol { return .unserved(expression) }
+            throw unservedSymbol(name, call.range)
         }
         let interval: TimeInterval
         do {
-            interval = try securityInterval(values["timeframe"], call.range)
+            interval = try securityInterval(values["timeframe"], allowFiner: !isChartSymbol, call.range)
         } catch {
             if values["ignore_invalid_timeframe"] == .bool(true) { return .unserved(expression) }
             throw error
+        }
+        var candles: [KlineData]?
+        if !isChartSymbol {
+            candles = series(PineSecurityKey(symbol: name, interval: interval))
+            if candles == nil {
+                if ignoreSymbol { return .unserved(expression) }
+                throw unservedSymbol(name, call.range)
+            }
         }
         return .serve(
             SecurityRequest(
                 interval: interval, expression: expression,
                 lookaheadOn: values["lookahead"] == .string("barmerge.lookahead_on"),
-                gapsOn: values["gaps"] == .string("barmerge.gaps_on")))
+                gapsOn: values["gaps"] == .string("barmerge.gaps_on"), foreign: candles))
+    }
+
+    /// The provider's candles for `key`, asked once per run.
+    func series(_ key: PineSecurityKey) -> [KlineData]? {
+        if let known = securitySeries[key] { return known }
+        let answer = securityData?.candles(for: key)
+        securitySeries[key] = .some(answer)
+        return answer
+    }
+
+    private func unservedSymbol(_ name: String, _ range: PineSourceRange) -> PineDiagnostic {
+        .error(
+            "PINE4022", .runtime,
+            name.isEmpty || securityData == nil
+                ? "request.security only supports the chart's own symbol (syminfo.tickerid) here."
+                : "No data is available for symbol '\(name)'.", range)
+    }
+
+    /// Evaluates the candles the provider holds for the chart's own symbol that closed before the chart's first
+    /// bar, so the expression starts with the history TradingView would have given it.
+    private func warmUp(_ site: inout PineSecuritySite, _ request: SecurityRequest, before first: Date) throws {
+        site.isWarmedUp = true
+        guard let candles = series(PineSecurityKey(symbol: symbol.tickerID, interval: request.interval)) else {
+            return
+        }
+        for candle in candles {
+            guard KlineData.bucketEnd(after: candle.openTime, interval: request.interval) <= first else { break }
+            site.lastResult = try evaluateHigherTimeframe(&site, candle, request, commit: true)
+        }
     }
 
     /// The call's arguments by parameter name. `expression` stays unevaluated: it runs on another series.
@@ -209,14 +258,9 @@ extension PineRuntimeSession {
         return array(intrabars.map { [$0] } ?? [])
     }
 
-    private func requireChartSymbol(_ value: PineRuntimeValue?, _ range: PineSourceRange) throws {
-        if case .string(let text)? = value, text.isEmpty || text == symbol.tickerID { return }
-        throw PineDiagnostic.error(
-            "PINE4022", .runtime,
-            "request.security only supports the chart's own symbol (syminfo.tickerid) in this release.", range)
-    }
-
-    private func securityInterval(_ value: PineRuntimeValue?, _ range: PineSourceRange) throws -> TimeInterval {
+    private func securityInterval(
+        _ value: PineRuntimeValue?, allowFiner: Bool, _ range: PineSourceRange
+    ) throws -> TimeInterval {
         let interval: TimeInterval
         switch value {
         case .string(let text)? where !text.isEmpty:
@@ -231,7 +275,7 @@ extension PineRuntimeSession {
             throw PineDiagnostic.error(
                 "PINE4021", .runtime, "The chart's bar length is not known yet.", range)
         }
-        if interval < barSeconds {
+        if interval < barSeconds, !allowFiner {
             throw PineDiagnostic.error(
                 "PINE4021", .runtime,
                 "request.security cannot use a timeframe finer than the chart's; lower timeframes are not supported.",
@@ -242,7 +286,7 @@ extension PineRuntimeSession {
 
     /// Runs the expression on `candle` in the site's own state. A commit keeps that state and
     /// appends the candle to its histories; otherwise the state is thrown away, like a realtime tick.
-    private func evaluateHigherTimeframe(
+    func evaluateHigherTimeframe(
         _ site: inout PineSecuritySite, _ candle: KlineData, _ request: SecurityRequest, commit: Bool
     ) throws -> PineRuntimeValue {
         let chart = working
