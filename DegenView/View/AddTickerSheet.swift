@@ -16,9 +16,9 @@ struct AddTickerSheet: View {
         sources: { [DataSourceFactory.shared.alpaca] }
     )
     @StateObject private var polymarketVM = PredictionMarketSearchViewModel(
-        provider: .polymarket, logPrefix: "[AddTicker/Polymarket]", offersTrending: true)
+        provider: .polymarket, logPrefix: "[AddTicker/Polymarket]")
     @StateObject private var kalshiVM = PredictionMarketSearchViewModel(
-        provider: .kalshi, logPrefix: "[AddTicker/Kalshi]", offersTrending: true)
+        provider: .kalshi, logPrefix: "[AddTicker/Kalshi]")
 
     @State private var selectedTab: Tab = .crypto
     @State private var inputText = ""

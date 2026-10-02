@@ -31,17 +31,13 @@ final class PredictionMarketSearchViewModel: ObservableObject {
     let provider: DataSourceType
     private let service: () -> TickerDataSource
     private let now: () -> Date
-    /// Whether an empty query lists trending events. Off for Chart Settings' replace-market pane.
-    private let offersTrending: Bool
     private var trendingTask: Task<Void, Never>?
     private var cachedTrending: (results: [TickerSearchResult], fetched: Date)?
 
     init(
         provider: DataSourceType = .polymarket, logPrefix: String = "[PredictionMarketSearch]",
-        offersTrending: Bool = false, service: (() -> TickerDataSource)? = nil,
-        now: @escaping () -> Date = Date.init
+        service: (() -> TickerDataSource)? = nil, now: @escaping () -> Date = Date.init
     ) {
-        self.offersTrending = offersTrending
         self.provider = provider
         self.logPrefix = logPrefix
         self.service = service ?? { DataSourceFactory.shared.service(for: provider) }
@@ -192,7 +188,7 @@ final class PredictionMarketSearchViewModel: ObservableObject {
     /// trending is an extra, not something the user asked for.
     func showTrending() {
         trendingTask?.cancel()
-        guard offersTrending, service() is TrendingMarketsDataSource else {
+        guard service() is TrendingMarketsDataSource else {
             isShowingTrending = false
             groups = []
             return

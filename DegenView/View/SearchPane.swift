@@ -16,7 +16,7 @@ extension View {
     }
 }
 
-/// Shared source-grouped result list used by Add Ticker and Chart Settings.
+/// Shared source-grouped result list used by Add Chart and the Script Manager market picker.
 struct TickerSearchResultList: View {
     let searchVM: TickerSearchViewModel
     let sources: [DataSourceType]
@@ -214,7 +214,7 @@ private struct SuggestionChip: View {
 
 /// Search text field with an inline progress spinner.
 ///
-/// Shared by every search pane in both sheets — crypto and Polymarket, add and edit.
+/// Shared by every search pane — crypto, stocks and prediction markets, in Add Chart and the picker.
 struct SearchFieldRow: View {
     let placeholder: String
     @Binding var text: String
@@ -329,7 +329,7 @@ struct PredictionMarketSearchPane: View {
     var showsStatus = true
     /// When set, a provider dropdown (Polymarket / Kalshi) leads the search field.
     var provider: Binding<DataSourceType>? = nil
-    /// Topic chips shown while the search box is empty; nil leaves the pane bare (Chart Settings).
+    /// Topic chips shown while the search box is empty; nil leaves the pane bare.
     var suggestions: [SuggestionChipGrid.Item]? = nil
     var onCommitResult: ((TickerSearchResult) -> Void)? = nil
 

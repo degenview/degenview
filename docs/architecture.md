@@ -50,7 +50,7 @@ DegenView/
 │   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
 │   ├── PineAlertListView.swift        # "Script Alerts" section of the alerts center
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
-│   ├── ChartSettingsSheet.swift       # Instrument, appearance, indicators
+│   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
 │   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
 │   ├── ScriptPreviewPane.swift        # Live preview: market, timeframe, zoom, chart, drawer bar
@@ -66,6 +66,7 @@ DegenView/
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings
 │   ├── RecentMarketsCard.swift        # Add Chart: the last picked markets, under the suggestions
+│   ├── CandleColorPreview.swift       # Tiny candle/line preview of the chosen chart colors
 │   ├── ChoiceCard.swift               # Selectable option card (icon, title, description, radio mark)
 │   ├── IconTabBar.swift          # Icon + title section switcher (portfolio tabs, Add Chart sources)
 │   ├── PortfolioPerformerCard.swift   # Best/worst performer card (icon, return %, total P&L)

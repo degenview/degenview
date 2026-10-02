@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Shared search result row used by AddTickerSheet and ChartSettingsSheet.
+/// Shared search result row used by AddTickerSheet and the Script Manager market picker.
 struct SearchResultRow: View {
     let result: TickerSearchResult
     let isSelected: Bool

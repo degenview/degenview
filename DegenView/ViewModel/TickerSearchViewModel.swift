@@ -1,7 +1,7 @@
 import Foundation
 
 /// Shared search state and debounced multi-source ticker lookup.
-/// Used by the Crypto tab of both AddTickerSheet and ChartSettingsSheet.
+/// Used by the Crypto and Stocks tabs of AddTickerSheet and by the Script Manager market picker.
 ///
 /// Prediction markets are not part of this fan-out — see `PredictionMarketSearchViewModel`.
 @MainActor

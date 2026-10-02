@@ -108,7 +108,7 @@ final class PredictionTrendingTests: XCTestCase {
         let source = StubTrendingSource()
         source.results = [market("Cut", event: "Fed"), market("Hold", event: "Fed")]
         source.searchResults = [market("BTC 100k", event: "Bitcoin")]
-        let viewModel = PredictionMarketSearchViewModel(offersTrending: true, service: { source })
+        let viewModel = PredictionMarketSearchViewModel(service: { source })
 
         viewModel.scheduleSearch(query: "")
         try await waitUntil { viewModel.hasResults }
@@ -125,7 +125,7 @@ final class PredictionTrendingTests: XCTestCase {
         let source = StubTrendingSource()
         source.results = [market("Cut", event: "Fed")]
         var clock = Date(timeIntervalSince1970: 1_000)
-        let viewModel = PredictionMarketSearchViewModel(offersTrending: true, service: { source }, now: { clock })
+        let viewModel = PredictionMarketSearchViewModel(service: { source }, now: { clock })
 
         viewModel.scheduleSearch(query: "")
         try await waitUntil { viewModel.hasResults }
@@ -142,7 +142,7 @@ final class PredictionTrendingTests: XCTestCase {
     @MainActor
     func testProvidersWithoutTrendingStayEmpty() async throws {
         let viewModel = PredictionMarketSearchViewModel(
-            provider: .kalshi, offersTrending: true, service: { StubPlainSource() })
+            provider: .kalshi, service: { StubPlainSource() })
 
         viewModel.scheduleSearch(query: "")
 
@@ -151,22 +151,10 @@ final class PredictionTrendingTests: XCTestCase {
     }
 
     @MainActor
-    func testPanesThatDoNotOfferTrendingStayEmpty() async throws {
-        let source = StubTrendingSource()
-        source.results = [market("Cut", event: "Fed")]
-        let viewModel = PredictionMarketSearchViewModel(service: { source })
-
-        viewModel.scheduleSearch(query: "")
-
-        XCTAssertTrue(viewModel.groups.isEmpty)
-        XCTAssertEqual(source.trendingCalls, 0)
-    }
-
-    @MainActor
     func testAFailedFetchLeavesNothingAndNoError() async throws {
         let source = StubTrendingSource()
         source.fails = true
-        let viewModel = PredictionMarketSearchViewModel(offersTrending: true, service: { source })
+        let viewModel = PredictionMarketSearchViewModel(service: { source })
 
         viewModel.scheduleSearch(query: "")
         try await waitUntil { source.trendingCalls == 1 && !viewModel.isSearching }

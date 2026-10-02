@@ -728,10 +728,6 @@ struct ContentView: View {
                 || contentViewModel.activeTool == .fibonacciRetracement,
             crosshair: contentViewModel.crosshair,
             onCrosshairExit: { contentViewModel.crosshair.clear(owner: vm.uniqueID) },
-            onUpdateTicker: { symbol, source, displayName, pmSeries in
-                contentViewModel.updateTicker(
-                    vm, symbol: symbol, source: source, displayName: displayName, pmSeries: pmSeries)
-            },
             onStyleChanged: {
                 contentViewModel.persistChartSettings()
             },
