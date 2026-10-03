@@ -18,7 +18,8 @@ struct CandleChartView: View {
     /// Precomputed by the view model over the full buffer, already trimmed to these
     /// candles — so a long-period overlay is warmed up at the left edge.
     var indicators: IndicatorSeries = .none
-    var pine: PineVisualOutput = .empty
+    /// Visible applied-instance outputs, in applied order — later instances composite on top.
+    var pineOutputs: [PineVisualOutput] = []
 
     // Hand-drawn trend lines, plus the one being drawn right now.
     var trendLines: [TrendLine] = []
@@ -48,7 +49,7 @@ struct CandleChartView: View {
                 style: style
             )
 
-            let script = PineChartLayer(pine: pine, candles: candles, style: style)
+            let scripts = pineOutputs.map { PineChartLayer(pine: $0, candles: candles, style: style) }
 
             Canvas { context, _ in
                 plot.drawGrid(&context)
@@ -57,15 +58,16 @@ struct CandleChartView: View {
                 // past the plot, and the axis labels live outside it by design.
                 context.drawLayer { layer in
                     layer.clip(to: Path(plot.plotRect))
-                    // `overlay=false` scripts draw in their own pane below the chart.
-                    if pine.overlay {
+                    // `overlay=false` scripts draw in their own pane below the chart. Applied
+                    // order is compositing order — a later instance paints on top.
+                    for script in scripts where script.pine.overlay {
                         script.drawBackground(&layer, plot: plot)
                     }
                     if showVolume {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
-                    drawCandles(context: &layer, plot: plot, script: script)
-                    if pine.overlay {
+                    drawCandles(context: &layer, plot: plot, scripts: scripts)
+                    for script in scripts where script.pine.overlay {
                         script.drawForeground(&layer, plot: plot)
                     }
 
@@ -110,7 +112,7 @@ struct CandleChartView: View {
 
                 // Tables pin to the plot's corners and are never price-anchored, so they
                 // sit outside the series clip.
-                if pine.overlay {
+                for script in scripts where script.pine.overlay {
                     script.drawTables(&context, plot: plot)
                 }
 
@@ -167,7 +169,8 @@ struct CandleChartView: View {
     // MARK: - Candles
 
     /// `barcolor()` recolors candles whichever pane the script draws in, as on TradingView.
-    private func drawCandles(context: inout GraphicsContext, plot: ChartPlot, script: PineChartLayer) {
+    /// When more than one applied instance sets a bar color, the first in applied order wins.
+    private func drawCandles(context: inout GraphicsContext, plot: ChartPlot, scripts: [PineChartLayer]) {
         let slotWidth = plot.slotWidth(forCount: candles.count)
         let priceRangeSpan = plot.priceRange.max - plot.priceRange.min
         let dojiAbsThreshold = priceRangeSpan * style.dojiThreshold
@@ -186,7 +189,7 @@ struct CandleChartView: View {
             let isBullish = candle.closePrice > candle.openPrice
 
             let candleColor: Color
-            if let scripted = script.barColor(at: i) {
+            if let scripted = scripts.lazy.compactMap({ $0.barColor(at: i) }).first {
                 candleColor = scripted
             } else if isDoji {
                 candleColor = style.dojiColor

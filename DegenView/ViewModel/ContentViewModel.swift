@@ -88,6 +88,9 @@ final class ContentViewModel: ObservableObject {
     /// Plot areas, each mapped to the chart drawn in it. Weak on both sides, so a
     /// removed card drops out on its own.
     private let plotRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
+    /// Each chart's Pine indicator legend, so drawing tools and the crosshair can exclude it —
+    /// a click on its eye/gear/remove icons must never be swallowed as "begin drawing".
+    private let legendRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
     /// The endpoint being dragged right now, and the chart it belongs to.
     private var lineDragTarget: (vm: ChartViewModel, original: TrendLine, isStart: Bool)?
     private var fibonacciDragTarget: (vm: ChartViewModel, original: FibonacciRetracementDrawing, isStart: Bool)?
@@ -299,6 +302,23 @@ final class ContentViewModel: ObservableObject {
     /// drawn in it.
     func registerPlotRegion(_ view: NSView, for viewModel: ChartViewModel) {
         plotRegions.setObject(viewModel, forKey: view)
+    }
+
+    /// Each chart card hands over the view covering its Pine indicator legend.
+    func registerLegendRegion(_ view: NSView, for viewModel: ChartViewModel) {
+        legendRegions.setObject(viewModel, forKey: view)
+    }
+
+    /// Same geometric check as the plot-region lookups, scoped to registered legend frames —
+    /// so an armed drawing tool (or the crosshair) never acts over the legend.
+    private func pointerIsOverLegend(_ event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let location = event.locationInWindow
+        guard let views = legendRegions.keyEnumerator().allObjects as? [NSView] else { return false }
+        return views.contains { view in
+            guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { return false }
+            return view.bounds.contains(view.convert(location, from: nil))
+        }
     }
 
     // MARK: - Historical replay
@@ -982,6 +1002,9 @@ final class ContentViewModel: ObservableObject {
         guard let window = event.window, let content = window.contentView else { return nil }
         let location = event.locationInWindow
         guard window.contentLayoutRect.contains(content.convert(location, from: nil)) else { return nil }
+        // A click or hover over the Pine indicator legend must never be treated as a chart
+        // hit — its own eye/gear/remove buttons (and normal crosshair hiding) take priority.
+        guard !pointerIsOverLegend(event) else { return nil }
         guard let views = plotRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
 
         for view in views {

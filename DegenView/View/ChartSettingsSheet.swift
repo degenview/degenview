@@ -24,9 +24,11 @@ struct ChartSettingsSheet: View {
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
     @State private var savedScripts: [LocalScript] = []
-    @State private var selectedScriptID: UUID?
+    /// Action trigger for the "Add script" picker — resets to nil right after each add, since
+    /// it isn't a persisted selection (the same script can be added again immediately).
+    @State private var scriptToAdd: UUID?
+    @State private var editingInstanceID: UUID?
     @State private var scriptLoadError: String?
-    @State private var pineInputSchema = PineInputSchema()
     @State private var showingPineAlertEditor = false
     @StateObject private var pineAlerts = PineAlertStore.shared
 
@@ -103,7 +105,6 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
-        _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
     }
 
     var body: some View {
@@ -382,16 +383,19 @@ struct ChartSettingsSheet: View {
 
     private var scriptsTab: some View {
         page {
-            section("Script", subtitle: "Run a Pine script on this chart and tune its inputs.") {
+            section("Scripts", subtitle: "Apply Pine scripts to this chart and tune their inputs.") {
                 if let scriptLoadError {
                     NoticeCard(
                         systemImage: "xmark.octagon.fill", tint: .red, title: "Couldn't load your scripts",
                         detail: scriptLoadError)
                 }
 
-                SettingsCardRow(title: "Applied script", icon: "curlybraces", hint: scriptHint) {
-                    Picker("Script", selection: $selectedScriptID) {
-                        Text("None").tag(nil as UUID?)
+                SettingsCardRow(
+                    title: "Add script", icon: "plus.curlybraces",
+                    hint: "Apply another script, or the same one again with different inputs."
+                ) {
+                    Picker("Add script", selection: $scriptToAdd) {
+                        Text("Choose…").tag(nil as UUID?)
                         if !indicatorScripts.isEmpty {
                             Section("Indicators") {
                                 ForEach(indicatorScripts) { Text($0.name).tag($0.id as UUID?) }
@@ -406,7 +410,7 @@ struct ChartSettingsSheet: View {
                     .pickerStyle(.menu)
                     .labelsHidden()
                     .frame(width: 180)
-                    .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
+                    .onChange(of: scriptToAdd) { _, id in addScriptToChart(id) }
                 }
 
                 if indicatorScripts.isEmpty && strategyScripts.isEmpty && scriptLoadError == nil {
@@ -423,12 +427,69 @@ struct ChartSettingsSheet: View {
                         }
                         .help("Open Script Manager in a new tab")
 
-                        if selectedScriptID != nil { scriptAlertControls }
+                        if !viewModel.scriptInstances.isEmpty { scriptAlertControls }
                     }
                 }
             }
 
+            if !viewModel.scriptInstances.isEmpty {
+                section("Applied", subtitle: "Toggle visibility, edit inputs, or remove.") {
+                    appliedInstancesSection
+                }
+            }
+
             scriptsDetails
+        }
+    }
+
+    private var appliedInstancesSection: some View {
+        ForEach(viewModel.scriptInstances) { instance in
+            let title = viewModel.pineResults[instance.id]?.declaration?.title ?? "Script"
+            let hasError =
+                viewModel.pineResults[instance.id]?.diagnostics.contains { $0.severity == .error } ?? false
+            SettingsCardRow(
+                title: title, icon: "curlybraces", hint: viewModel.pineResults[instance.id]?.status
+            ) {
+                HStack(spacing: 10) {
+                    if hasError {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("\(title) has a runtime error")
+                    }
+                    Toggle(
+                        "Visible",
+                        isOn: Binding(
+                            get: { instance.isVisible },
+                            set: { viewModel.setPineInstanceVisible(instance.id, isVisible: $0) })
+                    )
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .accessibilityLabel(instance.isVisible ? "Hide \(title)" : "Show \(title)")
+
+                    Button {
+                        editingInstanceID = instance.id
+                    } label: { Image(systemName: "gearshape") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("\(title) settings")
+
+                    Button(role: .destructive) {
+                        viewModel.removePineInstance(instance.id)
+                        onStyleChanged()
+                    } label: { Image(systemName: "xmark") }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(title)")
+                }
+            }
+        }
+        .popover(
+            isPresented: Binding(
+                get: { editingInstanceID != nil },
+                set: { if !$0 { editingInstanceID = nil } })
+        ) {
+            if let editingInstanceID {
+                PineInstanceSettingsPopover(
+                    viewModel: viewModel, instanceID: editingInstanceID, onStyleChanged: onStyleChanged)
+            }
         }
     }
 
@@ -468,34 +529,14 @@ struct ChartSettingsSheet: View {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
-    private var scriptHint: String {
-        selectedScriptID == nil ? "Choose a script to draw on this chart." : viewModel.pineStatus
-    }
-
     private var scriptsDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
-                PineStrategyReportView(
-                    report: viewModel.pineOutput.strategy, alerts: viewModel.pineOutput.alerts)
+        let strategyInstanceID =
+            editingInstanceID
+            ?? viewModel.scriptInstances.first { viewModel.pineResults[$0.id]?.output.strategy != nil }?.id
+        return Group {
+            if let id = strategyInstanceID, let report = viewModel.pineResults[id]?.output.strategy {
+                PineStrategyReportView(report: report, alerts: viewModel.pineResults[id]?.output.alerts ?? [])
             }
-
-            if !viewModel.pineDiagnostics.isEmpty {
-                PineDiagnosticsSection(diagnostics: viewModel.pineDiagnostics)
-            }
-
-            if let inputs = viewModel.pineConfiguration?.inputs {
-                PineInputsView(schema: pineInputSchema, values: inputs) { value, id in
-                    viewModel.setPineInput(value, id: id)
-                    onStyleChanged()
-                }
-            }
-        }
-        // Compiled once per applied source, not on every render.
-        .task(id: viewModel.pineConfiguration?.appliedSource) {
-            let source = viewModel.pineConfiguration?.appliedSource
-            pineInputSchema =
-                source.map { PineCompiler.compile(source: $0, libraries: PineLibraryRegistry.shared).inputSchema }
-                ?? PineInputSchema()
         }
     }
 
@@ -503,44 +544,29 @@ struct ChartSettingsSheet: View {
         do {
             savedScripts = try await ScriptStore.shared.allScripts()
             scriptLoadError = nil
-            guard let selectedScriptID else { return }
-            guard let script = savedScripts.first(where: { $0.id == selectedScriptID }) else {
-                // Deleted in the Script Manager.
-                self.selectedScriptID = nil
-                return
-            }
-            // Picks up edits saved in the Script Manager.
-            if script.source != viewModel.pineConfiguration?.appliedSource {
-                loadScript(script, inputs: viewModel.pineConfiguration?.inputs ?? [:])
-            }
         } catch {
             scriptLoadError = error.localizedDescription
         }
     }
 
-    private func selectSavedScript(_ id: UUID?) {
-        guard let id else {
-            viewModel.unloadPineScript()
-            onStyleChanged()
+    private func addScriptToChart(_ id: UUID?) {
+        defer { scriptToAdd = nil }
+        guard let id, let script = savedScripts.first(where: { $0.id == id }) else { return }
+        guard
+            viewModel.addPineInstance(
+                scriptID: script.id, revisionID: script.latestRevisionID ?? UUID(), source: script.source
+            ) != nil
+        else {
+            scriptLoadError = "\"\(script.name)\" didn't compile — it wasn't added."
             return
         }
-        guard let script = savedScripts.first(where: { $0.id == id }) else { return }
-        loadScript(script, inputs: [:])
-    }
-
-    private func loadScript(_ script: LocalScript, inputs: [String: PineInputValue]) {
-        viewModel.loadPineScript(source: script.source, inputs: inputs)
-        if let revisionID = script.latestRevisionID {
-            viewModel.scriptInstances = [
-                ChartScriptInstance(scriptID: script.id, loadedRevisionID: revisionID, inputs: inputs)
-            ]
-        }
+        scriptLoadError = nil
         onStyleChanged()
     }
 
     /// Closes this sheet, which would otherwise block the new tab, then opens the Script Manager.
     private func openScriptManager() {
-        let scriptID = selectedScriptID
+        let scriptID = viewModel.scriptInstances.first?.scriptID
         // While the sheet is key the coordinator falls back to the chart window beneath it.
         WindowCoordinator.shared.prepareAuxiliaryTab()
         dismiss()

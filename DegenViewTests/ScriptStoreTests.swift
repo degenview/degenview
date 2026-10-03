@@ -241,6 +241,36 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(before, after)
     }
 
+    func testResolvedSourcePinsToAnOlderRevisionAndFlagsItNotLatest() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        let first = try await store.save(id: script.id, source: validSource)
+        let second = try await store.save(
+            id: script.id, source: "//@version=6\nindicator(\"Valid\")\nplot(close + 1)\n")
+        let firstRevisionID = try XCTUnwrap(first.latestRevisionID)
+        let secondRevisionID = try XCTUnwrap(second.latestRevisionID)
+        XCTAssertNotEqual(firstRevisionID, secondRevisionID)
+
+        let old = try await store.resolvedSource(scriptID: script.id, revisionID: firstRevisionID)
+        XCTAssertEqual(old?.source, validSource)
+        XCTAssertEqual(old?.isLatest, false)
+
+        let latest = try await store.resolvedSource(scriptID: script.id, revisionID: secondRevisionID)
+        XCTAssertEqual(latest?.source, second.source)
+        XCTAssertEqual(latest?.isLatest, true)
+    }
+
+    func testResolvedSourceReturnsNilWhenScriptNoLongerExists() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        let saved = try await store.save(id: script.id, source: validSource)
+        try await store.delete(id: script.id)
+
+        let result = try await store.resolvedSource(
+            scriptID: script.id, revisionID: try XCTUnwrap(saved.latestRevisionID))
+        XCTAssertNil(result)
+    }
+
     // MARK: - Type detection
 
     func testSaveDetectsTypeFromSource() async throws {

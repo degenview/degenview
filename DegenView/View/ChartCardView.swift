@@ -16,6 +16,9 @@ struct ChartCardView: View {
     let onAxisRegion: (NSView) -> Void
     /// Hands the plot area's `NSView` to the trend-line drawing monitor.
     var onPlotRegion: (NSView) -> Void = { _ in }
+    /// Hands the Pine indicator legend's `NSView` to the drawing-tool monitor, so a click on
+    /// its eye/gear/remove icons is never swallowed as "begin drawing".
+    var onLegendRegion: (NSView) -> Void = { _ in }
     /// Whether any tool is armed — drives the crosshair cursor over the plot.
     var isToolArmed: Bool = false
     /// Narrower than `isToolArmed`: only the trend-line tool shows endpoint handles.
@@ -91,10 +94,17 @@ struct ChartCardView: View {
             VStack(spacing: 0) {
                 chartArea
                 // Below, not inside, the chart area: its overlays and hit regions must
-                // keep the price canvas's size, or `viewModel.plot(in:)` would drift.
-                if showsPinePane {
-                    PineScriptPaneView(
-                        pine: viewModel.pineOutput, candles: viewModel.visibleKlines, height: pinePaneHeight)
+                // keep the price canvas's size, or `viewModel.plot(in:)` would drift. One
+                // stacked pane per non-overlay applied instance, in applied order.
+                if showsPinePanes {
+                    let panes = viewModel.panePineOutputs
+                    VStack(spacing: 0) {
+                        ForEach(Array(panes.enumerated()), id: \.offset) { _, output in
+                            PineScriptPaneView(
+                                pine: output, candles: viewModel.visibleKlines,
+                                height: viewModel.pinePaneHeight(forChartHeight: chartHeight, count: panes.count))
+                        }
+                    }
                 }
             }
         }
@@ -265,9 +275,9 @@ struct ChartCardView: View {
 
     // MARK: - Chart Area
 
-    private var showsPinePane: Bool { viewModel.showsPinePane }
+    private var showsPinePanes: Bool { viewModel.showsPinePanes }
 
-    private var pinePaneHeight: CGFloat { viewModel.pinePaneHeight(forChartHeight: chartHeight) }
+    private var pinePanesHeight: CGFloat { viewModel.pinePanesHeight(forChartHeight: chartHeight) }
 
     @ViewBuilder
     private var chartArea: some View {
@@ -301,14 +311,14 @@ struct ChartCardView: View {
             } else {
                 CandleChartView(
                     candles: viewModel.visibleKlines,
-                    chartHeight: chartHeight - pinePaneHeight,
+                    chartHeight: chartHeight - pinePanesHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     yZoom: viewModel.yZoom,
                     showVolume: viewModel.showVolume,
                     indicators: indicators,
-                    pine: viewModel.pineOutput,
+                    pineOutputs: viewModel.visiblePineOutputs,
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
@@ -343,6 +353,10 @@ struct ChartCardView: View {
                     orders: paperOrders, accountCurrency: paperAccountCurrency, unrealizedPnL: paperUnrealizedPnL,
                     onModify: onPaperModify, onCancel: onPaperCancel, onClose: onPaperClose)
             }
+        }
+        .overlay(alignment: .topLeading) {
+            PineIndicatorLegend(viewModel: viewModel, onLegendRegion: onLegendRegion, onStyleChanged: onStyleChanged)
+                .padding(8)
         }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves
         // it altogether would strand the crosshair on the last chart it touched.
