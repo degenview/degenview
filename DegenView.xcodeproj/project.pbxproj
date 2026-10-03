@@ -46,6 +46,7 @@
 		AC020000000000000000000D /* AlertHistoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000C /* AlertHistoryRow.swift */; };
 		AC020000000000000000000F /* AlertCardScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000E /* AlertCardScroll.swift */; };
 		AC0200000000000000000011 /* AlertDayHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000010 /* AlertDayHeader.swift */; };
+		AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC01000000000000000000F0 /* AlertFooterBar.swift */; };
 		AC0200000000000000000013 /* AlertHistoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000012 /* AlertHistoryList.swift */; };
 		AC0200000000000000000015 /* AlertCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000014 /* AlertCardStyle.swift */; };
 		AC0200000000000000000017 /* PineAlertCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000016 /* PineAlertCard.swift */; };
@@ -678,6 +679,7 @@
 		AC010000000000000000000C /* AlertHistoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertHistoryRow.swift; sourceTree = "<group>"; };
 		AC010000000000000000000E /* AlertCardScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardScroll.swift; sourceTree = "<group>"; };
 		AC0100000000000000000010 /* AlertDayHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayHeader.swift; sourceTree = "<group>"; };
+		AC01000000000000000000F0 /* AlertFooterBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertFooterBar.swift; sourceTree = "<group>"; };
 		AC0100000000000000000012 /* AlertHistoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertHistoryList.swift; sourceTree = "<group>"; };
 		AC0100000000000000000014 /* AlertCardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardStyle.swift; sourceTree = "<group>"; };
 		AC0100000000000000000016 /* PineAlertCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCard.swift; sourceTree = "<group>"; };
@@ -1410,6 +1412,7 @@
 				AC010000000000000000000C /* AlertHistoryRow.swift */,
 				AC010000000000000000000E /* AlertCardScroll.swift */,
 				AC0100000000000000000010 /* AlertDayHeader.swift */,
+				AC01000000000000000000F0 /* AlertFooterBar.swift */,
 				AC0100000000000000000012 /* AlertHistoryList.swift */,
 				AC0100000000000000000014 /* AlertCardStyle.swift */,
 				AC0100000000000000000016 /* PineAlertCard.swift */,
@@ -2262,6 +2265,7 @@
 				AC020000000000000000000D /* AlertHistoryRow.swift in Sources */,
 				AC020000000000000000000F /* AlertCardScroll.swift in Sources */,
 				AC0200000000000000000011 /* AlertDayHeader.swift in Sources */,
+				AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */,
 				AC0200000000000000000013 /* AlertHistoryList.swift in Sources */,
 				AC0200000000000000000015 /* AlertCardStyle.swift in Sources */,
 				AC0200000000000000000017 /* PineAlertCard.swift in Sources */,

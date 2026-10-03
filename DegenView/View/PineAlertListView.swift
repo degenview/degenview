@@ -20,9 +20,23 @@ struct PineAlertListView: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            list
-                .task(id: focused) { await reveal(focused, with: proxy) }
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                list
+                    .task(id: focused) { await reveal(focused, with: proxy) }
+            }
+            footer
+        }
+    }
+
+    private var footer: some View {
+        AlertFooterBar(
+            systemImage: "curlybraces", note: "Script alerts are created from alert() calls in your scripts."
+        ) {
+            Button("Open Script Manager", systemImage: "curlybraces") {
+                WindowCoordinator.shared.openScriptManager()
+            }
+            .help("Write and manage the scripts whose alert() calls appear here")
         }
     }
 

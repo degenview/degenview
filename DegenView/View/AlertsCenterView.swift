@@ -26,6 +26,7 @@ struct AlertsCenterView: View {
     @StateObject private var store = AlertStore.shared
     @StateObject private var pineStore = PineAlertStore.shared
     @StateObject private var info = PortfolioAssetInfoViewModel()
+    @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @State private var filter: Filter = .active
     @State private var search = ""
     @State private var editing: PriceAlert?
@@ -68,6 +69,7 @@ struct AlertsCenterView: View {
         } message: {
             Text("This can't be undone. Your alerts are kept.")
         }
+        .preferredColorScheme(appTheme.colorScheme)
     }
 
     /// Switches to the Scripts tab, clears any search that would hide it, and points at one alert.
@@ -101,17 +103,6 @@ struct AlertsCenterView: View {
             HStack {
                 IconTabBar(items: tabs, selection: $filter, isCompact: true)
                 Spacer(minLength: 12)
-                if filter == .script {
-                    Button("Open Script Manager", systemImage: "curlybraces") {
-                        WindowCoordinator.shared.openScriptManager()
-                    }
-                    .controlSize(.small)
-                    .help("Write and manage the scripts whose alert() calls appear here")
-                }
-                if filter == .history, !store.history.isEmpty {
-                    Button("Clear History", systemImage: "trash") { confirmingClear = true }
-                        .controlSize(.small)
-                }
             }
         }
         .padding(.horizontal, 20)
@@ -198,10 +189,27 @@ struct AlertsCenterView: View {
 
     private var historyContent: some View {
         let byID = Dictionary(store.alerts.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        return AlertHistoryList(events: filteredHistory, info: info, rules: byID)
-            .overlay {
-                if filteredHistory.isEmpty { emptyState(hasAnyInTab: !store.history.isEmpty) }
-            }
+        return VStack(spacing: 0) {
+            AlertHistoryList(events: filteredHistory, info: info, rules: byID)
+                .overlay {
+                    if filteredHistory.isEmpty { emptyState(hasAnyInTab: !store.history.isEmpty) }
+                }
+            historyFooter
+        }
+    }
+
+    private var historyFooter: some View {
+        let count = store.history.count
+        return AlertFooterBar(
+            systemImage: "clock.arrow.circlepath",
+            note: count == 0
+                ? "Every time an alert fires it is logged here."
+                : "\(count) \(count == 1 ? "trigger" : "triggers") logged. Clearing history keeps your alerts."
+        ) {
+            Button("Clear History", systemImage: "trash") { confirmingClear = true }
+                .disabled(count == 0)
+                .help("Remove every logged trigger, not just the ones matching the search")
+        }
     }
 
     @ViewBuilder private func emptyState(hasAnyInTab: Bool) -> some View {
