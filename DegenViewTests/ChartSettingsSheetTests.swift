@@ -18,6 +18,6 @@ final class ChartSettingsSheetTests: XCTestCase {
     }
 
     func testSettingsOfferNoTickerTab() {
-        XCTAssertEqual(ChartSettingsSheet.Tab.allCases.map(\.rawValue), ["Appearance", "Indicators", "Scripts"])
+        XCTAssertEqual(ChartSettingsSheet.Tab.allCases.map(\.rawValue), ["Indicators", "Scripts", "Appearance"])
     }
 }

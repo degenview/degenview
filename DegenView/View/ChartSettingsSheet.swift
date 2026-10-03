@@ -32,9 +32,9 @@ struct ChartSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     enum Tab: String, CaseIterable {
-        case appearance = "Appearance"
         case indicators = "Indicators"
         case scripts = "Scripts"
+        case appearance = "Appearance"
 
         var systemImage: String {
             switch self {
@@ -85,7 +85,7 @@ struct ChartSettingsSheet: View {
 
     init(
         viewModel: ChartViewModel,
-        initialTab: Tab = .appearance,
+        initialTab: Tab = .indicators,
         onRemove: @escaping () -> Void,
         onStyleChanged: @escaping () -> Void
     ) {
