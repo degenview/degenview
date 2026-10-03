@@ -5,7 +5,7 @@ import SwiftUI
 struct PineLegendRowInfo: Identifiable {
     let id: UUID  // == ChartScriptInstance.id
     let scriptID: UUID  // the library script this instance runs
-    let title: String  // "EMA 20" — declaration title + compact input summary
+    let title: String  // the declaration title; inputs live in the settings popover
     let isVisible: Bool
     let hasError: Bool
 }
@@ -14,29 +14,12 @@ extension ChartViewModel {
     var pineLegendRows: [PineLegendRowInfo] {
         scriptInstances.map { instance in
             let result = pineResults[instance.id]
-            let base = result?.declaration?.title ?? "Script"
-            let summary = result.map { $0.inputSchema.pineCompactSummary(values: instance.inputs) } ?? ""
-            let title = summary.isEmpty ? base : "\(base) \(summary)"
+            let title = result?.declaration?.title ?? "Script"
             let hasError = result?.diagnostics.contains { $0.severity == .error } ?? false
             return PineLegendRowInfo(
                 id: instance.id, scriptID: instance.scriptID, title: title, isVisible: instance.isVisible,
                 hasError: hasError)
         }
-    }
-}
-
-extension PineInputSchema {
-    /// A short "<v1> <v2> …" summary of this schema's int/float inputs, current-value-first —
-    /// the same compact style TradingView's legend uses ("EMA 20", "Supertrend 10 3"). Other
-    /// input kinds are omitted; they rarely fit a one-line row.
-    func pineCompactSummary(values: [String: PineInputValue]) -> String {
-        inputs.compactMap { input -> String? in
-            switch values[input.id] ?? input.defaultValue {
-            case .int(let v): return "\(v)"
-            case .float(let v): return String(format: "%g", v)
-            default: return nil
-            }
-        }.joined(separator: " ")
     }
 }
 
@@ -151,18 +134,38 @@ private struct PineIndicatorLegendRow: View {
     var onStyleChanged: () -> Void = {}
     @State private var rowHovering = false
     @State private var showingSettings = false
+    @State private var settingsDismissedAt = Date.distantPast
 
     /// Controls stay visible while the settings popover is open even if the pointer has moved
     /// off the row into the popover itself — otherwise the popover's own anchor unmounts and
     /// SwiftUI dismisses it before the user can touch an input.
     private var controlsVisible: Bool { rowHovering || showingSettings }
 
+    /// A transient popover closes on the mouse-down of any outside click, so by the time the name's
+    /// button fires the popover is already gone and a plain toggle would reopen it. A press right
+    /// after a dismissal is therefore the click that closed it, not a request to open it again.
+    private func toggleSettings() {
+        if showingSettings {
+            showingSettings = false
+        } else if Date().timeIntervalSince(settingsDismissedAt) > 0.3 {
+            showingSettings = true
+        }
+    }
+
     var body: some View {
         HStack(spacing: 7) {
-            Text(info.title)
-                .font(.caption2.weight(.medium))
-                .foregroundStyle(info.isVisible ? .primary : .secondary)
-                .lineLimit(1)
+            // The name opens the same inputs popover as the gear, and closes it again.
+            Button {
+                toggleSettings()
+            } label: {
+                Text(info.title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(info.isVisible ? .primary : .secondary)
+                    .lineLimit(1)
+            }
+            .buttonStyle(.plain)
+            .help("Edit inputs")
+            .accessibilityLabel("\(info.title) inputs")
             if info.hasError {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 10))
@@ -206,6 +209,9 @@ private struct PineIndicatorLegendRow: View {
             withAnimation(.easeInOut(duration: 0.1)) { rowHovering = hovering }
         }
         .opacity(info.isVisible ? 1 : 0.55)
+        .onChange(of: showingSettings) { _, showing in
+            if !showing { settingsDismissedAt = Date() }
+        }
         .accessibilityElement(children: .combine)
     }
 

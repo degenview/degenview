@@ -2,8 +2,7 @@ import XCTest
 
 @testable import DegenView
 
-/// `ChartViewModel.pineLegendRows`/`PineInputSchema.pineCompactSummary` — the data the
-/// TradingView-style legend renders. Exercised through the real pipeline (not fabricated
+/// `ChartViewModel.pineLegendRows` — the data the TradingView-style legend renders. Exercised through the real pipeline (not fabricated
 /// state) since `pineResults` is `private(set)`.
 @MainActor
 final class PineIndicatorLegendTests: XCTestCase {
@@ -48,14 +47,14 @@ final class PineIndicatorLegendTests: XCTestCase {
         while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
     }
 
-    func testLegendRowTitleIncludesCompactInputSummary() async throws {
+    func testLegendRowTitleIsTheScriptNameWithoutInputs() async throws {
         let model = await makeModel(bars: bars(3))
         let id = try XCTUnwrap(
             model.addPineInstance(scriptID: UUID(), revisionID: UUID(), source: Self.ema, inputs: ["len": .int(20)]))
         await waitUntil(model.pineResults[id]?.output.barCount == 3)
 
         let row = try XCTUnwrap(model.pineLegendRows.first { $0.id == id })
-        XCTAssertEqual(row.title, "EMA 20")
+        XCTAssertEqual(row.title, "EMA")
         XCTAssertTrue(row.isVisible)
         XCTAssertFalse(row.hasError)
     }
@@ -93,7 +92,5 @@ final class PineIndicatorLegendTests: XCTestCase {
         let rows = model.pineLegendRows
         XCTAssertEqual(rows.count, 2)
         XCTAssertEqual(Set(rows.map(\.id)), Set([a, b]))
-        XCTAssertEqual(rows.first { $0.id == a }?.title, "EMA 20")
-        XCTAssertEqual(rows.first { $0.id == b }?.title, "EMA 200")
     }
 }
