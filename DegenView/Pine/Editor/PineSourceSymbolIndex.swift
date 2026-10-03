@@ -108,7 +108,17 @@ struct PineSourceSymbolIndex {
         let isExported: Bool
     }
 
+    /// One statement of the source, as the splitter reads it.
+    struct Statement: Equatable, Sendable {
+        /// From the first token's start to the last token's end.
+        let range: NSRange
+        /// The last token is an operator or comma, so the next line continues the statement.
+        let endsWithContinuation: Bool
+        let indent: Int
+    }
+
     let declarations: [Declaration]
+    let statements: [Statement]
     let scopes: [Scope]
     let imports: [Import]
     let types: [String: UserType]
@@ -122,10 +132,12 @@ struct PineSourceSymbolIndex {
     private let tokenOffsets: [Int]
 
     init(
-        declarations: [Declaration], scopes: [Scope], imports: [Import], types: [String: UserType],
-        enums: [String: UserEnum], roles: [Int: Role], tokenScopes: [Int], tokenOffsets: [Int]
+        declarations: [Declaration], statements: [Statement], scopes: [Scope], imports: [Import],
+        types: [String: UserType], enums: [String: UserEnum], roles: [Int: Role], tokenScopes: [Int],
+        tokenOffsets: [Int]
     ) {
         self.declarations = declarations
+        self.statements = statements
         self.scopes = scopes
         self.imports = imports
         self.types = types
@@ -220,6 +232,17 @@ struct PineSourceSymbolIndex {
             current = scopes[id].parent
         }
         return nil
+    }
+
+    /// The last statement that starts at or before `offset`.
+    func statement(atOrBefore offset: Int) -> Statement? {
+        var low = 0
+        var high = statements.count
+        while low < high {
+            let middle = (low + high) / 2
+            if statements[middle].range.location <= offset { low = middle + 1 } else { high = middle }
+        }
+        return low > 0 ? statements[low - 1] : nil
     }
 
     // MARK: - Imports and exports

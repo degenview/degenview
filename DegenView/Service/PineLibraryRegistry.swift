@@ -34,6 +34,12 @@ final class PineLibraryRegistry: PineLibraryResolver, @unchecked Sendable {
         return lock.withLock { byName[name] ?? byTitle[name] }
     }
 
+    /// The names a script can import, sorted: each library's file name. Read from memory, for the editor's
+    /// import-path completion.
+    func libraryNames() -> [String] {
+        lock.withLock { byName.keys.sorted() }
+    }
+
     private static let titlePattern = try? NSRegularExpression(
         pattern: #"^[ \t]*library[ \t]*\([ \t]*(?:"([^"]+)"|'([^']+)')"#, options: [.anchorsMatchLines])
 

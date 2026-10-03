@@ -26,9 +26,11 @@ struct PineSymbolSignature: Equatable, Sendable {
     let returns: String
     let summary: String?
 
-    /// `ta.rsi(source, length) → series float`.
+    /// `ta.rsi(source, length) → series float`; without the arrow when the return type is unknown
+    /// (a function the script itself declares).
     var label: String {
-        "\(name)(\(parameters.map(\.name).joined(separator: ", "))) → \(returns)"
+        let call = "\(name)(\(parameters.map(\.name).joined(separator: ", ")))"
+        return returns.isEmpty ? call : "\(call) → \(returns)"
     }
 
     /// The parameter list alone, `source, length`, for rows that already show the name.

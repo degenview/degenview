@@ -103,8 +103,8 @@ extension PineSourceSymbolIndex {
             }
             if let header { openEmptyScope(for: header, endingAt: text.length) }
             return PineSourceSymbolIndex(
-                declarations: declarations, scopes: scopes, imports: imports, types: types, enums: enums,
-                roles: roles, tokenScopes: tokenScopes, tokenOffsets: tokenOffsets)
+                declarations: declarations, statements: spans(), scopes: scopes, imports: imports, types: types,
+                enums: enums, roles: roles, tokenScopes: tokenScopes, tokenOffsets: tokenOffsets)
         }
 
         private mutating func openScope(parent: Int, start: Int, indent: Int, owner: Scope.Owner) -> Int {
@@ -114,6 +114,16 @@ extension PineSourceSymbolIndex {
                     id: id, parent: parent, depth: scopes[parent].depth + 1, start: start, end: text.length,
                     indentWidth: indent, owner: owner))
             return id
+        }
+
+        private func spans() -> [Statement] {
+            statements.map { statement in
+                let start = ranges[statement.first].location
+                return Statement(
+                    range: NSRange(location: start, length: NSMaxRange(ranges[statement.last]) - start),
+                    endsWithContinuation: PineLexer.continuationKinds.contains(kind(statement.last)),
+                    indent: statement.indent)
+            }
         }
 
         private mutating func openEmptyScope(for header: Header, endingAt end: Int) {

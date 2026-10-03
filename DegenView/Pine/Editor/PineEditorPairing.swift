@@ -35,6 +35,14 @@ enum PineEditorPairing {
         return nil
     }
 
+    /// Whether a new pair may open in front of `next`: at the end of text, before whitespace or a
+    /// line break, or before a character a pair may sit against (`) ] , ; : .`). Completion asks
+    /// this too, so an inserted call opens a pair exactly when typing `(` there would.
+    static func canOpenPair(before next: unichar?, in context: PineEditorContext) -> Bool {
+        guard let next else { return true }
+        return context.isWhitespace(next) || context.isLineBreak(next) || autoCloseBefore.contains(next)
+    }
+
     private static func opening(_ unit: unichar, in context: PineEditorContext) -> PineEditorEdit? {
         let isQuote = quotes.contains(unit)
         let closer = isQuote ? unit : closers[unit]!
@@ -74,9 +82,7 @@ enum PineEditorPairing {
 
         // 3. Pair, but not before text it would swallow, and not as an apostrophe or `"""`.
         let next = context.unit(at: caret)
-        guard next == nil || context.isWhitespace(next) || context.isLineBreak(next)
-            || autoCloseBefore.contains(next!)
-        else { return nil }
+        guard canOpenPair(before: next, in: context) else { return nil }
         if isQuote {
             let previous = context.unit(at: caret - 1)
             if context.isWordUnit(previous) || previous == unit || previous == backslash { return nil }

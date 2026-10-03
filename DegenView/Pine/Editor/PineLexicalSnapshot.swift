@@ -162,9 +162,14 @@ struct PineLexicalSnapshot {
 
     /// The token whose range contains `location`.
     func item(containing location: Int) -> Item? {
+        itemIndex(containing: location).map { items[$0] }
+    }
+
+    /// Index into `items` of the token whose range contains `location`.
+    func itemIndex(containing location: Int) -> Int? {
         let index = lowerBound(items.count) { NSMaxRange(items[$0].range) <= location }
         guard index < items.count, items[index].range.location <= location else { return nil }
-        return items[index]
+        return index
     }
 
     /// First index in `0..<count` for which `isBefore` is false, assuming it is monotonic.
