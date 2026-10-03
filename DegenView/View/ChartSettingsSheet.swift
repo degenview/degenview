@@ -391,8 +391,15 @@ struct ChartSettingsSheet: View {
                 SettingsCardRow(title: "Applied script", icon: "curlybraces", hint: scriptHint) {
                     Picker("Script", selection: $selectedScriptID) {
                         Text("None").tag(nil as UUID?)
-                        ForEach(savedScripts) { script in
-                            Text(script.name).tag(script.id as UUID?)
+                        if !indicatorScripts.isEmpty {
+                            Section("Indicators") {
+                                ForEach(indicatorScripts) { Text($0.name).tag($0.id as UUID?) }
+                            }
+                        }
+                        if !strategyScripts.isEmpty {
+                            Section("Strategies") {
+                                ForEach(strategyScripts) { Text($0.name).tag($0.id as UUID?) }
+                            }
                         }
                     }
                     .pickerStyle(.menu)
@@ -401,7 +408,7 @@ struct ChartSettingsSheet: View {
                     .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
                 }
 
-                if savedScripts.isEmpty && scriptLoadError == nil {
+                if indicatorScripts.isEmpty && strategyScripts.isEmpty && scriptLoadError == nil {
                     NoticeCard(
                         systemImage: "info.circle.fill", tint: .blue, title: "No scripts yet",
                         detail: "Write one in the Script Manager and it will show up here.",
@@ -430,6 +437,16 @@ struct ChartSettingsSheet: View {
 
             scriptsDetails
         }
+    }
+
+    /// Libraries only export code to other scripts, so they are never offered for a chart.
+    private var indicatorScripts: [LocalScript] { appliableScripts(of: .indicator) }
+    private var strategyScripts: [LocalScript] { appliableScripts(of: .strategy) }
+
+    private func appliableScripts(of type: ScriptType) -> [LocalScript] {
+        savedScripts
+            .filter { $0.type == type }
+            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     private var scriptHint: String {
