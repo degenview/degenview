@@ -11,6 +11,8 @@ struct PaperTextField: View {
     /// A small button inside the field's trailing edge ("Last"), for filling it from the market.
     var accessoryTitle: String?
     var accessoryAction: (() -> Void)?
+    /// Takes focus when the field first appears, so a sheet opens ready to type.
+    var autofocus = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
@@ -38,6 +40,7 @@ struct PaperTextField: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { isFocused = true }
+        .onAppear { if autofocus { isFocused = true } }
     }
 
     private var borderColor: Color {

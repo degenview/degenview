@@ -98,7 +98,9 @@ struct PortfolioDashboardView: View {
         }
         .sheet(item: $importPreview) { preview in PortfolioImportPreviewSheet(store: store, preview: preview) }
         .sheet(item: $coinMarketCapPreview) { preview in
-            PortfolioCoinMarketCapImportSheet(store: store, preview: preview, portfolioID: destinationPortfolioID) { converted in
+            PortfolioCoinMarketCapImportSheet(
+                store: store, preview: preview, portfolioID: destinationPortfolioID
+            ) { converted in
                 coinMarketCapPreview = nil
                 importPreview = converted
             }
@@ -342,85 +344,6 @@ struct TransactionEditorContext: Identifiable {
             price: copy.price, priceCurrency: copy.priceCurrency, fee: copy.fee, feeCurrency: copy.feeCurrency,
             timestamp: copy.timestamp, notes: copy.notes)
         return .init(transaction: copy, mode: .duplicate)
-    }
-}
-
-struct TransactionEditorSheet: View {
-    @ObservedObject var store: PortfolioStore
-    let context: TransactionEditorContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var type: PortfolioTransactionType
-    @State private var quantity: String
-    @State private var price: String
-    @State private var total: String
-    @State private var fee: String
-    @State private var date: Date
-    @State private var notes: String
-    @State private var editingTotal = false
-    init(store: PortfolioStore, context: TransactionEditorContext) {
-        self.store = store
-        self.context = context
-        let tx = context.transaction
-        _type = State(initialValue: tx.type)
-        _quantity = State(initialValue: tx.quantity == 0 ? "" : tx.quantity.description)
-        _price = State(initialValue: tx.price?.description ?? "")
-        _total = State(initialValue: tx.price.map { ($0 * tx.quantity).description } ?? "")
-        _fee = State(initialValue: tx.fee == 0 ? "" : tx.fee.description)
-        _date = State(initialValue: tx.timestamp)
-        _notes = State(initialValue: tx.notes)
-    }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("\(context.mode == .edit ? "Edit" : "Add") Transaction").font(.headline)
-            Text("\(context.transaction.asset.displayTicker) · \(context.transaction.asset.source.rawValue)")
-                .foregroundStyle(.secondary)
-            Picker("Type", selection: $type) {
-                ForEach(PortfolioTransactionType.allCases) { Text($0.rawValue).tag($0) }
-            }
-            TextField("Quantity", text: $quantity).onChange(of: quantity) { recalculateTotal() }
-            if [.buy, .sell, .transferIn, .reward, .stakingReward, .airdrop, .mining, .interest].contains(type) {
-                TextField(
-                    type == .sell ? "Sale price" : "Price per asset (optional for transfers/rewards)", text: $price
-                ).onChange(of: price) { recalculateTotal() }
-                TextField("Total", text: $total).onChange(of: total) { _, _ in
-                    if editingTotal, let q = Decimal(string: quantity), q != 0, let t = Decimal(string: total) {
-                        price = (t / q).description
-                    }
-                }.onTapGesture { editingTotal = true }
-            }
-            DatePicker("Date and time", selection: $date)
-            TextField("Fee", text: $fee)
-            TextField("Notes", text: $notes, axis: .vertical).lineLimit(2...4)
-            HStack {
-                Spacer()
-                Button("Cancel") { dismiss() }
-                Button("Save") { save() }.buttonStyle(.borderedProminent).disabled(
-                    Decimal(string: quantity).map { $0 <= 0 } ?? true)
-            }
-        }.padding(24).frame(width: 430)
-    }
-    private func recalculateTotal() {
-        guard !editingTotal, let q = Decimal(string: quantity), let p = Decimal(string: price) else { return }
-        total = (q * p).description
-    }
-    private func save() {
-        guard let q = Decimal(string: quantity) else { return }
-        var tx = context.transaction
-        tx.type = type
-        tx.quantity = q
-        tx.price = Decimal(string: price)
-        tx.fee = Decimal(string: fee) ?? 0
-        tx.timestamp = date
-        tx.notes = notes
-        tx.updatedAt = Date()
-        Task {
-            let ok = context.mode == .edit ? await store.update(tx) : await store.add(tx)
-            if ok {
-                dismiss()
-                await store.refreshQuotes()
-                await store.rebuildHistory()
-            }
-        }
     }
 }
 

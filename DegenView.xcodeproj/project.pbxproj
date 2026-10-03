@@ -36,6 +36,7 @@
 		AA1000000000000000000800 /* SheetHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000900 /* SheetHeader.swift */; };
 		AA1000000000000000000603 /* PortfolioManageSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000703 /* PortfolioManageSheet.swift */; };
 		AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */; };
+		C7A1000000000000000B0003 /* TransactionEditorDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A1000000000000000A0003 /* TransactionEditorDraftTests.swift */; };
 		AA1000000000000000000601 /* PortfolioCreateSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000701 /* PortfolioCreateSheet.swift */; };
 		AA1000000000000000000461 /* PortfolioPerformerCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000561 /* PortfolioPerformerCard.swift */; };
 		AA1000000000000000000460 /* IconTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000000560 /* IconTabBar.swift */; };
@@ -342,6 +343,7 @@
 		D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */; };
 		D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */; };
 		D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */; };
+		C7A1000000000000000B0001 /* TransactionEditorDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A1000000000000000A0001 /* TransactionEditorDraft.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
 		D30000000000000000000001 /* ChartColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000101 /* ChartColumn.swift */; };
 		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
@@ -376,6 +378,7 @@
 		D0FAB4AEB532EB3601608151 /* BookTickerCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */; };
 		D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */; };
 		F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000104 /* PaperOrderTicketSheet.swift */; };
+		C7A1000000000000000B0002 /* TransactionEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A1000000000000000A0002 /* TransactionEditorSheet.swift */; };
 		F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* PaperAccountManagerView.swift */; };
 		F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* PaperChartTradingOverlay.swift */; };
 		F26B67F079C53D2F57A4B72B /* PineArgument.swift in Sources */ = {isa = PBXBuildFile; fileRef = F148F629EBFF0115EFB81F88 /* PineArgument.swift */; };
@@ -719,6 +722,7 @@
 		AA1000000000000000000900 /* SheetHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SheetHeader.swift; sourceTree = "<group>"; };
 		AA1000000000000000000703 /* PortfolioManageSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioManageSheet.swift; sourceTree = "<group>"; };
 		AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheetTests.swift; sourceTree = "<group>"; };
+		C7A1000000000000000A0003 /* TransactionEditorDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionEditorDraftTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000000701 /* PortfolioCreateSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioCreateSheet.swift; sourceTree = "<group>"; };
 		AA1000000000000000000561 /* PortfolioPerformerCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioPerformerCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000000560 /* IconTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconTabBar.swift; sourceTree = "<group>"; };
@@ -908,6 +912,7 @@
 		D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTimestamp.swift; sourceTree = "<group>"; };
 		D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketDraft.swift; sourceTree = "<group>"; };
 		D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDecimalInput.swift; sourceTree = "<group>"; };
+		C7A1000000000000000A0001 /* TransactionEditorDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionEditorDraft.swift; sourceTree = "<group>"; };
 		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
 		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
 		A00000000000000000000101 /* DegenViewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DegenViewApp.swift; sourceTree = "<group>"; };
@@ -1018,6 +1023,7 @@
 		D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookTickerCoalescer.swift; sourceTree = "<group>"; };
 		D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingCSVExporter.swift; sourceTree = "<group>"; };
 		F30000000000000000000104 /* PaperOrderTicketSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketSheet.swift; sourceTree = "<group>"; };
+		C7A1000000000000000A0002 /* TransactionEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransactionEditorSheet.swift; sourceTree = "<group>"; };
 		F30000000000000000000105 /* PaperAccountManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperAccountManagerView.swift; sourceTree = "<group>"; };
 		F30000000000000000000107 /* PaperChartTradingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartTradingOverlay.swift; sourceTree = "<group>"; };
 		F148F629EBFF0115EFB81F88 /* PineArgument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineArgument.swift; sourceTree = "<group>"; };
@@ -1570,6 +1576,7 @@
 				AA1000000000000000000106 /* PortfolioDashboardView.swift */,
 				F30000000000000000000107 /* PaperChartTradingOverlay.swift */,
 				F30000000000000000000104 /* PaperOrderTicketSheet.swift */,
+				C7A1000000000000000A0002 /* TransactionEditorSheet.swift */,
 				F30000000000000000000105 /* PaperAccountManagerView.swift */,
 				E30000000000000000000103 /* ReplayControlBar.swift */,
 				E3F100000000000000000002 /* ReplayStyle.swift */,
@@ -1624,6 +1631,7 @@
 				D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */,
 				D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */,
 				D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */,
+				C7A1000000000000000A0001 /* TransactionEditorDraft.swift */,
 				A0000000000000000000011D /* ColorHex.swift */,
 				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
@@ -1710,6 +1718,7 @@
 				AC010000000000000000001A /* AlertPriceFormatTests.swift */,
 				AC010000000000000000001C /* AlertDayGroupingTests.swift */,
 				AA1000000000000000000702 /* PortfolioCreateSheetTests.swift */,
+				C7A1000000000000000A0003 /* TransactionEditorDraftTests.swift */,
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
 				AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */,
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
@@ -2288,6 +2297,7 @@
 				AC020000000000000000001B /* AlertPriceFormatTests.swift in Sources */,
 				AC020000000000000000001D /* AlertDayGroupingTests.swift in Sources */,
 				AA1000000000000000000602 /* PortfolioCreateSheetTests.swift in Sources */,
+				C7A1000000000000000B0003 /* TransactionEditorDraftTests.swift in Sources */,
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
 				AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */,
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
@@ -2490,6 +2500,7 @@
 				D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */,
 				D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */,
 				D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */,
+				C7A1000000000000000B0001 /* TransactionEditorDraft.swift in Sources */,
 				F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */,
 				F30000000000000000000001 /* PaperTradingModels.swift in Sources */,
 				D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */,
@@ -2498,6 +2509,7 @@
 				D0FAB4AEB532EB3601608151 /* BookTickerCoalescer.swift in Sources */,
 				D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */,
 				F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */,
+				C7A1000000000000000B0002 /* TransactionEditorSheet.swift in Sources */,
 				F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */,
 				E30000000000000000000001 /* ReplaySession.swift in Sources */,
 				E30000000000000000000002 /* ReplayEngine.swift in Sources */,
