@@ -23,14 +23,6 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
-    @State private var savedScripts: [LocalScript] = []
-    /// Action trigger for the "Add script" picker — resets to nil right after each add, since
-    /// it isn't a persisted selection (the same script can be added again immediately).
-    @State private var scriptToAdd: UUID?
-    @State private var editingInstanceID: UUID?
-    @State private var scriptLoadError: String?
-    @State private var alertTarget: AlertTarget?
-    @StateObject private var pineAlerts = PineAlertStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -168,7 +160,6 @@ struct ChartSettingsSheet: View {
                     + "To change a chart's market, remove it and add a new one."
             )
         }
-        .sheet(item: $alertTarget) { PineAlertEditor(viewModel: viewModel, instanceID: $0.id) }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
             onStyleChanged()
@@ -204,10 +195,6 @@ struct ChartSettingsSheet: View {
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
             onStyleChanged()
-        }
-        .task { await loadSavedScripts() }
-        .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in
-            Task { await loadSavedScripts() }
         }
     }
 
@@ -382,219 +369,7 @@ struct ChartSettingsSheet: View {
     // MARK: - Scripts Tab
 
     private var scriptsTab: some View {
-        page {
-            section("Scripts", subtitle: "Apply Pine scripts to this chart and tune their inputs.") {
-                if let scriptLoadError {
-                    NoticeCard(
-                        systemImage: "xmark.octagon.fill", tint: .red, title: "Couldn't load your scripts",
-                        detail: scriptLoadError)
-                }
-
-                SettingsCardRow(
-                    title: "Add script", icon: "plus.curlybraces",
-                    hint: "Apply another script, or the same one again with different inputs."
-                ) {
-                    Picker("Add script", selection: $scriptToAdd) {
-                        Text("Choose…").tag(nil as UUID?)
-                        if !indicatorScripts.isEmpty {
-                            Section("Indicators") {
-                                ForEach(indicatorScripts) { Text($0.name).tag($0.id as UUID?) }
-                            }
-                        }
-                        if !strategyScripts.isEmpty {
-                            Section("Strategies") {
-                                ForEach(strategyScripts) { Text($0.name).tag($0.id as UUID?) }
-                            }
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 180)
-                    .onChange(of: scriptToAdd) { _, id in addScriptToChart(id) }
-                }
-
-                if indicatorScripts.isEmpty && strategyScripts.isEmpty && scriptLoadError == nil {
-                    NoticeCard(
-                        systemImage: "info.circle.fill", tint: .blue, title: "No scripts yet",
-                        detail: "Write one in the Script Manager and it will show up here.",
-                        actionTitle: "Open Script Manager", action: openScriptManager)
-                } else {
-                    Button {
-                        openScriptManager()
-                    } label: {
-                        Label("Script Manager", systemImage: "curlybraces.square")
-                    }
-                    .help("Open Script Manager in a new tab")
-                }
-            }
-
-            if !viewModel.scriptInstances.isEmpty {
-                section("Applied", subtitle: "Toggle visibility, edit inputs, or remove.") {
-                    appliedInstancesSection
-                }
-            }
-
-            scriptsDetails
-        }
-    }
-
-    private var appliedInstancesSection: some View {
-        ForEach(viewModel.scriptInstances) { instance in
-            let title = viewModel.pineResults[instance.id]?.declaration?.title ?? "Script"
-            let hasError =
-                viewModel.pineResults[instance.id]?.diagnostics.contains { $0.severity == .error } ?? false
-            SettingsCardRow(
-                title: title, icon: "curlybraces", hint: viewModel.pineResults[instance.id]?.status
-            ) {
-                HStack(spacing: 10) {
-                    if hasError {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                            .accessibilityLabel("\(title) has a runtime error")
-                    }
-                    Toggle(
-                        "Visible",
-                        isOn: Binding(
-                            get: { instance.isVisible },
-                            set: { viewModel.setPineInstanceVisible(instance.id, isVisible: $0) })
-                    )
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .accessibilityLabel(instance.isVisible ? "Hide \(title)" : "Show \(title)")
-
-                    alertButton(for: instance, title: title, hasError: hasError)
-
-                    Button {
-                        editingInstanceID = instance.id
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(title) settings")
-
-                    Button(role: .destructive) {
-                        viewModel.removePineInstance(instance.id)
-                        onStyleChanged()
-                    } label: {
-                        Image(systemName: "xmark")
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(title)")
-                }
-            }
-        }
-        .popover(
-            isPresented: Binding(
-                get: { editingInstanceID != nil },
-                set: { if !$0 { editingInstanceID = nil } })
-        ) {
-            if let editingInstanceID {
-                PineInstanceSettingsPopover(
-                    viewModel: viewModel, instanceID: editingInstanceID, onStyleChanged: onStyleChanged)
-            }
-        }
-    }
-
-    /// A bell per applied indicator: "create alert" until this chart has one for it on its current
-    /// market, then a badged bell that opens that alert in the Alerts window. Creating is disabled —
-    /// with the reason as its tooltip — while the script is loading, has errors, or can never alert.
-    @ViewBuilder
-    private func alertButton(for instance: ChartScriptInstance, title: String, hasError: Bool) -> some View {
-        if let existing = pineAlerts.subscription(
-            forChart: viewModel.chartID, instanceID: instance.id, dataset: viewModel.pineAlertDataset)
-        {
-            let status = pineAlerts.status(of: existing)
-            Button {
-                openAlert(existing)
-            } label: {
-                Image(systemName: "bell.badge")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.accentColor)
-            .help("View alert for \(title) — \(status.text)")
-            .accessibilityLabel("View alert for \(title), \(status.text)")
-        } else {
-            let blocker = alertBlocker(for: instance, hasError: hasError)
-            Button {
-                alertTarget = AlertTarget(id: instance.id)
-            } label: {
-                Image(systemName: "bell")
-            }
-            .buttonStyle(.plain)
-            .disabled(blocker != nil)
-            .help(blocker ?? "Notify me when \(title) raises alert() on a live bar")
-            .accessibilityLabel("Create alert for \(title)")
-        }
-    }
-
-    /// Why an alert cannot be created for `instance` right now, nil when it can.
-    private func alertBlocker(for instance: ChartScriptInstance, hasError: Bool) -> String? {
-        guard let result = viewModel.pineResults[instance.id], viewModel.pineInstanceSourceHashes[instance.id] != nil
-        else { return "Still loading this script…" }
-        if hasError { return "Fix this script's errors before creating an alert." }
-        if result.alertCallCount == 0 { return "This script has no alert() or alertcondition() calls." }
-        return nil
-    }
-
-    /// Libraries only export code to other scripts, so they are never offered for a chart.
-    private var indicatorScripts: [LocalScript] { appliableScripts(of: .indicator) }
-    private var strategyScripts: [LocalScript] { appliableScripts(of: .strategy) }
-
-    private func appliableScripts(of type: ScriptType) -> [LocalScript] {
-        savedScripts
-            .filter { $0.type == type }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
-
-    private var scriptsDetails: some View {
-        let strategyInstanceID =
-            editingInstanceID
-            ?? viewModel.scriptInstances.first { viewModel.pineResults[$0.id]?.output.strategy != nil }?.id
-        return Group {
-            if let id = strategyInstanceID, let report = viewModel.pineResults[id]?.output.strategy {
-                PineStrategyReportView(report: report, alerts: viewModel.pineResults[id]?.output.alerts ?? [])
-            }
-        }
-    }
-
-    @MainActor private func loadSavedScripts() async {
-        do {
-            savedScripts = try await ScriptStore.shared.allScripts()
-            scriptLoadError = nil
-        } catch {
-            scriptLoadError = error.localizedDescription
-        }
-    }
-
-    private func addScriptToChart(_ id: UUID?) {
-        defer { scriptToAdd = nil }
-        guard let id, let script = savedScripts.first(where: { $0.id == id }) else { return }
-        guard
-            viewModel.addPineInstance(
-                scriptID: script.id, revisionID: script.latestRevisionID ?? UUID(), source: script.source
-            ) != nil
-        else {
-            scriptLoadError = "\"\(script.name)\" didn't compile — it wasn't added."
-            return
-        }
-        scriptLoadError = nil
-        onStyleChanged()
-    }
-
-    /// Closes this sheet, which would otherwise block the new tab, then opens the Script Manager.
-    private func openScriptManager() {
-        let scriptID = viewModel.scriptInstances.first?.scriptID
-        // While the sheet is key the coordinator falls back to the chart window beneath it.
-        WindowCoordinator.shared.prepareAuxiliaryTab()
-        dismiss()
-        DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
-    }
-
-    /// Closes this sheet, then opens the Alerts window on the alert. Settings apply as they are
-    /// changed, so nothing is lost by closing.
-    private func openAlert(_ subscription: PineAlertSubscription) {
-        dismiss()
-        DispatchQueue.main.async { WindowCoordinator.shared.openAlerts(showing: subscription.id) }
+        ChartScriptsTab(viewModel: viewModel, onStyleChanged: onStyleChanged)
     }
 
     private var volumeHint: String {
@@ -646,9 +421,4 @@ struct ChartSettingsSheet: View {
         onRemove: {},
         onStyleChanged: {}
     )
-}
-
-/// Which applied indicator the alert editor sheet is open for.
-private struct AlertTarget: Identifiable {
-    let id: UUID
 }

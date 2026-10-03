@@ -996,7 +996,7 @@ final class ChartViewModel: ObservableObject {
             let index = scriptInstances.firstIndex(where: { $0.id == id })
         else { return }
         scriptInstances[index].updateStatus = .missing
-        pineResults[id] = PineInstanceResult(status: "Script no longer exists")
+        pineResults[id] = PineInstanceResult(state: .failed("Script no longer exists"))
     }
 
     private func applyPineInstance(
@@ -1006,7 +1006,7 @@ final class ChartViewModel: ObservableObject {
         guard let outcome else {
             var result = pineResults[instanceID] ?? PineInstanceResult()
             result.diagnostics = program.diagnostics
-            result.status = "Compile failed"
+            result.state = .failed("Compile failed")
             pineResults[instanceID] = result
             return
         }
@@ -1017,8 +1017,8 @@ final class ChartViewModel: ObservableObject {
             result.declaration = program.declaration
             result.inputSchema = program.inputSchema
             result.diagnostics = program.diagnostics
-            let live = update.executions.contains { $0.isRealtime }
-            result.status = "Applied \(program.declaration.title) · \(update.output.barCount) bars\(live ? " · live" : "")"
+            result.state = .ready
+            result.isLive = update.executions.contains { $0.isRealtime }
             result.alertCallCount = program.alertCallSites.count
             pineResults[instanceID] = result
             if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID, instanceID) }
@@ -1029,7 +1029,7 @@ final class ChartViewModel: ObservableObject {
         case .failed(let diagnostic):
             var result = pineResults[instanceID] ?? PineInstanceResult()
             result.diagnostics = [diagnostic]
-            result.status = "Runtime failed — last valid output remains active"
+            result.state = .failed("Runtime failed — last valid output remains active")
             pineResults[instanceID] = result
         }
     }

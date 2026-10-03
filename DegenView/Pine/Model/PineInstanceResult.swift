@@ -8,7 +8,16 @@ struct PineInstanceResult: Sendable {
     var declaration: PineDeclarationMetadata?
     var inputSchema: PineInputSchema = PineInputSchema()
     var diagnostics: [PineDiagnostic] = []
-    var status: String = "Evaluating…"
+    var state: State = .evaluating
+    /// Whether the last execution ran on a realtime bar.
+    var isLive = false
     /// `alert()` / `alertcondition()` calls in the script — zero means an alert would never fire.
     var alertCallCount = 0
+
+    enum State: Sendable, Equatable {
+        case evaluating
+        case ready
+        /// Nothing fresh to show; the text says why ("Compile failed", "Script no longer exists").
+        case failed(String)
+    }
 }

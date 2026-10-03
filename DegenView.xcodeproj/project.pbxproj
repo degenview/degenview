@@ -59,6 +59,9 @@
 		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
 		A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011C /* ChartSettingsSheet.swift */; };
+		CS0000000000000000000003 /* SettingsIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000103 /* SettingsIconButton.swift */; };
+		CS0000000000000000000002 /* ScriptInstanceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000102 /* ScriptInstanceRow.swift */; };
+		CS0000000000000000000001 /* ChartScriptsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000101 /* ChartScriptsTab.swift */; };
 		A0000000000000000000001C /* ColorHex.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011D /* ColorHex.swift */; };
 		A0000000000000000000001D /* CGRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011E /* CGRateLimiter.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
@@ -807,6 +810,9 @@
 		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011C /* ChartSettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheet.swift; sourceTree = "<group>"; };
+		CS0000000000000000000103 /* SettingsIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsIconButton.swift; sourceTree = "<group>"; };
+		CS0000000000000000000102 /* ScriptInstanceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptInstanceRow.swift; sourceTree = "<group>"; };
+		CS0000000000000000000101 /* ChartScriptsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartScriptsTab.swift; sourceTree = "<group>"; };
 		A0000000000000000000011D /* ColorHex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorHex.swift; sourceTree = "<group>"; };
 		A0000000000000000000011E /* CGRateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CGRateLimiter.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
@@ -1711,6 +1717,9 @@
 				A0000000000000000000010B /* AddTickerSheet.swift */,
 				A0000000000000000000010D /* EmptyStateView.swift */,
 				A0000000000000000000011C /* ChartSettingsSheet.swift */,
+				CS0000000000000000000103 /* SettingsIconButton.swift */,
+				CS0000000000000000000102 /* ScriptInstanceRow.swift */,
+				CS0000000000000000000101 /* ChartScriptsTab.swift */,
 				A00000000000000000000112 /* CandleChartView.swift */,
 				C10000000000000000000106 /* LineChartView.swift */,
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
@@ -2609,6 +2618,9 @@
 				A0000000000000000000001D /* CGRateLimiter.swift in Sources */,
 				A0000000000000000000001A /* DEXScreenerService.swift in Sources */,
 				A0000000000000000000001B /* ChartSettingsSheet.swift in Sources */,
+				CS0000000000000000000003 /* SettingsIconButton.swift in Sources */,
+				CS0000000000000000000002 /* ScriptInstanceRow.swift in Sources */,
+				CS0000000000000000000001 /* ChartScriptsTab.swift in Sources */,
 				A0000000000000000000001C /* ColorHex.swift in Sources */,
 				58630E0C416C081AF0953889 /* KlineCache.swift in Sources */,
 				d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */,

@@ -174,14 +174,15 @@ private struct PineIndicatorLegendRow: View {
             }
             Spacer(minLength: 10)
             // Always laid out (never conditionally inserted/removed) so the row's height never
-            // changes on hover, and so the gear button's popover anchor never unmounts.
+            // changes on hover, and so the inputs button's popover anchor never unmounts.
             control("eye", alt: info.isVisible ? nil : "eye.slash") {
                 viewModel.setPineInstanceVisible(info.id, isVisible: !info.isVisible)
                 onStyleChanged()
             }
             .accessibilityLabel(info.isVisible ? "Hide \(info.title)" : "Show \(info.title)")
 
-            control("gearshape") { showingSettings = true }
+            control("slider.horizontal.3") { showingSettings = true }
+                .help("Edit inputs")
                 .accessibilityLabel("\(info.title) settings")
                 .popover(isPresented: $showingSettings) {
                     PineInstanceSettingsPopover(
