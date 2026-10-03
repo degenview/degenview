@@ -180,26 +180,9 @@ struct ChartCardView: View {
             }
 
             if paperConnected, let price = viewModel.displayedPrice {
-                HStack(spacing: 4) {
-                    Button(action: onPaperSell) {
-                        VStack(spacing: 0) {
-                            Text("SELL").font(.caption2.bold())
-                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
-                                .caption2.monospacedDigit())
-                        }
-                    }
-                    .buttonStyle(.bordered).tint(.red)
-                    .accessibilityLabel("Sell \(viewModel.title), paper order at last price \(price)")
-                    Button(action: onPaperBuy) {
-                        VStack(spacing: 0) {
-                            Text("BUY").font(.caption2.bold())
-                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
-                                .caption2.monospacedDigit())
-                        }
-                    }
-                    .buttonStyle(.borderedProminent).tint(.blue)
-                    .accessibilityLabel("Buy \(viewModel.title), paper order at last price \(price)")
-                }
+                PaperQuickTradeButtons(
+                    priceText: PriceFormatter.format(price, scale: viewModel.priceScale),
+                    title: viewModel.title, onSell: onPaperSell, onBuy: onPaperBuy)
             }
 
             if let change = viewModel.priceChangePercent {

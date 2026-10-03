@@ -221,7 +221,7 @@ struct ContentView: View {
                 ) {
                     showTradingPanel = false
                 }
-                .frame(minHeight: 270, idealHeight: 270)
+                .frame(minHeight: UI.paperPanelMinHeight, idealHeight: UI.paperPanelIdealHeight)
             }
         } else {
             chartsOnly
@@ -314,8 +314,11 @@ struct ContentView: View {
 
     @ViewBuilder
     private var sidebarTradingControls: some View {
+        let isPanelOpen = showTradingPanel && paperTrading.isConnected
         Button {
-            if paperTrading.isConnected {
+            if isPanelOpen {
+                showTradingPanel = false
+            } else if paperTrading.isConnected {
                 showTradingPanel = true
             } else {
                 Task {
@@ -326,12 +329,16 @@ struct ContentView: View {
         } label: {
             Image(systemName: "arrow.left.arrow.right")
                 .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isPanelOpen ? Color.accentColor : .primary)
                 .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 5).fill(isPanelOpen ? Color.accentColor.opacity(0.14) : .clear)
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
-        .sidebarTooltip("Paper Trading")
+        .accessibilityLabel(isPanelOpen ? "Hide Paper Trading panel" : "Show Paper Trading panel")
+        .sidebarTooltip(isPanelOpen ? "Hide Paper Trading" : "Paper Trading")
 
         Menu {
             Button("Select bar") { contentViewModel.beginReplaySelection() }
@@ -728,15 +735,7 @@ struct ContentView: View {
                 $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)"
             },
             paperAccountCurrency: paperTrading.selectedAccount?.baseCurrency ?? .USD,
-            paperUnrealizedPnL: { position in
-                guard let quote = paperTrading.snapshot.quotes[position.instrument.key],
-                    let mark = position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
-                else { return 0 }
-                return
-                    (position.signedQuantity >= 0
-                    ? mark - position.averageEntryPrice : position.averageEntryPrice - mark) * position.quantity
-                    * position.instrument.pointValue
-            },
+            paperUnrealizedPnL: { position in paperTrading.unrealizedPnL(for: position) },
             onPaperModify: { order, price in
                 let changes =
                     order.type == .stop || (order.type == .stopLimit && !order.stopTriggered)

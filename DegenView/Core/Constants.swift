@@ -310,6 +310,10 @@ enum UI {
     static let windowMinWidth: CGFloat = 380 + toolSidebarWidth
     /// Window minimum height — toolbar plus one card at `chartMinHeight`.
     static let windowMinHeight: CGFloat = 420
+    /// Height of the Paper Trading panel under the charts: header, metrics, a few table rows and the
+    /// footer fit at the minimum.
+    static let paperPanelMinHeight: CGFloat = 280
+    static let paperPanelIdealHeight: CGFloat = 340
     /// Window ideal size — landscape; charts read across time, not down it.
     static let windowIdealWidth: CGFloat = 1240
     static let windowIdealHeight: CGFloat = 800

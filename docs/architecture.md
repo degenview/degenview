@@ -57,6 +57,12 @@ DegenView/
 │   ├── GlobalAlertBanner.swift        # Trigger banner overlaid on every tab
 │   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
 │   ├── PineAlertListView.swift        # "Scripts" tab of the alerts center (rows use PineAlertCard)
+│   ├── PaperAccountManagerView.swift  # Paper Trading panel (bottom split pane): composes PaperPanelHeader (account menu, IconTabBar, actions), PaperMetricsStrip, one table per `PaperManagerTab` (PaperPositionsTable, PaperOrdersTable, PaperOrderHistoryTable, PaperClosedTradesTable, PaperJournalTable; `PaperEmptyState` when empty) and PaperPanelFooter (AlertFooterBar: Close All / Cancel All / Export)
+│   ├── PaperOrderTicketSheet.swift    # Order ticket; math and validation live in `Util/PaperOrderTicketDraft`, input parsing in `Util/PaperDecimalInput`; PaperQuoteStrip, PaperSideSelector, PaperOrderSummaryCard, PaperFormField / PaperTextField
+│   ├── PaperAccountConfigurationSheet.swift # Create / reset account (validated; reset starts from the account's settings)
+│   ├── PaperChartTradingOverlay.swift # Position / order markers on a chart (PaperChartMarkerPill; drag to modify)
+│   ├── PaperQuickTradeButtons.swift   # SELL / BUY pills in a chart card header
+│   └── PaperTradingStyle.swift        # Buy green / sell red, P&L colour; labels and tints in `Model/PaperTradingModels+Presentation`. PaperBadge, PaperSideChip, PaperIconButton / PaperIconGlyph are the shared bits
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
 │   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace

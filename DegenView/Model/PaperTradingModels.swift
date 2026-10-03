@@ -48,7 +48,8 @@ struct PaperInstrument: Codable, Hashable, Identifiable {
     var expiration: Date?
 
     static func chart(symbol: String, displayName: String, source: DataSourceType) -> Self {
-        let assetClass: PaperAssetClass = source == .alpaca ? .stock : (source.isPredictionMarket ? .prediction : .crypto)
+        let assetClass: PaperAssetClass =
+            source == .alpaca ? .stock : (source.isPredictionMarket ? .prediction : .crypto)
         return .init(
             key: "\(source.rawValue):\(symbol)", symbol: symbol, displayName: displayName,
             source: source, assetClass: assetClass, quoteCurrency: .USD,
@@ -302,7 +303,7 @@ enum PaperTradingError: LocalizedError, Equatable {
         case .unsupportedCurrencyConversion(let from, let to):
             "FX conversion from \(from.rawValue) to \(to.rawValue) is unavailable."
         case .insufficientFunds(let required, let available):
-            "Order rejected: insufficient available funds. Required margin: \(required); available funds: \(available)."
+            "Order rejected: insufficient available funds. Required margin: \(Decimal.rounded(required, scale: 2)); available funds: \(Decimal.rounded(available, scale: 2))."
         case .unsupportedSymbol: "This symbol is not supported by Paper Trading."
         }
     }

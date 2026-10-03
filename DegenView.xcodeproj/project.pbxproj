@@ -47,6 +47,31 @@
 		AC020000000000000000000F /* AlertCardScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000E /* AlertCardScroll.swift */; };
 		AC0200000000000000000011 /* AlertDayHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000010 /* AlertDayHeader.swift */; };
 		AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC01000000000000000000F0 /* AlertFooterBar.swift */; };
+		D0A627F98BF18E112237AC82 /* PaperQuickTradeButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */; };
+		D0292E1E1AAAE84E5006806C /* PaperChartMarkerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */; };
+		D0CD2C055C425A7A6542B095 /* PaperOrderSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */; };
+		D073D4B6A99C6708A01E2F3C /* PaperSideSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16708A01E2F3C3C9E74BE41 /* PaperSideSelector.swift */; };
+		D061CEBE006FBB762E57B90B /* PaperQuoteStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1BB762E57B90BE8ED4924A3 /* PaperQuoteStrip.swift */; };
+		D0AF2015263521588C099684 /* PaperAccountConfigurationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D121588C0996844067C5FF29 /* PaperAccountConfigurationSheet.swift */; };
+		D0CF28E7BD4FDB4469638903 /* PaperTextField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1DB4469638903791BB37563 /* PaperTextField.swift */; };
+		D03718BE16C6510A21750CFA /* PaperFormField.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1510A21750CFA5CE0FAE42B /* PaperFormField.swift */; };
+		D001349E33F5CA88663404EC /* PaperPanelFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CA88663404ECE90E958E60 /* PaperPanelFooter.swift */; };
+		D0A6EE4147301F305D239CC7 /* PaperPanelHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11F305D239CC7B6A42FAB7D /* PaperPanelHeader.swift */; };
+		D0FF4B2B05EC68F47A7A8CC5 /* PaperMetricsStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D168F47A7A8CC51D0EB8DDA7 /* PaperMetricsStrip.swift */; };
+		D0B25890267F9E300DFEAAD0 /* PaperJournalTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19E300DFEAAD07A5738AAA9 /* PaperJournalTable.swift */; };
+		D02C0B1DC65CF152760A92E0 /* PaperClosedTradesTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1F152760A92E0844A31F28E /* PaperClosedTradesTable.swift */; };
+		D0D11539913EB548127B639D /* PaperOrderHistoryTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B548127B639D2EF3C2F9E8 /* PaperOrderHistoryTable.swift */; };
+		D0E6E50EB30EA11C074640A5 /* PaperOrdersTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11C074640A533FD3D9BE7 /* PaperOrdersTable.swift */; };
+		D03ECC892AB92FD9A0EBB83B /* PaperPositionsTable.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12FD9A0EBB83B84C6C5C983 /* PaperPositionsTable.swift */; };
+		D04CB3FE7BE3A2FB1F4E593D /* PaperEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A2FB1F4E593D855EC2F4DF /* PaperEmptyState.swift */; };
+		D012C71868CB830BB04A77A8 /* PaperSymbolCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1830BB04A77A8977479AD81 /* PaperSymbolCell.swift */; };
+		D0E2F5F063D6CB6FC0C3B85E /* PaperInstrumentIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CB6FC0C3B85E7728CE86F0 /* PaperInstrumentIcon.swift */; };
+		D0E2AC00D02F1BE7F12DE5A5 /* PaperManagerTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D11BE7F12DE5A5A6BD648D25 /* PaperManagerTab.swift */; };
+		D0D1D4AB8C13319FDD4C64F2 /* PaperIconGlyph.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1319FDD4C64F2D39C1317D3 /* PaperIconGlyph.swift */; };
+		D07095D22E20D160138E583E /* PaperIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1D160138E583E92E2614B11 /* PaperIconButton.swift */; };
+		D0F95C62547606DEA9F6B848 /* PaperSideChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D106DEA9F6B848B43D53B726 /* PaperSideChip.swift */; };
+		D0F516FC92A12842D5FA5F94 /* PaperBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12842D5FA5F94E067E7C937 /* PaperBadge.swift */; };
+		D09E2CA2C1FE853DDF864A59 /* PaperTradingStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1853DDF864A59DA4F17D86C /* PaperTradingStyle.swift */; };
 		AC0200000000000000000013 /* AlertHistoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000012 /* AlertHistoryList.swift */; };
 		AC0200000000000000000015 /* AlertCardStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000014 /* AlertCardStyle.swift */; };
 		AC0200000000000000000017 /* PineAlertCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000016 /* PineAlertCard.swift */; };
@@ -228,6 +253,7 @@
 		FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000102 /* FibonacciRetracementTests.swift */; };
 		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
+		D05E7E8FC19B7A2E4F0D8B00 /* PaperTradingPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000102 /* ChartGridDropDelegate.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
@@ -305,6 +331,9 @@
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
 		AC0200000000000000000005 /* AlertDayGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000004 /* AlertDayGrouping.swift */; };
 		F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* PaperTradingFormatter.swift */; };
+		D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */; };
+		D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */; };
+		D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
 		D30000000000000000000001 /* ChartColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000101 /* ChartColumn.swift */; };
 		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
@@ -323,8 +352,10 @@
 		E30000000000000000000002 /* ReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000102 /* ReplayEngine.swift */; };
 		E30000000000000000000003 /* ReplayControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000103 /* ReplayControlBar.swift */; };
 		F30000000000000000000001 /* PaperTradingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* PaperTradingModels.swift */; };
+		D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */; };
 		F30000000000000000000002 /* PaperTradingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* PaperTradingEngine.swift */; };
 		F30000000000000000000003 /* PaperTradingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* PaperTradingStore.swift */; };
+		D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */; };
 		F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000104 /* PaperOrderTicketSheet.swift */; };
 		F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* PaperAccountManagerView.swift */; };
 		F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000107 /* PaperChartTradingOverlay.swift */; };
@@ -680,6 +711,31 @@
 		AC010000000000000000000E /* AlertCardScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardScroll.swift; sourceTree = "<group>"; };
 		AC0100000000000000000010 /* AlertDayHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayHeader.swift; sourceTree = "<group>"; };
 		AC01000000000000000000F0 /* AlertFooterBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertFooterBar.swift; sourceTree = "<group>"; };
+		D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuickTradeButtons.swift; sourceTree = "<group>"; };
+		D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartMarkerPill.swift; sourceTree = "<group>"; };
+		D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderSummaryCard.swift; sourceTree = "<group>"; };
+		D16708A01E2F3C3C9E74BE41 /* PaperSideSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperSideSelector.swift; sourceTree = "<group>"; };
+		D1BB762E57B90BE8ED4924A3 /* PaperQuoteStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuoteStrip.swift; sourceTree = "<group>"; };
+		D121588C0996844067C5FF29 /* PaperAccountConfigurationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperAccountConfigurationSheet.swift; sourceTree = "<group>"; };
+		D1DB4469638903791BB37563 /* PaperTextField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTextField.swift; sourceTree = "<group>"; };
+		D1510A21750CFA5CE0FAE42B /* PaperFormField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperFormField.swift; sourceTree = "<group>"; };
+		D1CA88663404ECE90E958E60 /* PaperPanelFooter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperPanelFooter.swift; sourceTree = "<group>"; };
+		D11F305D239CC7B6A42FAB7D /* PaperPanelHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperPanelHeader.swift; sourceTree = "<group>"; };
+		D168F47A7A8CC51D0EB8DDA7 /* PaperMetricsStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperMetricsStrip.swift; sourceTree = "<group>"; };
+		D19E300DFEAAD07A5738AAA9 /* PaperJournalTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperJournalTable.swift; sourceTree = "<group>"; };
+		D1F152760A92E0844A31F28E /* PaperClosedTradesTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperClosedTradesTable.swift; sourceTree = "<group>"; };
+		D1B548127B639D2EF3C2F9E8 /* PaperOrderHistoryTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderHistoryTable.swift; sourceTree = "<group>"; };
+		D1A11C074640A533FD3D9BE7 /* PaperOrdersTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrdersTable.swift; sourceTree = "<group>"; };
+		D12FD9A0EBB83B84C6C5C983 /* PaperPositionsTable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperPositionsTable.swift; sourceTree = "<group>"; };
+		D1A2FB1F4E593D855EC2F4DF /* PaperEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperEmptyState.swift; sourceTree = "<group>"; };
+		D1830BB04A77A8977479AD81 /* PaperSymbolCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperSymbolCell.swift; sourceTree = "<group>"; };
+		D1CB6FC0C3B85E7728CE86F0 /* PaperInstrumentIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperInstrumentIcon.swift; sourceTree = "<group>"; };
+		D11BE7F12DE5A5A6BD648D25 /* PaperManagerTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperManagerTab.swift; sourceTree = "<group>"; };
+		D1319FDD4C64F2D39C1317D3 /* PaperIconGlyph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperIconGlyph.swift; sourceTree = "<group>"; };
+		D1D160138E583E92E2614B11 /* PaperIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperIconButton.swift; sourceTree = "<group>"; };
+		D106DEA9F6B848B43D53B726 /* PaperSideChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperSideChip.swift; sourceTree = "<group>"; };
+		D12842D5FA5F94E067E7C937 /* PaperBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperBadge.swift; sourceTree = "<group>"; };
+		D1853DDF864A59DA4F17D86C /* PaperTradingStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingStyle.swift; sourceTree = "<group>"; };
 		AC0100000000000000000012 /* AlertHistoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertHistoryList.swift; sourceTree = "<group>"; };
 		AC0100000000000000000014 /* AlertCardStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardStyle.swift; sourceTree = "<group>"; };
 		AC0100000000000000000016 /* PineAlertCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCard.swift; sourceTree = "<group>"; };
@@ -817,12 +873,16 @@
 		AA1000000000000000000106 /* PortfolioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioDashboardView.swift; sourceTree = "<group>"; };
 		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
+		D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingPresentationTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		D30000000000000000000102 /* ChartGridDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartGridDropDelegate.swift; sourceTree = "<group>"; };
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
 		AC0100000000000000000004 /* AlertDayGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayGrouping.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
+		D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTimestamp.swift; sourceTree = "<group>"; };
+		D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketDraft.swift; sourceTree = "<group>"; };
+		D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDecimalInput.swift; sourceTree = "<group>"; };
 		808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SearchResultRow.swift; sourceTree = "<group>"; };
 		9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = "Comparable+Clamped.swift"; sourceTree = "<group>"; };
 		A00000000000000000000101 /* DegenViewApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DegenViewApp.swift; sourceTree = "<group>"; };
@@ -915,8 +975,10 @@
 		E30000000000000000000102 /* ReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngine.swift; sourceTree = "<group>"; };
 		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
 		F30000000000000000000101 /* PaperTradingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingModels.swift; sourceTree = "<group>"; };
+		D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaperTradingModels+Presentation.swift"; sourceTree = "<group>"; };
 		F30000000000000000000102 /* PaperTradingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngine.swift; sourceTree = "<group>"; };
 		F30000000000000000000103 /* PaperTradingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingStore.swift; sourceTree = "<group>"; };
+		D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingCSVExporter.swift; sourceTree = "<group>"; };
 		F30000000000000000000104 /* PaperOrderTicketSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketSheet.swift; sourceTree = "<group>"; };
 		F30000000000000000000105 /* PaperAccountManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperAccountManagerView.swift; sourceTree = "<group>"; };
 		F30000000000000000000107 /* PaperChartTradingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartTradingOverlay.swift; sourceTree = "<group>"; };
@@ -1245,6 +1307,7 @@
 				AA1000000000000000009102 /* MarketSuggestions.swift */,
 				AA2000000000000000000101 /* PortfolioValueChange.swift */,
 				F30000000000000000000101 /* PaperTradingModels.swift */,
+				D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
 				F10000000000000000000101 /* FavoriteItem.swift */,
 				A00000000000000000000103 /* KlineData.swift */,
@@ -1312,6 +1375,7 @@
 				AA1000000000000000000105 /* PortfolioCSVService.swift */,
 				F30000000000000000000102 /* PaperTradingEngine.swift */,
 				F30000000000000000000103 /* PaperTradingStore.swift */,
+				D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */,
 				E30000000000000000000102 /* ReplayEngine.swift */,
 				F10000000000000000000102 /* FavoritesStore.swift */,
 				E20000000000000000000101 /* AlpacaCredentials.swift */,
@@ -1413,6 +1477,31 @@
 				AC010000000000000000000E /* AlertCardScroll.swift */,
 				AC0100000000000000000010 /* AlertDayHeader.swift */,
 				AC01000000000000000000F0 /* AlertFooterBar.swift */,
+				D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */,
+				D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */,
+				D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */,
+				D16708A01E2F3C3C9E74BE41 /* PaperSideSelector.swift */,
+				D1BB762E57B90BE8ED4924A3 /* PaperQuoteStrip.swift */,
+				D121588C0996844067C5FF29 /* PaperAccountConfigurationSheet.swift */,
+				D1DB4469638903791BB37563 /* PaperTextField.swift */,
+				D1510A21750CFA5CE0FAE42B /* PaperFormField.swift */,
+				D1CA88663404ECE90E958E60 /* PaperPanelFooter.swift */,
+				D11F305D239CC7B6A42FAB7D /* PaperPanelHeader.swift */,
+				D168F47A7A8CC51D0EB8DDA7 /* PaperMetricsStrip.swift */,
+				D19E300DFEAAD07A5738AAA9 /* PaperJournalTable.swift */,
+				D1F152760A92E0844A31F28E /* PaperClosedTradesTable.swift */,
+				D1B548127B639D2EF3C2F9E8 /* PaperOrderHistoryTable.swift */,
+				D1A11C074640A533FD3D9BE7 /* PaperOrdersTable.swift */,
+				D12FD9A0EBB83B84C6C5C983 /* PaperPositionsTable.swift */,
+				D1A2FB1F4E593D855EC2F4DF /* PaperEmptyState.swift */,
+				D1830BB04A77A8977479AD81 /* PaperSymbolCell.swift */,
+				D1CB6FC0C3B85E7728CE86F0 /* PaperInstrumentIcon.swift */,
+				D11BE7F12DE5A5A6BD648D25 /* PaperManagerTab.swift */,
+				D1319FDD4C64F2D39C1317D3 /* PaperIconGlyph.swift */,
+				D1D160138E583E92E2614B11 /* PaperIconButton.swift */,
+				D106DEA9F6B848B43D53B726 /* PaperSideChip.swift */,
+				D12842D5FA5F94E067E7C937 /* PaperBadge.swift */,
+				D1853DDF864A59DA4F17D86C /* PaperTradingStyle.swift */,
 				AC0100000000000000000012 /* AlertHistoryList.swift */,
 				AC0100000000000000000014 /* AlertCardStyle.swift */,
 				AC0100000000000000000016 /* PineAlertCard.swift */,
@@ -1478,6 +1567,9 @@
 			isa = PBXGroup;
 			children = (
 				F30000000000000000000108 /* PaperTradingFormatter.swift */,
+				D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */,
+				D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */,
+				D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */,
 				A0000000000000000000011D /* ColorHex.swift */,
 				D7BF0A39943224E6FE7AB590 /* AppSupport.swift */,
 				9AB4301ACD00B5A586820208 /* Comparable+Clamped.swift */,
@@ -1573,6 +1665,7 @@
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
+				D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
 				FB0000000000000000000102 /* FibonacciRetracementTests.swift */,
 				F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */,
@@ -2147,6 +2240,7 @@
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
+				D05E7E8FC19B7A2E4F0D8B00 /* PaperTradingPresentationTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
@@ -2266,6 +2360,31 @@
 				AC020000000000000000000F /* AlertCardScroll.swift in Sources */,
 				AC0200000000000000000011 /* AlertDayHeader.swift in Sources */,
 				AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */,
+				D0A627F98BF18E112237AC82 /* PaperQuickTradeButtons.swift in Sources */,
+				D0292E1E1AAAE84E5006806C /* PaperChartMarkerPill.swift in Sources */,
+				D0CD2C055C425A7A6542B095 /* PaperOrderSummaryCard.swift in Sources */,
+				D073D4B6A99C6708A01E2F3C /* PaperSideSelector.swift in Sources */,
+				D061CEBE006FBB762E57B90B /* PaperQuoteStrip.swift in Sources */,
+				D0AF2015263521588C099684 /* PaperAccountConfigurationSheet.swift in Sources */,
+				D0CF28E7BD4FDB4469638903 /* PaperTextField.swift in Sources */,
+				D03718BE16C6510A21750CFA /* PaperFormField.swift in Sources */,
+				D001349E33F5CA88663404EC /* PaperPanelFooter.swift in Sources */,
+				D0A6EE4147301F305D239CC7 /* PaperPanelHeader.swift in Sources */,
+				D0FF4B2B05EC68F47A7A8CC5 /* PaperMetricsStrip.swift in Sources */,
+				D0B25890267F9E300DFEAAD0 /* PaperJournalTable.swift in Sources */,
+				D02C0B1DC65CF152760A92E0 /* PaperClosedTradesTable.swift in Sources */,
+				D0D11539913EB548127B639D /* PaperOrderHistoryTable.swift in Sources */,
+				D0E6E50EB30EA11C074640A5 /* PaperOrdersTable.swift in Sources */,
+				D03ECC892AB92FD9A0EBB83B /* PaperPositionsTable.swift in Sources */,
+				D04CB3FE7BE3A2FB1F4E593D /* PaperEmptyState.swift in Sources */,
+				D012C71868CB830BB04A77A8 /* PaperSymbolCell.swift in Sources */,
+				D0E2F5F063D6CB6FC0C3B85E /* PaperInstrumentIcon.swift in Sources */,
+				D0E2AC00D02F1BE7F12DE5A5 /* PaperManagerTab.swift in Sources */,
+				D0D1D4AB8C13319FDD4C64F2 /* PaperIconGlyph.swift in Sources */,
+				D07095D22E20D160138E583E /* PaperIconButton.swift in Sources */,
+				D0F95C62547606DEA9F6B848 /* PaperSideChip.swift in Sources */,
+				D0F516FC92A12842D5FA5F94 /* PaperBadge.swift in Sources */,
+				D09E2CA2C1FE853DDF864A59 /* PaperTradingStyle.swift in Sources */,
 				AC0200000000000000000013 /* AlertHistoryList.swift in Sources */,
 				AC0200000000000000000015 /* AlertCardStyle.swift in Sources */,
 				AC0200000000000000000017 /* PineAlertCard.swift in Sources */,
@@ -2305,10 +2424,15 @@
 				AA1000000000000000000005 /* PortfolioCSVService.swift in Sources */,
 				AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */,
 				F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */,
+				D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */,
+				D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */,
+				D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */,
 				F30000000000000000000007 /* PaperChartTradingOverlay.swift in Sources */,
 				F30000000000000000000001 /* PaperTradingModels.swift in Sources */,
+				D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */,
 				F30000000000000000000002 /* PaperTradingEngine.swift in Sources */,
 				F30000000000000000000003 /* PaperTradingStore.swift in Sources */,
+				D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */,
 				F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */,
 				F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */,
 				E30000000000000000000001 /* ReplaySession.swift in Sources */,

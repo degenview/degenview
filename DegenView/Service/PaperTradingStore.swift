@@ -140,6 +140,43 @@ final class PaperTradingStore: ObservableObject {
 
     func clearError() { lastError = nil }
 
+    // MARK: Formatting
+
+    var accountCurrency: PaperCurrency { selectedAccount?.baseCurrency ?? .USD }
+
+    func money(_ value: Decimal) -> String {
+        PaperTradingFormatter.money(value, currency: accountCurrency)
+    }
+
+    func signedMoney(_ value: Decimal) -> String {
+        PaperTradingFormatter.signedMoney(value, currency: accountCurrency)
+    }
+
+    // MARK: Marks
+
+    /// The price a position would close at right now: the bid for a long, the ask for a short,
+    /// falling back to the last trade. Nil until the instrument has a quote.
+    func mark(for position: PaperPosition) -> Decimal? {
+        guard let quote = snapshot.quotes[position.instrument.key] else { return nil }
+        return position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
+    }
+
+    /// Open profit or loss, the same figure the engine reports in its metrics (zero without a quote).
+    func unrealizedPnL(for position: PaperPosition) -> Decimal {
+        guard let mark = mark(for: position) else { return 0 }
+        let difference =
+            position.signedQuantity >= 0
+            ? mark - position.averageEntryPrice : position.averageEntryPrice - mark
+        return difference * position.quantity * position.instrument.pointValue
+    }
+
+    /// Open profit or loss as a ratio of the position's entry value (`0.05` is +5%).
+    func returnRatio(for position: PaperPosition) -> Decimal? {
+        let cost = position.averageEntryPrice * position.quantity * position.instrument.pointValue
+        guard cost > 0, mark(for: position) != nil else { return nil }
+        return unrealizedPnL(for: position) / cost
+    }
+
     private func scoped<T>(_ values: [T]) -> [T] {
         guard let id = snapshot.selectedAccountID else { return [] }
         return values.filter {
