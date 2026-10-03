@@ -7,4 +7,8 @@ struct PineAlertCallSite: Equatable, Sendable {
     /// `alertcondition()` rather than `alert()`.
     var isCondition: Bool
     var range: PineSourceRange
+    /// An `alertcondition()` title, when it is a plain string literal.
+    var title: String? = nil
+    /// The message, when it is a plain string literal. Nil when absent or built at run time.
+    var message: String? = nil
 }

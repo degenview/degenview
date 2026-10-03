@@ -335,4 +335,40 @@ final class PineAlertRoutingTests: XCTestCase {
         XCTAssertFalse(coordinator.rearm(subscription: orphan.id))
         XCTAssertEqual(store.subscription(id: orphan.id)?.state, .scriptChanged)
     }
+
+    func testStoreFindsTheChartsAlertForAScriptOnItsCurrentMarket() throws {
+        let store = PineAlertStore(database: try AppDatabase.makeInMemory())
+        let script = UUID()
+        func armed(
+            script: UUID? = script, chart: UUID? = nil, timeframe: String = F.dataset.timeframe,
+            state: PineAlertSubscription.State = .active, createdAt: Date = Date(timeIntervalSince1970: 0)
+        ) -> PineAlertSubscription {
+            var made = subscription(chartID: chart, timeframe: timeframe, state: state, createdAt: createdAt)
+            made.scriptID = script
+            return made
+        }
+        func found() -> PineAlertSubscription? {
+            store.subscription(forChart: chartID, scriptID: script, dataset: F.dataset)
+        }
+        XCTAssertNil(found())
+
+        // Another script, another chart and another timeframe are not this alert.
+        store.add(armed(script: UUID()))
+        store.add(armed(chart: UUID()))
+        store.add(armed(timeframe: "never"))
+        XCTAssertNil(found())
+
+        // A paused or script-changed alert still counts: it is re-armed, not replaced.
+        let paused = armed(state: .paused)
+        store.add(paused)
+        XCTAssertEqual(found()?.id, paused.id)
+        let changed = armed(state: .scriptChanged, createdAt: Date(timeIntervalSince1970: 10))
+        store.add(changed)
+        XCTAssertEqual(found()?.id, changed.id, "the newest wins when none is active")
+
+        // An active one wins over older and newer inactive ones.
+        let active = armed(createdAt: Date(timeIntervalSince1970: 5))
+        store.add(active)
+        XCTAssertEqual(found()?.id, active.id)
+    }
 }

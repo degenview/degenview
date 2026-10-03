@@ -279,6 +279,7 @@ final class WindowCoordinator {
         let queued = pendingScriptManagerSelection
         pendingScriptManagerSelection = nil
         if let queued { openScriptManager(selecting: queued) }
+        if let alert = pendingAlertsFocus { openAlerts(showing: alert) }
     }
 
     /// Script the Script Manager should select once it loads. Also parks requests made
@@ -299,6 +300,24 @@ final class WindowCoordinator {
         guard let scriptID else { return }
         // Reaches an already-open manager; a new one reads the pending selection instead.
         NotificationCenter.default.post(name: .selectScriptInManager, object: scriptID)
+    }
+
+    /// Script alert the Alerts window should bring into view once it loads; parked like
+    /// `pendingScriptManagerSelection` for a window that is not open yet.
+    private(set) var pendingAlertsFocus: UUID?
+
+    func takePendingAlertsFocus() -> UUID? {
+        defer { pendingAlertsFocus = nil }
+        return pendingAlertsFocus
+    }
+
+    /// Opens (or focuses) the Alerts window on its Scripts tab, with `subscriptionID` in view.
+    func openAlerts(showing subscriptionID: UUID) {
+        pendingAlertsFocus = subscriptionID
+        guard let openWindow = openWindowAction else { return }
+        openWindow(id: "alerts")
+        // Reaches an already-open window; a new one reads the pending value instead.
+        NotificationCenter.default.post(name: .showScriptAlertInCenter, object: subscriptionID)
     }
 
     /// Open a new empty tab next to the one the user is on.
@@ -472,4 +491,5 @@ final class WindowCoordinator {
 extension Notification.Name {
     static let portfolioAddTransaction = Notification.Name("portfolioAddTransaction")
     static let selectScriptInManager = Notification.Name("selectScriptInManager")
+    static let showScriptAlertInCenter = Notification.Name("showScriptAlertInCenter")
 }

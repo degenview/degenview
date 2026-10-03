@@ -31,6 +31,8 @@ struct AlertsCenterView: View {
     @State private var editing: PriceAlert?
     @State private var pendingDelete: PriceAlert?
     @State private var confirmingClear = false
+    /// The script alert the window was asked to show; `PineAlertListView` consumes it.
+    @State private var focusedScriptAlert: UUID?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -42,6 +44,15 @@ struct AlertsCenterView: View {
         .frame(minWidth: 760, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
         .task(id: assetKeys) { info.load(assets) }
+        .onAppear {
+            if let id = WindowCoordinator.shared.takePendingAlertsFocus() { show(scriptAlert: id) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showScriptAlertInCenter)) { note in
+            guard let id = note.object as? UUID else { return }
+            // Delivered here, so a later fresh window must not replay it from the parked request.
+            _ = WindowCoordinator.shared.takePendingAlertsFocus()
+            show(scriptAlert: id)
+        }
         .sheet(item: $editing) { PriceAlertEditor(asset: $0.asset, existing: $0) }
         .confirmationDialog(
             "Delete this alert?",
@@ -57,6 +68,13 @@ struct AlertsCenterView: View {
         } message: {
             Text("This can't be undone. Your alerts are kept.")
         }
+    }
+
+    /// Switches to the Scripts tab, clears any search that would hide it, and points at one alert.
+    private func show(scriptAlert id: UUID) {
+        search = ""
+        filter = .script
+        focusedScriptAlert = id
     }
 
     // MARK: - Header
@@ -156,7 +174,7 @@ struct AlertsCenterView: View {
     @ViewBuilder private var content: some View {
         switch filter {
         case .history: historyContent
-        case .script: PineAlertListView(search: search)
+        case .script: PineAlertListView(search: search, focused: $focusedScriptAlert)
         default: ruleContent
         }
     }

@@ -28,6 +28,7 @@ struct ChartSettingsSheet: View {
     @State private var scriptLoadError: String?
     @State private var pineInputSchema = PineInputSchema()
     @State private var showingPineAlertEditor = false
+    @StateObject private var pineAlerts = PineAlertStore.shared
 
     @Environment(\.dismiss) private var dismiss
 
@@ -422,20 +423,38 @@ struct ChartSettingsSheet: View {
                         }
                         .help("Open Script Manager in a new tab")
 
-                        if selectedScriptID != nil {
-                            Button {
-                                showingPineAlertEditor = true
-                            } label: {
-                                Label("Create Alert…", systemImage: "bell")
-                            }
-                            .disabled(viewModel.appliedSourceHash == nil)
-                            .help("Notify me when the applied script raises alert() on a live bar")
-                        }
+                        if selectedScriptID != nil { scriptAlertControls }
                     }
                 }
             }
 
             scriptsDetails
+        }
+    }
+
+    /// "Create Alert…" until this chart has an alert for the script on its current market; then
+    /// "View Alert" with that alert's state, which opens it in the Alerts window.
+    @ViewBuilder private var scriptAlertControls: some View {
+        if let existing = pineAlerts.subscription(
+            forChart: viewModel.chartID, scriptID: viewModel.scriptInstances.first?.scriptID,
+            dataset: viewModel.pineAlertDataset)
+        {
+            let status = pineAlerts.status(of: existing)
+            Button {
+                openAlert(existing)
+            } label: {
+                Label("View Alert", systemImage: "bell.badge")
+            }
+            .help("Show this script's alert in the Alerts window")
+            SettingsStatusBadge(text: status.text, tone: status.tone)
+        } else {
+            Button {
+                showingPineAlertEditor = true
+            } label: {
+                Label("Create Alert…", systemImage: "bell")
+            }
+            .disabled(viewModel.appliedSourceHash == nil)
+            .help("Notify me when the applied script raises alert() on a live bar")
         }
     }
 
@@ -461,7 +480,7 @@ struct ChartSettingsSheet: View {
             }
 
             if !viewModel.pineDiagnostics.isEmpty {
-                PineDiagnosticsListView(diagnostics: viewModel.pineDiagnostics)
+                PineDiagnosticsSection(diagnostics: viewModel.pineDiagnostics)
             }
 
             if let inputs = viewModel.pineConfiguration?.inputs {
@@ -526,6 +545,13 @@ struct ChartSettingsSheet: View {
         WindowCoordinator.shared.prepareAuxiliaryTab()
         dismiss()
         DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
+    }
+
+    /// Closes this sheet, then opens the Alerts window on the alert. Settings apply as they are
+    /// changed, so nothing is lost by closing.
+    private func openAlert(_ subscription: PineAlertSubscription) {
+        dismiss()
+        DispatchQueue.main.async { WindowCoordinator.shared.openAlerts(showing: subscription.id) }
     }
 
     private var volumeHint: String {

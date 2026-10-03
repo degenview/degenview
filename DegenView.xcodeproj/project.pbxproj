@@ -564,6 +564,11 @@
 		F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = F16CDF90684319BAC522DBEA /* PineReportColors.swift */; };
 		F26EA2169CCFCC19ABABAA08 /* PineReportFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11375E00439D240DDF1AB6E /* PineReportFormat.swift */; };
 		F2BF763D52D53F4C49562B63 /* PineReportListSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */; };
+		6577CDE9675CEA434B62BA5E /* PineAlertFrequency+DisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D1151CD9D3101BD63693450 /* PineAlertFrequency+DisplayName.swift */; };
+		84DFBF9367E3B827DFA30883 /* PineReportBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAF2B9AC86FA4B318746F04 /* PineReportBox.swift */; };
+		94DA4D7B02B2D66DEED77339 /* PineCountChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF35D514DB5C69F568C245A /* PineCountChip.swift */; };
+		BFFA7A7EE5977327B23627B8 /* PineAlertsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21ED9B39CB3E02C5EFDC852C /* PineAlertsSection.swift */; };
+		097E05F04C753ED6D1CE4ACA /* PineDiagnosticsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E78A01FF4A155E93DBB459F5 /* PineDiagnosticsSection.swift */; };
 		F2E45E86ACE89ACB8999119F /* Character+WordCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1A8FBF4D88DB72DBB7D46AB /* Character+WordCharacter.swift */; };
 		F2A9DC6582DD1D26214164D7 /* PineDiagnosticRangeMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1535694E53F525C24A507B6 /* PineDiagnosticRangeMapper.swift */; };
 		F237C581C5EB44F434386840 /* PineSyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1FF38F9ABD54E9ECE0C0D8D /* PineSyntaxHighlighter.swift */; };
@@ -1090,6 +1095,11 @@
 		F16CDF90684319BAC522DBEA /* PineReportColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportColors.swift; sourceTree = "<group>"; };
 		F11375E00439D240DDF1AB6E /* PineReportFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportFormat.swift; sourceTree = "<group>"; };
 		F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportListSection.swift; sourceTree = "<group>"; };
+		7D1151CD9D3101BD63693450 /* PineAlertFrequency+DisplayName.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineAlertFrequency+DisplayName.swift"; sourceTree = "<group>"; };
+		FEAF2B9AC86FA4B318746F04 /* PineReportBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineReportBox.swift; sourceTree = "<group>"; };
+		3AF35D514DB5C69F568C245A /* PineCountChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCountChip.swift; sourceTree = "<group>"; };
+		21ED9B39CB3E02C5EFDC852C /* PineAlertsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertsSection.swift; sourceTree = "<group>"; };
+		E78A01FF4A155E93DBB459F5 /* PineDiagnosticsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDiagnosticsSection.swift; sourceTree = "<group>"; };
 		F1A8FBF4D88DB72DBB7D46AB /* Character+WordCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Character+WordCharacter.swift"; sourceTree = "<group>"; };
 		F1535694E53F525C24A507B6 /* PineDiagnosticRangeMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineDiagnosticRangeMapper.swift; sourceTree = "<group>"; };
 		F1FF38F9ABD54E9ECE0C0D8D /* PineSyntaxHighlighter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSyntaxHighlighter.swift; sourceTree = "<group>"; };
@@ -1845,6 +1855,11 @@
 				F16CDF90684319BAC522DBEA /* PineReportColors.swift */,
 				F11375E00439D240DDF1AB6E /* PineReportFormat.swift */,
 				F1E6402BADE5D279DFD0631B /* PineReportListSection.swift */,
+				7D1151CD9D3101BD63693450 /* PineAlertFrequency+DisplayName.swift */,
+				FEAF2B9AC86FA4B318746F04 /* PineReportBox.swift */,
+				3AF35D514DB5C69F568C245A /* PineCountChip.swift */,
+				21ED9B39CB3E02C5EFDC852C /* PineAlertsSection.swift */,
+				E78A01FF4A155E93DBB459F5 /* PineDiagnosticsSection.swift */,
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */,
 				P20000000000000000000103 /* PineStrategyReportView.swift */,
@@ -2545,6 +2560,11 @@
 				F2141768B896D463DC1FA5AB /* PineReportColors.swift in Sources */,
 				F26EA2169CCFCC19ABABAA08 /* PineReportFormat.swift in Sources */,
 				F2BF763D52D53F4C49562B63 /* PineReportListSection.swift in Sources */,
+				6577CDE9675CEA434B62BA5E /* PineAlertFrequency+DisplayName.swift in Sources */,
+				84DFBF9367E3B827DFA30883 /* PineReportBox.swift in Sources */,
+				94DA4D7B02B2D66DEED77339 /* PineCountChip.swift in Sources */,
+				BFFA7A7EE5977327B23627B8 /* PineAlertsSection.swift in Sources */,
+				097E05F04C753ED6D1CE4ACA /* PineDiagnosticsSection.swift in Sources */,
 				F2E45E86ACE89ACB8999119F /* Character+WordCharacter.swift in Sources */,
 				F2A9DC6582DD1D26214164D7 /* PineDiagnosticRangeMapper.swift in Sources */,
 				F237C581C5EB44F434386840 /* PineSyntaxHighlighter.swift in Sources */,
