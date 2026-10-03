@@ -16,6 +16,27 @@ final class ReplayEngine: ObservableObject {
     var canAdvance: Bool { status == .paused || status == .playing }
     var currentTimestamp: Date? { session?.currentTimestamp }
 
+    /// Number of replayable steps on the current timeline.
+    var barCount: Int { timeline.count }
+    /// One-based position of the cursor on the timeline (0 with no session).
+    var barNumber: Int { session.map { min($0.currentBarIndex + 1, timeline.count) } ?? 0 }
+    /// First and last cursor positions the timeline offers.
+    var timelineBounds: ClosedRange<Date>? {
+        guard let first = timeline.first, let last = timeline.last else { return nil }
+        return first...last
+    }
+    /// Cursor position as 0…1 along the timeline.
+    var progress: Double { Self.fraction(ofIndex: session?.currentBarIndex, count: timeline.count) }
+    /// Where the chosen start sits along the timeline, as 0…1.
+    var startFraction: Double {
+        guard let start = session?.startTimestamp else { return 0 }
+        return Self.fraction(ofIndex: Self.index(atOrBefore: start, in: timeline) ?? 0, count: timeline.count)
+    }
+    var canStepBackward: Bool {
+        (status == .paused || status == .playing || status == .completed)
+            && (session?.currentBarIndex ?? 0) > 0
+    }
+
     deinit { playbackTask?.cancel() }
 
     func beginSelecting() {
@@ -154,6 +175,29 @@ final class ReplayEngine: ObservableObject {
         return true
     }
 
+    @discardableResult
+    func stepBackward() -> Bool {
+        guard var session, canStepBackward else { return false }
+        pauseLoop()
+        let previous = session.currentBarIndex - 1
+        session.currentBarIndex = previous
+        session.currentTimestamp = timeline[previous]
+        session.status = .paused
+        self.session = session
+        status = .paused
+        changed()
+        return true
+    }
+
+    /// Moves the cursor to the step nearest `fraction` (0…1) of the timeline and pauses.
+    func seek(toFraction fraction: Double) {
+        guard !timeline.isEmpty, session != nil else { return }
+        let clamped = min(max(fraction.isFinite ? fraction : 0, 0), 1)
+        let index = Int((clamped * Double(timeline.count - 1)).rounded())
+        guard index != session?.currentBarIndex || status == .playing else { return }
+        seek(to: timeline[index])
+    }
+
     func seek(to date: Date) {
         guard var session, let index = Self.index(atOrBefore: date, in: timeline) else { return }
         pauseLoop()
@@ -205,6 +249,11 @@ final class ReplayEngine: ObservableObject {
     }
 
     private func changed() { onStateChange?() }
+
+    static func fraction(ofIndex index: Int?, count: Int) -> Double {
+        guard let index, count > 1 else { return 0 }
+        return min(max(Double(index) / Double(count - 1), 0), 1)
+    }
 
     static func normalized(_ dates: [Date]) -> [Date] {
         Array(Set(dates)).sorted()

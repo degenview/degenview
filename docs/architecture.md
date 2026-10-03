@@ -66,7 +66,10 @@ DegenView/
 │   ├── PaperQuoteFeed.swift           # Zero-size view behind each chart card: observes the chart and streams its last price and Binance/Coinbase best bid/ask to `PaperTradingStore.stream` (ContentView does not observe charts, so this cannot live there). Util/PaperQuoteSample decides what counts as a fresh book
 │   ├── PaperQuickTradeButtons.swift   # SELL / BUY pills in a chart card header
 │   └── PaperTradingStyle.swift        # Buy green / sell red, P&L colour; labels and tints in `Model/PaperTradingModels+Presentation`. PaperBadge, PaperSideChip, PaperIconButton / PaperIconGlyph are the shared bits
-│   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
+│   ├── ReplayControlBar.swift         # The docked strip: status, transport, speed/resolution, scrubber, clock, notice, way back to live; swaps to a hint while picking a start. Pieces: ReplayStatusChip, ReplayTransportControls, ReplayPickerMenu, ReplayScrubber, ReplayClockReadout, ReplayNoticeChip, ReplayIconButton
+│   ├── ReplayStyle.swift              # Replay accent (orange), per-state colour/title, date formats
+│   ├── ReplaySelectionMarker.swift    # Start-picker hover marker: line, date tag, dimmed future
+│   ├── ReplayStartSheet.swift         # Date/time picker clamped to the loaded span, presets, bar-snap preview
 │   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
 │   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
@@ -224,7 +227,9 @@ DegenView/
    `import user/Library/version` resolves to a Script Manager library by name.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
-   timestamp and one cancellable playback task.
+   timestamp and one cancellable playback task. Timeline position (`progress`, `barNumber`,
+   `startFraction`), `stepBackward` and `seek(toFraction:)` are derived from its in-memory
+   timeline; `ReplaySession` (the persisted shape) carries none of it.
 8. Binance, Coinbase and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
    lower-timeframe bars are aggregated against the provider-returned displayed-bar
    boundaries, preserving stock sessions, market gaps, and DST alignment.

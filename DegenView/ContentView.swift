@@ -38,7 +38,6 @@ struct ContentView: View {
     @State private var showRenameAlert = false
     @State private var renameText = ""
     @State private var showReplayDatePicker = false
-    @State private var replayDate = Date()
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @StateObject private var paperTrading = PaperTradingStore.shared
     @AppStorage("showPaperTradingOnCharts") private var showPaperTradingOnCharts = true
@@ -150,22 +149,15 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showReplayDatePicker) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Select Replay Date and Time").font(.headline)
-                DatePicker("Replay starts at", selection: $replayDate)
-                    .datePickerStyle(.field)
-                HStack {
-                    Spacer()
-                    Button("Cancel", role: .cancel) { showReplayDatePicker = false }
-                    Button("Start Replay") {
-                        contentViewModel.selectReplayDate(replayDate)
-                        showReplayDatePicker = false
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(20)
-            .frame(width: 380)
+            ReplayStartSheet(
+                range: contentViewModel.replayDateRange,
+                initial: contentViewModel.replay.currentTimestamp,
+                snap: contentViewModel.replayBarStart(containing:),
+                onStart: { date in
+                    contentViewModel.selectReplayDate(date)
+                    showReplayDatePicker = false
+                },
+                onCancel: { showReplayDatePicker = false })
         }
         .sheet(item: $orderTicket) { ticket in
             PaperOrderTicketSheet(
@@ -232,24 +224,24 @@ struct ContentView: View {
     private var chartsOnly: some View {
         VStack(spacing: 0) {
             if contentViewModel.replay.isActive {
-                ReplayControlBar(
-                    engine: contentViewModel.replay,
-                    onChangeStart: contentViewModel.beginReplaySelection,
-                    onReturnToLive: contentViewModel.returnToLive,
-                    onClose: contentViewModel.returnToLive,
-                    availableIntervals: contentViewModel.availableReplayIntervals,
-                    onIntervalChanged: contentViewModel.setReplayInterval,
-                    isPreparing: contentViewModel.isPreparingReplay
-                )
-            }
-            if let notice = contentViewModel.replayNotice, contentViewModel.replay.isActive {
-                Text(notice)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.08))
+                VStack(spacing: 0) {
+                    ReplayControlBar(
+                        engine: contentViewModel.replay,
+                        onChangeStart: contentViewModel.beginReplaySelection,
+                        onCancelSelection: contentViewModel.cancelReplaySelection,
+                        onReturnToLive: contentViewModel.returnToLive,
+                        availableIntervals: contentViewModel.availableReplayIntervals,
+                        resolvedInterval: contentViewModel.resolvedReplayInterval,
+                        onIntervalChanged: contentViewModel.setReplayInterval,
+                        isPreparing: contentViewModel.isPreparingReplay,
+                        notice: contentViewModel.replayNotice,
+                        onDismissNotice: contentViewModel.dismissReplayNotice
+                    )
+                    // The grid's card inset shrinks to nothing in a crowded tab, so the replay
+                    // outline would otherwise touch the bar.
+                    Color.clear.frame(height: 6)
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
             // Global loading indicator
             if contentViewModel.isRefreshing {
@@ -308,6 +300,7 @@ struct ContentView: View {
                 }
             }
         }
+        .animation(.easeOut(duration: 0.2), value: contentViewModel.replay.isActive)
     }
 
     // MARK: - Toolbar
@@ -340,29 +333,60 @@ struct ContentView: View {
         .accessibilityLabel(isPanelOpen ? "Hide Paper Trading panel" : "Show Paper Trading panel")
         .sidebarTooltip(isPanelOpen ? "Hide Paper Trading" : "Paper Trading")
 
+        let isReplaying = contentViewModel.replay.isActive
+        let hasMarket = !contentViewModel.marketChartViewModels.isEmpty
         Menu {
-            Button("Select bar") { contentViewModel.beginReplaySelection() }
-            Button("Select date/time…") {
-                replayDate = contentViewModel.replay.currentTimestamp ?? Date()
-                showReplayDatePicker = true
+            Button {
+                contentViewModel.beginReplaySelection()
+            } label: {
+                Label("Select Bar on Chart", systemImage: "cursorarrow.click.2")
             }
-            Button("Random bar") { contentViewModel.selectRandomReplayBar() }
-            Button("First available bar") { contentViewModel.selectFirstReplayBar() }
-            if contentViewModel.replay.isActive {
+            Button {
+                showReplayDatePicker = true
+            } label: {
+                Label("Choose Date & Time…", systemImage: "calendar")
+            }
+            Divider()
+            Button {
+                contentViewModel.selectRandomReplayBar()
+            } label: {
+                Label("Random Bar", systemImage: "dice")
+            }
+            Button {
+                contentViewModel.selectFirstReplayBar()
+            } label: {
+                Label("First Available Bar", systemImage: "backward.end")
+            }
+            if isReplaying {
                 Divider()
-                Button("Return to Latest") { contentViewModel.returnToLive() }
+                Button {
+                    contentViewModel.returnToLive()
+                } label: {
+                    Label("Return to Latest", systemImage: "dot.radiowaves.left.and.right")
+                }
             }
         } label: {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: isReplaying ? .bold : .medium))
+                .foregroundStyle(isReplaying ? ReplayStyle.accent : .primary)
                 .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isReplaying ? ReplayStyle.accent.opacity(0.16) : .clear)
+                )
                 .contentShape(RoundedRectangle(cornerRadius: 5))
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .accessibilityLabel("Historical bar replay")
-        .sidebarTooltip("Historical Replay")
+        .disabled(!hasMarket)
+        .accessibilityLabel(isReplaying ? "Historical bar replay, active" : "Historical bar replay")
+        .sidebarTooltip(replayTooltip(isReplaying: isReplaying, hasMarket: hasMarket))
+    }
+
+    private func replayTooltip(isReplaying: Bool, hasMarket: Bool) -> String {
+        if isReplaying { return "Replay Active" }
+        return hasMarket ? "Historical Replay" : "Historical Replay — add a market chart first"
     }
 
     /// Commit the tab's edits back to its saved view, prompting for a name the

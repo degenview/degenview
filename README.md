@@ -176,7 +176,8 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
   market from that point. Future candles are removed at the data boundary before chart
   rendering, indicators, volume, crosshair inspection, autoscaling, or drawing snapping
 - **Native replay controls** — Select a bar, date/time, random bar, or first available
-  bar; then step, play/pause, change speed or interval, restart, or return to latest
+  bar; then step forward or back, play/pause, scrub the timeline, change speed or
+  interval, restart, or return to latest
 - **Granular Binance, Coinbase and Alpaca replay** — When lower-timeframe OHLCV is available,
   DegenView paginates up to 100,000 source bars and incrementally reconstructs the active
   displayed candle. Other providers fall back to deterministic complete-chart-bar steps

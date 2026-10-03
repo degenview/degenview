@@ -327,6 +327,31 @@ final class ContentViewModel: ObservableObject {
 
     func selectReplayDate(_ date: Date) { selectReplayStart(date) }
 
+    func cancelReplaySelection() {
+        replay.cancelSelection()
+        clearReplaySelectionMarkers()
+    }
+
+    func dismissReplayNotice() { replayNotice = nil }
+
+    /// The span the loaded chart covers, which is what a replay start may be picked from.
+    var replayDateRange: ClosedRange<Date>? {
+        guard let data = marketChartViewModels.first?.klineData,
+            let first = data.first?.openTime, let last = data.last?.openTime, first <= last
+        else { return nil }
+        return first...last
+    }
+
+    /// The chart bar a replay started at `date` would begin on.
+    func replayBarStart(containing date: Date) -> Date? {
+        marketChartViewModels.first?.klineData.last(where: { $0.openTime <= date })?.openTime
+    }
+
+    /// The interval Auto resolved to for the primary chart, nil when it replays whole bars.
+    var resolvedReplayInterval: ReplayInterval? {
+        marketChartViewModels.first?.granularReplayInterval
+    }
+
     func returnToLive() {
         replayPreparationTask?.cancel()
         replay.jumpToLatest()
@@ -395,8 +420,7 @@ final class ContentViewModel: ObservableObject {
     private func handleReplaySelection(_ event: NSEvent) -> NSEvent? {
         if event.type == .keyDown {
             guard event.keyCode == 53 else { return event }
-            replay.cancelSelection()
-            clearReplaySelectionMarkers()
+            cancelReplaySelection()
             return nil
         }
         guard let hit = plotHit(at: event),

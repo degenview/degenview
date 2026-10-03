@@ -359,6 +359,16 @@
 		E30000000000000000000001 /* ReplaySession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000101 /* ReplaySession.swift */; };
 		E30000000000000000000002 /* ReplayEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000102 /* ReplayEngine.swift */; };
 		E30000000000000000000003 /* ReplayControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = E30000000000000000000103 /* ReplayControlBar.swift */; };
+		E3F100000000000000000001 /* ReplayStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000002 /* ReplayStyle.swift */; };
+		E3F100000000000000000003 /* ReplayStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000004 /* ReplayStatusChip.swift */; };
+		E3F100000000000000000005 /* ReplayClockReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000006 /* ReplayClockReadout.swift */; };
+		E3F100000000000000000007 /* ReplayNoticeChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000008 /* ReplayNoticeChip.swift */; };
+		E3F100000000000000000009 /* ReplayIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000010 /* ReplayIconButton.swift */; };
+		E3F100000000000000000011 /* ReplayTransportControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000012 /* ReplayTransportControls.swift */; };
+		E3F100000000000000000013 /* ReplayPickerMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000014 /* ReplayPickerMenu.swift */; };
+		E3F100000000000000000015 /* ReplayScrubber.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000016 /* ReplayScrubber.swift */; };
+		E3F100000000000000000017 /* ReplaySelectionMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000018 /* ReplaySelectionMarker.swift */; };
+		E3F100000000000000000019 /* ReplayStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000020 /* ReplayStartSheet.swift */; };
 		F30000000000000000000001 /* PaperTradingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000101 /* PaperTradingModels.swift */; };
 		D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */; };
 		F30000000000000000000002 /* PaperTradingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* PaperTradingEngine.swift */; };
@@ -991,6 +1001,16 @@
 		E30000000000000000000101 /* ReplaySession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySession.swift; sourceTree = "<group>"; };
 		E30000000000000000000102 /* ReplayEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngine.swift; sourceTree = "<group>"; };
 		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
+		E3F100000000000000000002 /* ReplayStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStyle.swift; sourceTree = "<group>"; };
+		E3F100000000000000000004 /* ReplayStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStatusChip.swift; sourceTree = "<group>"; };
+		E3F100000000000000000006 /* ReplayClockReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayClockReadout.swift; sourceTree = "<group>"; };
+		E3F100000000000000000008 /* ReplayNoticeChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayNoticeChip.swift; sourceTree = "<group>"; };
+		E3F100000000000000000010 /* ReplayIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayIconButton.swift; sourceTree = "<group>"; };
+		E3F100000000000000000012 /* ReplayTransportControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayTransportControls.swift; sourceTree = "<group>"; };
+		E3F100000000000000000014 /* ReplayPickerMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayPickerMenu.swift; sourceTree = "<group>"; };
+		E3F100000000000000000016 /* ReplayScrubber.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayScrubber.swift; sourceTree = "<group>"; };
+		E3F100000000000000000018 /* ReplaySelectionMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySelectionMarker.swift; sourceTree = "<group>"; };
+		E3F100000000000000000020 /* ReplayStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStartSheet.swift; sourceTree = "<group>"; };
 		F30000000000000000000101 /* PaperTradingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingModels.swift; sourceTree = "<group>"; };
 		D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaperTradingModels+Presentation.swift"; sourceTree = "<group>"; };
 		F30000000000000000000102 /* PaperTradingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngine.swift; sourceTree = "<group>"; };
@@ -1552,6 +1572,16 @@
 				F30000000000000000000104 /* PaperOrderTicketSheet.swift */,
 				F30000000000000000000105 /* PaperAccountManagerView.swift */,
 				E30000000000000000000103 /* ReplayControlBar.swift */,
+				E3F100000000000000000002 /* ReplayStyle.swift */,
+				E3F100000000000000000004 /* ReplayStatusChip.swift */,
+				E3F100000000000000000006 /* ReplayClockReadout.swift */,
+				E3F100000000000000000008 /* ReplayNoticeChip.swift */,
+				E3F100000000000000000010 /* ReplayIconButton.swift */,
+				E3F100000000000000000012 /* ReplayTransportControls.swift */,
+				E3F100000000000000000014 /* ReplayPickerMenu.swift */,
+				E3F100000000000000000016 /* ReplayScrubber.swift */,
+				E3F100000000000000000018 /* ReplaySelectionMarker.swift */,
+				E3F100000000000000000020 /* ReplayStartSheet.swift */,
 				F10000000000000000000103 /* FavoritesSidebar.swift */,
 				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
@@ -2472,6 +2502,16 @@
 				E30000000000000000000001 /* ReplaySession.swift in Sources */,
 				E30000000000000000000002 /* ReplayEngine.swift in Sources */,
 				E30000000000000000000003 /* ReplayControlBar.swift in Sources */,
+				E3F100000000000000000001 /* ReplayStyle.swift in Sources */,
+				E3F100000000000000000003 /* ReplayStatusChip.swift in Sources */,
+				E3F100000000000000000005 /* ReplayClockReadout.swift in Sources */,
+				E3F100000000000000000007 /* ReplayNoticeChip.swift in Sources */,
+				E3F100000000000000000009 /* ReplayIconButton.swift in Sources */,
+				E3F100000000000000000011 /* ReplayTransportControls.swift in Sources */,
+				E3F100000000000000000013 /* ReplayPickerMenu.swift in Sources */,
+				E3F100000000000000000015 /* ReplayScrubber.swift in Sources */,
+				E3F100000000000000000017 /* ReplaySelectionMarker.swift in Sources */,
+				E3F100000000000000000019 /* ReplayStartSheet.swift in Sources */,
 				F10000000000000000000001 /* FavoriteItem.swift in Sources */,
 				F10000000000000000000002 /* FavoritesStore.swift in Sources */,
 				F10000000000000000000003 /* FavoritesSidebar.swift in Sources */,

@@ -67,6 +67,79 @@ final class ReplayEngineTests: XCTestCase {
         XCTAssertNil(engine.session)
     }
 
+    func testStepBackwardFloorsAtStartAndLeavesCompleted() {
+        let engine = ReplayEngine()
+        let timeline = dates(3)
+        engine.start(at: timeline[0], symbol: "BTCUSDT", timeframe: .oneHour, timeline: timeline)
+        XCTAssertFalse(engine.canStepBackward)
+        XCTAssertFalse(engine.stepBackward())
+        XCTAssertEqual(engine.currentTimestamp, timeline[0])
+
+        engine.seek(to: timeline[2])
+        XCTAssertEqual(engine.status, .completed)
+        XCTAssertTrue(engine.stepBackward())
+        XCTAssertEqual(engine.status, .paused)
+        XCTAssertEqual(engine.currentTimestamp, timeline[1])
+        XCTAssertTrue(engine.stepForward())
+    }
+
+    func testSeekToFractionClampsAndCompletesAtTheEnd() {
+        let engine = ReplayEngine()
+        let timeline = dates(11)
+        engine.start(at: timeline[0], symbol: "BTCUSDT", timeframe: .oneHour, timeline: timeline)
+        engine.seek(toFraction: 0.5)
+        XCTAssertEqual(engine.currentTimestamp, timeline[5])
+        XCTAssertEqual(engine.status, .paused)
+        engine.seek(toFraction: 7)
+        XCTAssertEqual(engine.currentTimestamp, timeline[10])
+        XCTAssertEqual(engine.status, .completed)
+        engine.seek(toFraction: -3)
+        XCTAssertEqual(engine.currentTimestamp, timeline[0])
+        engine.seek(toFraction: .nan)
+        XCTAssertEqual(engine.currentTimestamp, timeline[0])
+    }
+
+    func testProgressAndBarNumberFollowTheCursor() {
+        let engine = ReplayEngine()
+        XCTAssertEqual(engine.progress, 0)
+        XCTAssertEqual(engine.barNumber, 0)
+        XCTAssertNil(engine.timelineBounds)
+
+        let timeline = dates(5)
+        engine.start(at: timeline[1], symbol: "BTCUSDT", timeframe: .oneHour, timeline: timeline)
+        XCTAssertEqual(engine.barCount, 5)
+        XCTAssertEqual(engine.barNumber, 2)
+        XCTAssertEqual(engine.progress, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(engine.startFraction, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(engine.timelineBounds, timeline[0]...timeline[4])
+
+        engine.stepForward()
+        engine.stepForward()
+        XCTAssertEqual(engine.progress, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(engine.startFraction, 0.25, accuracy: 1e-9)
+    }
+
+    func testSingleBarTimelineHasZeroProgress() {
+        let engine = ReplayEngine()
+        let timeline = dates(1)
+        engine.start(at: timeline[0], symbol: "BTCUSDT", timeframe: .oneHour, timeline: timeline)
+        XCTAssertEqual(engine.progress, 0)
+        XCTAssertEqual(engine.startFraction, 0)
+    }
+
+    func testRestoreKeepsProgress() {
+        let timeline = dates(5)
+        let saved = ReplaySession(
+            status: .paused, symbol: "BTCUSDT", chartTimeframe: .oneHour,
+            startTimestamp: timeline[1], currentTimestamp: timeline[3], currentBarIndex: 3,
+            replayInterval: .automatic, playbackSpeed: .normal, sessionStartedAt: base
+        )
+        let engine = ReplayEngine()
+        engine.restore(saved, timeline: timeline)
+        XCTAssertEqual(engine.progress, 0.75, accuracy: 1e-9)
+        XCTAssertEqual(engine.startFraction, 0.25, accuracy: 1e-9)
+    }
+
     func testRestoreAlwaysPausesPlayingSession() {
         let timeline = dates(5)
         let saved = ReplaySession(

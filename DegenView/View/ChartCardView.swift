@@ -101,6 +101,14 @@ struct ChartCardView: View {
         .frame(height: cardHeight ?? chartHeight + ChartLayout.cardChrome)
         .clipped()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            // A time-travelled chart reads as one at a glance.
+            if viewModel.replayTimestamp != nil {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(ReplayStyle.accent.opacity(0.45), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .background(ZoomHitRegion(onResolve: onZoomRegion))
         .onChange(of: colorScheme, initial: true) { _, scheme in
             viewModel.setPineTheme(scheme == .dark ? .dark : .light)
@@ -148,8 +156,11 @@ struct ChartCardView: View {
                             .foregroundStyle(.secondary.opacity(0.6))
                         if viewModel.replayTimestamp != nil {
                             Label("Replay", systemImage: "clock.arrow.circlepath")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.orange)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(ReplayStyle.accent)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(ReplayStyle.accent.opacity(0.14), in: Capsule())
                                 .accessibilityLabel("Historical replay mode")
                         }
                     }
@@ -827,27 +838,6 @@ private struct PortfolioAllocationMiniChart: View {
                 }
             }
         }
-    }
-}
-
-private struct ReplaySelectionMarker: View {
-    @ObservedObject var viewModel: ChartViewModel
-    let date: Date
-
-    var body: some View {
-        GeometryReader { geometry in
-            Canvas { context, _ in
-                let points = viewModel.visibleKlines
-                guard let index = points.firstIndex(where: { $0.openTime == date }) else { return }
-                let plot = viewModel.plot(in: geometry.size)
-                let x = plot.x(forIndex: index, slotWidth: plot.slotWidth(forCount: points.count))
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: plot.plotRect.minY))
-                path.addLine(to: CGPoint(x: x, y: plot.plotRect.maxY))
-                context.stroke(path, with: .color(.orange), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 

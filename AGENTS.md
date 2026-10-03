@@ -279,6 +279,14 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
     Delete and Clear History ask first. History groups by day; prices read `$67,432.19`, `$1.2346`,
     `$0.00000278` — never a long decimal tail — in rows, the banner and the macOS notification
+13c. Replay: toolbar Replay ▸ Select Bar on Chart shows the "Click a candle" strip; the marker
+    follows the pointer with a date tag and Esc / Cancel exit. Click a candle: strip shows
+    Paused, the card gets an orange border and "Replay" badge. Play / pause / step ⇧→ ⇧← ⇧↓,
+    drag and click the timeline (pauses, tick marks the start), speed and Bars menus (Auto
+    shows the resolved interval, a spinner while loading). Play to the end: "Ended", the play
+    button restarts. A CoinGecko chart shows a dismissible fallback notice. **Live** returns to
+    latest. Choose Date & Time… presets and "Snaps to" preview; relaunch mid-replay restores
+    paused at the same spot; narrow window wraps the timeline to a second row; light and dark
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket
