@@ -37,13 +37,6 @@ struct ScriptManagerView: View {
                 .help(sidebarVisible ? "Hide the script list" : "Show the script list")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    showNewScript = true
-                } label: {
-                    Label("New Script", systemImage: "plus")
-                }
-                .help("New Script")
-
                 Menu {
                     Picker("Chart Position", selection: $chartPosition) {
                         ForEach(ChartPosition.allCases) { position in
@@ -146,7 +139,31 @@ extension ScriptManagerView {
             }
             .listStyle(.sidebar)
             .frame(maxHeight: .infinity)
+            // An inset, not an overlay: the last rows can still scroll clear of the button.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack {
+                    Spacer(minLength: 0)
+                    newScriptButton
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
         }
+    }
+
+    fileprivate var newScriptButton: some View {
+        Button {
+            showNewScript = true
+        } label: {
+            Label("New Script", systemImage: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 4)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.regular)
+        .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+        .help("Create a new script")
     }
 
     @ViewBuilder fileprivate var detail: some View {
