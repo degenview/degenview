@@ -745,13 +745,10 @@ struct ContentView: View {
             onPaperCancel: { order in Task { await paperTrading.cancel(order.id) } },
             onPaperClose: { position in Task { await paperTrading.close(position) } }
         )
-        // Fires on a new price (live ticks) and on every completed refresh, even when the price is
-        // unchanged: the engine rejects market orders against a quote older than 30 s, and a quiet
-        // market would otherwise let a still-current price age out.
-        .onChange(of: PaperQuoteStamp(price: vm.currentPrice, refreshedAt: vm.lastUpdated)) { _, stamp in
-            guard let price = stamp.price else { return }
-            let instrument = PaperInstrument.chart(symbol: vm.apiSymbol, displayName: vm.title, source: vm.source)
-            Task { await paperTrading.process(instrument: instrument, last: Decimal(price), timestamp: Date()) }
+        // Behind the card, not on `ContentView`: this view does not observe its charts, so a watcher
+        // here only ran when something unrelated redrew it. The feed observes the chart itself.
+        .background {
+            PaperQuoteFeed(viewModel: vm, quote: vm.liveQuote, store: paperTrading)
         }
     }
 
@@ -779,13 +776,6 @@ struct ContentView: View {
         orderTicket = .init(instrument: instrument, price: vm.displayedPrice.map { Decimal($0) }, side: side)
     }
 
-}
-
-/// What tells the paper engine a chart's price is current: the price itself, and when the chart last
-/// finished refreshing. One value, so a refresh that changes both feeds the engine once.
-private struct PaperQuoteStamp: Equatable {
-    let price: Double?
-    let refreshedAt: Date?
 }
 
 private struct PaperOrderTicketContext: Identifiable {

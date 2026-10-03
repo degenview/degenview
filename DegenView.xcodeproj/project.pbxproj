@@ -47,6 +47,7 @@
 		AC020000000000000000000F /* AlertCardScroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC010000000000000000000E /* AlertCardScroll.swift */; };
 		AC0200000000000000000011 /* AlertDayHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000010 /* AlertDayHeader.swift */; };
 		AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC01000000000000000000F0 /* AlertFooterBar.swift */; };
+		D0F9EB1AC41D68F8AAB4819E /* PaperQuoteFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D168F8AAB4819E5256774EE6 /* PaperQuoteFeed.swift */; };
 		D0A627F98BF18E112237AC82 /* PaperQuickTradeButtons.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */; };
 		D0292E1E1AAAE84E5006806C /* PaperChartMarkerPill.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */; };
 		D0CD2C055C425A7A6542B095 /* PaperOrderSummaryCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */; };
@@ -190,6 +191,7 @@
 		B90000000000000000000003 /* FXRateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000103 /* FXRateService.swift */; };
 		B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000104 /* MarketQuoteCoordinator.swift */; };
 		B90000000000000000000005 /* AlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000105 /* AlertStore.swift */; };
+		D03DC58061310FC07E64DE20 /* ChartLiveQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10FC07E64DE20AB76844081 /* ChartLiveQuote.swift */; };
 		B90000000000000000000006 /* PriceAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000106 /* PriceAlertEditor.swift */; };
 		B90000000000000000000007 /* AlertsCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B90000000000000000000107 /* AlertsCenterView.swift */; };
 		BA0000000000000000000001 /* AlertRuntimePersistence.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA0000000000000000000101 /* AlertRuntimePersistence.swift */; };
@@ -253,6 +255,8 @@
 		FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000102 /* FibonacciRetracementTests.swift */; };
 		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
 		F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000106 /* PaperTradingEngineTests.swift */; };
+		D0302A062EE3E0B2493404D7 /* PaperQuoteFeedObservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1E0B2493404D74DF9BFA2CC /* PaperQuoteFeedObservationTests.swift */; };
+		D0F31F051806EF4F02981B5C /* PaperQuoteFeedTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EF4F02981B5CA97714F8EC /* PaperQuoteFeedTests.swift */; };
 		D05E7E8FC19B7A2E4F0D8B00 /* PaperTradingPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000102 /* ChartGridDropDelegate.swift */; };
@@ -331,6 +335,7 @@
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
 		AC0200000000000000000005 /* AlertDayGrouping.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0100000000000000000004 /* AlertDayGrouping.swift */; };
 		F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000108 /* PaperTradingFormatter.swift */; };
+		D0D7DDB38C8949D34462E6AB /* PaperQuoteSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = D149D34462E6ABE41FE62D9F /* PaperQuoteSample.swift */; };
 		D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */; };
 		D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */; };
 		D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */; };
@@ -355,6 +360,7 @@
 		D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */; };
 		F30000000000000000000002 /* PaperTradingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000102 /* PaperTradingEngine.swift */; };
 		F30000000000000000000003 /* PaperTradingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000103 /* PaperTradingStore.swift */; };
+		D0FAB4AEB532EB3601608151 /* BookTickerCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */; };
 		D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */; };
 		F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000104 /* PaperOrderTicketSheet.swift */; };
 		F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F30000000000000000000105 /* PaperAccountManagerView.swift */; };
@@ -711,6 +717,7 @@
 		AC010000000000000000000E /* AlertCardScroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertCardScroll.swift; sourceTree = "<group>"; };
 		AC0100000000000000000010 /* AlertDayHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayHeader.swift; sourceTree = "<group>"; };
 		AC01000000000000000000F0 /* AlertFooterBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertFooterBar.swift; sourceTree = "<group>"; };
+		D168F8AAB4819E5256774EE6 /* PaperQuoteFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuoteFeed.swift; sourceTree = "<group>"; };
 		D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuickTradeButtons.swift; sourceTree = "<group>"; };
 		D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperChartMarkerPill.swift; sourceTree = "<group>"; };
 		D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderSummaryCard.swift; sourceTree = "<group>"; };
@@ -847,6 +854,7 @@
 		B90000000000000000000103 /* FXRateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FXRateService.swift; sourceTree = "<group>"; };
 		B90000000000000000000104 /* MarketQuoteCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarketQuoteCoordinator.swift; sourceTree = "<group>"; };
 		B90000000000000000000105 /* AlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertStore.swift; sourceTree = "<group>"; };
+		D10FC07E64DE20AB76844081 /* ChartLiveQuote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartLiveQuote.swift; sourceTree = "<group>"; };
 		B90000000000000000000106 /* PriceAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertEditor.swift; sourceTree = "<group>"; };
 		B90000000000000000000107 /* AlertsCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertsCenterView.swift; sourceTree = "<group>"; };
 		BA0000000000000000000101 /* AlertRuntimePersistence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertRuntimePersistence.swift; sourceTree = "<group>"; };
@@ -873,6 +881,8 @@
 		AA1000000000000000000106 /* PortfolioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PortfolioDashboardView.swift; sourceTree = "<group>"; };
 		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
 		F30000000000000000000106 /* PaperTradingEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngineTests.swift; sourceTree = "<group>"; };
+		D1E0B2493404D74DF9BFA2CC /* PaperQuoteFeedObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuoteFeedObservationTests.swift; sourceTree = "<group>"; };
+		D1EF4F02981B5CA97714F8EC /* PaperQuoteFeedTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuoteFeedTests.swift; sourceTree = "<group>"; };
 		D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingPresentationTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
@@ -880,6 +890,7 @@
 		763ED08073ED0807493107C6 /* PriceFormatter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PriceFormatter.swift; sourceTree = "<group>"; };
 		AC0100000000000000000004 /* AlertDayGrouping.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDayGrouping.swift; sourceTree = "<group>"; };
 		F30000000000000000000108 /* PaperTradingFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingFormatter.swift; sourceTree = "<group>"; };
+		D149D34462E6ABE41FE62D9F /* PaperQuoteSample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperQuoteSample.swift; sourceTree = "<group>"; };
 		D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTimestamp.swift; sourceTree = "<group>"; };
 		D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketDraft.swift; sourceTree = "<group>"; };
 		D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDecimalInput.swift; sourceTree = "<group>"; };
@@ -978,6 +989,7 @@
 		D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaperTradingModels+Presentation.swift"; sourceTree = "<group>"; };
 		F30000000000000000000102 /* PaperTradingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingEngine.swift; sourceTree = "<group>"; };
 		F30000000000000000000103 /* PaperTradingStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingStore.swift; sourceTree = "<group>"; };
+		D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookTickerCoalescer.swift; sourceTree = "<group>"; };
 		D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperTradingCSVExporter.swift; sourceTree = "<group>"; };
 		F30000000000000000000104 /* PaperOrderTicketSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperOrderTicketSheet.swift; sourceTree = "<group>"; };
 		F30000000000000000000105 /* PaperAccountManagerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperAccountManagerView.swift; sourceTree = "<group>"; };
@@ -1375,6 +1387,7 @@
 				AA1000000000000000000105 /* PortfolioCSVService.swift */,
 				F30000000000000000000102 /* PaperTradingEngine.swift */,
 				F30000000000000000000103 /* PaperTradingStore.swift */,
+				D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */,
 				D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */,
 				E30000000000000000000102 /* ReplayEngine.swift */,
 				F10000000000000000000102 /* FavoritesStore.swift */,
@@ -1421,6 +1434,7 @@
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
 				AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */,
 				B90000000000000000000105 /* AlertStore.swift */,
+				D10FC07E64DE20AB76844081 /* ChartLiveQuote.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
@@ -1477,6 +1491,7 @@
 				AC010000000000000000000E /* AlertCardScroll.swift */,
 				AC0100000000000000000010 /* AlertDayHeader.swift */,
 				AC01000000000000000000F0 /* AlertFooterBar.swift */,
+				D168F8AAB4819E5256774EE6 /* PaperQuoteFeed.swift */,
 				D18E112237AC82A61A6841AC /* PaperQuickTradeButtons.swift */,
 				D1E84E5006806C4FBA25E993 /* PaperChartMarkerPill.swift */,
 				D15A7A6542B095244C34ADC6 /* PaperOrderSummaryCard.swift */,
@@ -1567,6 +1582,7 @@
 			isa = PBXGroup;
 			children = (
 				F30000000000000000000108 /* PaperTradingFormatter.swift */,
+				D149D34462E6ABE41FE62D9F /* PaperQuoteSample.swift */,
 				D17C5BF1B208C5E01F63D823 /* PaperTimestamp.swift */,
 				D17615305A54F47DD6945196 /* PaperOrderTicketDraft.swift */,
 				D1B816646D614CC8F0351315 /* PaperDecimalInput.swift */,
@@ -1665,6 +1681,8 @@
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
 				C4D1A0000000000000000105 /* PortfolioQuoteFetcherTests.swift */,
 				F30000000000000000000106 /* PaperTradingEngineTests.swift */,
+				D1E0B2493404D74DF9BFA2CC /* PaperQuoteFeedObservationTests.swift */,
+				D1EF4F02981B5CA97714F8EC /* PaperQuoteFeedTests.swift */,
 				D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
 				FB0000000000000000000102 /* FibonacciRetracementTests.swift */,
@@ -2240,6 +2258,8 @@
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
 				C4D1A0000000000000000005 /* PortfolioQuoteFetcherTests.swift in Sources */,
 				F30000000000000000000006 /* PaperTradingEngineTests.swift in Sources */,
+				D0302A062EE3E0B2493404D7 /* PaperQuoteFeedObservationTests.swift in Sources */,
+				D0F31F051806EF4F02981B5C /* PaperQuoteFeedTests.swift in Sources */,
 				D05E7E8FC19B7A2E4F0D8B00 /* PaperTradingPresentationTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
@@ -2334,6 +2354,7 @@
 				B90000000000000000000004 /* MarketQuoteCoordinator.swift in Sources */,
 				AA1000000000000000000011 /* PortfolioAssetInfoViewModel.swift in Sources */,
 				B90000000000000000000005 /* AlertStore.swift in Sources */,
+				D03DC58061310FC07E64DE20 /* ChartLiveQuote.swift in Sources */,
 				B90000000000000000000006 /* PriceAlertEditor.swift in Sources */,
 				B90000000000000000000007 /* AlertsCenterView.swift in Sources */,
 				AA1000000000000000000009 /* PortfolioAssetAutoMapper.swift in Sources */,
@@ -2360,6 +2381,7 @@
 				AC020000000000000000000F /* AlertCardScroll.swift in Sources */,
 				AC0200000000000000000011 /* AlertDayHeader.swift in Sources */,
 				AC02000000000000000000F1 /* AlertFooterBar.swift in Sources */,
+				D0F9EB1AC41D68F8AAB4819E /* PaperQuoteFeed.swift in Sources */,
 				D0A627F98BF18E112237AC82 /* PaperQuickTradeButtons.swift in Sources */,
 				D0292E1E1AAAE84E5006806C /* PaperChartMarkerPill.swift in Sources */,
 				D0CD2C055C425A7A6542B095 /* PaperOrderSummaryCard.swift in Sources */,
@@ -2424,6 +2446,7 @@
 				AA1000000000000000000005 /* PortfolioCSVService.swift in Sources */,
 				AA1000000000000000000006 /* PortfolioDashboardView.swift in Sources */,
 				F30000000000000000000008 /* PaperTradingFormatter.swift in Sources */,
+				D0D7DDB38C8949D34462E6AB /* PaperQuoteSample.swift in Sources */,
 				D0B058FB249D7C5BF1B208C5 /* PaperTimestamp.swift in Sources */,
 				D0C8FB1F26857615305A54F4 /* PaperOrderTicketDraft.swift in Sources */,
 				D0E400323C8DB816646D614C /* PaperDecimalInput.swift in Sources */,
@@ -2432,6 +2455,7 @@
 				D0822923AE348F3DF1373F3C /* PaperTradingModels+Presentation.swift in Sources */,
 				F30000000000000000000002 /* PaperTradingEngine.swift in Sources */,
 				F30000000000000000000003 /* PaperTradingStore.swift in Sources */,
+				D0FAB4AEB532EB3601608151 /* BookTickerCoalescer.swift in Sources */,
 				D098AF0FB7C69C3B541BE04C /* PaperTradingCSVExporter.swift in Sources */,
 				F30000000000000000000004 /* PaperOrderTicketSheet.swift in Sources */,
 				F30000000000000000000005 /* PaperAccountManagerView.swift in Sources */,

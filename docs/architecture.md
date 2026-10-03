@@ -31,6 +31,7 @@ DegenView/
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
+│   ├── ChartLiveQuote.swift           # A chart's latest best bid/ask (own object, so book ticks don't redraw the card)
 │   ├── ScriptPreviewViewModel.swift   # Script Manager preview: one chart, market, timeframe, inputs, refresh
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
 │   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
@@ -61,6 +62,7 @@ DegenView/
 │   ├── PaperOrderTicketSheet.swift    # Order ticket; math and validation live in `Util/PaperOrderTicketDraft`, input parsing in `Util/PaperDecimalInput`; PaperQuoteStrip, PaperSideSelector, PaperOrderSummaryCard, PaperFormField / PaperTextField
 │   ├── PaperAccountConfigurationSheet.swift # Create / reset account (validated; reset starts from the account's settings)
 │   ├── PaperChartTradingOverlay.swift # Position / order markers on a chart (PaperChartMarkerPill; drag to modify)
+│   ├── PaperQuoteFeed.swift           # Zero-size view behind each chart card: observes the chart and streams its last price and Binance/Coinbase best bid/ask to `PaperTradingStore.stream` (ContentView does not observe charts, so this cannot live there). Util/PaperQuoteSample decides what counts as a fresh book
 │   ├── PaperQuickTradeButtons.swift   # SELL / BUY pills in a chart card header
 │   └── PaperTradingStyle.swift        # Buy green / sell red, P&L colour; labels and tints in `Model/PaperTradingModels+Presentation`. PaperBadge, PaperSideChip, PaperIconButton / PaperIconGlyph are the shared bits
 │   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
@@ -137,7 +139,8 @@ DegenView/
     ├── BinanceAPIService.swift        # Binance REST klines
     ├── ChartLiveFeed.swift            # Opens the Binance/Coinbase/Alpaca streams for a set of charts
     ├── ScriptPreviewInputsStore.swift # Input values tried in the Script Manager preview, per script
-    ├── BinanceWebSocketService.swift  # Binance live klines
+    ├── BinanceWebSocketService.swift  # Binance live klines (+ optional `@bookTicker` best bid/ask)
+    ├── BookTickerCoalescer.swift      # Thins book updates to a few deliveries a second per symbol
     ├── CoinbaseAPIService.swift       # Coinbase REST candles (paged, 1w/1M folded from daily) + product search
     ├── CoinbaseWebSocketService.swift # Coinbase live trades (ticker channel → CoinbaseTick)
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata

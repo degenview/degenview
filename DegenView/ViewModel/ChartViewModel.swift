@@ -207,6 +207,8 @@ final class ChartViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
+    /// Best bid and ask from the exchange stream (Binance, Coinbase); empty for other sources.
+    let liveQuote = ChartLiveQuote()
     @Published private(set) var cmcAltcoinLatest: AltcoinSeasonLatest?
     @Published private(set) var cmcAltcoinHistory: [AltcoinSeasonHistoricalPoint] = []
     @Published private(set) var cmcFearGreedLatest: FearAndGreedLatest?
@@ -1189,6 +1191,7 @@ final class ChartViewModel: ObservableObject {
         self.pmSeriesData = [:]
         klineData = []
         currentPrice = nil
+        liveQuote.clear()
         // A new instrument shares no series with the old one; the next fetch rebuilds the script.
         stopPineFeed()
         pineDataset = nil
@@ -1279,6 +1282,7 @@ final class ChartViewModel: ObservableObject {
     /// candle's end opens the next one. The REST refresh replaces the buffer every few seconds,
     /// so volume summed from trades only has to hold until then.
     func applyTick(_ tick: CoinbaseTick, plan: CoinbaseGranularity) {
+        liveQuote.apply(bid: tick.bestBid, ask: tick.bestAsk)
         guard let last = klineData.last else { return }
 
         let bucket = plan.bucketStart(of: tick.time)

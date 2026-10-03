@@ -12,7 +12,19 @@ final class PaperTradingStore: ObservableObject {
     let engine: PaperTradingEngine
     let execution: PaperTradingExecutionService
 
-    init(database: AppDatabase = .shared) {
+    private struct PendingQuote {
+        let instrument: PaperInstrument
+        let bid: Decimal?
+        let ask: Decimal?
+        let last: Decimal?
+        let timestamp: Date
+    }
+    private var pendingQuotes: [String: PendingQuote] = [:]
+    private var isQuoteFlushScheduled = false
+    private let quoteFlushInterval: TimeInterval
+
+    init(database: AppDatabase = .shared, quoteFlushInterval: TimeInterval = 0.5) {
+        self.quoteFlushInterval = quoteFlushInterval
         var initial = PaperTradingSnapshot.empty
         var canPersist = true
         do {
@@ -24,6 +36,9 @@ final class PaperTradingStore: ObservableObject {
                 print("[PaperTradingStore] Paper trading unreadable; disabling writes: \(error.localizedDescription)")
             #endif
         }
+        // A quote from an earlier run is hours old at best; showing it would put last session's price
+        // in the order ticket until the first fresh one arrives.
+        initial.quotes = [:]
         snapshot = initial
         let engine = PaperTradingEngine(
             snapshot: initial,
@@ -107,6 +122,33 @@ final class PaperTradingStore: ObservableObject {
                     last: last, timestamp: timestamp, isMarketOpen: marketOpen))
             await refresh()
         } catch { report(error) }
+    }
+
+    /// Hands the engine a market's latest quote, at most once every `quoteFlushInterval` per
+    /// instrument. Charts call this on every tick; the newest quote of each burst is the one used.
+    /// Use `process` for a quote that must land now.
+    func stream(instrument: PaperInstrument, bid: Decimal?, ask: Decimal?, last: Decimal?) {
+        pendingQuotes[instrument.key] = PendingQuote(
+            instrument: instrument, bid: bid, ask: ask, last: last, timestamp: Date())
+        guard !isQuoteFlushScheduled else { return }
+        isQuoteFlushScheduled = true
+        let interval = quoteFlushInterval
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            await flushQuotes()
+        }
+    }
+
+    /// Sends every pending streamed quote to the engine now.
+    func flushQuotes() async {
+        isQuoteFlushScheduled = false
+        let batch = Array(pendingQuotes.values)
+        pendingQuotes = [:]
+        for quote in batch {
+            await process(
+                instrument: quote.instrument, bid: quote.bid, ask: quote.ask, last: quote.last,
+                timestamp: quote.timestamp)
+        }
     }
 
     func reset(currency: PaperCurrency, balance: Decimal, settings: PaperAccountSettings) async {

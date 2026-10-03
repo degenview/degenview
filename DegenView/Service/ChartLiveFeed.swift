@@ -27,11 +27,16 @@ final class ChartLiveFeed {
         if binanceCharts.isEmpty || KlineData.monthlyFold(for: interval) != nil {
             binance.disconnect()
         } else {
-            binance.connect(symbols: binanceCharts.map { $0.apiSymbol.lowercased() }, interval: interval) {
-                symbol, kline in
-                binanceCharts.first { $0.apiSymbol.uppercased() == symbol.uppercased() }?
-                    .applyKlineUpdate(kline)
-            }
+            binance.connect(
+                symbols: binanceCharts.map { $0.apiSymbol.lowercased() }, interval: interval,
+                onUpdate: { symbol, kline in
+                    binanceCharts.first { $0.apiSymbol.uppercased() == symbol.uppercased() }?
+                        .applyKlineUpdate(kline)
+                },
+                onBookTicker: { symbol, bid, ask in
+                    binanceCharts.first { $0.apiSymbol.uppercased() == symbol.uppercased() }?
+                        .liveQuote.apply(bid: bid, ask: ask)
+                })
         }
 
         let coinbaseCharts = charts.filter { $0.source == .coinbase }
