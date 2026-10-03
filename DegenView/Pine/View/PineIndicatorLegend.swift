@@ -4,6 +4,7 @@ import SwiftUI
 /// stored, so it cannot drift from the model.
 struct PineLegendRowInfo: Identifiable {
     let id: UUID  // == ChartScriptInstance.id
+    let scriptID: UUID  // the library script this instance runs
     let title: String  // "EMA 20" — declaration title + compact input summary
     let isVisible: Bool
     let hasError: Bool
@@ -17,7 +18,9 @@ extension ChartViewModel {
             let summary = result.map { $0.inputSchema.pineCompactSummary(values: instance.inputs) } ?? ""
             let title = summary.isEmpty ? base : "\(base) \(summary)"
             let hasError = result?.diagnostics.contains { $0.severity == .error } ?? false
-            return PineLegendRowInfo(id: instance.id, title: title, isVisible: instance.isVisible, hasError: hasError)
+            return PineLegendRowInfo(
+                id: instance.id, scriptID: instance.scriptID, title: title, isVisible: instance.isVisible,
+                hasError: hasError)
         }
     }
 }
@@ -52,7 +55,7 @@ struct PineIndicatorLegend: View {
     @State private var expandedOverride = false
     /// Whether the whole legend is minimized to just its header strip. Session-local — it's a
     /// view convenience, not persisted chart configuration.
-    @State private var collapsed = false
+    @State private var collapsed = true
     private static let collapseThreshold = 4
     private static let cornerRadius: CGFloat = 10
 
@@ -64,7 +67,7 @@ struct PineIndicatorLegend: View {
                 header(count: rows.count)
                 if !collapsed {
                     Rectangle()
-                        .fill(Color.white.opacity(0.08))
+                        .fill(Color.primary.opacity(0.10))
                         .frame(height: 1)
                         .padding(.vertical, 4)
                     VStack(alignment: .leading, spacing: 2) {
@@ -77,10 +80,10 @@ struct PineIndicatorLegend: View {
                             } label: {
                                 Text("+\(rows.count - Self.collapseThreshold) more")
                                     .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.white.opacity(0.7))
+                                    .foregroundStyle(.secondary)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 3)
-                                    .background(Color.white.opacity(0.08), in: Capsule())
+                                    .background(Color.primary.opacity(0.08), in: Capsule())
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 6)
@@ -95,12 +98,14 @@ struct PineIndicatorLegend: View {
             // content — not of whatever width the chart overlay offers. Without this, the
             // legend would stretch to the full chart width.
             .fixedSize(horizontal: true, vertical: false)
-            .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Self.cornerRadius))
+            // Adaptive tint over the card's own material, so the legend follows light/dark and
+            // stays only faintly distinct from the chart behind it.
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: Self.cornerRadius))
             .overlay(
                 RoundedRectangle(cornerRadius: Self.cornerRadius)
-                    .strokeBorder(Color.white.opacity(0.08))
+                    .strokeBorder(Color.primary.opacity(0.10))
             )
-            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+            .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
             .animation(.easeInOut(duration: 0.16), value: collapsed)
             .onHover { legendHovering = $0 }
             .background(PineLegendHitRegion(onResolve: onLegendRegion))
@@ -109,27 +114,31 @@ struct PineIndicatorLegend: View {
     }
 
     private func header(count: Int) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: "chart.xyaxis.line")
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.55))
-            Text(collapsed ? "\(count) indicator\(count == 1 ? "" : "s")" : "Indicators")
+        // HStack spacing also applies on both sides of the Spacer, so collapsed zeroes both.
+        HStack(spacing: collapsed ? 0 : 6) {
+            if !collapsed {
+                Image(systemName: "chart.xyaxis.line")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            Text(collapsed ? "\(count)" : "Indicators")
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.85))
-            Spacer(minLength: 10)
+                .foregroundStyle(.primary)
+            Spacer(minLength: collapsed ? 3 : 10)
             Button {
                 withAnimation(.easeInOut(duration: 0.16)) { collapsed.toggle() }
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.secondary)
                     .rotationEffect(.degrees(collapsed ? -90 : 0))
                     .frame(width: 14, height: 14)
             }
             .buttonStyle(.plain)
             .accessibilityLabel(collapsed ? "Expand indicator list" : "Collapse indicator list")
         }
-        .padding(.horizontal, 4)
+        .padding(.leading, 4)
+        .padding(.trailing, collapsed ? 0 : 4)
         .padding(.vertical, 1)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.easeInOut(duration: 0.16)) { collapsed.toggle() } }
@@ -152,7 +161,7 @@ private struct PineIndicatorLegendRow: View {
         HStack(spacing: 7) {
             Text(info.title)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(info.isVisible ? .white : .white.opacity(0.55))
+                .foregroundStyle(info.isVisible ? .primary : .secondary)
                 .lineLimit(1)
             if info.hasError {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -176,6 +185,10 @@ private struct PineIndicatorLegendRow: View {
                         viewModel: viewModel, instanceID: info.id, onStyleChanged: onStyleChanged)
                 }
 
+            control("curlybraces") { openInScriptManager() }
+                .help("Edit script in Script Manager")
+                .accessibilityLabel("Edit \(info.title) in Script Manager")
+
             control("xmark") {
                 viewModel.removePineInstance(info.id)
                 onStyleChanged()
@@ -186,7 +199,7 @@ private struct PineIndicatorLegendRow: View {
         .padding(.vertical, 3)
         .background(
             RoundedRectangle(cornerRadius: 5)
-                .fill(Color.white.opacity(rowHovering ? 0.08 : 0))
+                .fill(Color.primary.opacity(rowHovering ? 0.08 : 0))
         )
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -194,6 +207,14 @@ private struct PineIndicatorLegendRow: View {
         }
         .opacity(info.isVisible ? 1 : 0.55)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Opens the Script Manager on this instance's script, previewing the chart's own market
+    /// (when the preview supports its source; otherwise it keeps its current one).
+    private func openInScriptManager() {
+        let market = PreviewMarket(ticker: viewModel.ticker, source: viewModel.source)
+        WindowCoordinator.shared.openScriptManager(
+            selecting: info.scriptID, market: PreviewMarket.isSupported(market.source) ? market : nil)
     }
 
     /// One fixed-size control icon — `alt` swaps the symbol (for the eye/eye.slash toggle)
@@ -206,7 +227,7 @@ private struct PineIndicatorLegendRow: View {
                 .frame(width: 16, height: 16)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.white.opacity(0.85))
+        .foregroundStyle(.primary.opacity(0.85))
         .opacity(controlsVisible ? 1 : 0)
         .allowsHitTesting(controlsVisible)
         .accessibilityHidden(!controlsVisible)

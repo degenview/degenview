@@ -67,8 +67,17 @@ struct ScriptManagerView: View {
                 .help(chartVisible ? "Hide the preview chart" : "Show the preview chart")
             }
         }
-        .task { model.load() }
+        .task {
+            model.load()
+            if let market = WindowCoordinator.shared.takePendingScriptManagerMarket() {
+                preview.selectMarket(market)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .selectPreviewMarketInManager)) { note in
+            _ = WindowCoordinator.shared.takePendingScriptManagerMarket()
+            if let market = note.object as? PreviewMarket { preview.selectMarket(market) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .selectScriptInManager)) { note in
             if let id = note.object as? UUID { model.select(id) }
         }

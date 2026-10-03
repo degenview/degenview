@@ -291,15 +291,26 @@ final class WindowCoordinator {
         return pendingScriptManagerSelection
     }
 
-    /// Opens (or focuses) the Script Manager, with `scriptID` selected when given.
-    func openScriptManager(selecting scriptID: UUID? = nil) {
+    /// Market the Script Manager preview should chart once it loads; parked like
+    /// `pendingScriptManagerSelection`.
+    private(set) var pendingScriptManagerMarket: PreviewMarket?
+
+    func takePendingScriptManagerMarket() -> PreviewMarket? {
+        defer { pendingScriptManagerMarket = nil }
+        return pendingScriptManagerMarket
+    }
+
+    /// Opens (or focuses) the Script Manager, with `scriptID` selected and the preview pointed at
+    /// `market` when given.
+    func openScriptManager(selecting scriptID: UUID? = nil, market: PreviewMarket? = nil) {
         if let scriptID { pendingScriptManagerSelection = scriptID }
+        if let market { pendingScriptManagerMarket = market }
         guard let openWindow = openWindowAction else { return }
         prepareAuxiliaryTab()
         openWindow(id: "script-manager")
-        guard let scriptID else { return }
-        // Reaches an already-open manager; a new one reads the pending selection instead.
-        NotificationCenter.default.post(name: .selectScriptInManager, object: scriptID)
+        // Each reaches an already-open manager; a new one reads the pending values instead.
+        if let market { NotificationCenter.default.post(name: .selectPreviewMarketInManager, object: market) }
+        if let scriptID { NotificationCenter.default.post(name: .selectScriptInManager, object: scriptID) }
     }
 
     /// Script alert the Alerts window should bring into view once it loads; parked like
@@ -491,5 +502,6 @@ final class WindowCoordinator {
 extension Notification.Name {
     static let portfolioAddTransaction = Notification.Name("portfolioAddTransaction")
     static let selectScriptInManager = Notification.Name("selectScriptInManager")
+    static let selectPreviewMarketInManager = Notification.Name("selectPreviewMarketInManager")
     static let showScriptAlertInCenter = Notification.Name("showScriptAlertInCenter")
 }
