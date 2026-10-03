@@ -13,6 +13,7 @@
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
 		17004834404D65A516B67060 /* PineHighlightScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653EB4B8B310D7D67D9FF4FC /* PineHighlightScopes.swift */; };
 		1BBE15D939B04D1D9632F7E6 /* PineIndicatorLegendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */; };
+		A1C0DE0000000000000000F1 /* PineInputsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */; };
 		1DAC5FB0C81B58F9830D3762 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
 		1E14B68E0F74864D3FD986E4 /* PineSyntaxCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AFA598476F6E0536D538027 /* PineSyntaxCategory.swift */; };
 		210811D2641BFEA642CB5C1B /* AppSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7BF0A39943224E6FE7AB590 /* AppSupport.swift */; };
@@ -754,6 +755,7 @@
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		1B32BD69F4104172033B7086 /* PineInstanceSettingsPopover.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInstanceSettingsPopover.swift; sourceTree = "<group>"; };
 		1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineIndicatorLegendTests.swift; sourceTree = "<group>"; };
+		A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInputsViewTests.swift; sourceTree = "<group>"; };
 		21ED9B39CB3E02C5EFDC852C /* PineAlertsSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertsSection.swift; sourceTree = "<group>"; };
 		25F781FB543C23EA5567E8E9 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		286EFD69AD17D4B9995402E7 /* PineInstanceResult.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInstanceResult.swift; sourceTree = "<group>"; };
@@ -1884,6 +1886,7 @@
 				6D522B75BD2332D9948E8947 /* ChartViewModelMultiPineInstanceTests.swift */,
 				49183ED8491C0A50D3F2B4CB /* ChartViewModelPineInstancePersistenceTests.swift */,
 				1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */,
+				A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */,
 			);
 			path = DegenViewTests;
 			sourceTree = "<group>";
@@ -3049,6 +3052,7 @@
 				95529618D60C56DDAA96913B /* ChartViewModelMultiPineInstanceTests.swift in Sources */,
 				EAD2458EA9D12466C1B4265E /* ChartViewModelPineInstancePersistenceTests.swift in Sources */,
 				1BBE15D939B04D1D9632F7E6 /* PineIndicatorLegendTests.swift in Sources */,
+				A1C0DE0000000000000000F1 /* PineInputsViewTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
