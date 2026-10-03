@@ -217,7 +217,8 @@ struct ChartCardView: View {
     private var alertAsset: PortfolioAsset {
         PortfolioAsset(
             key: viewModel.iconKey, symbol: viewModel.baseSymbol, name: viewModel.title,
-            source: viewModel.source, quoteCurrency: .USD, metadata: ["apiSymbol": viewModel.apiSymbol])
+            source: viewModel.source, quoteCurrency: PortfolioCurrency(quoteSymbol: viewModel.marketPair?.quote),
+            metadata: ["apiSymbol": viewModel.apiSymbol])
     }
 
     // MARK: - PM Series Legend

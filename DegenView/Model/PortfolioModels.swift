@@ -4,6 +4,17 @@ enum PortfolioCurrency: String, Codable, CaseIterable, Identifiable, Sendable {
     case USD, EUR, GBP, JPY, CHF, BTC
     var id: String { rawValue }
 
+    /// The currency a pair's quote asset is priced in. Dollar stablecoins count as USD; a quote
+    /// this app can't convert (`TRY`, `ETH`, …) falls back to USD.
+    init(quoteSymbol: String?) {
+        let quote = quoteSymbol?.uppercased()
+        if quote == "USDT" || quote == "USDC" {
+            self = .USD
+        } else {
+            self = quote.flatMap(PortfolioCurrency.init(rawValue:)) ?? .USD
+        }
+    }
+
     func format(_ value: Decimal) -> String {
         switch self {
         case .JPY: value.formatted(.currency(code: rawValue).precision(.fractionLength(0)))
@@ -123,11 +134,8 @@ struct PortfolioAsset: Codable, Hashable, Identifiable, Sendable {
     }
 
     init(searchResult: TickerSearchResult) {
-        let quote = searchResult.symbol.split(separator: "/").last.map(String.init)?.uppercased()
-        let currency: PortfolioCurrency = {
-            if quote == "USDT" || quote == "USDC" { return .USD }
-            return quote.flatMap(PortfolioCurrency.init(rawValue:)) ?? .USD
-        }()
+        let quote = searchResult.symbol.split(separator: "/").last.map(String.init)
+        let currency = PortfolioCurrency(quoteSymbol: quote)
         self.init(
             key: "\(searchResult.source.rawValue):\(searchResult.fullSymbol)",
             symbol: searchResult.symbol, name: searchResult.symbol,

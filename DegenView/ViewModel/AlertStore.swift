@@ -49,7 +49,7 @@ final class AlertStore: ObservableObject {
     var activeCount: Int { alerts.filter { $0.state == .active }.count }
     func alerts(for assetKey: String) -> [PriceAlert] { alerts.filter { $0.asset.key == assetKey } }
     func latestPrice(for asset: PortfolioAsset, currency: PortfolioCurrency) async -> Decimal? {
-        let quote = await MarketQuoteCoordinator.shared.latestQuote(for: asset.key)
+        let quote = await MarketQuoteCoordinator.shared.quote(for: asset)
         guard let quote, quote.isFresh, let rate = await FXRateService.shared.rate(from: quote.currency, to: currency)
         else { return nil }
         return quote.price * rate

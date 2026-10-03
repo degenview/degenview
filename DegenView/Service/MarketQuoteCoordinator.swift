@@ -27,9 +27,23 @@ actor MarketQuoteCoordinator {
     }
     func latestQuote(for key: String) -> MarketQuote? { latest[key] }
 
+    /// The cached quote while it is fresh; otherwise a one-off fetch. Polling only covers assets
+    /// with an active alert, so a brand-new alert's asset has no cached quote. The fetched quote is
+    /// not ingested — an unwatched asset must not feed the alert engine.
+    func quote(for asset: PortfolioAsset) async -> MarketQuote? {
+        if let cached = latest[asset.key], cached.isFresh { return cached }
+        return await Self.fetchQuote(for: asset)
+    }
+
     func ingest(_ quote: MarketQuote) async {
-        guard latest[quote.asset.key]?.fingerprint != quote.fingerprint else { return }
-        if let old = latest[quote.asset.key], quote.sourceTimestamp < old.sourceTimestamp { return }
+        if let old = latest[quote.asset.key] {
+            if quote.sourceTimestamp < old.sourceTimestamp { return }
+            // Same price and candle: nothing new to announce, but the read is newer — keep it fresh.
+            if old.fingerprint == quote.fingerprint {
+                latest[quote.asset.key] = quote
+                return
+            }
+        }
         latest[quote.asset.key] = quote
         await onQuote?(quote)
     }
@@ -51,29 +65,35 @@ actor MarketQuoteCoordinator {
             let chunk = values[chunkStart..<min(chunkStart + 4, values.count)]
             await withTaskGroup(of: MarketQuote?.self) { group in
                 for asset in chunk {
-                    group.addTask {
-                        do {
-                            let symbol =
-                                asset.metadata["apiSymbol"]
-                                ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
-                            let interval = asset.source == .alpaca ? "1h" : "1m"
-                            let candles = try await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
-                                symbol: symbol, interval: interval, limit: 2)
-                            guard let candle = candles.last else { return nil }
-                            let received = Date()
-                            let sourceDate = candle.openTime
-                            let quote = MarketQuote(
-                                asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
-                                sourceTimestamp: sourceDate, receivedAt: received,
-                                maximumAge: Self.maximumAge(for: asset.source),
-                                fingerprint: "\(asset.key):\(sourceDate.timeIntervalSince1970):\(candle.closePrice)")
-                            return quote
-                        } catch { return nil }
-                    }
+                    group.addTask { await Self.fetchQuote(for: asset) }
                 }
                 for await quote in group { if let quote { await ingest(quote) } }
             }
         }
+    }
+
+    /// One REST read of the latest candle close, without touching the cache or the quote handler.
+    nonisolated static func fetchQuote(for asset: PortfolioAsset) async -> MarketQuote? {
+        guard !asset.source.isPredictionMarket else { return nil }
+        do {
+            let symbol =
+                asset.metadata["apiSymbol"]
+                ?? String(asset.key.dropFirst(asset.source.rawValue.count + 1))
+            let interval = asset.source == .alpaca ? "1h" : "1m"
+            let candles = try await DataSourceFactory.shared.service(for: asset.source).fetchKlines(
+                symbol: symbol, interval: interval, limit: 2)
+            guard let candle = candles.last else { return nil }
+            let received = Date()
+            // Coinbase emits no candle for a minute without trades, so a quiet pair's newest candle
+            // can be many minutes old while its close is still the last price. The response itself
+            // is current; age it from now rather than from the candle.
+            let sourceDate = asset.source == .coinbase ? received : candle.openTime
+            return MarketQuote(
+                asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
+                sourceTimestamp: sourceDate, receivedAt: received,
+                maximumAge: maximumAge(for: asset.source),
+                fingerprint: "\(asset.key):\(candle.openTime.timeIntervalSince1970):\(candle.closePrice)")
+        } catch { return nil }
     }
 
     /// Quote polling needs one descriptor per logical asset. Alerts and portfolios can
