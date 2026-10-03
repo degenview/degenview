@@ -1,6 +1,12 @@
 import AppKit
 
 final class PineTextView: NSTextView {
+    /// What the user just did, for the completion controller to read when the text has changed.
+    var pendingCompletionCause: PineCompletionTrigger.Cause?
+
+    /// The completion list and signature help of this editor.
+    private(set) lazy var completion = PineCompletionController(textView: self)
+
     /// Double-clicking `table` in `table.cell` selects only `table`: AppKit's word
     /// breaking treats dotted names as one word, which is wrong for code.
     override func selectionRange(
@@ -29,6 +35,8 @@ final class PineTextView: NSTextView {
             ranges = [NSValue(range: word)]
         }
         super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
+        // A typed character moves the caret too; `didChangeText` handles that case with the cause.
+        if !stillSelecting, pendingCompletionCause == nil { completion.selectionDidChange() }
     }
 
     private func doubleClickedWord() -> NSRange? {
@@ -52,6 +60,12 @@ final class PineTextView: NSTextView {
     // all fall through to AppKit's own behaviour.
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
+        if replacementRange.location == NSNotFound, !hasMarkedText(),
+            let text = (string as? String) ?? (string as? NSAttributedString)?.string
+        {
+            pendingCompletionCause = .typed(text)
+        }
+        defer { pendingCompletionCause = nil }
         if replacementRange.location == NSNotFound, let edit = pairingEdit(forTyped: string) {
             perform(edit)
             return
@@ -59,14 +73,59 @@ final class PineTextView: NSTextView {
         super.insertText(string, replacementRange: replacementRange)
     }
 
+    override func didChangeText() {
+        super.didChangeText()
+        completion.textDidChange(hasMarkedText() ? nil : pendingCompletionCause)
+    }
+
+    // The completion list takes Return, Tab, Up, Down and Escape only while it is open with a row
+    // selected; closed, each falls through to the editing behaviour below.
+
     override func insertNewline(_ sender: Any?) {
+        if completion.acceptSelected() { return }
         guard let context = editingContext else { return super.insertNewline(sender) }
         perform(PineIndentationEngine.newline(in: context))
     }
 
     override func insertTab(_ sender: Any?) {
+        if completion.acceptSelected() { return }
         guard let context = editingContext else { return super.insertTab(sender) }
         perform(PineIndentationEngine.indent(in: context), actionName: "Indent")
+    }
+
+    override func moveDown(_ sender: Any?) {
+        if !completion.moveSelection(by: 1) { super.moveDown(sender) }
+    }
+
+    override func moveUp(_ sender: Any?) {
+        if !completion.moveSelection(by: -1) { super.moveUp(sender) }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        // NSTextView has no handler of its own; an Escape nothing here wants goes up the chain.
+        if !completion.cancel() {
+            _ = nextResponder?.tryToPerform(#selector(NSResponder.cancelOperation(_:)), with: sender)
+        }
+    }
+
+    /// Option-Escape and F5: the standard "complete" command.
+    override func complete(_ sender: Any?) {
+        completion.explicitInvoke()
+    }
+
+    override func resignFirstResponder() -> Bool {
+        completion.dismissAll()
+        return super.resignFirstResponder()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        completion.dismissAll()
+        super.mouseDown(with: event)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        completion.dismissAll()
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func insertBacktab(_ sender: Any?) {
@@ -75,6 +134,8 @@ final class PineTextView: NSTextView {
     }
 
     override func deleteBackward(_ sender: Any?) {
+        if !hasMarkedText() { pendingCompletionCause = .deleted }
+        defer { pendingCompletionCause = nil }
         guard let context = editingContext, let edit = PineEditorPairing.backspace(in: context) else {
             return super.deleteBackward(sender)
         }
@@ -93,6 +154,13 @@ final class PineTextView: NSTextView {
         guard window?.firstResponder === self,
             let key = event.charactersIgnoringModifiers?.lowercased()
         else { return super.performKeyEquivalent(with: event) }
+
+        // Control-Space asks for completion (macOS may reserve it for input sources; Option-Escape and
+        // F5 reach the same command through `complete(_:)`).
+        if event.keyCode == 49, modifiers == [.control], !hasMarkedText() {
+            completion.explicitInvoke()
+            return true
+        }
 
         if let command = PineEditorShortcut(keyCode: event.keyCode, key: key, modifiers: modifiers),
             let context = editingContext

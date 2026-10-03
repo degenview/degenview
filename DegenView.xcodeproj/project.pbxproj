@@ -432,6 +432,7 @@
 		E7066389703532A203B8B5C9 /* PineEditorTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F0DBDED4012864B42F0386 /* PineEditorTestSupport.swift */; };
 		E7158782B18FD11353F84829 /* PineEditorCommandsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74AAE5B5748FC5C381C8AB6 /* PineEditorCommandsTests.swift */; };
 		E71D26A5C4333D98F65B1BE7 /* PineEditorPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */; };
+		E04C9AD5762657FDF8E4B272 /* PineCompletionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D87BE976B55853DAA3C655 /* PineCompletionControllerTests.swift */; };
 		01D959CC3970F1205766CA12 /* PineCompletionPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D0413EACE0A1782DDF6AB7 /* PineCompletionPerformanceTests.swift */; };
 		1DF4CEEF3137475F0E71712C /* PineLibraryExportsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8DF36264E9FC5928DC5221F /* PineLibraryExportsTests.swift */; };
 		4CE868B27ADEECF77B7EFF45 /* PineSignatureHelpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CCB66FE816CE4025A1AB01D /* PineSignatureHelpTests.swift */; };
@@ -446,6 +447,14 @@
 		E74CC96CFD3364200FAD8C20 /* PineTextView+Editing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E75F63AA8385D34824298417 /* PineTextView+Editing.swift */; };
 		E75488CF1ACED0E6628EB3D0 /* PineLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A2B80A9084EA5A91CEFF60 /* PineLayoutManager.swift */; };
 		E75ED523426838CE799E41FE /* PineEditorEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */; };
+		D8E507CC0E2C8A09A0591510 /* PineTextView+Completion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6284ACC97C9ED55409DB8871 /* PineTextView+Completion.swift */; };
+		7C512E1B4B25E2250D65861D /* PineCompletionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7413637DBF0C5D487F27FA2B /* PineCompletionController.swift */; };
+		44A55A7271C4A964BD29CB29 /* PineSignaturePanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A903E7EC05715F256878B6E7 /* PineSignaturePanel.swift */; };
+		97C5DA4E87AC131C328636D9 /* PineCompletionPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30F0AE9B06D35B6A6F37B077 /* PineCompletionPanel.swift */; };
+		35C23104C9E120C10EC65D6C /* PineCompletionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4D22DCC5C0F566CBD350A8B /* PineCompletionListView.swift */; };
+		59727EDC87FB549142A83538 /* PineCompletionTableRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 897AF73D3E49285B210F87D7 /* PineCompletionTableRowView.swift */; };
+		A47AE00F2EE5C55B4612480E /* PineCompletionTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B8ECE3CBD4209A78158CE8E /* PineCompletionTableView.swift */; };
+		F3958835A8248F73F3BD22F8 /* PineCompletionRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BE8CB49F1F1B3101A68C353 /* PineCompletionRowView.swift */; };
 		957BC8066F0D988B6B82521F /* PineLibraryExportDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2E8B63FAB236C9B9094C5155 /* PineLibraryExportDirectory.swift */; };
 		2B059CDEE228544F99027148 /* PineSignatureResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E4123EABC4553381228A682 /* PineSignatureResolver.swift */; };
 		C10BE82B54168670BB9050C0 /* PineSignatureHelp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 178CD5B73C6C77C91BB5306F /* PineSignatureHelp.swift */; };
@@ -1176,6 +1185,14 @@
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
 		E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorEdit.swift; sourceTree = "<group>"; };
+		6284ACC97C9ED55409DB8871 /* PineTextView+Completion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineTextView+Completion.swift"; sourceTree = "<group>"; };
+		7413637DBF0C5D487F27FA2B /* PineCompletionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionController.swift; sourceTree = "<group>"; };
+		A903E7EC05715F256878B6E7 /* PineSignaturePanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSignaturePanel.swift; sourceTree = "<group>"; };
+		30F0AE9B06D35B6A6F37B077 /* PineCompletionPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionPanel.swift; sourceTree = "<group>"; };
+		A4D22DCC5C0F566CBD350A8B /* PineCompletionListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionListView.swift; sourceTree = "<group>"; };
+		897AF73D3E49285B210F87D7 /* PineCompletionTableRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionTableRowView.swift; sourceTree = "<group>"; };
+		7B8ECE3CBD4209A78158CE8E /* PineCompletionTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionTableView.swift; sourceTree = "<group>"; };
+		2BE8CB49F1F1B3101A68C353 /* PineCompletionRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionRowView.swift; sourceTree = "<group>"; };
 		2E8B63FAB236C9B9094C5155 /* PineLibraryExportDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLibraryExportDirectory.swift; sourceTree = "<group>"; };
 		4E4123EABC4553381228A682 /* PineSignatureResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSignatureResolver.swift; sourceTree = "<group>"; };
 		178CD5B73C6C77C91BB5306F /* PineSignatureHelp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSignatureHelp.swift; sourceTree = "<group>"; };
@@ -1195,6 +1212,7 @@
 		694A95CA73B7C6A4B32700E2 /* PineStatementSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStatementSplitter.swift; sourceTree = "<group>"; };
 		E714F3451838E69B5737F0A6 /* PineCurrentLineRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCurrentLineRenderer.swift; sourceTree = "<group>"; };
 		E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorPairingTests.swift; sourceTree = "<group>"; };
+		D7D87BE976B55853DAA3C655 /* PineCompletionControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionControllerTests.swift; sourceTree = "<group>"; };
 		55D0413EACE0A1782DDF6AB7 /* PineCompletionPerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionPerformanceTests.swift; sourceTree = "<group>"; };
 		E8DF36264E9FC5928DC5221F /* PineLibraryExportsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLibraryExportsTests.swift; sourceTree = "<group>"; };
 		8CCB66FE816CE4025A1AB01D /* PineSignatureHelpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSignatureHelpTests.swift; sourceTree = "<group>"; };
@@ -1894,6 +1912,7 @@
 				E774164EB796C48C79305ED6 /* PineIndentationEngineTests.swift */,
 				E76519C2A3E15052A189DF9F /* PineDelimiterMatcherTests.swift */,
 				E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */,
+				D7D87BE976B55853DAA3C655 /* PineCompletionControllerTests.swift */,
 				55D0413EACE0A1782DDF6AB7 /* PineCompletionPerformanceTests.swift */,
 				E8DF36264E9FC5928DC5221F /* PineLibraryExportsTests.swift */,
 				8CCB66FE816CE4025A1AB01D /* PineSignatureHelpTests.swift */,
@@ -2138,6 +2157,14 @@
 				E72A5401B065B11989DBBC97 /* PineEditorContext.swift */,
 				E7E2FD84391392E5D135AC32 /* PineLexicalSnapshot.swift */,
 				E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */,
+				6284ACC97C9ED55409DB8871 /* PineTextView+Completion.swift */,
+				7413637DBF0C5D487F27FA2B /* PineCompletionController.swift */,
+				A903E7EC05715F256878B6E7 /* PineSignaturePanel.swift */,
+				30F0AE9B06D35B6A6F37B077 /* PineCompletionPanel.swift */,
+				A4D22DCC5C0F566CBD350A8B /* PineCompletionListView.swift */,
+				897AF73D3E49285B210F87D7 /* PineCompletionTableRowView.swift */,
+				7B8ECE3CBD4209A78158CE8E /* PineCompletionTableView.swift */,
+				2BE8CB49F1F1B3101A68C353 /* PineCompletionRowView.swift */,
 				2E8B63FAB236C9B9094C5155 /* PineLibraryExportDirectory.swift */,
 				4E4123EABC4553381228A682 /* PineSignatureResolver.swift */,
 				178CD5B73C6C77C91BB5306F /* PineSignatureHelp.swift */,
@@ -2963,6 +2990,14 @@
 				E77E3026C54C91616EC8B917 /* PineEditorContext.swift in Sources */,
 				E7D6DCC10B65146AFB4CA83E /* PineLexicalSnapshot.swift in Sources */,
 				E75ED523426838CE799E41FE /* PineEditorEdit.swift in Sources */,
+				D8E507CC0E2C8A09A0591510 /* PineTextView+Completion.swift in Sources */,
+				7C512E1B4B25E2250D65861D /* PineCompletionController.swift in Sources */,
+				44A55A7271C4A964BD29CB29 /* PineSignaturePanel.swift in Sources */,
+				97C5DA4E87AC131C328636D9 /* PineCompletionPanel.swift in Sources */,
+				35C23104C9E120C10EC65D6C /* PineCompletionListView.swift in Sources */,
+				59727EDC87FB549142A83538 /* PineCompletionTableRowView.swift in Sources */,
+				A47AE00F2EE5C55B4612480E /* PineCompletionTableView.swift in Sources */,
+				F3958835A8248F73F3BD22F8 /* PineCompletionRowView.swift in Sources */,
 				957BC8066F0D988B6B82521F /* PineLibraryExportDirectory.swift in Sources */,
 				2B059CDEE228544F99027148 /* PineSignatureResolver.swift in Sources */,
 				C10BE82B54168670BB9050C0 /* PineSignatureHelp.swift in Sources */,
@@ -3132,6 +3167,7 @@
 				E765D40F43053BBDBECCA297 /* PineIndentationEngineTests.swift in Sources */,
 				E74664BE4D045ECEF2C58FED /* PineDelimiterMatcherTests.swift in Sources */,
 				E71D26A5C4333D98F65B1BE7 /* PineEditorPairingTests.swift in Sources */,
+				E04C9AD5762657FDF8E4B272 /* PineCompletionControllerTests.swift in Sources */,
 				01D959CC3970F1205766CA12 /* PineCompletionPerformanceTests.swift in Sources */,
 				1DF4CEEF3137475F0E71712C /* PineLibraryExportsTests.swift in Sources */,
 				4CE868B27ADEECF77B7EFF45 /* PineSignatureHelpTests.swift in Sources */,
