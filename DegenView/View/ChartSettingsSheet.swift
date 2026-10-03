@@ -29,7 +29,7 @@ struct ChartSettingsSheet: View {
     @State private var scriptToAdd: UUID?
     @State private var editingInstanceID: UUID?
     @State private var scriptLoadError: String?
-    @State private var showingPineAlertEditor = false
+    @State private var alertTarget: AlertTarget?
     @StateObject private var pineAlerts = PineAlertStore.shared
 
     @Environment(\.dismiss) private var dismiss
@@ -168,7 +168,7 @@ struct ChartSettingsSheet: View {
                     + "To change a chart's market, remove it and add a new one."
             )
         }
-        .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
+        .sheet(item: $alertTarget) { PineAlertEditor(viewModel: viewModel, instanceID: $0.id) }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
             onStyleChanged()
@@ -419,16 +419,12 @@ struct ChartSettingsSheet: View {
                         detail: "Write one in the Script Manager and it will show up here.",
                         actionTitle: "Open Script Manager", action: openScriptManager)
                 } else {
-                    HStack(spacing: 10) {
-                        Button {
-                            openScriptManager()
-                        } label: {
-                            Label("Script Manager", systemImage: "curlybraces.square")
-                        }
-                        .help("Open Script Manager in a new tab")
-
-                        if !viewModel.scriptInstances.isEmpty { scriptAlertControls }
+                    Button {
+                        openScriptManager()
+                    } label: {
+                        Label("Script Manager", systemImage: "curlybraces.square")
                     }
+                    .help("Open Script Manager in a new tab")
                 }
             }
 
@@ -466,18 +462,24 @@ struct ChartSettingsSheet: View {
                     .toggleStyle(.switch)
                     .accessibilityLabel(instance.isVisible ? "Hide \(title)" : "Show \(title)")
 
+                    alertButton(for: instance, title: title, hasError: hasError)
+
                     Button {
                         editingInstanceID = instance.id
-                    } label: { Image(systemName: "gearshape") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("\(title) settings")
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(title) settings")
 
                     Button(role: .destructive) {
                         viewModel.removePineInstance(instance.id)
                         onStyleChanged()
-                    } label: { Image(systemName: "xmark") }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("Remove \(title)")
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(title)")
                 }
             }
         }
@@ -493,30 +495,45 @@ struct ChartSettingsSheet: View {
         }
     }
 
-    /// "Create Alert…" until this chart has an alert for the script on its current market; then
-    /// "View Alert" with that alert's state, which opens it in the Alerts window.
-    @ViewBuilder private var scriptAlertControls: some View {
+    /// A bell per applied indicator: "create alert" until this chart has one for it on its current
+    /// market, then a badged bell that opens that alert in the Alerts window. Creating is disabled —
+    /// with the reason as its tooltip — while the script is loading, has errors, or can never alert.
+    @ViewBuilder
+    private func alertButton(for instance: ChartScriptInstance, title: String, hasError: Bool) -> some View {
         if let existing = pineAlerts.subscription(
-            forChart: viewModel.chartID, scriptID: viewModel.scriptInstances.first?.scriptID,
-            dataset: viewModel.pineAlertDataset)
+            forChart: viewModel.chartID, instanceID: instance.id, dataset: viewModel.pineAlertDataset)
         {
             let status = pineAlerts.status(of: existing)
             Button {
                 openAlert(existing)
             } label: {
-                Label("View Alert", systemImage: "bell.badge")
+                Image(systemName: "bell.badge")
             }
-            .help("Show this script's alert in the Alerts window")
-            SettingsStatusBadge(text: status.text, tone: status.tone)
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
+            .help("View alert for \(title) — \(status.text)")
+            .accessibilityLabel("View alert for \(title), \(status.text)")
         } else {
+            let blocker = alertBlocker(for: instance, hasError: hasError)
             Button {
-                showingPineAlertEditor = true
+                alertTarget = AlertTarget(id: instance.id)
             } label: {
-                Label("Create Alert…", systemImage: "bell")
+                Image(systemName: "bell")
             }
-            .disabled(viewModel.appliedSourceHash == nil)
-            .help("Notify me when the applied script raises alert() on a live bar")
+            .buttonStyle(.plain)
+            .disabled(blocker != nil)
+            .help(blocker ?? "Notify me when \(title) raises alert() on a live bar")
+            .accessibilityLabel("Create alert for \(title)")
         }
+    }
+
+    /// Why an alert cannot be created for `instance` right now, nil when it can.
+    private func alertBlocker(for instance: ChartScriptInstance, hasError: Bool) -> String? {
+        guard let result = viewModel.pineResults[instance.id], viewModel.pineInstanceSourceHashes[instance.id] != nil
+        else { return "Still loading this script…" }
+        if hasError { return "Fix this script's errors before creating an alert." }
+        if result.alertCallCount == 0 { return "This script has no alert() or alertcondition() calls." }
+        return nil
     }
 
     /// Libraries only export code to other scripts, so they are never offered for a chart.
@@ -629,4 +646,9 @@ struct ChartSettingsSheet: View {
         onRemove: {},
         onStyleChanged: {}
     )
+}
+
+/// Which applied indicator the alert editor sheet is open for.
+private struct AlertTarget: Identifiable {
+    let id: UUID
 }

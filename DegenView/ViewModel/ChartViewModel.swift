@@ -253,12 +253,16 @@ final class ChartViewModel: ObservableObject {
     private var pineDataset: PineDatasetKey?
     /// The timeframe most recently requested from `fetchData`.
     private var requestedRange: TimeRange?
-    /// Called on the main actor with alerts a script raised on a live bar. Historical calculation and
-    /// loading never call it.
-    var pineAlertHandler: (([PineAlertEvent], PineBarID?) -> Void)?
-    /// Called on the main actor whenever the applied script is recalculated from scratch: with the
-    /// market it now runs on and the hash of its source, nil when no script is applied.
-    var pineContextHandler: ((PineDatasetKey, String?) -> Void)?
+    /// Called on the main actor with alerts a script raised on a live bar, and the applied instance
+    /// that raised them (nil for the single-script preview path). Historical calculation and loading
+    /// never call it.
+    var pineAlertHandler: (([PineAlertEvent], PineBarID?, UUID?) -> Void)?
+    /// Called on the main actor whenever the applied scripts are recalculated from scratch or learn
+    /// their source: with the market they now run on and the source hash of every instance that has
+    /// one. An instance whose source is not resolved yet is absent, never "changed".
+    var pineContextHandler: ((PineDatasetKey, [UUID: String]) -> Void)?
+    /// Called on the main actor with an applied instance's id once it is removed from the chart.
+    var pineInstanceRemovedHandler: ((UUID) -> Void)?
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -647,7 +651,9 @@ final class ChartViewModel: ObservableObject {
 
     /// Stops the running script and forgets its source and inputs.
     func unloadPineScript() {
+        let removed = scriptInstances.map(\.id)
         scriptInstances = []
+        removed.forEach { pineInstanceRemovedHandler?($0) }
         pineConfiguration = nil
         pineDiagnostics = []
         pineStatus = "No script applied"
@@ -695,7 +701,7 @@ final class ChartViewModel: ObservableObject {
         stopPineFeed()
         pineGeneration += 1
         let generation = pineGeneration
-        pineContextHandler?(pineAlertDataset, appliedSourceHash)
+        pineContextHandler?(pineAlertDataset, [:])
         guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
             pineOutput = .empty
             return
@@ -793,7 +799,7 @@ final class ChartViewModel: ObservableObject {
             pineDiagnostics = program.diagnostics
             let live = update.executions.contains { $0.isRealtime }
             pineStatus = "Applied \(program.declaration.title) · \(update.output.barCount) bars\(live ? " · live" : "")"
-            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID) }
+            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID, nil) }
         case .unchanged:
             break
         case .needsRebuild:
@@ -832,7 +838,6 @@ final class ChartViewModel: ObservableObject {
         let instance = ChartScriptInstance(scriptID: scriptID, loadedRevisionID: revisionID, inputs: inputs)
         scriptInstances.append(instance)
         reevaluatePineInstance(instance.id, source: source, compiled: compiled)
-        pineContextHandler?(pineAlertDataset, firstPineInstanceSourceHash)
         return instance.id
     }
 
@@ -843,7 +848,8 @@ final class ChartViewModel: ObservableObject {
         pineRuntimes.removeValue(forKey: id)
         pineResults.removeValue(forKey: id)
         scriptInstances.removeAll { $0.id == id }
-        pineContextHandler?(pineAlertDataset, firstPineInstanceSourceHash)
+        pineInstanceRemovedHandler?(id)
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
     }
 
     /// Suppresses rendering without discarding config or runtime state.
@@ -871,14 +877,21 @@ final class ChartViewModel: ObservableObject {
     /// never rebuilds.
     func pineGeneration(forInstance id: UUID) -> Int? { pineRuntimes[id]?.generation }
 
-    /// Hash of the first applied instance's resolved source — matches the `.first`-only alert
-    /// call sites in `PineAlertCoordinator`/`PineAlertEditor`. Instance-aware alert routing is
-    /// a deferred follow-up.
-    var firstPineInstanceSourceHash: String? {
-        guard let first = scriptInstances.first, let resolved = pineRuntimes[first.id]?.resolvedSource,
-            !resolved.isEmpty
-        else { return nil }
-        return ScriptSourceHash.sha256(resolved)
+    /// Hash of each applied instance's resolved source. An instance still resolving its script is
+    /// absent, so a subscription is never judged against a source that is not known yet.
+    var pineInstanceSourceHashes: [UUID: String] {
+        var hashes: [UUID: String] = [:]
+        for instance in scriptInstances {
+            if let resolved = pineRuntimes[instance.id]?.resolvedSource, !resolved.isEmpty {
+                hashes[instance.id] = ScriptSourceHash.sha256(resolved)
+            }
+        }
+        return hashes
+    }
+
+    /// The source one applied instance is running, once resolved from the script library.
+    func pineInstanceResolvedSource(_ id: UUID) -> String? {
+        pineRuntimes[id]?.resolvedSource
     }
 
     /// Recalculates one instance from scratch: on an input, theme, symbol or timeframe change
@@ -970,6 +983,7 @@ final class ChartViewModel: ObservableObject {
 
     private func cachePineInstanceResolvedSource(_ id: UUID, _ source: String) {
         pineRuntimes[id]?.resolvedSource = source
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
     }
 
     private func markPineInstanceUpdateStatus(_ id: UUID, isLatest: Bool) {
@@ -1005,8 +1019,9 @@ final class ChartViewModel: ObservableObject {
             result.diagnostics = program.diagnostics
             let live = update.executions.contains { $0.isRealtime }
             result.status = "Applied \(program.declaration.title) · \(update.output.barCount) bars\(live ? " · live" : "")"
+            result.alertCallCount = program.alertCallSites.count
             pineResults[instanceID] = result
-            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID) }
+            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID, instanceID) }
         case .unchanged:
             break
         case .needsRebuild:
@@ -1046,7 +1061,7 @@ final class ChartViewModel: ObservableObject {
     /// Symbol/timeframe/theme/replay change: every instance is stale, all rebuild against the
     /// same new authoritative history.
     private func reevaluateAllPineInstances() {
-        pineContextHandler?(pineAlertDataset, firstPineInstanceSourceHash)
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
         for instance in scriptInstances { reevaluatePineInstance(instance.id) }
     }
 

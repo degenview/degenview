@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Creates a notification subscription for the alerts a chart's applied script raises.
+/// Creates a notification subscription for the alerts one of a chart's applied indicators raises.
 struct PineAlertEditor: View {
     @ObservedObject var viewModel: ChartViewModel
+    /// The applied indicator (`ChartScriptInstance.id`) the alert is for.
+    let instanceID: UUID
     @StateObject private var store = PineAlertStore.shared
     @Environment(\.dismiss) private var dismiss
     @State private var note = ""
@@ -15,23 +17,28 @@ struct PineAlertEditor: View {
 
     private var dataset: PineDatasetKey { viewModel.pineAlertDataset }
 
+    private var instance: ChartScriptInstance? { viewModel.scriptInstances.first { $0.id == instanceID } }
+
     private var duplicateExists: Bool {
         store.subscriptions(forChart: viewModel.chartID).contains {
-            $0.isActive && $0.sourceHash == viewModel.appliedSourceHash && $0.watches(dataset)
+            $0.isActive && $0.instanceID == instanceID && $0.watches(dataset)
         }
     }
 
     /// Why the alert cannot be created yet, if it cannot.
     private var blocker: (title: String, detail: String)? {
         guard loaded else { return nil }
-        if viewModel.appliedSourceHash == nil {
-            return ("No script applied", "Apply a script to this chart first.")
+        if instance == nil {
+            return ("Indicator removed", "This indicator is no longer applied to the chart.")
+        }
+        if viewModel.pineInstanceSourceHashes[instanceID] == nil {
+            return ("Script not loaded", "The indicator's script hasn't loaded yet. Try again in a moment.")
         }
         if callSites.isEmpty {
-            return ("No alerts in this script", "The applied script has no alert() or alertcondition() calls.")
+            return ("No alerts in this script", "The script has no alert() or alertcondition() calls.")
         }
         if duplicateExists {
-            return ("Already armed", "This script already has an active alert on this chart.")
+            return ("Already armed", "This indicator already has an active alert on this chart.")
         }
         return nil
     }
@@ -150,7 +157,7 @@ struct PineAlertEditor: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.primary.opacity(0.06), in: Capsule())
-                Text("Line \(site.range.start.line)")
+                Text(verbatim: "Line \(site.range.start.line)")
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
@@ -200,8 +207,7 @@ struct PineAlertEditor: View {
                 .controlSize(.large)
             Button("Create Alert") {
                 PineAlertCoordinator.shared.subscribe(
-                    viewModel, scriptID: viewModel.scriptInstances.first?.scriptID,
-                    scriptName: scriptName, note: note)
+                    viewModel, instanceID: instanceID, scriptName: scriptName, note: note)
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
@@ -242,10 +248,10 @@ struct PineAlertEditor: View {
 
     private func load() async {
         defer { loaded = true }
-        guard let source = viewModel.pineConfiguration?.appliedSource, !source.isEmpty else { return }
+        guard let source = viewModel.pineInstanceResolvedSource(instanceID), !source.isEmpty else { return }
         let program = PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
         callSites = program.alertCallSites
-        if let id = viewModel.scriptInstances.first?.scriptID,
+        if let id = instance?.scriptID,
             let saved = try? await ScriptStore.shared.script(id: id)
         {
             scriptName = saved.name

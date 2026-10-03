@@ -17,6 +17,9 @@ struct PineAlertSubscription: Codable, Identifiable, Equatable, Sendable {
 
     var id = UUID()
     var chartID: UUID
+    /// The applied indicator (`ChartScriptInstance.id`) this alert watches. Two instances of one
+    /// script, with different inputs, are separate alerts.
+    var instanceID: UUID?
     var scriptID: UUID?
     var scriptName: String
     /// `"<source>:<ticker>"`, matching `PineDatasetKey.symbolKey`.

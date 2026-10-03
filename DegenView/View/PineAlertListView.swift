@@ -65,7 +65,8 @@ struct PineAlertListView: View {
             if store.subscriptions.isEmpty && store.history.isEmpty {
                 ContentUnavailableView(
                     "No Script Alerts", systemImage: "curlybraces",
-                    description: Text("Apply a script with alert() calls, then choose Create Alert in its settings."))
+                    description: Text(
+                        "Apply a script with alert() calls, then tap its bell in Chart Settings ▸ Indicators."))
             } else if subscriptions.isEmpty && history.isEmpty {
                 ContentUnavailableView.search(text: search)
             }

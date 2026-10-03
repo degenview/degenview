@@ -28,10 +28,10 @@ final class PineAlertStore: ObservableObject {
         subscriptions.filter { $0.chartID == chartID }
     }
 
-    /// The alert a chart already has for `scriptID` on `dataset`, in any state: a paused or
-    /// script-changed one is re-armed, not replaced. An active one wins over older ones.
-    func subscription(forChart chartID: UUID, scriptID: UUID?, dataset: PineDatasetKey) -> PineAlertSubscription? {
-        let matches = subscriptions(forChart: chartID).filter { $0.scriptID == scriptID && $0.watches(dataset) }
+    /// The alert a chart already has for the applied indicator `instanceID` on `dataset`, in any
+    /// state: a paused or script-changed one is re-armed, not replaced. An active one wins over older ones.
+    func subscription(forChart chartID: UUID, instanceID: UUID?, dataset: PineDatasetKey) -> PineAlertSubscription? {
+        let matches = subscriptions(forChart: chartID).filter { $0.instanceID == instanceID && $0.watches(dataset) }
         return matches.first(where: \.isActive) ?? matches.max { $0.createdAt < $1.createdAt }
     }
 

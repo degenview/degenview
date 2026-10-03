@@ -25,15 +25,21 @@ final class PineAlertCoordinator {
     func attach(_ chart: ChartViewModel) {
         attached.removeAll { $0.chart == nil }
         if !attached.contains(where: { $0.chart === chart }) { attached.append(WeakChart(chart: chart)) }
-        chart.pineAlertHandler = { [weak self, weak chart] events, barID in
+        chart.pineAlertHandler = { [weak self, weak chart] events, barID, instanceID in
             guard let self, let chart else { return }
-            self.ingest(events: events, barID: barID, chartID: chart.chartID, sourceHash: chart.appliedSourceHash)
+            self.ingest(
+                events: events, barID: barID, chartID: chart.chartID, instanceID: instanceID,
+                sourceHash: instanceID.flatMap { chart.pineInstanceSourceHashes[$0] })
         }
-        chart.pineContextHandler = { [weak self, weak chart] dataset, hash in
+        chart.pineContextHandler = { [weak self, weak chart] dataset, hashes in
             guard let self, let chart else { return }
-            self.contextChanged(chartID: chart.chartID, dataset: dataset, sourceHash: hash)
+            self.contextChanged(chartID: chart.chartID, dataset: dataset, hashes: hashes)
         }
-        contextChanged(chartID: chart.chartID, dataset: chart.pineAlertDataset, sourceHash: chart.appliedSourceHash)
+        chart.pineInstanceRemovedHandler = { [weak self, weak chart] instanceID in
+            guard let self, let chart else { return }
+            self.instanceRemoved(chartID: chart.chartID, instanceID: instanceID)
+        }
+        contextChanged(chartID: chart.chartID, dataset: chart.pineAlertDataset, hashes: chart.pineInstanceSourceHashes)
     }
 
     /// The attached chart with this id, when its tab is open.
@@ -43,9 +49,11 @@ final class PineAlertCoordinator {
 
     // MARK: Routing
 
-    func ingest(events: [PineAlertEvent], barID: PineBarID?, chartID: UUID, sourceHash: String?) {
+    func ingest(
+        events: [PineAlertEvent], barID: PineBarID?, chartID: UUID, instanceID: UUID?, sourceHash: String?
+    ) {
         let routed = PineAlertRouter.route(
-            events: events, barID: barID, chartID: chartID, sourceHash: sourceHash,
+            events: events, barID: barID, chartID: chartID, instanceID: instanceID, sourceHash: sourceHash,
             subscriptions: store.subscriptions, guard: &frequencyGuard)
         for item in routed where store.record(item.notification, dedupeKey: item.dedupeKey) {
             let notification = item.notification
@@ -55,13 +63,23 @@ final class PineAlertCoordinator {
 
     // MARK: Subscription lifecycle
 
-    /// A chart recalculated its script from scratch. A source that no longer matches what a
-    /// subscription was created for pauses it, and stays paused until the user re-arms.
-    func contextChanged(chartID: UUID, dataset: PineDatasetKey, sourceHash: String?) {
+    /// A chart recalculated its scripts, or one learned its source. A source that no longer matches
+    /// what a subscription was created for pauses it, and stays paused until the user re-arms.
+    /// `hashes` holds only instances whose source is known: an absent one is still loading, not changed.
+    func contextChanged(chartID: UUID, dataset: PineDatasetKey, hashes: [UUID: String]) {
         store.setDataset(dataset, forChart: chartID)
-        for subscription in store.subscriptions(forChart: chartID)
-        where subscription.state == .active && subscription.sourceHash != sourceHash {
+        for subscription in store.subscriptions(forChart: chartID) where subscription.state == .active {
+            guard let instanceID = subscription.instanceID, let hash = hashes[instanceID],
+                hash != subscription.sourceHash
+            else { continue }
             store.update(subscription.id) { $0.state = .scriptChanged }
+        }
+    }
+
+    /// An indicator was taken off the chart: its alerts, and what they delivered, go with it.
+    func instanceRemoved(chartID: UUID, instanceID: UUID) {
+        for subscription in store.subscriptions(forChart: chartID) where subscription.instanceID == instanceID {
+            remove(subscription: subscription.id)
         }
     }
 
@@ -78,24 +96,35 @@ final class PineAlertCoordinator {
         }
     }
 
-    /// Creates an active subscription for `chart`'s applied script, or nil when it has none.
+    /// Creates an active subscription for one of `chart`'s applied indicators, or nil when it is gone
+    /// or has not resolved its source yet.
     @discardableResult
     func subscribe(
-        _ chart: ChartViewModel, scriptID: UUID?, scriptName: String, note: String
+        _ chart: ChartViewModel, instanceID: UUID, scriptName: String, note: String
     ) -> PineAlertSubscription? {
-        guard let hash = chart.appliedSourceHash else { return nil }
+        guard let instance = chart.scriptInstances.first(where: { $0.id == instanceID }),
+            let hash = chart.pineInstanceSourceHashes[instanceID]
+        else { return nil }
         let dataset = chart.pineAlertDataset
         let subscription = PineAlertSubscription(
-            chartID: chart.chartID, scriptID: scriptID, scriptName: scriptName,
+            chartID: chart.chartID, instanceID: instanceID, scriptID: instance.scriptID, scriptName: scriptName,
             symbolKey: dataset.symbolKey, timeframe: dataset.timeframe, sourceHash: hash, note: note)
         store.add(subscription)
         Task { await AlertStore.shared.requestNotificationAuthorizationIfNeeded() }
         return subscription
     }
 
-    /// Whether `subscription` can be armed now: its chart is open and has a script applied.
+    /// Whether `subscription` can be armed now: its chart is open and still runs its indicator.
     func canRearm(_ subscription: PineAlertSubscription) -> Bool {
-        chart(withID: subscription.chartID)?.appliedSourceHash != nil
+        sourceHash(of: subscription) != nil
+    }
+
+    private func sourceHash(of subscription: PineAlertSubscription) -> String? {
+        guard let instanceID = subscription.instanceID,
+            let chart = chart(withID: subscription.chartID),
+            chart.scriptInstances.contains(where: { $0.id == instanceID })
+        else { return nil }
+        return chart.pineInstanceSourceHashes[instanceID]
     }
 
     func pause(subscription id: UUID) {
@@ -106,14 +135,16 @@ final class PineAlertCoordinator {
     /// forgetting what it delivered, so it starts clean. False when its chart is not open.
     @discardableResult
     func rearm(subscription id: UUID) -> Bool {
-        guard let subscription = store.subscription(id: id),
-            let chart = chart(withID: subscription.chartID), let hash = chart.appliedSourceHash
+        guard let subscription = store.subscription(id: id), let instanceID = subscription.instanceID,
+            let chart = chart(withID: subscription.chartID),
+            let scriptID = chart.scriptInstances.first(where: { $0.id == instanceID })?.scriptID,
+            let hash = sourceHash(of: subscription)
         else { return false }
         let dataset = chart.pineAlertDataset
         frequencyGuard.reset(subscription: id)
         store.clearDedupeKeys(subscriptionID: id)
         store.update(id) {
-            $0.scriptID = chart.scriptInstances.first?.scriptID
+            $0.scriptID = scriptID
             $0.sourceHash = hash
             $0.symbolKey = dataset.symbolKey
             $0.timeframe = dataset.timeframe

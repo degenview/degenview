@@ -216,7 +216,7 @@ final class ChartViewModelMultiPineInstanceTests: XCTestCase {
     func testHistoricalRebuildAcrossInstancesStillEmitsNoAlerts() async throws {
         let model = await makeModel(bars: bars(50))
         var received: [[PineAlertEvent]] = []
-        model.pineAlertHandler = { events, _ in received.append(events) }
+        model.pineAlertHandler = { events, _, _ in received.append(events) }
 
         let a = try XCTUnwrap(model.addPineInstance(scriptID: UUID(), revisionID: UUID(), source: Self.alerting))
         let b = try XCTUnwrap(model.addPineInstance(scriptID: UUID(), revisionID: UUID(), source: Self.alerting))
