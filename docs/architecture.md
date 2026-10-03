@@ -130,7 +130,8 @@ DegenView/
 │   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs), PineLibraryLinker (`import`)
 │   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
 │   │   ├── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
-│   │   └── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above (editor highlighting)
+│   │   ├── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above; `+Members` lists a namespace's members (editor highlighting + completion)
+│   │   └── PineSymbolMetadata*.swift  # Signatures, overloads and one-line docs per builtin, one DSL line each, by family; `PineSymbolMetadataTests` guards them against the catalog and the runtime
 │   ├── Runtime/
 │   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
 │   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
@@ -140,8 +141,8 @@ DegenView/
 │   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
-│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
-│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
+│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineSourceSymbolIndex for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
+│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Completion and signature help: PineEditorAnalysisCache (one PineLexicalSnapshot + one PineSourceSymbolIndex per text version) → PineCompletionContext (word, member base, position, scope, PineCallSite) → PineCompletionEngine / PineSignatureResolver (pure; builtins from PineSymbolCatalog + PineSymbolMetadata, imports from PineLibraryExportDirectory over PineLibraryRegistry) → PineCompletionController → child panels (PineCompletionPanel, PineSignaturePanel); accepting is a PineEditorEdit from PineCompletionInsertion. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines

@@ -47,7 +47,7 @@ final class PineCompletionRowView: NSView {
     private let detail = NSTextField(labelWithString: "")
 
     private static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
-    private static let boldFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold)
+    private static let boldFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .heavy)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)

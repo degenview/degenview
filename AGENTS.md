@@ -118,6 +118,35 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   band and indent guides draw in `PineLayoutManager.drawBackground(forGlyphRange:at:)`
 - Everything is skipped while `hasMarkedText()` (IME) — keep that guard in `editingContext`
 
+### Pine completion and signature help
+- One analysis per text version: `PineEditorAnalysisCache.analysis(for:)` returns the lexical
+  snapshot and a `PineSourceSymbolIndex` (declarations with kinds, parameters and visibility,
+  scopes with ranges, imports, user types and enums, exports). The classifier resolves user
+  shadowing through the same index, so highlighting and completion cannot disagree. It reads
+  content tokens, never the lexer's newline/indent/dedent (`PineStatementSplitter`): an unclosed
+  `(` mid-typing erases those, and completion must keep its scopes then
+- Pure engine, Foundation only, unit-testable without a text view: `PineCompletionContext`
+  (word, member base, position, suppression, scope, `PineCallSite`), `PineCompletionEngine`,
+  `PineCompletionRanking` (deterministic, no fuzzy matching), `PineCompletionTrigger` (the one
+  place the 2-letter threshold lives), `PineCompletionInsertion` (one `PineEditorEdit` per
+  acceptance; a call's `(` pairs by `PineEditorPairing.canOpenPair`), `PineSignatureResolver`.
+  Completion never compiles, runs, lexes again, or touches the network or database;
+  `PineCompletionPerformanceTests` greps the files for that
+- Builtins come from `PineSymbolCatalog` (`members(of:)`) and signatures/docs from
+  `PineSymbolMetadata`, one DSL line per overload in the `PineSymbolMetadata+<Family>.swift`
+  files. A new builtin needs a line there; `PineSymbolMetadataTests` fails until it has one, and
+  fails a line the runtime does not dispatch. Never add a second list of names to the engine
+- Libraries: `PineLibraryExportDirectory` reads a library's `export`s from `PineLibraryRegistry`
+  (memory only) through the same symbol index, with its own lex so the edited script's cached
+  lex is not evicted
+- UI is `PineCompletionController` (per `PineTextView`, `textView.completion`) over two child
+  `NSPanel`s that never become key (`PineCompletionPanel`, `PineSignaturePanel`). Keys: Down/Up,
+  Return/Tab accept, Escape closes the list then the help — the Escape check is first in the
+  container's key monitor, ahead of the find bar. With nothing open every key keeps its editing
+  behaviour. `perform(_:)` calls `didChangeText`, so the controller ignores changes it makes
+  itself (`isApplying`). Never call `NSTextView.mouseDown` from a test without a queued mouse-up:
+  it tracks until the button comes up
+
 ### Script Manager preview
 - The Script Manager window is a `SplitContainer` (sidebar | `ScriptWorkspaceView`); the
   workspace splits the editor and `ScriptPreviewPane` left/top/bottom. `SplitLayout` is a real
@@ -317,6 +346,15 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket
     tints its partner; guides and the current-line band follow scrolling and don't eat clicks
+14b. Completion: type `plot(ta.rs` — the list opens under the caret with `rsi` and its signature;
+    Down/Up move, Tab or Return accept (`ta.rsi(|)`, one ⌘Z undoes it), Esc closes the list. `ta.`
+    lists only `ta` members; `plot(clo` offers `close`; a variable and a function you declare appear
+    (parameters first inside their function); `ta.sma(close, ` shows the signature with `length`
+    underlined; `// ta.rs` and `"ta.rs"` stay quiet; Control-Space / Option-Esc complete with nothing
+    typed; clicking a row selects it, double-click accepts, the caret never moves; scrolling, a
+    window resize, clicking into the text, switching scripts and focus loss close the popup; with
+    the list closed Return and Tab still indent. In an `import user/` line the library names appear,
+    and `lib.` lists a library's exports
 14. Script Manager: collapse the sidebar (⌃⌘S) and relaunch — it stays collapsed. Open an
     indicator: the preview chart appears left of the code. Type — the plot updates after a pause;
     break the syntax — the banner appears and the last plot stays. Move the chart left/top/bottom

@@ -53,10 +53,12 @@ final class PineSignaturePanel: NSPanel {
             result.append(
                 .init(
                     string: parameter.name,
-                    attributes: [
-                        .font: isActive ? boldFont : font,
-                        .foregroundColor: isActive ? NSColor.controlAccentColor : color,
-                    ]))
+                    attributes: isActive
+                        ? [
+                            .font: boldFont, .foregroundColor: color,
+                            .underlineStyle: NSUnderlineStyle.single.rawValue,
+                            .underlineColor: NSColor.controlAccentColor,
+                        ] : [.font: font, .foregroundColor: color]))
         }
         result.append(.init(string: ")", attributes: [.font: font, .foregroundColor: color]))
         if !signature.returns.isEmpty {
