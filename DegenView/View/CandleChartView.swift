@@ -30,10 +30,9 @@ struct CandleChartView: View {
     var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
     var selectedFibonacciID: UUID? = nil
 
-    // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
-    // so there is no armed flag to gate them on.
-    var rulers: [RulerRect] = []
-    var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+    // Measuring rectangles, the one being drawn right now, and which is selected or
+    // hovered. Cleared with the tool, so there is no armed flag to gate them on.
+    var rulerOverlay: RulerOverlayState = .empty
 
     var body: some View {
         GeometryReader { geometry in
@@ -98,8 +97,7 @@ struct CandleChartView: View {
 
                     plot.drawRulers(
                         &layer,
-                        rects: rulers,
-                        draft: rulerDraft,
+                        overlay: rulerOverlay,
                         points: candles,
                         bullish: bullishColor,
                         bearish: bearishColor
@@ -119,6 +117,11 @@ struct CandleChartView: View {
                     plot.drawCurrentPriceLine(&context, price: last.closePrice, color: color)
                     plot.drawCurrentPriceBox(&context, price: last.closePrice, color: color)
                 }
+
+                // After the current-price pill: a measurement's end prices are what the
+                // user is reading, and they take its slot in the gutter.
+                plot.drawRulerPriceTags(
+                    &context, overlay: rulerOverlay, bullish: bullishColor, bearish: bearishColor)
 
                 plot.drawTimeGrid(&context, points: candles)
             }

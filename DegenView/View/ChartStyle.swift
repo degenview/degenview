@@ -79,15 +79,33 @@ struct ChartStyle {
     var trendDashPattern: [CGFloat] = [4, 3]
 
     // Ruler rectangles. No colour of their own — they take the chart's bull/bear colours,
-    // since the whole point of the tool is which way the move went. The fill stays as low
-    // as the Bollinger tint so the candles being measured still read through it.
-    var rulerFillOpacity: Double = 0.12
-    /// Faint on purpose: the border marks where the measurement ends, it isn't the
-    /// measurement. A solid edge competes with the candles it brackets.
-    var rulerBorderOpacity: Double = 0.4
+    // since the whole point of the tool is which way the move went. The fill fades from
+    // `rulerFillOpacity` at the edge the measurement ended on to `rulerFillFadeOpacity` at
+    // the edge it started from, so direction reads before the numbers do, and the candles
+    // being measured still show through at the faint end.
+    var rulerFillOpacity: Double = 0.20
+    var rulerFillFadeOpacity: Double = 0.05
+    var rulerBorderOpacity: Double = 0.7
     var rulerBorderWidth: CGFloat = 1
-    /// Dash for the rectangle between the first click and the second.
+    /// Border while the pointer is over a ruler or it is selected.
+    var rulerEmphasisBorderOpacity: Double = 0.95
+    var rulerEmphasisBorderWidth: CGFloat = 1.5
+    var rulerCornerRadius: CGFloat = 2
+    /// Dash for the rectangle while it is being drawn.
     var rulerDashPattern: [CGFloat] = [4, 3]
+    /// The centred start→end arrows and the dot at the start corner.
+    var rulerGuideOpacity: Double = 0.75
+    var rulerGuideWidth: CGFloat = 1
+    var rulerArrowheadSize: CGFloat = 5
+    var rulerHandleRadius: CGFloat = 4.5
+    /// Read-out card. Dark in both themes, like the crosshair labels, so the white text
+    /// holds up over any candles behind it.
+    var rulerCardColor: Color = .black.opacity(0.8)
+    var rulerCardCornerRadius: CGFloat = 7
+    var rulerCardBorderOpacity: Double = 0.55
+    var rulerCardPadding: CGSize = CGSize(width: 9, height: 6)
+    var rulerCardRowSpacing: CGFloat = 1
+    var rulerCardGap: CGFloat = 6
 
     // Crosshair. Neutral on purpose — blue and pink belong to trend lines, and purple,
     // orange and cyan to the indicators, so a tinted crosshair would read as one of them.

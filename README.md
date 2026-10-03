@@ -77,8 +77,9 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
 - **Native drawing undo and redo** — Trend-line and Fibonacci edits participate in each
   window's Edit menu with descriptive action names. Use **⌘Z** to undo and **⇧⌘Z** or
   **⌘Y** to redo; history lasts for the current app session
-- **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
-  green/red rectangle; measurements are intentionally temporary
+- **Ruler** — Measure a move's percentage, price change, duration, and bar count with a
+  green/red rectangle, drawn by dragging or click-move-click. Drag a corner to resize or
+  an edge to move it; ⌘ snaps to candle OHLC. Measurements are intentionally temporary
 
 ### Portfolio tracking
 

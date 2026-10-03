@@ -26,7 +26,8 @@ DegenView/
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
 │   ├── PreviewMarket.swift            # A crypto or stock market the Script Manager preview charts
 │   ├── ScriptPreviewLayout.swift      # ChartPosition: preview chart left of / above / below the code
-│   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
+│   ├── TrendLine.swift                # Trend-line, ruler (rect, corners, hits, overlay state), and tool-selection models
+│   ├── RulerReadout.swift             # Ruler numbers: percent, price delta, bars, duration, and their text
 │   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
@@ -316,6 +317,29 @@ sheet presentation are similarly collapsed into one edit when the sheet closes. 
 crosshairs, and ruler measurements never enter drawing history because they are transient.
 Store observation clears selected or edited IDs when an undo, redo, or another window
 removes the corresponding drawing.
+
+## Ruler flow
+
+The ruler is a measurement, not an annotation: `RulerRect` is not `Codable`, lives only on
+`ChartViewModel.rulers`, and is dropped on tool switch, timeframe switch, and relaunch.
+`ContentViewModel.handleRuler` (the same window-wide mouse monitor as the other tools) runs:
+
+- **Draw** — mouse-down on empty plot begins a draft and remembers the press. Dragging
+  rubber-bands it; on release, a pointer that travelled at least `Drawing.hitTolerance`
+  commits, otherwise the draft stays open and the next click commits (click-move-click).
+  ⌘ snaps to OHLC through `snappedDrawingAnchor`, shared with Fibonacci.
+- **Edit** — `ChartViewModel.rulerHit` finds a corner (resize) or an edge band (move);
+  the interior is deliberately not a hit so a measurement can start inside another.
+  Drags recompute from the rectangle as it was at mouse-down (`RulerRect.resized` /
+  `translated`). Hover and selection publish `hoveredRuler` / `selectedRulerID`, which
+  show handles and drive the plot cursor (`PlotCursor` in `ChartCardView`).
+- **Keys** — Esc: cancel draft → clear rulers → disarm. Delete: selected ruler, else all.
+
+Rendering is `ChartPlot+Ruler.swift`, shared by `CandleChartView` and `LineChartView`
+through one `RulerOverlayState`: a gradient box (strongest at the end edge), centred
+start→end arrows, corner handles on the hovered or selected ruler, a read-out card from
+`RulerReadout`, and price tags in the gutter (`drawRulerPriceTags`, outside the series
+clip). Colours are the chart's own bull/bear colours.
 
 ## Fibonacci retracement flow
 

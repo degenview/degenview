@@ -44,6 +44,15 @@ struct ChartCardView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
+    /// Over a ruler's edge or corner the cursor says what a drag would do.
+    private var plotCursor: PlotCursor {
+        guard let hover = viewModel.hoveredRuler else { return .crosshair }
+        switch hover.part {
+        case .edge: return .move
+        case .corner(let corner): return .resize(corner)
+        }
+    }
+
     var body: some View {
         if let config = viewModel.portfolioChart {
             PortfolioChartCard(
@@ -271,8 +280,7 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
-                    rulers: viewModel.rulers,
-                    rulerDraft: viewModel.rulerDraft
+                    rulerOverlay: viewModel.rulerOverlay
                 )
             } else {
                 CandleChartView(
@@ -292,13 +300,12 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
-                    rulers: viewModel.rulers,
-                    rulerDraft: viewModel.rulerDraft
+                    rulerOverlay: viewModel.rulerOverlay
                 )
             }
         }
         .overlay {
-            PlotHitRegion(isArmed: isToolArmed, onResolve: onPlotRegion)
+            PlotHitRegion(isArmed: isToolArmed, cursor: plotCursor, onResolve: onPlotRegion)
         }
         .overlay {
             if let crosshair {
@@ -325,6 +332,7 @@ struct ChartCardView: View {
         .onHover { isInside in
             guard !isInside else { return }
             onCrosshairExit()
+            viewModel.setRulerHover(nil)
         }
         .overlay(alignment: .trailing) {
             PriceAxisRegion(onResolve: onAxisRegion)
@@ -1437,6 +1445,36 @@ struct ZoomHitRegion: NSViewRepresentable {
 /// resize cursor over it. The drag itself is handled by `ContentViewModel`'s mouse
 /// monitor, which hit-tests against this view.
 ///
+/// What the pointer looks like over the plot while a tool is armed. The ruler is the only
+/// tool that changes it: grabbing an edge moves a measurement, a corner resizes it.
+private enum PlotCursor: Equatable {
+    case crosshair
+    case move
+    case resize(RulerCorner)
+
+    var nsCursor: NSCursor {
+        switch self {
+        case .crosshair:
+            return .crosshair
+        case .move:
+            return .openHand
+        case .resize(let corner):
+            // Diagonal resize cursors are public API from macOS 15 only.
+            if #available(macOS 15.0, *) {
+                let position: NSCursor.FrameResizePosition =
+                    switch (corner.isTop, corner.isLeft) {
+                    case (true, true): .topLeft
+                    case (true, false): .topRight
+                    case (false, true): .bottomLeft
+                    case (false, false): .bottomRight
+                    }
+                return .frameResize(position: position, directions: .all)
+            }
+            return .crosshair
+        }
+    }
+}
+
 /// The monitor rather than `mouseDown`/`mouseDragged` overrides here: SwiftUI's
 /// hosting view claims mouse events for the card's `.onDrag` reordering before AppKit
 /// ever offers them to a child view, so an event-handling `NSView` in this position
@@ -1451,23 +1489,29 @@ struct ZoomHitRegion: NSViewRepresentable {
 /// monitor can convert a click without reconstructing the flip by hand.
 private struct PlotHitRegion: NSViewRepresentable {
     let isArmed: Bool
+    let cursor: PlotCursor
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = PlotRegionView()
         view.isArmed = isArmed
+        view.cursor = cursor
         onResolve(view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let view = nsView as? PlotRegionView, view.isArmed != isArmed else { return }
+        guard let view = nsView as? PlotRegionView,
+            view.isArmed != isArmed || view.cursor != cursor
+        else { return }
         view.isArmed = isArmed
+        view.cursor = cursor
         view.window?.invalidateCursorRects(for: view)
     }
 
     private final class PlotRegionView: NSView {
         var isArmed = false
+        var cursor = PlotCursor.crosshair
 
         override var isFlipped: Bool { true }
 
@@ -1480,7 +1524,7 @@ private struct PlotHitRegion: NSViewRepresentable {
             // Stop short of the price gutter, which keeps its own resize cursor.
             var rect = bounds
             rect.size.width = max(0, rect.width - ChartStyle.default.chartInsets.trailing)
-            addCursorRect(rect, cursor: .crosshair)
+            addCursorRect(rect, cursor: cursor.nsCursor)
         }
     }
 }

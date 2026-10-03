@@ -181,6 +181,7 @@
 		CB1100000000000000000001 /* CoinbaseAPIService.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000101; };
 		CB1000000000000000000001 /* CoinbaseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000101 /* CoinbaseAPIService.swift */; };
 		C50000000000000000000003 /* ChartPlotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000103 /* ChartPlotTests.swift */; };
+		D10000000000000000000A06 /* RulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A05 /* RulerTests.swift */; };
 		D30000000000000000000003 /* ChartColumnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000103 /* ChartColumnTests.swift */; };
 		C50000000000000000000004 /* IndicatorsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000104 /* IndicatorsTests.swift */; };
 		C50000000000000000000005 /* KlineCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000105 /* KlineCacheTests.swift */; };
@@ -294,6 +295,7 @@
 		C10000000000000000000201 /* KalshiModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000211 /* KalshiModels.swift */; };
 		C10000000000000000000003 /* PredictionMarketSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */; };
 		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
+		D10000000000000000000A04 /* ChartPlot+Ruler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A03 /* ChartPlot+Ruler.swift */; };
 		D20000000000000000000001 /* PineChartLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000101 /* PineChartLayer.swift */; };
 		P20000000000000000000003 /* PineStrategyReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000103 /* PineStrategyReportView.swift */; };
 		D20000000000000000000002 /* PineScriptPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000102 /* PineScriptPaneView.swift */; };
@@ -319,6 +321,7 @@
 		A00000000000000000000901 /* GeckoTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000902 /* GeckoTerminalService.swift */; };
 		A00000000000000000000903 /* Indicators.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000904 /* Indicators.swift */; };
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
+		D10000000000000000000A02 /* RulerReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A01 /* RulerReadout.swift */; };
 		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
 		D5A00000000000000000AB01 /* AppToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A00000000000000000AB02 /* AppToolbar.swift */; };
@@ -844,6 +847,7 @@
 		CB1000000000000000000102 /* CoinbaseWebSocketService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseWebSocketService.swift; sourceTree = "<group>"; };
 		CB1000000000000000000101 /* CoinbaseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseAPIService.swift; sourceTree = "<group>"; };
 		C50000000000000000000103 /* ChartPlotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlotTests.swift; sourceTree = "<group>"; };
+		D10000000000000000000A05 /* RulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RulerTests.swift"; sourceTree = "<group>"; };
 		D30000000000000000000103 /* ChartColumnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartColumnTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000104 /* IndicatorsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorsTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000105 /* KlineCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineCacheTests.swift; sourceTree = "<group>"; };
@@ -925,6 +929,7 @@
 		C10000000000000000000211 /* KalshiModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KalshiModels.swift; sourceTree = "<group>"; };
 		C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionMarketSearchViewModel.swift; sourceTree = "<group>"; };
 		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
+		D10000000000000000000A03 /* ChartPlot+Ruler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChartPlot+Ruler.swift"; sourceTree = "<group>"; };
 		D20000000000000000000101 /* PineChartLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartLayer.swift; sourceTree = "<group>"; };
 		P20000000000000000000103 /* PineStrategyReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyReportView.swift; sourceTree = "<group>"; };
 		D20000000000000000000102 /* PineScriptPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineScriptPaneView.swift; sourceTree = "<group>"; };
@@ -950,6 +955,7 @@
 		A00000000000000000000902 /* GeckoTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeckoTerminalService.swift; sourceTree = "<group>"; };
 		A00000000000000000000904 /* Indicators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Indicators.swift; sourceTree = "<group>"; };
 		A00000000000000000000906 /* TrendLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendLine.swift; sourceTree = "<group>"; };
+		D10000000000000000000A01 /* RulerReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RulerReadout.swift"; sourceTree = "<group>"; };
 		FB0000000000000000000101 /* FibonacciRetracement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracement.swift; sourceTree = "<group>"; };
 		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
@@ -1327,6 +1333,7 @@
 				CB1000000000000000000103 /* CoinbaseTick.swift */,
 				A00000000000000000000904 /* Indicators.swift */,
 				A00000000000000000000906 /* TrendLine.swift */,
+				D10000000000000000000A01 /* RulerReadout.swift */,
 				FB0000000000000000000101 /* FibonacciRetracement.swift */,
 				A0000000000000000000090A /* Crosshair.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
@@ -1559,6 +1566,7 @@
 				C10000000000000000000106 /* LineChartView.swift */,
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
+				D10000000000000000000A03 /* ChartPlot+Ruler.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
@@ -1661,6 +1669,7 @@
 				CB1000000000000000000112 /* CoinbaseWebSocketServiceTests.swift */,
 				CB1000000000000000000111 /* CoinbaseAPIServiceTests.swift */,
 				C50000000000000000000103 /* ChartPlotTests.swift */,
+				D10000000000000000000A05 /* RulerTests.swift */,
 				D30000000000000000000103 /* ChartColumnTests.swift */,
 				C50000000000000000000104 /* IndicatorsTests.swift */,
 				C50000000000000000000105 /* KlineCacheTests.swift */,
@@ -2238,6 +2247,7 @@
 				CB1000000000000000000012 /* CoinbaseWebSocketServiceTests.swift in Sources */,
 				CB1000000000000000000011 /* CoinbaseAPIServiceTests.swift in Sources */,
 				C50000000000000000000003 /* ChartPlotTests.swift in Sources */,
+				D10000000000000000000A06 /* RulerTests.swift in Sources */,
 				D30000000000000000000003 /* ChartColumnTests.swift in Sources */,
 				C50000000000000000000004 /* IndicatorsTests.swift in Sources */,
 				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
@@ -2475,6 +2485,7 @@
 				A00000000000000000000003 /* KlineData.swift in Sources */,
 				A00000000000000000000903 /* Indicators.swift in Sources */,
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
+				D10000000000000000000A02 /* RulerReadout.swift in Sources */,
 				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
 				D5A00000000000000000AB01 /* AppToolbar.swift in Sources */,
@@ -2503,6 +2514,7 @@
 				C10000000000000000000201 /* KalshiModels.swift in Sources */,
 				C10000000000000000000003 /* PredictionMarketSearchViewModel.swift in Sources */,
 				C10000000000000000000004 /* ChartPlot.swift in Sources */,
+				D10000000000000000000A04 /* ChartPlot+Ruler.swift in Sources */,
 				D20000000000000000000001 /* PineChartLayer.swift in Sources */,
 				P20000000000000000000003 /* PineStrategyReportView.swift in Sources */,
 				D20000000000000000000002 /* PineScriptPaneView.swift in Sources */,

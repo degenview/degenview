@@ -299,6 +299,14 @@ enum PriceZoom {
 enum Drawing {
     /// How far a click may land from a handle or a line and still count as a hit.
     static let hitTolerance: CGFloat = 8
+
+    /// How far from a ruler's edge the pointer may be and still grab it. Narrower than
+    /// the corner reach, so the edge doesn't swallow clicks meant for the chart.
+    static let rulerEdgeBand: CGFloat = 5
+
+    /// Corner reach for a ruler, a little over `hitTolerance` since the handle is drawn
+    /// larger than a trend-line endpoint.
+    static let rulerCornerReach: CGFloat = 10
 }
 
 // MARK: - UI Constants

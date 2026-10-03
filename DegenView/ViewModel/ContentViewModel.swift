@@ -93,6 +93,11 @@ final class ContentViewModel: ObservableObject {
         (
             vm: ChartViewModel, original: FibonacciRetracementDrawing, pointerStart: TrendAnchor
         )?
+    /// The ruler corner or edge being dragged, as the rectangle was when the drag began.
+    private var rulerDragTarget: (vm: ChartViewModel, original: RulerRect, part: RulerPart, pointerStart: TrendAnchor)?
+    /// A rectangle started by a press. If the pointer travels before release it is drawn
+    /// by dragging and finishes on release; if not, it stays open for a second click.
+    private var rulerPress: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint, moved: Bool)?
 
     /// The tab's crosshair. Its own observable object rather than a `@Published` here —
     /// see `CrosshairTracker`.
@@ -110,6 +115,8 @@ final class ContentViewModel: ObservableObject {
             crosshair.clear()
             // A measurement belongs to the armed ruler — reaching for another tool is
             // done with it. Trend lines, being annotations, stay.
+            rulerDragTarget = nil
+            rulerPress = nil
             for vm in chartViewModels {
                 vm.cancelRulerDraft()
                 vm.clearRulers()
@@ -508,7 +515,7 @@ final class ContentViewModel: ObservableObject {
                 if let hit = plotHit(at: event) {
                     target.vm.translateFibonacci(
                         id: target.original.id, original: target.original, from: target.pointerStart,
-                        to: fibonacciAnchor(for: event, hit: hit))
+                        to: snappedDrawingAnchor(for: event, hit: hit))
                 }
                 return nil
             case .leftMouseUp:
@@ -525,7 +532,7 @@ final class ContentViewModel: ObservableObject {
                 if let hit = plotHit(at: event) {
                     target.vm.moveFibonacciAnchor(
                         id: target.original.id, isStart: target.isStart,
-                        to: fibonacciAnchor(for: event, hit: hit))
+                        to: snappedDrawingAnchor(for: event, hit: hit))
                 }
                 return nil
             case .leftMouseUp:
@@ -537,7 +544,7 @@ final class ContentViewModel: ObservableObject {
             }
         }
         guard let hit = plotHit(at: event) else { return event }
-        let anchor = fibonacciAnchor(for: event, hit: hit)
+        let anchor = snappedDrawingAnchor(for: event, hit: hit)
         switch event.type {
         case .mouseMoved:
             hit.vm.updateFibonacciDraft(to: anchor)
@@ -570,7 +577,7 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    private func fibonacciAnchor(
+    private func snappedDrawingAnchor(
         for event: NSEvent, hit: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)
     ) -> TrendAnchor {
         // Command temporarily enables weak OHLC magnet snapping. This mirrors the
@@ -582,31 +589,97 @@ final class ContentViewModel: ObservableObject {
         return hit.vm.snappedAnchor(at: hit.point, in: hit.plot, strong: false)
     }
 
-    /// Click once to pin a corner, again to finish the rectangle, a third time to put it
-    /// away. Same click-move-click shape as the line tool, minus the parts a measurement
-    /// doesn't need: nothing to select, nothing to drag, nothing to persist.
+    /// Draws and edits measurement rectangles.
+    ///
+    /// - Press, drag, release draws one. A press that doesn't travel leaves the rectangle
+    ///   open instead: move, then click again to finish it.
+    /// - A corner or edge of a finished rectangle grabs it — corners resize, edges move.
+    ///   The interior is not a target, so a new measurement can start inside an old one.
+    /// - Hovering one shows its handles and sets the cursor (`ChartViewModel.hoveredRuler`).
+    ///
+    /// Nothing here touches drawing history or storage: a ruler is not an annotation.
     private func handleRuler(_ event: NSEvent) -> NSEvent? {
         if event.type == .keyDown { return handleRulerKey(event) }
 
-        guard let hit = plotHit(at: event) else { return event }
-        let anchor = hit.vm.anchor(at: hit.point, in: hit.plot)
+        // An edit owns the pointer until release, wherever it wanders.
+        if let target = rulerDragTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    let anchor = snappedDrawingAnchor(for: event, hit: hit)
+                    switch target.part {
+                    case .corner(let corner):
+                        target.vm.moveRulerCorner(original: target.original, corner: corner, to: anchor)
+                    case .edge:
+                        target.vm.translateRuler(
+                            original: target.original, from: target.pointerStart, to: anchor)
+                    }
+                }
+                return nil
+            case .leftMouseUp:
+                rulerDragTarget = nil
+                return nil
+            default:
+                break
+            }
+        }
+
+        // So does a rectangle being dragged out.
+        if let press = rulerPress {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event), hit.vm === press.vm {
+                    press.vm.updateRulerDraft(to: snappedDrawingAnchor(for: event, hit: hit))
+                    let travelled = hypot(hit.point.x - press.point.x, hit.point.y - press.point.y)
+                    if travelled >= Drawing.hitTolerance { rulerPress?.moved = true }
+                }
+                return nil
+            case .leftMouseUp:
+                rulerPress = nil
+                // Released outside the plot, the rectangle ends where the pointer last was.
+                if press.moved, let end = press.vm.rulerDraft?.end {
+                    press.vm.commitRulerDraft(at: end, in: press.plot)
+                }
+                return nil
+            default:
+                break
+            }
+        }
+
+        guard let hit = plotHit(at: event) else {
+            if event.type == .mouseMoved { clearRulerHover(except: nil) }
+            return event
+        }
+        let anchor = snappedDrawingAnchor(for: event, hit: hit)
 
         switch event.type {
         case .mouseMoved:
-            // Rubber band only. Never swallowed — the pointer still belongs to the app.
-            hit.vm.updateRulerDraft(to: anchor)
+            // Never swallowed — the pointer still belongs to the app.
+            clearRulerHover(except: hit.vm)
+            if hit.vm.hasRulerDraft {
+                hit.vm.updateRulerDraft(to: anchor)
+                hit.vm.setRulerHover(nil)
+            } else {
+                hit.vm.setRulerHover(hit.vm.rulerHit(at: hit.point, in: hit.plot))
+            }
             return event
 
         case .leftMouseDown:
             // A click on another card abandons whatever was half-drawn there, but leaves
-            // its finished measurement up — two charts can be read side by side.
+            // its finished measurements up — two charts can be read side by side.
             clearDrawingState(except: hit.vm)
 
             if hit.vm.hasRulerDraft {
+                // Second click of a click-move-click rectangle.
                 hit.vm.commitRulerDraft(at: anchor, in: hit.plot)
-            } else if !hit.vm.clearRulers() {
-                // Nothing was up to dismiss, so this click starts a rectangle instead.
+            } else if let target = hit.vm.rulerHit(at: hit.point, in: hit.plot),
+                let original = hit.vm.rulers.first(where: { $0.id == target.id })
+            {
+                hit.vm.selectRuler(target.id)
+                rulerDragTarget = (hit.vm, original, target.part, anchor)
+            } else {
                 hit.vm.beginRulerDraft(at: anchor)
+                rulerPress = (hit.vm, hit.plot, hit.point, false)
             }
             return nil
 
@@ -619,22 +692,35 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Esc backs out of a half-drawn rectangle, then out of the measurements on screen,
-    /// then out of the tool. Delete clears the measurements outright.
+    /// then out of the tool. Delete removes the selected measurement, or all of them when
+    /// none is selected.
     private func handleRulerKey(_ event: NSEvent) -> NSEvent? {
         switch event.keyCode {
         case 53:  // Esc
             if let drafting = chartViewModels.first(where: { $0.hasRulerDraft }) {
                 drafting.cancelRulerDraft()
+                rulerPress = nil
             } else if !clearAllRulers() {
                 activeTool = .none
             }
             return nil
 
         case 51, 117:  // Delete, forward delete
+            if let target = chartViewModels.first(where: { $0.selectedRulerID != nil }) {
+                target.removeSelectedRuler()
+                return nil
+            }
             return clearAllRulers() ? nil : event
 
         default:
             return event
+        }
+    }
+
+    /// The pointer left every ruler, or moved to another chart: drop stale highlights.
+    private func clearRulerHover(except keep: ChartViewModel?) {
+        for vm in chartViewModels where vm !== keep {
+            vm.setRulerHover(nil)
         }
     }
 
@@ -743,6 +829,7 @@ final class ContentViewModel: ObservableObject {
             vm.cancelDraft()
             vm.cancelFibonacciDraft()
             vm.cancelRulerDraft()
+            vm.selectRuler(nil)
             vm.selectedLineID = nil
             vm.editingLineID = nil
             vm.selectedFibonacciID = nil

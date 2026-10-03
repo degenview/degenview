@@ -263,10 +263,13 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 11. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab
 12. Quit and relaunch — same tabs, same order, same window grouping
-13. Arm the ruler, drag a rectangle up (green) and down (red); check the read-out's percent
-    against the price axis and its bar count against the candles inside. One more click
-    puts it away — on that chart only. Switching tool or timeframe drops it, and it never
-    comes back after a relaunch
+13. Arm the ruler, press-drag-release a rectangle up (green) and down (red), and right to left;
+    check the card's percent against the price axis tags and its bar count against the
+    candles inside. A click-move-click rectangle works too. Hover a corner or edge: handles
+    and the cursor change; drag a corner to resize and an edge to move, and start a second
+    rectangle inside the first. Delete removes the selected one, Esc cancels a draft, then
+    clears all, then disarms. Switching tool or timeframe drops them, and they never come
+    back after a relaunch
 13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
     and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
     Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own

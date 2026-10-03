@@ -323,14 +323,19 @@ final class ChartViewModel: ObservableObject {
 
     // MARK: - Ruler
 
-    /// Measuring rectangles on this chart. Never persisted and never restored — a ruler
-    /// answers a question and then goes away on the next click.
+    /// Measuring rectangles on this chart. Never persisted, never restored and never in
+    /// drawing history — a ruler answers a question and goes away with the tool.
     @Published private(set) var rulers: [RulerRect] = []
 
     /// First corner of a rectangle in progress, and the opposite corner that follows the
-    /// pointer until the second click lands.
+    /// pointer until it is finished.
     @Published private(set) var rulerDraftStart: TrendAnchor?
     @Published private(set) var rulerDraftEnd: TrendAnchor?
+
+    /// The ruler showing its handles because it was clicked, and the part of a ruler the
+    /// pointer is over right now (which drives the highlight and the cursor).
+    @Published private(set) var selectedRulerID: UUID?
+    @Published private(set) var hoveredRuler: RulerHit?
 
     var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let rulerDraftStart, let rulerDraftEnd else { return nil }
@@ -338,6 +343,11 @@ final class ChartViewModel: ObservableObject {
     }
 
     var hasRulerDraft: Bool { rulerDraftStart != nil }
+
+    var rulerOverlay: RulerOverlayState {
+        RulerOverlayState(
+            rects: rulers, draft: rulerDraft, selectedID: selectedRulerID, hover: hoveredRuler)
+    }
 
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
@@ -1133,11 +1143,13 @@ final class ChartViewModel: ObservableObject {
 
     // MARK: - Drawing a ruler
 
-    /// First click: pin one corner. The rectangle tracks the pointer from here until the
-    /// second click.
+    /// First click, or the press of a drag: pin one corner. The rectangle tracks the
+    /// pointer from here until it is finished.
     func beginRulerDraft(at anchor: TrendAnchor) {
         rulerDraftStart = anchor
         rulerDraftEnd = anchor
+        selectedRulerID = nil
+        hoveredRuler = nil
     }
 
     func updateRulerDraft(to anchor: TrendAnchor) {
@@ -1145,9 +1157,9 @@ final class ChartViewModel: ObservableObject {
         rulerDraftEnd = anchor
     }
 
-    /// Second click. Rejects a click that landed back on the first one — a rectangle with
-    /// no area would report 0% over one candle — and leaves the draft open so the next
-    /// click can still finish it.
+    /// Finishes the rectangle and selects it. Rejects an end that landed back on the first
+    /// corner — a rectangle with no area would report 0% over one candle — and leaves the
+    /// draft open so the next click can still finish it.
     @discardableResult
     func commitRulerDraft(at anchor: TrendAnchor, in plot: ChartPlot) -> Bool {
         guard let start = rulerDraftStart else { return false }
@@ -1157,7 +1169,9 @@ final class ChartViewModel: ObservableObject {
         let to = plot.position(of: anchor, points: points, slotWidth: slot)
         guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
 
-        rulers.append(RulerRect(start: start, end: anchor))
+        let ruler = RulerRect(start: start, end: anchor)
+        rulers.append(ruler)
+        selectedRulerID = ruler.id
         rulerDraftStart = nil
         rulerDraftEnd = nil
         return true
@@ -1168,10 +1182,89 @@ final class ChartViewModel: ObservableObject {
         rulerDraftEnd = nil
     }
 
+    // MARK: - Editing a ruler
+
+    /// The ruler part under `point`: a corner within reach first, then an edge. Newest
+    /// first, matching what the renderer draws on top. The interior is not a hit, so a
+    /// measurement can start inside an existing one.
+    func rulerHit(at point: CGPoint, in plot: ChartPlot) -> RulerHit? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+
+        for ruler in rulers.reversed() {
+            let from = plot.position(of: ruler.start, points: points, slotWidth: slot)
+            let to = plot.position(of: ruler.end, points: points, slotWidth: slot)
+            let box = CGRect(
+                x: min(from.x, to.x), y: min(from.y, to.y),
+                width: abs(to.x - from.x), height: abs(to.y - from.y))
+
+            for corner in RulerCorner.allCases {
+                let center = CGPoint(
+                    x: corner.isLeft ? box.minX : box.maxX,
+                    y: corner.isTop ? box.minY : box.maxY)
+                if hypot(center.x - point.x, center.y - point.y) <= Drawing.rulerCornerReach {
+                    return RulerHit(id: ruler.id, part: .corner(corner))
+                }
+            }
+
+            let band = Drawing.rulerEdgeBand
+            let outer = box.insetBy(dx: -band, dy: -band)
+            let inner = box.insetBy(dx: band, dy: band)
+            if outer.contains(point), !inner.contains(point) {
+                return RulerHit(id: ruler.id, part: .edge)
+            }
+        }
+        return nil
+    }
+
+    /// Only publishes a change, so a pointer wandering over empty chart doesn't redraw
+    /// the canvas on every mouse move.
+    func setRulerHover(_ hit: RulerHit?) {
+        guard hoveredRuler != hit else { return }
+        hoveredRuler = hit
+    }
+
+    func selectRuler(_ id: UUID?) {
+        guard selectedRulerID != id else { return }
+        selectedRulerID = id
+    }
+
+    /// Drags `corner` of `original` to `anchor`. Always computed from the rectangle as it
+    /// was when the drag began, so crossing over the opposite corner and coming back
+    /// restores it exactly.
+    func moveRulerCorner(original: RulerRect, corner: RulerCorner, to anchor: TrendAnchor) {
+        replaceRuler(original.resized(corner: corner, to: anchor))
+    }
+
+    /// Moves the whole rectangle by how far the pointer has travelled since the drag began.
+    func translateRuler(original: RulerRect, from start: TrendAnchor, to current: TrendAnchor) {
+        replaceRuler(
+            original.translated(
+                by: current.date.timeIntervalSince(start.date),
+                price: current.price - start.price))
+    }
+
+    private func replaceRuler(_ ruler: RulerRect) {
+        guard let index = rulers.firstIndex(where: { $0.id == ruler.id }) else { return }
+        rulers[index] = ruler
+    }
+
+    @discardableResult
+    func removeSelectedRuler() -> Bool {
+        guard let id = selectedRulerID, rulers.contains(where: { $0.id == id }) else { return false }
+        rulers.removeAll { $0.id == id }
+        selectedRulerID = nil
+        hoveredRuler = nil
+        return true
+    }
+
     /// Put every measurement on this chart away. Reports whether there was anything to
-    /// clear, so the caller can tell a dismissing click from one that starts a rectangle.
+    /// clear, so Esc and Delete can tell a dismissal from a step out of the tool.
     @discardableResult
     func clearRulers() -> Bool {
+        selectedRulerID = nil
+        hoveredRuler = nil
         guard !rulers.isEmpty else { return false }
         rulers.removeAll()
         return true
