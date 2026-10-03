@@ -31,6 +31,13 @@ enum PineLibraryLinker {
     /// How deep libraries may import libraries; a guard against runaway graphs.
     static let maximumDepth = 8
 
+    /// The alias an import without `as` gets: the library name, the middle of `user/Library/version`.
+    /// Nil for text that is not a three-part path (an import still being typed).
+    static func defaultAlias(forPath path: String) -> String? {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        return parts.count == 3 && !parts[1].isEmpty ? String(parts[1]) : nil
+    }
+
     private static let importLine = try? NSRegularExpression(
         pattern: #"^import[ \t]+(\S+)(?:[ \t]+as[ \t]+([A-Za-z_][A-Za-z0-9_]*))?[ \t]*(?://.*)?$"#)
 

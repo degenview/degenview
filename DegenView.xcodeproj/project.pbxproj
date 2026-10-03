@@ -12,7 +12,6 @@
 		097E05F04C753ED6D1CE4ACA /* PineDiagnosticsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E78A01FF4A155E93DBB459F5 /* PineDiagnosticsSection.swift */; };
 		0B3A6A699CA2BD7F002BA89C /* AppDatabase+Schema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C31ED70872A2B7452A37049 /* AppDatabase+Schema.swift */; };
 		107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF4F0861ED57FFD15CBF8E0D /* DateFormat+Extensions.swift */; };
-		17004834404D65A516B67060 /* PineHighlightScopes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 653EB4B8B310D7D67D9FF4FC /* PineHighlightScopes.swift */; };
 		1BBE15D939B04D1D9632F7E6 /* PineIndicatorLegendTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */; };
 		A1C0DE0000000000000000F1 /* PineInputsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */; };
 		1DAC5FB0C81B58F9830D3762 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
@@ -433,12 +432,19 @@
 		E7066389703532A203B8B5C9 /* PineEditorTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7F0DBDED4012864B42F0386 /* PineEditorTestSupport.swift */; };
 		E7158782B18FD11353F84829 /* PineEditorCommandsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74AAE5B5748FC5C381C8AB6 /* PineEditorCommandsTests.swift */; };
 		E71D26A5C4333D98F65B1BE7 /* PineEditorPairingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */; };
+		399D3761D376B253746F1360 /* PineEditorAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FABDF07855F285C900938BA /* PineEditorAnalysisTests.swift */; };
+		123763B0B631BCD1447D39EC /* PineSourceSymbolIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 846400FA249FB98EE88D2C13 /* PineSourceSymbolIndexTests.swift */; };
 		E73CA6C25AF343A6F394AE95 /* PineTextViewEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7B1BB1779CCA9B58E5E6EFD /* PineTextViewEditingTests.swift */; };
 		E74664BE4D045ECEF2C58FED /* PineDelimiterMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76519C2A3E15052A189DF9F /* PineDelimiterMatcherTests.swift */; };
 		E748A3FBB5080FB055F1AB48 /* PineLineEditSet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E757EDCE807CE7E0A84CF8A4 /* PineLineEditSet.swift */; };
 		E74CC96CFD3364200FAD8C20 /* PineTextView+Editing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E75F63AA8385D34824298417 /* PineTextView+Editing.swift */; };
 		E75488CF1ACED0E6628EB3D0 /* PineLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A2B80A9084EA5A91CEFF60 /* PineLayoutManager.swift */; };
 		E75ED523426838CE799E41FE /* PineEditorEdit.swift in Sources */ = {isa = PBXBuildFile; fileRef = E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */; };
+		A669BCB481FA56DD9D3EE6DC /* PineEditorAnalysisCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E14A42A5F9C57C8041F78F /* PineEditorAnalysisCache.swift */; };
+		C4CD04C1A24FE23EC3746B99 /* PineEditorAnalysisSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 608586F65503C3B6CF15A468 /* PineEditorAnalysisSnapshot.swift */; };
+		880AD7920585E188E2B3E502 /* PineSourceSymbolIndex+Builder.swift in Sources */ = {isa = PBXBuildFile; fileRef = D743602E83758C4E71192EC2 /* PineSourceSymbolIndex+Builder.swift */; };
+		730B05857C01A9AD27D01061 /* PineSourceSymbolIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0C68C3592470286D1F7834 /* PineSourceSymbolIndex.swift */; };
+		922CA7788D1AC693173C05A4 /* PineStatementSplitter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 694A95CA73B7C6A4B32700E2 /* PineStatementSplitter.swift */; };
 		E765D40F43053BBDBECCA297 /* PineIndentationEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E774164EB796C48C79305ED6 /* PineIndentationEngineTests.swift */; };
 		E76B93EFF3EC79D75838ACF8 /* PineIndentGuidesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7549D1DFDB072E1D966497E /* PineIndentGuidesTests.swift */; };
 		E776CF2218F716953A53DA8B /* PineCurrentLineRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E714F3451838E69B5737F0A6 /* PineCurrentLineRenderer.swift */; };
@@ -807,7 +813,6 @@
 		5E55102B2C1D4E8F00B2C3A3 /* PineDiagnosticSeverity+Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineDiagnosticSeverity+Color.swift"; sourceTree = "<group>"; };
 		5E55102B2C1D4E8F00B2C3A4 /* PineIgnoredFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIgnoredFeatureTests.swift; sourceTree = "<group>"; };
 		62da476d2ea14915af7cffe9 /* ImageCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ImageCache.swift; sourceTree = "<group>"; };
-		653EB4B8B310D7D67D9FF4FC /* PineHighlightScopes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineHighlightScopes.swift; sourceTree = "<group>"; };
 		6707006AD4A62C0B40679829 /* PineOffsetMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineOffsetMap.swift; sourceTree = "<group>"; };
 		6AB3F1BA9B8CC9CDE860CF58 /* AppDatabase+Workspace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Workspace.swift"; sourceTree = "<group>"; };
 		6D522B75BD2332D9948E8947 /* ChartViewModelMultiPineInstanceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChartViewModelMultiPineInstanceTests.swift; sourceTree = "<group>"; };
@@ -1153,8 +1158,15 @@
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
 		E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorEdit.swift; sourceTree = "<group>"; };
+		65E14A42A5F9C57C8041F78F /* PineEditorAnalysisCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorAnalysisCache.swift; sourceTree = "<group>"; };
+		608586F65503C3B6CF15A468 /* PineEditorAnalysisSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorAnalysisSnapshot.swift; sourceTree = "<group>"; };
+		D743602E83758C4E71192EC2 /* PineSourceSymbolIndex+Builder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineSourceSymbolIndex+Builder.swift"; sourceTree = "<group>"; };
+		5B0C68C3592470286D1F7834 /* PineSourceSymbolIndex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSourceSymbolIndex.swift; sourceTree = "<group>"; };
+		694A95CA73B7C6A4B32700E2 /* PineStatementSplitter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStatementSplitter.swift; sourceTree = "<group>"; };
 		E714F3451838E69B5737F0A6 /* PineCurrentLineRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCurrentLineRenderer.swift; sourceTree = "<group>"; };
 		E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorPairingTests.swift; sourceTree = "<group>"; };
+		9FABDF07855F285C900938BA /* PineEditorAnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorAnalysisTests.swift; sourceTree = "<group>"; };
+		846400FA249FB98EE88D2C13 /* PineSourceSymbolIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSourceSymbolIndexTests.swift; sourceTree = "<group>"; };
 		E72A5401B065B11989DBBC97 /* PineEditorContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorContext.swift; sourceTree = "<group>"; };
 		E738CA5A08C95F977366D705 /* PineEditorPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorPairing.swift; sourceTree = "<group>"; };
 		E744AB19036DDAF61B5CF0E4 /* PineIndentationEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIndentationEngine.swift; sourceTree = "<group>"; };
@@ -1846,6 +1858,8 @@
 				E774164EB796C48C79305ED6 /* PineIndentationEngineTests.swift */,
 				E76519C2A3E15052A189DF9F /* PineDelimiterMatcherTests.swift */,
 				E71CC74CD19A0A5D31CBD709 /* PineEditorPairingTests.swift */,
+				9FABDF07855F285C900938BA /* PineEditorAnalysisTests.swift */,
+				846400FA249FB98EE88D2C13 /* PineSourceSymbolIndexTests.swift */,
 				E76295899D06E1DA635E47FB /* PineLexicalSnapshotTests.swift */,
 				E7F0DBDED4012864B42F0386 /* PineEditorTestSupport.swift */,
 				PC0000000000000000000101 /* PineCorpusTests.swift */,
@@ -2060,7 +2074,6 @@
 				F1535694E53F525C24A507B6 /* PineDiagnosticRangeMapper.swift */,
 				F1FF38F9ABD54E9ECE0C0D8D /* PineSyntaxHighlighter.swift */,
 				6707006AD4A62C0B40679829 /* PineOffsetMap.swift */,
-				653EB4B8B310D7D67D9FF4FC /* PineHighlightScopes.swift */,
 				DE610F2AD9839F8A22183970 /* PineSyntaxClassifier.swift */,
 				F90FE0867430D98A0CB06E73 /* PineSyntaxTheme.swift */,
 				5E55102B2C1D4E8F00B2C3A3 /* PineDiagnosticSeverity+Color.swift */,
@@ -2083,6 +2096,11 @@
 				E72A5401B065B11989DBBC97 /* PineEditorContext.swift */,
 				E7E2FD84391392E5D135AC32 /* PineLexicalSnapshot.swift */,
 				E714035ABE17BFBB6C9C512A /* PineEditorEdit.swift */,
+				65E14A42A5F9C57C8041F78F /* PineEditorAnalysisCache.swift */,
+				608586F65503C3B6CF15A468 /* PineEditorAnalysisSnapshot.swift */,
+				D743602E83758C4E71192EC2 /* PineSourceSymbolIndex+Builder.swift */,
+				5B0C68C3592470286D1F7834 /* PineSourceSymbolIndex.swift */,
+				694A95CA73B7C6A4B32700E2 /* PineStatementSplitter.swift */,
 			);
 			path = Editor;
 			sourceTree = "<group>";
@@ -2869,7 +2887,6 @@
 				F2A9DC6582DD1D26214164D7 /* PineDiagnosticRangeMapper.swift in Sources */,
 				F237C581C5EB44F434386840 /* PineSyntaxHighlighter.swift in Sources */,
 				89D3A09940226FF53F58870B /* PineOffsetMap.swift in Sources */,
-				17004834404D65A516B67060 /* PineHighlightScopes.swift in Sources */,
 				F7826ACEC937FD0171B0002B /* PineSyntaxClassifier.swift in Sources */,
 				B680F2B2F98926364A250976 /* PineSyntaxTheme.swift in Sources */,
 				5E55102B2C1D4E8F00B1C2A3 /* PineDiagnosticSeverity+Color.swift in Sources */,
@@ -2892,6 +2909,11 @@
 				E77E3026C54C91616EC8B917 /* PineEditorContext.swift in Sources */,
 				E7D6DCC10B65146AFB4CA83E /* PineLexicalSnapshot.swift in Sources */,
 				E75ED523426838CE799E41FE /* PineEditorEdit.swift in Sources */,
+				A669BCB481FA56DD9D3EE6DC /* PineEditorAnalysisCache.swift in Sources */,
+				C4CD04C1A24FE23EC3746B99 /* PineEditorAnalysisSnapshot.swift in Sources */,
+				880AD7920585E188E2B3E502 /* PineSourceSymbolIndex+Builder.swift in Sources */,
+				730B05857C01A9AD27D01061 /* PineSourceSymbolIndex.swift in Sources */,
+				922CA7788D1AC693173C05A4 /* PineStatementSplitter.swift in Sources */,
 				F296B138838E2D12E33E1FCD /* PineExecutionRejection.swift in Sources */,
 				F26F9CE9A89CFB62DA1DB549 /* PineExecutionHost.swift in Sources */,
 				F2563B31E3BD8C32CAD83587 /* PineExecutionController.swift in Sources */,
@@ -3044,6 +3066,8 @@
 				E765D40F43053BBDBECCA297 /* PineIndentationEngineTests.swift in Sources */,
 				E74664BE4D045ECEF2C58FED /* PineDelimiterMatcherTests.swift in Sources */,
 				E71D26A5C4333D98F65B1BE7 /* PineEditorPairingTests.swift in Sources */,
+				399D3761D376B253746F1360 /* PineEditorAnalysisTests.swift in Sources */,
+				123763B0B631BCD1447D39EC /* PineSourceSymbolIndexTests.swift in Sources */,
 				E7C861B8950496A7E7FB2D41 /* PineLexicalSnapshotTests.swift in Sources */,
 				E7066389703532A203B8B5C9 /* PineEditorTestSupport.swift in Sources */,
 				PC0000000000000000000001 /* PineCorpusTests.swift in Sources */,

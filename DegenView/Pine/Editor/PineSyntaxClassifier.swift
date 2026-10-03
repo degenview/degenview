@@ -10,10 +10,12 @@ enum PineSyntaxClassifier {
     private static let annotationExpression = try! NSRegularExpression(
         pattern: #"^//@[A-Za-z_]+(?:=\d+)?"#)
 
-    static func classify(_ source: String) -> [PineHighlightSpan] {
-        let snapshot = PineLexicalSnapshot.shared(for: source)
-        var spans = lexicalSpans(in: source, snapshot: snapshot)
-        var run = TokenRun(snapshot: snapshot)
+    static func classify(
+        _ source: String, analysis cache: PineEditorAnalysisCache = .shared
+    ) -> [PineHighlightSpan] {
+        let analysis = cache.analysis(for: source)
+        var spans = lexicalSpans(in: source, snapshot: analysis.lexical)
+        var run = TokenRun(snapshot: analysis.lexical, index: analysis.index)
         spans.append(contentsOf: run.classify())
         return spans
     }
@@ -44,19 +46,19 @@ enum PineSyntaxClassifier {
 private struct TokenRun {
     let tokens: [PineToken]
     let snapshot: PineLexicalSnapshot
-    var scopes = PineHighlightScopes()
+    let symbols: PineSourceSymbolIndex
     var parenDepth = 0
     var spans: [PineHighlightSpan] = []
 
-    init(snapshot: PineLexicalSnapshot) {
+    init(snapshot: PineLexicalSnapshot, index: PineSourceSymbolIndex) {
         tokens = snapshot.tokens
         self.snapshot = snapshot
+        symbols = index
     }
 
     mutating func classify() -> [PineHighlightSpan] {
         var index = 0
         while index < tokens.count {
-            scopes.observe(index, in: tokens)
             index = classifyToken(at: index)
         }
         return spans
@@ -128,9 +130,9 @@ private struct TokenRun {
     ) -> [PineSyntaxCategory] {
         let head = names[0]
         let plain = [PineSyntaxCategory](repeating: .identifier, count: names.count)
-        if scopes.role(at: chain[0]) == .declaration { return plain }
-        if scopes.role(at: chain[0]) == .forKeyword { return [.keyword] }
-        if scopes.isUserDefined(head) { return plain }
+        if symbols.role(at: chain[0]) == .declaration { return plain }
+        if symbols.role(at: chain[0]) == .forKeyword { return [.keyword] }
+        if symbols.resolve(head, atToken: chain[0]) != nil { return plain }
         if names.count == 1 { return [singleName(head, at: chain[0], isCall: isCall)] }
 
         guard PineSymbolCatalog.namespaces.contains(head) else { return plain }
