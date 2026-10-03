@@ -117,6 +117,14 @@ actor ScriptStore {
         return script
     }
 
+    /// Saves a copy of the script's current source as "<name> copy" (disambiguated on conflict).
+    /// The copy starts as a plain script: not a favorite, no history.
+    @discardableResult
+    func duplicate(id: UUID) throws -> LocalScript {
+        guard let original = try script(id: id) else { throw ScriptStoreError.missingScript }
+        return try create(name: "\(original.name) copy", type: original.type, source: original.source)
+    }
+
     /// Copies an outside `.pine` file into the library. The copy is named after the file
     /// (disambiguated on conflict) and typed by the script's own declaration.
     func importFile(at url: URL) throws -> LocalScript {

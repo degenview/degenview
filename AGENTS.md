@@ -131,6 +131,15 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - `PineInputsView` is the one `input.*` → controls renderer, shared with `ChartSettingsSheet`;
   it takes a precompiled `PineInputSchema` — never compile inside a view body
 
+### Example scripts
+- `DegenView/Resources/DemoScripts/*.pine` ship in the app's Resources phase (each one is a
+  `project.pbxproj` file reference + build file, like any new file). `DemoScriptLibrary` copies them
+  into `ScriptStore` — once at launch (`scripts.demosSeeded`, skipped under XCTest) and on demand from
+  the Script Manager's empty state — so a demo the user deletes stays deleted. The file name is the script name
+  (no "Demo" prefix — the word never appears in user-visible script names or titles)
+- Demos are original work only (the repo is GPL-3.0; never copy community scripts) and must compile with **no
+  diagnostics**, warnings included: `PineExampleScriptsTests` compiles and runs every bundled file
+
 ### WebSocket updates
 - `ChartLiveFeed` owns the three socket services and routes ticks to charts; `ContentViewModel`
   and the Script Manager preview each hold one
@@ -312,7 +321,9 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     indicator: the preview chart appears left of the code. Type — the plot updates after a pause;
     break the syntax — the banner appears and the last plot stays. Move the chart left/top/bottom
     without losing the editor's cursor. Change an input, relaunch, reopen the script — the value
-    is back. The market picker offers only Crypto and Stock
+    is back. The market picker offers only Crypto and Stock. A favorited script highlights one sidebar row
+    (whichever you click), right-click ▸ Duplicate makes "<name> copy" and selects it, and the
+    "Community scripts" link sits under the list
 
 Adding a new `.swift` file means four hand-edits to `project.pbxproj` (`PBXBuildFile`,
 `PBXFileReference`, the group's `children`, the `Sources` phase). The project does not use

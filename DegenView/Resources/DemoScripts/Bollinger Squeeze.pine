@@ -1,0 +1,19 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Bollinger Bands, with the background tinted when the bands are the narrowest
+// they have been for a while: a "squeeze", which often comes before a big move.
+indicator("Bollinger Squeeze", overlay = true)
+
+length = input.int(20, "Length", minval = 2, group = "Bands")
+mult = input.float(2.0, "Multiplier", minval = 0.1, step = 0.1, group = "Bands")
+lookback = input.int(100, "Squeeze lookback", minval = 10, group = "Squeeze", tooltip = "A squeeze is the narrowest the bands have been over this many bars.")
+
+[middle, upper, lower] = ta.bb(close, length, mult)
+width = (upper - lower) / middle
+squeeze = width <= ta.lowest(width, lookback)
+
+plot(middle, "Basis", color = color.orange)
+top = plot(upper, "Upper", color = color.blue)
+bottom = plot(lower, "Lower", color = color.blue)
+fill(top, bottom, color = color.new(color.blue, 90), title = "Band fill")
+bgcolor(squeeze ? color.new(color.yellow, 80) : na)

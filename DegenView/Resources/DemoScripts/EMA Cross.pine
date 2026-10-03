@@ -1,0 +1,23 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Two exponential moving averages. A triangle marks each crossover, and both
+// crossovers are available as alert conditions.
+indicator("EMA Cross", overlay = true)
+
+fastLength = input.int(12, "Fast length", minval = 1, group = "Moving averages")
+slowLength = input.int(26, "Slow length", minval = 2, group = "Moving averages", tooltip = "Keep this longer than the fast length.")
+source = input.source(close, "Source", group = "Moving averages")
+
+fast = ta.ema(source, fastLength)
+slow = ta.ema(source, slowLength)
+
+bullish = ta.crossover(fast, slow)
+bearish = ta.crossunder(fast, slow)
+
+plot(fast, "Fast EMA", color = color.aqua, linewidth = 2)
+plot(slow, "Slow EMA", color = color.orange, linewidth = 2)
+plotshape(bullish, "Bullish cross", style = shape.triangleup, location = location.belowbar, color = color.green, size = size.small)
+plotshape(bearish, "Bearish cross", style = shape.triangledown, location = location.abovebar, color = color.red, size = size.small)
+
+alertcondition(bullish, "Bullish cross", "Fast EMA crossed above the slow EMA")
+alertcondition(bearish, "Bearish cross", "Fast EMA crossed below the slow EMA")

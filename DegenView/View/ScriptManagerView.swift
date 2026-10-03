@@ -122,7 +122,8 @@ extension ScriptManagerView {
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             .padding(8)
 
-            List(selection: $model.selection) {
+            // Selection is by row, not script: a favorited script has a row in two sections.
+            List(selection: Binding(get: { model.selectedRowID }, set: { model.selectRow($0) })) {
                 ForEach(model.groups) { group in
                     Section(isExpanded: model.isExpanded(group.id)) {
                         ForEach(group.rows) { row in
@@ -130,7 +131,7 @@ extension ScriptManagerView {
                                 script: row.script, rowID: row.id, model: model,
                                 onDelete: { pendingDelete = $0 }
                             )
-                            .tag(row.script.id)
+                            .tag(row.id)
                         }
                     } header: {
                         Text(group.title)
@@ -148,6 +149,17 @@ extension ScriptManagerView {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
             }
+
+            Divider()
+            Link(destination: URL(string: "https://www.tradingview.com/scripts/")!) {
+                Label("Community scripts", systemImage: "arrow.up.right.square")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .help("Browse community scripts on TradingView")
         }
     }
 
@@ -182,6 +194,8 @@ extension ScriptManagerView {
                     .multilineTextAlignment(.center)
                 Button("Create Your First Script", systemImage: "plus") { showNewScript = true }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                Button("Add Example Scripts", systemImage: "square.and.arrow.down") { model.addDemoScripts() }
                     .controlSize(.large)
                 HStack(spacing: 16) {
                     Link(
@@ -243,6 +257,7 @@ private struct ScriptRow: View {
         .contextMenu {
             Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
             Button("Rename") { model.renamingRowID = rowID }
+            Button("Duplicate") { model.duplicate(script) }
             Divider()
             Button("Show in Finder") { model.showInFinder(script) }
             Button("Export…") { model.export(script) }

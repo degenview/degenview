@@ -1,0 +1,24 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// MACD with a four-colour histogram: strong colours while momentum is growing,
+// faded colours while it fades.
+indicator("MACD Histogram", overlay = false)
+
+fastLength = input.int(12, "Fast length", minval = 1, group = "MACD")
+slowLength = input.int(26, "Slow length", minval = 2, group = "MACD")
+signalLength = input.int(9, "Signal length", minval = 1, group = "MACD")
+
+risingUp = input.color(color.new(color.teal, 0), "Above zero, rising", group = "Colors")
+fadingUp = input.color(color.new(color.teal, 60), "Above zero, fading", group = "Colors")
+risingDown = input.color(color.new(color.red, 0), "Below zero, falling", group = "Colors")
+fadingDown = input.color(color.new(color.red, 60), "Below zero, fading", group = "Colors")
+
+[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, signalLength)
+
+growing = histogram > histogram[1]
+histogramColor = histogram >= 0 ? (growing ? risingUp : fadingUp) : (growing ? fadingDown : risingDown)
+
+plot(histogram, "Histogram", style = plot.style_columns, color = histogramColor)
+plot(macdLine, "MACD", color = color.blue)
+plot(signalLine, "Signal", color = color.orange)
+hline(0, "Zero", color = color.gray)

@@ -384,15 +384,15 @@
 		D7F3BB66B587A189659605E6 /* PineDrawingCoordinate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7A565120F66539001CAEC84 /* PineDrawingCoordinate.swift */; };
 		D7FCCC71251F12775529B890 /* PineParser+Types.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7792B7535BE4DF2EE5D3585 /* PineParser+Types.swift */; };
 		D7FD5DB0C6F9A39FBB29A3E6 /* PineTextAlign.swift in Sources */ = {isa = PBXBuildFile; fileRef = D74F246EAB771B07F92C778A /* PineTextAlign.swift */; };
-		DM0000000000000000000301 /* Demo - Bollinger Squeeze.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000101 /* Demo - Bollinger Squeeze.pine */; };
-		DM0000000000000000000302 /* Demo - EMA Cross Strategy.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000102 /* Demo - EMA Cross Strategy.pine */; };
-		DM0000000000000000000303 /* Demo - EMA Cross.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000103 /* Demo - EMA Cross.pine */; };
-		DM0000000000000000000304 /* Demo - Higher Timeframe Trend.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000104 /* Demo - Higher Timeframe Trend.pine */; };
-		DM0000000000000000000305 /* Demo - MACD Histogram.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000105 /* Demo - MACD Histogram.pine */; };
-		DM0000000000000000000306 /* Demo - Pivot Levels.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000106 /* Demo - Pivot Levels.pine */; };
-		DM0000000000000000000307 /* Demo - RSI Zones.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000107 /* Demo - RSI Zones.pine */; };
-		DM0000000000000000000308 /* Demo - Stats Table.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000108 /* Demo - Stats Table.pine */; };
-		DM0000000000000000000309 /* Demo - Volume Spike Alert.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000109 /* Demo - Volume Spike Alert.pine */; };
+		DM0000000000000000000301 /* Bollinger Squeeze.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000101 /* Bollinger Squeeze.pine */; };
+		DM0000000000000000000302 /* EMA Cross Strategy.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000102 /* EMA Cross Strategy.pine */; };
+		DM0000000000000000000303 /* EMA Cross.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000103 /* EMA Cross.pine */; };
+		DM0000000000000000000304 /* Higher Timeframe Trend.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000104 /* Higher Timeframe Trend.pine */; };
+		DM0000000000000000000305 /* MACD Histogram.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000105 /* MACD Histogram.pine */; };
+		DM0000000000000000000306 /* Pivot Levels.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000106 /* Pivot Levels.pine */; };
+		DM0000000000000000000307 /* RSI Zones.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000107 /* RSI Zones.pine */; };
+		DM0000000000000000000308 /* Stats Table.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000108 /* Stats Table.pine */; };
+		DM0000000000000000000309 /* Volume Spike Alert.pine in Resources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000109 /* Volume Spike Alert.pine */; };
 		DM0000000000000000000350 /* DemoScriptLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000150 /* DemoScriptLibrary.swift */; };
 		DM0000000000000000000351 /* PineExampleScriptsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DM0000000000000000000151 /* PineExampleScriptsTests.swift */; };
 		E20000000000000000000001 /* AlpacaCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000101 /* AlpacaCredentials.swift */; };
@@ -1090,15 +1090,15 @@
 		D7F4D69CD5EC34A7A385EEA9 /* PineTechnicalAnalysisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTechnicalAnalysisTests.swift; sourceTree = "<group>"; };
 		DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = JSONStore.swift; sourceTree = "<group>"; };
 		DE610F2AD9839F8A22183970 /* PineSyntaxClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSyntaxClassifier.swift; sourceTree = "<group>"; };
-		DM0000000000000000000101 /* Demo - Bollinger Squeeze.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - Bollinger Squeeze.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000102 /* Demo - EMA Cross Strategy.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - EMA Cross Strategy.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000103 /* Demo - EMA Cross.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - EMA Cross.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000104 /* Demo - Higher Timeframe Trend.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - Higher Timeframe Trend.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000105 /* Demo - MACD Histogram.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - MACD Histogram.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000106 /* Demo - Pivot Levels.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - Pivot Levels.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000107 /* Demo - RSI Zones.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - RSI Zones.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000108 /* Demo - Stats Table.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - Stats Table.pine"; sourceTree = "<group>"; };
-		DM0000000000000000000109 /* Demo - Volume Spike Alert.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Demo - Volume Spike Alert.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000101 /* Bollinger Squeeze.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Bollinger Squeeze.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000102 /* EMA Cross Strategy.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "EMA Cross Strategy.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000103 /* EMA Cross.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "EMA Cross.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000104 /* Higher Timeframe Trend.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Higher Timeframe Trend.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000105 /* MACD Histogram.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "MACD Histogram.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000106 /* Pivot Levels.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Pivot Levels.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000107 /* RSI Zones.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "RSI Zones.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000108 /* Stats Table.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Stats Table.pine"; sourceTree = "<group>"; };
+		DM0000000000000000000109 /* Volume Spike Alert.pine */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Volume Spike Alert.pine"; sourceTree = "<group>"; };
 		DM0000000000000000000150 /* DemoScriptLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DemoScriptLibrary.swift; sourceTree = "<group>"; };
 		DM0000000000000000000151 /* PineExampleScriptsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExampleScriptsTests.swift; sourceTree = "<group>"; };
 		E167CD7B739B528C0792D361 /* KlineCache.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = KlineCache.swift; sourceTree = "<group>"; };
@@ -1781,15 +1781,15 @@
 		DM0000000000000000000160 /* DemoScripts */ = {
 			isa = PBXGroup;
 			children = (
-				DM0000000000000000000101 /* Demo - Bollinger Squeeze.pine */,
-				DM0000000000000000000102 /* Demo - EMA Cross Strategy.pine */,
-				DM0000000000000000000103 /* Demo - EMA Cross.pine */,
-				DM0000000000000000000104 /* Demo - Higher Timeframe Trend.pine */,
-				DM0000000000000000000105 /* Demo - MACD Histogram.pine */,
-				DM0000000000000000000106 /* Demo - Pivot Levels.pine */,
-				DM0000000000000000000107 /* Demo - RSI Zones.pine */,
-				DM0000000000000000000108 /* Demo - Stats Table.pine */,
-				DM0000000000000000000109 /* Demo - Volume Spike Alert.pine */,
+				DM0000000000000000000101 /* Bollinger Squeeze.pine */,
+				DM0000000000000000000102 /* EMA Cross Strategy.pine */,
+				DM0000000000000000000103 /* EMA Cross.pine */,
+				DM0000000000000000000104 /* Higher Timeframe Trend.pine */,
+				DM0000000000000000000105 /* MACD Histogram.pine */,
+				DM0000000000000000000106 /* Pivot Levels.pine */,
+				DM0000000000000000000107 /* RSI Zones.pine */,
+				DM0000000000000000000108 /* Stats Table.pine */,
+				DM0000000000000000000109 /* Volume Spike Alert.pine */,
 			);
 			path = Resources/DemoScripts;
 			sourceTree = "<group>";
@@ -2332,15 +2332,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				A0000000000000000000000F /* Assets.xcassets in Resources */,
-				DM0000000000000000000301 /* Demo - Bollinger Squeeze.pine in Resources */,
-				DM0000000000000000000302 /* Demo - EMA Cross Strategy.pine in Resources */,
-				DM0000000000000000000303 /* Demo - EMA Cross.pine in Resources */,
-				DM0000000000000000000304 /* Demo - Higher Timeframe Trend.pine in Resources */,
-				DM0000000000000000000305 /* Demo - MACD Histogram.pine in Resources */,
-				DM0000000000000000000306 /* Demo - Pivot Levels.pine in Resources */,
-				DM0000000000000000000307 /* Demo - RSI Zones.pine in Resources */,
-				DM0000000000000000000308 /* Demo - Stats Table.pine in Resources */,
-				DM0000000000000000000309 /* Demo - Volume Spike Alert.pine in Resources */,
+				DM0000000000000000000301 /* Bollinger Squeeze.pine in Resources */,
+				DM0000000000000000000302 /* EMA Cross Strategy.pine in Resources */,
+				DM0000000000000000000303 /* EMA Cross.pine in Resources */,
+				DM0000000000000000000304 /* Higher Timeframe Trend.pine in Resources */,
+				DM0000000000000000000305 /* MACD Histogram.pine in Resources */,
+				DM0000000000000000000306 /* Pivot Levels.pine in Resources */,
+				DM0000000000000000000307 /* RSI Zones.pine in Resources */,
+				DM0000000000000000000308 /* Stats Table.pine in Resources */,
+				DM0000000000000000000309 /* Volume Spike Alert.pine in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
