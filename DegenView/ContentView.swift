@@ -308,7 +308,13 @@ struct ContentView: View {
     @ViewBuilder
     private var sidebarTradingControls: some View {
         let isPanelOpen = showTradingPanel && paperTrading.isConnected
-        Button {
+        SidebarIconButton(
+            icon: "arrow.left.arrow.right",
+            label: isPanelOpen ? "Hide Paper Trading panel" : "Show Paper Trading panel",
+            tooltip: isPanelOpen ? "Hide Paper Trading" : "Paper Trading",
+            isActive: isPanelOpen,
+            activeStyle: .tinted
+        ) {
             if isPanelOpen {
                 showTradingPanel = false
             } else if paperTrading.isConnected {
@@ -319,23 +325,18 @@ struct ContentView: View {
                     showTradingPanel = true
                 }
             }
-        } label: {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(isPanelOpen ? Color.accentColor : .primary)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 5).fill(isPanelOpen ? Color.accentColor.opacity(0.14) : .clear)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(isPanelOpen ? "Hide Paper Trading panel" : "Show Paper Trading panel")
-        .sidebarTooltip(isPanelOpen ? "Hide Paper Trading" : "Paper Trading")
 
         let isReplaying = contentViewModel.replay.isActive
         let hasMarket = !contentViewModel.marketChartViewModels.isEmpty
-        Menu {
+        SidebarMenu(
+            icon: "clock.arrow.circlepath",
+            label: isReplaying ? "Historical bar replay, active" : "Historical bar replay",
+            tooltip: replayTooltip(isReplaying: isReplaying, hasMarket: hasMarket),
+            isActive: isReplaying,
+            tint: ReplayStyle.accent,
+            activeStyle: .tinted
+        ) {
             Button {
                 contentViewModel.beginReplaySelection()
             } label: {
@@ -365,23 +366,8 @@ struct ContentView: View {
                     Label("Return to Latest", systemImage: "dot.radiowaves.left.and.right")
                 }
             }
-        } label: {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 13, weight: isReplaying ? .bold : .medium))
-                .foregroundStyle(isReplaying ? ReplayStyle.accent : .primary)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isReplaying ? ReplayStyle.accent.opacity(0.16) : .clear)
-                )
-                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
         .disabled(!hasMarket)
-        .accessibilityLabel(isReplaying ? "Historical bar replay, active" : "Historical bar replay")
-        .sidebarTooltip(replayTooltip(isReplaying: isReplaying, hasMarket: hasMarket))
     }
 
     private func replayTooltip(isReplaying: Bool, hasMarket: Bool) -> String {

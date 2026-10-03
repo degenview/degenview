@@ -313,7 +313,11 @@ enum Drawing {
 
 enum UI {
     /// Width of the vertical tool strip down the left edge of the window.
-    static let toolSidebarWidth: CGFloat = 36
+    static let toolSidebarWidth: CGFloat = 52
+    /// Side of a square tool-strip button; the hit area matches the drawn tile.
+    static let toolButtonSize: CGFloat = 40
+    /// Point size of a tool-strip glyph.
+    static let toolIconSize: CGFloat = 18
     /// Window minimum width. Includes the tool strip, so cards keep the width they
     /// had before it existed.
     static let windowMinWidth: CGFloat = 380 + toolSidebarWidth
