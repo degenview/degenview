@@ -186,6 +186,9 @@
 		CB1000000000000000000001 /* CoinbaseAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB1000000000000000000101 /* CoinbaseAPIService.swift */; };
 		C50000000000000000000003 /* ChartPlotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000103 /* ChartPlotTests.swift */; };
 		D10000000000000000000A06 /* RulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A05 /* RulerTests.swift */; };
+		BB0000000000000000000008 /* BrushChartViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000108 /* BrushChartViewModelTests.swift */; };
+		BB0000000000000000000007 /* BrushDrawingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000107 /* BrushDrawingTests.swift */; };
+		BB0000000000000000000006 /* BrushGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000106 /* BrushGeometryTests.swift */; };
 		D30000000000000000000003 /* ChartColumnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000103 /* ChartColumnTests.swift */; };
 		C50000000000000000000004 /* IndicatorsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000104 /* IndicatorsTests.swift */; };
 		C50000000000000000000005 /* KlineCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000105 /* KlineCacheTests.swift */; };
@@ -278,6 +281,7 @@
 		A00000000000000000000005 /* SymbolInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* SymbolInfo.swift */; };
 		A00000000000000000000006 /* BinanceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* BinanceAPIService.swift */; };
 		A00000000000000000000008 /* ChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* ChartViewModel.swift */; };
+		BB0000000000000000000003 /* ChartViewModel+Brush.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000103 /* ChartViewModel+Brush.swift */; };
 		SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000512 /* ScriptPreviewViewModel.swift */; };
 		F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
@@ -301,6 +305,8 @@
 		C10000000000000000000003 /* PredictionMarketSearchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */; };
 		C10000000000000000000004 /* ChartPlot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C10000000000000000000104 /* ChartPlot.swift */; };
 		D10000000000000000000A04 /* ChartPlot+Ruler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A03 /* ChartPlot+Ruler.swift */; };
+		BB0000000000000000000005 /* BrushEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000105 /* BrushEditor.swift */; };
+		BB0000000000000000000004 /* ChartPlot+Brush.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000104 /* ChartPlot+Brush.swift */; };
 		D20000000000000000000001 /* PineChartLayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000101 /* PineChartLayer.swift */; };
 		P20000000000000000000003 /* PineStrategyReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000103 /* PineStrategyReportView.swift */; };
 		D20000000000000000000002 /* PineScriptPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000102 /* PineScriptPaneView.swift */; };
@@ -328,6 +334,8 @@
 		A00000000000000000000905 /* TrendLine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000906 /* TrendLine.swift */; };
 		D10000000000000000000A02 /* RulerReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000A01 /* RulerReadout.swift */; };
 		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
+		BB0000000000000000000002 /* BrushGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000102 /* BrushGeometry.swift */; };
+		BB0000000000000000000001 /* BrushDrawing.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0000000000000000000101 /* BrushDrawing.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
 		D5A00000000000000000AB01 /* AppToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A00000000000000000AB02 /* AppToolbar.swift */; };
 		E7A000000000000000006001 /* SavedLayoutFocusedValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000006101 /* SavedLayoutFocusedValue.swift */; };
@@ -874,6 +882,9 @@
 		CB1000000000000000000101 /* CoinbaseAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseAPIService.swift; sourceTree = "<group>"; };
 		C50000000000000000000103 /* ChartPlotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlotTests.swift; sourceTree = "<group>"; };
 		D10000000000000000000A05 /* RulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RulerTests.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000108 /* BrushChartViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushChartViewModelTests.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000107 /* BrushDrawingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushDrawingTests.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000106 /* BrushGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushGeometryTests.swift"; sourceTree = "<group>"; };
 		D30000000000000000000103 /* ChartColumnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartColumnTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000104 /* IndicatorsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IndicatorsTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000105 /* KlineCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KlineCacheTests.swift; sourceTree = "<group>"; };
@@ -934,6 +945,7 @@
 		A00000000000000000000105 /* SymbolInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymbolInfo.swift; sourceTree = "<group>"; };
 		A00000000000000000000106 /* BinanceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceAPIService.swift; sourceTree = "<group>"; };
 		A00000000000000000000108 /* ChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModel.swift; sourceTree = "<group>"; };
+		BB0000000000000000000103 /* ChartViewModel+Brush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChartViewModel+Brush.swift"; sourceTree = "<group>"; };
 		SP0000000000000000000512 /* ScriptPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewViewModel.swift; sourceTree = "<group>"; };
 		F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineFeedOperation.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
@@ -958,6 +970,8 @@
 		C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionMarketSearchViewModel.swift; sourceTree = "<group>"; };
 		C10000000000000000000104 /* ChartPlot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartPlot.swift; sourceTree = "<group>"; };
 		D10000000000000000000A03 /* ChartPlot+Ruler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChartPlot+Ruler.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000105 /* BrushEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushEditor.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000104 /* ChartPlot+Brush.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ChartPlot+Brush.swift"; sourceTree = "<group>"; };
 		D20000000000000000000101 /* PineChartLayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineChartLayer.swift; sourceTree = "<group>"; };
 		P20000000000000000000103 /* PineStrategyReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyReportView.swift; sourceTree = "<group>"; };
 		D20000000000000000000102 /* PineScriptPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineScriptPaneView.swift; sourceTree = "<group>"; };
@@ -985,6 +999,8 @@
 		A00000000000000000000906 /* TrendLine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendLine.swift; sourceTree = "<group>"; };
 		D10000000000000000000A01 /* RulerReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RulerReadout.swift"; sourceTree = "<group>"; };
 		FB0000000000000000000101 /* FibonacciRetracement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracement.swift; sourceTree = "<group>"; };
+		BB0000000000000000000102 /* BrushGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushGeometry.swift"; sourceTree = "<group>"; };
+		BB0000000000000000000101 /* BrushDrawing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "BrushDrawing.swift"; sourceTree = "<group>"; };
 		FB0000000000000000000102 /* FibonacciRetracementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FibonacciRetracementTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
@@ -1379,6 +1395,8 @@
 				A00000000000000000000906 /* TrendLine.swift */,
 				D10000000000000000000A01 /* RulerReadout.swift */,
 				FB0000000000000000000101 /* FibonacciRetracement.swift */,
+				BB0000000000000000000102 /* BrushGeometry.swift */,
+				BB0000000000000000000101 /* BrushDrawing.swift */,
 				A0000000000000000000090A /* Crosshair.swift */,
 				A00000000000000000000104 /* TimeRange.swift */,
 				A00000000000000000000105 /* SymbolInfo.swift */,
@@ -1489,6 +1507,7 @@
 				B90000000000000000000105 /* AlertStore.swift */,
 				D10FC07E64DE20AB76844081 /* ChartLiveQuote.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
+				BB0000000000000000000103 /* ChartViewModel+Brush.swift */,
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
@@ -1628,6 +1647,8 @@
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
 				C10000000000000000000104 /* ChartPlot.swift */,
 				D10000000000000000000A03 /* ChartPlot+Ruler.swift */,
+				BB0000000000000000000105 /* BrushEditor.swift */,
+				BB0000000000000000000104 /* ChartPlot+Brush.swift */,
 				C10000000000000000000105 /* ChartStyle.swift */,
 				D30000000000000000000102 /* ChartGridDropDelegate.swift */,
 				808E1370CBBDF7B875C17D9D /* SearchResultRow.swift */,
@@ -1732,6 +1753,9 @@
 				CB1000000000000000000111 /* CoinbaseAPIServiceTests.swift */,
 				C50000000000000000000103 /* ChartPlotTests.swift */,
 				D10000000000000000000A05 /* RulerTests.swift */,
+				BB0000000000000000000108 /* BrushChartViewModelTests.swift */,
+				BB0000000000000000000107 /* BrushDrawingTests.swift */,
+				BB0000000000000000000106 /* BrushGeometryTests.swift */,
 				D30000000000000000000103 /* ChartColumnTests.swift */,
 				C50000000000000000000104 /* IndicatorsTests.swift */,
 				C50000000000000000000105 /* KlineCacheTests.swift */,
@@ -2314,6 +2338,9 @@
 				CB1000000000000000000011 /* CoinbaseAPIServiceTests.swift in Sources */,
 				C50000000000000000000003 /* ChartPlotTests.swift in Sources */,
 				D10000000000000000000A06 /* RulerTests.swift in Sources */,
+				BB0000000000000000000008 /* BrushChartViewModelTests.swift in Sources */,
+				BB0000000000000000000007 /* BrushDrawingTests.swift in Sources */,
+				BB0000000000000000000006 /* BrushGeometryTests.swift in Sources */,
 				D30000000000000000000003 /* ChartColumnTests.swift in Sources */,
 				C50000000000000000000004 /* IndicatorsTests.swift in Sources */,
 				C50000000000000000000005 /* KlineCacheTests.swift in Sources */,
@@ -2569,6 +2596,8 @@
 				A00000000000000000000905 /* TrendLine.swift in Sources */,
 				D10000000000000000000A02 /* RulerReadout.swift in Sources */,
 				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
+				BB0000000000000000000002 /* BrushGeometry.swift in Sources */,
+				BB0000000000000000000001 /* BrushDrawing.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
 				D5A00000000000000000AB01 /* AppToolbar.swift in Sources */,
 				E7A000000000000000006001 /* SavedLayoutFocusedValue.swift in Sources */,
@@ -2579,6 +2608,7 @@
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,
 				A00000000000000000000008 /* ChartViewModel.swift in Sources */,
+				BB0000000000000000000003 /* ChartViewModel+Brush.swift in Sources */,
 				SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */,
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
@@ -2601,6 +2631,8 @@
 				C10000000000000000000003 /* PredictionMarketSearchViewModel.swift in Sources */,
 				C10000000000000000000004 /* ChartPlot.swift in Sources */,
 				D10000000000000000000A04 /* ChartPlot+Ruler.swift in Sources */,
+				BB0000000000000000000005 /* BrushEditor.swift in Sources */,
+				BB0000000000000000000004 /* ChartPlot+Brush.swift in Sources */,
 				D20000000000000000000001 /* PineChartLayer.swift in Sources */,
 				P20000000000000000000003 /* PineStrategyReportView.swift in Sources */,
 				D20000000000000000000002 /* PineScriptPaneView.swift in Sources */,

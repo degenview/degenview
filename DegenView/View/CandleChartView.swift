@@ -30,6 +30,9 @@ struct CandleChartView: View {
     var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
     var selectedFibonacciID: UUID? = nil
 
+    // Freehand strokes, the one being drawn right now, and which is selected or hovered.
+    var brushOverlay: BrushOverlayState = .empty
+
     // Measuring rectangles, the one being drawn right now, and which is selected or
     // hovered. Cleared with the tool, so there is no armed flag to gate them on.
     var rulerOverlay: RulerOverlayState = .empty
@@ -94,6 +97,7 @@ struct CandleChartView: View {
                         &layer, drawings: fibonacciRetracements, draft: fibonacciDraft,
                         selectedID: selectedFibonacciID, showHandles: showTrendHandles,
                         points: candles, decimalPlaces: yAxisDecimalPlaces)
+                    plot.drawBrushes(&layer, overlay: brushOverlay, points: candles)
 
                     plot.drawRulers(
                         &layer,

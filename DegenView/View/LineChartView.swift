@@ -42,6 +42,9 @@ struct LineChartView: View {
     var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
     var selectedFibonacciID: UUID? = nil
 
+    // Freehand strokes, the one being drawn right now, and which is selected or hovered.
+    var brushOverlay: BrushOverlayState = .empty
+
     @State private var hoveredSeriesIndex: Int?
 
     // Measuring rectangles, the one being drawn right now, and which is selected or
@@ -107,6 +110,7 @@ struct LineChartView: View {
                         &layer, drawings: fibonacciRetracements, draft: fibonacciDraft,
                         selectedID: selectedFibonacciID, showHandles: showTrendHandles,
                         points: points, decimalPlaces: yAxisDecimalPlaces)
+                    plot.drawBrushes(&layer, overlay: brushOverlay, points: points)
 
                     plot.drawRulers(
                         &layer,

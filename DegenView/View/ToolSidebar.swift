@@ -37,6 +37,13 @@ struct ToolSidebar<BottomControls: View>: View {
                     onSelect(.fibonacciRetracement)
                 }
                 SidebarIconButton(
+                    icon: "paintbrush.pointed",
+                    label: "Brush",
+                    isActive: activeTool == .brush
+                ) {
+                    onSelect(.brush)
+                }
+                SidebarIconButton(
                     icon: "ruler",
                     label: "Ruler",
                     isActive: activeTool == .ruler

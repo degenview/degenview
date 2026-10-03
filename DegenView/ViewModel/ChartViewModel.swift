@@ -288,10 +288,11 @@ final class ChartViewModel: ObservableObject {
     @Published var trendLines: [TrendLine] = []
     @Published var fibonacciRetracements: [FibonacciRetracementDrawing] = []
     var drawingUndoCoordinator: DrawingUndoCoordinator?
-    private let drawingStore: DrawingStore
+    let drawingStore: DrawingStore
     private var fibonacciSettingsOriginal: FibonacciRetracementDrawing?
     private var drawingStoreSubscription: AnyCancellable?
     private var fibonacciStoreSubscription: AnyCancellable?
+    private var brushStoreSubscription: AnyCancellable?
 
     /// First click of a line in progress, and the rubber-band end that follows the
     /// pointer until the second click lands.
@@ -313,6 +314,28 @@ final class ChartViewModel: ObservableObject {
     }
 
     var hasFibonacciDraft: Bool { fibonacciDraftStart != nil }
+
+    // MARK: - Brush
+
+    /// Freehand strokes on this chart, anchored to time and price.
+    @Published var brushes: [BrushDrawing] = []
+    @Published var selectedBrushID: UUID?
+    /// The stroke whose style editor is open. Separate from selection so grabbing a
+    /// stroke to move it does not open an editor under the drag.
+    @Published var editingBrushID: UUID?
+    @Published var hoveredBrushID: UUID?
+    /// The stroke being drawn right now. Never persisted until the pointer is released.
+    @Published var brushDraft: BrushDraft?
+    /// Screen position of the last kept sample, so the next one is judged by distance.
+    var lastBrushSample: CGPoint?
+    var brushSettingsOriginal: BrushDrawing?
+
+    var hasBrushDraft: Bool { brushDraft != nil }
+
+    var brushOverlay: BrushOverlayState {
+        BrushOverlayState(
+            strokes: brushes, draft: brushDraft, selectedID: selectedBrushID, hoveredID: hoveredBrushID)
+    }
 
     var trendDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let draftStart, let draftEnd else { return nil }
@@ -568,6 +591,7 @@ final class ChartViewModel: ObservableObject {
         showTrendFlips = config.showTrendFlips ?? false
         trendLines = drawingStore.lines(ticker: ticker, source: source)
         fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
+        brushes = drawingStore.brushes(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
         pineConfiguration = config.pine
@@ -1291,6 +1315,8 @@ final class ChartViewModel: ObservableObject {
         pineOutput = .empty
         api = DataSourceFactory.shared.service(for: source)
         trendLines = drawingStore.lines(ticker: ticker, source: source)
+        resetBrushState()
+        brushes = drawingStore.brushes(ticker: ticker, source: source)
     }
 
     private func observeDrawings() {
@@ -1316,9 +1342,23 @@ final class ChartViewModel: ObservableObject {
                     self.editingFibonacciID = nil
                 }
             }
+        brushStoreSubscription = drawingStore.$brushesByInstrument
+            .sink { [weak self] allBrushes in
+                guard let self else { return }
+                let key = self.drawingStore.key(ticker: self.ticker, source: self.source)
+                let sharedBrushes = allBrushes[key] ?? []
+                if self.brushes != sharedBrushes { self.brushes = sharedBrushes }
+                if let id = self.selectedBrushID, !sharedBrushes.contains(where: { $0.id == id }) {
+                    self.selectedBrushID = nil
+                    self.editingBrushID = nil
+                }
+                if let id = self.hoveredBrushID, !sharedBrushes.contains(where: { $0.id == id }) {
+                    self.hoveredBrushID = nil
+                }
+            }
     }
 
-    private var drawingInstrument: String {
+    var drawingInstrument: String {
         drawingStore.key(ticker: ticker, source: source)
     }
 

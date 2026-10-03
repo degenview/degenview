@@ -10,7 +10,9 @@
    technical indicators. Use its **Scripts** tab to edit and apply a Pine v6-style
    indicator or change the generated inputs. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines,
-   **Fib Retracement**, and the **Ruler**. Drag across the chart with the ruler to measure
+   **Fib Retracement**, **Brush**, and the **Ruler**. With the Brush, press and drag to draw
+   a freehand stroke; click a stroke to restyle it, drag it to move it, press Delete to
+   remove it, and Esc to cancel one in progress. Drag across the chart with the ruler to measure
    a move (or click, move, and click again); drag a corner to resize a measurement or an
    edge to move it, and press Delete to remove the selected one. Measurements are
    temporary. For a Fib, click once for Point

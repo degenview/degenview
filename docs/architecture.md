@@ -29,7 +29,9 @@ DegenView/
 │   ├── ScriptPreviewLayout.swift      # ChartPosition: preview chart left of / above / below the code
 │   ├── TrendLine.swift                # Trend-line, ruler (rect, corners, hits, overlay state), and tool-selection models
 │   ├── RulerReadout.swift             # Ruler numbers: percent, price delta, bars, duration, and their text
-│   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
+│   ├── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
+│   ├── BrushDrawing.swift             # Freehand stroke (time + price points), style, draft, overlay state, tuning
+│   └── BrushGeometry.swift            # Pure screen-space maths: simplification, hit testing, smoothing
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
 │   ├── SavedLayoutController.swift    # Per-tab active layout, dirty/autosave, save/copy/rename/open
@@ -83,7 +85,7 @@ DegenView/
 │   ├── PriceAxisDragMonitor.swift     # Drag a price axis to scale candles (chart tabs and the preview)
 │   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
-│   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
+│   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, brush, and ruler tools
 │   ├── AppToolbar.swift               # Portfolio + Script Manager title-bar buttons, shared by every tab kind
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
@@ -176,7 +178,7 @@ DegenView/
     ├── TabsStore.swift                # Tabs and session persistence
     ├── SavedViewStore.swift           # Shared saved-layout library (throwing writes, recency)
     ├── FavoritesStore.swift           # Shared watchlist persistence
-    ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
+    ├── DrawingStore.swift             # Instrument-keyed trend-line, Fib, and brush persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
     ├── WindowTabIcon.swift            # Per-kind tab icon (SF Symbol in the tab's attributed title) + decorator
@@ -325,6 +327,33 @@ sheet presentation are similarly collapsed into one edit when the sheet closes. 
 crosshairs, and ruler measurements never enter drawing history because they are transient.
 Store observation clears selected or edited IDs when an undo, redo, or another window
 removes the corresponding drawing.
+
+## Brush flow
+
+A brush stroke is a first-class drawing, not a paint layer: `BrushDrawing` holds
+`TrendAnchor` points (continuous time + price), so it follows pan, zoom, resize and timeframe
+changes like a trend line. It persists through `DrawingStore` as the `brush` drawing kind and
+joins drawing undo through `DrawingUndoCoordinator.recordBrush`.
+
+- **Capture** (`ContentViewModel.handleBrush`): press, drag, release. Points are raw chart
+  coordinates — no candle or OHLC snapping. A sample is kept once the pointer has moved
+  `BrushTuning.sampleDistance` points, and the live stroke is only `ChartViewModel.brushDraft`.
+- **Commit**: on release the draft is projected with the current plot and simplified in
+  screen space (Ramer–Douglas–Peucker at `BrushTuning.simplifyTolerance`, so a pixel means the
+  same on DOGE and BTC); the kept points are the original anchors. One database write, one
+  undo step. A click that never travels becomes a one-point dot. Esc drops the draft with no
+  write and no undo.
+- **Render** (`ChartPlot+Brush`): inside the chart's clipped layer, one smoothed `Path` per
+  stroke. Smoothing is midpoint-quadratic, which cannot overshoot, and vertices that turn more
+  than `BrushTuning.cornerAngle` stay sharp. It is render-only — stored points are untouched.
+- **Hit testing** (`BrushGeometry.hit`): screen-space distance to each segment against half the
+  stroke width plus `Drawing.hitTolerance`, after an expanded bounding-box rejection.
+- **Move**: the pointer's screen delta applied to the stroke as it was at mouse-down, each point
+  projected, offset and inverse-projected, so nothing accumulates and a future non-linear price
+  scale still works. One undo step per drag. A click without movement opens `BrushEditor`.
+- The brush tool stays armed after a stroke. Strokes are also selectable and deletable under
+  the crosshair. The editor sits behind the same `isShowingLineEditor` gate as the other
+  editors.
 
 ## Ruler flow
 

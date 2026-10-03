@@ -41,7 +41,10 @@ final class ContentViewModel: ObservableObject {
                     vm.cancelDraft()
                     vm.cancelRulerDraft()
                     vm.clearRulers()
+                    vm.cancelBrushDraft()
                 }
+                brushDrawTarget = nil
+                brushMoveTarget = nil
                 crosshair.clear()
             }
         }
@@ -97,6 +100,11 @@ final class ContentViewModel: ObservableObject {
     /// A rectangle started by a press. If the pointer travels before release it is drawn
     /// by dragging and finishes on release; if not, it stays open for a second click.
     private var rulerPress: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint, moved: Bool)?
+    /// The chart a brush stroke is being drawn on, and the plot geometry at the last
+    /// pointer position (the release can land outside the plot).
+    private var brushDrawTarget: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)?
+    /// The stroke being dragged, as it was at mouse-down, and where the pointer was.
+    private var brushMoveTarget: (vm: ChartViewModel, original: BrushDrawing, pointerStart: CGPoint, moved: Bool)?
 
     /// The tab's crosshair. Its own observable object rather than a `@Published` here —
     /// see `CrosshairTracker`.
@@ -116,9 +124,21 @@ final class ContentViewModel: ObservableObject {
             // done with it. Trend lines, being annotations, stay.
             rulerDragTarget = nil
             rulerPress = nil
+            brushDrawTarget = nil
+            brushMoveTarget = nil
+            // A stroke in progress or a hover belongs to the armed brush. A selected
+            // stroke stays selectable under the crosshair, but its editor would block
+            // every other tool's gestures.
+            let keepsBrushSelection = activeTool == .brush || activeTool == .crosshair
             for vm in chartViewModels {
                 vm.cancelRulerDraft()
                 vm.clearRulers()
+                vm.cancelBrushDraft()
+                vm.hoveredBrushID = nil
+                if !keepsBrushSelection {
+                    vm.selectedBrushID = nil
+                    vm.editingBrushID = nil
+                }
             }
             guard activeTool == .none else { return }
             for vm in chartViewModels {
@@ -469,6 +489,7 @@ final class ContentViewModel: ObservableObject {
         if activeTool == .crosshair { return handleCrosshair(event) }
         if activeTool == .ruler { return handleRuler(event) }
         if activeTool == .fibonacciRetracement { return handleFibonacci(event) }
+        if activeTool == .brush { return handleBrush(event) }
         guard activeTool == .trendLine else { return event }
 
         if event.type == .keyDown { return handleDrawingKey(event) }
@@ -601,6 +622,108 @@ final class ContentViewModel: ObservableObject {
         case .leftMouseUp: return nil
         default: return event
         }
+    }
+
+    /// Draws and edits freehand strokes.
+    ///
+    /// - Press, drag, release draws one. Samples are filtered by screen distance and the
+    ///   stroke is written once, on release — never per pointer event.
+    /// - Pressing a finished stroke grabs it: drag to move, or click without moving to open
+    ///   its style editor. Locked strokes can still be selected.
+    /// - Raw chart coordinates throughout: a stroke must not jump between candle highs.
+    private func handleBrush(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown { return handleDrawingKey(event) }
+
+        if let target = brushMoveTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    let delta = CGSize(
+                        width: hit.point.x - target.pointerStart.x,
+                        height: hit.point.y - target.pointerStart.y)
+                    let moved = target.moved || hypot(delta.width, delta.height) >= BrushTuning.moveThreshold
+                    brushMoveTarget = (target.vm, target.original, target.pointerStart, moved)
+                    if moved {
+                        target.vm.translateBrush(original: target.original, by: delta, in: hit.plot)
+                    }
+                }
+                return nil
+            case .leftMouseUp:
+                brushMoveTarget = nil
+                if target.moved {
+                    target.vm.commitBrushDrag(original: target.original)
+                } else {
+                    // A click, not a drag: open the editor now that no drag is running.
+                    target.vm.editingBrushID = target.original.id
+                }
+                return nil
+            default:
+                break
+            }
+        }
+
+        if let target = brushDrawTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event), hit.vm === target.vm {
+                    target.vm.appendBrushPoint(at: hit.point, in: hit.plot)
+                    brushDrawTarget = (target.vm, hit.plot, hit.point)
+                }
+                return nil
+            case .leftMouseUp:
+                brushDrawTarget = nil
+                target.vm.commitBrushDraft(at: target.point, in: target.plot)
+                return nil
+            default:
+                break
+            }
+        }
+
+        guard let hit = plotHit(at: event) else {
+            if event.type == .mouseMoved { chartViewModels.forEach { $0.setBrushHover(nil) } }
+            return event
+        }
+
+        switch event.type {
+        case .mouseMoved:
+            clearBrushHover(except: hit.vm)
+            hit.vm.setBrushHover(hit.vm.brushHit(at: hit.point, in: hit.plot))
+            return event
+
+        case .leftMouseDown:
+            clearDrawingState(except: hit.vm)
+            if beginBrushMove(hit) { return nil }
+            hit.vm.beginBrushDraft(at: hit.point, in: hit.plot)
+            brushDrawTarget = (hit.vm, hit.plot, hit.point)
+            return nil
+
+        case .leftMouseDragged, .leftMouseUp:
+            // A press that began elsewhere (or was cancelled by Esc) owns nothing here.
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// Selects the stroke under the pointer, if any, and arms a move of it. Returns whether
+    /// there was one. Shared by the brush tool and the crosshair.
+    private func beginBrushMove(_ hit: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)) -> Bool {
+        guard let id = hit.vm.brushHit(at: hit.point, in: hit.plot),
+            let original = hit.vm.brushes.first(where: { $0.id == id })
+        else {
+            hit.vm.selectedBrushID = nil
+            hit.vm.editingBrushID = nil
+            return false
+        }
+        hit.vm.selectedBrushID = id
+        hit.vm.editingBrushID = nil
+        brushMoveTarget = (hit.vm, original, hit.point, false)
+        return true
+    }
+
+    private func clearBrushHover(except keep: ChartViewModel) {
+        for vm in chartViewModels where vm !== keep { vm.setBrushHover(nil) }
     }
 
     private func snappedDrawingAnchor(
@@ -770,17 +893,35 @@ final class ContentViewModel: ObservableObject {
     /// be the only thing that clears the crosshair — `ChartCardView`'s `onHover` handles
     /// the exit.
     private func handleCrosshair(_ event: NSEvent) -> NSEvent? {
+        // A finished brush stroke stays selectable, movable and deletable under the
+        // crosshair; with none under the pointer every event falls through as before.
+        if brushMoveTarget != nil { return handleBrush(event) }
         switch event.type {
         case .keyDown:
+            if event.keyCode == 51 || event.keyCode == 117,
+                let target = chartViewModels.first(where: { $0.selectedBrushID != nil })
+            {
+                _ = target.removeSelectedBrush()
+                return nil
+            }
             guard event.keyCode == 53 else { return event }  // Esc
             activeTool = .none
             return nil
 
+        case .leftMouseDown:
+            guard let hit = plotHit(at: event) else { return event }
+            clearDrawingState(except: hit.vm)
+            if beginBrushMove(hit) { return nil }
+            return event
+
         case .mouseMoved:
             guard let hit = plotHit(at: event) else {
                 crosshair.clear()
+                chartViewModels.forEach { $0.setBrushHover(nil) }
                 return event
             }
+            clearBrushHover(except: hit.vm)
+            hit.vm.setBrushHover(hit.vm.brushHit(at: hit.point, in: hit.plot))
             let rect = hit.plot.plotRect
             guard rect.width > 0 else { return event }
             crosshair.update(
@@ -802,7 +943,11 @@ final class ContentViewModel: ObservableObject {
     private func handleDrawingKey(_ event: NSEvent) -> NSEvent? {
         switch event.keyCode {
         case 53:  // Esc
-            if let drafting = chartViewModels.first(where: { $0.hasFibonacciDraft }) {
+            if let drafting = chartViewModels.first(where: { $0.hasBrushDraft }) {
+                // Later drag and release events find no target, so nothing is written.
+                drafting.cancelBrushDraft()
+                brushDrawTarget = nil
+            } else if let drafting = chartViewModels.first(where: { $0.hasFibonacciDraft }) {
                 drafting.cancelFibonacciDraft()
             } else if let drafting = chartViewModels.first(where: { $0.hasDraft }) {
                 drafting.cancelDraft()
@@ -812,6 +957,10 @@ final class ContentViewModel: ObservableObject {
             return nil
 
         case 51, 117:  // Delete, forward delete
+            if let target = chartViewModels.first(where: { $0.selectedBrushID != nil }) {
+                _ = target.removeSelectedBrush()
+                return nil
+            }
             if let target = chartViewModels.first(where: { $0.selectedFibonacciID != nil }) {
                 _ = target.removeSelectedFibonacci()
                 return nil
@@ -860,6 +1009,9 @@ final class ContentViewModel: ObservableObject {
             vm.editingLineID = nil
             vm.selectedFibonacciID = nil
             vm.editingFibonacciID = nil
+            vm.cancelBrushDraft()
+            vm.selectedBrushID = nil
+            vm.editingBrushID = nil
         }
     }
 

@@ -10,12 +10,33 @@ final class DrawingStore: ObservableObject {
     @Published private(set) var linesByInstrument: [String: [TrendLine]]
     @Published private(set) var fibsByInstrument: [String: [FibonacciRetracementDrawing]]
 
+    @Published private(set) var brushesByInstrument: [String: [BrushDrawing]]
+
     private let database: AppDatabase
 
     init(database: AppDatabase = .shared) {
         self.database = database
         linesByInstrument = database.drawings(TrendLine.self, kind: .trendLine)
         fibsByInstrument = database.drawings(FibonacciRetracementDrawing.self, kind: .fibonacci)
+        brushesByInstrument = database.drawings(BrushDrawing.self, kind: .brush)
+    }
+
+    func brushes(ticker: String, source: DataSourceType) -> [BrushDrawing] {
+        brushesByInstrument[key(ticker: ticker, source: source)] ?? []
+    }
+
+    func save(_ brushes: [BrushDrawing], ticker: String, source: DataSourceType) {
+        let instrument = key(ticker: ticker, source: source)
+        brushesByInstrument[instrument] = brushes
+        database.saveDrawings(brushes, instrument: instrument, kind: .brush)
+    }
+
+    func setBrush(_ brush: BrushDrawing?, at preferredIndex: Int, instrument: String, id: UUID) {
+        var brushes = brushesByInstrument[instrument] ?? []
+        brushes.removeAll { $0.id == id }
+        if let brush { brushes.insert(brush, at: min(max(0, preferredIndex), brushes.count)) }
+        brushesByInstrument[instrument] = brushes
+        database.saveDrawings(brushes, instrument: instrument, kind: .brush)
     }
 
     func fibs(ticker: String, source: DataSourceType) -> [FibonacciRetracementDrawing] {

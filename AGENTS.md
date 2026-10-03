@@ -280,6 +280,13 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     rectangle inside the first. Delete removes the selected one, Esc cancels a draft, then
     clears all, then disarms. Switching tool or timeframe drops them, and they never come
     back after a relaunch
+13d. Brush: arm it and drag a circle, a V and a zigzag — corners stay sharp, curves smooth, and
+    the stroke follows the pointer with no snapping to candles. A click leaves a dot. Esc
+    mid-stroke leaves nothing and ⌘Z has nothing to undo. ⌘Z removes a whole stroke, ⇧⌘Z
+    brings it back. Switch timeframe, scroll-zoom, drag the price axis and resize the window:
+    the stroke stays on the same price action. Hover shows a halo and the move cursor; click
+    opens the editor (colour, width, opacity, lock), drag moves the stroke (one undo step),
+    Delete removes it. Relaunch keeps strokes; the same symbol on another source has none
 13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
     and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
     Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own

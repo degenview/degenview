@@ -46,6 +46,7 @@ struct ChartCardView: View {
     @ViewBuilder
     /// Over a ruler's edge or corner the cursor says what a drag would do.
     private var plotCursor: PlotCursor {
+        if viewModel.hoveredBrushID != nil { return .move }
         guard let hover = viewModel.hoveredRuler else { return .crosshair }
         switch hover.part {
         case .edge: return .move
@@ -131,6 +132,9 @@ struct ChartCardView: View {
             if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
         .onChange(of: viewModel.editingFibonacciID) { old, new in
+            if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
+        }
+        .onChange(of: viewModel.editingBrushID) { old, new in
             if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
     }
@@ -291,6 +295,7 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
+                    brushOverlay: viewModel.brushOverlay,
                     rulerOverlay: viewModel.rulerOverlay
                 )
             } else {
@@ -311,6 +316,7 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
+                    brushOverlay: viewModel.brushOverlay,
                     rulerOverlay: viewModel.rulerOverlay
                 )
             }
@@ -380,6 +386,13 @@ struct ChartCardView: View {
             } else if let fibID = viewModel.editingFibonacciID {
                 FibonacciEditor(viewModel: viewModel, drawingID: fibID, onChange: onStyleChanged)
                     .padding(.top, 8)
+            } else if let brushID = viewModel.editingBrushID {
+                BrushEditor(
+                    viewModel: viewModel,
+                    brushID: brushID,
+                    onDismiss: { viewModel.editingBrushID = nil }
+                )
+                .padding(.top, 8)
             }
         }
     }

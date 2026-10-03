@@ -50,6 +50,7 @@ extension AppDatabase {
     enum DrawingKind: String {
         case trendLine = "trend_line"
         case fibonacci
+        case brush
     }
 
     /// Drawings of `kind` for every instrument that has any.
