@@ -24,9 +24,6 @@ struct PineInstanceSettingsPopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(result?.declaration?.title ?? "Script").font(.headline)
-            if let diagnostics = result?.diagnostics, !diagnostics.isEmpty {
-                PineDiagnosticsListView(diagnostics: diagnostics, maxHeight: 90, showsHeader: false)
-            }
             ScrollView {
                 PineInputsView(schema: result?.inputSchema ?? PineInputSchema(), values: draftInputs) {
                     value, id in draftInputs[id] = value
