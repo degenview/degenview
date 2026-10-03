@@ -24,6 +24,9 @@
 		AA1000000000000000001401 /* TrendingMarketsDataSource.swift in Agent Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001500; };
 		AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001303 /* RecentMarketsStoreTests.swift */; };
 		AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */; };
+		E7A000000000000000009001 /* SavedLayoutControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000009101 /* SavedLayoutControllerTests.swift */; };
+		E7A000000000000000008001 /* SavedViewStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000008101 /* SavedViewStoreTests.swift */; };
+		E7A000000000000000007001 /* LayoutSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000007101 /* LayoutSnapshotTests.swift */; };
 		AA1000000000000000001202 /* RecentMarketsCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001302 /* RecentMarketsCard.swift */; };
 		AA1000000000000000001201 /* RecentMarketsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001301 /* RecentMarketsStore.swift */; };
 		AA1000000000000000001200 /* RecentMarket.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001300 /* RecentMarket.swift */; };
@@ -278,6 +281,7 @@
 		SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = SP0000000000000000000512 /* ScriptPreviewViewModel.swift */; };
 		F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
+		E7A000000000000000003001 /* SavedLayoutController.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000003101 /* SavedLayoutController.swift */; };
 		A0000000000000000000000A /* ChartCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* ChartCardView.swift */; };
 		A0000000000000000000000B /* AddTickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* AddTickerSheet.swift */; };
 		F10000000000000000000001 /* FavoriteItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000101 /* FavoriteItem.swift */; };
@@ -326,6 +330,9 @@
 		FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB0000000000000000000101 /* FibonacciRetracement.swift */; };
 		A00000000000000000000907 /* ToolSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000908 /* ToolSidebar.swift */; };
 		D5A00000000000000000AB01 /* AppToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5A00000000000000000AB02 /* AppToolbar.swift */; };
+		E7A000000000000000006001 /* SavedLayoutFocusedValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000006101 /* SavedLayoutFocusedValue.swift */; };
+		E7A000000000000000005001 /* SavedLayoutPickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000005101 /* SavedLayoutPickerSheet.swift */; };
+		E7A000000000000000004001 /* SavedLayoutToolbarButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000004101 /* SavedLayoutToolbarButton.swift */; };
 		A00000000000000000000909 /* Crosshair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000090A /* Crosshair.swift */; };
 		A0000000000000000000001E /* TickerIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011F /* TickerIconView.swift */; };
 		A00000000000000000000F01 /* SourceLogoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000F02 /* SourceLogoView.swift */; };
@@ -346,7 +353,9 @@
 		C7A1000000000000000B0001 /* TransactionEditorDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7A1000000000000000A0001 /* TransactionEditorDraft.swift */; };
 		D10000000000000000000001 /* ChartTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000101 /* ChartTab.swift */; };
 		D30000000000000000000001 /* ChartColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = D30000000000000000000101 /* ChartColumn.swift */; };
+		E7A000000000000000001001 /* LayoutSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000001101 /* LayoutSnapshot.swift */; };
 		D10000000000000000000002 /* TabsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000102 /* TabsStore.swift */; };
+		E7A000000000000000002001 /* SavedViewStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7A000000000000000002101 /* SavedViewStore.swift */; };
 		D10000000000000000000003 /* WindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000103 /* WindowCoordinator.swift */; };
 		D10000000000000000000004 /* WindowAccessor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D10000000000000000000104 /* WindowAccessor.swift */; };
 		E20000000000000000000001 /* AlpacaCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000101 /* AlpacaCredentials.swift */; };
@@ -710,6 +719,9 @@
 		AA1000000000000000001500 /* TrendingMarketsDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendingMarketsDataSource.swift; sourceTree = "<group>"; };
 		AA1000000000000000001303 /* RecentMarketsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStoreTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateSuggestionsTests.swift; sourceTree = "<group>"; };
+		E7A000000000000000009101 /* SavedLayoutControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLayoutControllerTests.swift; sourceTree = "<group>"; };
+		E7A000000000000000008101 /* SavedViewStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedViewStoreTests.swift; sourceTree = "<group>"; };
+		E7A000000000000000007101 /* LayoutSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSnapshotTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001302 /* RecentMarketsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000001301 /* RecentMarketsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarketsStore.swift; sourceTree = "<group>"; };
 		AA1000000000000000001300 /* RecentMarket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentMarket.swift; sourceTree = "<group>"; };
@@ -925,6 +937,7 @@
 		SP0000000000000000000512 /* ScriptPreviewViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptPreviewViewModel.swift; sourceTree = "<group>"; };
 		F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineFeedOperation.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
+		E7A000000000000000003101 /* SavedLayoutController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLayoutController.swift; sourceTree = "<group>"; };
 		A0000000000000000000010A /* ChartCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCardView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010B /* AddTickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTickerSheet.swift; sourceTree = "<group>"; };
 		F10000000000000000000101 /* FavoriteItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteItem.swift; sourceTree = "<group>"; };
@@ -976,6 +989,9 @@
 		F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingUndoCoordinatorTests.swift; sourceTree = "<group>"; };
 		A00000000000000000000908 /* ToolSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolSidebar.swift; sourceTree = "<group>"; };
 		D5A00000000000000000AB02 /* AppToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppToolbar.swift; sourceTree = "<group>"; };
+		E7A000000000000000006101 /* SavedLayoutFocusedValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLayoutFocusedValue.swift; sourceTree = "<group>"; };
+		E7A000000000000000005101 /* SavedLayoutPickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLayoutPickerSheet.swift; sourceTree = "<group>"; };
+		E7A000000000000000004101 /* SavedLayoutToolbarButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedLayoutToolbarButton.swift; sourceTree = "<group>"; };
 		A0000000000000000000090A /* Crosshair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Crosshair.swift; sourceTree = "<group>"; };
 		A0000000000000000000011F /* TickerIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerIconView.swift; sourceTree = "<group>"; };
 		A00000000000000000000F02 /* SourceLogoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceLogoView.swift; sourceTree = "<group>"; };
@@ -992,7 +1008,9 @@
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
 		D10000000000000000000101 /* ChartTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTab.swift; sourceTree = "<group>"; };
 		D30000000000000000000101 /* ChartColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartColumn.swift; sourceTree = "<group>"; };
+		E7A000000000000000001101 /* LayoutSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSnapshot.swift; sourceTree = "<group>"; };
 		D10000000000000000000102 /* TabsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabsStore.swift; sourceTree = "<group>"; };
+		E7A000000000000000002101 /* SavedViewStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedViewStore.swift; sourceTree = "<group>"; };
 		D10000000000000000000103 /* WindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCoordinator.swift; sourceTree = "<group>"; };
 		D10000000000000000000104 /* WindowAccessor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAccessor.swift; sourceTree = "<group>"; };
 		E20000000000000000000101 /* AlpacaCredentials.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaCredentials.swift; sourceTree = "<group>"; };
@@ -1374,6 +1392,7 @@
 				C10000000000000000000211 /* KalshiModels.swift */,
 				D10000000000000000000101 /* ChartTab.swift */,
 				D30000000000000000000101 /* ChartColumn.swift */,
+				E7A000000000000000001101 /* LayoutSnapshot.swift */,
 				F942FA5B7FB7B0EC36435479 /* Script */,
 			);
 			path = Model;
@@ -1451,6 +1470,7 @@
 				62da476d2ea14915af7cffe9 /* ImageCache.swift */,
 				DC402F9B4B39FBF3A4F0D4BE /* JSONStore.swift */,
 				D10000000000000000000102 /* TabsStore.swift */,
+				E7A000000000000000002101 /* SavedViewStore.swift */,
 				D10000000000000000000103 /* WindowCoordinator.swift */,
 				F20000000000000000000101 /* DrawingStore.swift */,
 				F20000000000000000000102 /* DrawingUndoCoordinator.swift */,
@@ -1472,6 +1492,7 @@
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
+				E7A000000000000000003101 /* SavedLayoutController.swift */,
 				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
 				C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */,
 			);
@@ -1594,6 +1615,9 @@
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
 				D5A00000000000000000AB02 /* AppToolbar.swift */,
+				E7A000000000000000006101 /* SavedLayoutFocusedValue.swift */,
+				E7A000000000000000005101 /* SavedLayoutPickerSheet.swift */,
+				E7A000000000000000004101 /* SavedLayoutToolbarButton.swift */,
 				A0000000000000000000011F /* TickerIconView.swift */,
 				A00000000000000000000F02 /* SourceLogoView.swift */,
 				A0000000000000000000010B /* AddTickerSheet.swift */,
@@ -1721,6 +1745,9 @@
 				C7A1000000000000000A0003 /* TransactionEditorDraftTests.swift */,
 				AA1000000000000000001303 /* RecentMarketsStoreTests.swift */,
 				AA1000000000000000009101 /* EmptyStateSuggestionsTests.swift */,
+				E7A000000000000000009101 /* SavedLayoutControllerTests.swift */,
+				E7A000000000000000008101 /* SavedViewStoreTests.swift */,
+				E7A000000000000000007101 /* LayoutSnapshotTests.swift */,
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
@@ -2300,6 +2327,9 @@
 				C7A1000000000000000B0003 /* TransactionEditorDraftTests.swift in Sources */,
 				AA1000000000000000001203 /* RecentMarketsStoreTests.swift in Sources */,
 				AA1000000000000000009001 /* EmptyStateSuggestionsTests.swift in Sources */,
+				E7A000000000000000009001 /* SavedLayoutControllerTests.swift in Sources */,
+				E7A000000000000000008001 /* SavedViewStoreTests.swift in Sources */,
+				E7A000000000000000007001 /* LayoutSnapshotTests.swift in Sources */,
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
@@ -2541,6 +2571,9 @@
 				FB0000000000000000000001 /* FibonacciRetracement.swift in Sources */,
 				A00000000000000000000907 /* ToolSidebar.swift in Sources */,
 				D5A00000000000000000AB01 /* AppToolbar.swift in Sources */,
+				E7A000000000000000006001 /* SavedLayoutFocusedValue.swift in Sources */,
+				E7A000000000000000005001 /* SavedLayoutPickerSheet.swift in Sources */,
+				E7A000000000000000004001 /* SavedLayoutToolbarButton.swift in Sources */,
 				A00000000000000000000909 /* Crosshair.swift in Sources */,
 				A00000000000000000000004 /* TimeRange.swift in Sources */,
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
@@ -2549,6 +2582,7 @@
 				SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */,
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
+				E7A000000000000000003001 /* SavedLayoutController.swift in Sources */,
 				A0000000000000000000001E /* TickerIconView.swift in Sources */,
 				A00000000000000000000F01 /* SourceLogoView.swift in Sources */,
 				A0000000000000000000000A /* ChartCardView.swift in Sources */,
@@ -2611,7 +2645,9 @@
 				AC0200000000000000000005 /* AlertDayGrouping.swift in Sources */,
 				D10000000000000000000001 /* ChartTab.swift in Sources */,
 				D30000000000000000000001 /* ChartColumn.swift in Sources */,
+				E7A000000000000000001001 /* LayoutSnapshot.swift in Sources */,
 				D10000000000000000000002 /* TabsStore.swift in Sources */,
+				E7A000000000000000002001 /* SavedViewStore.swift in Sources */,
 				D10000000000000000000003 /* WindowCoordinator.swift in Sources */,
 				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,

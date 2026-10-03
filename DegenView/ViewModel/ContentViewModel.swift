@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -48,7 +49,9 @@ final class ContentViewModel: ObservableObject {
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
     @Published var isRefreshing = false
 
-    @Published var savedViews: [SavedView] = []
+    /// This tab's saved layout: which one it is on, dirty state, and every save/open operation.
+    let layout: SavedLayoutController
+    private var layoutObserver: AnyCancellable?
 
     /// The tab's label. Shows in the name bar *and* as the window title, which on
     /// macOS is what the system tab bar draws.
@@ -58,10 +61,6 @@ final class ContentViewModel: ObservableObject {
             WindowCoordinator.shared.syncTitle(for: tabID)
         }
     }
-    @Published var hasUnsavedChanges = false
-
-    private var currentViewID: UUID?
-    private var isApplyingView = false
     /// Set while `init` assigns the tab's fields. A `didSet` that reaches `syncTab()`
     /// would otherwise write the tab back before `chartViewModels` is populated,
     /// erasing the very charts being restored.
@@ -147,15 +146,18 @@ final class ContentViewModel: ObservableObject {
     private var isWindowVisible = false
     private var didInitialLoad = false
 
-    init(tabID: UUID, api: BinanceAPIService = BinanceAPIService()) {
+    init(
+        tabID: UUID, api: BinanceAPIService = BinanceAPIService(),
+        savedViews: SavedViewStore = .shared
+    ) {
         self.tabID = tabID
         self.api = api
-        self.savedViews = AppDatabase.shared.savedViews()
 
         let tab = TabsStore.shared.ensureTab(tabID)
+        // A tab whose layout was deleted since it was last open is Unnamed again.
+        self.layout = SavedLayoutController(store: savedViews, activeViewID: tab.savedViewID)
         pendingReplayRestore = tab.replaySession
-        tabName = tab.name
-        currentViewID = tab.savedViewID
+        tabName = layout.displayName
         selectedTimeRange = tab.timeRange
         // Assigned after the range, whose didSet would otherwise reset it.
         candleCount = tab.candleCount
@@ -165,8 +167,8 @@ final class ContentViewModel: ObservableObject {
             return vm
         }
         chartColumns = ChartColumn.resolved(tab.chartColumns, chartIDs: chartViewModels.map(\.chartID))
-        hasUnsavedChanges = false
         isHydrating = false
+        configureLayout()
 
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, !self.chartViewModels.isEmpty, !self.isShowingSheet else { return event }
@@ -934,6 +936,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Release everything this tab holds — its window is closing for good.
     private func teardown() {
+        layout.flush()
         suspend()
         if let m = scrollMonitor {
             NSEvent.removeMonitor(m)
@@ -1294,64 +1297,56 @@ final class ContentViewModel: ObservableObject {
         let configs = makeTickerConfigs()
         TabsStore.shared.update(tabID) { tab in
             tab.name = tabName
-            tab.savedViewID = currentViewID
+            tab.savedViewID = layout.activeViewID
             tab.tickerConfigs = configs
             tab.chartColumns = chartColumns
             tab.timeRange = selectedTimeRange
             tab.candleCount = candleCount
             tab.replaySession = replay.session
         }
+        layout.refresh()
     }
 
-    // MARK: - Tab naming
+    // MARK: - Saved layouts
 
-    /// Rename the tab without touching the saved-view library.
-    func renameTab(to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        tabName = trimmed
-        syncTab()
-    }
-
-    // MARK: - Saved Views
-
-    /// Save the current state. Updates existing view if already named, otherwise creates new.
-    func saveCurrentView(name: String) {
-        let configs = makeTickerConfigs()
-        let view = SavedView(
-            id: currentViewID ?? UUID(),
-            name: name,
-            tickers: chartViewModels.map { $0.ticker },
-            timeRange: selectedTimeRange,
-            createdAt: Date(),
-            tickerConfigs: configs,
-            chartColumns: chartColumns,
-            candleCount: candleCount
-        )
-        savedViews.removeAll { $0.id == view.id }
-        savedViews.append(view)
-        AppDatabase.shared.saveSavedViews(savedViews)
-
-        tabName = name
-        currentViewID = view.id
-        hasUnsavedChanges = false
-        syncTab()
-    }
-
-    /// Save changes to the current named view without prompting.
-    func saveChanges() {
-        guard currentViewID != nil else {
-            // No saved view yet — treat as new save; caller should prompt for name
-            return
+    /// Wire the controller to this tab. Runs once the tab is fully hydrated, because the controller
+    /// captures and rebuilds the tab and may call back into `syncTab()`.
+    private func configureLayout() {
+        layout.capture = { [weak self] in
+            guard let self else {
+                return SavedLayoutController.Capture(
+                    timeRange: .oneDay, configs: [], columns: [], candleCount: TimeRange.oneDay.dataPointLimit)
+            }
+            return SavedLayoutController.Capture(
+                timeRange: selectedTimeRange, configs: makeTickerConfigs(), columns: chartColumns,
+                candleCount: candleCount)
         }
-        saveCurrentView(name: tabName)
+        layout.applyView = { [weak self] in self?.applySavedView($0) }
+        layout.onIdentityChange = { [weak self] in
+            guard let self else { return }
+            tabName = layout.displayName
+            syncTab()
+        }
+        layout.openNewTab = { WindowCoordinator.shared.newTab() }
+        // The toolbar button and sheets observe the controller through this view model.
+        layoutObserver = layout.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        layout.refresh()
     }
 
-    /// Apply a saved view to this tab, replacing its current state.
-    func loadView(_ view: SavedView) {
+    /// Open `view` in this tab, asking first if the current layout has unsaved changes.
+    func openSavedView(_ view: SavedView) {
+        layout.requestOpen(view)
+    }
+
+    /// ⌘S: save the current layout, or ask for a name if it has none yet.
+    func saveLayout() {
+        layout.requestSave()
+    }
+
+    /// Replace this tab's state with `view`. Only the controller calls this, so dirty tracking is
+    /// already suspended and the baseline is taken afterwards.
+    private func applySavedView(_ view: SavedView) {
         replay.stop()
-        isApplyingView = true
-        defer { isApplyingView = false }
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
@@ -1365,31 +1360,9 @@ final class ContentViewModel: ObservableObject {
         }
         chartColumns = ChartColumn.resolved(view.chartColumns, chartIDs: chartViewModels.map(\.chartID))
 
-        tabName = view.name
-        currentViewID = view.id
-        hasUnsavedChanges = false
-        syncTab()
-
         didInitialLoad = true
         refetchAll()
         connectWebSocket()
-    }
-
-    /// Re-read the saved views, which another tab may have added to since this one opened.
-    func reloadSavedViews() {
-        savedViews = AppDatabase.shared.savedViews()
-    }
-
-    /// Delete a saved view. Tabs sitting on it keep their charts but lose the link.
-    func deleteView(_ view: SavedView) {
-        savedViews.removeAll { $0.id == view.id }
-        AppDatabase.shared.saveSavedViews(savedViews)
-        if currentViewID == view.id {
-            tabName = UI.unnamedView
-            currentViewID = nil
-            hasUnsavedChanges = false
-            syncTab()
-        }
     }
 
     /// Persist chart appearance settings (colors, decimals) to disk.
@@ -1398,11 +1371,10 @@ final class ContentViewModel: ObservableObject {
         markChanged()
     }
 
-    /// Mark current view as having unsaved changes (unless applying a loaded view).
+    /// A persisted setting changed. Whether that makes the layout dirty is the controller's call,
+    /// made by comparing snapshots from `syncTab()`.
     private func markChanged() {
         syncTab()
-        guard !isApplyingView else { return }
-        hasUnsavedChanges = true
     }
 
 }

@@ -213,6 +213,17 @@ enum CacheLimit {
     static let saveDebounceNS: UInt64 = 2_000_000_000
 }
 
+// MARK: - Saved Layout Constants
+
+enum SavedLayout {
+    /// Quiet time after the last layout change before an autosave-enabled layout is written (nanoseconds).
+    static let autosaveDebounceNS: UInt64 = 2_000_000_000
+    /// Layouts listed under "Recently used".
+    static let recentLimit = 5
+    /// Widest the toolbar layout name grows before it truncates.
+    static let nameMaxWidth: CGFloat = 180
+}
+
 // MARK: - Format Constants
 
 enum Format {

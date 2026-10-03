@@ -37,8 +37,14 @@ struct DegenViewApp: App {
 
 private struct TabCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.savedLayout) private var savedLayout
 
     var body: some Commands {
+        CommandGroup(replacing: .saveItem) {
+            Button("Save Layout") { savedLayout?.requestSave() }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(savedLayout == nil)
+        }
         CommandGroup(after: .newItem) {
             Button("New Tab") {
                 WindowCoordinator.shared.newTab(using: openWindow)

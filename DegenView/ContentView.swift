@@ -33,10 +33,8 @@ struct ContentView: View {
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var favoritesStore = FavoritesStore.shared
     @ObservedObject private var recents = RecentMarketsStore.shared
-    @State private var showSaveAlert = false
-    @State private var saveViewName = ""
-    @State private var showRenameAlert = false
-    @State private var renameText = ""
+    @State private var showLayoutPicker = false
+    @State private var layoutPromptName = ""
     @State private var showReplayDatePicker = false
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @StateObject private var paperTrading = PaperTradingStore.shared
@@ -98,24 +96,50 @@ struct ContentView: View {
             .frame(width: 0, height: 0)
         )
         .preferredColorScheme(appTheme.colorScheme)
-        .alert("Save View", isPresented: $showSaveAlert) {
-            TextField("Name", text: $saveViewName)
-            Button("Save") {
-                let name = saveViewName.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                contentViewModel.saveCurrentView(name: name)
+        .alert(
+            layoutPromptTitle,
+            isPresented: Binding(
+                get: { contentViewModel.layout.prompt != nil },
+                set: { if !$0 { contentViewModel.layout.cancelPrompt() } })
+        ) {
+            TextField("Name", text: $layoutPromptName)
+            Button(layoutPromptButton) {
+                contentViewModel.layout.confirmPrompt(name: layoutPromptName)
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { contentViewModel.layout.cancelPrompt() }
         } message: {
-            Text("Save the current charts, timeframe, and layout as a named view.")
+            Text(layoutPromptMessage)
         }
-        .alert("Rename Tab", isPresented: $showRenameAlert) {
-            TextField("Name", text: $renameText)
-            Button("Rename") { contentViewModel.renameTab(to: renameText) }
-            Button("Cancel", role: .cancel) {}
+        .onChange(of: contentViewModel.layout.prompt) { _, prompt in
+            if prompt != nil { layoutPromptName = contentViewModel.layout.promptDefaultName }
+        }
+        .confirmationDialog(
+            "Save changes to “\(contentViewModel.layout.displayName)”?",
+            isPresented: Binding(
+                get: { contentViewModel.layout.pendingTransition != nil },
+                set: { if !$0 { contentViewModel.layout.resolve(.cancel) } }),
+            titleVisibility: .visible
+        ) {
+            Button("Save") { contentViewModel.layout.resolve(.save) }
+            Button("Don’t Save", role: .destructive) { contentViewModel.layout.resolve(.discard) }
+            Button("Cancel", role: .cancel) { contentViewModel.layout.resolve(.cancel) }
         } message: {
-            Text("The tab name is also the window title.")
+            Text("Your changes will be lost if you switch layouts without saving.")
         }
+        .alert(
+            "Layout",
+            isPresented: Binding(
+                get: { contentViewModel.layout.lastError != nil },
+                set: { if !$0 { contentViewModel.layout.clearError() } })
+        ) {
+            Button("OK") { contentViewModel.layout.clearError() }
+        } message: {
+            Text(contentViewModel.layout.lastError ?? "")
+        }
+        .sheet(isPresented: $showLayoutPicker) {
+            SavedLayoutPickerSheet(layout: contentViewModel.layout, store: contentViewModel.layout.store)
+        }
+        .focusedSceneValue(\.savedLayout, contentViewModel.layout)
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(
                 onAddPortfolio: { config in
@@ -175,10 +199,13 @@ struct ContentView: View {
             Text(paperTrading.lastError ?? "")
         }
         .onChange(of: showAddSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
         }
         .onChange(of: showAddFavoriteSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+        }
+        .onChange(of: showLayoutPicker) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
         }
     }
 
@@ -255,21 +282,21 @@ struct ContentView: View {
                 EmptyStateView(
                     suggestions: EmptyStateSuggestions(
                         favorites: favoritesStore.items, recents: recents.items,
-                        savedViews: contentViewModel.savedViews),
+                        savedViews: contentViewModel.layout.store.views),
                     offersStocks: AlpacaCredentialsStore.isConfigured,
                     onAddTapped: { showAddSheet = true },
                     onOpenFavorite: contentViewModel.openFavorite,
                     onOpenRecent: { openMarket($0.result) },
-                    onOpenView: { contentViewModel.loadView($0) },
+                    onOpenView: { contentViewModel.openSavedView($0) },
                     onOpenSuggestion: openMarket,
                     onRemoveRecent: { recents.remove($0) },
                     onClearRecents: { recents.clear() },
                     onShowFavorites: { withAnimation { showFavorites = true } }
                 )
                 // Another tab may have saved a view since this one opened.
-                .onAppear { contentViewModel.reloadSavedViews() }
+                .onAppear { contentViewModel.layout.store.reload() }
                 .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-                    contentViewModel.reloadSavedViews()
+                    contentViewModel.layout.store.reload()
                 }
             } else {
                 VStack(spacing: 0) {
@@ -375,14 +402,23 @@ struct ContentView: View {
         return hasMarket ? "Historical Replay" : "Historical Replay — add a market chart first"
     }
 
-    /// Commit the tab's edits back to its saved view, prompting for a name the
-    /// first time — an unnamed tab has no view to write to yet.
-    private func saveChanges() {
-        if contentViewModel.tabName == UI.unnamedView {
-            saveViewName = ""
-            showSaveAlert = true
-        } else {
-            contentViewModel.saveChanges()
+    private var layoutPromptTitle: String {
+        switch contentViewModel.layout.prompt {
+        case .copy: return "Make a Copy"
+        case .rename: return "Rename Layout"
+        case .save, nil: return "Save Layout"
+        }
+    }
+
+    private var layoutPromptButton: String {
+        contentViewModel.layout.prompt == .rename ? "Rename" : "Save"
+    }
+
+    private var layoutPromptMessage: String {
+        switch contentViewModel.layout.prompt {
+        case .copy: return "The copy keeps what you see now and saves separately from the original."
+        case .rename: return "The name is also the tab title."
+        case .save, nil: return "Save the current charts, timeframe, and layout under a name."
         }
     }
 
@@ -401,59 +437,11 @@ struct ContentView: View {
             }
         }
         ToolbarItem(placement: .automatic) {
-            Menu {
-                // The name bar used to be the rename affordance; with it gone
-                // this menu is the only place left to reach it.
-                Button("Rename Tab…") {
-                    renameText =
-                        contentViewModel.tabName == UI.unnamedView
-                        ? "" : contentViewModel.tabName
-                    showRenameAlert = true
-                }
-
-                if !contentViewModel.savedViews.isEmpty {
-                    Divider()
-                    ForEach(contentViewModel.savedViews) { view in
-                        Button(view.name) {
-                            contentViewModel.loadView(view)
-                        }
-                    }
-                    Divider()
-                    Menu("Delete…") {
-                        ForEach(contentViewModel.savedViews) { view in
-                            Button(role: .destructive) {
-                                contentViewModel.deleteView(view)
-                            } label: {
-                                Text(view.name)
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "folder")
-            }
-            .accessibilityLabel("Load View")
+            SavedLayoutToolbarButton(layout: contentViewModel.layout) { showLayoutPicker = true }
         }
-        // Only meaningful once the tab has drifted from what's on disk.
-        if contentViewModel.hasUnsavedChanges {
-            ToolbarItem(placement: .automatic) {
-                Button(action: saveChanges) {
-                    Image(systemName: "square.and.arrow.down.on.square")
-                }
-                .accessibilityLabel("Save Changes")
-                .help("Save changes to \"\(contentViewModel.tabName)\"")
-            }
-        }
-        ToolbarItem(placement: .automatic) {
-            Button {
-                saveViewName =
-                    contentViewModel.tabName == UI.unnamedView
-                    ? "" : contentViewModel.tabName
-                showSaveAlert = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-            }
-            .accessibilityLabel("Save View")
+        // Its own bubble, apart from the layout button, the title-bar buttons and Add Chart.
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -474,6 +462,7 @@ struct ContentView: View {
             } label: {
                 Label("Add Chart", systemImage: "plus")
                     .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 6)
             }
             .help("Add Chart")
         }

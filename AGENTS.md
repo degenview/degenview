@@ -198,8 +198,14 @@ Three things broke when a second instance appeared — check for this shape when
   suspend, so API load doesn't scale with tab count
 
 ### State management
-- `ContentViewModel.markChanged()` sets `hasUnsavedChanges = true` (skipped during `loadView`)
-- `isApplyingView` flag prevents false unsaved-change detection on view load
+- Saved layouts: `SavedViewStore.shared` owns the library (every tab writes through it, writes throw,
+  `lastOpenedAt` drives "Recently used"); `ContentViewModel.layout` (`SavedLayoutController`) is the
+  tab's active layout. **Dirty is a fingerprint, not a flag**: `syncTab()` calls `layout.refresh()`,
+  which compares a `LayoutSnapshot` (timeframe, chart configs, column membership — not zoom,
+  drawings, replay or market data) with the snapshot taken at open/save. Layouts are applied only via
+  the controller's `restore`, which suspends tracking and re-baselines. Autosave is per layout
+  (`SavedView.autosave`), debounced 2 s, never applies to Unnamed, and is flushed before a switch
+- `tabName` is always the active layout's name or `UI.unnamedView`; there is no tab-only rename
 - `isHydrating` guards `syncTab()` during `init` — a `didSet` that reached it would otherwise
   write the tab back before `chartViewModels` is populated and erase it
 - `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the database write
@@ -251,8 +257,12 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
 3. Switch timeframes, toggle log scale
 4. Scroll-zoom on chart, verify candle count changes
-5. Save view, add a ticker, verify unsaved changes indicator
-6. Load saved view, verify state restores
+5. Layout button reads "Unnamed"; ⌘S names it. Add a ticker — an "(unsaved)" tag appears after the
+   name; scroll-zoom and live ticks never raise it; ⌘S clears it
+6. Layout ▸ Open layout… / Recently used loads a saved layout; with changes pending it asks
+   Save / Don't Save / Cancel. Autosave on: change a setting, "Save" never shows, change persists
+   after relaunch. Make a copy keeps unsaved changes; Rename keeps the tab title in sync in every
+   tab; Create new layout opens a blank tab. ⌘S in the Script Manager still saves the script
 7. Add a DEX pair (e.g. search "BONK" on DEXScreener)
 8. With one tab open, confirm the tab bar and its `+` are still visible
 9. Both ⌘T and the tab bar's `+` open an empty tab named "Unnamed" — never a second view

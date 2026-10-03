@@ -21,6 +21,7 @@ DegenView/
 │   ├── PortfolioCurrency+AlertPrice.swift # `formatAlertPrice`: magnitude-aware alert price text (also in the agent)
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
+│   ├── LayoutSnapshot.swift           # Persisted-layout fingerprint compared for dirty state
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
@@ -31,6 +32,7 @@ DegenView/
 │   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
+│   ├── SavedLayoutController.swift    # Per-tab active layout, dirty/autosave, save/copy/rename/open
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
 │   ├── ChartLiveQuote.swift           # A chart's latest best bid/ask (own object, so book ticks don't redraw the card)
 │   ├── ScriptPreviewViewModel.swift   # Script Manager preview: one chart, market, timeframe, inputs, refresh
@@ -171,7 +173,8 @@ DegenView/
     ├── KalshiSeriesIndex.swift        # Cached /series list + local keyword ranking
     ├── CoinMarketCapService.swift     # Keychain, typed API client/provider, cache and retry
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
-    ├── TabsStore.swift                # Tabs, saved views, and session persistence
+    ├── TabsStore.swift                # Tabs and session persistence
+    ├── SavedViewStore.swift           # Shared saved-layout library (throwing writes, recency)
     ├── FavoritesStore.swift           # Shared watchlist persistence
     ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history

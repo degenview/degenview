@@ -12,6 +12,11 @@ struct SavedView: Identifiable, Codable, Equatable {
     var chartColumns: [ChartColumn]? = nil
     /// Zoom level — candle count at time of save.
     var candleCount: Int
+    /// When this layout was last opened or saved. Nil for views that predate recency tracking;
+    /// they stay out of "Recently used" until opened.
+    var lastOpenedAt: Date? = nil
+    /// Whether changes to this layout are written back without asking. Nil = off.
+    var autosave: Bool? = nil
 
     static func == (lhs: SavedView, rhs: SavedView) -> Bool {
         lhs.id == rhs.id
