@@ -50,30 +50,89 @@ struct PineIndicatorLegend: View {
 
     @State private var legendHovering = false
     @State private var expandedOverride = false
+    /// Whether the whole legend is minimized to just its header strip. Session-local — it's a
+    /// view convenience, not persisted chart configuration.
+    @State private var collapsed = false
     private static let collapseThreshold = 4
+    private static let cornerRadius: CGFloat = 10
 
     var body: some View {
         let rows = viewModel.pineLegendRows
         if !rows.isEmpty {
             let showAll = legendHovering || expandedOverride || rows.count <= Self.collapseThreshold
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(showAll ? rows : Array(rows.prefix(Self.collapseThreshold))) { row in
-                    PineIndicatorLegendRow(viewModel: viewModel, info: row, onStyleChanged: onStyleChanged)
-                }
-                if !showAll {
-                    Button("+\(rows.count - Self.collapseThreshold) more") { expandedOverride = true }
-                        .buttonStyle(.plain)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 6)
+            VStack(alignment: .leading, spacing: 0) {
+                header(count: rows.count)
+                if !collapsed {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 1)
+                        .padding(.vertical, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(showAll ? rows : Array(rows.prefix(Self.collapseThreshold))) { row in
+                            PineIndicatorLegendRow(viewModel: viewModel, info: row, onStyleChanged: onStyleChanged)
+                        }
+                        if !showAll {
+                            Button {
+                                expandedOverride = true
+                            } label: {
+                                Text("+\(rows.count - Self.collapseThreshold) more")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.white.opacity(0.7))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 3)
+                                    .background(Color.white.opacity(0.08), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 6)
+                            .padding(.top, 2)
+                        }
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            .padding(5)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8))
+            .padding(7)
+            // The row/header Spacers push controls to the trailing edge of the legend's own
+            // content — not of whatever width the chart overlay offers. Without this, the
+            // legend would stretch to the full chart width.
+            .fixedSize(horizontal: true, vertical: false)
+            .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: Self.cornerRadius))
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.cornerRadius)
+                    .strokeBorder(Color.white.opacity(0.08))
+            )
+            .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
+            .animation(.easeInOut(duration: 0.16), value: collapsed)
             .onHover { legendHovering = $0 }
             .background(PineLegendHitRegion(onResolve: onLegendRegion))
             .accessibilityElement(children: .contain)
         }
+    }
+
+    private func header(count: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "chart.xyaxis.line")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.55))
+            Text(collapsed ? "\(count) indicator\(count == 1 ? "" : "s")" : "Indicators")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.85))
+            Spacer(minLength: 10)
+            Button {
+                withAnimation(.easeInOut(duration: 0.16)) { collapsed.toggle() }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    .frame(width: 14, height: 14)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(collapsed ? "Expand indicator list" : "Collapse indicator list")
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 1)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.16)) { collapsed.toggle() } }
     }
 }
 
@@ -84,50 +143,73 @@ private struct PineIndicatorLegendRow: View {
     @State private var rowHovering = false
     @State private var showingSettings = false
 
+    /// Controls stay visible while the settings popover is open even if the pointer has moved
+    /// off the row into the popover itself — otherwise the popover's own anchor unmounts and
+    /// SwiftUI dismisses it before the user can touch an input.
+    private var controlsVisible: Bool { rowHovering || showingSettings }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Text(info.title)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(info.isVisible ? .primary : .secondary)
+                .foregroundStyle(info.isVisible ? .white : .white.opacity(0.55))
                 .lineLimit(1)
             if info.hasError {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.caption2)
+                    .font(.system(size: 10))
                     .foregroundStyle(.orange)
                     .accessibilityLabel("\(info.title) has a runtime error")
             }
-            if rowHovering {
-                Button {
-                    viewModel.setPineInstanceVisible(info.id, isVisible: !info.isVisible)
-                    onStyleChanged()
-                } label: {
-                    Image(systemName: info.isVisible ? "eye" : "eye.slash")
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(info.isVisible ? "Hide \(info.title)" : "Show \(info.title)")
-
-                Button { showingSettings = true } label: { Image(systemName: "gearshape") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(info.title) settings")
-                    .popover(isPresented: $showingSettings) {
-                        PineInstanceSettingsPopover(
-                            viewModel: viewModel, instanceID: info.id, onStyleChanged: onStyleChanged)
-                    }
-
-                Button {
-                    viewModel.removePineInstance(info.id)
-                    onStyleChanged()
-                } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(info.title)")
+            Spacer(minLength: 10)
+            // Always laid out (never conditionally inserted/removed) so the row's height never
+            // changes on hover, and so the gear button's popover anchor never unmounts.
+            control("eye", alt: info.isVisible ? nil : "eye.slash") {
+                viewModel.setPineInstanceVisible(info.id, isVisible: !info.isVisible)
+                onStyleChanged()
             }
+            .accessibilityLabel(info.isVisible ? "Hide \(info.title)" : "Show \(info.title)")
+
+            control("gearshape") { showingSettings = true }
+                .accessibilityLabel("\(info.title) settings")
+                .popover(isPresented: $showingSettings) {
+                    PineInstanceSettingsPopover(
+                        viewModel: viewModel, instanceID: info.id, onStyleChanged: onStyleChanged)
+                }
+
+            control("xmark") {
+                viewModel.removePineInstance(info.id)
+                onStyleChanged()
+            }
+            .accessibilityLabel("Remove \(info.title)")
         }
         .padding(.horizontal, 6)
-        .padding(.vertical, 2)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(Color.white.opacity(rowHovering ? 0.08 : 0))
+        )
         .contentShape(Rectangle())
-        .onHover { rowHovering = $0 }
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) { rowHovering = hovering }
+        }
         .opacity(info.isVisible ? 1 : 0.55)
         .accessibilityElement(children: .combine)
+    }
+
+    /// One fixed-size control icon — `alt` swaps the symbol (for the eye/eye.slash toggle)
+    /// without changing the button's identity, so SwiftUI never recreates it mid-hover.
+    @ViewBuilder
+    private func control(_ systemName: String, alt: String? = nil, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: alt ?? systemName)
+                .font(.system(size: 11, weight: .medium))
+                .frame(width: 16, height: 16)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.white.opacity(0.85))
+        .opacity(controlsVisible ? 1 : 0)
+        .allowsHitTesting(controlsVisible)
+        .accessibilityHidden(!controlsVisible)
     }
 }
 

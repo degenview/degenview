@@ -356,7 +356,8 @@ struct ChartCardView: View {
         }
         .overlay(alignment: .topLeading) {
             PineIndicatorLegend(viewModel: viewModel, onLegendRegion: onLegendRegion, onStyleChanged: onStyleChanged)
-                .padding(8)
+                .padding(.leading, 8)
+                .padding(.top, 28)
         }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves
         // it altogether would strand the crosshair on the last chart it touched.
