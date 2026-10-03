@@ -263,6 +263,20 @@ extension PineRuntimeSession {
         }
     }
 
+    /// `timeframe.from_seconds(seconds)`: the timeframe string for a length in seconds.
+    func timeframeFromSecondsCall(
+        _ call: PineCall, _ context: inout PineRuntimeContext
+    ) throws -> PineRuntimeValue {
+        let value = try argument(call, 0, "seconds", &context)
+        if case .na = value { return .na }
+        guard let seconds = value.intValue, let text = PineTime.timeframe(fromSeconds: seconds) else {
+            throw PineDiagnostic.error(
+                "PINE4017", .runtime, "timeframe.from_seconds() needs a positive number of seconds.",
+                call.range)
+        }
+        return .string(text)
+    }
+
     /// `timeframe.change(tf)`: whether this bar opens a new `tf` period. The first bar always does.
     /// Periods follow the same UTC calendar boundaries the app folds weekly and monthly candles on.
     func timeframeChangeCall(

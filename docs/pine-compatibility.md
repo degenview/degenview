@@ -260,7 +260,7 @@ row) → `PineAlertDispatcher` (channels).
 ### Time, timeframes and other series
 
 - `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday`, `timeframe.isticks`,
-  `timeframe.in_seconds([tf])`, `timeframe.change(tf)`, `time(timeframe, session, timezone)` and `time_close(timeframe)`,
+  `timeframe.in_seconds([tf])`, `timeframe.from_seconds(seconds)`, `timeframe.change(tf)`, `time(timeframe, session, timezone)` and `time_close(timeframe)`,
   `syminfo.root`, `syminfo.prefix`, `syminfo.timezone`, `syminfo.pointvalue`, `chart.is_standard` and
   the other `chart.is_*` flags.
 - **`request.security` for the chart's own symbol**, on a timeframe at least as long as the chart's

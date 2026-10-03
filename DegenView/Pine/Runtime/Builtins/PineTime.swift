@@ -64,6 +64,20 @@ enum PineTime {
         }
     }
 
+    /// The timeframe string for a length in seconds, the inverse of `seconds(ofTimeframe:)`:
+    /// `60` → `"1"`, `7200` → `"120"`, `86_400` → `"1D"`, `45` → `"45S"`. The largest unit that divides
+    /// evenly wins, with a month counted as 30 days. Nil for a length that is not a positive whole number.
+    static func timeframe(fromSeconds seconds: Int) -> String? {
+        guard seconds > 0 else { return nil }
+        let units: [(length: Int, suffix: String)] = [
+            (30 * Int(day), "M"), (7 * Int(day), "W"), (Int(day), "D"),
+        ]
+        for (length, suffix) in units where seconds % length == 0 {
+            return "\(seconds / length)\(suffix)"
+        }
+        return seconds % 60 == 0 ? "\(seconds / 60)" : "\(seconds)S"
+    }
+
     /// `timeframe.*` for bars `seconds` apart; nil until the spacing is known.
     static func timeframe(_ name: String, barSeconds seconds: Double) -> PineRuntimeValue? {
         guard seconds > 0 else { return nil }
