@@ -136,7 +136,8 @@ enum PineSymbolCatalog {
         return names
     }()
 
-    private static let reservedFunctions: Set<String> = [
+    /// Pine functions DegenView does not implement; a call is a compile error, so editors skip them.
+    static let reservedFunctions: Set<String> = [
         "fixnan", "plotarrow", "plotbar",
     ]
 

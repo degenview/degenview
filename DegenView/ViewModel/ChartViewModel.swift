@@ -207,6 +207,8 @@ final class ChartViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var lastUpdated: Date?
     @Published var currentPrice: Double?
+    /// Best bid and ask from the exchange stream (Binance, Coinbase); empty for other sources.
+    let liveQuote = ChartLiveQuote()
     @Published private(set) var cmcAltcoinLatest: AltcoinSeasonLatest?
     @Published private(set) var cmcAltcoinHistory: [AltcoinSeasonHistoricalPoint] = []
     @Published private(set) var cmcFearGreedLatest: FearAndGreedLatest?
@@ -251,12 +253,16 @@ final class ChartViewModel: ObservableObject {
     private var pineDataset: PineDatasetKey?
     /// The timeframe most recently requested from `fetchData`.
     private var requestedRange: TimeRange?
-    /// Called on the main actor with alerts a script raised on a live bar. Historical calculation and
-    /// loading never call it.
-    var pineAlertHandler: (([PineAlertEvent], PineBarID?) -> Void)?
-    /// Called on the main actor whenever the applied script is recalculated from scratch: with the
-    /// market it now runs on and the hash of its source, nil when no script is applied.
-    var pineContextHandler: ((PineDatasetKey, String?) -> Void)?
+    /// Called on the main actor with alerts a script raised on a live bar, and the applied instance
+    /// that raised them (nil for the single-script preview path). Historical calculation and loading
+    /// never call it.
+    var pineAlertHandler: (([PineAlertEvent], PineBarID?, UUID?) -> Void)?
+    /// Called on the main actor whenever the applied scripts are recalculated from scratch or learn
+    /// their source: with the market they now run on and the source hash of every instance that has
+    /// one. An instance whose source is not resolved yet is absent, never "changed".
+    var pineContextHandler: ((PineDatasetKey, [UUID: String]) -> Void)?
+    /// Called on the main actor with an applied instance's id once it is removed from the chart.
+    var pineInstanceRemovedHandler: ((UUID) -> Void)?
 
     /// Every enabled indicator, computed over the full buffer and trimmed to the
     /// visible tail so warm-up happens off screen.
@@ -286,10 +292,11 @@ final class ChartViewModel: ObservableObject {
     @Published var trendLines: [TrendLine] = []
     @Published var fibonacciRetracements: [FibonacciRetracementDrawing] = []
     var drawingUndoCoordinator: DrawingUndoCoordinator?
-    private let drawingStore: DrawingStore
+    let drawingStore: DrawingStore
     private var fibonacciSettingsOriginal: FibonacciRetracementDrawing?
     private var drawingStoreSubscription: AnyCancellable?
     private var fibonacciStoreSubscription: AnyCancellable?
+    private var brushStoreSubscription: AnyCancellable?
 
     /// First click of a line in progress, and the rubber-band end that follows the
     /// pointer until the second click lands.
@@ -312,6 +319,28 @@ final class ChartViewModel: ObservableObject {
 
     var hasFibonacciDraft: Bool { fibonacciDraftStart != nil }
 
+    // MARK: - Brush
+
+    /// Freehand strokes on this chart, anchored to time and price.
+    @Published var brushes: [BrushDrawing] = []
+    @Published var selectedBrushID: UUID?
+    /// The stroke whose style editor is open. Separate from selection so grabbing a
+    /// stroke to move it does not open an editor under the drag.
+    @Published var editingBrushID: UUID?
+    @Published var hoveredBrushID: UUID?
+    /// The stroke being drawn right now. Never persisted until the pointer is released.
+    @Published var brushDraft: BrushDraft?
+    /// Screen position of the last kept sample, so the next one is judged by distance.
+    var lastBrushSample: CGPoint?
+    var brushSettingsOriginal: BrushDrawing?
+
+    var hasBrushDraft: Bool { brushDraft != nil }
+
+    var brushOverlay: BrushOverlayState {
+        BrushOverlayState(
+            strokes: brushes, draft: brushDraft, selectedID: selectedBrushID, hoveredID: hoveredBrushID)
+    }
+
     var trendDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let draftStart, let draftEnd else { return nil }
         return (draftStart, draftEnd)
@@ -321,14 +350,19 @@ final class ChartViewModel: ObservableObject {
 
     // MARK: - Ruler
 
-    /// Measuring rectangles on this chart. Never persisted and never restored — a ruler
-    /// answers a question and then goes away on the next click.
+    /// Measuring rectangles on this chart. Never persisted, never restored and never in
+    /// drawing history — a ruler answers a question and goes away with the tool.
     @Published private(set) var rulers: [RulerRect] = []
 
     /// First corner of a rectangle in progress, and the opposite corner that follows the
-    /// pointer until the second click lands.
+    /// pointer until it is finished.
     @Published private(set) var rulerDraftStart: TrendAnchor?
     @Published private(set) var rulerDraftEnd: TrendAnchor?
+
+    /// The ruler showing its handles because it was clicked, and the part of a ruler the
+    /// pointer is over right now (which drives the highlight and the cursor).
+    @Published private(set) var selectedRulerID: UUID?
+    @Published private(set) var hoveredRuler: RulerHit?
 
     var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? {
         guard let rulerDraftStart, let rulerDraftEnd else { return nil }
@@ -336,6 +370,11 @@ final class ChartViewModel: ObservableObject {
     }
 
     var hasRulerDraft: Bool { rulerDraftStart != nil }
+
+    var rulerOverlay: RulerOverlayState {
+        RulerOverlayState(
+            rects: rulers, draft: rulerDraft, selectedID: selectedRulerID, hover: hoveredRuler)
+    }
 
     private var fetchTask: Task<Void, Never>?
     private var fetchGeneration = 0
@@ -360,6 +399,7 @@ final class ChartViewModel: ObservableObject {
         replayTimestamp = timestamp
         // Replay recalculates as pure history; leaving it goes back to the live feed.
         if changed, pineConfiguration?.appliedSource?.isEmpty == false { reevaluatePine() }
+        if changed, !scriptInstances.isEmpty { reevaluateAllPineInstances() }
     }
 
     func applyReplaySelectionTimestamp(_ timestamp: Date?) {
@@ -540,7 +580,7 @@ final class ChartViewModel: ObservableObject {
     /// Apply persisted chart settings from a TickerConfig.
     func applyConfig(_ config: TickerConfig) {
         chartID = config.chartID
-        scriptInstances = config.scripts
+        scriptInstances = Self.migratedPineInstances(config)
         portfolioChart = config.portfolioChart
         coinMarketCapChart = config.coinMarketCapChart
         bitcoinPowerLaw = config.bitcoinPowerLaw
@@ -556,10 +596,27 @@ final class ChartViewModel: ObservableObject {
         showTrendFlips = config.showTrendFlips ?? false
         trendLines = drawingStore.lines(ticker: ticker, source: source)
         fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
+        brushes = drawingStore.brushes(ticker: ticker, source: source)
         if let name = config.displayName { displayName = name }
         if let series = config.pmSeries, !series.isEmpty { pmSeries = series }
-        pineConfiguration = config.pine
-        reevaluatePine()
+        hydratePineInstances()
+    }
+
+    /// `scriptInstances` from `config.scripts` when present (the modern shape); otherwise,
+    /// one `legacySource`-carrying instance synthesized from the pre-instance
+    /// `TickerConfig.pine` shape (raw applied source text, no `ScriptStore` entry to resolve
+    /// it from). `config.pine` is never written back by this path — it exists purely so an
+    /// old persisted chart keeps working after decode.
+    /// Not `private`: exercised directly by `ChartScriptInstanceDecodeTests`. `nonisolated`
+    /// because it's a pure function of its argument — no actor state involved.
+    nonisolated static func migratedPineInstances(_ config: TickerConfig) -> [ChartScriptInstance] {
+        guard config.scripts.isEmpty else { return config.scripts }
+        guard let pine = config.pine, let source = pine.appliedSource, !source.isEmpty else { return [] }
+        return [
+            ChartScriptInstance(
+                scriptID: UUID(), loadedRevisionID: UUID(), inputs: pine.inputs, isVisible: true,
+                updateStatus: .current, legacySource: source)
+        ]
     }
 
     func updatePineDraft(_ source: String) {
@@ -594,11 +651,14 @@ final class ChartViewModel: ObservableObject {
 
     /// Stops the running script and forgets its source and inputs.
     func unloadPineScript() {
+        let removed = scriptInstances.map(\.id)
         scriptInstances = []
+        removed.forEach { pineInstanceRemovedHandler?($0) }
         pineConfiguration = nil
         pineDiagnostics = []
         pineStatus = "No script applied"
         reevaluatePine()
+        reevaluateAllPineInstances()
     }
 
     func setPineInput(_ value: PineInputValue, id: String) {
@@ -641,7 +701,7 @@ final class ChartViewModel: ObservableObject {
         stopPineFeed()
         pineGeneration += 1
         let generation = pineGeneration
-        pineContextHandler?(pineAlertDataset, appliedSourceHash)
+        pineContextHandler?(pineAlertDataset, [:])
         guard let config = pineConfiguration, let source = config.appliedSource, !source.isEmpty else {
             pineOutput = .empty
             return
@@ -739,7 +799,7 @@ final class ChartViewModel: ObservableObject {
             pineDiagnostics = program.diagnostics
             let live = update.executions.contains { $0.isRealtime }
             pineStatus = "Applied \(program.declaration.title) · \(update.output.barCount) bars\(live ? " · live" : "")"
-            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID) }
+            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID, nil) }
         case .unchanged:
             break
         case .needsRebuild:
@@ -748,6 +808,291 @@ final class ChartViewModel: ObservableObject {
             pineDiagnostics = [diagnostic]
             pineStatus = "Runtime failed — last valid output remains active"
         }
+    }
+
+
+    // MARK: - Pine instances (multi-script)
+
+    /// Latest result per applied instance, keyed by `ChartScriptInstance.id`.
+    @Published private(set) var pineResults: [UUID: PineInstanceResult] = [:]
+
+    /// Execution plumbing per instance — mirrors the singular `pineFeed`/`pineFeedTask`/
+    /// `pineGeneration`/`pineDataset` above, but one per `scriptInstances` entry.
+    private var pineRuntimes: [UUID: PineInstanceRuntime] = [:]
+
+    /// Seeds the multi-instance pipeline from `scriptInstances` right after it's hydrated
+    /// from a decoded/migrated `TickerConfig`.
+    private func hydratePineInstances() {
+        reevaluateAllPineInstances()
+    }
+
+    /// Appends a new instance running `source` at the end of `scriptInstances`. Returns its
+    /// id, or nil when `source` fails to compile — nothing is added, existing instances are
+    /// untouched.
+    @discardableResult
+    func addPineInstance(
+        scriptID: UUID, revisionID: UUID, source: String, inputs: [String: PineInputValue] = [:]
+    ) -> UUID? {
+        let compiled = PineCompiler.compile(source: source, libraries: PineLibraryRegistry.shared)
+        guard compiled.isValid else { return nil }
+        let instance = ChartScriptInstance(scriptID: scriptID, loadedRevisionID: revisionID, inputs: inputs)
+        scriptInstances.append(instance)
+        reevaluatePineInstance(instance.id, source: source, compiled: compiled)
+        return instance.id
+    }
+
+    /// Stops and forgets one instance — the only way its state actually goes away. Hiding
+    /// keeps everything; this discards it.
+    func removePineInstance(_ id: UUID) {
+        pineRuntimes[id]?.stop()
+        pineRuntimes.removeValue(forKey: id)
+        pineResults.removeValue(forKey: id)
+        scriptInstances.removeAll { $0.id == id }
+        pineInstanceRemovedHandler?(id)
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
+    }
+
+    /// Suppresses rendering without discarding config or runtime state.
+    func setPineInstanceVisible(_ id: UUID, isVisible: Bool) {
+        guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        scriptInstances[index].isVisible = isVisible
+        // No rebuild — rendering reads `isVisible` directly; the runtime keeps ticking.
+    }
+
+    /// Replaces one instance's inputs and rebuilds just that instance.
+    func setPineInstanceInputs(_ id: UUID, inputs: [String: PineInputValue]) {
+        guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        scriptInstances[index].inputs = inputs
+        reevaluatePineInstance(id)
+    }
+
+    /// Simple reorder for the legend/settings list — not full drag-reorder.
+    func movePineInstance(_ id: UUID, toIndex newIndex: Int) {
+        guard let from = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        let instance = scriptInstances.remove(at: from)
+        scriptInstances.insert(instance, at: min(max(newIndex, 0), scriptInstances.count))
+    }
+
+    /// Test-only visibility into one instance's generation, to assert an unrelated instance
+    /// never rebuilds.
+    func pineGeneration(forInstance id: UUID) -> Int? { pineRuntimes[id]?.generation }
+
+    /// Hash of each applied instance's resolved source. An instance still resolving its script is
+    /// absent, so a subscription is never judged against a source that is not known yet.
+    var pineInstanceSourceHashes: [UUID: String] {
+        var hashes: [UUID: String] = [:]
+        for instance in scriptInstances {
+            if let resolved = pineRuntimes[instance.id]?.resolvedSource, !resolved.isEmpty {
+                hashes[instance.id] = ScriptSourceHash.sha256(resolved)
+            }
+        }
+        return hashes
+    }
+
+    /// The source one applied instance is running, once resolved from the script library.
+    func pineInstanceResolvedSource(_ id: UUID) -> String? {
+        pineRuntimes[id]?.resolvedSource
+    }
+
+    /// Recalculates one instance from scratch: on an input, theme, symbol or timeframe change
+    /// for it, or right after it's added. A fresh host means no state survives from the
+    /// previous program or dataset.
+    private func reevaluatePineInstance(
+        _ id: UUID, source suppliedSource: String? = nil, compiled supplied: PineCompiledProgram? = nil
+    ) {
+        guard let instance = scriptInstances.first(where: { $0.id == id }) else { return }
+        let runtime = pineRuntimes[id] ?? {
+            let created = PineInstanceRuntime(instanceID: id)
+            pineRuntimes[id] = created
+            return created
+        }()
+        runtime.stop()
+        runtime.generation += 1
+        let generation = runtime.generation
+        // Captured on the main actor: an input-only rebuild reuses the source already
+        // resolved for this instance rather than re-touching ScriptStore every time.
+        let cachedResolvedSource = runtime.resolvedSource
+
+        let bars = replayKlines
+        let live = replayTimestamp == nil
+        let dataset = pineDataset(for: requestedRange ?? .oneDay)
+        let inputs = instance.inputs
+        let theme = pineTheme
+        let symbol = PineSymbolInfo(
+            ticker: ticker, tickerID: dataset.symbolKey,
+            type: source == .alpaca ? "stock" : source.isPredictionMarket ? "prediction" : "crypto")
+        let securityChart = PineSecurityTarget.Chart(
+            tickerID: dataset.symbolKey, source: source, apiSymbol: apiSymbol)
+        let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
+        runtime.feed = feed
+        runtime.dataset = dataset
+
+        runtime.feedTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var compiled = supplied
+            var host: PineExecutionHost?
+            let resolvedSource: String
+            if let suppliedSource {
+                resolvedSource = suppliedSource
+            } else if let legacy = instance.legacySource {
+                resolvedSource = legacy
+            } else if let cachedResolvedSource {
+                resolvedSource = cachedResolvedSource
+            } else if let resolved = try? await ScriptStore.shared.resolvedSource(
+                scriptID: instance.scriptID, revisionID: instance.loadedRevisionID)
+            {
+                resolvedSource = resolved.source
+                await self?.markPineInstanceUpdateStatus(id, isLatest: resolved.isLatest)
+            } else {
+                await self?.markPineInstanceScriptMissing(id, generation: generation)
+                return
+            }
+            await self?.cachePineInstanceResolvedSource(id, resolvedSource)
+            for await operation in operations {
+                if Task.isCancelled { return }
+                var outcome: PineExecutionOutcome
+                switch operation {
+                case .rebuild:
+                    let program = compiled ?? PineCompiler.compile(source: resolvedSource, libraries: PineLibraryRegistry.shared)
+                    compiled = program
+                    guard program.isValid else {
+                        await self?.applyPineInstance(id, program: program, outcome: nil, generation: generation)
+                        host = nil
+                        continue
+                    }
+                    let securityData = await PineSecurityFeed.prepare(
+                        program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
+                        bars: bars)
+                    let fresh = PineExecutionHost(
+                        program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
+                        securityData: securityData)
+                    host = fresh
+                    outcome = await fresh.rebuild(bars: bars, live: live)
+                case .ingest(let update):
+                    guard let host else { continue }
+                    outcome = await host.ingest(update)
+                case .sync(let snapshot):
+                    guard let host else { continue }
+                    outcome = await host.sync(snapshot: snapshot)
+                }
+                guard let program = compiled else { continue }
+                await self?.applyPineInstance(id, program: program, outcome: outcome, generation: generation)
+            }
+        }
+        feed.yield(.rebuild)
+    }
+
+    private func cachePineInstanceResolvedSource(_ id: UUID, _ source: String) {
+        pineRuntimes[id]?.resolvedSource = source
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
+    }
+
+    private func markPineInstanceUpdateStatus(_ id: UUID, isLatest: Bool) {
+        guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        scriptInstances[index].updateStatus = isLatest ? .current : .available
+    }
+
+    private func markPineInstanceScriptMissing(_ id: UUID, generation: Int) {
+        guard pineRuntimes[id]?.generation == generation,
+            let index = scriptInstances.firstIndex(where: { $0.id == id })
+        else { return }
+        scriptInstances[index].updateStatus = .missing
+        pineResults[id] = PineInstanceResult(state: .failed("Script no longer exists"))
+    }
+
+    private func applyPineInstance(
+        _ instanceID: UUID, program: PineCompiledProgram, outcome: PineExecutionOutcome?, generation: Int
+    ) {
+        guard pineRuntimes[instanceID]?.generation == generation else { return }
+        guard let outcome else {
+            var result = pineResults[instanceID] ?? PineInstanceResult()
+            result.diagnostics = program.diagnostics
+            result.state = .failed("Compile failed")
+            pineResults[instanceID] = result
+            return
+        }
+        switch outcome {
+        case .updated(let update):
+            var result = PineInstanceResult()
+            result.output = update.output
+            result.declaration = program.declaration
+            result.inputSchema = program.inputSchema
+            result.diagnostics = program.diagnostics
+            result.state = .ready
+            result.isLive = update.executions.contains { $0.isRealtime }
+            result.alertCallCount = program.alertCallSites.count
+            pineResults[instanceID] = result
+            if !update.alerts.isEmpty { pineAlertHandler?(update.alerts, update.barID, instanceID) }
+        case .unchanged:
+            break
+        case .needsRebuild:
+            reevaluatePineInstance(instanceID, compiled: program)
+        case .failed(let diagnostic):
+            var result = pineResults[instanceID] ?? PineInstanceResult()
+            result.diagnostics = [diagnostic]
+            result.state = .failed("Runtime failed — last valid output remains active")
+            pineResults[instanceID] = result
+        }
+    }
+
+    /// Feeds one observation into every instance's own pipeline. History is fetched once by
+    /// the chart; this is the fan-out point — each instance processes it independently.
+    private func feedPineAllInstances(_ bar: KlineData, origin: PineMarketUpdate.Origin) {
+        guard replayTimestamp == nil, let requestedRange else { return }
+        let current = pineDataset(for: requestedRange)
+        for instance in scriptInstances {
+            guard pineRuntimes[instance.id]?.dataset == current else { continue }
+            pineRuntimes[instance.id]?.feed?.yield(.ingest(PineMarketUpdate(bar: bar, origin: origin)))
+        }
+    }
+
+    /// After a fetch: reconcile every running instance with the refreshed bars, or rebuild
+    /// an instance whose feed can no longer be reconciled (symbol/timeframe changed under it).
+    private func syncPineAllInstances(range: TimeRange) {
+        let dataset = pineDataset(for: range)
+        for instance in scriptInstances {
+            guard replayTimestamp == nil, let runtime = pineRuntimes[instance.id], runtime.dataset == dataset else {
+                reevaluatePineInstance(instance.id)
+                continue
+            }
+            runtime.feed?.yield(.sync(klineData))
+        }
+    }
+
+    /// Symbol/timeframe/theme/replay change: every instance is stale, all rebuild against the
+    /// same new authoritative history.
+    private func reevaluateAllPineInstances() {
+        pineContextHandler?(pineAlertDataset, pineInstanceSourceHashes)
+        for instance in scriptInstances { reevaluatePineInstance(instance.id) }
+    }
+
+    // MARK: - Pine instance rendering
+
+    /// Every visible instance's latest output, in `scriptInstances` order — later instances
+    /// composite on top, matching TradingView's "last added on top".
+    var visiblePineOutputs: [PineVisualOutput] {
+        scriptInstances.filter(\.isVisible).compactMap { pineResults[$0.id]?.output }
+    }
+
+    /// The subset that draws in its own pane under the candles (`overlay == false`).
+    var panePineOutputs: [PineVisualOutput] { visiblePineOutputs.filter { !$0.overlay } }
+
+    /// `overlay=false` instances get their own stacked panes; the line chart draws no scripts
+    /// (unchanged rule).
+    var showsPinePanes: Bool { !usesLineChart && !panePineOutputs.isEmpty }
+
+    /// Shared budget for every stacked pane: 30% of `chartHeight`, or 60pt per pane if that's
+    /// more — matches today's single-pane behavior exactly at one pane, and keeps panes
+    /// legible at higher N rather than shrinking the candle area unboundedly.
+    func pinePanesHeight(forChartHeight chartHeight: CGFloat) -> CGFloat {
+        let count = panePineOutputs.count
+        guard count > 0 else { return 0 }
+        return max(chartHeight * 0.3, CGFloat(count) * 60).rounded()
+    }
+
+    /// One pane's height out of the shared budget.
+    func pinePaneHeight(forChartHeight chartHeight: CGFloat, count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return (pinePanesHeight(forChartHeight: chartHeight) / CGFloat(count)).rounded()
     }
 
     // MARK: - Vertical zoom
@@ -1131,11 +1476,13 @@ final class ChartViewModel: ObservableObject {
 
     // MARK: - Drawing a ruler
 
-    /// First click: pin one corner. The rectangle tracks the pointer from here until the
-    /// second click.
+    /// First click, or the press of a drag: pin one corner. The rectangle tracks the
+    /// pointer from here until it is finished.
     func beginRulerDraft(at anchor: TrendAnchor) {
         rulerDraftStart = anchor
         rulerDraftEnd = anchor
+        selectedRulerID = nil
+        hoveredRuler = nil
     }
 
     func updateRulerDraft(to anchor: TrendAnchor) {
@@ -1143,9 +1490,9 @@ final class ChartViewModel: ObservableObject {
         rulerDraftEnd = anchor
     }
 
-    /// Second click. Rejects a click that landed back on the first one — a rectangle with
-    /// no area would report 0% over one candle — and leaves the draft open so the next
-    /// click can still finish it.
+    /// Finishes the rectangle and selects it. Rejects an end that landed back on the first
+    /// corner — a rectangle with no area would report 0% over one candle — and leaves the
+    /// draft open so the next click can still finish it.
     @discardableResult
     func commitRulerDraft(at anchor: TrendAnchor, in plot: ChartPlot) -> Bool {
         guard let start = rulerDraftStart else { return false }
@@ -1155,7 +1502,9 @@ final class ChartViewModel: ObservableObject {
         let to = plot.position(of: anchor, points: points, slotWidth: slot)
         guard hypot(to.x - from.x, to.y - from.y) >= Drawing.hitTolerance else { return false }
 
-        rulers.append(RulerRect(start: start, end: anchor))
+        let ruler = RulerRect(start: start, end: anchor)
+        rulers.append(ruler)
+        selectedRulerID = ruler.id
         rulerDraftStart = nil
         rulerDraftEnd = nil
         return true
@@ -1166,10 +1515,89 @@ final class ChartViewModel: ObservableObject {
         rulerDraftEnd = nil
     }
 
+    // MARK: - Editing a ruler
+
+    /// The ruler part under `point`: a corner within reach first, then an edge. Newest
+    /// first, matching what the renderer draws on top. The interior is not a hit, so a
+    /// measurement can start inside an existing one.
+    func rulerHit(at point: CGPoint, in plot: ChartPlot) -> RulerHit? {
+        let points = visibleKlines
+        guard !points.isEmpty else { return nil }
+        let slot = plot.slotWidth(forCount: points.count)
+
+        for ruler in rulers.reversed() {
+            let from = plot.position(of: ruler.start, points: points, slotWidth: slot)
+            let to = plot.position(of: ruler.end, points: points, slotWidth: slot)
+            let box = CGRect(
+                x: min(from.x, to.x), y: min(from.y, to.y),
+                width: abs(to.x - from.x), height: abs(to.y - from.y))
+
+            for corner in RulerCorner.allCases {
+                let center = CGPoint(
+                    x: corner.isLeft ? box.minX : box.maxX,
+                    y: corner.isTop ? box.minY : box.maxY)
+                if hypot(center.x - point.x, center.y - point.y) <= Drawing.rulerCornerReach {
+                    return RulerHit(id: ruler.id, part: .corner(corner))
+                }
+            }
+
+            let band = Drawing.rulerEdgeBand
+            let outer = box.insetBy(dx: -band, dy: -band)
+            let inner = box.insetBy(dx: band, dy: band)
+            if outer.contains(point), !inner.contains(point) {
+                return RulerHit(id: ruler.id, part: .edge)
+            }
+        }
+        return nil
+    }
+
+    /// Only publishes a change, so a pointer wandering over empty chart doesn't redraw
+    /// the canvas on every mouse move.
+    func setRulerHover(_ hit: RulerHit?) {
+        guard hoveredRuler != hit else { return }
+        hoveredRuler = hit
+    }
+
+    func selectRuler(_ id: UUID?) {
+        guard selectedRulerID != id else { return }
+        selectedRulerID = id
+    }
+
+    /// Drags `corner` of `original` to `anchor`. Always computed from the rectangle as it
+    /// was when the drag began, so crossing over the opposite corner and coming back
+    /// restores it exactly.
+    func moveRulerCorner(original: RulerRect, corner: RulerCorner, to anchor: TrendAnchor) {
+        replaceRuler(original.resized(corner: corner, to: anchor))
+    }
+
+    /// Moves the whole rectangle by how far the pointer has travelled since the drag began.
+    func translateRuler(original: RulerRect, from start: TrendAnchor, to current: TrendAnchor) {
+        replaceRuler(
+            original.translated(
+                by: current.date.timeIntervalSince(start.date),
+                price: current.price - start.price))
+    }
+
+    private func replaceRuler(_ ruler: RulerRect) {
+        guard let index = rulers.firstIndex(where: { $0.id == ruler.id }) else { return }
+        rulers[index] = ruler
+    }
+
+    @discardableResult
+    func removeSelectedRuler() -> Bool {
+        guard let id = selectedRulerID, rulers.contains(where: { $0.id == id }) else { return false }
+        rulers.removeAll { $0.id == id }
+        selectedRulerID = nil
+        hoveredRuler = nil
+        return true
+    }
+
     /// Put every measurement on this chart away. Reports whether there was anything to
-    /// clear, so the caller can tell a dismissing click from one that starts a rectangle.
+    /// clear, so Esc and Delete can tell a dismissal from a step out of the tool.
     @discardableResult
     func clearRulers() -> Bool {
+        selectedRulerID = nil
+        hoveredRuler = nil
         guard !rulers.isEmpty else { return false }
         rulers.removeAll()
         return true
@@ -1189,12 +1617,16 @@ final class ChartViewModel: ObservableObject {
         self.pmSeriesData = [:]
         klineData = []
         currentPrice = nil
+        liveQuote.clear()
         // A new instrument shares no series with the old one; the next fetch rebuilds the script.
         stopPineFeed()
         pineDataset = nil
         pineOutput = .empty
+        for runtime in pineRuntimes.values { runtime.stop() }
         api = DataSourceFactory.shared.service(for: source)
         trendLines = drawingStore.lines(ticker: ticker, source: source)
+        resetBrushState()
+        brushes = drawingStore.brushes(ticker: ticker, source: source)
     }
 
     private func observeDrawings() {
@@ -1220,9 +1652,23 @@ final class ChartViewModel: ObservableObject {
                     self.editingFibonacciID = nil
                 }
             }
+        brushStoreSubscription = drawingStore.$brushesByInstrument
+            .sink { [weak self] allBrushes in
+                guard let self else { return }
+                let key = self.drawingStore.key(ticker: self.ticker, source: self.source)
+                let sharedBrushes = allBrushes[key] ?? []
+                if self.brushes != sharedBrushes { self.brushes = sharedBrushes }
+                if let id = self.selectedBrushID, !sharedBrushes.contains(where: { $0.id == id }) {
+                    self.selectedBrushID = nil
+                    self.editingBrushID = nil
+                }
+                if let id = self.hoveredBrushID, !sharedBrushes.contains(where: { $0.id == id }) {
+                    self.hoveredBrushID = nil
+                }
+            }
     }
 
-    private var drawingInstrument: String {
+    var drawingInstrument: String {
         drawingStore.key(ticker: ticker, source: source)
     }
 
@@ -1251,6 +1697,7 @@ final class ChartViewModel: ObservableObject {
             currentPrice = kline.closePrice
         }
         feedPine(kline, origin: .stream)
+        feedPineAllInstances(kline, origin: .stream)
     }
 
     /// Fold a completed lower-resolution live bar into the current displayed candle.
@@ -1270,6 +1717,7 @@ final class ChartViewModel: ObservableObject {
         klineData[index].quoteVolume += bar.quoteVolume
         currentPrice = bar.closePrice
         feedPine(klineData[index], origin: .stream)
+        feedPineAllInstances(klineData[index], origin: .stream)
     }
 
     /// Fold one Coinbase trade into the live candle.
@@ -1279,6 +1727,7 @@ final class ChartViewModel: ObservableObject {
     /// candle's end opens the next one. The REST refresh replaces the buffer every few seconds,
     /// so volume summed from trades only has to hold until then.
     func applyTick(_ tick: CoinbaseTick, plan: CoinbaseGranularity) {
+        liveQuote.apply(bid: tick.bestBid, ask: tick.bestAsk)
         guard let last = klineData.last else { return }
 
         let bucket = plan.bucketStart(of: tick.time)
@@ -1293,16 +1742,19 @@ final class ChartViewModel: ObservableObject {
             klineData[index].volume += tick.size
             klineData[index].quoteVolume += notional
             feedPine(klineData[index], origin: .stream)
+            feedPineAllInstances(klineData[index], origin: .stream)
         } else {
             // Same hand-off Binance's closing kline makes: the finished candle is flagged
             // before the first trade of the next one arrives.
             klineData[index].isClosed = true
             feedPine(klineData[index], origin: .stream)
+            feedPineAllInstances(klineData[index], origin: .stream)
             let opened = KlineData(
                 openTime: bucket, openPrice: tick.price, highPrice: tick.price, lowPrice: tick.price,
                 closePrice: tick.price, volume: tick.size, quoteVolume: notional)
             klineData.append(opened)
             feedPine(opened, origin: .stream)
+            feedPineAllInstances(opened, origin: .stream)
         }
 
         if currentPrice != tick.price {
@@ -1461,6 +1913,7 @@ final class ChartViewModel: ObservableObject {
         if fetchGeneration == generation {
             fetchTask = nil
             syncPine(range: range)
+            syncPineAllInstances(range: range)
         }
     }
 

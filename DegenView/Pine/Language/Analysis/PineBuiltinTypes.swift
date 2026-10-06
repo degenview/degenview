@@ -89,7 +89,8 @@ enum PineBuiltinTypes {
             "str.length": .int, "str.tonumber": .float, "math.floor": .int, "math.ceil": .int,
         ]
         for name in [
-            "str.tostring", "str.format", "str.upper", "str.lower", "str.trim", "str.replace_all",
+            "str.tostring", "timeframe.from_seconds", "str.format", "str.upper", "str.lower", "str.trim",
+            "str.replace_all",
             "str.substring",
         ] {
             table[name] = .string

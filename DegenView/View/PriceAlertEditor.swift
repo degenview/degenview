@@ -50,7 +50,8 @@ struct PriceAlertEditor: View {
     init(asset: PortfolioAsset, existing: PriceAlert? = nil) {
         self.asset = asset
         self.existing = existing
-        _currency = State(initialValue: existing?.currency ?? .USD)
+        let quote = PortfolioCurrency.alertCurrencies.contains(asset.quoteCurrency) ? asset.quoteCurrency : .USD
+        _currency = State(initialValue: existing?.currency ?? quote)
         _frequency = State(initialValue: existing?.frequency ?? .once)
         _note = State(initialValue: existing?.note ?? "")
         switch existing?.condition {
@@ -388,7 +389,7 @@ struct PriceAlertEditor: View {
     /// The market moves while the sheet is open; keep the price and the hints honest.
     private func keepPriceFresh() async {
         while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(3))
+            try? await Task.sleep(for: .seconds(10))
             let price = await store.latestPrice(for: asset, currency: currency)
             if let price { currentPrice = price }
         }

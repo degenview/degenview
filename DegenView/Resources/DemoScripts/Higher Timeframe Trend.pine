@@ -1,0 +1,18 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Reads an EMA from a longer timeframe with request.security and colours the chart
+// by whether price is above or below it. A timeframe shorter than the chart's falls
+// back to the chart's own.
+indicator("Higher Timeframe Trend", overlay = true)
+
+higherTimeframe = input.string("D", "Higher timeframe", options = ["60", "D", "W", "M"], group = "Trend", tooltip = "Use a timeframe at least as long as the chart's.")
+length = input.int(20, "EMA length", minval = 1, group = "Trend")
+
+usable = timeframe.in_seconds(higherTimeframe) >= timeframe.in_seconds()
+timeframeToUse = usable ? higherTimeframe : timeframe.period
+
+higherEma = request.security(syminfo.tickerid, timeframeToUse, ta.ema(close, length))
+trendUp = close > higherEma
+
+plot(higherEma, "Higher-timeframe EMA", color = trendUp ? color.green : color.red, linewidth = 2)
+bgcolor(trendUp ? color.new(color.green, 92) : color.new(color.red, 92))

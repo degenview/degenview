@@ -37,13 +37,6 @@ struct ScriptManagerView: View {
                 .help(sidebarVisible ? "Hide the script list" : "Show the script list")
             }
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    showNewScript = true
-                } label: {
-                    Label("New Script", systemImage: "plus")
-                }
-                .help("New Script")
-
                 Menu {
                     Picker("Chart Position", selection: $chartPosition) {
                         ForEach(ChartPosition.allCases) { position in
@@ -67,8 +60,17 @@ struct ScriptManagerView: View {
                 .help(chartVisible ? "Hide the preview chart" : "Show the preview chart")
             }
         }
-        .task { model.load() }
+        .task {
+            model.load()
+            if let market = WindowCoordinator.shared.takePendingScriptManagerMarket() {
+                preview.selectMarket(market)
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .selectPreviewMarketInManager)) { note in
+            _ = WindowCoordinator.shared.takePendingScriptManagerMarket()
+            if let market = note.object as? PreviewMarket { preview.selectMarket(market) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .selectScriptInManager)) { note in
             if let id = note.object as? UUID { model.select(id) }
         }
@@ -120,7 +122,8 @@ extension ScriptManagerView {
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             .padding(8)
 
-            List(selection: $model.selection) {
+            // Selection is by row, not script: a favorited script has a row in two sections.
+            List(selection: Binding(get: { model.selectedRowID }, set: { model.selectRow($0) })) {
                 ForEach(model.groups) { group in
                     Section(isExpanded: model.isExpanded(group.id)) {
                         ForEach(group.rows) { row in
@@ -128,7 +131,7 @@ extension ScriptManagerView {
                                 script: row.script, rowID: row.id, model: model,
                                 onDelete: { pendingDelete = $0 }
                             )
-                            .tag(row.script.id)
+                            .tag(row.id)
                         }
                     } header: {
                         Text(group.title)
@@ -137,7 +140,42 @@ extension ScriptManagerView {
             }
             .listStyle(.sidebar)
             .frame(maxHeight: .infinity)
+            // An inset, not an overlay: the last rows can still scroll clear of the button.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                HStack {
+                    Spacer(minLength: 0)
+                    newScriptButton
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+            }
+
+            Divider()
+            Link(destination: URL(string: "https://www.tradingview.com/scripts/")!) {
+                Label("Community scripts", systemImage: "arrow.up.right.square")
+                    .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .help("Browse community scripts on TradingView")
         }
+    }
+
+    fileprivate var newScriptButton: some View {
+        Button {
+            showNewScript = true
+        } label: {
+            Label("New Script", systemImage: "plus")
+                .font(.system(size: 12, weight: .semibold))
+                .padding(.horizontal, 4)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
+        .controlSize(.regular)
+        .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+        .help("Create a new script")
     }
 
     @ViewBuilder fileprivate var detail: some View {
@@ -156,6 +194,8 @@ extension ScriptManagerView {
                     .multilineTextAlignment(.center)
                 Button("Create Your First Script", systemImage: "plus") { showNewScript = true }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                Button("Add Example Scripts", systemImage: "square.and.arrow.down") { model.addDemoScripts() }
                     .controlSize(.large)
                 HStack(spacing: 16) {
                     Link(
@@ -217,6 +257,7 @@ private struct ScriptRow: View {
         .contextMenu {
             Button(script.isFavorite ? "Remove Favorite" : "Favorite") { model.toggleFavorite(script) }
             Button("Rename") { model.renamingRowID = rowID }
+            Button("Duplicate") { model.duplicate(script) }
             Divider()
             Button("Show in Finder") { model.showInFinder(script) }
             Button("Export…") { model.export(script) }

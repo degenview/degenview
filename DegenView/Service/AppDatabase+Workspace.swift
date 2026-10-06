@@ -14,6 +14,10 @@ extension AppDatabase {
         replaceDocuments(views, in: .savedView)
     }
 
+    func writeSavedViews(_ views: [SavedView]) throws {
+        try replaceDocumentsThrowing(views, in: .savedView)
+    }
+
     // MARK: - Tabs
 
     /// Nil when no tab has ever been saved.
@@ -46,6 +50,7 @@ extension AppDatabase {
     enum DrawingKind: String {
         case trendLine = "trend_line"
         case fibonacci
+        case brush
     }
 
     /// Drawings of `kind` for every instrument that has any.

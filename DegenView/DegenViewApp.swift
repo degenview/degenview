@@ -37,8 +37,14 @@ struct DegenViewApp: App {
 
 private struct TabCommands: Commands {
     @Environment(\.openWindow) private var openWindow
+    @FocusedValue(\.savedLayout) private var savedLayout
 
     var body: some Commands {
+        CommandGroup(replacing: .saveItem) {
+            Button("Save Layout") { savedLayout?.requestSave() }
+                .keyboardShortcut("s", modifiers: .command)
+                .disabled(savedLayout == nil)
+        }
         CommandGroup(after: .newItem) {
             Button("New Tab") {
                 WindowCoordinator.shared.newTab(using: openWindow)
@@ -141,6 +147,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in await PineAlertCoordinator.shared.scriptsChanged() }
         }
         ScriptFolderMonitor.shared.start()
+        // A test run is hosted by the app and must not write into the real script library.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            Task { await DemoScriptLibrary.seedIfNeeded() }
+        }
     }
 
     /// `.pine` files opened from Finder. Files already in the script library open straight

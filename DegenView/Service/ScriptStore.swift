@@ -117,6 +117,14 @@ actor ScriptStore {
         return script
     }
 
+    /// Saves a copy of the script's current source as "<name> copy" (disambiguated on conflict).
+    /// The copy starts as a plain script: not a favorite, no history.
+    @discardableResult
+    func duplicate(id: UUID) throws -> LocalScript {
+        guard let original = try script(id: id) else { throw ScriptStoreError.missingScript }
+        return try create(name: "\(original.name) copy", type: original.type, source: original.source)
+    }
+
     /// Copies an outside `.pine` file into the library. The copy is named after the file
     /// (disambiguated on conflict) and typed by the script's own declaration.
     func importFile(at url: URL) throws -> LocalScript {
@@ -215,6 +223,21 @@ actor ScriptStore {
             try decodeIfPresent(ScriptVersion.self, at: $0)
         }
         .sorted { $0.createdAt > $1.createdAt }
+    }
+
+    /// The source text for one pinned revision of a script, and whether that revision is
+    /// still the script's latest. `nil` when the script itself no longer exists (deleted in
+    /// the Script Manager) — callers keep the applied instance and surface the failure
+    /// per-instance rather than silently dropping it.
+    func resolvedSource(scriptID: UUID, revisionID: UUID) throws -> (source: String, isLatest: Bool)? {
+        guard let script = try script(id: scriptID) else { return nil }
+        if script.latestRevisionID == revisionID { return (script.source, true) }
+        guard let revision = try revisions(id: scriptID).first(where: { $0.id == revisionID }) else {
+            // Pinned revision was pruned (kept 100) or never existed under this id — fall
+            // back to latest; the caller marks the instance `.available` rather than `.current`.
+            return (script.source, false)
+        }
+        return (revision.source, false)
     }
 
     func restore(scriptID: UUID, revisionID: UUID) throws -> LocalScript {

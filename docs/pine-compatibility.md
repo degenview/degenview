@@ -260,7 +260,7 @@ row) → `PineAlertDispatcher` (channels).
 ### Time, timeframes and other series
 
 - `last_bar_index`, `last_bar_time`, `timenow`, `time_tradingday`, `timeframe.isticks`,
-  `timeframe.in_seconds([tf])`, `timeframe.change(tf)`, `time(timeframe, session, timezone)` and `time_close(timeframe)`,
+  `timeframe.in_seconds([tf])`, `timeframe.from_seconds(seconds)`, `timeframe.change(tf)`, `time(timeframe, session, timezone)` and `time_close(timeframe)`,
   `syminfo.root`, `syminfo.prefix`, `syminfo.timezone`, `syminfo.pointvalue`, `chart.is_standard` and
   the other `chart.is_*` flags.
 - **`request.security` for the chart's own symbol**, on a timeframe at least as long as the chart's
@@ -417,6 +417,16 @@ the corpus run (below) only shows that scripts compile and run.
 | Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
 | Libraries | `library()`, `export` and `import` work as described under "Libraries and `import`". | Only the libraries in the Script Manager are available: nothing is downloaded from TradingView, and a path is matched on its library name alone, so the user and version parts are accepted and ignored (two versions of one library cannot coexist). The name is the script's file name, or else the title in its `library("…")`. A library constant that builds a collection is rebuilt on every read. A compiled importer holds the library as it was at compile time: after editing a library, an importer that is already running picks the change up when it is next recompiled (saved, or its chart reloaded). | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |
+
+## Editor completion offers only what runs
+
+The Script Manager editor completes builtins (`ta.`, `math.`, `str.`, `color.`, `strategy.` … and the
+global variables, constants and functions), the script's own names, imported library exports and
+named arguments, and shows signature help for the call under the caret. It lists only names this
+engine implements: Pine functions and variables DegenView does not run (`fixnan`, `plotarrow`,
+`weekofyear`, `session.ismarket` …) are never offered. Signatures and one-line docs live in
+`Pine/Language/PineSymbolMetadata*.swift`; `PineSymbolMetadataTests` fails when a builtin the runtime
+dispatches has no entry, and when an entry names something the runtime rejects.
 
 ## Ignored features are warned about
 

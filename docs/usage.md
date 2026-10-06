@@ -10,7 +10,12 @@
    technical indicators. Use its **Scripts** tab to edit and apply a Pine v6-style
    indicator or change the generated inputs. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines,
-   **Fib Retracement**, and temporary ruler measurements. For a Fib, click once for Point
+   **Fib Retracement**, **Brush**, and the **Ruler**. With the Brush, press and drag to draw
+   a freehand stroke; click a stroke to restyle it, drag it to move it, press Delete to
+   remove it, and Esc to cancel one in progress. Drag across the chart with the ruler to measure
+   a move (or click, move, and click again); drag a corner to resize a measurement or an
+   edge to move it, and press Delete to remove the selected one. Measurements are
+   temporary. For a Fib, click once for Point
    1, move to preview its levels, and click again for Point 2. Select a completed Fib to
    drag its handles or body, open its settings, or delete it. Press Escape to cancel an
    incomplete drawing and Delete/Backspace to remove a selected drawing.
@@ -23,9 +28,12 @@
    and click one to open it in the current tab.
 8. Press **⌘T** or use the tab bar's **+** for an empty tab. Drag tabs out into windows or
    merge them again through the tab bar or **File → Merge All Windows**.
-9. Open the toolbar **Replay** menu and choose **Select bar**. Move over a chart to snap
-   the orange marker to a historical candle, then click to begin. Use the replay strip to
-   step, play, change speed/resolution, choose a new start, or return to latest.
+9. Open the toolbar **Replay** menu and choose **Select Bar on Chart**. Move over a chart to
+   snap the orange marker to a historical candle (the plot to its right dims), then click to
+   begin; **Esc** or **Cancel** backs out. **Choose Date & Time…** opens a picker limited to
+   the loaded chart. Use the replay strip to step forward or back (⇧→ / ⇧←), play or pause
+   (⇧↓), drag the timeline to jump, change speed/resolution, choose a new start, or press
+   **Live** to return to the latest data.
 10. Open the toolbar **Portfolio** menu to create a dedicated Portfolio tab. Create a
     portfolio, add transactions manually, or choose **Import from CoinMarketCap**. Review
     automatic asset mappings and historical FX issues before committing the atomic import.

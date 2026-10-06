@@ -23,18 +23,13 @@ struct ChartSettingsSheet: View {
     @State private var emaPeriod: Int
     @State private var showBollinger: Bool
     @State private var showTrendFlips: Bool
-    @State private var savedScripts: [LocalScript] = []
-    @State private var selectedScriptID: UUID?
-    @State private var scriptLoadError: String?
-    @State private var pineInputSchema = PineInputSchema()
-    @State private var showingPineAlertEditor = false
 
     @Environment(\.dismiss) private var dismiss
 
     enum Tab: String, CaseIterable {
-        case appearance = "Appearance"
         case indicators = "Indicators"
         case scripts = "Scripts"
+        case appearance = "Appearance"
 
         var systemImage: String {
             switch self {
@@ -85,7 +80,7 @@ struct ChartSettingsSheet: View {
 
     init(
         viewModel: ChartViewModel,
-        initialTab: Tab = .appearance,
+        initialTab: Tab = .indicators,
         onRemove: @escaping () -> Void,
         onStyleChanged: @escaping () -> Void
     ) {
@@ -102,7 +97,6 @@ struct ChartSettingsSheet: View {
         _emaPeriod = State(initialValue: viewModel.emaPeriod)
         _showBollinger = State(initialValue: viewModel.showBollinger)
         _showTrendFlips = State(initialValue: viewModel.showTrendFlips)
-        _selectedScriptID = State(initialValue: viewModel.scriptInstances.first?.scriptID)
     }
 
     var body: some View {
@@ -166,7 +160,6 @@ struct ChartSettingsSheet: View {
                     + "To change a chart's market, remove it and add a new one."
             )
         }
-        .sheet(isPresented: $showingPineAlertEditor) { PineAlertEditor(viewModel: viewModel) }
         .onChange(of: bullishColor) {
             viewModel.bullishColor = bullishColor
             onStyleChanged()
@@ -202,10 +195,6 @@ struct ChartSettingsSheet: View {
         .onChange(of: showTrendFlips) {
             viewModel.showTrendFlips = showTrendFlips
             onStyleChanged()
-        }
-        .task { await loadSavedScripts() }
-        .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in
-            Task { await loadSavedScripts() }
         }
     }
 
@@ -380,135 +369,7 @@ struct ChartSettingsSheet: View {
     // MARK: - Scripts Tab
 
     private var scriptsTab: some View {
-        page {
-            section("Script", subtitle: "Run a Pine script on this chart and tune its inputs.") {
-                if let scriptLoadError {
-                    NoticeCard(
-                        systemImage: "xmark.octagon.fill", tint: .red, title: "Couldn't load your scripts",
-                        detail: scriptLoadError)
-                }
-
-                SettingsCardRow(title: "Applied script", icon: "curlybraces", hint: scriptHint) {
-                    Picker("Script", selection: $selectedScriptID) {
-                        Text("None").tag(nil as UUID?)
-                        ForEach(savedScripts) { script in
-                            Text(script.name).tag(script.id as UUID?)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 180)
-                    .onChange(of: selectedScriptID) { _, id in selectSavedScript(id) }
-                }
-
-                if savedScripts.isEmpty && scriptLoadError == nil {
-                    NoticeCard(
-                        systemImage: "info.circle.fill", tint: .blue, title: "No scripts yet",
-                        detail: "Write one in the Script Manager and it will show up here.",
-                        actionTitle: "Open Script Manager", action: openScriptManager)
-                } else {
-                    HStack(spacing: 10) {
-                        Button {
-                            openScriptManager()
-                        } label: {
-                            Label("Script Manager", systemImage: "curlybraces.square")
-                        }
-                        .help("Open Script Manager in a new tab")
-
-                        if selectedScriptID != nil {
-                            Button {
-                                showingPineAlertEditor = true
-                            } label: {
-                                Label("Create Alert…", systemImage: "bell")
-                            }
-                            .disabled(viewModel.appliedSourceHash == nil)
-                            .help("Notify me when the applied script raises alert() on a live bar")
-                        }
-                    }
-                }
-            }
-
-            scriptsDetails
-        }
-    }
-
-    private var scriptHint: String {
-        selectedScriptID == nil ? "Choose a script to draw on this chart." : viewModel.pineStatus
-    }
-
-    private var scriptsDetails: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if viewModel.pineOutput.strategy != nil || !viewModel.pineOutput.alerts.isEmpty {
-                PineStrategyReportView(
-                    report: viewModel.pineOutput.strategy, alerts: viewModel.pineOutput.alerts)
-            }
-
-            if !viewModel.pineDiagnostics.isEmpty {
-                PineDiagnosticsListView(diagnostics: viewModel.pineDiagnostics)
-            }
-
-            if let inputs = viewModel.pineConfiguration?.inputs {
-                PineInputsView(schema: pineInputSchema, values: inputs) { value, id in
-                    viewModel.setPineInput(value, id: id)
-                    onStyleChanged()
-                }
-            }
-        }
-        // Compiled once per applied source, not on every render.
-        .task(id: viewModel.pineConfiguration?.appliedSource) {
-            let source = viewModel.pineConfiguration?.appliedSource
-            pineInputSchema =
-                source.map { PineCompiler.compile(source: $0, libraries: PineLibraryRegistry.shared).inputSchema }
-                ?? PineInputSchema()
-        }
-    }
-
-    @MainActor private func loadSavedScripts() async {
-        do {
-            savedScripts = try await ScriptStore.shared.allScripts()
-            scriptLoadError = nil
-            guard let selectedScriptID else { return }
-            guard let script = savedScripts.first(where: { $0.id == selectedScriptID }) else {
-                // Deleted in the Script Manager.
-                self.selectedScriptID = nil
-                return
-            }
-            // Picks up edits saved in the Script Manager.
-            if script.source != viewModel.pineConfiguration?.appliedSource {
-                loadScript(script, inputs: viewModel.pineConfiguration?.inputs ?? [:])
-            }
-        } catch {
-            scriptLoadError = error.localizedDescription
-        }
-    }
-
-    private func selectSavedScript(_ id: UUID?) {
-        guard let id else {
-            viewModel.unloadPineScript()
-            onStyleChanged()
-            return
-        }
-        guard let script = savedScripts.first(where: { $0.id == id }) else { return }
-        loadScript(script, inputs: [:])
-    }
-
-    private func loadScript(_ script: LocalScript, inputs: [String: PineInputValue]) {
-        viewModel.loadPineScript(source: script.source, inputs: inputs)
-        if let revisionID = script.latestRevisionID {
-            viewModel.scriptInstances = [
-                ChartScriptInstance(scriptID: script.id, loadedRevisionID: revisionID, inputs: inputs)
-            ]
-        }
-        onStyleChanged()
-    }
-
-    /// Closes this sheet, which would otherwise block the new tab, then opens the Script Manager.
-    private func openScriptManager() {
-        let scriptID = selectedScriptID
-        // While the sheet is key the coordinator falls back to the chart window beneath it.
-        WindowCoordinator.shared.prepareAuxiliaryTab()
-        dismiss()
-        DispatchQueue.main.async { WindowCoordinator.shared.openScriptManager(selecting: scriptID) }
+        ChartScriptsTab(viewModel: viewModel, onStyleChanged: onStyleChanged)
     }
 
     private var volumeHint: String {

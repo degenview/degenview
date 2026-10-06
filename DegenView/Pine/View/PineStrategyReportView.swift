@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Backtest summary for a `strategy()` script: headline metrics, the equity curve, the
-/// closed trades, and the alerts the script raised. Read-only — everything comes from the
-/// `PineStrategyReport` the runtime produced. Indicators have no report but can still
-/// raise alerts, so the report is optional.
+/// Backtest summary for a `strategy()` script: headline metrics, the equity curve and the
+/// closed trades in one box, and the alerts the script raised in a box of their own. Read-only —
+/// everything comes from the `PineStrategyReport` the runtime produced. Indicators have no
+/// report but can still raise alerts, so the report is optional.
 struct PineStrategyReportView: View {
     var report: PineStrategyReport?
     var alerts: [PineAlertEvent] = []
@@ -11,17 +11,18 @@ struct PineStrategyReportView: View {
     private typealias Format = PineReportFormat
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             if let report {
-                Text("Strategy report").font(.caption.weight(.semibold))
-                metricGrid(report)
-                PineEquityCurveView(equity: report.equity, initialCapital: report.settings.initialCapital)
-                if !report.trades.isEmpty { tradeList(report) }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Strategy report").font(.caption.weight(.semibold))
+                    metricGrid(report)
+                    PineEquityCurveView(equity: report.equity, initialCapital: report.settings.initialCapital)
+                    if !report.trades.isEmpty { tradeList(report) }
+                }
+                .pineReportBox()
             }
-            if !alerts.isEmpty { alertList }
+            if !alerts.isEmpty { PineAlertsSection(alerts: alerts) }
         }
-        .padding(10)
-        .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
     }
 
     // MARK: Metrics
@@ -67,19 +68,6 @@ struct PineStrategyReportView: View {
             }
             .font(.caption2.monospacedDigit())
             .help("\(trade.entryID) → \(trade.exitID) · qty \(Format.price(trade.quantity))")
-        }
-    }
-
-    private var alertList: some View {
-        PineReportListSection(title: "Alerts", items: alerts, maxHeight: 120) { alert in
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(alert.time.formatted(date: .abbreviated, time: .shortened))
-                    .foregroundStyle(.secondary)
-                Text(alert.message)
-                Spacer(minLength: 0)
-            }
-            .font(.caption2)
-            .textSelection(.enabled)
         }
     }
 }

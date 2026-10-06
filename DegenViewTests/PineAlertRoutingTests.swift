@@ -10,21 +10,23 @@ final class PineAlertRoutingTests: XCTestCase {
     private let sourceHash = "hash-a"
 
     private func subscription(
-        chartID: UUID? = nil, symbolKey: String = F.dataset.symbolKey, timeframe: String = F.dataset.timeframe,
-        sourceHash: String? = nil, state: PineAlertSubscription.State = .active,
-        createdAt: Date = Date(timeIntervalSince1970: 0)
+        chartID: UUID? = nil, instanceID: UUID? = nil, symbolKey: String = F.dataset.symbolKey,
+        timeframe: String = F.dataset.timeframe, sourceHash: String? = nil,
+        state: PineAlertSubscription.State = .active, createdAt: Date = Date(timeIntervalSince1970: 0)
     ) -> PineAlertSubscription {
         PineAlertSubscription(
-            chartID: chartID ?? self.chartID, scriptName: "Script", symbolKey: symbolKey, timeframe: timeframe,
+            chartID: chartID ?? self.chartID, instanceID: instanceID, scriptName: "Script", symbolKey: symbolKey,
+            timeframe: timeframe,
             sourceHash: sourceHash ?? self.sourceHash, state: state, createdAt: createdAt)
     }
 
     private func route(
         _ update: PineExecutionUpdate, _ subscriptions: [PineAlertSubscription],
-        guard frequencyGuard: inout PineAlertFrequencyGuard, sourceHash: String? = "hash-a"
+        guard frequencyGuard: inout PineAlertFrequencyGuard, instanceID: UUID? = nil, sourceHash: String? = "hash-a"
     ) -> [PineAlertRouter.Routed] {
         PineAlertRouter.route(
-            events: update.alerts, barID: update.barID, chartID: chartID, sourceHash: sourceHash,
+            events: update.alerts, barID: update.barID, chartID: chartID, instanceID: instanceID,
+            sourceHash: sourceHash,
             subscriptions: subscriptions, guard: &frequencyGuard)
     }
 
@@ -103,7 +105,7 @@ final class PineAlertRoutingTests: XCTestCase {
         var frequencyGuard = PineAlertFrequencyGuard()
         let routed = PineAlertRouter.route(
             events: [event], barID: PineBarID(dataset: F.dataset, openTime: F.time(3)), chartID: chartID,
-            sourceHash: sourceHash, subscriptions: [subscription()], guard: &frequencyGuard)
+            instanceID: nil, sourceHash: sourceHash, subscriptions: [subscription()], guard: &frequencyGuard)
         XCTAssertTrue(routed.isEmpty)
     }
 
@@ -163,14 +165,28 @@ final class PineAlertRoutingTests: XCTestCase {
         let subscriptions = [subscription()]
         XCTAssertTrue(
             PineAlertRouter.route(
-                events: [event], barID: nil, chartID: chartID, sourceHash: sourceHash, subscriptions: subscriptions,
-                guard: &frequencyGuard
+                events: [event], barID: nil, chartID: chartID, instanceID: nil, sourceHash: sourceHash,
+                subscriptions: subscriptions, guard: &frequencyGuard
             ).isEmpty)
         XCTAssertTrue(
             PineAlertRouter.route(
                 events: [event], barID: PineBarID(dataset: F.dataset, openTime: F.time(3)), chartID: chartID,
-                sourceHash: nil, subscriptions: subscriptions, guard: &frequencyGuard
+                instanceID: nil, sourceHash: nil, subscriptions: subscriptions, guard: &frequencyGuard
             ).isEmpty)
+    }
+
+    func testOnlyTheRaisingIndicatorsSubscriptionFires() throws {
+        let controller = F.controller("if close > open\n    alert(\"Up\", alert.freq_all)")
+        _ = controller.rebuild(
+            bars: F.history([100, 100, 100]) + [F.bar(3, open: 100, close: 99)], live: true, now: F.now(during: 3))
+        let update = try XCTUnwrap(
+            F.update(controller.ingest(F.stream(F.bar(3, open: 100, close: 102, closed: false)))))
+        let first = UUID()
+        let second = UUID()
+        let subscriptions = [subscription(instanceID: first), subscription(instanceID: second)]
+        var frequencyGuard = PineAlertFrequencyGuard()
+        let routed = route(update, subscriptions, guard: &frequencyGuard, instanceID: second)
+        XCTAssertEqual(routed.map(\.notification.subscriptionID), [subscriptions[1].id])
     }
 
     // MARK: - Guard
@@ -243,11 +259,24 @@ final class PineAlertRoutingTests: XCTestCase {
         }
     }
 
-    private func appliedChart(_ source: String) throws -> ChartViewModel {
+    private func waitUntil(_ condition: @autoclosure () -> Bool, timeout: Duration = .seconds(3)) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    private func appliedChart(_ source: String) throws -> (chart: ChartViewModel, instanceID: UUID) {
         let chart = ChartViewModel(ticker: "BTC")
-        chart.updatePineDraft("//@version=6\nindicator(\"T\")\n\(source)")
-        XCTAssertTrue(chart.applyPineDraft())
-        return chart
+        let id = try XCTUnwrap(
+            chart.addPineInstance(
+                scriptID: UUID(), revisionID: UUID(), source: "//@version=6\nindicator(\"T\")\n\(source)"))
+        return (chart, id)
+    }
+
+    /// An applied chart whose indicator has resolved its source, so it has a hash to subscribe against.
+    private func resolvedChart(_ source: String) async throws -> (chart: ChartViewModel, instanceID: UUID) {
+        let applied = try appliedChart(source)
+        await waitUntil(applied.chart.pineInstanceSourceHashes[applied.instanceID] != nil)
+        return applied
     }
 
     func testLoadPineScriptAppliesAndUnloadForgetsIt() throws {
@@ -265,7 +294,8 @@ final class PineAlertRoutingTests: XCTestCase {
     }
 
     func testLoadPineScriptKeepsThePreviousScriptWhenTheNewOneFails() throws {
-        let chart = try appliedChart("plot(close)")
+        let chart = ChartViewModel(ticker: "BTC")
+        XCTAssertTrue(chart.loadPineScript(source: "//@version=6\nindicator(\"T\")\nplot(close)\n"))
         let applied = chart.pineConfiguration?.appliedSource
         XCTAssertFalse(chart.loadPineScript(source: "plot(("))
         XCTAssertEqual(chart.pineConfiguration?.appliedSource, applied)
@@ -276,49 +306,100 @@ final class PineAlertRoutingTests: XCTestCase {
         let store = PineAlertStore(database: try AppDatabase.makeInMemory())
         let channel = RecordingPineAlertChannel()
         let coordinator = PineAlertCoordinator(store: store, dispatcher: PineAlertDispatcher(channels: [channel]))
-        let chart = try appliedChart("if close > open\n    alert(\"Up\", alert.freq_all)")
+        let (chart, instanceID) = try await resolvedChart("if close > open\n    alert(\"Up\", alert.freq_all)")
         coordinator.attach(chart)
         let subscription = try XCTUnwrap(
-            coordinator.subscribe(chart, scriptID: nil, scriptName: "Script", note: ""))
+            coordinator.subscribe(chart, instanceID: instanceID, scriptName: "Script", note: ""))
         let dataset = chart.pineAlertDataset
-        let appliedHash = try XCTUnwrap(chart.appliedSourceHash)
+        let appliedHash = try XCTUnwrap(chart.pineInstanceSourceHashes[instanceID])
 
         let event = PineAlertEvent(
             id: 1, site: 1, bar: 3, time: Date(), message: "Up", frequency: .all, isRealtime: true, isConfirmed: false)
         let barID = PineBarID(dataset: dataset, openTime: event.time)
-        coordinator.ingest(events: [event], barID: barID, chartID: chart.chartID, sourceHash: appliedHash)
+        coordinator.ingest(
+            events: [event], barID: barID, chartID: chart.chartID, instanceID: instanceID, sourceHash: appliedHash)
         await waitForDeliveries(channel, count: 1)
         XCTAssertEqual(channel.delivered.count, 1)
         XCTAssertEqual(store.history.count, 1)
 
         // The script is edited: paused, silent.
-        coordinator.contextChanged(chartID: chart.chartID, dataset: dataset, sourceHash: "edited")
+        coordinator.contextChanged(chartID: chart.chartID, dataset: dataset, hashes: [instanceID: "edited"])
         XCTAssertEqual(store.subscription(id: subscription.id)?.state, .scriptChanged)
-        coordinator.ingest(events: [event], barID: barID, chartID: chart.chartID, sourceHash: "edited")
+        coordinator.ingest(
+            events: [event], barID: barID, chartID: chart.chartID, instanceID: instanceID, sourceHash: "edited")
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(channel.delivered.count, 1)
 
-        // Re-arming pins the chart's current script again.
+        // Re-arming pins the indicator's current script again.
         XCTAssertTrue(coordinator.rearm(subscription: subscription.id))
         XCTAssertEqual(store.subscription(id: subscription.id)?.state, .active)
         XCTAssertEqual(store.subscription(id: subscription.id)?.sourceHash, appliedHash)
+    }
+
+    func testAnIndicatorStillLoadingNeverPausesItsAlert() async throws {
+        let store = PineAlertStore(database: try AppDatabase.makeInMemory())
+        let coordinator = PineAlertCoordinator(store: store, dispatcher: PineAlertDispatcher(channels: []))
+        let (chart, instanceID) = try await resolvedChart("alert(\"x\", alert.freq_all)")
+        let subscription = try XCTUnwrap(
+            coordinator.subscribe(chart, instanceID: instanceID, scriptName: "Script", note: ""))
+
+        // No hash for it (source still resolving) and an unrelated indicator's hash: nothing changes.
+        coordinator.contextChanged(chartID: chart.chartID, dataset: chart.pineAlertDataset, hashes: [:])
+        coordinator.contextChanged(chartID: chart.chartID, dataset: chart.pineAlertDataset, hashes: [UUID(): "other"])
+        XCTAssertEqual(store.subscription(id: subscription.id)?.state, .active)
+    }
+
+    func testTwoIndicatorsOfOneScriptHaveSeparateAlerts() async throws {
+        let store = PineAlertStore(database: try AppDatabase.makeInMemory())
+        let coordinator = PineAlertCoordinator(store: store, dispatcher: PineAlertDispatcher(channels: []))
+        let chart = ChartViewModel(ticker: "BTC")
+        let scriptID = UUID()
+        let source = "//@version=6\nindicator(\"T\")\nalert(\"x\", alert.freq_all)"
+        let first = try XCTUnwrap(chart.addPineInstance(scriptID: scriptID, revisionID: UUID(), source: source))
+        let second = try XCTUnwrap(chart.addPineInstance(scriptID: scriptID, revisionID: UUID(), source: source))
+        await waitUntil(chart.pineInstanceSourceHashes.count == 2)
+
+        let armed = try XCTUnwrap(coordinator.subscribe(chart, instanceID: first, scriptName: "T", note: ""))
+        XCTAssertEqual(armed.instanceID, first)
+        XCTAssertEqual(armed.scriptID, scriptID)
+        let dataset = chart.pineAlertDataset
+        XCTAssertEqual(store.subscription(forChart: chart.chartID, instanceID: first, dataset: dataset)?.id, armed.id)
+        XCTAssertNil(store.subscription(forChart: chart.chartID, instanceID: second, dataset: dataset))
+    }
+
+    func testRemovingAnIndicatorDeletesItsAlertAndKeepsTheOthers() async throws {
+        let store = PineAlertStore(database: try AppDatabase.makeInMemory())
+        let coordinator = PineAlertCoordinator(store: store, dispatcher: PineAlertDispatcher(channels: []))
+        let chart = ChartViewModel(ticker: "BTC")
+        let source = "//@version=6\nindicator(\"T\")\nalert(\"x\", alert.freq_all)"
+        let first = try XCTUnwrap(chart.addPineInstance(scriptID: UUID(), revisionID: UUID(), source: source))
+        let second = try XCTUnwrap(chart.addPineInstance(scriptID: UUID(), revisionID: UUID(), source: source))
+        await waitUntil(chart.pineInstanceSourceHashes.count == 2)
+        coordinator.attach(chart)
+        let removed = try XCTUnwrap(coordinator.subscribe(chart, instanceID: first, scriptName: "T", note: ""))
+        let kept = try XCTUnwrap(coordinator.subscribe(chart, instanceID: second, scriptName: "T", note: ""))
+
+        chart.removePineInstance(first)
+
+        XCTAssertNil(store.subscription(id: removed.id))
+        XCTAssertEqual(store.subscription(id: kept.id)?.state, .active)
     }
 
     func testPausedSubscriptionStaysSilentAndChartRemovalDeletesIt() async throws {
         let store = PineAlertStore(database: try AppDatabase.makeInMemory())
         let channel = RecordingPineAlertChannel()
         let coordinator = PineAlertCoordinator(store: store, dispatcher: PineAlertDispatcher(channels: [channel]))
-        let chart = try appliedChart("alert(\"x\", alert.freq_all)")
+        let (chart, instanceID) = try await resolvedChart("alert(\"x\", alert.freq_all)")
         coordinator.attach(chart)
         let subscription = try XCTUnwrap(
-            coordinator.subscribe(chart, scriptID: nil, scriptName: "Script", note: ""))
+            coordinator.subscribe(chart, instanceID: instanceID, scriptName: "Script", note: ""))
         coordinator.pause(subscription: subscription.id)
 
         let event = PineAlertEvent(
             id: 1, site: 1, bar: 3, time: Date(), message: "x", frequency: .all, isRealtime: true, isConfirmed: false)
         coordinator.ingest(
             events: [event], barID: PineBarID(dataset: chart.pineAlertDataset, openTime: event.time),
-            chartID: chart.chartID, sourceHash: chart.appliedSourceHash)
+            chartID: chart.chartID, instanceID: instanceID, sourceHash: chart.pineInstanceSourceHashes[instanceID])
         try? await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(channel.delivered.isEmpty)
 
@@ -334,5 +415,40 @@ final class PineAlertRoutingTests: XCTestCase {
         XCTAssertFalse(coordinator.canRearm(orphan))
         XCTAssertFalse(coordinator.rearm(subscription: orphan.id))
         XCTAssertEqual(store.subscription(id: orphan.id)?.state, .scriptChanged)
+    }
+
+    func testStoreFindsTheChartsAlertForAnIndicatorOnItsCurrentMarket() throws {
+        let store = PineAlertStore(database: try AppDatabase.makeInMemory())
+        let instance = UUID()
+        func armed(
+            instance: UUID? = instance, chart: UUID? = nil, timeframe: String = F.dataset.timeframe,
+            state: PineAlertSubscription.State = .active, createdAt: Date = Date(timeIntervalSince1970: 0)
+        ) -> PineAlertSubscription {
+            subscription(
+                chartID: chart, instanceID: instance, timeframe: timeframe, state: state, createdAt: createdAt)
+        }
+        func found() -> PineAlertSubscription? {
+            store.subscription(forChart: chartID, instanceID: instance, dataset: F.dataset)
+        }
+        XCTAssertNil(found())
+
+        // Another indicator, another chart and another timeframe are not this alert.
+        store.add(armed(instance: UUID()))
+        store.add(armed(chart: UUID()))
+        store.add(armed(timeframe: "never"))
+        XCTAssertNil(found())
+
+        // A paused or script-changed alert still counts: it is re-armed, not replaced.
+        let paused = armed(state: .paused)
+        store.add(paused)
+        XCTAssertEqual(found()?.id, paused.id)
+        let changed = armed(state: .scriptChanged, createdAt: Date(timeIntervalSince1970: 10))
+        store.add(changed)
+        XCTAssertEqual(found()?.id, changed.id, "the newest wins when none is active")
+
+        // An active one wins over older and newer inactive ones.
+        let active = armed(createdAt: Date(timeIntervalSince1970: 5))
+        store.add(active)
+        XCTAssertEqual(found()?.id, active.id)
     }
 }

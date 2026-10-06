@@ -4,7 +4,11 @@ import SwiftUI
 /// they delivered.
 struct PineAlertListView: View {
     let search: String
+    /// A subscription to bring into view and ring for a moment; cleared once it has been shown,
+    /// so asking for the same one again works.
+    @Binding var focused: UUID?
     @StateObject private var store = PineAlertStore.shared
+    @State private var highlighted: UUID?
 
     private var subscriptions: [PineAlertSubscription] {
         store.subscriptions.filter { matches($0.scriptName) || matches($0.symbolKey) }
@@ -16,6 +20,27 @@ struct PineAlertListView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                list
+                    .task(id: focused) { await reveal(focused, with: proxy) }
+            }
+            footer
+        }
+    }
+
+    private var footer: some View {
+        AlertFooterBar(
+            systemImage: "curlybraces", note: "Script alerts are created from alert() calls in your scripts."
+        ) {
+            Button("Open Script Manager", systemImage: "curlybraces") {
+                WindowCoordinator.shared.openScriptManager()
+            }
+            .help("Write and manage the scripts whose alert() calls appear here")
+        }
+    }
+
+    private var list: some View {
         AlertCardScroll {
             if !subscriptions.isEmpty {
                 Section {
@@ -40,7 +65,8 @@ struct PineAlertListView: View {
             if store.subscriptions.isEmpty && store.history.isEmpty {
                 ContentUnavailableView(
                     "No Script Alerts", systemImage: "curlybraces",
-                    description: Text("Apply a script with alert() calls, then choose Create Alert in its settings."))
+                    description: Text(
+                        "Apply a script with alert() calls, then tap its bell in Chart Settings ▸ Indicators."))
             } else if subscriptions.isEmpty && history.isEmpty {
                 ContentUnavailableView.search(text: search)
             }
@@ -48,9 +74,9 @@ struct PineAlertListView: View {
     }
 
     private func row(_ subscription: PineAlertSubscription) -> some View {
-        let status = status(of: subscription)
+        let status = store.status(of: subscription)
         let coordinator = PineAlertCoordinator.shared
-        return PineAlertCard {
+        return PineAlertCard(isHighlighted: highlighted == subscription.id) {
             scriptIcon(symbolKey: subscription.symbolKey)
             VStack(alignment: .leading, spacing: 2) {
                 Text(subscription.scriptName).font(.headline).lineLimit(1)
@@ -84,6 +110,22 @@ struct PineAlertListView: View {
             .fixedSize()
             .accessibilityLabel("More actions")
         }
+    }
+
+    /// Scrolls to `id` once its row exists, rings it, and lets the ring fade.
+    private func reveal(_ id: UUID?, with proxy: ScrollViewProxy) async {
+        guard let id else { return }
+        guard subscriptions.contains(where: { $0.id == id }) else {
+            focused = nil
+            return
+        }
+        // The row is laid out after the tab switch that brought this list on screen.
+        try? await Task.sleep(for: .milliseconds(150))
+        withAnimation { proxy.scrollTo(id, anchor: .center) }
+        highlighted = id
+        try? await Task.sleep(for: .seconds(2))
+        if highlighted == id { highlighted = nil }
+        if focused == id { focused = nil }
     }
 
     private func recentRow(_ item: PineAlertNotification) -> some View {
@@ -128,17 +170,6 @@ struct PineAlertListView: View {
             .accessibilityHidden(true)
     }
 
-    private func status(of subscription: PineAlertSubscription) -> (text: String, tone: SettingsStatusBadge.Tone) {
-        switch subscription.state {
-        case .paused: return ("Paused", .neutral)
-        case .scriptChanged: return ("Script changed — re-arm", .warning)
-        case .scriptDeleted: return ("Script deleted", .bad)
-        case .active:
-            guard let dataset = store.chartDatasets[subscription.chartID] else { return ("Chart not open", .neutral) }
-            return subscription.watches(dataset) ? ("Active", .good) : ("Other symbol on chart", .warning)
-        }
-    }
-
     private func matches(_ text: String) -> Bool {
         search.isEmpty || text.localizedCaseInsensitiveContains(search)
     }
@@ -153,5 +184,19 @@ extension String {
     /// For a `"<source>:<ticker>"` key, the ticker.
     fileprivate var symbolPart: String {
         split(separator: ":", maxSplits: 1).last.map(String.init) ?? self
+    }
+}
+
+extension PineAlertStore {
+    /// What a script alert's badge says: whether it can fire now, and if not, why.
+    func status(of subscription: PineAlertSubscription) -> (text: String, tone: SettingsStatusBadge.Tone) {
+        switch subscription.state {
+        case .paused: return ("Paused", .neutral)
+        case .scriptChanged: return ("Script changed — re-arm", .warning)
+        case .scriptDeleted: return ("Script deleted", .bad)
+        case .active:
+            guard let dataset = chartDatasets[subscription.chartID] else { return ("Chart not open", .neutral) }
+            return subscription.watches(dataset) ? ("Active", .good) : ("Other symbol on chart", .warning)
+        }
     }
 }

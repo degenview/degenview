@@ -269,6 +269,25 @@ final class ScriptPreviewViewModelTests: XCTestCase {
 
     // MARK: - Lifecycle
 
+    func testOldWorkspaceDisappearingAfterTheNewOneAppearedKeepsThePreviewRunning() {
+        let model = makeModel()
+        let old = UUID()
+        let new = UUID()
+        model.setWindowVisible(true)
+        model.bind(scriptID: old, type: .indicator)
+        model.setPaneVisible(true)
+        XCTAssertTrue(model.isActive)
+
+        // The new workspace appears first, the old one disappears after it.
+        model.bind(scriptID: new, type: .indicator)
+        model.setPaneVisible(true)
+        model.paneDisappeared(scriptID: old)
+        XCTAssertTrue(model.isActive, "the stale disappear must not hide the new workspace's pane")
+
+        model.paneDisappeared(scriptID: new)
+        XCTAssertFalse(model.isActive)
+    }
+
     func testPollsOnlyWhileActive() async {
         let model = makeModel(refreshInterval: 0.05)
         model.bind(scriptID: UUID(), type: .indicator)

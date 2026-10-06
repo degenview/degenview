@@ -43,7 +43,7 @@ struct ScriptWorkspaceView: View {
             preview.sourceChanged(editor.source)
             preview.setPaneVisible(chartVisible)
         }
-        .onDisappear { preview.setPaneVisible(false) }
+        .onDisappear { preview.paneDisappeared(scriptID: scriptID) }
         .onChange(of: type) { _, newType in preview.bind(scriptID: scriptID, type: newType) }
         .onChange(of: chartVisible) { _, visible in preview.setPaneVisible(visible) }
         // Unsaved edits included: the chart answers what is on screen, not what is on disk.

@@ -280,7 +280,7 @@ private struct SuggestionTile<Content: View>: View {
 // MARK: - Items
 
 /// A coin's artwork, resolved the way a chart header does it.
-private struct MarketIcon: View {
+struct MarketIcon: View {
     @StateObject private var viewModel: ChartViewModel
     let size: CGFloat
 

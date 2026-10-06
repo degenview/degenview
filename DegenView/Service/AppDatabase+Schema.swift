@@ -174,12 +174,18 @@ extension AppDatabase {
     func replaceDocuments<T: Encodable & Identifiable>(_ items: [T], in table: DocumentTable)
     where T.ID == UUID {
         do {
-            try writer.write { try Self.replaceDocuments(items, in: table, db: $0) }
+            try replaceDocumentsThrowing(items, in: table)
         } catch {
             #if DEBUG
                 print("[AppDatabase] Could not write \(table.rawValue): \(error.localizedDescription)")
             #endif
         }
+    }
+
+    /// For callers that must know the write failed, such as the saved-layout store.
+    func replaceDocumentsThrowing<T: Encodable & Identifiable>(_ items: [T], in table: DocumentTable) throws
+    where T.ID == UUID {
+        try writer.write { try Self.replaceDocuments(items, in: table, db: $0) }
     }
 
     static func documents<T: Decodable>(_ type: T.Type, in table: DocumentTable, db: Database) throws -> [T] {

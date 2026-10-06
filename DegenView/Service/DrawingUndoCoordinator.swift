@@ -37,6 +37,33 @@ final class DrawingUndoCoordinator {
         undoManager.endUndoGrouping()
     }
 
+    func recordBrush(
+        instrument: String, before: BrushDrawing?, beforeIndex: Int, after: BrushDrawing?,
+        afterIndex: Int, actionName: String
+    ) {
+        guard before != after || beforeIndex != afterIndex else { return }
+        undoManager.beginUndoGrouping()
+        registerBrush(
+            instrument: instrument, current: after, currentIndex: afterIndex, replacement: before,
+            replacementIndex: beforeIndex, actionName: actionName)
+        undoManager.setActionName(actionName)
+        undoManager.endUndoGrouping()
+    }
+
+    private func registerBrush(
+        instrument: String, current: BrushDrawing?, currentIndex: Int, replacement: BrushDrawing?,
+        replacementIndex: Int, actionName: String
+    ) {
+        let id = (current ?? replacement)!.id
+        undoManager.registerUndo(withTarget: self) { coordinator in
+            coordinator.store.setBrush(replacement, at: replacementIndex, instrument: instrument, id: id)
+            coordinator.registerBrush(
+                instrument: instrument, current: replacement, currentIndex: replacementIndex,
+                replacement: current, replacementIndex: currentIndex, actionName: actionName)
+            coordinator.undoManager.setActionName(actionName)
+        }
+    }
+
     private func registerLine(
         instrument: String, current: TrendLine?, currentIndex: Int, replacement: TrendLine?,
         replacementIndex: Int, actionName: String

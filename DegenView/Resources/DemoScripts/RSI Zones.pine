@@ -1,0 +1,18 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// RSI in its own pane. The background tints while RSI is overbought or oversold.
+indicator("RSI Zones", overlay = false)
+
+length = input.int(14, "Length", minval = 2)
+source = input.source(close, "Source")
+overbought = input.int(70, "Overbought level", minval = 50, maxval = 100, group = "Zones")
+oversold = input.int(30, "Oversold level", minval = 0, maxval = 50, group = "Zones")
+
+value = ta.rsi(source, length)
+
+plot(value, "RSI", color = color.purple, linewidth = 2)
+hline(overbought, "Overbought", color = color.red)
+hline(50, "Midline", color = color.gray)
+hline(oversold, "Oversold", color = color.green)
+
+bgcolor(value >= overbought ? color.new(color.red, 85) : value <= oversold ? color.new(color.green, 85) : na)

@@ -42,12 +42,14 @@ struct LineChartView: View {
     var fibonacciDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
     var selectedFibonacciID: UUID? = nil
 
+    // Freehand strokes, the one being drawn right now, and which is selected or hovered.
+    var brushOverlay: BrushOverlayState = .empty
+
     @State private var hoveredSeriesIndex: Int?
 
-    // Measuring rectangles, plus the one being drawn right now. Cleared with the tool,
-    // so there is no armed flag to gate them on.
-    var rulers: [RulerRect] = []
-    var rulerDraft: (start: TrendAnchor, end: TrendAnchor)? = nil
+    // Measuring rectangles, the one being drawn right now, and which is selected or
+    // hovered. Cleared with the tool, so there is no armed flag to gate them on.
+    var rulerOverlay: RulerOverlayState = .empty
 
     /// Green when the series ends above where it started, red otherwise.
     private var lineColor: Color {
@@ -108,11 +110,11 @@ struct LineChartView: View {
                         &layer, drawings: fibonacciRetracements, draft: fibonacciDraft,
                         selectedID: selectedFibonacciID, showHandles: showTrendHandles,
                         points: points, decimalPlaces: yAxisDecimalPlaces)
+                    plot.drawBrushes(&layer, overlay: brushOverlay, points: points)
 
                     plot.drawRulers(
                         &layer,
-                        rects: rulers,
-                        draft: rulerDraft,
+                        overlay: rulerOverlay,
                         points: points,
                         bullish: bullishColor,
                         bearish: bearishColor
@@ -125,6 +127,9 @@ struct LineChartView: View {
                     plot.drawCurrentPriceLine(&context, price: last.closePrice, color: currentPriceColor)
                     plot.drawCurrentPriceBox(&context, price: last.closePrice, color: currentPriceColor)
                 }
+
+                plot.drawRulerPriceTags(
+                    &context, overlay: rulerOverlay, bullish: bullishColor, bearish: bearishColor)
 
                 plot.drawTimeGrid(&context, points: points)
             }

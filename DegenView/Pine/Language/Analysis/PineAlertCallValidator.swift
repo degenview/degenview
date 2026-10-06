@@ -37,9 +37,14 @@ struct PineAlertCallValidator {
                 sites.append(
                     PineAlertCallSite(
                         frequency: frequency.map { resolvedFrequency($0.value) } ?? .oncePerBar,
-                        isCondition: false, range: range))
+                        isCondition: false, range: range,
+                        message: stringLiteral(argument("message", at: 0, of: arguments))))
             case "alertcondition":
-                sites.append(PineAlertCallSite(frequency: .all, isCondition: true, range: range))
+                sites.append(
+                    PineAlertCallSite(
+                        frequency: .all, isCondition: true, range: range,
+                        title: stringLiteral(argument("title", at: 1, of: arguments)),
+                        message: stringLiteral(argument("message", at: 2, of: arguments))))
             default: break
             }
         }
@@ -53,6 +58,13 @@ struct PineAlertCallValidator {
         case .literal(.string(let name), _): PineAlertFrequency(pineName: name)
         default: nil
         }
+    }
+
+    /// The text of `argument` when it is a plain, non-blank string literal.
+    private static func stringLiteral(_ argument: PineArgument?) -> String? {
+        guard case .literal(.string(let text), _) = argument?.value else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// The argument bound to `parameter`: by name, or by `position` among those passed without one.

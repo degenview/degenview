@@ -74,11 +74,15 @@ SwiftUI and an AppKit `Canvas`; its only dependency is GRDB.swift for local SQLi
   anchored to time and price and shared by every chart of the same instrument
 - **Fibonacci retracements** — Draw, move, resize, reverse, extend, lock, hide, and
   customize retracements with configurable levels, labels, colors, and visibility
-- **Native drawing undo and redo** — Trend-line and Fibonacci edits participate in each
+- **Brush** — Freehand strokes drawn by dragging, smoothed when drawn and pinned to time
+  and price like the other drawings. Select, move, recolor, change width and opacity, lock,
+  and delete them
+- **Native drawing undo and redo** — Trend-line, Fibonacci, and Brush edits participate in each
   window's Edit menu with descriptive action names. Use **⌘Z** to undo and **⇧⌘Z** or
   **⌘Y** to redo; history lasts for the current app session
-- **Ruler** — Measure a move's price change, percentage, duration, and bar count with a
-  green/red rectangle; measurements are intentionally temporary
+- **Ruler** — Measure a move's percentage, price change, duration, and bar count with a
+  green/red rectangle, drawn by dragging or click-move-click. Drag a corner to resize or
+  an edge to move it; ⌘ snaps to candle OHLC. Measurements are intentionally temporary
 
 ### Portfolio tracking
 
@@ -175,7 +179,8 @@ directly; paper orders never route through Alpaca, Binance, or another live serv
   market from that point. Future candles are removed at the data boundary before chart
   rendering, indicators, volume, crosshair inspection, autoscaling, or drawing snapping
 - **Native replay controls** — Select a bar, date/time, random bar, or first available
-  bar; then step, play/pause, change speed or interval, restart, or return to latest
+  bar; then step forward or back, play/pause, scrub the timeline, change speed or
+  interval, restart, or return to latest
 - **Granular Binance, Coinbase and Alpaca replay** — When lower-timeframe OHLCV is available,
   DegenView paginates up to 100,000 source bars and incrementally reconstructs the active
   displayed candle. Other providers fall back to deterministic complete-chart-bar steps

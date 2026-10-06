@@ -94,8 +94,9 @@ enum Timeout {
     static let request: Double = 10
     /// URLSession resource timeout (seconds).
     static let resource: Double = 30
-    /// Binance kline cache TTL (seconds).
-    static let binanceCacheTTL: TimeInterval = 15
+    /// Binance kline cache TTL (seconds). Kept under the 5 s auto-refresh, like Coinbase's, so a
+    /// refresh never swaps the live candle (and the price the paper ticket reads) for an older copy.
+    static let binanceCacheTTL: TimeInterval = 3
     /// Coinbase candle cache TTL (seconds). Kept under the 5 s auto-refresh so a refresh never
     /// swaps the live candle for an older cached copy; a refresh costs one request per chart
     /// against Coinbase's ~10 requests/s public limit.
@@ -212,6 +213,17 @@ enum CacheLimit {
     static let saveDebounceNS: UInt64 = 2_000_000_000
 }
 
+// MARK: - Saved Layout Constants
+
+enum SavedLayout {
+    /// Quiet time after the last layout change before an autosave-enabled layout is written (nanoseconds).
+    static let autosaveDebounceNS: UInt64 = 2_000_000_000
+    /// Layouts listed under "Recently used".
+    static let recentLimit = 5
+    /// Widest the toolbar layout name grows before it truncates.
+    static let nameMaxWidth: CGFloat = 180
+}
+
 // MARK: - Format Constants
 
 enum Format {
@@ -298,18 +310,34 @@ enum PriceZoom {
 enum Drawing {
     /// How far a click may land from a handle or a line and still count as a hit.
     static let hitTolerance: CGFloat = 8
+
+    /// How far from a ruler's edge the pointer may be and still grab it. Narrower than
+    /// the corner reach, so the edge doesn't swallow clicks meant for the chart.
+    static let rulerEdgeBand: CGFloat = 5
+
+    /// Corner reach for a ruler, a little over `hitTolerance` since the handle is drawn
+    /// larger than a trend-line endpoint.
+    static let rulerCornerReach: CGFloat = 10
 }
 
 // MARK: - UI Constants
 
 enum UI {
     /// Width of the vertical tool strip down the left edge of the window.
-    static let toolSidebarWidth: CGFloat = 36
+    static let toolSidebarWidth: CGFloat = 52
+    /// Side of a square tool-strip button; the hit area matches the drawn tile.
+    static let toolButtonSize: CGFloat = 40
+    /// Point size of a tool-strip glyph.
+    static let toolIconSize: CGFloat = 18
     /// Window minimum width. Includes the tool strip, so cards keep the width they
     /// had before it existed.
     static let windowMinWidth: CGFloat = 380 + toolSidebarWidth
     /// Window minimum height — toolbar plus one card at `chartMinHeight`.
     static let windowMinHeight: CGFloat = 420
+    /// Height of the Paper Trading panel under the charts: header, metrics, a few table rows and the
+    /// footer fit at the minimum.
+    static let paperPanelMinHeight: CGFloat = 280
+    static let paperPanelIdealHeight: CGFloat = 340
     /// Window ideal size — landscape; charts read across time, not down it.
     static let windowIdealWidth: CGFloat = 1240
     static let windowIdealHeight: CGFloat = 800

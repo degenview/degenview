@@ -33,12 +33,9 @@ struct ContentView: View {
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var favoritesStore = FavoritesStore.shared
     @ObservedObject private var recents = RecentMarketsStore.shared
-    @State private var showSaveAlert = false
-    @State private var saveViewName = ""
-    @State private var showRenameAlert = false
-    @State private var renameText = ""
+    @State private var showLayoutPicker = false
+    @State private var layoutPromptName = ""
     @State private var showReplayDatePicker = false
-    @State private var replayDate = Date()
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @StateObject private var paperTrading = PaperTradingStore.shared
     @AppStorage("showPaperTradingOnCharts") private var showPaperTradingOnCharts = true
@@ -99,24 +96,50 @@ struct ContentView: View {
             .frame(width: 0, height: 0)
         )
         .preferredColorScheme(appTheme.colorScheme)
-        .alert("Save View", isPresented: $showSaveAlert) {
-            TextField("Name", text: $saveViewName)
-            Button("Save") {
-                let name = saveViewName.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                contentViewModel.saveCurrentView(name: name)
+        .alert(
+            layoutPromptTitle,
+            isPresented: Binding(
+                get: { contentViewModel.layout.prompt != nil },
+                set: { if !$0 { contentViewModel.layout.cancelPrompt() } })
+        ) {
+            TextField("Name", text: $layoutPromptName)
+            Button(layoutPromptButton) {
+                contentViewModel.layout.confirmPrompt(name: layoutPromptName)
             }
-            Button("Cancel", role: .cancel) {}
+            Button("Cancel", role: .cancel) { contentViewModel.layout.cancelPrompt() }
         } message: {
-            Text("Save the current charts, timeframe, and layout as a named view.")
+            Text(layoutPromptMessage)
         }
-        .alert("Rename Tab", isPresented: $showRenameAlert) {
-            TextField("Name", text: $renameText)
-            Button("Rename") { contentViewModel.renameTab(to: renameText) }
-            Button("Cancel", role: .cancel) {}
+        .onChange(of: contentViewModel.layout.prompt) { _, prompt in
+            if prompt != nil { layoutPromptName = contentViewModel.layout.promptDefaultName }
+        }
+        .confirmationDialog(
+            "Save changes to “\(contentViewModel.layout.displayName)”?",
+            isPresented: Binding(
+                get: { contentViewModel.layout.pendingTransition != nil },
+                set: { if !$0 { contentViewModel.layout.resolve(.cancel) } }),
+            titleVisibility: .visible
+        ) {
+            Button("Save") { contentViewModel.layout.resolve(.save) }
+            Button("Don’t Save", role: .destructive) { contentViewModel.layout.resolve(.discard) }
+            Button("Cancel", role: .cancel) { contentViewModel.layout.resolve(.cancel) }
         } message: {
-            Text("The tab name is also the window title.")
+            Text("Your changes will be lost if you switch layouts without saving.")
         }
+        .alert(
+            "Layout",
+            isPresented: Binding(
+                get: { contentViewModel.layout.lastError != nil },
+                set: { if !$0 { contentViewModel.layout.clearError() } })
+        ) {
+            Button("OK") { contentViewModel.layout.clearError() }
+        } message: {
+            Text(contentViewModel.layout.lastError ?? "")
+        }
+        .sheet(isPresented: $showLayoutPicker) {
+            SavedLayoutPickerSheet(layout: contentViewModel.layout, store: contentViewModel.layout.store)
+        }
+        .focusedSceneValue(\.savedLayout, contentViewModel.layout)
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(
                 onAddPortfolio: { config in
@@ -150,22 +173,15 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showReplayDatePicker) {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Select Replay Date and Time").font(.headline)
-                DatePicker("Replay starts at", selection: $replayDate)
-                    .datePickerStyle(.field)
-                HStack {
-                    Spacer()
-                    Button("Cancel", role: .cancel) { showReplayDatePicker = false }
-                    Button("Start Replay") {
-                        contentViewModel.selectReplayDate(replayDate)
-                        showReplayDatePicker = false
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(20)
-            .frame(width: 380)
+            ReplayStartSheet(
+                range: contentViewModel.replayDateRange,
+                initial: contentViewModel.replay.currentTimestamp,
+                snap: contentViewModel.replayBarStart(containing:),
+                onStart: { date in
+                    contentViewModel.selectReplayDate(date)
+                    showReplayDatePicker = false
+                },
+                onCancel: { showReplayDatePicker = false })
         }
         .sheet(item: $orderTicket) { ticket in
             PaperOrderTicketSheet(
@@ -183,10 +199,13 @@ struct ContentView: View {
             Text(paperTrading.lastError ?? "")
         }
         .onChange(of: showAddSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
         }
         .onChange(of: showAddFavoriteSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+        }
+        .onChange(of: showLayoutPicker) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
         }
     }
 
@@ -221,7 +240,7 @@ struct ContentView: View {
                 ) {
                     showTradingPanel = false
                 }
-                .frame(minHeight: 270, idealHeight: 270)
+                .frame(minHeight: UI.paperPanelMinHeight, idealHeight: UI.paperPanelIdealHeight)
             }
         } else {
             chartsOnly
@@ -232,24 +251,24 @@ struct ContentView: View {
     private var chartsOnly: some View {
         VStack(spacing: 0) {
             if contentViewModel.replay.isActive {
-                ReplayControlBar(
-                    engine: contentViewModel.replay,
-                    onChangeStart: contentViewModel.beginReplaySelection,
-                    onReturnToLive: contentViewModel.returnToLive,
-                    onClose: contentViewModel.returnToLive,
-                    availableIntervals: contentViewModel.availableReplayIntervals,
-                    onIntervalChanged: contentViewModel.setReplayInterval,
-                    isPreparing: contentViewModel.isPreparingReplay
-                )
-            }
-            if let notice = contentViewModel.replayNotice, contentViewModel.replay.isActive {
-                Text(notice)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.orange.opacity(0.08))
+                VStack(spacing: 0) {
+                    ReplayControlBar(
+                        engine: contentViewModel.replay,
+                        onChangeStart: contentViewModel.beginReplaySelection,
+                        onCancelSelection: contentViewModel.cancelReplaySelection,
+                        onReturnToLive: contentViewModel.returnToLive,
+                        availableIntervals: contentViewModel.availableReplayIntervals,
+                        resolvedInterval: contentViewModel.resolvedReplayInterval,
+                        onIntervalChanged: contentViewModel.setReplayInterval,
+                        isPreparing: contentViewModel.isPreparingReplay,
+                        notice: contentViewModel.replayNotice,
+                        onDismissNotice: contentViewModel.dismissReplayNotice
+                    )
+                    // The grid's card inset shrinks to nothing in a crowded tab, so the replay
+                    // outline would otherwise touch the bar.
+                    Color.clear.frame(height: 6)
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
             // Global loading indicator
             if contentViewModel.isRefreshing {
@@ -263,21 +282,21 @@ struct ContentView: View {
                 EmptyStateView(
                     suggestions: EmptyStateSuggestions(
                         favorites: favoritesStore.items, recents: recents.items,
-                        savedViews: contentViewModel.savedViews),
+                        savedViews: contentViewModel.layout.store.views),
                     offersStocks: AlpacaCredentialsStore.isConfigured,
                     onAddTapped: { showAddSheet = true },
                     onOpenFavorite: contentViewModel.openFavorite,
                     onOpenRecent: { openMarket($0.result) },
-                    onOpenView: { contentViewModel.loadView($0) },
+                    onOpenView: { contentViewModel.openSavedView($0) },
                     onOpenSuggestion: openMarket,
                     onRemoveRecent: { recents.remove($0) },
                     onClearRecents: { recents.clear() },
                     onShowFavorites: { withAnimation { showFavorites = true } }
                 )
                 // Another tab may have saved a view since this one opened.
-                .onAppear { contentViewModel.reloadSavedViews() }
+                .onAppear { contentViewModel.layout.store.reload() }
                 .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-                    contentViewModel.reloadSavedViews()
+                    contentViewModel.layout.store.reload()
                 }
             } else {
                 VStack(spacing: 0) {
@@ -308,14 +327,24 @@ struct ContentView: View {
                 }
             }
         }
+        .animation(.easeOut(duration: 0.2), value: contentViewModel.replay.isActive)
     }
 
     // MARK: - Toolbar
 
     @ViewBuilder
     private var sidebarTradingControls: some View {
-        Button {
-            if paperTrading.isConnected {
+        let isPanelOpen = showTradingPanel && paperTrading.isConnected
+        SidebarIconButton(
+            icon: "arrow.left.arrow.right",
+            label: isPanelOpen ? "Hide Paper Trading panel" : "Show Paper Trading panel",
+            tooltip: isPanelOpen ? "Hide Paper Trading" : "Paper Trading",
+            isActive: isPanelOpen,
+            activeStyle: .tinted
+        ) {
+            if isPanelOpen {
+                showTradingPanel = false
+            } else if paperTrading.isConnected {
                 showTradingPanel = true
             } else {
                 Task {
@@ -323,49 +352,73 @@ struct ContentView: View {
                     showTradingPanel = true
                 }
             }
-        } label: {
-            Image(systemName: "arrow.left.arrow.right")
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(paperTrading.isConnected ? "Paper Trading connected" : "Trade")
-        .sidebarTooltip("Paper Trading")
 
-        Menu {
-            Button("Select bar") { contentViewModel.beginReplaySelection() }
-            Button("Select date/time…") {
-                replayDate = contentViewModel.replay.currentTimestamp ?? Date()
+        let isReplaying = contentViewModel.replay.isActive
+        let hasMarket = !contentViewModel.marketChartViewModels.isEmpty
+        SidebarMenu(
+            icon: "clock.arrow.circlepath",
+            label: isReplaying ? "Historical bar replay, active" : "Historical bar replay",
+            tooltip: replayTooltip(isReplaying: isReplaying, hasMarket: hasMarket),
+            isActive: isReplaying,
+            tint: ReplayStyle.accent,
+            activeStyle: .tinted
+        ) {
+            Button {
+                contentViewModel.beginReplaySelection()
+            } label: {
+                Label("Select Bar on Chart", systemImage: "cursorarrow.click.2")
+            }
+            Button {
                 showReplayDatePicker = true
+            } label: {
+                Label("Choose Date & Time…", systemImage: "calendar")
             }
-            Button("Random bar") { contentViewModel.selectRandomReplayBar() }
-            Button("First available bar") { contentViewModel.selectFirstReplayBar() }
-            if contentViewModel.replay.isActive {
+            Divider()
+            Button {
+                contentViewModel.selectRandomReplayBar()
+            } label: {
+                Label("Random Bar", systemImage: "dice")
+            }
+            Button {
+                contentViewModel.selectFirstReplayBar()
+            } label: {
+                Label("First Available Bar", systemImage: "backward.end")
+            }
+            if isReplaying {
                 Divider()
-                Button("Return to Latest") { contentViewModel.returnToLive() }
+                Button {
+                    contentViewModel.returnToLive()
+                } label: {
+                    Label("Return to Latest", systemImage: "dot.radiowaves.left.and.right")
+                }
             }
-        } label: {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 13, weight: .medium))
-                .frame(width: 26, height: 26)
-                .contentShape(RoundedRectangle(cornerRadius: 5))
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("Historical bar replay")
-        .sidebarTooltip("Historical Replay")
+        .disabled(!hasMarket)
     }
 
-    /// Commit the tab's edits back to its saved view, prompting for a name the
-    /// first time — an unnamed tab has no view to write to yet.
-    private func saveChanges() {
-        if contentViewModel.tabName == UI.unnamedView {
-            saveViewName = ""
-            showSaveAlert = true
-        } else {
-            contentViewModel.saveChanges()
+    private func replayTooltip(isReplaying: Bool, hasMarket: Bool) -> String {
+        if isReplaying { return "Replay Active" }
+        return hasMarket ? "Historical Replay" : "Historical Replay — add a market chart first"
+    }
+
+    private var layoutPromptTitle: String {
+        switch contentViewModel.layout.prompt {
+        case .copy: return "Make a Copy"
+        case .rename: return "Rename Layout"
+        case .save, nil: return "Save Layout"
+        }
+    }
+
+    private var layoutPromptButton: String {
+        contentViewModel.layout.prompt == .rename ? "Rename" : "Save"
+    }
+
+    private var layoutPromptMessage: String {
+        switch contentViewModel.layout.prompt {
+        case .copy: return "The copy keeps what you see now and saves separately from the original."
+        case .rename: return "The name is also the tab title."
+        case .save, nil: return "Save the current charts, timeframe, and layout under a name."
         }
     }
 
@@ -384,59 +437,11 @@ struct ContentView: View {
             }
         }
         ToolbarItem(placement: .automatic) {
-            Menu {
-                // The name bar used to be the rename affordance; with it gone
-                // this menu is the only place left to reach it.
-                Button("Rename Tab…") {
-                    renameText =
-                        contentViewModel.tabName == UI.unnamedView
-                        ? "" : contentViewModel.tabName
-                    showRenameAlert = true
-                }
-
-                if !contentViewModel.savedViews.isEmpty {
-                    Divider()
-                    ForEach(contentViewModel.savedViews) { view in
-                        Button(view.name) {
-                            contentViewModel.loadView(view)
-                        }
-                    }
-                    Divider()
-                    Menu("Delete…") {
-                        ForEach(contentViewModel.savedViews) { view in
-                            Button(role: .destructive) {
-                                contentViewModel.deleteView(view)
-                            } label: {
-                                Text(view.name)
-                            }
-                        }
-                    }
-                }
-            } label: {
-                Image(systemName: "folder")
-            }
-            .accessibilityLabel("Load View")
+            SavedLayoutToolbarButton(layout: contentViewModel.layout) { showLayoutPicker = true }
         }
-        // Only meaningful once the tab has drifted from what's on disk.
-        if contentViewModel.hasUnsavedChanges {
-            ToolbarItem(placement: .automatic) {
-                Button(action: saveChanges) {
-                    Image(systemName: "square.and.arrow.down.on.square")
-                }
-                .accessibilityLabel("Save Changes")
-                .help("Save changes to \"\(contentViewModel.tabName)\"")
-            }
-        }
-        ToolbarItem(placement: .automatic) {
-            Button {
-                saveViewName =
-                    contentViewModel.tabName == UI.unnamedView
-                    ? "" : contentViewModel.tabName
-                showSaveAlert = true
-            } label: {
-                Image(systemName: "square.and.arrow.down")
-            }
-            .accessibilityLabel("Save View")
+        // Its own bubble, apart from the layout button, the title-bar buttons and Add Chart.
+        if #available(macOS 26, *) {
+            ToolbarSpacer(.fixed, placement: .primaryAction)
         }
         ToolbarItem(placement: .primaryAction) {
             Button {
@@ -457,6 +462,7 @@ struct ContentView: View {
             } label: {
                 Label("Add Chart", systemImage: "plus")
                     .labelStyle(.titleAndIcon)
+                    .padding(.horizontal, 6)
             }
             .help("Add Chart")
         }
@@ -704,6 +710,7 @@ struct ContentView: View {
             },
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
+            onLegendRegion: { contentViewModel.registerLegendRegion($0, for: vm) },
             isToolArmed: contentViewModel.activeTool != .none,
             showTrendHandles: contentViewModel.activeTool == .trendLine
                 || contentViewModel.activeTool == .fibonacciRetracement,
@@ -728,15 +735,7 @@ struct ContentView: View {
                 $0.instrument.key == "\(vm.source.rawValue):\(vm.apiSymbol)"
             },
             paperAccountCurrency: paperTrading.selectedAccount?.baseCurrency ?? .USD,
-            paperUnrealizedPnL: { position in
-                guard let quote = paperTrading.snapshot.quotes[position.instrument.key],
-                    let mark = position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
-                else { return 0 }
-                return
-                    (position.signedQuantity >= 0
-                    ? mark - position.averageEntryPrice : position.averageEntryPrice - mark) * position.quantity
-                    * position.instrument.pointValue
-            },
+            paperUnrealizedPnL: { position in paperTrading.unrealizedPnL(for: position) },
             onPaperModify: { order, price in
                 let changes =
                     order.type == .stop || (order.type == .stopLimit && !order.stopTriggered)
@@ -746,10 +745,10 @@ struct ContentView: View {
             onPaperCancel: { order in Task { await paperTrading.cancel(order.id) } },
             onPaperClose: { position in Task { await paperTrading.close(position) } }
         )
-        .onChange(of: vm.currentPrice) { _, price in
-            guard let price else { return }
-            let instrument = PaperInstrument.chart(symbol: vm.apiSymbol, displayName: vm.title, source: vm.source)
-            Task { await paperTrading.process(instrument: instrument, last: Decimal(price), timestamp: Date()) }
+        // Behind the card, not on `ContentView`: this view does not observe its charts, so a watcher
+        // here only ran when something unrelated redrew it. The feed observes the chart itself.
+        .background {
+            PaperQuoteFeed(viewModel: vm, quote: vm.liveQuote, store: paperTrading)
         }
     }
 

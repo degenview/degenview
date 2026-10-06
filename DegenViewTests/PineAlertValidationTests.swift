@@ -72,6 +72,22 @@ final class PineAlertValidationTests: XCTestCase {
         XCTAssertEqual(sites.map(\.isCondition), [false, false, false, true])
     }
 
+    func testCallSitesCarryLiteralTitleAndMessage() {
+        let program = compile(
+            """
+            alert("Closed above")
+            alert("a" + str.tostring(close))
+            alertcondition(close < open, "Down", "Price fell")
+            alertcondition(close > open, "Up")
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let sites = program.alertCallSites
+        XCTAssertEqual(sites.map(\.title), [nil, nil, "Down", "Up"])
+        XCTAssertEqual(sites.map(\.message), ["Closed above", nil, "Price fell", nil])
+        // `compile` puts the version and indicator declaration on lines 1–2.
+        XCTAssertEqual(sites.map(\.range.start.line), [3, 4, 5, 6])
+    }
+
     func testProgramWithoutAlertsHasNoCallSites() {
         XCTAssertTrue(compile("plot(close)").alertCallSites.isEmpty)
     }

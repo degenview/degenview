@@ -118,6 +118,35 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   band and indent guides draw in `PineLayoutManager.drawBackground(forGlyphRange:at:)`
 - Everything is skipped while `hasMarkedText()` (IME) — keep that guard in `editingContext`
 
+### Pine completion and signature help
+- One analysis per text version: `PineEditorAnalysisCache.analysis(for:)` returns the lexical
+  snapshot and a `PineSourceSymbolIndex` (declarations with kinds, parameters and visibility,
+  scopes with ranges, imports, user types and enums, exports). The classifier resolves user
+  shadowing through the same index, so highlighting and completion cannot disagree. It reads
+  content tokens, never the lexer's newline/indent/dedent (`PineStatementSplitter`): an unclosed
+  `(` mid-typing erases those, and completion must keep its scopes then
+- Pure engine, Foundation only, unit-testable without a text view: `PineCompletionContext`
+  (word, member base, position, suppression, scope, `PineCallSite`), `PineCompletionEngine`,
+  `PineCompletionRanking` (deterministic, no fuzzy matching), `PineCompletionTrigger` (the one
+  place the 2-letter threshold lives), `PineCompletionInsertion` (one `PineEditorEdit` per
+  acceptance; a call's `(` pairs by `PineEditorPairing.canOpenPair`), `PineSignatureResolver`.
+  Completion never compiles, runs, lexes again, or touches the network or database;
+  `PineCompletionPerformanceTests` greps the files for that
+- Builtins come from `PineSymbolCatalog` (`members(of:)`) and signatures/docs from
+  `PineSymbolMetadata`, one DSL line per overload in the `PineSymbolMetadata+<Family>.swift`
+  files. A new builtin needs a line there; `PineSymbolMetadataTests` fails until it has one, and
+  fails a line the runtime does not dispatch. Never add a second list of names to the engine
+- Libraries: `PineLibraryExportDirectory` reads a library's `export`s from `PineLibraryRegistry`
+  (memory only) through the same symbol index, with its own lex so the edited script's cached
+  lex is not evicted
+- UI is `PineCompletionController` (per `PineTextView`, `textView.completion`) over two child
+  `NSPanel`s that never become key (`PineCompletionPanel`, `PineSignaturePanel`). Keys: Down/Up,
+  Return/Tab accept, Escape closes the list then the help — the Escape check is first in the
+  container's key monitor, ahead of the find bar. With nothing open every key keeps its editing
+  behaviour. `perform(_:)` calls `didChangeText`, so the controller ignores changes it makes
+  itself (`isApplying`). Never call `NSTextView.mouseDown` from a test without a queued mouse-up:
+  it tracks until the button comes up
+
 ### Script Manager preview
 - The Script Manager window is a `SplitContainer` (sidebar | `ScriptWorkspaceView`); the
   workspace splits the editor and `ScriptPreviewPane` left/top/bottom. `SplitLayout` is a real
@@ -130,6 +159,15 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   crypto and stock only (`PreviewMarket.isSupported`)
 - `PineInputsView` is the one `input.*` → controls renderer, shared with `ChartSettingsSheet`;
   it takes a precompiled `PineInputSchema` — never compile inside a view body
+
+### Example scripts
+- `DegenView/Resources/DemoScripts/*.pine` ship in the app's Resources phase (each one is a
+  `project.pbxproj` file reference + build file, like any new file). `DemoScriptLibrary` copies them
+  into `ScriptStore` — once at launch (`scripts.demosSeeded`, skipped under XCTest) and on demand from
+  the Script Manager's empty state — so a demo the user deletes stays deleted. The file name is the script name
+  (no "Demo" prefix — the word never appears in user-visible script names or titles)
+- Demos are original work only (the repo is GPL-3.0; never copy community scripts) and must compile with **no
+  diagnostics**, warnings included: `PineExampleScriptsTests` compiles and runs every bundled file
 
 ### WebSocket updates
 - `ChartLiveFeed` owns the three socket services and routes ticks to charts; `ContentViewModel`
@@ -198,8 +236,14 @@ Three things broke when a second instance appeared — check for this shape when
   suspend, so API load doesn't scale with tab count
 
 ### State management
-- `ContentViewModel.markChanged()` sets `hasUnsavedChanges = true` (skipped during `loadView`)
-- `isApplyingView` flag prevents false unsaved-change detection on view load
+- Saved layouts: `SavedViewStore.shared` owns the library (every tab writes through it, writes throw,
+  `lastOpenedAt` drives "Recently used"); `ContentViewModel.layout` (`SavedLayoutController`) is the
+  tab's active layout. **Dirty is a fingerprint, not a flag**: `syncTab()` calls `layout.refresh()`,
+  which compares a `LayoutSnapshot` (timeframe, chart configs, column membership — not zoom,
+  drawings, replay or market data) with the snapshot taken at open/save. Layouts are applied only via
+  the controller's `restore`, which suspends tracking and re-baselines. Autosave is per layout
+  (`SavedView.autosave`), debounced 2 s, never applies to Unnamed, and is flushed before a switch
+- `tabName` is always the active layout's name or `UI.unnamedView`; there is no tab-only rename
 - `isHydrating` guards `syncTab()` during `init` — a `didSet` that reached it would otherwise
   write the tab back before `chartViewModels` is populated and erase it
 - `syncTab()` writes the whole `ChartTab` back; `TabsStore` debounces the database write
@@ -251,8 +295,12 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 2. Add same symbol from CoinGecko (different source, no duplicate rejection)
 3. Switch timeframes, toggle log scale
 4. Scroll-zoom on chart, verify candle count changes
-5. Save view, add a ticker, verify unsaved changes indicator
-6. Load saved view, verify state restores
+5. Layout button reads "Unnamed"; ⌘S names it. Add a ticker — an "(unsaved)" tag appears after the
+   name; scroll-zoom and live ticks never raise it; ⌘S clears it
+6. Layout ▸ Open layout… / Recently used loads a saved layout; with changes pending it asks
+   Save / Don't Save / Cancel. Autosave on: change a setting, "Save" never shows, change persists
+   after relaunch. Make a copy keeps unsaved changes; Rename keeps the tab title in sync in every
+   tab; Create new layout opens a blank tab. ⌘S in the Script Manager still saves the script
 7. Add a DEX pair (e.g. search "BONK" on DEXScreener)
 8. With one tab open, confirm the tab bar and its `+` are still visible
 9. Both ⌘T and the tab bar's `+` open an empty tab named "Unnamed" — never a second view
@@ -263,10 +311,20 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 11. Drag a tab out to detach it, then put it back with File ▸ Merge All Windows or by
     dragging the window onto a tab bar. Confirm the tab bar survives both, at one tab
 12. Quit and relaunch — same tabs, same order, same window grouping
-13. Arm the ruler, drag a rectangle up (green) and down (red); check the read-out's percent
-    against the price axis and its bar count against the candles inside. One more click
-    puts it away — on that chart only. Switching tool or timeframe drops it, and it never
-    comes back after a relaunch
+13. Arm the ruler, press-drag-release a rectangle up (green) and down (red), and right to left;
+    check the card's percent against the price axis tags and its bar count against the
+    candles inside. A click-move-click rectangle works too. Hover a corner or edge: handles
+    and the cursor change; drag a corner to resize and an edge to move, and start a second
+    rectangle inside the first. Delete removes the selected one, Esc cancels a draft, then
+    clears all, then disarms. Switching tool or timeframe drops them, and they never come
+    back after a relaunch
+13d. Brush: arm it and drag a circle, a V and a zigzag — corners stay sharp, curves smooth, and
+    the stroke follows the pointer with no snapping to candles. A click leaves a dot. Esc
+    mid-stroke leaves nothing and ⌘Z has nothing to undo. ⌘Z removes a whole stroke, ⇧⌘Z
+    brings it back. Switch timeframe, scroll-zoom, drag the price axis and resize the window:
+    the stroke stays on the same price action. Hover shows a halo and the move cursor; click
+    opens the editor (colour, width, opacity, lock), drag moves the stroke (one undo step),
+    Delete removes it. Relaunch keeps strokes; the same symbol on another source has none
 13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
     and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
     Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own
@@ -276,15 +334,34 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
     Delete and Clear History ask first. History groups by day; prices read `$67,432.19`, `$1.2346`,
     `$0.00000278` — never a long decimal tail — in rows, the banner and the macOS notification
+13c. Replay: toolbar Replay ▸ Select Bar on Chart shows the "Click a candle" strip; the marker
+    follows the pointer with a date tag and Esc / Cancel exit. Click a candle: strip shows
+    Paused, the card gets an orange border and "Replay" badge. Play / pause / step ⇧→ ⇧← ⇧↓,
+    drag and click the timeline (pauses, tick marks the start), speed and Bars menus (Auto
+    shows the resolved interval, a spinner while loading). Play to the end: "Ended", the play
+    button restarts. A CoinGecko chart shows a dismissible fallback notice. **Live** returns to
+    latest. Choose Date & Time… presets and "Snaps to" preview; relaunch mid-replay restores
+    paused at the same spot; narrow window wraps the timeline to a second row; light and dark
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket
     tints its partner; guides and the current-line band follow scrolling and don't eat clicks
+14b. Completion: type `plot(ta.rs` — the list opens under the caret with `rsi` and its signature;
+    Down/Up move, Tab or Return accept (`ta.rsi(|)`, one ⌘Z undoes it), Esc closes the list. `ta.`
+    lists only `ta` members; `plot(clo` offers `close`; a variable and a function you declare appear
+    (parameters first inside their function); `ta.sma(close, ` shows the signature with `length`
+    underlined; `// ta.rs` and `"ta.rs"` stay quiet; Control-Space / Option-Esc complete with nothing
+    typed; clicking a row selects it, double-click accepts, the caret never moves; scrolling, a
+    window resize, clicking into the text, switching scripts and focus loss close the popup; with
+    the list closed Return and Tab still indent. In an `import user/` line the library names appear,
+    and `lib.` lists a library's exports
 14. Script Manager: collapse the sidebar (⌃⌘S) and relaunch — it stays collapsed. Open an
     indicator: the preview chart appears left of the code. Type — the plot updates after a pause;
     break the syntax — the banner appears and the last plot stays. Move the chart left/top/bottom
     without losing the editor's cursor. Change an input, relaunch, reopen the script — the value
-    is back. The market picker offers only Crypto and Stock
+    is back. The market picker offers only Crypto and Stock. A favorited script highlights one sidebar row
+    (whichever you click), right-click ▸ Duplicate makes "<name> copy" and selects it, and the
+    "Community scripts" link sits under the list
 
 Adding a new `.swift` file means four hand-edits to `project.pbxproj` (`PBXBuildFile`,
 `PBXFileReference`, the group's `children`, the `Sources` phase). The project does not use

@@ -29,6 +29,7 @@ extension PineRuntimeSession {
             "ta.dmi": PineRuntimeSession.dmiCall, "ta.sar": PineRuntimeSession.sarCall,
             "ta.linreg": PineRuntimeSession.linregCall, "ta.cum": PineRuntimeSession.cumulativeCall, "ta.bb": PineRuntimeSession.bollingerCall,
             "timeframe.in_seconds": PineRuntimeSession.timeframeSecondsCall,
+            "timeframe.from_seconds": PineRuntimeSession.timeframeFromSecondsCall,
             "request.security": PineRuntimeSession.securityCall,
             "request.security_lower_tf": PineRuntimeSession.securityLowerTimeframeCall,
             "timeframe.change": PineRuntimeSession.timeframeChangeCall,

@@ -198,7 +198,9 @@ actor PaperTradingEngine {
         let ids = state.orders.filter { $0.instrument.key == quote.instrumentKey && $0.status.isWorking }
             .sorted { $0.createdAt < $1.createdAt }.map(\.id)
         for id in ids { try evaluate(orderID: id, bracket: nil) }
-        try await save()
+        // Quotes arrive every few hundred milliseconds and are not worth a rewrite of every paper
+        // table; only a quote that could have moved an order is saved.
+        if !ids.isEmpty { try await save() }
     }
 
     func metrics(accountID: UUID) -> PaperAccountMetrics {

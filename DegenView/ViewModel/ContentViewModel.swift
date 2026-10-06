@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import Foundation
 import SwiftUI
 
@@ -40,7 +41,10 @@ final class ContentViewModel: ObservableObject {
                     vm.cancelDraft()
                     vm.cancelRulerDraft()
                     vm.clearRulers()
+                    vm.cancelBrushDraft()
                 }
+                brushDrawTarget = nil
+                brushMoveTarget = nil
                 crosshair.clear()
             }
         }
@@ -48,7 +52,9 @@ final class ContentViewModel: ObservableObject {
     @Published var candleCount: Int = TimeRange.oneDay.dataPointLimit
     @Published var isRefreshing = false
 
-    @Published var savedViews: [SavedView] = []
+    /// This tab's saved layout: which one it is on, dirty state, and every save/open operation.
+    let layout: SavedLayoutController
+    private var layoutObserver: AnyCancellable?
 
     /// The tab's label. Shows in the name bar *and* as the window title, which on
     /// macOS is what the system tab bar draws.
@@ -58,10 +64,6 @@ final class ContentViewModel: ObservableObject {
             WindowCoordinator.shared.syncTitle(for: tabID)
         }
     }
-    @Published var hasUnsavedChanges = false
-
-    private var currentViewID: UUID?
-    private var isApplyingView = false
     /// Set while `init` assigns the tab's fields. A `didSet` that reaches `syncTab()`
     /// would otherwise write the tab back before `chartViewModels` is populated,
     /// erasing the very charts being restored.
@@ -86,6 +88,9 @@ final class ContentViewModel: ObservableObject {
     /// Plot areas, each mapped to the chart drawn in it. Weak on both sides, so a
     /// removed card drops out on its own.
     private let plotRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
+    /// Each chart's Pine indicator legend, so drawing tools and the crosshair can exclude it —
+    /// a click on its eye/gear/remove icons must never be swallowed as "begin drawing".
+    private let legendRegions = NSMapTable<NSView, ChartViewModel>.weakToWeakObjects()
     /// The endpoint being dragged right now, and the chart it belongs to.
     private var lineDragTarget: (vm: ChartViewModel, original: TrendLine, isStart: Bool)?
     private var fibonacciDragTarget: (vm: ChartViewModel, original: FibonacciRetracementDrawing, isStart: Bool)?
@@ -93,6 +98,16 @@ final class ContentViewModel: ObservableObject {
         (
             vm: ChartViewModel, original: FibonacciRetracementDrawing, pointerStart: TrendAnchor
         )?
+    /// The ruler corner or edge being dragged, as the rectangle was when the drag began.
+    private var rulerDragTarget: (vm: ChartViewModel, original: RulerRect, part: RulerPart, pointerStart: TrendAnchor)?
+    /// A rectangle started by a press. If the pointer travels before release it is drawn
+    /// by dragging and finishes on release; if not, it stays open for a second click.
+    private var rulerPress: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint, moved: Bool)?
+    /// The chart a brush stroke is being drawn on, and the plot geometry at the last
+    /// pointer position (the release can land outside the plot).
+    private var brushDrawTarget: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)?
+    /// The stroke being dragged, as it was at mouse-down, and where the pointer was.
+    private var brushMoveTarget: (vm: ChartViewModel, original: BrushDrawing, pointerStart: CGPoint, moved: Bool)?
 
     /// The tab's crosshair. Its own observable object rather than a `@Published` here —
     /// see `CrosshairTracker`.
@@ -110,9 +125,23 @@ final class ContentViewModel: ObservableObject {
             crosshair.clear()
             // A measurement belongs to the armed ruler — reaching for another tool is
             // done with it. Trend lines, being annotations, stay.
+            rulerDragTarget = nil
+            rulerPress = nil
+            brushDrawTarget = nil
+            brushMoveTarget = nil
+            // A stroke in progress or a hover belongs to the armed brush. A selected
+            // stroke stays selectable under the crosshair, but its editor would block
+            // every other tool's gestures.
+            let keepsBrushSelection = activeTool == .brush || activeTool == .crosshair
             for vm in chartViewModels {
                 vm.cancelRulerDraft()
                 vm.clearRulers()
+                vm.cancelBrushDraft()
+                vm.hoveredBrushID = nil
+                if !keepsBrushSelection {
+                    vm.selectedBrushID = nil
+                    vm.editingBrushID = nil
+                }
             }
             guard activeTool == .none else { return }
             for vm in chartViewModels {
@@ -140,15 +169,18 @@ final class ContentViewModel: ObservableObject {
     private var isWindowVisible = false
     private var didInitialLoad = false
 
-    init(tabID: UUID, api: BinanceAPIService = BinanceAPIService()) {
+    init(
+        tabID: UUID, api: BinanceAPIService = BinanceAPIService(),
+        savedViews: SavedViewStore = .shared
+    ) {
         self.tabID = tabID
         self.api = api
-        self.savedViews = AppDatabase.shared.savedViews()
 
         let tab = TabsStore.shared.ensureTab(tabID)
+        // A tab whose layout was deleted since it was last open is Unnamed again.
+        self.layout = SavedLayoutController(store: savedViews, activeViewID: tab.savedViewID)
         pendingReplayRestore = tab.replaySession
-        tabName = tab.name
-        currentViewID = tab.savedViewID
+        tabName = layout.displayName
         selectedTimeRange = tab.timeRange
         // Assigned after the range, whose didSet would otherwise reset it.
         candleCount = tab.candleCount
@@ -158,8 +190,8 @@ final class ContentViewModel: ObservableObject {
             return vm
         }
         chartColumns = ChartColumn.resolved(tab.chartColumns, chartIDs: chartViewModels.map(\.chartID))
-        hasUnsavedChanges = false
         isHydrating = false
+        configureLayout()
 
         scrollMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, !self.chartViewModels.isEmpty, !self.isShowingSheet else { return event }
@@ -272,6 +304,23 @@ final class ContentViewModel: ObservableObject {
         plotRegions.setObject(viewModel, forKey: view)
     }
 
+    /// Each chart card hands over the view covering its Pine indicator legend.
+    func registerLegendRegion(_ view: NSView, for viewModel: ChartViewModel) {
+        legendRegions.setObject(viewModel, forKey: view)
+    }
+
+    /// Same geometric check as the plot-region lookups, scoped to registered legend frames —
+    /// so an armed drawing tool (or the crosshair) never acts over the legend.
+    private func pointerIsOverLegend(_ event: NSEvent) -> Bool {
+        guard let window = event.window else { return false }
+        let location = event.locationInWindow
+        guard let views = legendRegions.keyEnumerator().allObjects as? [NSView] else { return false }
+        return views.contains { view in
+            guard view.window === window, !view.isHiddenOrHasHiddenAncestor else { return false }
+            return view.bounds.contains(view.convert(location, from: nil))
+        }
+    }
+
     // MARK: - Historical replay
 
     func beginReplaySelection() {
@@ -319,6 +368,31 @@ final class ContentViewModel: ObservableObject {
     }
 
     func selectReplayDate(_ date: Date) { selectReplayStart(date) }
+
+    func cancelReplaySelection() {
+        replay.cancelSelection()
+        clearReplaySelectionMarkers()
+    }
+
+    func dismissReplayNotice() { replayNotice = nil }
+
+    /// The span the loaded chart covers, which is what a replay start may be picked from.
+    var replayDateRange: ClosedRange<Date>? {
+        guard let data = marketChartViewModels.first?.klineData,
+            let first = data.first?.openTime, let last = data.last?.openTime, first <= last
+        else { return nil }
+        return first...last
+    }
+
+    /// The chart bar a replay started at `date` would begin on.
+    func replayBarStart(containing date: Date) -> Date? {
+        marketChartViewModels.first?.klineData.last(where: { $0.openTime <= date })?.openTime
+    }
+
+    /// The interval Auto resolved to for the primary chart, nil when it replays whole bars.
+    var resolvedReplayInterval: ReplayInterval? {
+        marketChartViewModels.first?.granularReplayInterval
+    }
 
     func returnToLive() {
         replayPreparationTask?.cancel()
@@ -388,8 +462,7 @@ final class ContentViewModel: ObservableObject {
     private func handleReplaySelection(_ event: NSEvent) -> NSEvent? {
         if event.type == .keyDown {
             guard event.keyCode == 53 else { return event }
-            replay.cancelSelection()
-            clearReplaySelectionMarkers()
+            cancelReplaySelection()
             return nil
         }
         guard let hit = plotHit(at: event),
@@ -436,6 +509,7 @@ final class ContentViewModel: ObservableObject {
         if activeTool == .crosshair { return handleCrosshair(event) }
         if activeTool == .ruler { return handleRuler(event) }
         if activeTool == .fibonacciRetracement { return handleFibonacci(event) }
+        if activeTool == .brush { return handleBrush(event) }
         guard activeTool == .trendLine else { return event }
 
         if event.type == .keyDown { return handleDrawingKey(event) }
@@ -508,7 +582,7 @@ final class ContentViewModel: ObservableObject {
                 if let hit = plotHit(at: event) {
                     target.vm.translateFibonacci(
                         id: target.original.id, original: target.original, from: target.pointerStart,
-                        to: fibonacciAnchor(for: event, hit: hit))
+                        to: snappedDrawingAnchor(for: event, hit: hit))
                 }
                 return nil
             case .leftMouseUp:
@@ -525,7 +599,7 @@ final class ContentViewModel: ObservableObject {
                 if let hit = plotHit(at: event) {
                     target.vm.moveFibonacciAnchor(
                         id: target.original.id, isStart: target.isStart,
-                        to: fibonacciAnchor(for: event, hit: hit))
+                        to: snappedDrawingAnchor(for: event, hit: hit))
                 }
                 return nil
             case .leftMouseUp:
@@ -537,7 +611,7 @@ final class ContentViewModel: ObservableObject {
             }
         }
         guard let hit = plotHit(at: event) else { return event }
-        let anchor = fibonacciAnchor(for: event, hit: hit)
+        let anchor = snappedDrawingAnchor(for: event, hit: hit)
         switch event.type {
         case .mouseMoved:
             hit.vm.updateFibonacciDraft(to: anchor)
@@ -570,7 +644,109 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
-    private func fibonacciAnchor(
+    /// Draws and edits freehand strokes.
+    ///
+    /// - Press, drag, release draws one. Samples are filtered by screen distance and the
+    ///   stroke is written once, on release — never per pointer event.
+    /// - Pressing a finished stroke grabs it: drag to move, or click without moving to open
+    ///   its style editor. Locked strokes can still be selected.
+    /// - Raw chart coordinates throughout: a stroke must not jump between candle highs.
+    private func handleBrush(_ event: NSEvent) -> NSEvent? {
+        if event.type == .keyDown { return handleDrawingKey(event) }
+
+        if let target = brushMoveTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    let delta = CGSize(
+                        width: hit.point.x - target.pointerStart.x,
+                        height: hit.point.y - target.pointerStart.y)
+                    let moved = target.moved || hypot(delta.width, delta.height) >= BrushTuning.moveThreshold
+                    brushMoveTarget = (target.vm, target.original, target.pointerStart, moved)
+                    if moved {
+                        target.vm.translateBrush(original: target.original, by: delta, in: hit.plot)
+                    }
+                }
+                return nil
+            case .leftMouseUp:
+                brushMoveTarget = nil
+                if target.moved {
+                    target.vm.commitBrushDrag(original: target.original)
+                } else {
+                    // A click, not a drag: open the editor now that no drag is running.
+                    target.vm.editingBrushID = target.original.id
+                }
+                return nil
+            default:
+                break
+            }
+        }
+
+        if let target = brushDrawTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event), hit.vm === target.vm {
+                    target.vm.appendBrushPoint(at: hit.point, in: hit.plot)
+                    brushDrawTarget = (target.vm, hit.plot, hit.point)
+                }
+                return nil
+            case .leftMouseUp:
+                brushDrawTarget = nil
+                target.vm.commitBrushDraft(at: target.point, in: target.plot)
+                return nil
+            default:
+                break
+            }
+        }
+
+        guard let hit = plotHit(at: event) else {
+            if event.type == .mouseMoved { chartViewModels.forEach { $0.setBrushHover(nil) } }
+            return event
+        }
+
+        switch event.type {
+        case .mouseMoved:
+            clearBrushHover(except: hit.vm)
+            hit.vm.setBrushHover(hit.vm.brushHit(at: hit.point, in: hit.plot))
+            return event
+
+        case .leftMouseDown:
+            clearDrawingState(except: hit.vm)
+            if beginBrushMove(hit) { return nil }
+            hit.vm.beginBrushDraft(at: hit.point, in: hit.plot)
+            brushDrawTarget = (hit.vm, hit.plot, hit.point)
+            return nil
+
+        case .leftMouseDragged, .leftMouseUp:
+            // A press that began elsewhere (or was cancelled by Esc) owns nothing here.
+            return nil
+
+        default:
+            return event
+        }
+    }
+
+    /// Selects the stroke under the pointer, if any, and arms a move of it. Returns whether
+    /// there was one. Shared by the brush tool and the crosshair.
+    private func beginBrushMove(_ hit: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)) -> Bool {
+        guard let id = hit.vm.brushHit(at: hit.point, in: hit.plot),
+            let original = hit.vm.brushes.first(where: { $0.id == id })
+        else {
+            hit.vm.selectedBrushID = nil
+            hit.vm.editingBrushID = nil
+            return false
+        }
+        hit.vm.selectedBrushID = id
+        hit.vm.editingBrushID = nil
+        brushMoveTarget = (hit.vm, original, hit.point, false)
+        return true
+    }
+
+    private func clearBrushHover(except keep: ChartViewModel) {
+        for vm in chartViewModels where vm !== keep { vm.setBrushHover(nil) }
+    }
+
+    private func snappedDrawingAnchor(
         for event: NSEvent, hit: (vm: ChartViewModel, plot: ChartPlot, point: CGPoint)
     ) -> TrendAnchor {
         // Command temporarily enables weak OHLC magnet snapping. This mirrors the
@@ -582,31 +758,97 @@ final class ContentViewModel: ObservableObject {
         return hit.vm.snappedAnchor(at: hit.point, in: hit.plot, strong: false)
     }
 
-    /// Click once to pin a corner, again to finish the rectangle, a third time to put it
-    /// away. Same click-move-click shape as the line tool, minus the parts a measurement
-    /// doesn't need: nothing to select, nothing to drag, nothing to persist.
+    /// Draws and edits measurement rectangles.
+    ///
+    /// - Press, drag, release draws one. A press that doesn't travel leaves the rectangle
+    ///   open instead: move, then click again to finish it.
+    /// - A corner or edge of a finished rectangle grabs it — corners resize, edges move.
+    ///   The interior is not a target, so a new measurement can start inside an old one.
+    /// - Hovering one shows its handles and sets the cursor (`ChartViewModel.hoveredRuler`).
+    ///
+    /// Nothing here touches drawing history or storage: a ruler is not an annotation.
     private func handleRuler(_ event: NSEvent) -> NSEvent? {
         if event.type == .keyDown { return handleRulerKey(event) }
 
-        guard let hit = plotHit(at: event) else { return event }
-        let anchor = hit.vm.anchor(at: hit.point, in: hit.plot)
+        // An edit owns the pointer until release, wherever it wanders.
+        if let target = rulerDragTarget {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event) {
+                    let anchor = snappedDrawingAnchor(for: event, hit: hit)
+                    switch target.part {
+                    case .corner(let corner):
+                        target.vm.moveRulerCorner(original: target.original, corner: corner, to: anchor)
+                    case .edge:
+                        target.vm.translateRuler(
+                            original: target.original, from: target.pointerStart, to: anchor)
+                    }
+                }
+                return nil
+            case .leftMouseUp:
+                rulerDragTarget = nil
+                return nil
+            default:
+                break
+            }
+        }
+
+        // So does a rectangle being dragged out.
+        if let press = rulerPress {
+            switch event.type {
+            case .leftMouseDragged:
+                if let hit = plotHit(at: event), hit.vm === press.vm {
+                    press.vm.updateRulerDraft(to: snappedDrawingAnchor(for: event, hit: hit))
+                    let travelled = hypot(hit.point.x - press.point.x, hit.point.y - press.point.y)
+                    if travelled >= Drawing.hitTolerance { rulerPress?.moved = true }
+                }
+                return nil
+            case .leftMouseUp:
+                rulerPress = nil
+                // Released outside the plot, the rectangle ends where the pointer last was.
+                if press.moved, let end = press.vm.rulerDraft?.end {
+                    press.vm.commitRulerDraft(at: end, in: press.plot)
+                }
+                return nil
+            default:
+                break
+            }
+        }
+
+        guard let hit = plotHit(at: event) else {
+            if event.type == .mouseMoved { clearRulerHover(except: nil) }
+            return event
+        }
+        let anchor = snappedDrawingAnchor(for: event, hit: hit)
 
         switch event.type {
         case .mouseMoved:
-            // Rubber band only. Never swallowed — the pointer still belongs to the app.
-            hit.vm.updateRulerDraft(to: anchor)
+            // Never swallowed — the pointer still belongs to the app.
+            clearRulerHover(except: hit.vm)
+            if hit.vm.hasRulerDraft {
+                hit.vm.updateRulerDraft(to: anchor)
+                hit.vm.setRulerHover(nil)
+            } else {
+                hit.vm.setRulerHover(hit.vm.rulerHit(at: hit.point, in: hit.plot))
+            }
             return event
 
         case .leftMouseDown:
             // A click on another card abandons whatever was half-drawn there, but leaves
-            // its finished measurement up — two charts can be read side by side.
+            // its finished measurements up — two charts can be read side by side.
             clearDrawingState(except: hit.vm)
 
             if hit.vm.hasRulerDraft {
+                // Second click of a click-move-click rectangle.
                 hit.vm.commitRulerDraft(at: anchor, in: hit.plot)
-            } else if !hit.vm.clearRulers() {
-                // Nothing was up to dismiss, so this click starts a rectangle instead.
+            } else if let target = hit.vm.rulerHit(at: hit.point, in: hit.plot),
+                let original = hit.vm.rulers.first(where: { $0.id == target.id })
+            {
+                hit.vm.selectRuler(target.id)
+                rulerDragTarget = (hit.vm, original, target.part, anchor)
+            } else {
                 hit.vm.beginRulerDraft(at: anchor)
+                rulerPress = (hit.vm, hit.plot, hit.point, false)
             }
             return nil
 
@@ -619,22 +861,35 @@ final class ContentViewModel: ObservableObject {
     }
 
     /// Esc backs out of a half-drawn rectangle, then out of the measurements on screen,
-    /// then out of the tool. Delete clears the measurements outright.
+    /// then out of the tool. Delete removes the selected measurement, or all of them when
+    /// none is selected.
     private func handleRulerKey(_ event: NSEvent) -> NSEvent? {
         switch event.keyCode {
         case 53:  // Esc
             if let drafting = chartViewModels.first(where: { $0.hasRulerDraft }) {
                 drafting.cancelRulerDraft()
+                rulerPress = nil
             } else if !clearAllRulers() {
                 activeTool = .none
             }
             return nil
 
         case 51, 117:  // Delete, forward delete
+            if let target = chartViewModels.first(where: { $0.selectedRulerID != nil }) {
+                target.removeSelectedRuler()
+                return nil
+            }
             return clearAllRulers() ? nil : event
 
         default:
             return event
+        }
+    }
+
+    /// The pointer left every ruler, or moved to another chart: drop stale highlights.
+    private func clearRulerHover(except keep: ChartViewModel?) {
+        for vm in chartViewModels where vm !== keep {
+            vm.setRulerHover(nil)
         }
     }
 
@@ -658,17 +913,35 @@ final class ContentViewModel: ObservableObject {
     /// be the only thing that clears the crosshair — `ChartCardView`'s `onHover` handles
     /// the exit.
     private func handleCrosshair(_ event: NSEvent) -> NSEvent? {
+        // A finished brush stroke stays selectable, movable and deletable under the
+        // crosshair; with none under the pointer every event falls through as before.
+        if brushMoveTarget != nil { return handleBrush(event) }
         switch event.type {
         case .keyDown:
+            if event.keyCode == 51 || event.keyCode == 117,
+                let target = chartViewModels.first(where: { $0.selectedBrushID != nil })
+            {
+                _ = target.removeSelectedBrush()
+                return nil
+            }
             guard event.keyCode == 53 else { return event }  // Esc
             activeTool = .none
             return nil
 
+        case .leftMouseDown:
+            guard let hit = plotHit(at: event) else { return event }
+            clearDrawingState(except: hit.vm)
+            if beginBrushMove(hit) { return nil }
+            return event
+
         case .mouseMoved:
             guard let hit = plotHit(at: event) else {
                 crosshair.clear()
+                chartViewModels.forEach { $0.setBrushHover(nil) }
                 return event
             }
+            clearBrushHover(except: hit.vm)
+            hit.vm.setBrushHover(hit.vm.brushHit(at: hit.point, in: hit.plot))
             let rect = hit.plot.plotRect
             guard rect.width > 0 else { return event }
             crosshair.update(
@@ -690,7 +963,11 @@ final class ContentViewModel: ObservableObject {
     private func handleDrawingKey(_ event: NSEvent) -> NSEvent? {
         switch event.keyCode {
         case 53:  // Esc
-            if let drafting = chartViewModels.first(where: { $0.hasFibonacciDraft }) {
+            if let drafting = chartViewModels.first(where: { $0.hasBrushDraft }) {
+                // Later drag and release events find no target, so nothing is written.
+                drafting.cancelBrushDraft()
+                brushDrawTarget = nil
+            } else if let drafting = chartViewModels.first(where: { $0.hasFibonacciDraft }) {
                 drafting.cancelFibonacciDraft()
             } else if let drafting = chartViewModels.first(where: { $0.hasDraft }) {
                 drafting.cancelDraft()
@@ -700,6 +977,10 @@ final class ContentViewModel: ObservableObject {
             return nil
 
         case 51, 117:  // Delete, forward delete
+            if let target = chartViewModels.first(where: { $0.selectedBrushID != nil }) {
+                _ = target.removeSelectedBrush()
+                return nil
+            }
             if let target = chartViewModels.first(where: { $0.selectedFibonacciID != nil }) {
                 _ = target.removeSelectedFibonacci()
                 return nil
@@ -721,6 +1002,9 @@ final class ContentViewModel: ObservableObject {
         guard let window = event.window, let content = window.contentView else { return nil }
         let location = event.locationInWindow
         guard window.contentLayoutRect.contains(content.convert(location, from: nil)) else { return nil }
+        // A click or hover over the Pine indicator legend must never be treated as a chart
+        // hit — its own eye/gear/remove buttons (and normal crosshair hiding) take priority.
+        guard !pointerIsOverLegend(event) else { return nil }
         guard let views = plotRegions.keyEnumerator().allObjects as? [NSView] else { return nil }
 
         for view in views {
@@ -743,10 +1027,14 @@ final class ContentViewModel: ObservableObject {
             vm.cancelDraft()
             vm.cancelFibonacciDraft()
             vm.cancelRulerDraft()
+            vm.selectRuler(nil)
             vm.selectedLineID = nil
             vm.editingLineID = nil
             vm.selectedFibonacciID = nil
             vm.editingFibonacciID = nil
+            vm.cancelBrushDraft()
+            vm.selectedBrushID = nil
+            vm.editingBrushID = nil
         }
     }
 
@@ -823,6 +1111,7 @@ final class ContentViewModel: ObservableObject {
 
     /// Release everything this tab holds — its window is closing for good.
     private func teardown() {
+        layout.flush()
         suspend()
         if let m = scrollMonitor {
             NSEvent.removeMonitor(m)
@@ -1183,64 +1472,56 @@ final class ContentViewModel: ObservableObject {
         let configs = makeTickerConfigs()
         TabsStore.shared.update(tabID) { tab in
             tab.name = tabName
-            tab.savedViewID = currentViewID
+            tab.savedViewID = layout.activeViewID
             tab.tickerConfigs = configs
             tab.chartColumns = chartColumns
             tab.timeRange = selectedTimeRange
             tab.candleCount = candleCount
             tab.replaySession = replay.session
         }
+        layout.refresh()
     }
 
-    // MARK: - Tab naming
+    // MARK: - Saved layouts
 
-    /// Rename the tab without touching the saved-view library.
-    func renameTab(to name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty else { return }
-        tabName = trimmed
-        syncTab()
-    }
-
-    // MARK: - Saved Views
-
-    /// Save the current state. Updates existing view if already named, otherwise creates new.
-    func saveCurrentView(name: String) {
-        let configs = makeTickerConfigs()
-        let view = SavedView(
-            id: currentViewID ?? UUID(),
-            name: name,
-            tickers: chartViewModels.map { $0.ticker },
-            timeRange: selectedTimeRange,
-            createdAt: Date(),
-            tickerConfigs: configs,
-            chartColumns: chartColumns,
-            candleCount: candleCount
-        )
-        savedViews.removeAll { $0.id == view.id }
-        savedViews.append(view)
-        AppDatabase.shared.saveSavedViews(savedViews)
-
-        tabName = name
-        currentViewID = view.id
-        hasUnsavedChanges = false
-        syncTab()
-    }
-
-    /// Save changes to the current named view without prompting.
-    func saveChanges() {
-        guard currentViewID != nil else {
-            // No saved view yet — treat as new save; caller should prompt for name
-            return
+    /// Wire the controller to this tab. Runs once the tab is fully hydrated, because the controller
+    /// captures and rebuilds the tab and may call back into `syncTab()`.
+    private func configureLayout() {
+        layout.capture = { [weak self] in
+            guard let self else {
+                return SavedLayoutController.Capture(
+                    timeRange: .oneDay, configs: [], columns: [], candleCount: TimeRange.oneDay.dataPointLimit)
+            }
+            return SavedLayoutController.Capture(
+                timeRange: selectedTimeRange, configs: makeTickerConfigs(), columns: chartColumns,
+                candleCount: candleCount)
         }
-        saveCurrentView(name: tabName)
+        layout.applyView = { [weak self] in self?.applySavedView($0) }
+        layout.onIdentityChange = { [weak self] in
+            guard let self else { return }
+            tabName = layout.displayName
+            syncTab()
+        }
+        layout.openNewTab = { WindowCoordinator.shared.newTab() }
+        // The toolbar button and sheets observe the controller through this view model.
+        layoutObserver = layout.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        layout.refresh()
     }
 
-    /// Apply a saved view to this tab, replacing its current state.
-    func loadView(_ view: SavedView) {
+    /// Open `view` in this tab, asking first if the current layout has unsaved changes.
+    func openSavedView(_ view: SavedView) {
+        layout.requestOpen(view)
+    }
+
+    /// ⌘S: save the current layout, or ask for a name if it has none yet.
+    func saveLayout() {
+        layout.requestSave()
+    }
+
+    /// Replace this tab's state with `view`. Only the controller calls this, so dirty tracking is
+    /// already suspended and the baseline is taken afterwards.
+    private func applySavedView(_ view: SavedView) {
         replay.stop()
-        isApplyingView = true
-        defer { isApplyingView = false }
 
         chartViewModels.removeAll()
         selectedTimeRange = view.timeRange
@@ -1254,31 +1535,9 @@ final class ContentViewModel: ObservableObject {
         }
         chartColumns = ChartColumn.resolved(view.chartColumns, chartIDs: chartViewModels.map(\.chartID))
 
-        tabName = view.name
-        currentViewID = view.id
-        hasUnsavedChanges = false
-        syncTab()
-
         didInitialLoad = true
         refetchAll()
         connectWebSocket()
-    }
-
-    /// Re-read the saved views, which another tab may have added to since this one opened.
-    func reloadSavedViews() {
-        savedViews = AppDatabase.shared.savedViews()
-    }
-
-    /// Delete a saved view. Tabs sitting on it keep their charts but lose the link.
-    func deleteView(_ view: SavedView) {
-        savedViews.removeAll { $0.id == view.id }
-        AppDatabase.shared.saveSavedViews(savedViews)
-        if currentViewID == view.id {
-            tabName = UI.unnamedView
-            currentViewID = nil
-            hasUnsavedChanges = false
-            syncTab()
-        }
     }
 
     /// Persist chart appearance settings (colors, decimals) to disk.
@@ -1287,11 +1546,10 @@ final class ContentViewModel: ObservableObject {
         markChanged()
     }
 
-    /// Mark current view as having unsaved changes (unless applying a loaded view).
+    /// A persisted setting changed. Whether that makes the layout dirty is the controller's call,
+    /// made by comparing snapshots from `syncTab()`.
     private func markChanged() {
         syncTab()
-        guard !isApplyingView else { return }
-        hasUnsavedChanges = true
     }
 
 }

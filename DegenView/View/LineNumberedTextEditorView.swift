@@ -186,11 +186,20 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             // SwiftUI windows and sheets consume Escape before the find bar's own
             // cancel handling sees it, which otherwise leaves no way to close the bar.
             escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self, event.keyCode == 53, self.closeFindBarIfFocused(in: event.window) else {
-                    return event
+                guard let self, event.keyCode == 53 else { return event }
+                // Escape closes the completion list or signature help before anything else.
+                if self.cancelCompletionIfFocused(in: event.window) || self.closeFindBarIfFocused(in: event.window) {
+                    return nil
                 }
-                return nil
+                return event
             }
+        }
+
+        private func cancelCompletionIfFocused(in eventWindow: NSWindow?) -> Bool {
+            guard eventWindow === window, window?.firstResponder === textView,
+                let editor = textView as? PineTextView
+            else { return false }
+            return editor.completion.cancel()
         }
 
         private func closeFindBarIfFocused(in eventWindow: NSWindow?) -> Bool {

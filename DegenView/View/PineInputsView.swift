@@ -37,6 +37,22 @@ struct PineInputsView: View {
         return groups
     }
 
+    /// Width cap for an options dropdown. Short option lists keep their natural width (nil); a long
+    /// title would otherwise crowd the card's name and hint into a sliver, because the card never
+    /// shrinks its control.
+    static func menuWidth(forOptionTitles titles: [String]) -> CGFloat? {
+        (titles.map(\.count).max() ?? 0) > 20 ? 95 : nil
+    }
+
+    /// An options input's choices: the stored value and the title the menu shows for it.
+    static func optionTitles(of input: PineInputDefinition) -> [(value: String, title: String)] {
+        (input.options ?? []).enumerated().compactMap { index, option in
+            guard case .string(let text) = option else { return nil }
+            let title = input.optionTitles.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? text
+            return (text, title)
+        }
+    }
+
     private func set(_ value: PineInputValue, for input: PineInputDefinition) {
         onChange(value, input.id)
     }
@@ -102,6 +118,8 @@ struct PineInputsView: View {
                 .frame(width: 100)
             }
         case (.string, .string(let value)) where input.options != nil:
+            let titles = Self.optionTitles(of: input)
+            let shown = titles.first { $0.value == value }?.title ?? value
             SettingsCardRow(title: title, icon: "list.bullet", hint: input.tooltip) {
                 Picker(
                     title,
@@ -109,15 +127,12 @@ struct PineInputsView: View {
                         get: { value },
                         set: { set(.string($0), for: input) })
                 ) {
-                    ForEach(Array((input.options ?? []).enumerated()), id: \.offset) { index, option in
-                        if case .string(let text) = option {
-                            Text(input.optionTitles.flatMap { $0.indices.contains(index) ? $0[index] : nil } ?? text)
-                                .tag(text)
-                        }
-                    }
+                    ForEach(titles, id: \.value) { Text($0.title).tag($0.value) }
                 }
                 .pickerStyle(.menu)
                 .labelsHidden()
+                .frame(width: Self.menuWidth(forOptionTitles: titles.map(\.title)))
+                .help(shown)
             }
         case (.string, .string(let value)):
             SettingsCardRow(title: title, icon: "textformat", hint: input.tooltip) {

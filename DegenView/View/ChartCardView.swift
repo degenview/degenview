@@ -16,6 +16,9 @@ struct ChartCardView: View {
     let onAxisRegion: (NSView) -> Void
     /// Hands the plot area's `NSView` to the trend-line drawing monitor.
     var onPlotRegion: (NSView) -> Void = { _ in }
+    /// Hands the Pine indicator legend's `NSView` to the drawing-tool monitor, so a click on
+    /// its eye/gear/remove icons is never swallowed as "begin drawing".
+    var onLegendRegion: (NSView) -> Void = { _ in }
     /// Whether any tool is armed — drives the crosshair cursor over the plot.
     var isToolArmed: Bool = false
     /// Narrower than `isToolArmed`: only the trend-line tool shows endpoint handles.
@@ -44,6 +47,16 @@ struct ChartCardView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     @ViewBuilder
+    /// Over a ruler's edge or corner the cursor says what a drag would do.
+    private var plotCursor: PlotCursor {
+        if viewModel.hoveredBrushID != nil { return .move }
+        guard let hover = viewModel.hoveredRuler else { return .crosshair }
+        switch hover.part {
+        case .edge: return .move
+        case .corner(let corner): return .resize(corner)
+        }
+    }
+
     var body: some View {
         if let config = viewModel.portfolioChart {
             PortfolioChartCard(
@@ -81,10 +94,17 @@ struct ChartCardView: View {
             VStack(spacing: 0) {
                 chartArea
                 // Below, not inside, the chart area: its overlays and hit regions must
-                // keep the price canvas's size, or `viewModel.plot(in:)` would drift.
-                if showsPinePane {
-                    PineScriptPaneView(
-                        pine: viewModel.pineOutput, candles: viewModel.visibleKlines, height: pinePaneHeight)
+                // keep the price canvas's size, or `viewModel.plot(in:)` would drift. One
+                // stacked pane per non-overlay applied instance, in applied order.
+                if showsPinePanes {
+                    let panes = viewModel.panePineOutputs
+                    VStack(spacing: 0) {
+                        ForEach(Array(panes.enumerated()), id: \.offset) { _, output in
+                            PineScriptPaneView(
+                                pine: output, candles: viewModel.visibleKlines,
+                                height: viewModel.pinePaneHeight(forChartHeight: chartHeight, count: panes.count))
+                        }
+                    }
                 }
             }
         }
@@ -92,6 +112,14 @@ struct ChartCardView: View {
         .frame(height: cardHeight ?? chartHeight + ChartLayout.cardChrome)
         .clipped()
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            // A time-travelled chart reads as one at a glance.
+            if viewModel.replayTimestamp != nil {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(ReplayStyle.accent.opacity(0.45), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .background(ZoomHitRegion(onResolve: onZoomRegion))
         .onChange(of: colorScheme, initial: true) { _, scheme in
             viewModel.setPineTheme(scheme == .dark ? .dark : .light)
@@ -114,6 +142,9 @@ struct ChartCardView: View {
             if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
         .onChange(of: viewModel.editingFibonacciID) { old, new in
+            if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
+        }
+        .onChange(of: viewModel.editingBrushID) { old, new in
             if (old == nil) != (new == nil) { onLineEditorPresented?(new != nil) }
         }
     }
@@ -139,8 +170,11 @@ struct ChartCardView: View {
                             .foregroundStyle(.secondary.opacity(0.6))
                         if viewModel.replayTimestamp != nil {
                             Label("Replay", systemImage: "clock.arrow.circlepath")
-                                .font(.caption2.weight(.semibold))
-                                .foregroundStyle(.orange)
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(ReplayStyle.accent)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(ReplayStyle.accent.opacity(0.14), in: Capsule())
                                 .accessibilityLabel("Historical replay mode")
                         }
                     }
@@ -180,26 +214,9 @@ struct ChartCardView: View {
             }
 
             if paperConnected, let price = viewModel.displayedPrice {
-                HStack(spacing: 4) {
-                    Button(action: onPaperSell) {
-                        VStack(spacing: 0) {
-                            Text("SELL").font(.caption2.bold())
-                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
-                                .caption2.monospacedDigit())
-                        }
-                    }
-                    .buttonStyle(.bordered).tint(.red)
-                    .accessibilityLabel("Sell \(viewModel.title), paper order at last price \(price)")
-                    Button(action: onPaperBuy) {
-                        VStack(spacing: 0) {
-                            Text("BUY").font(.caption2.bold())
-                            Text(PriceFormatter.format(price, scale: viewModel.priceScale)).font(
-                                .caption2.monospacedDigit())
-                        }
-                    }
-                    .buttonStyle(.borderedProminent).tint(.blue)
-                    .accessibilityLabel("Buy \(viewModel.title), paper order at last price \(price)")
-                }
+                PaperQuickTradeButtons(
+                    priceText: PriceFormatter.format(price, scale: viewModel.priceScale),
+                    title: viewModel.title, onSell: onPaperSell, onBuy: onPaperBuy)
             }
 
             if let change = viewModel.priceChangePercent {
@@ -217,7 +234,8 @@ struct ChartCardView: View {
     private var alertAsset: PortfolioAsset {
         PortfolioAsset(
             key: viewModel.iconKey, symbol: viewModel.baseSymbol, name: viewModel.title,
-            source: viewModel.source, quoteCurrency: .USD, metadata: ["apiSymbol": viewModel.apiSymbol])
+            source: viewModel.source, quoteCurrency: PortfolioCurrency(quoteSymbol: viewModel.marketPair?.quote),
+            metadata: ["apiSymbol": viewModel.apiSymbol])
     }
 
     // MARK: - PM Series Legend
@@ -257,9 +275,9 @@ struct ChartCardView: View {
 
     // MARK: - Chart Area
 
-    private var showsPinePane: Bool { viewModel.showsPinePane }
+    private var showsPinePanes: Bool { viewModel.showsPinePanes }
 
-    private var pinePaneHeight: CGFloat { viewModel.pinePaneHeight(forChartHeight: chartHeight) }
+    private var pinePanesHeight: CGFloat { viewModel.pinePanesHeight(forChartHeight: chartHeight) }
 
     @ViewBuilder
     private var chartArea: some View {
@@ -287,20 +305,20 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
-                    rulers: viewModel.rulers,
-                    rulerDraft: viewModel.rulerDraft
+                    brushOverlay: viewModel.brushOverlay,
+                    rulerOverlay: viewModel.rulerOverlay
                 )
             } else {
                 CandleChartView(
                     candles: viewModel.visibleKlines,
-                    chartHeight: chartHeight - pinePaneHeight,
+                    chartHeight: chartHeight - pinePanesHeight,
                     bullishColor: viewModel.bullishColor,
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     yZoom: viewModel.yZoom,
                     showVolume: viewModel.showVolume,
                     indicators: indicators,
-                    pine: viewModel.pineOutput,
+                    pineOutputs: viewModel.visiblePineOutputs,
                     trendLines: viewModel.trendLines,
                     trendDraft: viewModel.trendDraft,
                     selectedTrendLineID: viewModel.selectedLineID,
@@ -308,13 +326,13 @@ struct ChartCardView: View {
                     fibonacciRetracements: visibleFibonacciRetracements,
                     fibonacciDraft: viewModel.fibonacciDraft,
                     selectedFibonacciID: viewModel.selectedFibonacciID,
-                    rulers: viewModel.rulers,
-                    rulerDraft: viewModel.rulerDraft
+                    brushOverlay: viewModel.brushOverlay,
+                    rulerOverlay: viewModel.rulerOverlay
                 )
             }
         }
         .overlay {
-            PlotHitRegion(isArmed: isToolArmed, onResolve: onPlotRegion)
+            PlotHitRegion(isArmed: isToolArmed, cursor: plotCursor, onResolve: onPlotRegion)
         }
         .overlay {
             if let crosshair {
@@ -336,11 +354,17 @@ struct ChartCardView: View {
                     onModify: onPaperModify, onCancel: onPaperCancel, onClose: onPaperClose)
             }
         }
+        .overlay(alignment: .topLeading) {
+            PineIndicatorLegend(viewModel: viewModel, onLegendRegion: onLegendRegion, onStyleChanged: onStyleChanged)
+                .padding(.leading, 8)
+                .padding(.top, 28)
+        }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves
         // it altogether would strand the crosshair on the last chart it touched.
         .onHover { isInside in
             guard !isInside else { return }
             onCrosshairExit()
+            viewModel.setRulerHover(nil)
         }
         .overlay(alignment: .trailing) {
             PriceAxisRegion(onResolve: onAxisRegion)
@@ -377,6 +401,13 @@ struct ChartCardView: View {
             } else if let fibID = viewModel.editingFibonacciID {
                 FibonacciEditor(viewModel: viewModel, drawingID: fibID, onChange: onStyleChanged)
                     .padding(.top, 8)
+            } else if let brushID = viewModel.editingBrushID {
+                BrushEditor(
+                    viewModel: viewModel,
+                    brushID: brushID,
+                    onDismiss: { viewModel.editingBrushID = nil }
+                )
+                .padding(.top, 8)
             }
         }
     }
@@ -835,27 +866,6 @@ private struct PortfolioAllocationMiniChart: View {
                 }
             }
         }
-    }
-}
-
-private struct ReplaySelectionMarker: View {
-    @ObservedObject var viewModel: ChartViewModel
-    let date: Date
-
-    var body: some View {
-        GeometryReader { geometry in
-            Canvas { context, _ in
-                let points = viewModel.visibleKlines
-                guard let index = points.firstIndex(where: { $0.openTime == date }) else { return }
-                let plot = viewModel.plot(in: geometry.size)
-                let x = plot.x(forIndex: index, slotWidth: plot.slotWidth(forCount: points.count))
-                var path = Path()
-                path.move(to: CGPoint(x: x, y: plot.plotRect.minY))
-                path.addLine(to: CGPoint(x: x, y: plot.plotRect.maxY))
-                context.stroke(path, with: .color(.orange), style: StrokeStyle(lineWidth: 2, dash: [5, 4]))
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 
@@ -1453,6 +1463,36 @@ struct ZoomHitRegion: NSViewRepresentable {
 /// resize cursor over it. The drag itself is handled by `ContentViewModel`'s mouse
 /// monitor, which hit-tests against this view.
 ///
+/// What the pointer looks like over the plot while a tool is armed. The ruler is the only
+/// tool that changes it: grabbing an edge moves a measurement, a corner resizes it.
+private enum PlotCursor: Equatable {
+    case crosshair
+    case move
+    case resize(RulerCorner)
+
+    var nsCursor: NSCursor {
+        switch self {
+        case .crosshair:
+            return .crosshair
+        case .move:
+            return .openHand
+        case .resize(let corner):
+            // Diagonal resize cursors are public API from macOS 15 only.
+            if #available(macOS 15.0, *) {
+                let position: NSCursor.FrameResizePosition =
+                    switch (corner.isTop, corner.isLeft) {
+                    case (true, true): .topLeft
+                    case (true, false): .topRight
+                    case (false, true): .bottomLeft
+                    case (false, false): .bottomRight
+                    }
+                return .frameResize(position: position, directions: .all)
+            }
+            return .crosshair
+        }
+    }
+}
+
 /// The monitor rather than `mouseDown`/`mouseDragged` overrides here: SwiftUI's
 /// hosting view claims mouse events for the card's `.onDrag` reordering before AppKit
 /// ever offers them to a child view, so an event-handling `NSView` in this position
@@ -1467,23 +1507,29 @@ struct ZoomHitRegion: NSViewRepresentable {
 /// monitor can convert a click without reconstructing the flip by hand.
 private struct PlotHitRegion: NSViewRepresentable {
     let isArmed: Bool
+    let cursor: PlotCursor
     let onResolve: (NSView) -> Void
 
     func makeNSView(context: Context) -> NSView {
         let view = PlotRegionView()
         view.isArmed = isArmed
+        view.cursor = cursor
         onResolve(view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        guard let view = nsView as? PlotRegionView, view.isArmed != isArmed else { return }
+        guard let view = nsView as? PlotRegionView,
+            view.isArmed != isArmed || view.cursor != cursor
+        else { return }
         view.isArmed = isArmed
+        view.cursor = cursor
         view.window?.invalidateCursorRects(for: view)
     }
 
     private final class PlotRegionView: NSView {
         var isArmed = false
+        var cursor = PlotCursor.crosshair
 
         override var isFlipped: Bool { true }
 
@@ -1496,7 +1542,7 @@ private struct PlotHitRegion: NSViewRepresentable {
             // Stop short of the price gutter, which keeps its own resize cursor.
             var rect = bounds
             rect.size.width = max(0, rect.width - ChartStyle.default.chartInsets.trailing)
-            addCursorRect(rect, cursor: .crosshair)
+            addCursorRect(rect, cursor: cursor.nsCursor)
         }
     }
 }

@@ -1,0 +1,29 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Long-only EMA crossover with an ATR-based stop and target. Apply it to a chart
+// and open the Scripts tab to see the backtest report. Past results say nothing
+// about the future.
+strategy("EMA Cross Strategy", overlay = true, initial_capital = 10000, default_qty_type = strategy.percent_of_equity, default_qty_value = 50)
+
+fastLength = input.int(12, "Fast length", minval = 1, group = "Entry")
+slowLength = input.int(26, "Slow length", minval = 2, group = "Entry")
+atrLength = input.int(14, "ATR length", minval = 1, group = "Exit")
+stopMultiple = input.float(2.0, "Stop distance (ATR x)", minval = 0.5, step = 0.5, group = "Exit")
+targetMultiple = input.float(4.0, "Target distance (ATR x)", minval = 0.5, step = 0.5, group = "Exit")
+
+fast = ta.ema(close, fastLength)
+slow = ta.ema(close, slowLength)
+atr = ta.atr(atrLength)
+
+goLong = ta.crossover(fast, slow)
+goFlat = ta.crossunder(fast, slow)
+
+if goLong
+    strategy.entry("Long", strategy.long)
+if goFlat
+    strategy.close("Long")
+if strategy.position_size > 0
+    strategy.exit("Stop/Target", "Long", stop = strategy.position_avg_price - atr * stopMultiple, limit = strategy.position_avg_price + atr * targetMultiple)
+
+plot(fast, "Fast EMA", color = color.aqua)
+plot(slow, "Slow EMA", color = color.orange)

@@ -27,8 +27,8 @@ struct PineDiagnosticsListView: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Image(systemName: diagnostic.severity.symbol)
                                 .foregroundStyle(diagnostic.severity.color)
-                            Text(Self.format(diagnostic))
-                                .foregroundStyle(.primary)
+                            (Text(Self.location(diagnostic)).foregroundStyle(.secondary)
+                                + Text(diagnostic.message).foregroundStyle(.primary))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .textSelection(.enabled)
@@ -51,7 +51,9 @@ struct PineDiagnosticsListView: View {
         .font(.caption)
     }
 
-    private var copyTitle: String {
+    private var copyTitle: String { Self.copyTitle(for: diagnostics) }
+
+    static func copyTitle(for diagnostics: [PineDiagnostic]) -> String {
         diagnostics.contains { $0.severity == .error } ? "Copy Errors" : "Copy Problems"
     }
 
@@ -65,17 +67,25 @@ struct PineDiagnosticsListView: View {
             .map(\.element)
     }
 
-    static func format(_ diagnostic: PineDiagnostic) -> String {
-        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  \(diagnostic.message)"
+    /// "PINE3025 · 12:4  ", the part of a row that says where, not what.
+    static func location(_ diagnostic: PineDiagnostic) -> String {
+        "\(diagnostic.code) · \(diagnostic.range.start.line):\(diagnostic.range.start.column)  "
     }
 
-    private func copy() {
+    static func format(_ diagnostic: PineDiagnostic) -> String { location(diagnostic) + diagnostic.message }
+
+    /// Puts the errors (or everything, when there are only warnings) on the pasteboard.
+    static func copyToPasteboard(_ diagnostics: [PineDiagnostic]) {
         let errors = diagnostics.filter { $0.severity == .error }
-        let text = (errors.isEmpty ? diagnostics : errors).map(Self.format).joined(separator: "\n")
+        let text = (errors.isEmpty ? diagnostics : errors).map(format).joined(separator: "\n")
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+    }
+
+    private func copy() {
+        Self.copyToPasteboard(diagnostics)
         copied = true
         Task {
             try? await Task.sleep(for: .seconds(2))

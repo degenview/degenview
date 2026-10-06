@@ -337,6 +337,22 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(output.plots[0].values, [0, 0, 86_400_000])
     }
 
+    func testTimeframeFromSecondsBuildsTimeframeStrings() throws {
+        let program = compile(
+            """
+            plot(timeframe.in_seconds(timeframe.from_seconds(45)))
+            plot(timeframe.in_seconds(timeframe.from_seconds(300)))
+            plot(timeframe.in_seconds(timeframe.from_seconds(172800)))
+            plot(timeframe.from_seconds(7200) == "120" ? 1 : 0)
+            plot(timeframe.from_seconds(86400) == "1D" ? 1 : 0)
+            plot(timeframe.from_seconds(1209600) == "2W" ? 1 : 0)
+            """)
+        let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(output.plots.map { $0.values.last ?? nil }, [45, 300, 172_800, 1, 1, 1])
+        XCTAssertEqual(PineTime.timeframe(fromSeconds: 90), "90S")
+        XCTAssertNil(PineTime.timeframe(fromSeconds: 0))
+    }
+
     func testTimeframeInSecondsRejectsAMalformedTimeframe() {
         let program = compile("plot(timeframe.in_seconds(\"5X\"))")
         XCTAssertThrowsError(try PineRuntimeSession(program: program).evaluate(bars: bars([1]))) {

@@ -15,21 +15,20 @@ struct PaperChartTradingOverlay: View {
             let range = priceRange
             ZStack(alignment: .topLeading) {
                 ForEach(positions) { position in
-                    marker(y: y(position.averageEntryPrice, in: geometry.size, range: range), color: .blue) {
-                        HStack(spacing: 5) {
-                            Text(
-                                "PAPER \(position.side.rawValue.uppercased()) \(quantity(position.quantity, position.instrument)) @ \(price(position.averageEntryPrice, position.instrument))  \(PaperTradingFormatter.signedMoney(unrealizedPnL(position), currency: accountCurrency))"
-                            )
-                            Button {
-                                onClose(position)
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                            }
-                            .buttonStyle(.plain).accessibilityLabel(
-                                "Close paper \(position.side.rawValue) position, \(quantity(position.quantity, position.instrument))"
-                            )
-                        }
+                    let pnl = unrealizedPnL(position)
+                    let size = quantity(position.quantity, position.instrument)
+                    let entry = price(position.averageEntryPrice, position.instrument)
+                    PaperChartMarkerPill(
+                        tag: position.side.badgeText, tint: position.side.tint,
+                        text: "\(size) @ \(entry)",
+                        pnlText: PaperTradingFormatter.signedMoney(pnl, currency: accountCurrency),
+                        pnlColor: PaperTradingStyle.pnl(pnl),
+                        closeLabel: "Close paper \(position.side.rawValue) position, \(size)"
+                    ) {
+                        onClose(position)
                     }
+                    .frame(maxWidth: .infinity)
+                    .offset(y: y(position.averageEntryPrice, in: geometry.size, range: range))
                 }
                 ForEach(orders) { order in
                     if let price = markerPrice(order) {
@@ -64,15 +63,6 @@ struct PaperChartTradingOverlay: View {
         let fraction = ((price - range.lowerBound) / (range.upperBound - range.lowerBound)).doubleValue
         return max(0, min(size.height - 20, size.height * CGFloat(1 - fraction)))
     }
-    private func marker<Content: View>(y: CGFloat, color: Color, @ViewBuilder content: () -> Content) -> some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(color).frame(height: 1)
-            content().font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2).background(
-                color.opacity(0.9), in: Capsule()
-            ).foregroundStyle(.white)
-        }
-        .frame(maxWidth: .infinity).offset(y: y)
-    }
     private func price(_ value: Decimal, _ instrument: PaperInstrument) -> String {
         PaperTradingFormatter.price(value, instrument: instrument)
     }
@@ -92,22 +82,12 @@ struct PaperChartTradingOverlay: View {
         var body: some View {
             let baseY = y(initialPrice)
             let displayed = dragY.map(price) ?? initialPrice
-            HStack(spacing: 0) {
-                Rectangle().fill(color).frame(height: 1)
-                HStack(spacing: 5) {
-                    Text(
-                        "PAPER \(order.side.rawValue.uppercased()) \(order.type.rawValue.uppercased()) \(quantity(order.remainingQuantity)) @ \(price(displayed))"
-                    )
-                    Button {
-                        onCancel(order)
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel(
-                            "Cancel paper \(order.side.rawValue) \(order.type.rawValue) order at \(price(displayed))")
-                }.font(.caption2.monospacedDigit()).padding(.horizontal, 5).padding(.vertical, 2).background(
-                    color.opacity(0.9), in: Capsule()
-                ).foregroundStyle(.white)
+            PaperChartMarkerPill(
+                tag: order.role == .entry ? order.type.badgeText : order.role.badgeText, tint: color,
+                text: "\(order.side.badgeText) \(quantity(order.remainingQuantity)) @ \(price(displayed))",
+                closeLabel: "Cancel paper \(order.side.rawValue) \(order.type.rawValue) order at \(price(displayed))"
+            ) {
+                onCancel(order)
             }
             .frame(maxWidth: .infinity).offset(y: dragY ?? baseY).contentShape(Rectangle())
             .gesture(
@@ -120,8 +100,13 @@ struct PaperChartTradingOverlay: View {
             )
             .help("Drag to modify; release to commit")
         }
+        /// Take profit green, stop loss and plain stops red, resting limits in the accent colour.
         private var color: Color {
-            order.role == .takeProfit ? .green : (order.role == .stopLoss || order.type == .stop ? .red : .orange)
+            switch order.role {
+            case .takeProfit: PaperTradingStyle.buy
+            case .stopLoss: PaperTradingStyle.sell
+            case .entry: order.type == .stop || order.type == .stopLimit ? .orange : .accentColor
+            }
         }
         private func y(_ price: Decimal) -> CGFloat {
             size.height * CGFloat(1 - ((price - range.lowerBound) / (range.upperBound - range.lowerBound)).doubleValue)

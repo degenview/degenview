@@ -1,0 +1,18 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Volume columns, orange when a bar trades several times the recent average.
+// On a live chart, "Create Alert…" in the chart's Scripts tab turns the alert()
+// below into a notification. History never notifies.
+indicator("Volume Spike Alert", overlay = false)
+
+length = input.int(20, "Average length", minval = 2)
+multiplier = input.float(3.0, "Spike multiplier", minval = 1.0, step = 0.5)
+
+threshold = ta.sma(volume, length)[1] * multiplier
+spike = volume > threshold
+
+plot(volume, "Volume", style = plot.style_columns, color = spike ? color.orange : color.new(color.gray, 60))
+plot(threshold, "Threshold", color = color.red)
+
+if spike
+    alert("Volume spike on " + syminfo.ticker + ": " + str.tostring(volume / (threshold / multiplier), "#.0") + "x the average", alert.freq_once_per_bar_close)

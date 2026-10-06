@@ -100,4 +100,40 @@ final class PineIgnoredFeatureTests: XCTestCase {
         XCTAssertEqual(PineDiagnosticSeverity.error.nsColor, .systemRed)
         XCTAssertEqual(PineDiagnosticSeverity.warning.nsColor, .systemYellow)
     }
+
+    func testDiagnosticsSectionCountsSeveritiesAndOpensOnlyForErrors() {
+        let error = PineDiagnostic.error("PINE0001", .syntax, "Unexpected end", .zero)
+        let warning = PineDiagnostic.warning("PINE9001", .semantic, "Ignored", .zero)
+        let mixed = [warning, error, error]
+
+        XCTAssertEqual(PineDiagnosticsSection.summary(for: mixed), .init(errors: 2, warnings: 1))
+        XCTAssertTrue(PineDiagnosticsSection.startsExpanded(mixed))
+
+        XCTAssertEqual(PineDiagnosticsSection.summary(for: [warning]), .init(errors: 0, warnings: 1))
+        XCTAssertFalse(PineDiagnosticsSection.startsExpanded([warning]), "warnings alone wait to be opened")
+
+        XCTAssertEqual(PineDiagnosticsSection.summary(for: []), .init())
+        XCTAssertFalse(PineDiagnosticsSection.startsExpanded([]))
+    }
+
+    func testAlertsSectionSplitsLiveFromHistoricalAndListsNewestFirst() {
+        func alert(_ id: Int, live: Bool) -> PineAlertEvent {
+            PineAlertEvent(
+                id: id, site: 1, bar: id, time: Date(timeIntervalSince1970: Double(id)), message: "m\(id)",
+                isRealtime: live)
+        }
+        let alerts = (1...(PineAlertsSection.limit + 5)).map { alert($0, live: $0 % 10 == 0) }
+        let summary = PineAlertsSection.summary(for: alerts)
+        XCTAssertEqual(summary.live + summary.historical, alerts.count)
+        XCTAssertEqual(summary.live, alerts.filter(\.isRealtime).count)
+
+        let visible = PineAlertsSection.visible(alerts)
+        XCTAssertEqual(visible.count, PineAlertsSection.limit)
+        XCTAssertEqual(visible.first?.id, alerts.last?.id, "newest first")
+        XCTAssertEqual(visible.last?.id, 6, "the oldest five are dropped")
+
+        XCTAssertEqual(PineAlertsSection.summary(for: []), .init())
+        XCTAssertEqual(PineCountChip.plural(1, "error"), "1 error")
+        XCTAssertEqual(PineCountChip.plural(2, "error"), "2 errors")
+    }
 }

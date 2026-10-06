@@ -1,0 +1,32 @@
+//@version=6
+// Example script bundled with DegenView. Edit it freely.
+// Draws a horizontal line from every confirmed swing high (resistance) and swing
+// low (support), and keeps only the most recent few of each. A pivot is confirmed
+// "right bars" after it happens, so levels appear with that delay.
+indicator("Pivot Levels", overlay = true)
+
+leftBars = input.int(10, "Left bars", minval = 1, group = "Pivots")
+rightBars = input.int(10, "Right bars", minval = 1, group = "Pivots")
+keep = input.int(5, "Levels to keep per side", minval = 1, maxval = 20, group = "Display")
+resistanceColor = input.color(color.red, "Resistance", group = "Display")
+supportColor = input.color(color.green, "Support", group = "Display")
+
+var array<line> resistance = array.new<line>()
+var array<line> support = array.new<line>()
+var array<label> tags = array.new<label>()
+
+// Draws one level, then deletes the oldest ones beyond the cap.
+addLevel(array<line> levels, float price, color levelColor, int pivotBar) =>
+    levels.push(line.new(pivotBar, price, bar_index, price, extend = extend.right, color = levelColor))
+    tags.push(label.new(pivotBar, price, str.tostring(price, format.mintick), style = label.style_label_down, color = levelColor, textcolor = color.white, size = size.small))
+    if levels.size() > keep
+        line.delete(levels.shift())
+        label.delete(tags.shift())
+
+pivotHigh = ta.pivothigh(high, leftBars, rightBars)
+pivotLow = ta.pivotlow(low, leftBars, rightBars)
+
+if not na(pivotHigh)
+    addLevel(resistance, pivotHigh, resistanceColor, bar_index - rightBars)
+if not na(pivotLow)
+    addLevel(support, pivotLow, supportColor, bar_index - rightBars)

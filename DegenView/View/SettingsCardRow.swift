@@ -1,20 +1,22 @@
 import SwiftUI
 
-/// A consistently aligned settings card: icon badge, title and hint on the left, the control
+/// A consistently aligned settings card: optional icon badge, title and hint on the left, the control
 /// anchored to the right. Shared by the chart's indicator and script-input lists.
 struct SettingsCardRow<Control: View>: View {
     let title: String
-    let icon: String
+    let icon: String?
     let hint: String?
     @ViewBuilder let control: () -> Control
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.tint)
-                .frame(width: 30, height: 30)
-                .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.tint)
+                    .frame(width: 30, height: 30)
+                    .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)

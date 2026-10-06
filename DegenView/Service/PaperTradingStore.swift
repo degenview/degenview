@@ -12,7 +12,19 @@ final class PaperTradingStore: ObservableObject {
     let engine: PaperTradingEngine
     let execution: PaperTradingExecutionService
 
-    init(database: AppDatabase = .shared) {
+    private struct PendingQuote {
+        let instrument: PaperInstrument
+        let bid: Decimal?
+        let ask: Decimal?
+        let last: Decimal?
+        let timestamp: Date
+    }
+    private var pendingQuotes: [String: PendingQuote] = [:]
+    private var isQuoteFlushScheduled = false
+    private let quoteFlushInterval: TimeInterval
+
+    init(database: AppDatabase = .shared, quoteFlushInterval: TimeInterval = 0.5) {
+        self.quoteFlushInterval = quoteFlushInterval
         var initial = PaperTradingSnapshot.empty
         var canPersist = true
         do {
@@ -24,6 +36,9 @@ final class PaperTradingStore: ObservableObject {
                 print("[PaperTradingStore] Paper trading unreadable; disabling writes: \(error.localizedDescription)")
             #endif
         }
+        // A quote from an earlier run is hours old at best; showing it would put last session's price
+        // in the order ticket until the first fresh one arrives.
+        initial.quotes = [:]
         snapshot = initial
         let engine = PaperTradingEngine(
             snapshot: initial,
@@ -109,6 +124,33 @@ final class PaperTradingStore: ObservableObject {
         } catch { report(error) }
     }
 
+    /// Hands the engine a market's latest quote, at most once every `quoteFlushInterval` per
+    /// instrument. Charts call this on every tick; the newest quote of each burst is the one used.
+    /// Use `process` for a quote that must land now.
+    func stream(instrument: PaperInstrument, bid: Decimal?, ask: Decimal?, last: Decimal?) {
+        pendingQuotes[instrument.key] = PendingQuote(
+            instrument: instrument, bid: bid, ask: ask, last: last, timestamp: Date())
+        guard !isQuoteFlushScheduled else { return }
+        isQuoteFlushScheduled = true
+        let interval = quoteFlushInterval
+        Task {
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            await flushQuotes()
+        }
+    }
+
+    /// Sends every pending streamed quote to the engine now.
+    func flushQuotes() async {
+        isQuoteFlushScheduled = false
+        let batch = Array(pendingQuotes.values)
+        pendingQuotes = [:]
+        for quote in batch {
+            await process(
+                instrument: quote.instrument, bid: quote.bid, ask: quote.ask, last: quote.last,
+                timestamp: quote.timestamp)
+        }
+    }
+
     func reset(currency: PaperCurrency, balance: Decimal, settings: PaperAccountSettings) async {
         guard let id = snapshot.selectedAccountID else { return }
         do {
@@ -139,6 +181,43 @@ final class PaperTradingStore: ObservableObject {
     }
 
     func clearError() { lastError = nil }
+
+    // MARK: Formatting
+
+    var accountCurrency: PaperCurrency { selectedAccount?.baseCurrency ?? .USD }
+
+    func money(_ value: Decimal) -> String {
+        PaperTradingFormatter.money(value, currency: accountCurrency)
+    }
+
+    func signedMoney(_ value: Decimal) -> String {
+        PaperTradingFormatter.signedMoney(value, currency: accountCurrency)
+    }
+
+    // MARK: Marks
+
+    /// The price a position would close at right now: the bid for a long, the ask for a short,
+    /// falling back to the last trade. Nil until the instrument has a quote.
+    func mark(for position: PaperPosition) -> Decimal? {
+        guard let quote = snapshot.quotes[position.instrument.key] else { return nil }
+        return position.signedQuantity >= 0 ? (quote.bid ?? quote.last) : (quote.ask ?? quote.last)
+    }
+
+    /// Open profit or loss, the same figure the engine reports in its metrics (zero without a quote).
+    func unrealizedPnL(for position: PaperPosition) -> Decimal {
+        guard let mark = mark(for: position) else { return 0 }
+        let difference =
+            position.signedQuantity >= 0
+            ? mark - position.averageEntryPrice : position.averageEntryPrice - mark
+        return difference * position.quantity * position.instrument.pointValue
+    }
+
+    /// Open profit or loss as a ratio of the position's entry value (`0.05` is +5%).
+    func returnRatio(for position: PaperPosition) -> Decimal? {
+        let cost = position.averageEntryPrice * position.quantity * position.instrument.pointValue
+        guard cost > 0, mark(for: position) != nil else { return nil }
+        return unrealizedPnL(for: position) / cost
+    }
 
     private func scoped<T>(_ values: [T]) -> [T] {
         guard let id = snapshot.selectedAccountID else { return [] }

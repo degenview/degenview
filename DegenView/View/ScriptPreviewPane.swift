@@ -155,7 +155,7 @@ struct ScriptPreviewPane: View {
                     yZoom: chart.yZoom,
                     showVolume: chart.showVolume,
                     indicators: chart.indicators,
-                    pine: chart.pineOutput
+                    pineOutputs: [chart.pineOutput]
                 )
                 .overlay(alignment: .trailing) {
                     PriceAxisRegion { preview.registerAxisRegion($0) }

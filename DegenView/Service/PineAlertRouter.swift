@@ -12,9 +12,10 @@ enum PineAlertRouter {
     /// - Parameters:
     ///   - events: what `PineExecutionUpdate.alerts` carried.
     ///   - barID: the update's bar; its dataset is the market the script ran on.
-    ///   - sourceHash: hash of the source the chart has applied now.
+    ///   - instanceID: the applied indicator that raised `events`; only its subscriptions can fire.
+    ///   - sourceHash: hash of the source that indicator is running now.
     static func route(
-        events: [PineAlertEvent], barID: PineBarID?, chartID: UUID, sourceHash: String?,
+        events: [PineAlertEvent], barID: PineBarID?, chartID: UUID, instanceID: UUID?, sourceHash: String?,
         subscriptions: [PineAlertSubscription], guard frequencyGuard: inout PineAlertFrequencyGuard,
         now: Date = Date()
     ) -> [Routed] {
@@ -24,8 +25,8 @@ enum PineAlertRouter {
 
         var routed: [Routed] = []
         for subscription in subscriptions
-        where subscription.isActive && subscription.chartID == chartID && subscription.watches(dataset)
-            && subscription.sourceHash == sourceHash
+        where subscription.isActive && subscription.chartID == chartID && subscription.instanceID == instanceID
+            && subscription.watches(dataset) && subscription.sourceHash == sourceHash
         {
             let barLength = TimeRange(rawValue: subscription.timeframe)?.binanceIntervalSeconds ?? 0
             for event in live {

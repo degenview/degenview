@@ -67,7 +67,7 @@ struct TrendLine: Codable, Equatable, Hashable, Identifiable {
 /// A measuring rectangle, pinned by two opposite corners.
 ///
 /// Deliberately not `Codable`: a ruler is a measurement, not an annotation. It lives on
-/// the chart view model only, and the next click puts it away.
+/// the chart view model only, is never persisted and never enters drawing history.
 ///
 /// Which way the move went is read from the anchors rather than stored, so a rectangle
 /// keeps its colour when a timeframe switch reprojects it.
@@ -79,6 +79,85 @@ struct RulerRect: Equatable, Identifiable {
     /// True when the second corner landed above the first — measured bottom to top.
     /// A flat measurement counts as up, matching how the card header reads a 0% change.
     var isUpward: Bool { end.price >= start.price }
+
+    var earliest: Date { min(start.date, end.date) }
+    var latest: Date { max(start.date, end.date) }
+    var high: Double { max(start.price, end.price) }
+    var low: Double { min(start.price, end.price) }
+
+    /// The anchor-space position of one of the four corners.
+    func anchor(of corner: RulerCorner) -> TrendAnchor {
+        TrendAnchor(
+            date: corner.isLeft ? earliest : latest,
+            price: corner.isTop ? high : low
+        )
+    }
+
+    /// The rectangle with `corner` dragged to `anchor` and the opposite corner left
+    /// where it was.
+    ///
+    /// Each axis is written to whichever stored anchor owns that edge, so the start and
+    /// end — and with them the measured direction — keep their meaning. Dragging a corner
+    /// past the opposite one flips the box without a special case.
+    func resized(corner: RulerCorner, to anchor: TrendAnchor) -> RulerRect {
+        var result = self
+        let startIsEarlier = start.date <= end.date
+        if corner.isLeft == startIsEarlier {
+            result.start.date = anchor.date
+        } else {
+            result.end.date = anchor.date
+        }
+        let startIsHigher = start.price >= end.price
+        if corner.isTop == startIsHigher {
+            result.start.price = anchor.price
+        } else {
+            result.end.price = anchor.price
+        }
+        return result
+    }
+
+    /// The same rectangle shifted in time and price.
+    func translated(by time: TimeInterval, price: Double) -> RulerRect {
+        var result = self
+        result.start = TrendAnchor(date: start.date.addingTimeInterval(time), price: start.price + price)
+        result.end = TrendAnchor(date: end.date.addingTimeInterval(time), price: end.price + price)
+        return result
+    }
+}
+
+/// A corner of a ruler rectangle. "Left" is the earlier time, "top" the higher price —
+/// named for how the box reads on screen, whichever way it was drawn.
+enum RulerCorner: CaseIterable, Equatable {
+    case topLeft, topRight, bottomLeft, bottomRight
+
+    var isLeft: Bool { self == .topLeft || self == .bottomLeft }
+    var isTop: Bool { self == .topLeft || self == .topRight }
+}
+
+/// What the pointer is over on a ruler: a corner resizes it, an edge moves it. The
+/// interior is deliberately not a target, so a new measurement can start inside an old one.
+enum RulerPart: Equatable {
+    case corner(RulerCorner)
+    case edge
+}
+
+struct RulerHit: Equatable {
+    var id: UUID
+    var part: RulerPart
+}
+
+/// Everything a chart view needs to draw its rulers, bundled so the views take one
+/// parameter instead of four.
+struct RulerOverlayState {
+    var rects: [RulerRect] = []
+    /// The rectangle being drawn right now.
+    var draft: (start: TrendAnchor, end: TrendAnchor)?
+    var selectedID: UUID?
+    var hover: RulerHit?
+
+    static let empty = RulerOverlayState()
+
+    var isEmpty: Bool { rects.isEmpty && draft == nil }
 }
 
 /// Which drawing tool the window's tool strip has armed.
@@ -87,5 +166,6 @@ enum ChartTool {
     case crosshair
     case trendLine
     case fibonacciRetracement
+    case brush
     case ruler
 }

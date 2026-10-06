@@ -26,6 +26,32 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), script.source)
     }
 
+    func testDuplicateCopiesSourceAndDisambiguates() async throws {
+        let (store, scripts, _) = try makeStore()
+        let original = try await store.create(name: "Alpha", type: .indicator, source: validSource)
+        try await store.setFavorite(id: original.id, true)
+
+        let first = try await store.duplicate(id: original.id)
+        let second = try await store.duplicate(id: original.id)
+        XCTAssertEqual(first.name, "Alpha copy")
+        XCTAssertEqual(second.name, "Alpha copy 2")
+        XCTAssertEqual(first.source, validSource)
+        XCTAssertEqual(first.type, original.type)
+        XCTAssertNotEqual(first.id, original.id)
+        XCTAssertFalse(first.isFavorite)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: scripts.appendingPathComponent("Alpha copy.pine").path))
+        let kept = try await store.script(id: original.id)
+        XCTAssertEqual(kept?.isFavorite, true)
+    }
+
+    func testDuplicateOfMissingScriptThrows() async throws {
+        let (store, _, _) = try makeStore()
+        do {
+            _ = try await store.duplicate(id: UUID())
+            XCTFail("expected missingScript")
+        } catch ScriptStoreError.missingScript {}
+    }
+
     func testSavingAnImporterCompilesAgainstTheStoresLibraries() async throws {
         let root = try temporaryDirectory()
         let registry = PineLibraryRegistry()
@@ -239,6 +265,36 @@ final class ScriptStoreTests: XCTestCase {
         XCTAssertEqual(renamed.source, validSource)
         let after = try await store.revisions(id: script.id).count
         XCTAssertEqual(before, after)
+    }
+
+    func testResolvedSourcePinsToAnOlderRevisionAndFlagsItNotLatest() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        let first = try await store.save(id: script.id, source: validSource)
+        let second = try await store.save(
+            id: script.id, source: "//@version=6\nindicator(\"Valid\")\nplot(close + 1)\n")
+        let firstRevisionID = try XCTUnwrap(first.latestRevisionID)
+        let secondRevisionID = try XCTUnwrap(second.latestRevisionID)
+        XCTAssertNotEqual(firstRevisionID, secondRevisionID)
+
+        let old = try await store.resolvedSource(scriptID: script.id, revisionID: firstRevisionID)
+        XCTAssertEqual(old?.source, validSource)
+        XCTAssertEqual(old?.isLatest, false)
+
+        let latest = try await store.resolvedSource(scriptID: script.id, revisionID: secondRevisionID)
+        XCTAssertEqual(latest?.source, second.source)
+        XCTAssertEqual(latest?.isLatest, true)
+    }
+
+    func testResolvedSourceReturnsNilWhenScriptNoLongerExists() async throws {
+        let (store, _, _) = try makeStore()
+        let script = try await store.create(name: "Alpha", type: .indicator)
+        let saved = try await store.save(id: script.id, source: validSource)
+        try await store.delete(id: script.id)
+
+        let result = try await store.resolvedSource(
+            scriptID: script.id, revisionID: try XCTUnwrap(saved.latestRevisionID))
+        XCTAssertNil(result)
     }
 
     // MARK: - Type detection

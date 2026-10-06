@@ -21,16 +21,22 @@ DegenView/
 │   ├── PortfolioCurrency+AlertPrice.swift # `formatAlertPrice`: magnitude-aware alert price text (also in the agent)
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
+│   ├── LayoutSnapshot.swift           # Persisted-layout fingerprint compared for dirty state
 │   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
 │   ├── PreviewMarket.swift            # A crypto or stock market the Script Manager preview charts
 │   ├── ScriptPreviewLayout.swift      # ChartPosition: preview chart left of / above / below the code
-│   ├── TrendLine.swift                # Trend-line, ruler, and tool-selection models
-│   └── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
+│   ├── TrendLine.swift                # Trend-line, ruler (rect, corners, hits, overlay state), and tool-selection models
+│   ├── RulerReadout.swift             # Ruler numbers: percent, price delta, bars, duration, and their text
+│   ├── FibonacciRetracement.swift     # Fib levels, style, calculator, visibility, templates
+│   ├── BrushDrawing.swift             # Freehand stroke (time + price points), style, draft, overlay state, tuning
+│   └── BrushGeometry.swift            # Pure screen-space maths: simplification, hit testing, smoothing
 ├── ViewModel/
 │   ├── ContentViewModel.swift         # Per-tab charts, tools, refresh, persistence
+│   ├── SavedLayoutController.swift    # Per-tab active layout, dirty/autosave, save/copy/rename/open
 │   ├── ChartViewModel.swift           # Fetching, caching, indicators, chart state
+│   ├── ChartLiveQuote.swift           # A chart's latest best bid/ask (own object, so book ticks don't redraw the card)
 │   ├── ScriptPreviewViewModel.swift   # Script Manager preview: one chart, market, timeframe, inputs, refresh
 │   ├── AlertStore.swift               # MainActor alert UI facade and notification delivery
 │   ├── PineAlertStore.swift           # Pine script alert subscriptions, history, banner
@@ -57,7 +63,17 @@ DegenView/
 │   ├── GlobalAlertBanner.swift        # Trigger banner overlaid on every tab
 │   ├── PineAlertEditor.swift          # Create a script alert from a chart's applied script
 │   ├── PineAlertListView.swift        # "Scripts" tab of the alerts center (rows use PineAlertCard)
-│   ├── ReplayControlBar.swift         # Playback, interval, timestamp, and live controls
+│   ├── PaperAccountManagerView.swift  # Paper Trading panel (bottom split pane): composes PaperPanelHeader (account menu, IconTabBar, actions), PaperMetricsStrip, one table per `PaperManagerTab` (PaperPositionsTable, PaperOrdersTable, PaperOrderHistoryTable, PaperClosedTradesTable, PaperJournalTable; `PaperEmptyState` when empty) and PaperPanelFooter (AlertFooterBar: Close All / Cancel All / Export)
+│   ├── PaperOrderTicketSheet.swift    # Order ticket; math and validation live in `Util/PaperOrderTicketDraft`, input parsing in `Util/PaperDecimalInput`; PaperQuoteStrip, PaperSideSelector, PaperOrderSummaryCard, PaperFormField / PaperTextField
+│   ├── PaperAccountConfigurationSheet.swift # Create / reset account (validated; reset starts from the account's settings)
+│   ├── PaperChartTradingOverlay.swift # Position / order markers on a chart (PaperChartMarkerPill; drag to modify)
+│   ├── PaperQuoteFeed.swift           # Zero-size view behind each chart card: observes the chart and streams its last price and Binance/Coinbase best bid/ask to `PaperTradingStore.stream` (ContentView does not observe charts, so this cannot live there). Util/PaperQuoteSample decides what counts as a fresh book
+│   ├── PaperQuickTradeButtons.swift   # SELL / BUY pills in a chart card header
+│   └── PaperTradingStyle.swift        # Buy green / sell red, P&L colour; labels and tints in `Model/PaperTradingModels+Presentation`. PaperBadge, PaperSideChip, PaperIconButton / PaperIconGlyph are the shared bits
+│   ├── ReplayControlBar.swift         # The docked strip: status, transport, speed/resolution, scrubber, clock, notice, way back to live; swaps to a hint while picking a start. Pieces: ReplayStatusChip, ReplayTransportControls, ReplayPickerMenu, ReplayScrubber, ReplayClockReadout, ReplayNoticeChip, ReplayIconButton
+│   ├── ReplayStyle.swift              # Replay accent (orange), per-state colour/title, date formats
+│   ├── ReplaySelectionMarker.swift    # Start-picker hover marker: line, date tag, dimmed future
+│   ├── ReplayStartSheet.swift         # Date/time picker clamped to the loaded span, presets, bar-snap preview
 │   ├── ChartSettingsSheet.swift       # Appearance, indicators, scripts (a chart's market is fixed: remove and re-add)
 │   ├── ScriptManagerView.swift        # Script list sidebar (collapsible) + per-script workspace
 │   ├── ScriptWorkspaceView.swift      # Code editor + preview chart, split left/top/bottom
@@ -69,7 +85,7 @@ DegenView/
 │   ├── PriceAxisDragMonitor.swift     # Drag a price axis to scale candles (chart tabs and the preview)
 │   ├── SplitContainer.swift           # Resizable, collapsible two-pane split (+ SplitLayout, SplitMetrics)
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
-│   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, and ruler tools
+│   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, brush, and ruler tools
 │   ├── AppToolbar.swift               # Portfolio + Script Manager title-bar buttons, shared by every tab kind
 │   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
@@ -114,7 +130,8 @@ DegenView/
 │   │   ├── Compiler/                  # PineCompiler (+Declaration, +Constants, +Inputs), PineLibraryLinker (`import`)
 │   │   ├── Analysis/                  # Structure validator, type checker, builtin type tables
 │   │   ├── PineBuiltins.swift         # Color and named-constant tables shared by compiler/runtime
-│   │   └── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above (editor highlighting)
+│   │   ├── PineSymbolCatalog.swift    # Builtin variables/constants/functions/namespaces, composed from the tables above; `+Members` lists a namespace's members (editor highlighting + completion)
+│   │   └── PineSymbolMetadata*.swift  # Signatures, overloads and one-line docs per builtin, one DSL line each, by family; `PineSymbolMetadataTests` guards them against the catalog and the runtime
 │   ├── Runtime/
 │   │   ├── PineRuntimeSession*.swift  # Bar interpreter: statements, expressions, call router, one extension per builtin family
 │   │   ├── Builtins/                  # Pure math, strings, formatting, time, calendar, operators, ta.*
@@ -124,14 +141,15 @@ DegenView/
 │   │   └── PineExecutionScheduler.swift # Which events run which script (indicator vs strategy, calc_on_every_tick)
 │   ├── Broker/                        # strategy() order book, triggers, fills, trades, equity
 │   ├── Model/                         # Diagnostics, inputs, typed style enums, visual output (also in the alert agent)
-│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineHighlightScopes for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
-│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
+│   ├── Editor/                        # Script editor text view, word ranges, diagnostic mapping; highlighting = PineSyntaxClassifier (lexer tokens + catalog + PineSourceSymbolIndex for user shadowing) → PineSyntaxTheme → PineSyntaxHighlighter
+│   │                                  # Editing assistance: PineLexicalSnapshot (one lex per text version: strings, comments, bracket pairs; shared with the classifier) → PineEditorContext → pure engines (PineEditorPairing, PineIndentationEngine, PineEditorCommands, PineDelimiterMatcher) returning a PineEditorEdit → PineTextView(+Editing) applies it as one undo step. Completion and signature help: PineEditorAnalysisCache (one PineLexicalSnapshot + one PineSourceSymbolIndex per text version) → PineCompletionContext (word, member base, position, scope, PineCallSite) → PineCompletionEngine / PineSignatureResolver (pure; builtins from PineSymbolCatalog + PineSymbolMetadata, imports from PineLibraryExportDirectory over PineLibraryRegistry) → PineCompletionController → child panels (PineCompletionPanel, PineSignaturePanel); accepting is a PineEditorEdit from PineCompletionInsertion. Visual only: PineEditorDecorations (temporary attrs), PineLayoutManager → PineCurrentLineRenderer / PineIndentGuideRenderer
 │   └── View/                          # PineChartLayer (+per-output drawing), script pane, strategy report
 └── Service/
     ├── BinanceAPIService.swift        # Binance REST klines
     ├── ChartLiveFeed.swift            # Opens the Binance/Coinbase/Alpaca streams for a set of charts
     ├── ScriptPreviewInputsStore.swift # Input values tried in the Script Manager preview, per script
-    ├── BinanceWebSocketService.swift  # Binance live klines
+    ├── BinanceWebSocketService.swift  # Binance live klines (+ optional `@bookTicker` best bid/ask)
+    ├── BookTickerCoalescer.swift      # Thins book updates to a few deliveries a second per symbol
     ├── CoinbaseAPIService.swift       # Coinbase REST candles (paged, 1w/1M folded from daily) + product search
     ├── CoinbaseWebSocketService.swift # Coinbase live trades (ticker channel → CoinbaseTick)
     ├── CoinGeckoAPIService.swift      # CoinGecko OHLC and market metadata
@@ -158,9 +176,10 @@ DegenView/
     ├── KalshiSeriesIndex.swift        # Cached /series list + local keyword ranking
     ├── CoinMarketCapService.swift     # Keychain, typed API client/provider, cache and retry
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
-    ├── TabsStore.swift                # Tabs, saved views, and session persistence
+    ├── TabsStore.swift                # Tabs and session persistence
+    ├── SavedViewStore.swift           # Shared saved-layout library (throwing writes, recency)
     ├── FavoritesStore.swift           # Shared watchlist persistence
-    ├── DrawingStore.swift             # Instrument-keyed trend-line and Fib persistence
+    ├── DrawingStore.swift             # Instrument-keyed trend-line, Fib, and brush persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
     ├── WindowTabIcon.swift            # Per-kind tab icon (SF Symbol in the tab's attributed title) + decorator
@@ -214,7 +233,9 @@ DegenView/
    `import user/Library/version` resolves to a Script Manager library by name.
 7. During replay, each chart retains its immutable canonical history and exposes only a
    binary-searched prefix through `replayKlines`. `ReplayEngine` owns the tab's sole
-   timestamp and one cancellable playback task.
+   timestamp and one cancellable playback task. Timeline position (`progress`, `barNumber`,
+   `startFraction`), `stepBackward` and `seek(toFraction:)` are derived from its in-memory
+   timeline; `ReplaySession` (the persisted shape) carries none of it.
 8. Binance, Coinbase and Alpaca optionally conform to `GranularReplayDataSource`. Their paginated
    lower-timeframe bars are aggregated against the provider-returned displayed-bar
    boundaries, preserving stock sessions, market gaps, and DST alignment.
@@ -307,6 +328,56 @@ sheet presentation are similarly collapsed into one edit when the sheet closes. 
 crosshairs, and ruler measurements never enter drawing history because they are transient.
 Store observation clears selected or edited IDs when an undo, redo, or another window
 removes the corresponding drawing.
+
+## Brush flow
+
+A brush stroke is a first-class drawing, not a paint layer: `BrushDrawing` holds
+`TrendAnchor` points (continuous time + price), so it follows pan, zoom, resize and timeframe
+changes like a trend line. It persists through `DrawingStore` as the `brush` drawing kind and
+joins drawing undo through `DrawingUndoCoordinator.recordBrush`.
+
+- **Capture** (`ContentViewModel.handleBrush`): press, drag, release. Points are raw chart
+  coordinates — no candle or OHLC snapping. A sample is kept once the pointer has moved
+  `BrushTuning.sampleDistance` points, and the live stroke is only `ChartViewModel.brushDraft`.
+- **Commit**: on release the draft is projected with the current plot and simplified in
+  screen space (Ramer–Douglas–Peucker at `BrushTuning.simplifyTolerance`, so a pixel means the
+  same on DOGE and BTC); the kept points are the original anchors. One database write, one
+  undo step. A click that never travels becomes a one-point dot. Esc drops the draft with no
+  write and no undo.
+- **Render** (`ChartPlot+Brush`): inside the chart's clipped layer, one smoothed `Path` per
+  stroke. Smoothing is midpoint-quadratic, which cannot overshoot, and vertices that turn more
+  than `BrushTuning.cornerAngle` stay sharp. It is render-only — stored points are untouched.
+- **Hit testing** (`BrushGeometry.hit`): screen-space distance to each segment against half the
+  stroke width plus `Drawing.hitTolerance`, after an expanded bounding-box rejection.
+- **Move**: the pointer's screen delta applied to the stroke as it was at mouse-down, each point
+  projected, offset and inverse-projected, so nothing accumulates and a future non-linear price
+  scale still works. One undo step per drag. A click without movement opens `BrushEditor`.
+- The brush tool stays armed after a stroke. Strokes are also selectable and deletable under
+  the crosshair. The editor sits behind the same `isShowingLineEditor` gate as the other
+  editors.
+
+## Ruler flow
+
+The ruler is a measurement, not an annotation: `RulerRect` is not `Codable`, lives only on
+`ChartViewModel.rulers`, and is dropped on tool switch, timeframe switch, and relaunch.
+`ContentViewModel.handleRuler` (the same window-wide mouse monitor as the other tools) runs:
+
+- **Draw** — mouse-down on empty plot begins a draft and remembers the press. Dragging
+  rubber-bands it; on release, a pointer that travelled at least `Drawing.hitTolerance`
+  commits, otherwise the draft stays open and the next click commits (click-move-click).
+  ⌘ snaps to OHLC through `snappedDrawingAnchor`, shared with Fibonacci.
+- **Edit** — `ChartViewModel.rulerHit` finds a corner (resize) or an edge band (move);
+  the interior is deliberately not a hit so a measurement can start inside another.
+  Drags recompute from the rectangle as it was at mouse-down (`RulerRect.resized` /
+  `translated`). Hover and selection publish `hoveredRuler` / `selectedRulerID`, which
+  show handles and drive the plot cursor (`PlotCursor` in `ChartCardView`).
+- **Keys** — Esc: cancel draft → clear rulers → disarm. Delete: selected ruler, else all.
+
+Rendering is `ChartPlot+Ruler.swift`, shared by `CandleChartView` and `LineChartView`
+through one `RulerOverlayState`: a gradient box (strongest at the end edge), centred
+start→end arrows, corner handles on the hovered or selected ruler, a read-out card from
+`RulerReadout`, and price tags in the gutter (`drawRulerPriceTags`, outside the series
+clip). Colours are the chart's own bull/bear colours.
 
 ## Fibonacci retracement flow
 

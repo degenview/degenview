@@ -10,6 +10,9 @@ struct CoinbaseTick: Equatable {
     let size: Double
     let time: Date
     let tradeID: Int64
+    /// The best bid and ask the frame reports alongside the trade; nil when it carries none.
+    let bestBid: Double?
+    let bestAsk: Double?
 
     /// Decode a `ticker` frame. Returns nil for every other message type —
     /// `subscriptions`, `heartbeat` and `error` frames share the socket.
@@ -26,14 +29,21 @@ struct CoinbaseTick: Equatable {
         self.size = (json["last_size"] as? String).flatMap(Double.init) ?? 0
         self.time = time
         self.tradeID = tradeID
+        self.bestBid = (json["best_bid"] as? String).flatMap(Double.init)
+        self.bestAsk = (json["best_ask"] as? String).flatMap(Double.init)
     }
 
-    init(productID: String, price: Double, size: Double, time: Date, tradeID: Int64) {
+    init(
+        productID: String, price: Double, size: Double, time: Date, tradeID: Int64,
+        bestBid: Double? = nil, bestAsk: Double? = nil
+    ) {
         self.productID = productID
         self.price = price
         self.size = size
         self.time = time
         self.tradeID = tradeID
+        self.bestBid = bestBid
+        self.bestAsk = bestAsk
     }
 
     /// Coinbase stamps microseconds: `2026-09-30T17:28:25.629380Z`.

@@ -42,3 +42,47 @@ struct PineEditorFixture {
         return Self.render(applied.text, applied.selection)
     }
 }
+
+/// A completion request written inline: `|` is the caret. Builds its own analysis cache, so tests
+/// never share state, and exposes the engine's answer and the result of accepting a candidate.
+struct PineCompletionFixture {
+    let editor: PineEditorFixture
+    let analysis: PineEditorAnalysisSnapshot
+    let context: PineCompletionContext
+
+    init(_ marked: String, explicit: Bool = false) {
+        editor = PineEditorFixture(marked)
+        analysis = PineEditorAnalysisCache().analysis(for: editor.text)
+        context = PineCompletionContext(analysis: analysis, selection: editor.selection, explicit: explicit)
+    }
+
+    func items(libraries: PineLibraryExportProviding = PineNoLibraryExports()) -> [PineCompletionItem] {
+        PineCompletionEngine.complete(context, analysis: analysis, libraries: libraries)
+    }
+
+    func labels(libraries: PineLibraryExportProviding = PineNoLibraryExports()) -> [String] {
+        items(libraries: libraries).map(\.label)
+    }
+
+    func item(_ label: String, libraries: PineLibraryExportProviding = PineNoLibraryExports()) -> PineCompletionItem? {
+        items(libraries: libraries).first { $0.label == label }
+    }
+
+    /// The text after accepting the candidate named `label`, in `|` notation; nil when there is none.
+    func accepting(_ label: String, libraries: PineLibraryExportProviding = PineNoLibraryExports()) -> String? {
+        guard let item = item(label, libraries: libraries),
+            let acceptance = PineCompletionInsertion.accept(item, in: editor.context)
+        else { return nil }
+        return editor.result(acceptance.edit)
+    }
+}
+
+/// A library set for tests: exports by import path, and the names on offer.
+struct StubLibraryExports: PineLibraryExportProviding {
+    var exports: [String: [PineLibraryExport]] = [:]
+
+    func exports(forImportPath path: String) -> [PineLibraryExport]? { exports[path] }
+    func libraryNames() -> [String] {
+        exports.keys.compactMap { $0.split(separator: "/").dropFirst().first.map(String.init) }.sorted()
+    }
+}

@@ -26,11 +26,17 @@ final class ScriptManagerViewModel: ObservableObject {
     /// overwrite the script restored by it.
     @Published var selection: UUID? {
         didSet {
+            reconcileSelectedRow()
             guard hasLoaded, selection != oldValue else { return }
             defaults.set(selection?.uuidString, forKey: Self.selectionKey)
         }
     }
-    @Published var query = ""
+    /// The highlighted sidebar row. A favorited script has a row in Favorites and one in its
+    /// type group, so the list selects by row while `selection` stays the script.
+    @Published private(set) var selectedRowID: String?
+    @Published var query = "" {
+        didSet { reconcileSelectedRow() }
+    }
     @Published var errorMessage: String?
     @Published private var collapsedGroups: Set<String> = []
     /// Keyed by `Group.Row.id`, not the script's own id — a favorited script has a row
@@ -44,6 +50,24 @@ final class ScriptManagerViewModel: ObservableObject {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+    }
+
+    /// Called by the sidebar list with the row the user picked.
+    func selectRow(_ rowID: String?) {
+        selectedRowID = rowID
+        selection = rowID.flatMap { id in groups.lazy.flatMap(\.rows).first { $0.id == id }?.script.id }
+    }
+
+    /// Keeps `selectedRowID` on a row of the selected script: the picked one while it still
+    /// exists, otherwise the first row for that script (nil when none is listed).
+    private func reconcileSelectedRow() {
+        let rows = groups.flatMap(\.rows)
+        if let current = selectedRowID,
+            rows.contains(where: { $0.id == current && $0.script.id == selection })
+        {
+            return
+        }
+        selectedRowID = selection.flatMap { id in rows.first { $0.script.id == id }?.id }
     }
 
     /// Finder-style "slow double click" rename: a second click on an already-selected
@@ -150,6 +174,25 @@ final class ScriptManagerViewModel: ObservableObject {
             } catch { errorMessage = error.localizedDescription }
         }
     }
+    /// Saves a copy next to the original and selects it.
+    func duplicate(_ script: LocalScript) {
+        Task {
+            do {
+                let copy = try await ScriptStore.shared.duplicate(id: script.id)
+                NotificationCenter.default.post(name: .localScriptsDidChange, object: copy.id)
+                await refresh(selecting: copy.id)
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
+    /// Adds the bundled example scripts the library doesn't hold yet.
+    func addDemoScripts() {
+        Task {
+            do {
+                try await DemoScriptLibrary.addMissing()
+                await refresh()
+            } catch { errorMessage = error.localizedDescription }
+        }
+    }
     func toggleFavorite(_ script: LocalScript) {
         Task {
             do {
@@ -208,6 +251,7 @@ final class ScriptManagerViewModel: ObservableObject {
             }
             // The file may have been deleted or renamed away outside the app.
             if let current = selection, !scripts.contains(where: { $0.id == current }) { selection = nil }
+            reconcileSelectedRow()
         } catch { errorMessage = error.localizedDescription }
     }
 }

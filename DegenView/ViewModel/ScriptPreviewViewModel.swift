@@ -278,6 +278,14 @@ final class ScriptPreviewViewModel: ObservableObject {
         refreshActivity()
     }
 
+    /// A script's workspace left the screen. Ignored once another script's workspace has bound —
+    /// SwiftUI may run the new workspace's `onAppear` before the old one's `onDisappear`, and
+    /// hiding the pane then would leave the preview stopped with nothing to restart it.
+    func paneDisappeared(scriptID: UUID) {
+        guard scriptID == self.scriptID else { return }
+        setPaneVisible(false)
+    }
+
     /// Follows the hosting window's occlusion, like a chart tab: a hidden Script Manager stops
     /// polling and closes its streams, and a closed one releases its monitors.
     func attach(to window: NSWindow) {
