@@ -10,6 +10,8 @@ struct PineAlertEditor: View {
     @State private var note = ""
     @State private var scriptName = ""
     @State private var callSites: [PineAlertCallSite] = []
+    @State private var sendsToWebhooks = false
+    @State private var webhookIDs: [UUID] = []
     /// False until the applied script has been compiled; nothing is blocked while it is unknown.
     @State private var loaded = false
 
@@ -46,6 +48,16 @@ struct PineAlertEditor: View {
     private var canCreate: Bool { loaded && blocker == nil }
 
     var body: some View {
+        FormScrollContainer {
+            form
+        } footer: {
+            footer
+        }
+        .frame(width: 480)
+        .task { await load() }
+    }
+
+    private var form: some View {
         VStack(alignment: .leading, spacing: 18) {
             SheetHeader(
                 title: "Create Script Alert",
@@ -58,17 +70,14 @@ struct PineAlertEditor: View {
             scriptCard
             triggersSection
             noteField
+            WebhookSendSection(isOn: $sendsToWebhooks, selection: $webhookIDs)
             if let blocker {
                 NoticeCard(
                     systemImage: "exclamationmark.triangle.fill", tint: .orange,
                     title: blocker.title, detail: blocker.detail)
             }
             footnote
-            footer
         }
-        .padding(24)
-        .frame(width: 480)
-        .task { await load() }
     }
 
     // MARK: - Sections
@@ -207,7 +216,8 @@ struct PineAlertEditor: View {
                 .controlSize(.large)
             Button("Create Alert") {
                 PineAlertCoordinator.shared.subscribe(
-                    viewModel, instanceID: instanceID, scriptName: scriptName, note: note)
+                    viewModel, instanceID: instanceID, scriptName: scriptName, note: note,
+                    webhookEndpointIDs: sendsToWebhooks ? webhookIDs : [])
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
@@ -215,7 +225,6 @@ struct PineAlertEditor: View {
             .controlSize(.large)
             .disabled(!canCreate)
         }
-        .padding(.top, 4)
     }
 
     // MARK: - Pieces

@@ -9,6 +9,7 @@ struct PineAlertListView: View {
     @Binding var focused: UUID?
     @StateObject private var store = PineAlertStore.shared
     @State private var highlighted: UUID?
+    @State private var editingWebhooks: PineAlertSubscription?
 
     private var subscriptions: [PineAlertSubscription] {
         store.subscriptions.filter { matches($0.scriptName) || matches($0.symbolKey) }
@@ -27,6 +28,7 @@ struct PineAlertListView: View {
             }
             footer
         }
+        .sheet(item: $editingWebhooks) { PineAlertWebhooksSheet(subscription: $0) }
     }
 
     private var footer: some View {
@@ -81,8 +83,9 @@ struct PineAlertListView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(subscription.scriptName).font(.headline).lineLimit(1)
                 Text(
-                    subscription.note.isEmpty
-                        ? "\(subscription.symbolKey.symbolPart) · \(subscription.timeframe)" : subscription.note
+                    (subscription.note.isEmpty
+                        ? "\(subscription.symbolKey.symbolPart) · \(subscription.timeframe)" : subscription.note)
+                        + webhookSuffix(subscription)
                 )
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
@@ -95,6 +98,7 @@ struct PineAlertListView: View {
                     Button("Re-arm", systemImage: "play.fill") { coordinator.rearm(subscription: subscription.id) }
                         .disabled(!coordinator.canRearm(subscription))
                 }
+                Button("Webhooks…", systemImage: "arrow.up.forward.app") { editingWebhooks = subscription }
                 Divider()
                 Button("Delete", systemImage: "trash", role: .destructive) {
                     coordinator.remove(subscription: subscription.id)
@@ -110,6 +114,11 @@ struct PineAlertListView: View {
             .fixedSize()
             .accessibilityLabel("More actions")
         }
+    }
+
+    private func webhookSuffix(_ subscription: PineAlertSubscription) -> String {
+        let count = subscription.webhookEndpointIDs.count
+        return count == 0 ? "" : " · \(count) webhook\(count == 1 ? "" : "s")"
     }
 
     /// Scrolls to `id` once its row exists, rings it, and lets the ring fade.
@@ -137,6 +146,9 @@ struct PineAlertListView: View {
                     .font(.caption).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 8)
+            if item.webhookEndpointIDs?.isEmpty == false {
+                WebhookDeliveryChip(eventID: item.id)
+            }
             VStack(alignment: .trailing, spacing: 2) {
                 Text(item.triggeredAt.formatted(date: .omitted, time: .shortened)).monospacedDigit()
                 Text(item.triggeredAt.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated)))

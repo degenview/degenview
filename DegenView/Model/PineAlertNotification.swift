@@ -14,6 +14,9 @@ struct PineAlertNotification: Codable, Identifiable, Equatable, Sendable {
     var frequency: PineAlertFrequency
     var triggeredAt = Date()
     var isConfirmed: Bool
+    /// The subscription's webhook endpoints when this was routed. Optional so history saved before
+    /// webhooks existed still decodes.
+    var webhookEndpointIDs: [UUID]?
 
     /// The ticker without its `"<source>:"` prefix.
     var symbol: String {

@@ -92,7 +92,10 @@ actor MarketQuoteCoordinator {
                 asset: asset, price: Decimal(candle.closePrice), currency: asset.quoteCurrency,
                 sourceTimestamp: sourceDate, receivedAt: received,
                 maximumAge: maximumAge(for: asset.source),
-                fingerprint: "\(asset.key):\(candle.openTime.timeIntervalSince1970):\(candle.closePrice)")
+                fingerprint: "\(asset.key):\(candle.openTime.timeIntervalSince1970):\(candle.closePrice)",
+                candle: AlertCandleSnapshot(
+                    openTime: candle.openTime, open: candle.openPrice, high: candle.highPrice,
+                    low: candle.lowPrice, close: candle.closePrice, volume: candle.volume, interval: interval))
         } catch { return nil }
     }
 

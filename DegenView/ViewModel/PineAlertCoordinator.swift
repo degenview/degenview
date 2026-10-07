@@ -100,7 +100,8 @@ final class PineAlertCoordinator {
     /// or has not resolved its source yet.
     @discardableResult
     func subscribe(
-        _ chart: ChartViewModel, instanceID: UUID, scriptName: String, note: String
+        _ chart: ChartViewModel, instanceID: UUID, scriptName: String, note: String,
+        webhookEndpointIDs: [UUID] = []
     ) -> PineAlertSubscription? {
         guard let instance = chart.scriptInstances.first(where: { $0.id == instanceID }),
             let hash = chart.pineInstanceSourceHashes[instanceID]
@@ -108,7 +109,8 @@ final class PineAlertCoordinator {
         let dataset = chart.pineAlertDataset
         let subscription = PineAlertSubscription(
             chartID: chart.chartID, instanceID: instanceID, scriptID: instance.scriptID, scriptName: scriptName,
-            symbolKey: dataset.symbolKey, timeframe: dataset.timeframe, sourceHash: hash, note: note)
+            symbolKey: dataset.symbolKey, timeframe: dataset.timeframe, sourceHash: hash, note: note,
+            webhookEndpointIDs: webhookEndpointIDs)
         store.add(subscription)
         Task { await AlertStore.shared.requestNotificationAuthorizationIfNeeded() }
         return subscription
@@ -125,6 +127,12 @@ final class PineAlertCoordinator {
             chart.scriptInstances.contains(where: { $0.id == instanceID })
         else { return nil }
         return chart.pineInstanceSourceHashes[instanceID]
+    }
+
+    /// Chooses the webhook endpoints a subscription posts to. Ids only: the endpoint's URL, name and
+    /// enabled state stay in `WebhookEndpointStore`.
+    func setWebhooks(_ endpointIDs: [UUID], for id: UUID) {
+        store.update(id) { $0.webhookEndpointIDs = endpointIDs }
     }
 
     func pause(subscription id: UUID) {

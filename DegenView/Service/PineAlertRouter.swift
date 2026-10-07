@@ -39,7 +39,9 @@ enum PineAlertRouter {
                             subscriptionID: subscription.id, scriptName: subscription.scriptName,
                             chartID: chartID, symbolKey: subscription.symbolKey, timeframe: subscription.timeframe,
                             barTime: event.time, message: event.message, frequency: event.frequency,
-                            triggeredAt: now, isConfirmed: event.isConfirmed),
+                            triggeredAt: now, isConfirmed: event.isConfirmed,
+                            webhookEndpointIDs: subscription.webhookEndpointIDs.isEmpty
+                                ? nil : subscription.webhookEndpointIDs),
                         dedupeKey: PineAlertFrequencyGuard.dedupeKey(subscription: subscription.id, event: event)))
             }
         }

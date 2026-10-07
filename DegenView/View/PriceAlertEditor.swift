@@ -41,6 +41,9 @@ struct PriceAlertEditor: View {
     @State private var currency: PortfolioCurrency = .USD
     @State private var frequency: AlertFrequency = .once
     @State private var note = ""
+    @State private var sendsToWebhooks = false
+    @State private var webhookIDs: [UUID] = []
+    @State private var webhookMessage = ""
     /// The price a percentage alert counts from; fixed when the sheet opens (or kept from the saved alert).
     @State private var reference: Decimal?
     /// The market now, in the chosen currency; refreshed while the sheet is open.
@@ -54,6 +57,9 @@ struct PriceAlertEditor: View {
         _currency = State(initialValue: existing?.currency ?? quote)
         _frequency = State(initialValue: existing?.frequency ?? .once)
         _note = State(initialValue: existing?.note ?? "")
+        _sendsToWebhooks = State(initialValue: !(existing?.webhookEndpointIDs.isEmpty ?? true))
+        _webhookIDs = State(initialValue: existing?.webhookEndpointIDs ?? [])
+        _webhookMessage = State(initialValue: existing?.webhookMessage ?? "")
         switch existing?.condition {
         case .crossesAbove(let level):
             _target = State(initialValue: level.description)
@@ -73,27 +79,11 @@ struct PriceAlertEditor: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            SheetHeader(
-                title: existing == nil ? "Create Price Alert" : "Edit Price Alert",
-                subtitle: "\(info.subtitle(for: asset)) · \(asset.source.displayName)"
-            ) {
-                AlertAssetIcon(asset: asset, info: info, size: 40)
-            }
-            priceCard
-            conditionSection
-            valueSection
-            frequencySection
-            noteSection
-            if identical {
-                NoticeCard(
-                    systemImage: "exclamationmark.triangle.fill", tint: .orange,
-                    title: "An identical alert already exists",
-                    detail: "Saving adds a second one that fires at the same time.")
-            }
+        FormScrollContainer {
+            form
+        } footer: {
             footer
         }
-        .padding(24)
         .frame(width: 480)
         .task { await populate() }
         .task { await keepPriceFresh() }
@@ -106,6 +96,39 @@ struct PriceAlertEditor: View {
                 reference = currentPrice
             }
         }
+    }
+
+    private var form: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            SheetHeader(
+                title: existing == nil ? "Create Price Alert" : "Edit Price Alert",
+                subtitle: "\(info.subtitle(for: asset)) · \(asset.source.displayName)"
+            ) {
+                AlertAssetIcon(asset: asset, info: info, size: 40)
+            }
+            priceCard
+            conditionSection
+            valueSection
+            frequencySection
+            noteSection
+            WebhookSendSection(
+                isOn: $sendsToWebhooks, selection: $webhookIDs, message: $webhookMessage,
+                exampleContext: webhookExampleContext)
+            if identical {
+                NoticeCard(
+                    systemImage: "exclamationmark.triangle.fill", tint: .orange,
+                    title: "An identical alert already exists",
+                    detail: "Saving adds a second one that fires at the same time.")
+            }
+        }
+    }
+
+    /// Example values for the webhook message preview: what this alert would send for its own market.
+    private var webhookExampleContext: AlertMessageContext {
+        AlertMessageContext(
+            ticker: asset.metadata["apiSymbol"] ?? asset.symbol, exchange: asset.source.displayName, interval: "1",
+            close: currentPrice.map { WebhookPickerLogic.exampleClose($0, currency: currency) }, time: Date(),
+            now: Date())
     }
 
     // MARK: - Sections
@@ -135,17 +158,16 @@ struct PriceAlertEditor: View {
                 items: Direction.allCases.map {
                     IconTabBar<Direction>.Item(value: $0, title: $0.rawValue, systemImage: $0.systemImage)
                 },
-                selection: $direction, isCompact: true)
+                selection: $direction, isCompact: true, fillsWidth: true)
             Text(direction.blurb).font(.caption).foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder private var valueSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            sectionTitle(direction.isPercent ? "By" : "Target price")
             if direction.isPercent {
-                field {
-                    TextField("Percentage", text: $percent)
+                valueField(label: "By") {
+                    TextField("0", text: $percent)
                         .textFieldStyle(.plain)
                         .font(.title3.weight(.semibold).monospacedDigit())
                         .focused($valueFocused)
@@ -160,9 +182,9 @@ struct PriceAlertEditor: View {
                     hint("Fires at \(currency.formatAlertPrice(level))", tone: .secondary)
                 }
             } else {
-                field {
+                valueField(label: "Target price") {
                     Text(currency.glyph).font(.title3).foregroundStyle(.secondary)
-                    TextField("Target price", text: $target)
+                    TextField("0.00", text: $target)
                         .textFieldStyle(.plain)
                         .font(.title3.weight(.semibold).monospacedDigit())
                         .focused($valueFocused)
@@ -182,6 +204,21 @@ struct PriceAlertEditor: View {
         }
     }
 
+    /// The value input with its label in front of it, like a row in a settings form. Tapping anywhere
+    /// on the row, label included, focuses the field.
+    private func valueField<Content: View>(label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        field {
+            Text(label)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
+                .fixedSize()
+            Divider().frame(height: 18)
+            content()
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { valueFocused = true }
+    }
+
     private var currencyMenu: some View {
         Menu {
             Picker("Currency", selection: $currency) {
@@ -196,20 +233,26 @@ struct PriceAlertEditor: View {
         .help("Currency the alert is checked in")
     }
 
+    /// A slim row, not a section: most alerts keep the default, so it stays out of the way.
     private var frequencySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionTitle("How often")
-            HStack(spacing: 10) {
-                ChoiceCard(
-                    title: "Once", subtitle: "Fire once, then wait until re-enabled", systemImage: "1.circle",
-                    isSelected: frequency == .once
-                ) { frequency = .once }
-                ChoiceCard(
-                    title: "Every time", subtitle: "Fire on each crossing, re-arming in between", systemImage: "repeat",
-                    isSelected: frequency == .everyTime
-                ) { frequency = .everyTime }
+        HStack(spacing: 12) {
+            Text("How often")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 8)
+            Picker("How often", selection: $frequency) {
+                Text("Once").tag(AlertFrequency.once)
+                Text("Every time").tag(AlertFrequency.everyTime)
             }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .controlSize(.small)
+            .fixedSize()
         }
+        .help(
+            frequency == .once
+                ? "Fires once, then waits until you turn it back on."
+                : "Fires on each crossing, re-arming in between.")
     }
 
     private var noteSection: some View {
@@ -235,7 +278,6 @@ struct PriceAlertEditor: View {
                 .controlSize(.large)
                 .disabled(condition == nil)
         }
-        .padding(.top, 4)
     }
 
     // MARK: - Pieces
@@ -408,6 +450,10 @@ struct PriceAlertEditor: View {
         alert.currency = currency
         alert.frequency = frequency
         alert.note = note
+        // Off means no webhooks, whatever was picked before; the choice stays in the form if it is turned back on.
+        alert.webhookEndpointIDs = sendsToWebhooks ? webhookIDs : []
+        let message = webhookMessage.trimmingCharacters(in: .whitespacesAndNewlines)
+        alert.webhookMessage = message.isEmpty ? nil : webhookMessage
         alert.state = .active
         store.save(alert)
         dismiss()

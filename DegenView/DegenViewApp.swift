@@ -40,6 +40,8 @@ private struct TabCommands: Commands {
     @FocusedValue(\.savedLayout) private var savedLayout
 
     var body: some Commands {
+        // The standard "About DegenView" panel is replaced by Settings ▸ About.
+        CommandGroup(replacing: .appInfo) {}
         CommandGroup(replacing: .saveItem) {
             Button("Save Layout") { savedLayout?.requestSave() }
                 .keyboardShortcut("s", modifiers: .command)

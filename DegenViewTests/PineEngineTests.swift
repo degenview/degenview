@@ -325,6 +325,36 @@ final class PineEngineTests: XCTestCase {
         XCTAssertEqual(output.plots.map { $0.values.last! }, [10, 321, 15, 8, 12, 14])
     }
 
+    func testBareValueStatementIsRejected() {
+        let program = PineCompiler.compile(
+            source: """
+                //@version=6
+                indicator("Test")
+                inShort = strategy.position_size < 0
+
+                3223
+
+                foo = 4323
+                """)
+        let bare = program.diagnostics.filter { $0.code == "PINE3048" }
+        XCTAssertEqual(bare.map(\.message), ["\"3223\" is not a valid statement."])
+        XCTAssertEqual(bare.first?.range.start.line, 5)
+        XCTAssertFalse(program.isValid)
+    }
+
+    func testBareStringNameAndOperatorStatementsAreRejected() {
+        for line in ["\"abc\"", "close", "close + 1", "true", "close[1]"] {
+            XCTAssertTrue(codes(line).contains("PINE3048"), line)
+        }
+    }
+
+    func testCallsAndBlockValuesAreValidStatements() {
+        XCTAssertFalse(codes("plot(close)").contains("PINE3048"))
+        XCTAssertFalse(codes("f() =>\n    plot(close)\n    true\nf()").contains("PINE3048"))
+        XCTAssertTrue(codes("f() =>\n    1\n    true\nf()").contains("PINE3048"))
+        XCTAssertFalse(codes("b = close > open ?\n     1 :\n     2").contains("PINE3048"))
+    }
+
     func testLoopControlOutsideLoopIsRejected() {
         XCTAssertTrue(codes("break").contains("PINE3023"))
     }

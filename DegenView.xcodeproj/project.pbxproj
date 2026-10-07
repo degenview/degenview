@@ -7,6 +7,71 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB10F061C5E7038A67593849 /* WebhookSendSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10AEC28E9190CFA54A6356 /* WebhookSendSection.swift */; };
+		AB10DAA41473A2E9CA5B06E2 /* WebhookMessageEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10220BA015CDFEDD18AD65 /* WebhookMessageEditor.swift */; };
+		AB10226EE076A5C6C1D88EEF /* WebhookPickerEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10CBB3F9A56BD56390A520 /* WebhookPickerEmptyState.swift */; };
+		AB1082C5D2ACA9E9997BCEFE /* WebhookPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10C7E60E218AF515FE2668 /* WebhookPickerRow.swift */; };
+		AB10DBC8A76C213050679195 /* FormScrollContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1051D77DB4531E90353E18 /* FormScrollContainer.swift */; };
+		AB10CDFDDC53CB1FE6A6176D /* WebhookPickerLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10A6D5A72CFB6BF1422F86 /* WebhookPickerLogicTests.swift */; };
+		AB1021DBFD13C075AF8D069D /* WebhookPickerLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10B4F1627A77EF88B5FB6B /* WebhookPickerLogic.swift */; };
+		AB1078972253D48237467A04 /* WebhookHeadersEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10D92040B5A4B10329EC98 /* WebhookHeadersEditor.swift */; };
+		AB10D8042B2D397DCDFBA732 /* WebhookSecretSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10FDA9ACF7A0966C887081 /* WebhookSecretSection.swift */; };
+		AB107EF343D2FB196E7500F1 /* WebhookFieldChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1084E4811F620C53FF86D1 /* WebhookFieldChrome.swift */; };
+		AB10E11F3C4D451106CF17AF /* WebhookSecretPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E9807FDB19AE304A1FC2 /* WebhookSecretPlacementTests.swift */; };
+		AB10809E36539657F15F702B /* WebhookRequestResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10FD415F8719224556C732 /* WebhookRequestResolverTests.swift */; };
+		AB104F5F43B1584FFC0C3EF4 /* WebhookHeaderPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10FCCAFCF5BBDB0B5A4C37 /* WebhookHeaderPolicyTests.swift */; };
+		AB10F8F74EC9748C747DCAC8 /* WebhookSecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB102E77D021A360E8C55A1C /* WebhookSecretStore.swift */; };
+		AB100615228D71BED351FFDB /* WebhookSecretStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB102E77D021A360E8C55A1C /* WebhookSecretStore.swift */; };
+		AB10DCBC70AAE536964C0653 /* WebhookSecretPlacement.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB100059FA786BFE716194D9 /* WebhookSecretPlacement.swift */; };
+		AB10F45BCF9F66616BB109CB /* WebhookRequestResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1003FD9FA79BD7433775B7 /* WebhookRequestResolver.swift */; };
+		AB1021E131A4235BC71E0534 /* WebhookRequestResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1003FD9FA79BD7433775B7 /* WebhookRequestResolver.swift */; };
+		AB10CF3FFB9CAB0DCA66D29E /* WebhookHeaderPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10AE7E2933662A46360F83 /* WebhookHeaderPolicy.swift */; };
+		AB10039589AD9C846DA85233 /* WebhookHeaderPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10AE7E2933662A46360F83 /* WebhookHeaderPolicy.swift */; };
+		AB10BBF6B8BA47431AEAE4D7 /* WebhookSecretPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB108FD8D9C56C270AB63322 /* WebhookSecretPlaceholder.swift */; };
+		AB10C33AC720D5BDC445BF3A /* WebhookSecretPlaceholder.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB108FD8D9C56C270AB63322 /* WebhookSecretPlaceholder.swift */; };
+		AB10D66473246274C7EC92B9 /* WebhookHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB107D85F86BBF5E3F57869C /* WebhookHeader.swift */; };
+		AB10AC7303DAA94E0962CFEA /* WebhookHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB107D85F86BBF5E3F57869C /* WebhookHeader.swift */; };
+		AB10D89B120B4D02A187B42F /* WebhookHTTPMethod.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10B5364691A87EAA43E87E /* WebhookHTTPMethod.swift */; };
+		AB10004C7211ADAF1668DF55 /* WebhookHTTPMethod.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10B5364691A87EAA43E87E /* WebhookHTTPMethod.swift */; };
+		AB10DDCF06A4FC509AFEB984 /* WebhookDeliverySummaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB106B3E166641353ACE59F7 /* WebhookDeliverySummaryTests.swift */; };
+		AB10C1AE0E04A9EB015DD441 /* WebhookDeliveryChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10CD23CF88A907B006B6E3 /* WebhookDeliveryChip.swift */; };
+		AB10670D183362BD861B1658 /* WebhookDeliverySummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB109535E1EBA0B8046FD992 /* WebhookDeliverySummary.swift */; };
+		AB108E769B6A0612062A7488 /* PineWebhookChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB102B9D79379AC6CCCAD111 /* PineWebhookChannelTests.swift */; };
+		AB102C93A409A4053F21482A /* PineAlertWebhooksSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB105F512CA420A466A2B532 /* PineAlertWebhooksSheet.swift */; };
+		AB10B33E1E6CAF921BC2D107 /* WebhookPineAlertChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E16E723A4E7A76FA1027 /* WebhookPineAlertChannel.swift */; };
+		AB102881EED3C04551C1800C /* PriceAlertWebhookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10DAC995B73F0FD07CEFA1 /* PriceAlertWebhookTests.swift */; };
+		AB10579063BD5F0CE1BBF1C0 /* WebhookEndpointPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB103E2093B4E319F610E290 /* WebhookEndpointPicker.swift */; };
+		AB109A90B20D716BB95D7E75 /* PriceAlertWebhookDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10EBD0500A2E5C7EA6E9A2 /* PriceAlertWebhookDispatcher.swift */; };
+		AB108B5301EBF36A1FC9EDCB /* PriceAlertWebhookDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10EBD0500A2E5C7EA6E9A2 /* PriceAlertWebhookDispatcher.swift */; };
+		AB102EF0E070B8A66B0E2122 /* WebhookEndpointStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB107CADDCA93E8A20F4FC12 /* WebhookEndpointStoreTests.swift */; };
+		AB10A3EB7271A7AF0EBBE8F1 /* WebhookEndpointEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10C1CBAC9E229F73ADF7A0 /* WebhookEndpointEditorSheet.swift */; };
+		AB10986F27D9DD640276B00C /* WebhookEndpointRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E6F7A77A21B229B307C3 /* WebhookEndpointRow.swift */; };
+		AB10178433375A94D62FBC7B /* WebhookSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10A74EC8940AF5979204AB /* WebhookSettingsView.swift */; };
+		AB10A390098EDEA36952D214 /* WebhookTestState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1053EAB3B864E6FADA9599 /* WebhookTestState.swift */; };
+		AB10511FD1AC7A975D997C8C /* WebhookReferenceSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E94A48D8C3FB815D4C0E /* WebhookReferenceSource.swift */; };
+		AB10A8C5225B0ED895FC89CD /* WebhookEndpointStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB108BC2DFADE442EBB7F9E1 /* WebhookEndpointStore.swift */; };
+		AB10A7410B33109BA716FB0A /* AlertMessageRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1057409D76DC67DD8FF48A /* AlertMessageRendererTests.swift */; };
+		AB1094767AA52AFD3CF2F8B2 /* WebhookURLPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1042B146266CAEBB4E7A93 /* WebhookURLPolicyTests.swift */; };
+		AB1061A6E80B2624A0D2CC48 /* WebhookDeliveryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10041CF38A7B767E6FA074 /* WebhookDeliveryServiceTests.swift */; };
+		AB1082FC779A82217897F9EE /* WebhookTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10C21F5B6CD0DC32AF3C08 /* WebhookTestSupport.swift */; };
+		AB10CD04042938E969EF2CED /* AppDatabase+Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10074450F2B37B16225604 /* AppDatabase+Webhooks.swift */; };
+		AB10C9B7C3940751D053A969 /* AppDatabase+Webhooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10074450F2B37B16225604 /* AppDatabase+Webhooks.swift */; };
+		AB1073086D6572CA6FFD4B84 /* AlertMessageRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1077760A42B1C0C1E2A715 /* AlertMessageRenderer.swift */; };
+		AB107157A4C5A75F49CD018B /* AlertMessageRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1077760A42B1C0C1E2A715 /* AlertMessageRenderer.swift */; };
+		AB10CAC58EC050FE9A651A24 /* WebhookDeliveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB102569D748FE5524976A1D /* WebhookDeliveryService.swift */; };
+		AB10F1508F46EA86A3EDC9D2 /* WebhookDeliveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB102569D748FE5524976A1D /* WebhookDeliveryService.swift */; };
+		AB1063B8842B8223732BA94C /* WebhookTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E172C068E6941AA551E9 /* WebhookTransport.swift */; };
+		AB10B6083CF6D44D1D1BF8C5 /* WebhookTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10E172C068E6941AA551E9 /* WebhookTransport.swift */; };
+		AB1041DE90157FA502431AE8 /* WebhookPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10305D145894D6AF281D95 /* WebhookPayload.swift */; };
+		AB10B0A5BFDD5232D04A7CDF /* WebhookPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10305D145894D6AF281D95 /* WebhookPayload.swift */; };
+		AB10E8D436BE6CD96FE2F614 /* WebhookRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10D4D3B35E4E8CE3F1FC9A /* WebhookRedactor.swift */; };
+		AB10F9BA3E2872A774B4EACB /* WebhookRedactor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10D4D3B35E4E8CE3F1FC9A /* WebhookRedactor.swift */; };
+		AB10FB1505CBAA13C105ED74 /* WebhookURLPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB106C176D76180E0599C429 /* WebhookURLPolicy.swift */; };
+		AB101F35A2ABA5DE2860EEE1 /* WebhookURLPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB106C176D76180E0599C429 /* WebhookURLPolicy.swift */; };
+		AB107F23145C7D27B2595A37 /* WebhookDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10BFF6B66D3F9145F96D3B /* WebhookDelivery.swift */; };
+		AB1019736D4EFB03C400D268 /* WebhookDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10BFF6B66D3F9145F96D3B /* WebhookDelivery.swift */; };
+		AB104747AD197375461BA516 /* WebhookEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10472999C79D4F8015F04B /* WebhookEndpoint.swift */; };
+		AB10B9BBA4621D1D5D508267 /* WebhookEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10472999C79D4F8015F04B /* WebhookEndpoint.swift */; };
 		0514D14597FD919F194C1D7E /* PineSymbolCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */; };
 		E2208B48EB48045DB4793D63 /* PineSymbolMetadataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C66B73848500A8FB221464B /* PineSymbolMetadataTests.swift */; };
 		097E05F04C753ED6D1CE4ACA /* PineDiagnosticsSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = E78A01FF4A155E93DBB459F5 /* PineDiagnosticsSection.swift */; };
@@ -47,6 +112,10 @@
 		84DFBF9367E3B827DFA30883 /* PineReportBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAF2B9AC86FA4B318746F04 /* PineReportBox.swift */; };
 		89D3A09940226FF53F58870B /* PineOffsetMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6707006AD4A62C0B40679829 /* PineOffsetMap.swift */; };
 		8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */; };
+		AA1000000000000000002A02 /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B02 /* AppInfo.swift */; };
+		AA1000000000000000002C03 /* PlaceholderUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */; };
+		AA1000000000000000002C02 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D02 /* UpdateChecker.swift */; };
+		AA1000000000000000002C01 /* UpdateStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D01 /* UpdateStatus.swift */; };
 		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
 		94DA4D7B02B2D66DEED77339 /* PineCountChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF35D514DB5C69F568C245A /* PineCountChip.swift */; };
 		95529618D60C56DDAA96913B /* ChartViewModelMultiPineInstanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D522B75BD2332D9948E8947 /* ChartViewModelMultiPineInstanceTests.swift */; };
@@ -59,6 +128,7 @@
 		A00000000000000000000006 /* BinanceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* BinanceAPIService.swift */; };
 		A00000000000000000000008 /* ChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* ChartViewModel.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
+		AA1000000000000000002C04 /* UpdateCheckViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D04 /* UpdateCheckViewModel.swift */; };
 		A0000000000000000000000A /* ChartCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* ChartCardView.swift */; };
 		A0000000000000000000000B /* AddTickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* AddTickerSheet.swift */; };
 		A0000000000000000000000D /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* EmptyStateView.swift */; };
@@ -139,10 +209,18 @@
 		AA1000000000000000002001 /* SettingsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002101 /* SettingsField.swift */; };
 		AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002102 /* SettingsStatusBadge.swift */; };
 		AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002103 /* AppearanceSettingsView.swift */; };
+		AA1000000000000000002A01 /* AboutSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B01 /* AboutSettingsView.swift */; };
+		AA1000000000000000002C13 /* AboutLinkRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D13 /* AboutLinkRow.swift */; };
+		AA1000000000000000002C12 /* AboutGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D12 /* AboutGroup.swift */; };
+		AA1000000000000000002C11 /* AboutLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D11 /* AboutLayout.swift */; };
+		AA1000000000000000002C10 /* AboutRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D10 /* AboutRow.swift */; };
+		AA1000000000000000002C06 /* UpdateStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D06 /* UpdateStatusCard.swift */; };
 		AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002104 /* AlpacaSettingsView.swift */; };
 		AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */; };
 		AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002106 /* NotificationSettingsView.swift */; };
 		AA1000000000000000002009 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002109 /* SettingsTabTests.swift */; };
+		AA1000000000000000002A03 /* AppInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B03 /* AppInfoTests.swift */; };
+		AA1000000000000000002C05 /* UpdateCheckViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */; };
 		AA1000000000000000002200 /* WindowTabIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002300 /* WindowTabIcon.swift */; };
 		AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002301 /* WindowTabIconTests.swift */; };
 		AA1000000000000000009000 /* EmptyStateSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009100 /* EmptyStateSuggestions.swift */; };
@@ -170,15 +248,18 @@
 		B434136DF80AC5E2F3A79296 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
 		B680F2B2F98926364A250976 /* PineSyntaxTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90FE0867430D98A0CB06E73 /* PineSyntaxTheme.swift */; };
 		B7A1E7000000000000000A00 /* PineAlertSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B00 /* PineAlertSubscription.swift */; };
+		AE02000000000000000000A1 /* AlertDomainEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A1 /* AlertDomainEvent.swift */; };
 		B7A1E7000000000000000A01 /* PineAlertNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B01 /* PineAlertNotification.swift */; };
 		B7A1E7000000000000000A02 /* PineAlertFrequencyGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B02 /* PineAlertFrequencyGuard.swift */; };
 		B7A1E7000000000000000A03 /* PineAlertRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B03 /* PineAlertRouter.swift */; };
 		B7A1E7000000000000000A04 /* PineAlertChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B04 /* PineAlertChannel.swift */; };
 		B7A1E7000000000000000A05 /* UserNotificationChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B05 /* UserNotificationChannel.swift */; };
+		AE02000000000000000000A2 /* AlertEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A2 /* AlertEventBus.swift */; };
 		B7A1E7000000000000000A06 /* InAppBannerChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B06 /* InAppBannerChannel.swift */; };
 		B7A1E7000000000000000A07 /* PineAlertDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */; };
 		B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */; };
 		B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B09 /* ScriptSourceHash.swift */; };
+		AE02000000000000000000A3 /* UnseenAlertsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A3 /* UnseenAlertsStore.swift */; };
 		B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B10 /* PineAlertStore.swift */; };
 		B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */; };
 		B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B12 /* PineAlertEditor.swift */; };
@@ -186,6 +267,7 @@
 		B7A1E7000000000000000A14 /* PineAlertCallSite.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B14 /* PineAlertCallSite.swift */; };
 		B7A1E7000000000000000A15 /* PineAlertCallValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B15 /* PineAlertCallValidator.swift */; };
 		B7A1E7000000000000000A16 /* PineAlertValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */; };
+		AE02000000000000000000A4 /* UnseenAlertsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */; };
 		B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */; };
 		B7A1E7000000000000000A18 /* PineAlertDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */; };
 		B7A1E7000000000000000A90 /* PineAlertChannelFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */; };
@@ -510,6 +592,8 @@
 		F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */; };
 		F20586EAD822170661FA7949 /* PineMarketUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F113CB49FCCE3631A3D692ED /* PineMarketUpdate.swift */; };
 		F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */; };
+		F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000A2 /* PineIdentifierRules.swift */; };
+		F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */; };
 		F2083594719C0E9A2272BEF4 /* PineMarkerOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C84A02D6C320E2C6C7BC2 /* PineMarkerOutput.swift */; };
 		F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F171A9B196E8CCB53752887F /* PineChartTheme.swift */; };
 		F20C147C602535650C562791 /* PineAlertEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BA1F4B1EABF23ADAA39F14 /* PineAlertEvent.swift */; };
@@ -802,9 +886,62 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AB10AEC28E9190CFA54A6356 /* WebhookSendSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSendSection.swift; sourceTree = "<group>"; };
+		AB10220BA015CDFEDD18AD65 /* WebhookMessageEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookMessageEditor.swift; sourceTree = "<group>"; };
+		AB10CBB3F9A56BD56390A520 /* WebhookPickerEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPickerEmptyState.swift; sourceTree = "<group>"; };
+		AB10C7E60E218AF515FE2668 /* WebhookPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPickerRow.swift; sourceTree = "<group>"; };
+		AB1051D77DB4531E90353E18 /* FormScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormScrollContainer.swift; sourceTree = "<group>"; };
+		AB10A6D5A72CFB6BF1422F86 /* WebhookPickerLogicTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPickerLogicTests.swift; sourceTree = "<group>"; };
+		AB10B4F1627A77EF88B5FB6B /* WebhookPickerLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPickerLogic.swift; sourceTree = "<group>"; };
+		AB10D92040B5A4B10329EC98 /* WebhookHeadersEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookHeadersEditor.swift; sourceTree = "<group>"; };
+		AB10FDA9ACF7A0966C887081 /* WebhookSecretSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSecretSection.swift; sourceTree = "<group>"; };
+		AB1084E4811F620C53FF86D1 /* WebhookFieldChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookFieldChrome.swift; sourceTree = "<group>"; };
+		AB10E9807FDB19AE304A1FC2 /* WebhookSecretPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSecretPlacementTests.swift; sourceTree = "<group>"; };
+		AB10FD415F8719224556C732 /* WebhookRequestResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookRequestResolverTests.swift; sourceTree = "<group>"; };
+		AB10FCCAFCF5BBDB0B5A4C37 /* WebhookHeaderPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookHeaderPolicyTests.swift; sourceTree = "<group>"; };
+		AB102E77D021A360E8C55A1C /* WebhookSecretStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSecretStore.swift; sourceTree = "<group>"; };
+		AB100059FA786BFE716194D9 /* WebhookSecretPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSecretPlacement.swift; sourceTree = "<group>"; };
+		AB1003FD9FA79BD7433775B7 /* WebhookRequestResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookRequestResolver.swift; sourceTree = "<group>"; };
+		AB10AE7E2933662A46360F83 /* WebhookHeaderPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookHeaderPolicy.swift; sourceTree = "<group>"; };
+		AB108FD8D9C56C270AB63322 /* WebhookSecretPlaceholder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSecretPlaceholder.swift; sourceTree = "<group>"; };
+		AB107D85F86BBF5E3F57869C /* WebhookHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookHeader.swift; sourceTree = "<group>"; };
+		AB10B5364691A87EAA43E87E /* WebhookHTTPMethod.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookHTTPMethod.swift; sourceTree = "<group>"; };
+		AB106B3E166641353ACE59F7 /* WebhookDeliverySummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDeliverySummaryTests.swift; sourceTree = "<group>"; };
+		AB10CD23CF88A907B006B6E3 /* WebhookDeliveryChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDeliveryChip.swift; sourceTree = "<group>"; };
+		AB109535E1EBA0B8046FD992 /* WebhookDeliverySummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDeliverySummary.swift; sourceTree = "<group>"; };
+		AB102B9D79379AC6CCCAD111 /* PineWebhookChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineWebhookChannelTests.swift; sourceTree = "<group>"; };
+		AB105F512CA420A466A2B532 /* PineAlertWebhooksSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertWebhooksSheet.swift; sourceTree = "<group>"; };
+		AB10E16E723A4E7A76FA1027 /* WebhookPineAlertChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPineAlertChannel.swift; sourceTree = "<group>"; };
+		AB10DAC995B73F0FD07CEFA1 /* PriceAlertWebhookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertWebhookTests.swift; sourceTree = "<group>"; };
+		AB103E2093B4E319F610E290 /* WebhookEndpointPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpointPicker.swift; sourceTree = "<group>"; };
+		AB10EBD0500A2E5C7EA6E9A2 /* PriceAlertWebhookDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PriceAlertWebhookDispatcher.swift; sourceTree = "<group>"; };
+		AB107CADDCA93E8A20F4FC12 /* WebhookEndpointStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpointStoreTests.swift; sourceTree = "<group>"; };
+		AB10C1CBAC9E229F73ADF7A0 /* WebhookEndpointEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpointEditorSheet.swift; sourceTree = "<group>"; };
+		AB10E6F7A77A21B229B307C3 /* WebhookEndpointRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpointRow.swift; sourceTree = "<group>"; };
+		AB10A74EC8940AF5979204AB /* WebhookSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSettingsView.swift; sourceTree = "<group>"; };
+		AB1053EAB3B864E6FADA9599 /* WebhookTestState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookTestState.swift; sourceTree = "<group>"; };
+		AB10E94A48D8C3FB815D4C0E /* WebhookReferenceSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookReferenceSource.swift; sourceTree = "<group>"; };
+		AB108BC2DFADE442EBB7F9E1 /* WebhookEndpointStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpointStore.swift; sourceTree = "<group>"; };
+		AB1057409D76DC67DD8FF48A /* AlertMessageRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertMessageRendererTests.swift; sourceTree = "<group>"; };
+		AB1042B146266CAEBB4E7A93 /* WebhookURLPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookURLPolicyTests.swift; sourceTree = "<group>"; };
+		AB10041CF38A7B767E6FA074 /* WebhookDeliveryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDeliveryServiceTests.swift; sourceTree = "<group>"; };
+		AB10C21F5B6CD0DC32AF3C08 /* WebhookTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookTestSupport.swift; sourceTree = "<group>"; };
+		AB10074450F2B37B16225604 /* AppDatabase+Webhooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+Webhooks.swift"; sourceTree = "<group>"; };
+		AB1077760A42B1C0C1E2A715 /* AlertMessageRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertMessageRenderer.swift; sourceTree = "<group>"; };
+		AB102569D748FE5524976A1D /* WebhookDeliveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDeliveryService.swift; sourceTree = "<group>"; };
+		AB10E172C068E6941AA551E9 /* WebhookTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookTransport.swift; sourceTree = "<group>"; };
+		AB10305D145894D6AF281D95 /* WebhookPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPayload.swift; sourceTree = "<group>"; };
+		AB10D4D3B35E4E8CE3F1FC9A /* WebhookRedactor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookRedactor.swift; sourceTree = "<group>"; };
+		AB106C176D76180E0599C429 /* WebhookURLPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookURLPolicy.swift; sourceTree = "<group>"; };
+		AB10BFF6B66D3F9145F96D3B /* WebhookDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookDelivery.swift; sourceTree = "<group>"; };
+		AB10472999C79D4F8015F04B /* WebhookEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookEndpoint.swift; sourceTree = "<group>"; };
 		15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolCatalogTests.swift; sourceTree = "<group>"; };
 		9C66B73848500A8FB221464B /* PineSymbolMetadataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolMetadataTests.swift; sourceTree = "<group>"; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B02 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderUpdateChecker.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D02 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D01 /* UpdateStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateStatus.swift; sourceTree = "<group>"; };
 		1B32BD69F4104172033B7086 /* PineInstanceSettingsPopover.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInstanceSettingsPopover.swift; sourceTree = "<group>"; };
 		1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineIndicatorLegendTests.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInputsViewTests.swift; sourceTree = "<group>"; };
@@ -857,6 +994,7 @@
 		A00000000000000000000106 /* BinanceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceAPIService.swift; sourceTree = "<group>"; };
 		A00000000000000000000108 /* ChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D04 /* UpdateCheckViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckViewModel.swift; sourceTree = "<group>"; };
 		A0000000000000000000010A /* ChartCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCardView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010B /* AddTickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTickerSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000010D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
@@ -935,10 +1073,18 @@
 		AA1000000000000000002101 /* SettingsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsField.swift; sourceTree = "<group>"; };
 		AA1000000000000000002102 /* SettingsStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusBadge.swift; sourceTree = "<group>"; };
 		AA1000000000000000002103 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B01 /* AboutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D13 /* AboutLinkRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutLinkRow.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D12 /* AboutGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutGroup.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D11 /* AboutLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutLayout.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D10 /* AboutRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutRow.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D06 /* UpdateStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateStatusCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000002104 /* AlpacaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002106 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002109 /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B03 /* AppInfoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfoTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckViewModelTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000002300 /* WindowTabIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIcon.swift; sourceTree = "<group>"; };
 		AA1000000000000000002301 /* WindowTabIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIconTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000009100 /* EmptyStateSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateSuggestions.swift; sourceTree = "<group>"; };
@@ -963,15 +1109,18 @@
 		B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoinGeckoProvisionalStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B00 /* PineAlertSubscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertSubscription.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A1 /* AlertDomainEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDomainEvent.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B01 /* PineAlertNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertNotification.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B02 /* PineAlertFrequencyGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertFrequencyGuard.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B03 /* PineAlertRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertRouter.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B04 /* PineAlertChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertChannel.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B05 /* UserNotificationChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationChannel.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A2 /* AlertEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertEventBus.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B06 /* InAppBannerChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBannerChannel.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertDispatcher.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PineAlerts.swift"; sourceTree = "<group>"; };
 		B7A1E7000000000000000B09 /* ScriptSourceHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptSourceHash.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A3 /* UnseenAlertsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnseenAlertsStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B10 /* PineAlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCoordinator.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B12 /* PineAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertEditor.swift; sourceTree = "<group>"; };
@@ -979,6 +1128,7 @@
 		B7A1E7000000000000000B14 /* PineAlertCallSite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCallSite.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B15 /* PineAlertCallValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCallValidator.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertValidationTests.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnseenAlertsStoreTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertRoutingTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertDispatcherTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertChannelFixtures.swift; sourceTree = "<group>"; };
@@ -1262,6 +1412,8 @@
 		F105C0EC28D11D0F51720D17 /* PineExecutionSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExecutionSchedulerTests.swift; sourceTree = "<group>"; };
 		F10AE320F35F4637D8C22ECA /* PineExecutionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExecutionModelTests.swift; sourceTree = "<group>"; };
 		F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStructureValidator.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000A2 /* PineIdentifierRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRules.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRulesTests.swift; sourceTree = "<group>"; };
 		F10BEC91102FD2902D06354E /* PineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineParser.swift; sourceTree = "<group>"; };
 		F10CBC70E475DBEF89814AA2 /* PineLineOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLineOutput.swift; sourceTree = "<group>"; };
 		F10EB2DB62EC78FC2894565A /* PineSize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSize.swift; sourceTree = "<group>"; };
@@ -1494,6 +1646,10 @@
 			isa = PBXGroup;
 			children = (
 				1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */,
+				AA1000000000000000002B02 /* AppInfo.swift */,
+				AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */,
+				AA1000000000000000002D02 /* UpdateChecker.swift */,
+				AA1000000000000000002D01 /* UpdateStatus.swift */,
 			);
 			name = Core;
 			path = Core;
@@ -1543,6 +1699,7 @@
 			isa = PBXGroup;
 			children = (
 				B7A1E7000000000000000B01 /* PineAlertNotification.swift */,
+				AE01000000000000000000A1 /* AlertDomainEvent.swift */,
 				B7A1E7000000000000000B00 /* PineAlertSubscription.swift */,
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
@@ -1582,6 +1739,10 @@
 				D30000000000000000000101 /* ChartColumn.swift */,
 				E7A000000000000000001101 /* LayoutSnapshot.swift */,
 				F942FA5B7FB7B0EC36435479 /* Script */,
+				AB10472999C79D4F8015F04B /* WebhookEndpoint.swift */,
+				AB10BFF6B66D3F9145F96D3B /* WebhookDelivery.swift */,
+				AB10B5364691A87EAA43E87E /* WebhookHTTPMethod.swift */,
+				AB107D85F86BBF5E3F57869C /* WebhookHeader.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -1593,6 +1754,7 @@
 				B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */,
 				B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */,
 				B7A1E7000000000000000B06 /* InAppBannerChannel.swift */,
+				AE01000000000000000000A2 /* AlertEventBus.swift */,
 				B7A1E7000000000000000B05 /* UserNotificationChannel.swift */,
 				B7A1E7000000000000000B04 /* PineAlertChannel.swift */,
 				B7A1E7000000000000000B03 /* PineAlertRouter.swift */,
@@ -1663,6 +1825,20 @@
 				D10000000000000000000103 /* WindowCoordinator.swift */,
 				F20000000000000000000101 /* DrawingStore.swift */,
 				F20000000000000000000102 /* DrawingUndoCoordinator.swift */,
+				AB106C176D76180E0599C429 /* WebhookURLPolicy.swift */,
+				AB10D4D3B35E4E8CE3F1FC9A /* WebhookRedactor.swift */,
+				AB10305D145894D6AF281D95 /* WebhookPayload.swift */,
+				AB10E172C068E6941AA551E9 /* WebhookTransport.swift */,
+				AB102569D748FE5524976A1D /* WebhookDeliveryService.swift */,
+				AB1077760A42B1C0C1E2A715 /* AlertMessageRenderer.swift */,
+				AB10074450F2B37B16225604 /* AppDatabase+Webhooks.swift */,
+				AB10EBD0500A2E5C7EA6E9A2 /* PriceAlertWebhookDispatcher.swift */,
+				AB10E16E723A4E7A76FA1027 /* WebhookPineAlertChannel.swift */,
+				AB108FD8D9C56C270AB63322 /* WebhookSecretPlaceholder.swift */,
+				AB10AE7E2933662A46360F83 /* WebhookHeaderPolicy.swift */,
+				AB1003FD9FA79BD7433775B7 /* WebhookRequestResolver.swift */,
+				AB100059FA786BFE716194D9 /* WebhookSecretPlacement.swift */,
+				AB102E77D021A360E8C55A1C /* WebhookSecretStore.swift */,
 			);
 			path = Service;
 			sourceTree = "<group>";
@@ -1672,6 +1848,7 @@
 			children = (
 				B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */,
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
+				AE01000000000000000000A3 /* UnseenAlertsStore.swift */,
 				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
 				AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */,
@@ -1682,9 +1859,15 @@
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
+				AA1000000000000000002D04 /* UpdateCheckViewModel.swift */,
 				E7A000000000000000003101 /* SavedLayoutController.swift */,
 				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
 				C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */,
+				AB108BC2DFADE442EBB7F9E1 /* WebhookEndpointStore.swift */,
+				AB10E94A48D8C3FB815D4C0E /* WebhookReferenceSource.swift */,
+				AB1053EAB3B864E6FADA9599 /* WebhookTestState.swift */,
+				AB109535E1EBA0B8046FD992 /* WebhookDeliverySummary.swift */,
+				AB10B4F1627A77EF88B5FB6B /* WebhookPickerLogic.swift */,
 			);
 			path = ViewModel;
 			sourceTree = "<group>";
@@ -1780,6 +1963,12 @@
 				AA1000000000000000002101 /* SettingsField.swift */,
 				AA1000000000000000002102 /* SettingsStatusBadge.swift */,
 				AA1000000000000000002103 /* AppearanceSettingsView.swift */,
+				AA1000000000000000002B01 /* AboutSettingsView.swift */,
+				AA1000000000000000002D13 /* AboutLinkRow.swift */,
+				AA1000000000000000002D12 /* AboutGroup.swift */,
+				AA1000000000000000002D11 /* AboutLayout.swift */,
+				AA1000000000000000002D10 /* AboutRow.swift */,
+				AA1000000000000000002D06 /* UpdateStatusCard.swift */,
 				AA1000000000000000002104 /* AlpacaSettingsView.swift */,
 				AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */,
 				AA1000000000000000002106 /* NotificationSettingsView.swift */,
@@ -1831,6 +2020,20 @@
 				C10000000000000000000108 /* SearchPane.swift */,
 				D10000000000000000000104 /* WindowAccessor.swift */,
 				1B32BD69F4104172033B7086 /* PineInstanceSettingsPopover.swift */,
+				AB10A74EC8940AF5979204AB /* WebhookSettingsView.swift */,
+				AB10E6F7A77A21B229B307C3 /* WebhookEndpointRow.swift */,
+				AB10C1CBAC9E229F73ADF7A0 /* WebhookEndpointEditorSheet.swift */,
+				AB103E2093B4E319F610E290 /* WebhookEndpointPicker.swift */,
+				AB105F512CA420A466A2B532 /* PineAlertWebhooksSheet.swift */,
+				AB10CD23CF88A907B006B6E3 /* WebhookDeliveryChip.swift */,
+				AB1084E4811F620C53FF86D1 /* WebhookFieldChrome.swift */,
+				AB10FDA9ACF7A0966C887081 /* WebhookSecretSection.swift */,
+				AB10D92040B5A4B10329EC98 /* WebhookHeadersEditor.swift */,
+				AB1051D77DB4531E90353E18 /* FormScrollContainer.swift */,
+				AB10C7E60E218AF515FE2668 /* WebhookPickerRow.swift */,
+				AB10CBB3F9A56BD56390A520 /* WebhookPickerEmptyState.swift */,
+				AB10220BA015CDFEDD18AD65 /* WebhookMessageEditor.swift */,
+				AB10AEC28E9190CFA54A6356 /* WebhookSendSection.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -1896,6 +2099,7 @@
 				B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */,
 				B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */,
 				B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */,
+				AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */,
 				B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */,
 				B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */,
 				KCP000000000000000000301 /* KeychainPolicyTests.swift */,
@@ -1951,6 +2155,7 @@
 				F10AE320F35F4637D8C22ECA /* PineExecutionModelTests.swift */,
 				F17F3E7D8CAC2AEA7F05446A /* PineExecutionFixtures.swift */,
 				P30000000000000000000102 /* PineTypeCheckerTests.swift */,
+			F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
 				C50000000000000000000101 /* JSONStoreTests.swift */,
@@ -1986,6 +2191,8 @@
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
+				AA1000000000000000002B03 /* AppInfoTests.swift */,
+				AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */,
 				AA1000000000000000002301 /* WindowTabIconTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
@@ -2002,6 +2209,18 @@
 				49183ED8491C0A50D3F2B4CB /* ChartViewModelPineInstancePersistenceTests.swift */,
 				1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */,
 				A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */,
+				AB10C21F5B6CD0DC32AF3C08 /* WebhookTestSupport.swift */,
+				AB10041CF38A7B767E6FA074 /* WebhookDeliveryServiceTests.swift */,
+				AB1042B146266CAEBB4E7A93 /* WebhookURLPolicyTests.swift */,
+				AB1057409D76DC67DD8FF48A /* AlertMessageRendererTests.swift */,
+				AB107CADDCA93E8A20F4FC12 /* WebhookEndpointStoreTests.swift */,
+				AB10DAC995B73F0FD07CEFA1 /* PriceAlertWebhookTests.swift */,
+				AB102B9D79379AC6CCCAD111 /* PineWebhookChannelTests.swift */,
+				AB106B3E166641353ACE59F7 /* WebhookDeliverySummaryTests.swift */,
+				AB10FCCAFCF5BBDB0B5A4C37 /* WebhookHeaderPolicyTests.swift */,
+				AB10FD415F8719224556C732 /* WebhookRequestResolverTests.swift */,
+				AB10E9807FDB19AE304A1FC2 /* WebhookSecretPlacementTests.swift */,
+				AB10A6D5A72CFB6BF1422F86 /* WebhookPickerLogicTests.swift */,
 			);
 			path = DegenViewTests;
 			sourceTree = "<group>";
@@ -2316,6 +2535,7 @@
 				B7A1E7000000000000000B14 /* PineAlertCallSite.swift */,
 				F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */,
 				F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */,
+			F3A1D00000000000000000A2 /* PineIdentifierRules.swift */,
 				5E55102B2C1D4E8F00B2C3A2 /* PineIgnoredFeatureValidator.swift */,
 				F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */,
 				P30000000000000000000101 /* PineTypeChecker.swift */,
@@ -2375,6 +2595,7 @@
 				A00000000000000000000201 /* Frameworks */,
 				A00000000000000000000502 /* Resources */,
 				BA1000000000000000000502 /* Embed Login Items */,
+				AA1000000000000000002E01 /* Bump Build Number */,
 			);
 			buildRules = (
 			);
@@ -2490,6 +2711,29 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		AA1000000000000000002E01 /* Bump Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bump Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/tools/bump-build-number.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000501 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -2501,15 +2745,18 @@
 				B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */,
 				B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */,
 				B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */,
+				AE02000000000000000000A3 /* UnseenAlertsStore.swift in Sources */,
 				B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */,
 				B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */,
 				B7A1E7000000000000000A07 /* PineAlertDispatcher.swift in Sources */,
 				B7A1E7000000000000000A06 /* InAppBannerChannel.swift in Sources */,
+				AE02000000000000000000A2 /* AlertEventBus.swift in Sources */,
 				B7A1E7000000000000000A05 /* UserNotificationChannel.swift in Sources */,
 				B7A1E7000000000000000A04 /* PineAlertChannel.swift in Sources */,
 				B7A1E7000000000000000A03 /* PineAlertRouter.swift in Sources */,
 				B7A1E7000000000000000A02 /* PineAlertFrequencyGuard.swift in Sources */,
 				B7A1E7000000000000000A01 /* PineAlertNotification.swift in Sources */,
+				AE02000000000000000000A1 /* AlertDomainEvent.swift in Sources */,
 				B7A1E7000000000000000A00 /* PineAlertSubscription.swift in Sources */,
 				ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */,
 				8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */,
@@ -2635,6 +2882,12 @@
 				AA1000000000000000002001 /* SettingsField.swift in Sources */,
 				AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */,
 				AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */,
+				AA1000000000000000002A01 /* AboutSettingsView.swift in Sources */,
+				AA1000000000000000002C13 /* AboutLinkRow.swift in Sources */,
+				AA1000000000000000002C12 /* AboutGroup.swift in Sources */,
+				AA1000000000000000002C11 /* AboutLayout.swift in Sources */,
+				AA1000000000000000002C10 /* AboutRow.swift in Sources */,
+				AA1000000000000000002C06 /* UpdateStatusCard.swift in Sources */,
 				AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */,
 				AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */,
 				AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */,
@@ -2710,6 +2963,7 @@
 				SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */,
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
+				AA1000000000000000002C04 /* UpdateCheckViewModel.swift in Sources */,
 				E7A000000000000000003001 /* SavedLayoutController.swift in Sources */,
 				A0000000000000000000001E /* TickerIconView.swift in Sources */,
 				A00000000000000000000F01 /* SourceLogoView.swift in Sources */,
@@ -2785,6 +3039,10 @@
 				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
 				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
+				AA1000000000000000002A02 /* AppInfo.swift in Sources */,
+				AA1000000000000000002C03 /* PlaceholderUpdateChecker.swift in Sources */,
+				AA1000000000000000002C02 /* UpdateChecker.swift in Sources */,
+				AA1000000000000000002C01 /* UpdateStatus.swift in Sources */,
 				D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */,
 				A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */,
 				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,
@@ -2837,6 +3095,7 @@
 				F28389140591DA72F90BB80E /* PineOperators.swift in Sources */,
 				F2D0A3332B1F076A5C5B0579 /* PineSyntaxTraversal.swift in Sources */,
 				F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */,
+			F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */,
 				5E55102B2C1D4E8F00B1C2A2 /* PineIgnoredFeatureValidator.swift in Sources */,
 				F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */,
 				F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */,
@@ -3029,6 +3288,43 @@
 				96F8A7015403A8D9DF2832E0 /* PineInstanceResult.swift in Sources */,
 				7049175C48A8B16635AD5AA0 /* PineIndicatorLegend.swift in Sources */,
 				424518CA454DEB587747B72E /* PineInstanceSettingsPopover.swift in Sources */,
+				AB10B9BBA4621D1D5D508267 /* WebhookEndpoint.swift in Sources */,
+				AB1019736D4EFB03C400D268 /* WebhookDelivery.swift in Sources */,
+				AB101F35A2ABA5DE2860EEE1 /* WebhookURLPolicy.swift in Sources */,
+				AB10F9BA3E2872A774B4EACB /* WebhookRedactor.swift in Sources */,
+				AB10B0A5BFDD5232D04A7CDF /* WebhookPayload.swift in Sources */,
+				AB10B6083CF6D44D1D1BF8C5 /* WebhookTransport.swift in Sources */,
+				AB10F1508F46EA86A3EDC9D2 /* WebhookDeliveryService.swift in Sources */,
+				AB107157A4C5A75F49CD018B /* AlertMessageRenderer.swift in Sources */,
+				AB10C9B7C3940751D053A969 /* AppDatabase+Webhooks.swift in Sources */,
+				AB10A8C5225B0ED895FC89CD /* WebhookEndpointStore.swift in Sources */,
+				AB10511FD1AC7A975D997C8C /* WebhookReferenceSource.swift in Sources */,
+				AB10A390098EDEA36952D214 /* WebhookTestState.swift in Sources */,
+				AB10178433375A94D62FBC7B /* WebhookSettingsView.swift in Sources */,
+				AB10986F27D9DD640276B00C /* WebhookEndpointRow.swift in Sources */,
+				AB10A3EB7271A7AF0EBBE8F1 /* WebhookEndpointEditorSheet.swift in Sources */,
+				AB108B5301EBF36A1FC9EDCB /* PriceAlertWebhookDispatcher.swift in Sources */,
+				AB10579063BD5F0CE1BBF1C0 /* WebhookEndpointPicker.swift in Sources */,
+				AB10B33E1E6CAF921BC2D107 /* WebhookPineAlertChannel.swift in Sources */,
+				AB102C93A409A4053F21482A /* PineAlertWebhooksSheet.swift in Sources */,
+				AB10670D183362BD861B1658 /* WebhookDeliverySummary.swift in Sources */,
+				AB10C1AE0E04A9EB015DD441 /* WebhookDeliveryChip.swift in Sources */,
+				AB10004C7211ADAF1668DF55 /* WebhookHTTPMethod.swift in Sources */,
+				AB10AC7303DAA94E0962CFEA /* WebhookHeader.swift in Sources */,
+				AB10C33AC720D5BDC445BF3A /* WebhookSecretPlaceholder.swift in Sources */,
+				AB10039589AD9C846DA85233 /* WebhookHeaderPolicy.swift in Sources */,
+				AB1021E131A4235BC71E0534 /* WebhookRequestResolver.swift in Sources */,
+				AB10DCBC70AAE536964C0653 /* WebhookSecretPlacement.swift in Sources */,
+				AB100615228D71BED351FFDB /* WebhookSecretStore.swift in Sources */,
+				AB107EF343D2FB196E7500F1 /* WebhookFieldChrome.swift in Sources */,
+				AB10D8042B2D397DCDFBA732 /* WebhookSecretSection.swift in Sources */,
+				AB1078972253D48237467A04 /* WebhookHeadersEditor.swift in Sources */,
+				AB1021DBFD13C075AF8D069D /* WebhookPickerLogic.swift in Sources */,
+				AB10DBC8A76C213050679195 /* FormScrollContainer.swift in Sources */,
+				AB1082C5D2ACA9E9997BCEFE /* WebhookPickerRow.swift in Sources */,
+				AB10226EE076A5C6C1D88EEF /* WebhookPickerEmptyState.swift in Sources */,
+				AB10DAA41473A2E9CA5B06E2 /* WebhookMessageEditor.swift in Sources */,
+				AB10F061C5E7038A67593849 /* WebhookSendSection.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3141,6 +3437,22 @@
 				F3A5FBED7471DB2E2DB71336 /* PineNamedConstant.swift in Sources */,
 				F38EB18AA919A09EFFE74873 /* PineSize.swift in Sources */,
 				F33D1B2F24D01DFCA2A1614C /* PineTablePosition.swift in Sources */,
+				AB104747AD197375461BA516 /* WebhookEndpoint.swift in Sources */,
+				AB107F23145C7D27B2595A37 /* WebhookDelivery.swift in Sources */,
+				AB10FB1505CBAA13C105ED74 /* WebhookURLPolicy.swift in Sources */,
+				AB10E8D436BE6CD96FE2F614 /* WebhookRedactor.swift in Sources */,
+				AB1041DE90157FA502431AE8 /* WebhookPayload.swift in Sources */,
+				AB1063B8842B8223732BA94C /* WebhookTransport.swift in Sources */,
+				AB10CAC58EC050FE9A651A24 /* WebhookDeliveryService.swift in Sources */,
+				AB1073086D6572CA6FFD4B84 /* AlertMessageRenderer.swift in Sources */,
+				AB10CD04042938E969EF2CED /* AppDatabase+Webhooks.swift in Sources */,
+				AB109A90B20D716BB95D7E75 /* PriceAlertWebhookDispatcher.swift in Sources */,
+				AB10D89B120B4D02A187B42F /* WebhookHTTPMethod.swift in Sources */,
+				AB10D66473246274C7EC92B9 /* WebhookHeader.swift in Sources */,
+				AB10BBF6B8BA47431AEAE4D7 /* WebhookSecretPlaceholder.swift in Sources */,
+				AB10CF3FFB9CAB0DCA66D29E /* WebhookHeaderPolicy.swift in Sources */,
+				AB10F45BCF9F66616BB109CB /* WebhookRequestResolver.swift in Sources */,
+				AB10F8F74EC9748C747DCAC8 /* WebhookSecretStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3151,6 +3463,7 @@
 				B7A1E7000000000000000A90 /* PineAlertChannelFixtures.swift in Sources */,
 				B7A1E7000000000000000A18 /* PineAlertDispatcherTests.swift in Sources */,
 				B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */,
+				AE02000000000000000000A4 /* UnseenAlertsStoreTests.swift in Sources */,
 				B7A1E7000000000000000A16 /* PineAlertValidationTests.swift in Sources */,
 				3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */,
 				KCP000000000000000000201 /* KeychainPolicyTests.swift in Sources */,
@@ -3186,6 +3499,7 @@
 				P20000000000000000000004 /* PineStrategyTests.swift in Sources */,
 				DM0000000000000000000351 /* PineExampleScriptsTests.swift in Sources */,
 				P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */,
+			F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
@@ -3221,6 +3535,8 @@
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
+				AA1000000000000000002A03 /* AppInfoTests.swift in Sources */,
+				AA1000000000000000002C05 /* UpdateCheckViewModelTests.swift in Sources */,
 				AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
@@ -3257,6 +3573,18 @@
 				EAD2458EA9D12466C1B4265E /* ChartViewModelPineInstancePersistenceTests.swift in Sources */,
 				1BBE15D939B04D1D9632F7E6 /* PineIndicatorLegendTests.swift in Sources */,
 				A1C0DE0000000000000000F1 /* PineInputsViewTests.swift in Sources */,
+				AB1082FC779A82217897F9EE /* WebhookTestSupport.swift in Sources */,
+				AB1061A6E80B2624A0D2CC48 /* WebhookDeliveryServiceTests.swift in Sources */,
+				AB1094767AA52AFD3CF2F8B2 /* WebhookURLPolicyTests.swift in Sources */,
+				AB10A7410B33109BA716FB0A /* AlertMessageRendererTests.swift in Sources */,
+				AB102EF0E070B8A66B0E2122 /* WebhookEndpointStoreTests.swift in Sources */,
+				AB102881EED3C04551C1800C /* PriceAlertWebhookTests.swift in Sources */,
+				AB108E769B6A0612062A7488 /* PineWebhookChannelTests.swift in Sources */,
+				AB10DDCF06A4FC509AFEB984 /* WebhookDeliverySummaryTests.swift in Sources */,
+				AB104F5F43B1584FFC0C3EF4 /* WebhookHeaderPolicyTests.swift in Sources */,
+				AB10809E36539657F15F702B /* WebhookRequestResolverTests.swift in Sources */,
+				AB10E11F3C4D451106CF17AF /* WebhookSecretPlacementTests.swift in Sources */,
+				AB10CDFDDC53CB1FE6A6176D /* WebhookPickerLogicTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -3338,9 +3666,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DegenView/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				INFOPLIST_KEY_NSPrincipalClass = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3363,9 +3692,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DegenView/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				INFOPLIST_KEY_NSPrincipalClass = "";
 				LD_RUNPATH_SEARCH_PATHS = (

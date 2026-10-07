@@ -9,6 +9,7 @@ extension AppDatabase {
         // configuration can evolve through Codable defaults instead of schema changes.
         for table in [
             "favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert", "pine_alert_subscription",
+            "webhook_endpoint",
         ] {
             try createDocumentTable(table, db: db)
         }
@@ -122,6 +123,25 @@ extension AppDatabase {
             index: "pine_alert_event_on_subscription", on: "pine_alert_event",
             columns: ["subscription_id", "timestamp"], options: .ifNotExists)
 
+        // Webhook attempts. A row is claimed (`pending`) before the request goes out, and the unique
+        // key means one trigger reaches one endpoint once, even if the app and the agent both see the
+        // trigger. No URL, payload or response body is stored.
+        try db.create(table: "webhook_delivery", options: .ifNotExists) { t in
+            t.primaryKey("id", .text)
+            t.column("endpoint_id", .text).notNull()
+            t.column("source", .text).notNull()
+            t.column("event_id", .text)
+            t.column("timestamp", .double).notNull()
+            t.column("state", .text).notNull()
+            t.column("status_code", .integer)
+            t.column("duration", .double)
+            t.column("error", .text)
+            t.uniqueKey(["source", "event_id", "endpoint_id"])
+        }
+        try db.create(
+            index: "webhook_delivery_on_event", on: "webhook_delivery", columns: ["event_id"],
+            options: .ifNotExists)
+
         // GUI → runtime queue. The runtime deletes a row once the command is applied.
         try db.create(table: "alert_command", options: .ifNotExists) { t in
             t.primaryKey("id", .text)
@@ -153,6 +173,7 @@ enum DocumentTable: String {
     case paperAccount = "paper_account"
     case priceAlert = "price_alert"
     case pineAlertSubscription = "pine_alert_subscription"
+    case webhookEndpoint = "webhook_endpoint"
 }
 
 extension AppDatabase {

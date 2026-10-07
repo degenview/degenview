@@ -295,16 +295,25 @@ DegenView/
 15. Price alerts are evaluated by one `AlertRuntimeHost`, in either the app or the
     login-item agent, whichever holds `alert_runtime.lock`. Both processes open the same
     database: the owner saves the alert snapshot in one transaction per change, and the GUI
-    sends edits by inserting `alert_command` rows, which the owner applies and deletes.
+    sends edits by inserting `alert_command` rows, which the owner applies and deletes. The owner
+    also posts the alert's webhooks (`PriceAlertWebhookDispatcher`, see "Webhook delivery flow"), so
+    there is exactly one sender.
 16. Pine script alerts run in the app only (the agent has no compiler or runtime).
     `PineExecutionUpdate.alerts` (realtime executions only) reaches `PineAlertCoordinator`
     through `ChartViewModel.pineAlertHandler`; the pure `PineAlertRouter` matches it to active
     `PineAlertSubscription`s (chart, symbol, timeframe, source hash) and
     `PineAlertFrequencyGuard` admits it once per call site, bar and mode. Admitted alerts are
     recorded in `pine_alert_event` (unique `dedupe_key`, NULL for `freq_all`) and fanned out by
-    `PineAlertDispatcher` to independent `PineAlertChannel`s (macOS notification, in-app banner).
+    `PineAlertDispatcher` to independent `PineAlertChannel`s (macOS notification, in-app banner, webhook).
     Subscriptions are the `pine_alert_subscription` document table. They are separate from the
     price-alert snapshot, so `replaceSnapshot` never touches them.
+17. Every alert trigger the app learns of is published as an `AlertDomainEvent` on
+    `AlertEventBus` (Combine subject, main actor): price alerts from `AlertStore.reload()` for each
+    new `alert_event` id (the one place agent- and app-evaluated triggers meet; includes ones fired
+    while the app was closed), script alerts from `PineAlertStore.record`. `UnseenAlertsStore`
+    subscribes and drives the red bubble on the sidebar bell. "Seen" is the `alerts.lastSeenAt`
+    setting, set when the Alerts window becomes key; events while it is key never count. A new
+    trigger path must publish here.
 
 ## Drawing undo and redo
 
@@ -504,3 +513,31 @@ but client TTLs suppress network traffic until upstream data is stale. Hidden or
 tabs cancel refresh work. Manual refresh bypasses freshness while still participating in
 in-flight coalescing. Fear and Greed ALL history requests sequential 500-record pages until
 the API returns a short page; all historical points are normalized oldest to newest.
+
+## Webhook delivery flow
+
+Webhooks are opt-in, global, reusable endpoints that alerts reference by id. Price alerts and Pine
+alerts keep their own pipelines and share only configuration and transport. Details, TradingView
+compatibility and safety rules are in [webhooks.md](webhooks.md).
+
+```
+Settings ▸ Webhooks ── WebhookEndpointStore ──┬─ webhook_endpoint (SQLite: name, URL + header templates)
+                                              └─ WebhookSecretStore (Keychain: the one secret)
+
+price alert triggers                        Pine alert() / alertcondition()
+  LocalPriceAlertEngine                       PineExecutionUpdate.alerts (realtime only)
+  → AlertTriggerEvent (+ candle)              → PineAlertRouter → PineAlertFrequencyGuard
+  → AlertRuntimeHost (lock owner only)        → pine_alert_event → PineAlertDispatcher
+  → PriceAlertWebhookDispatcher                 → WebhookPineAlertChannel
+          └──────────── claim row in webhook_delivery (one send per trigger + endpoint) ───┘
+                                      ↓
+                          WebhookDeliveryService  (POST/PUT, 3 s, no retry, no redirects)
+                            WebhookRequestResolver: {{secret}} → URL (percent-encoded) / headers (raw)
+                                      ↓
+                          webhook_delivery result (status, duration, typed error; no URL or body)
+```
+
+- `WebhookDeliveryService` is the only code that does webhook HTTP. The Settings Test button uses it
+  in `.test` mode (the enabled flag is bypassed, URL validation is not).
+- Everything in the shared box is compiled into both the app and `DegenViewAlertAgent`; none of it
+  imports SwiftUI, `AlertStore` or Pine runtime types.

@@ -17,6 +17,11 @@ open DegenView.xcodeproj
 
 Requires Xcode 16+, macOS 14+.
 
+Every compile of the app target bumps `CFBundleVersion` (the "Bump Build Number" run-script phase,
+`tools/bump-build-number.sh`). The counter is the gitignored `.build-number`; it is written into
+the built Info.plist only, never the project. That phase is why the app target has script
+sandboxing off.
+
 ## Code conventions
 
 - **MVVM**: `Model/` — data + enums, `ViewModel/` — `@ObservableObject` state, `View/` — SwiftUI views
@@ -98,6 +103,32 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   20×20 slot is occupied either way and card headers stay aligned
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
   `updateTicker` by design and would pin the old coin's artwork to a renamed card
+
+### Alert events
+- Every alert trigger is an `AlertDomainEvent` published on `AlertEventBus` (`AlertStore.reload()` for
+  price alerts, `PineAlertStore.record` for script alerts). A new trigger path must publish there.
+  `UnseenAlertsStore` turns them into the sidebar bell's unseen count; "seen" is the
+  `alerts.lastSeenAt` setting, never a flag on the events (`replaceSnapshot` rewrites them)
+
+### Webhooks
+- `docs/webhooks.md` has the behaviour; `docs/architecture.md` has the flow. Endpoints are global
+  (`WebhookEndpointStore`, `webhook_endpoint` table). The URL and header values are templates stored in
+  plain text in that row (the agent reads them); show the URL only through `WebhookRedactor`. A secret
+  is the one value that lives in the Keychain (`WebhookSecretStore`, shared access group, per endpoint),
+  placed with `{{secret}}` by `WebhookRequestResolver`: percent-encoded in the URL, raw in headers, never
+  in the host or the body. Never log or store a resolved URL/header or touch `webhook_delivery` with one;
+  Debug builds have no access group, so the agent can't read secrets there
+- `WebhookDeliveryService` is the only webhook HTTP. Price alerts send from `AlertRuntimeHost` through
+  `PriceAlertWebhookDispatcher` (lock owner only; `AlertStore` must never send); Pine alerts send through
+  `WebhookPineAlertChannel`. Both claim a `webhook_delivery` row before sending. No retries, no redirects
+- The webhook models, policy, renderer, transport, service, `AppDatabase+Webhooks` and
+  `PriceAlertWebhookDispatcher` also compile into `DegenViewAlertAgent`: keep them free of SwiftUI,
+  `AlertStore` and Pine runtime types, and add any new file to the agent's Sources phase
+- New fields on `PriceAlert`, `AlertTriggerEvent`, `PineAlertSubscription` and `PineAlertNotification` must
+  decode old rows (`decodeIfPresent`): a row that fails to decode is dropped, and `replaceSnapshot` then
+  rewrites the table without it
+- Tests use `RecordingWebhookTransport` and `InMemoryWebhookSecretStore` (`WebhookTestSupport.swift`);
+  nothing reaches the network or the Keychain
 
 ### Pine editor assistance
 - Pure logic, no AppKit: `PineEditorPairing` (auto-pair, overtype, empty-pair Backspace, wrap),
@@ -334,6 +365,9 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
     Delete and Clear History ask first. History groups by day; prices read `$67,432.19`, `$1.2346`,
     `$0.00000278` — never a long decimal tail — in rows, the banner and the macOS notification
+    The tab bar spans the full width. A fired alert (price or script) puts a red count on the sidebar
+    bell, also for ones the agent fired while the app was closed; opening the window clears it and
+    relaunch keeps it clear; alerts firing while the window is key never show a bubble
 13c. Replay: toolbar Replay ▸ Select Bar on Chart shows the "Click a candle" strip; the marker
     follows the pointer with a date tag and Esc / Cancel exit. Click a candle: strip shows
     Paused, the card gets an orange border and "Replay" badge. Play / pause / step ⇧→ ⇧← ⇧↓,
@@ -342,6 +376,12 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     button restarts. A CoinGecko chart shows a dismissible fallback notice. **Live** returns to
     latest. Choose Date & Time… presets and "Snaps to" preview; relaunch mid-replay restores
     paused at the same spot; narrow window wraps the timeline to a second row; light and dark
+13e. Webhooks: Settings ▸ Webhooks, add a local receiver (`python3 -m http.server`, or `nc -l 8080` for the
+    raw request; add a secret and `?token={{secret}}` via Use secret, and a Bearer header: the receiver sees the
+    percent-encoded token in the query and the raw one in `Authorization`; Headers starts collapsed). Test sends `{"event":"DegenView webhook test"}` as application/json; change the test message to
+    plain text and it goes as text/plain. A disabled webhook still tests. A price alert with two
+    webhooks (one dead) shows `Webhooks 1/2 delivered`; deleting a used webhook asks first with the
+    count. A script alert posts once per admitted `alert()`, and loading a script over history posts nothing
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket

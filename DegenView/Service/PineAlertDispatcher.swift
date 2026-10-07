@@ -5,7 +5,11 @@ import Foundation
 actor PineAlertDispatcher {
     private let channels: [any PineAlertChannel]
 
-    init(channels: [any PineAlertChannel] = [UserNotificationChannel(), InAppBannerChannel()]) {
+    init(
+        channels: [any PineAlertChannel] = [
+            UserNotificationChannel(), InAppBannerChannel(), WebhookPineAlertChannel(),
+        ]
+    ) {
         self.channels = channels
     }
 

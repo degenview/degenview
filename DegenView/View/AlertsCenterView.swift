@@ -26,6 +26,9 @@ struct AlertsCenterView: View {
     @StateObject private var store = AlertStore.shared
     @StateObject private var pineStore = PineAlertStore.shared
     @StateObject private var info = PortfolioAssetInfoViewModel()
+    @StateObject private var unseen = UnseenAlertsStore.shared
+    /// This view's window, kept so key-window changes can be matched to it.
+    @State private var hostWindow = WeakWindow()
     @AppStorage("appTheme") private var appTheme: AppTheme = .system
     @State private var filter: Filter = .active
     @State private var search = ""
@@ -44,8 +47,24 @@ struct AlertsCenterView: View {
         }
         .frame(minWidth: 760, minHeight: 480)
         .background(Color(nsColor: .windowBackgroundColor))
+        .background(
+            WindowAccessor {
+                hostWindow.window = $0
+                if $0.isKeyWindow { unseen.windowDidBecomeActive() }
+            }
+        )
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if let window = note.object as? NSWindow, window === hostWindow.window { unseen.windowDidBecomeActive() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResignKeyNotification)) { note in
+            if let window = note.object as? NSWindow, window === hostWindow.window { unseen.windowDidResign() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { note in
+            if let window = note.object as? NSWindow, window === hostWindow.window { unseen.windowDidResign() }
+        }
         .task(id: assetKeys) { info.load(assets) }
         .onAppear {
+            if hostWindow.window?.isKeyWindow == true { unseen.windowDidBecomeActive() }
             if let id = WindowCoordinator.shared.takePendingAlertsFocus() { show(scriptAlert: id) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showScriptAlertInCenter)) { note in
@@ -100,10 +119,7 @@ struct AlertsCenterView: View {
                 runtimeBadge
                 PortfolioSearchField(text: $search, prompt: "Search asset or name")
             }
-            HStack {
-                IconTabBar(items: tabs, selection: $filter, isCompact: true)
-                Spacer(minLength: 12)
-            }
+            IconTabBar(items: tabs, selection: $filter, isCompact: true, fillsWidth: true)
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
@@ -303,6 +319,12 @@ struct AlertsCenterView: View {
         store.save(
             PriceAlert(
                 asset: alert.asset, condition: alert.condition, currency: alert.currency,
-                frequency: alert.frequency, note: alert.note))
+                frequency: alert.frequency, note: alert.note,
+                webhookEndpointIDs: alert.webhookEndpointIDs, webhookMessage: alert.webhookMessage))
     }
+}
+
+/// Holds a window without retaining it.
+private final class WeakWindow {
+    weak var window: NSWindow?
 }

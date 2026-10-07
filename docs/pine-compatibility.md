@@ -160,8 +160,14 @@ row) → `PineAlertDispatcher` (channels).
   subscriptions.
 - **Symbol or timeframe change.** The subscription stays enabled but fires only while its chart
   shows the pair it was created for; the Alerts center shows "Chart shows other symbol".
-- **Channels.** `PineAlertChannel` is the seam: a webhook would be one more conformance. Channels
-  run independently and a failing one never reaches the script or blocks the others.
+- **Channels.** `PineAlertChannel` is the seam: macOS notification, in-app banner and
+  `WebhookPineAlertChannel` are independent conformances. A failing one never reaches the script or
+  blocks the others. A subscription selects webhook endpoints by id (see `docs/webhooks.md`); the
+  script never sees a URL.
+- **`alertcondition()` placeholders.** The message is a template resolved when the condition fires
+  (`{{ticker}}`, `{{exchange}}`, `{{open}}`, `{{high}}`, `{{low}}`, `{{close}}`, `{{volume}}`, `{{time}}`,
+  `{{timenow}}`, `{{interval}}`); unknown ones stay as written. `alert()` text is the script's own and is
+  never substituted again. Subscriptions are per indicator, not per condition.
 - Drawing objects with `xloc.bar_index` coordinates (or `xloc.bar_time`, see below): `line.new/set_*/get_*/delete`
   (style, extend), `label.new/set_*/get_*/delete` (bubble styles up/down/left/right/none),
   `box.new/set_*/get_*/delete`, and `table.new/cell/delete` pinned to any `position.*`.
@@ -171,6 +177,9 @@ row) → `PineAlertDispatcher` (channels).
   line/column diagnostics survive while last-valid output stays active.
 - Each statement must end its line: leftover tokens after a complete statement
   (`aaa "x" 1`, `plot(close) 5`) are a `PINE2013` syntax error, reported once per line.
+- A value on its own line (`3223`, `"abc"`, `x`, `a + b`) is `PINE3048`, `"3223" is not a valid statement.`
+  Only calls may stand alone. The last statement of a function, `if`, loop or `switch` body is that
+  block's value and stays valid.
 - Limits: 500k source characters (a runaway-input guard; published scripts reach 300k), 50k
   tokens and AST nodes, 20M executed instructions per bar (Pine bounds a bar by time, not by steps),
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
@@ -444,6 +453,23 @@ no observable effect (`max_bars_back`, `dynamic_requests`) are not warned about.
 | `PINE7003` | a variable that is always `na` (see "Variables the engine does not model") |
 | `PINE7004` | an argument value drawn as something else, e.g. `plot.style_linebr` |
 
+## Identifier rules
+
+`PineIdentifierRules` checks every name a script declares: variables, tuple names, function names
+and parameters, and `for` counters. Codes follow TradingView's numbering.
+
+| Code | Rule |
+|---|---|
+| `CE10090` | A declared name contains `.`: `math.max = 44`. |
+| `CE10190` | A declared name shadows a builtin variable or function: `close = 5`, `f(high) =>`, `plot = 1`. |
+
+A bare namespace is not a builtin variable, so `math = 44`, `ta = 1` and `color = 44` are allowed,
+as are the object-type names `line`, `label`, `box` and `table`. `_` is always allowed, and a
+`method` may share a builtin's name because it is chosen by receiver type. TradingView only errors
+on `CE10190` when the script has already used the builtin and otherwise warns (`CW10011`);
+DegenView always errors. `obj.field := 1` is a field assignment, not a declaration, and is not
+affected.
+
 ## Known incompatibilities
 
 The current grammar does not yet implement values of the built-in `footprint` and `volume_row` types (the names parse in signatures and
@@ -497,7 +523,9 @@ claimed as parity.
 - **One script per chart** in the UI; the engine itself supports any number.
 - **Script alerts are client-side.** They need the app running and the chart's tab visible (hidden
   tabs suspend the feed), and a bar close missed while disconnected is not alerted retroactively.
-  There is no server worker, webhook, email, push, or account.
+  Alerts can POST to user-configured webhook endpoints (`docs/webhooks.md`); there is no server
+  worker, email, push, or account. Strategy order-fill alerts, `alert_message` on `strategy.*` and
+  `//@strategy_alert_message` are not supported: the broker emulator emits no fill events.
 
 ## Conformance and performance
 
