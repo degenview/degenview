@@ -9,8 +9,21 @@ final class ScriptEditorViewModel: ObservableObject {
     @Published var diagnostics: [PineDiagnostic] = []
     @Published var isDirty = false
     @Published var errorMessage: String?
+    /// A request for the editor to scroll to and flash a source position; each click makes a new one.
+    @Published private(set) var reveal: Reveal?
+
+    struct Reveal: Equatable {
+        let id = UUID()
+        let line: Int
+        let column: Int
+    }
     private var savedSource = ""
     private var draftTask: Task<Void, Never>?
+
+    /// Asks the editor to show where `diagnostic` points.
+    func reveal(_ diagnostic: PineDiagnostic) {
+        reveal = Reveal(line: diagnostic.range.start.line, column: diagnostic.range.start.column)
+    }
 
     init(scriptID: UUID) {
         self.scriptID = scriptID

@@ -24,6 +24,8 @@ struct ScriptPreviewDrawer: View {
     let editorDiagnostics: [PineDiagnostic]
     let editorHasErrors: Bool
     let tab: Tab
+    /// Called when a problem row is clicked.
+    var onSelectProblem: ((PineDiagnostic) -> Void)?
 
     /// Problems for whichever source the user is looking at: the editor's while it doesn't compile,
     /// the running script's (warnings, or the runtime failure) otherwise.
@@ -84,7 +86,7 @@ struct ScriptPreviewDrawer: View {
         if diagnostics.isEmpty {
             placeholder("No problems", "Compile errors, warnings and runtime failures are listed here.")
         } else {
-            PineDiagnosticsListView(diagnostics: diagnostics, maxHeight: nil)
+            PineDiagnosticsListView(diagnostics: diagnostics, maxHeight: nil, onSelect: onSelectProblem)
                 .padding(12)
         }
     }

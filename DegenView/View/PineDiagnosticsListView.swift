@@ -8,6 +8,8 @@ struct PineDiagnosticsListView: View {
     /// Caps the list so a long report scrolls instead of growing its container; nil lets it fill.
     var maxHeight: CGFloat? = 90
     var showsHeader = true
+    /// Makes each row a button, e.g. to jump to the problem in the editor.
+    var onSelect: ((PineDiagnostic) -> Void)?
 
     @State private var copied = false
 
@@ -24,20 +26,31 @@ struct PineDiagnosticsListView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Self.ordered(diagnostics)) { diagnostic in
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Image(systemName: diagnostic.severity.symbol)
-                                .foregroundStyle(diagnostic.severity.color)
-                            (Text(Self.location(diagnostic)).foregroundStyle(.secondary)
-                                + Text(diagnostic.message).foregroundStyle(.primary))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                        }
-                        .font(.caption.monospaced())
+                        row(diagnostic)
                     }
                 }
             }
             .frame(maxHeight: maxHeight)
+        }
+    }
+
+    @ViewBuilder private func row(_ diagnostic: PineDiagnostic) -> some View {
+        let content = HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: diagnostic.severity.symbol)
+                .foregroundStyle(diagnostic.severity.color)
+            (Text(Self.location(diagnostic)).foregroundStyle(.secondary)
+                + Text(diagnostic.message).foregroundStyle(.primary))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.caption.monospaced())
+        if let onSelect {
+            // Selectable text would swallow the click, so a navigable row is a button instead.
+            Button { onSelect(diagnostic) } label: { content.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .help("Go to line \(diagnostic.range.start.line)")
+        } else {
+            content.textSelection(.enabled)
         }
     }
 

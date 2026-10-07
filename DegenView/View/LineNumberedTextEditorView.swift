@@ -4,6 +4,8 @@ import SwiftUI
 struct LineNumberedTextEditorView: NSViewRepresentable {
     @Binding var text: String
     var diagnostics: [PineDiagnostic] = []
+    /// A position to scroll to and flash; each new request (by id) is handled once.
+    var reveal: ScriptEditorViewModel.Reveal?
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
 
@@ -13,6 +15,8 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         context.coordinator.gutter = container.gutter
         context.coordinator.container = container
         context.coordinator.diagnostics = diagnostics
+        // A request made before this editor existed is stale.
+        context.coordinator.handledReveal = reveal?.id
         container.setText(text)
         container.setDiagnostics(diagnostics)
         return container
@@ -23,6 +27,10 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         context.coordinator.diagnostics = diagnostics
         container.setDiagnostics(diagnostics)
         container.gutter.needsDisplay = true
+        if let reveal, reveal.id != context.coordinator.handledReveal {
+            context.coordinator.handledReveal = reveal.id
+            DispatchQueue.main.async { container.reveal(line: reveal.line, column: reveal.column) }
+        }
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -31,6 +39,7 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
         weak var gutter: LineNumberGutterView?
         weak var container: EditorContainerView?
         private var lastEditWasWordCharacter: Bool?
+        var handledReveal: UUID?
 
         init(text: Binding<String>) { self.text = text }
 
@@ -232,6 +241,26 @@ struct LineNumberedTextEditorView: NSViewRepresentable {
             textView.sizeToFit()
             updateOccurrenceHighlights()
             gutter.needsDisplay = true
+        }
+
+        /// Scrolls to a 1-based line and column, puts the caret there and flashes the line. The
+        /// current-line band then keeps marking it until the caret moves.
+        func reveal(line: Int, column: Int) {
+            let source = textView.string as NSString
+            var start = 0
+            for _ in 1..<max(line, 1) {
+                let next = NSMaxRange(source.lineRange(for: NSRange(location: start, length: 0)))
+                if next >= source.length { break }
+                start = next
+            }
+            let lineRange = source.lineRange(for: NSRange(location: start, length: 0))
+            var content = lineRange
+            while content.length > 0, source.character(at: NSMaxRange(content) - 1) == 0x0A { content.length -= 1 }
+            let caret = start + min(max(column - 1, 0), content.length)
+            window?.makeFirstResponder(textView)
+            textView.setSelectedRange(NSRange(location: caret, length: 0))
+            textView.scrollRangeToVisible(lineRange)
+            textView.showFindIndicator(for: content)
         }
 
         func setDiagnostics(_ diagnostics: [PineDiagnostic]) {

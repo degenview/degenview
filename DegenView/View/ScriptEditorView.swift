@@ -5,7 +5,8 @@ struct ScriptEditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            LineNumberedTextEditorView(text: $model.source, diagnostics: model.diagnostics)
+            LineNumberedTextEditorView(
+                text: $model.source, diagnostics: model.diagnostics, reveal: model.reveal)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .frame(minHeight: 120)
                 .clipped()

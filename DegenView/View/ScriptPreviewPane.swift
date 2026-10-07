@@ -28,7 +28,8 @@ struct ScriptPreviewPane: View {
     private var drawer: ScriptPreviewDrawer {
         ScriptPreviewDrawer(
             preview: preview, chart: chart, editorDiagnostics: editor.diagnostics,
-            editorHasErrors: editorHasErrors, tab: drawerTab)
+            editorHasErrors: editorHasErrors, tab: drawerTab,
+            onSelectProblem: { editor.reveal($0) })
     }
 
     var body: some View {
