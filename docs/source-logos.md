@@ -18,3 +18,12 @@ data provider.
 The Google favicon service URL is
 `https://t2.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://<domain>&size=256`.
 Swap in an official SVG for any PNG source if one becomes available.
+
+## About page logos
+
+`BrandLogo-<name>.imageset`, drawn by `AboutSettingsView` on a fixed badge tile. Trademarks of their owners, used only to identify the linked destination.
+
+| Brand | Format | Origin |
+|---|---|---|
+| GitHub | SVG | https://cdn.jsdelivr.net/gh/glincker/thesvg@main/public/icons/github/default.svg — fill changed from `#181717` to white (shown on a near-black tile) |
+| Buy Me a Coffee | PNG 512px | Official "no background" cup logo supplied by the project owner, downscaled from 1768x2558 |

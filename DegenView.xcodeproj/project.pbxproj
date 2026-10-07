@@ -47,6 +47,10 @@
 		84DFBF9367E3B827DFA30883 /* PineReportBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEAF2B9AC86FA4B318746F04 /* PineReportBox.swift */; };
 		89D3A09940226FF53F58870B /* PineOffsetMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6707006AD4A62C0B40679829 /* PineOffsetMap.swift */; };
 		8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */; };
+		AA1000000000000000002A02 /* AppInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B02 /* AppInfo.swift */; };
+		AA1000000000000000002C03 /* PlaceholderUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */; };
+		AA1000000000000000002C02 /* UpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D02 /* UpdateChecker.swift */; };
+		AA1000000000000000002C01 /* UpdateStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D01 /* UpdateStatus.swift */; };
 		8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 343A9B054A6326F4C1508301 /* AppDatabase+Portfolio.swift */; };
 		94DA4D7B02B2D66DEED77339 /* PineCountChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AF35D514DB5C69F568C245A /* PineCountChip.swift */; };
 		95529618D60C56DDAA96913B /* ChartViewModelMultiPineInstanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D522B75BD2332D9948E8947 /* ChartViewModelMultiPineInstanceTests.swift */; };
@@ -59,6 +63,7 @@
 		A00000000000000000000006 /* BinanceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* BinanceAPIService.swift */; };
 		A00000000000000000000008 /* ChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* ChartViewModel.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
+		AA1000000000000000002C04 /* UpdateCheckViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D04 /* UpdateCheckViewModel.swift */; };
 		A0000000000000000000000A /* ChartCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* ChartCardView.swift */; };
 		A0000000000000000000000B /* AddTickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* AddTickerSheet.swift */; };
 		A0000000000000000000000D /* EmptyStateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010D /* EmptyStateView.swift */; };
@@ -139,10 +144,18 @@
 		AA1000000000000000002001 /* SettingsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002101 /* SettingsField.swift */; };
 		AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002102 /* SettingsStatusBadge.swift */; };
 		AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002103 /* AppearanceSettingsView.swift */; };
+		AA1000000000000000002A01 /* AboutSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B01 /* AboutSettingsView.swift */; };
+		AA1000000000000000002C13 /* AboutLinkRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D13 /* AboutLinkRow.swift */; };
+		AA1000000000000000002C12 /* AboutGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D12 /* AboutGroup.swift */; };
+		AA1000000000000000002C11 /* AboutLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D11 /* AboutLayout.swift */; };
+		AA1000000000000000002C10 /* AboutRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D10 /* AboutRow.swift */; };
+		AA1000000000000000002C06 /* UpdateStatusCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D06 /* UpdateStatusCard.swift */; };
 		AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002104 /* AlpacaSettingsView.swift */; };
 		AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */; };
 		AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002106 /* NotificationSettingsView.swift */; };
 		AA1000000000000000002009 /* SettingsTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002109 /* SettingsTabTests.swift */; };
+		AA1000000000000000002A03 /* AppInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002B03 /* AppInfoTests.swift */; };
+		AA1000000000000000002C05 /* UpdateCheckViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */; };
 		AA1000000000000000002200 /* WindowTabIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002300 /* WindowTabIcon.swift */; };
 		AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002301 /* WindowTabIconTests.swift */; };
 		AA1000000000000000009000 /* EmptyStateSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000009100 /* EmptyStateSuggestions.swift */; };
@@ -805,6 +818,10 @@
 		15D3F8A0FB52063AA222566B /* PineSymbolCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolCatalogTests.swift; sourceTree = "<group>"; };
 		9C66B73848500A8FB221464B /* PineSymbolMetadataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolMetadataTests.swift; sourceTree = "<group>"; };
 		1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B02 /* AppInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfo.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderUpdateChecker.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D02 /* UpdateChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChecker.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D01 /* UpdateStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateStatus.swift; sourceTree = "<group>"; };
 		1B32BD69F4104172033B7086 /* PineInstanceSettingsPopover.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInstanceSettingsPopover.swift; sourceTree = "<group>"; };
 		1B8456EF5ED67972E125CB9A /* PineIndicatorLegendTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineIndicatorLegendTests.swift; sourceTree = "<group>"; };
 		A1C0DE0000000000000000F2 /* PineInputsViewTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineInputsViewTests.swift; sourceTree = "<group>"; };
@@ -857,6 +874,7 @@
 		A00000000000000000000106 /* BinanceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceAPIService.swift; sourceTree = "<group>"; };
 		A00000000000000000000108 /* ChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModel.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D04 /* UpdateCheckViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckViewModel.swift; sourceTree = "<group>"; };
 		A0000000000000000000010A /* ChartCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCardView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010B /* AddTickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTickerSheet.swift; sourceTree = "<group>"; };
 		A0000000000000000000010D /* EmptyStateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateView.swift; sourceTree = "<group>"; };
@@ -935,10 +953,18 @@
 		AA1000000000000000002101 /* SettingsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsField.swift; sourceTree = "<group>"; };
 		AA1000000000000000002102 /* SettingsStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusBadge.swift; sourceTree = "<group>"; };
 		AA1000000000000000002103 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B01 /* AboutSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutSettingsView.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D13 /* AboutLinkRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutLinkRow.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D12 /* AboutGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutGroup.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D11 /* AboutLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutLayout.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D10 /* AboutRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutRow.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D06 /* UpdateStatusCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateStatusCard.swift; sourceTree = "<group>"; };
 		AA1000000000000000002104 /* AlpacaSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlpacaSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002106 /* NotificationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSettingsView.swift; sourceTree = "<group>"; };
 		AA1000000000000000002109 /* SettingsTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTabTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002B03 /* AppInfoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfoTests.swift; sourceTree = "<group>"; };
+		AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCheckViewModelTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000002300 /* WindowTabIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIcon.swift; sourceTree = "<group>"; };
 		AA1000000000000000002301 /* WindowTabIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowTabIconTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000009100 /* EmptyStateSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmptyStateSuggestions.swift; sourceTree = "<group>"; };
@@ -1494,6 +1520,10 @@
 			isa = PBXGroup;
 			children = (
 				1A7A9FF7FE2582A9CD3DFB94 /* Constants.swift */,
+				AA1000000000000000002B02 /* AppInfo.swift */,
+				AA1000000000000000002D03 /* PlaceholderUpdateChecker.swift */,
+				AA1000000000000000002D02 /* UpdateChecker.swift */,
+				AA1000000000000000002D01 /* UpdateStatus.swift */,
 			);
 			name = Core;
 			path = Core;
@@ -1682,6 +1712,7 @@
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
 				A00000000000000000000109 /* ContentViewModel.swift */,
+				AA1000000000000000002D04 /* UpdateCheckViewModel.swift */,
 				E7A000000000000000003101 /* SavedLayoutController.swift */,
 				E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */,
 				C10000000000000000000103 /* PredictionMarketSearchViewModel.swift */,
@@ -1780,6 +1811,12 @@
 				AA1000000000000000002101 /* SettingsField.swift */,
 				AA1000000000000000002102 /* SettingsStatusBadge.swift */,
 				AA1000000000000000002103 /* AppearanceSettingsView.swift */,
+				AA1000000000000000002B01 /* AboutSettingsView.swift */,
+				AA1000000000000000002D13 /* AboutLinkRow.swift */,
+				AA1000000000000000002D12 /* AboutGroup.swift */,
+				AA1000000000000000002D11 /* AboutLayout.swift */,
+				AA1000000000000000002D10 /* AboutRow.swift */,
+				AA1000000000000000002D06 /* UpdateStatusCard.swift */,
 				AA1000000000000000002104 /* AlpacaSettingsView.swift */,
 				AA1000000000000000002105 /* CoinMarketCapSettingsView.swift */,
 				AA1000000000000000002106 /* NotificationSettingsView.swift */,
@@ -1986,6 +2023,8 @@
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
+				AA1000000000000000002B03 /* AppInfoTests.swift */,
+				AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */,
 				AA1000000000000000002301 /* WindowTabIconTests.swift */,
 				AA1000000000000000000107 /* PortfolioAccountingEngineTests.swift */,
 				C4D1A0000000000000000103 /* PortfolioCandleStoreTests.swift */,
@@ -2375,6 +2414,7 @@
 				A00000000000000000000201 /* Frameworks */,
 				A00000000000000000000502 /* Resources */,
 				BA1000000000000000000502 /* Embed Login Items */,
+				AA1000000000000000002E01 /* Bump Build Number */,
 			);
 			buildRules = (
 			);
@@ -2489,6 +2529,29 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		AA1000000000000000002E01 /* Bump Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Bump Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "\"${SRCROOT}/tools/bump-build-number.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		A00000000000000000000501 /* Sources */ = {
@@ -2635,6 +2698,12 @@
 				AA1000000000000000002001 /* SettingsField.swift in Sources */,
 				AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */,
 				AA1000000000000000002003 /* AppearanceSettingsView.swift in Sources */,
+				AA1000000000000000002A01 /* AboutSettingsView.swift in Sources */,
+				AA1000000000000000002C13 /* AboutLinkRow.swift in Sources */,
+				AA1000000000000000002C12 /* AboutGroup.swift in Sources */,
+				AA1000000000000000002C11 /* AboutLayout.swift in Sources */,
+				AA1000000000000000002C10 /* AboutRow.swift in Sources */,
+				AA1000000000000000002C06 /* UpdateStatusCard.swift in Sources */,
 				AA1000000000000000002004 /* AlpacaSettingsView.swift in Sources */,
 				AA1000000000000000002005 /* CoinMarketCapSettingsView.swift in Sources */,
 				AA1000000000000000002006 /* NotificationSettingsView.swift in Sources */,
@@ -2710,6 +2779,7 @@
 				SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */,
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
 				A00000000000000000000009 /* ContentViewModel.swift in Sources */,
+				AA1000000000000000002C04 /* UpdateCheckViewModel.swift in Sources */,
 				E7A000000000000000003001 /* SavedLayoutController.swift in Sources */,
 				A0000000000000000000001E /* TickerIconView.swift in Sources */,
 				A00000000000000000000F01 /* SourceLogoView.swift in Sources */,
@@ -2785,6 +2855,10 @@
 				D10000000000000000000004 /* WindowAccessor.swift in Sources */,
 				107499480345BD4E1AF89997 /* DateFormat+Extensions.swift in Sources */,
 				8A6F0FBF904AABC2B7092AB6 /* Constants.swift in Sources */,
+				AA1000000000000000002A02 /* AppInfo.swift in Sources */,
+				AA1000000000000000002C03 /* PlaceholderUpdateChecker.swift in Sources */,
+				AA1000000000000000002C02 /* UpdateChecker.swift in Sources */,
+				AA1000000000000000002C01 /* UpdateStatus.swift in Sources */,
 				D30000000000000000000002 /* ChartGridDropDelegate.swift in Sources */,
 				A8264FDDEB83050C431DE260 /* SearchResultRow.swift in Sources */,
 				44306C22FA7B0C913BEAFD73 /* TickerSearchViewModel.swift in Sources */,
@@ -3221,6 +3295,8 @@
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
+				AA1000000000000000002A03 /* AppInfoTests.swift in Sources */,
+				AA1000000000000000002C05 /* UpdateCheckViewModelTests.swift in Sources */,
 				AA1000000000000000002201 /* WindowTabIconTests.swift in Sources */,
 				AA1000000000000000000007 /* PortfolioAccountingEngineTests.swift in Sources */,
 				C4D1A0000000000000000003 /* PortfolioCandleStoreTests.swift in Sources */,
@@ -3338,9 +3414,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DegenView/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				INFOPLIST_KEY_NSPrincipalClass = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -3363,9 +3440,10 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = DegenView/Info.plist;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 				INFOPLIST_KEY_NSMainStoryboardFile = "";
 				INFOPLIST_KEY_NSPrincipalClass = "";
 				LD_RUNPATH_SEARCH_PATHS = (

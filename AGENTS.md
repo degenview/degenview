@@ -17,6 +17,11 @@ open DegenView.xcodeproj
 
 Requires Xcode 16+, macOS 14+.
 
+Every compile of the app target bumps `CFBundleVersion` (the "Bump Build Number" run-script phase,
+`tools/bump-build-number.sh`). The counter is the gitignored `.build-number`; it is written into
+the built Info.plist only, never the project. That phase is why the app target has script
+sandboxing off.
+
 ## Code conventions
 
 - **MVVM**: `Model/` — data + enums, `ViewModel/` — `@ObservableObject` state, `View/` — SwiftUI views

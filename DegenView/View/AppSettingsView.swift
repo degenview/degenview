@@ -5,6 +5,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     case alpaca
     case coinMarketCap
     case notifications
+    case about
 
     var id: Self { self }
 
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .alpaca: "Alpaca"
         case .coinMarketCap: "CoinMarketCap"
         case .notifications: "Notifications"
+        case .about: "About"
         }
     }
 
@@ -23,6 +25,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .alpaca: "chart.xyaxis.line"
         case .coinMarketCap: "gauge.with.dots.needle.50percent"
         case .notifications: "bell.badge.fill"
+        case .about: "info.circle.fill"
         }
     }
 
@@ -33,6 +36,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .alpaca: .orange
         case .coinMarketCap: .blue
         case .notifications: .red
+        case .about: .gray
         }
     }
 }
@@ -75,6 +79,7 @@ struct AppSettingsView: View {
         case .alpaca: AlpacaSettingsView()
         case .coinMarketCap: CoinMarketCapSettingsView()
         case .notifications: NotificationSettingsView()
+        case .about: AboutSettingsView()
         }
     }
 }

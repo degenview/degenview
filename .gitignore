@@ -17,3 +17,6 @@ DerivedData/
 
 # Pine corpus — third-party scripts fetched by tools/pine-corpus/fetch.py
 .pine-corpus/
+
+# Local build counter written by tools/bump-build-number.sh
+.build-number
