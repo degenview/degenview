@@ -130,11 +130,11 @@ final class PineTypeCheckerTests: XCTestCase {
             """)
     }
 
-    func testLocalsShadowBuiltinsAndOuterNames() {
+    func testLocalsShadowOuterNames() {
         assertClean(
             """
-            f(close) =>
-                close + "x"
+            f(text) =>
+                text + "x"
             v = f("a")
             if close > open
                 string close2 = "inner"

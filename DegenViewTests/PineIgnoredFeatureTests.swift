@@ -79,14 +79,14 @@ final class PineIgnoredFeatureTests: XCTestCase {
         XCTAssertEqual(covered(found[2], in: source), "syminfo.session")
     }
 
-    func testAUserFunctionWithACataloguedNameIsNotWarnedAbout() {
+    func testAUserFunctionWithACataloguedNameIsAnErrorNotAWarning() {
         let program = compile(
             """
             hline(x, linestyle) =>
                 x + linestyle
             plot(hline(1, 2))
             """)
-        XCTAssertEqual(program.diagnostics, [])
+        XCTAssertEqual(program.diagnostics.map(\.code), ["CE10190"])
     }
 
     func testWarningsDoNotHideErrorsAndErrorsListFirst() {

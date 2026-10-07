@@ -29,17 +29,32 @@ extension PineParser {
         if take(.varKeyword) { mode = .variable } else if take(.varipKeyword) { mode = .intrabar }
         let qualifier = skipQualifier()
         let type = typeAnnotation()
-        guard let name = variableName(current.kind), peek(1)?.kind == .assign else {
+        guard let target = declarationTarget() else {
             index = start
             return nil
         }
-        let range = current.range
-        advance()
-        advance()
+        for _ in 0...target.tokenCount { advance() }
         guard let value = expression() else { return nil }
         return .declaration(
-            name: name, annotation: .init(type: type, qualifier: qualifier), mode: mode, value: value,
-            range: range)
+            name: target.name, annotation: .init(type: type, qualifier: qualifier), mode: mode,
+            value: value, range: target.range)
+    }
+
+    /// The name before a declaration's `=`. A dotted chain (`math.max = 44`) is kept whole so
+    /// the validator can reject it with CE10090 rather than the parser failing on the `=`.
+    private func declarationTarget() -> (name: String, range: PineSourceRange, tokenCount: Int)? {
+        guard var name = variableName(current.kind) else { return nil }
+        var range = current.range
+        var count = 1
+        while peek(count)?.kind == .dot, let next = peek(count + 1),
+            case .identifier(let part) = next.kind
+        {
+            name += "." + part
+            range.end = next.range.end
+            count += 2
+        }
+        guard peek(count)?.kind == .assign else { return nil }
+        return (name, range, count)
     }
 
     /// Parses `int`, `float[]`, `line`, `box[]`, `array<int>`. Only consumes tokens when

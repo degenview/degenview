@@ -444,6 +444,23 @@ no observable effect (`max_bars_back`, `dynamic_requests`) are not warned about.
 | `PINE7003` | a variable that is always `na` (see "Variables the engine does not model") |
 | `PINE7004` | an argument value drawn as something else, e.g. `plot.style_linebr` |
 
+## Identifier rules
+
+`PineIdentifierRules` checks every name a script declares: variables, tuple names, function names
+and parameters, and `for` counters. Codes follow TradingView's numbering.
+
+| Code | Rule |
+|---|---|
+| `CE10090` | A declared name contains `.`: `math.max = 44`. |
+| `CE10190` | A declared name shadows a builtin variable or function: `close = 5`, `f(high) =>`, `plot = 1`. |
+
+A bare namespace is not a builtin variable, so `math = 44`, `ta = 1` and `color = 44` are allowed,
+as are the object-type names `line`, `label`, `box` and `table`. `_` is always allowed, and a
+`method` may share a builtin's name because it is chosen by receiver type. TradingView only errors
+on `CE10190` when the script has already used the builtin and otherwise warns (`CW10011`);
+DegenView always errors. `obj.field := 1` is a field assignment, not a declaration, and is not
+affected.
+
 ## Known incompatibilities
 
 The current grammar does not yet implement values of the built-in `footprint` and `volume_row` types (the names parse in signatures and

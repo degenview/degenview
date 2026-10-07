@@ -523,6 +523,8 @@
 		F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */; };
 		F20586EAD822170661FA7949 /* PineMarketUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F113CB49FCCE3631A3D692ED /* PineMarketUpdate.swift */; };
 		F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */; };
+		F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000A2 /* PineIdentifierRules.swift */; };
+		F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */; };
 		F2083594719C0E9A2272BEF4 /* PineMarkerOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F19C84A02D6C320E2C6C7BC2 /* PineMarkerOutput.swift */; };
 		F20B20E1679CAEE443D8940C /* PineChartTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F171A9B196E8CCB53752887F /* PineChartTheme.swift */; };
 		F20C147C602535650C562791 /* PineAlertEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1BA1F4B1EABF23ADAA39F14 /* PineAlertEvent.swift */; };
@@ -1288,6 +1290,8 @@
 		F105C0EC28D11D0F51720D17 /* PineExecutionSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExecutionSchedulerTests.swift; sourceTree = "<group>"; };
 		F10AE320F35F4637D8C22ECA /* PineExecutionModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineExecutionModelTests.swift; sourceTree = "<group>"; };
 		F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStructureValidator.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000A2 /* PineIdentifierRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRules.swift; sourceTree = "<group>"; };
+		F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIdentifierRulesTests.swift; sourceTree = "<group>"; };
 		F10BEC91102FD2902D06354E /* PineParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineParser.swift; sourceTree = "<group>"; };
 		F10CBC70E475DBEF89814AA2 /* PineLineOutput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLineOutput.swift; sourceTree = "<group>"; };
 		F10EB2DB62EC78FC2894565A /* PineSize.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSize.swift; sourceTree = "<group>"; };
@@ -1988,6 +1992,7 @@
 				F10AE320F35F4637D8C22ECA /* PineExecutionModelTests.swift */,
 				F17F3E7D8CAC2AEA7F05446A /* PineExecutionFixtures.swift */,
 				P30000000000000000000102 /* PineTypeCheckerTests.swift */,
+			F3A1D00000000000000000B2 /* PineIdentifierRulesTests.swift */,
 				C50000000000000000000107 /* BinanceWebSocketServiceTests.swift */,
 				C50000000000000000000106 /* KlineDataTests.swift */,
 				C50000000000000000000101 /* JSONStoreTests.swift */,
@@ -2355,6 +2360,7 @@
 				B7A1E7000000000000000B14 /* PineAlertCallSite.swift */,
 				F1A49EDB1EDCBEBB136CCD5A /* PineBuiltinTypes.swift */,
 				F10B331098A65559D5BD39A3 /* PineStructureValidator.swift */,
+			F3A1D00000000000000000A2 /* PineIdentifierRules.swift */,
 				5E55102B2C1D4E8F00B2C3A2 /* PineIgnoredFeatureValidator.swift */,
 				F18244F0986033BA0EE0FDFB /* PineTypeChecker+Expressions.swift */,
 				P30000000000000000000101 /* PineTypeChecker.swift */,
@@ -2911,6 +2917,7 @@
 				F28389140591DA72F90BB80E /* PineOperators.swift in Sources */,
 				F2D0A3332B1F076A5C5B0579 /* PineSyntaxTraversal.swift in Sources */,
 				F2069ABD26AAE8D30EC73D65 /* PineStructureValidator.swift in Sources */,
+			F3A1D00000000000000000A1 /* PineIdentifierRules.swift in Sources */,
 				5E55102B2C1D4E8F00B1C2A2 /* PineIgnoredFeatureValidator.swift in Sources */,
 				F2A60F9F044A91D0F2FCCDA7 /* PineCompiler+Constants.swift in Sources */,
 				F2F8B593B0792A7FC0715068 /* PineCompiler+Declaration.swift in Sources */,
@@ -3260,6 +3267,7 @@
 				P20000000000000000000004 /* PineStrategyTests.swift in Sources */,
 				DM0000000000000000000351 /* PineExampleScriptsTests.swift in Sources */,
 				P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */,
+			F3A1D00000000000000000B1 /* PineIdentifierRulesTests.swift in Sources */,
 				C50000000000000000000007 /* BinanceWebSocketServiceTests.swift in Sources */,
 				C50000000000000000000006 /* KlineDataTests.swift in Sources */,
 				C50000000000000000000001 /* JSONStoreTests.swift in Sources */,
