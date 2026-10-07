@@ -160,8 +160,14 @@ row) → `PineAlertDispatcher` (channels).
   subscriptions.
 - **Symbol or timeframe change.** The subscription stays enabled but fires only while its chart
   shows the pair it was created for; the Alerts center shows "Chart shows other symbol".
-- **Channels.** `PineAlertChannel` is the seam: a webhook would be one more conformance. Channels
-  run independently and a failing one never reaches the script or blocks the others.
+- **Channels.** `PineAlertChannel` is the seam: macOS notification, in-app banner and
+  `WebhookPineAlertChannel` are independent conformances. A failing one never reaches the script or
+  blocks the others. A subscription selects webhook endpoints by id (see `docs/webhooks.md`); the
+  script never sees a URL.
+- **`alertcondition()` placeholders.** The message is a template resolved when the condition fires
+  (`{{ticker}}`, `{{exchange}}`, `{{open}}`, `{{high}}`, `{{low}}`, `{{close}}`, `{{volume}}`, `{{time}}`,
+  `{{timenow}}`, `{{interval}}`); unknown ones stay as written. `alert()` text is the script's own and is
+  never substituted again. Subscriptions are per indicator, not per condition.
 - Drawing objects with `xloc.bar_index` coordinates (or `xloc.bar_time`, see below): `line.new/set_*/get_*/delete`
   (style, extend), `label.new/set_*/get_*/delete` (bubble styles up/down/left/right/none),
   `box.new/set_*/get_*/delete`, and `table.new/cell/delete` pinned to any `position.*`.
@@ -517,7 +523,9 @@ claimed as parity.
 - **One script per chart** in the UI; the engine itself supports any number.
 - **Script alerts are client-side.** They need the app running and the chart's tab visible (hidden
   tabs suspend the feed), and a bar close missed while disconnected is not alerted retroactively.
-  There is no server worker, webhook, email, push, or account.
+  Alerts can POST to user-configured webhook endpoints (`docs/webhooks.md`); there is no server
+  worker, email, push, or account. Strategy order-fill alerts, `alert_message` on `strategy.*` and
+  `//@strategy_alert_message` are not supported: the broker emulator emits no fill events.
 
 ## Conformance and performance
 

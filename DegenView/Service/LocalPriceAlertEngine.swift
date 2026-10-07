@@ -133,7 +133,7 @@ actor LocalPriceAlertEngine {
                     let event = AlertTriggerEvent(
                         id: UUID(), alertID: alert.id, asset: alert.asset,
                         observedValue: current, target: target, currency: alert.currency,
-                        timestamp: quote.receivedAt, quoteFingerprint: quote.fingerprint)
+                        timestamp: quote.receivedAt, quoteFingerprint: quote.fingerprint, candle: quote.candle)
                     events.append(event)
                     snapshot.history.append(event)
                     if alert.frequency == .once {

@@ -29,11 +29,38 @@ struct PineAlertSubscription: Codable, Identifiable, Equatable, Sendable {
     var note = ""
     var state = State.active
     var createdAt = Date()
+    /// Webhook endpoints (`WebhookEndpoint.id`) this alert also posts to. Ids, never URLs, so
+    /// renaming or disabling an endpoint needs no change here.
+    var webhookEndpointIDs: [UUID] = []
 
     var isActive: Bool { state == .active }
 
     /// Whether `dataset` is the market this subscription was created for.
     func watches(_ dataset: PineDatasetKey) -> Bool {
         dataset.symbolKey == symbolKey && dataset.timeframe == timeframe
+    }
+}
+
+extension PineAlertSubscription {
+    private enum CodingKeys: String, CodingKey {
+        case id, chartID, instanceID, scriptID, scriptName, symbolKey, timeframe, sourceHash, note, state, createdAt
+        case webhookEndpointIDs
+    }
+
+    /// Alerts saved before webhooks existed have no `webhookEndpointIDs`.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        chartID = try c.decode(UUID.self, forKey: .chartID)
+        instanceID = try c.decodeIfPresent(UUID.self, forKey: .instanceID)
+        scriptID = try c.decodeIfPresent(UUID.self, forKey: .scriptID)
+        scriptName = try c.decode(String.self, forKey: .scriptName)
+        symbolKey = try c.decode(String.self, forKey: .symbolKey)
+        timeframe = try c.decode(String.self, forKey: .timeframe)
+        sourceHash = try c.decode(String.self, forKey: .sourceHash)
+        note = try c.decode(String.self, forKey: .note)
+        state = try c.decode(State.self, forKey: .state)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        webhookEndpointIDs = try c.decodeIfPresent([UUID].self, forKey: .webhookEndpointIDs) ?? []
     }
 }

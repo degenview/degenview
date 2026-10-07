@@ -303,6 +303,7 @@ struct AlertsCenterView: View {
         store.save(
             PriceAlert(
                 asset: alert.asset, condition: alert.condition, currency: alert.currency,
-                frequency: alert.frequency, note: alert.note))
+                frequency: alert.frequency, note: alert.note,
+                webhookEndpointIDs: alert.webhookEndpointIDs, webhookMessage: alert.webhookMessage))
     }
 }

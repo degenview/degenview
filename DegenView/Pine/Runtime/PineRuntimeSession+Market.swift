@@ -31,7 +31,7 @@ extension PineRuntimeSession {
         }
     }
 
-    private var exchangePrefix: String? {
+    var exchangePrefix: String? {
         guard let colon = symbol.tickerID.firstIndex(of: ":") else { return nil }
         let prefix = symbol.tickerID[..<colon]
         return prefix.isEmpty ? nil : prefix.uppercased()

@@ -19,6 +19,9 @@ struct AlertHistoryRow: View {
                     .help(event.delivery.error ?? "The notification could not be delivered.")
                     .accessibilityLabel("Notification failed")
             }
+            if rule?.webhookEndpointIDs.isEmpty == false {
+                WebhookDeliveryChip(eventID: event.id)
+            }
             chip
             priceColumn.frame(width: 132, alignment: .trailing)
             timeColumn.frame(width: 92, alignment: .trailing)

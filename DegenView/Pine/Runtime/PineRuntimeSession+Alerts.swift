@@ -20,10 +20,41 @@ extension PineRuntimeSession {
         } else {
             let b = try bind(call, ["condition", "title", "message"], &context)
             guard b["condition"]?.bool == true else { return .void }
+            // Unlike alert(), an alertcondition() message is a template: its {{placeholders}} resolve
+            // here, when the condition fires, from the bar and symbol the script is running on.
+            let template = b["message"].textValue ?? b["title"].textValue ?? ""
             recordAlert(
-                b["message"].textValue ?? b["title"].textValue ?? "", frequency: .all, site: site, context)
+                AlertMessageRenderer.render(template, context: messageContext(context)), frequency: .all,
+                site: site, context)
         }
         return .void
+    }
+
+    /// What `{{ticker}}`, `{{close}}` and the rest mean for the bar being executed. A historical bar
+    /// uses its own open time for `{{timenow}}`, so replaying history stays deterministic.
+    private func messageContext(_ context: PineRuntimeContext) -> AlertMessageContext {
+        let bar = context.bar
+        return AlertMessageContext(
+            ticker: symbol.ticker.isEmpty ? nil : symbol.ticker, exchange: exchangePrefix,
+            interval: Self.intervalLabel(barSeconds: barSeconds), open: bar.openPrice, high: bar.highPrice,
+            low: bar.lowPrice, close: bar.closePrice, volume: bar.volume, time: bar.openTime,
+            now: context.flags.isRealtime ? Date() : bar.openTime)
+    }
+
+    /// TradingView's name for a bar length: minutes (`60`), then `D`, `W`, `M`.
+    static func intervalLabel(barSeconds: Double) -> String? {
+        guard barSeconds >= 60 else { return nil }
+        let day = 86_400.0
+        guard barSeconds >= day else { return String(Int(barSeconds / 60)) }
+        let days = Int((barSeconds / day).rounded())
+        switch days {
+        case 1: return "D"
+        case 7: return "W"
+        case 28...31: return "M"
+        case 88...93: return "3M"
+        case 360...370: return "12M"
+        default: return "\(days)D"
+        }
     }
 
     private func recordAlert(

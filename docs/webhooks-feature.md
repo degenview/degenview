@@ -102,23 +102,6 @@ They intentionally have different execution models.
 
 Price alerts are evaluated by one `AlertRuntimeHost`.
 
-The runtime can live in:
-
-```text
-main DegenView app
-
-OR
-
-login-item alert agent
-```
-
-whichever owns:
-
-```text
-alert_runtime.lock
-```
-
-Both processes use the same SQLite database.
 
 The GUI sends alert mutations through:
 

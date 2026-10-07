@@ -41,6 +41,13 @@ struct AlertRuleRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .help(alert.frequency == .once ? "Triggers once" : "Triggers every time")
+                if !alert.webhookEndpointIDs.isEmpty {
+                    let count = alert.webhookEndpointIDs.count
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help("Posts to \(count) webhook\(count == 1 ? "" : "s")")
+                }
             }
             Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }

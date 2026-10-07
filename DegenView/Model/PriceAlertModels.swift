@@ -93,13 +93,19 @@ struct PriceAlert: Codable, Identifiable, Equatable, Sendable {
     var lastFingerprint: String?
     var createdAt: Date
     var updatedAt: Date
+    /// Webhook endpoints (`WebhookEndpoint.id`) notified when this alert triggers. Empty by default,
+    /// which leaves delivery exactly as it was before webhooks existed.
+    var webhookEndpointIDs: [UUID] = []
+    /// The webhook body, with `{{placeholders}}`. Nil sends `AlertMessageRenderer.defaultPriceAlertTemplate`.
+    var webhookMessage: String?
 
     init(
         id: UUID = UUID(), asset: PortfolioAsset, condition: AlertCondition,
         currency: PortfolioCurrency = .USD, frequency: AlertFrequency = .once,
         state: AlertState = .active, note: String = "", armed: Bool = true,
         previousValue: Decimal? = nil, lastFingerprint: String? = nil,
-        createdAt: Date = Date(), updatedAt: Date = Date()
+        createdAt: Date = Date(), updatedAt: Date = Date(),
+        webhookEndpointIDs: [UUID] = [], webhookMessage: String? = nil
     ) {
         self.id = id
         self.asset = asset
@@ -113,6 +119,32 @@ struct PriceAlert: Codable, Identifiable, Equatable, Sendable {
         self.lastFingerprint = lastFingerprint
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.webhookEndpointIDs = webhookEndpointIDs
+        self.webhookMessage = webhookMessage
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, asset, condition, currency, frequency, state, note, armed, previousValue, lastFingerprint
+        case createdAt, updatedAt, webhookEndpointIDs, webhookMessage
+    }
+
+    /// Alerts saved before webhooks existed have neither webhook key.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        asset = try c.decode(PortfolioAsset.self, forKey: .asset)
+        condition = try c.decode(AlertCondition.self, forKey: .condition)
+        currency = try c.decode(PortfolioCurrency.self, forKey: .currency)
+        frequency = try c.decode(AlertFrequency.self, forKey: .frequency)
+        state = try c.decode(AlertState.self, forKey: .state)
+        note = try c.decode(String.self, forKey: .note)
+        armed = try c.decode(Bool.self, forKey: .armed)
+        previousValue = try c.decodeIfPresent(Decimal.self, forKey: .previousValue)
+        lastFingerprint = try c.decodeIfPresent(String.self, forKey: .lastFingerprint)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        webhookEndpointIDs = try c.decodeIfPresent([UUID].self, forKey: .webhookEndpointIDs) ?? []
+        webhookMessage = try c.decodeIfPresent(String.self, forKey: .webhookMessage)
     }
 }
 
@@ -127,12 +159,14 @@ struct AlertTriggerEvent: Codable, Identifiable, Equatable, Sendable {
     let quoteFingerprint: String
     var origin: AlertEventOrigin = .live
     var delivery: AlertDeliveryRecord = .pending
+    /// The candle the quote came from, for webhook placeholders. Nil for catch-up events.
+    var candle: AlertCandleSnapshot?
 
     init(
         id: UUID = UUID(), alertID: UUID, asset: PortfolioAsset, observedValue: Decimal,
         target: Decimal, currency: PortfolioCurrency, timestamp: Date,
         quoteFingerprint: String, origin: AlertEventOrigin = .live,
-        delivery: AlertDeliveryRecord = .pending
+        delivery: AlertDeliveryRecord = .pending, candle: AlertCandleSnapshot? = nil
     ) {
         self.id = id
         self.alertID = alertID
@@ -144,10 +178,11 @@ struct AlertTriggerEvent: Codable, Identifiable, Equatable, Sendable {
         self.quoteFingerprint = quoteFingerprint
         self.origin = origin
         self.delivery = delivery
+        self.candle = candle
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, alertID, asset, observedValue, target, currency, timestamp, quoteFingerprint, origin, delivery
+        case id, alertID, asset, observedValue, target, currency, timestamp, quoteFingerprint, origin, delivery, candle
     }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -161,7 +196,21 @@ struct AlertTriggerEvent: Codable, Identifiable, Equatable, Sendable {
         quoteFingerprint = try c.decode(String.self, forKey: .quoteFingerprint)
         origin = try c.decodeIfPresent(AlertEventOrigin.self, forKey: .origin) ?? .live
         delivery = try c.decodeIfPresent(AlertDeliveryRecord.self, forKey: .delivery) ?? .pending
+        candle = try c.decodeIfPresent(AlertCandleSnapshot.self, forKey: .candle)
     }
+}
+
+/// The candle a price quote was read from. Webhook placeholders (`{{open}}`, `{{volume}}`, ...)
+/// come from here, in the asset's own quote currency (not converted to the alert's currency).
+struct AlertCandleSnapshot: Codable, Equatable, Sendable {
+    var openTime: Date
+    var open: Double
+    var high: Double
+    var low: Double
+    var close: Double
+    var volume: Double
+    /// The candle size the quote was polled at, in DegenView's names (`1m`, `1h`). Not the user's chart timeframe.
+    var interval: String
 }
 
 enum AlertEventOrigin: String, Codable, Sendable { case live, catchUp }
@@ -247,6 +296,8 @@ struct MarketQuote: Codable, Equatable, Sendable {
     let receivedAt: Date
     let maximumAge: TimeInterval
     let fingerprint: String
+    /// The candle behind `price`, when the provider gave one.
+    var candle: AlertCandleSnapshot?
 
     var isFresh: Bool { receivedAt.timeIntervalSince(sourceTimestamp) <= maximumAge }
 }

@@ -8,14 +8,19 @@ actor AlertRuntimeHost {
 
     private let role: Role
     private let persistence: AlertRuntimePersistence
+    private let webhookDispatcher: PriceAlertWebhookDispatcher
     private var engine: LocalPriceAlertEngine?
     private var task: Task<Void, Never>?
     private var lockFD: Int32 = -1
     private var providerHealth: [DataSourceType: AlertProviderHealth] = [:]
 
-    init(role: Role, persistence: AlertRuntimePersistence = .shared) {
+    init(
+        role: Role, persistence: AlertRuntimePersistence = .shared,
+        webhookDispatcher: PriceAlertWebhookDispatcher = .shared
+    ) {
         self.role = role
         self.persistence = persistence
+        self.webhookDispatcher = webhookDispatcher
     }
 
     deinit {
@@ -75,6 +80,7 @@ actor AlertRuntimeHost {
         }
         if changed { await refreshSubscriptions() }
         await deliverPending()
+        await deliverWebhooks()
         var snapshot = await engine.currentSnapshot()
         var health = snapshot.health
         health.owner = role == .agent ? .agent : .app
@@ -119,7 +125,16 @@ actor AlertRuntimeHost {
             _ = await engine.process(quote, convertedPrice: quote.price * rate, currency: currency)
         }
         await deliverPending()
+        await deliverWebhooks()
         await refreshSubscriptions()
+    }
+
+    /// Webhooks for triggers the engine has committed. Starts the requests and returns: nothing here
+    /// waits on a remote server. Only the host that owns `alert_runtime.lock` has an engine, so only
+    /// it can get this far. Independent of the macOS-notification switch.
+    private func deliverWebhooks() async {
+        guard let engine else { return }
+        await webhookDispatcher.dispatch(snapshot: await engine.currentSnapshot())
     }
 
     private func deliverPending() async {

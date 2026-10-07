@@ -17,6 +17,8 @@ struct IconTabBar<Value: Hashable>: View {
     @Binding var selection: Value
     /// Smaller type and padding, for sheets where six segments share one row.
     var isCompact = false
+    /// Segments share the full width equally instead of hugging their titles.
+    var fillsWidth = false
     @Namespace private var highlight
 
     var body: some View {
@@ -55,6 +57,7 @@ struct IconTabBar<Value: Hashable>: View {
                             (isSelected ? Color.accentColor : Color.secondary).opacity(0.15), in: Capsule())
                 }
             }
+            .frame(maxWidth: fillsWidth ? .infinity : nil)
             .padding(.horizontal, isCompact ? 11 : 16)
             .padding(.vertical, isCompact ? 6 : 8)
             .contentShape(Rectangle())
