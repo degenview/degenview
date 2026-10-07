@@ -171,6 +171,9 @@ row) → `PineAlertDispatcher` (channels).
   line/column diagnostics survive while last-valid output stays active.
 - Each statement must end its line: leftover tokens after a complete statement
   (`aaa "x" 1`, `plot(close) 5`) are a `PINE2013` syntax error, reported once per line.
+- A value on its own line (`3223`, `"abc"`, `x`, `a + b`) is `PINE3048`, `"3223" is not a valid statement.`
+  Only calls may stand alone. The last statement of a function, `if`, loop or `switch` body is that
+  block's value and stays valid.
 - Limits: 500k source characters (a runaway-input guard; published scripts reach 300k), 50k
   tokens and AST nodes, 20M executed instructions per bar (Pine bounds a bar by time, not by steps),
   64 call depth/visuals, 1m history bars, 256 MB declared runtime budget, cooperative
