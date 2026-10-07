@@ -7,6 +7,7 @@ import SwiftUI
 /// tools can be added under the ones already here.
 struct ToolSidebar<BottomControls: View>: View {
     @Environment(\.openWindow) private var openWindow
+    @StateObject private var unseenAlerts = UnseenAlertsStore.shared
 
     let activeTool: ChartTool
     let onSelect: (ChartTool) -> Void
@@ -55,7 +56,8 @@ struct ToolSidebar<BottomControls: View>: View {
                 SidebarGroupDivider()
                 SidebarIconButton(
                     icon: "bell",
-                    label: "View Price Alerts"
+                    label: "View Price Alerts",
+                    badge: unseenAlerts.count
                 ) {
                     openWindow(id: "alerts")
                 }
@@ -101,6 +103,8 @@ struct SidebarIconLabel: View {
     var tint: Color = .accentColor
     var activeStyle: SidebarActiveStyle = .filled
     var isPressed = false
+    /// Unseen items shown as a red bubble on the tile's corner; zero draws nothing.
+    var badge = 0
     /// Hover reported by a parent, for a control (a `Menu`) whose label never sees the pointer.
     var hoverOverride: Bool?
 
@@ -129,6 +133,9 @@ struct SidebarIconLabel: View {
                 }
             }
             .shadow(color: isLit ? tint.opacity(0.35) : .clear, radius: 5, y: 2)
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 { SidebarBadge(count: badge).offset(x: 5, y: -5) }
+            }
             .scaleEffect(isPressed ? 0.94 : 1)
             .opacity(isEnabled ? 1 : 0.35)
             .contentShape(tile)
@@ -152,6 +159,23 @@ struct SidebarIconLabel: View {
     }
 }
 
+/// The red count bubble on a tool-strip tile.
+private struct SidebarBadge: View {
+    let count: Int
+
+    var body: some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .font(.system(size: 10, weight: .semibold).monospacedDigit())
+            .foregroundStyle(.white)
+            .padding(.horizontal, 4)
+            .frame(minWidth: 16, minHeight: 16)
+            .background(Capsule().fill(Color.red))
+            .overlay(Capsule().strokeBorder(.background, lineWidth: 1.5))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
 /// A tool-strip button: the shared tile, a tooltip, and press feedback.
 struct SidebarIconButton: View {
     let icon: String
@@ -161,6 +185,8 @@ struct SidebarIconButton: View {
     var isActive = false
     var tint: Color = .accentColor
     var activeStyle: SidebarActiveStyle = .filled
+    /// Unseen items, drawn as a red bubble on the tile and read out after the label.
+    var badge = 0
     let action: () -> Void
 
     var body: some View {
@@ -168,9 +194,9 @@ struct SidebarIconButton: View {
             Color.clear
         }
         .buttonStyle(
-            SidebarButtonStyle(icon: icon, isActive: isActive, tint: tint, activeStyle: activeStyle)
+            SidebarButtonStyle(icon: icon, isActive: isActive, tint: tint, activeStyle: activeStyle, badge: badge)
         )
-        .accessibilityLabel(label)
+        .accessibilityLabel(badge > 0 ? "\(label), \(badge) new" : label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
         .sidebarTooltip(tooltip ?? label)
     }
@@ -220,6 +246,7 @@ private struct SidebarButtonStyle: ButtonStyle {
     let isActive: Bool
     let tint: Color
     let activeStyle: SidebarActiveStyle
+    let badge: Int
 
     func makeBody(configuration: Configuration) -> some View {
         SidebarIconLabel(
@@ -227,7 +254,8 @@ private struct SidebarButtonStyle: ButtonStyle {
             isActive: isActive,
             tint: tint,
             activeStyle: activeStyle,
-            isPressed: configuration.isPressed
+            isPressed: configuration.isPressed,
+            badge: badge
         )
     }
 }

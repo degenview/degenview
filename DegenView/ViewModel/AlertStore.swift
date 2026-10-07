@@ -13,6 +13,7 @@ final class AlertStore: ObservableObject {
     @Published private(set) var latestQuotes: [String: MarketQuote] = [:]
     @Published private(set) var health = AlertRuntimeHealth()
     private let client = AlertRuntimeClient.shared
+    private let eventBus = AlertEventBus.shared
     private var fallbackHost: AlertRuntimeHost?
     private var observerTask: Task<Void, Never>?
     private let sessionStartedAt = Date()
@@ -139,6 +140,9 @@ final class AlertStore: ObservableObject {
         health = value.health
         health.serviceState = AlertBackgroundService.shared.state
         seenEventIDs.formUnion(value.history.map(\.id))
+        for event in value.history where !previousIDs.contains(event.id) {
+            eventBus.publish(.priceAlertTriggered(eventID: event.id, at: event.timestamp))
+        }
         if settings.inAppBannersEnabled,
             let event = value.history.filter({ $0.timestamp >= sessionStartedAt && !previousIDs.contains($0.id) }).max(
                 by: { $0.timestamp < $1.timestamp })

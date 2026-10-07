@@ -248,15 +248,18 @@
 		B434136DF80AC5E2F3A79296 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25F781FB543C23EA5567E8E9 /* AppDatabase.swift */; };
 		B680F2B2F98926364A250976 /* PineSyntaxTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90FE0867430D98A0CB06E73 /* PineSyntaxTheme.swift */; };
 		B7A1E7000000000000000A00 /* PineAlertSubscription.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B00 /* PineAlertSubscription.swift */; };
+		AE02000000000000000000A1 /* AlertDomainEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A1 /* AlertDomainEvent.swift */; };
 		B7A1E7000000000000000A01 /* PineAlertNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B01 /* PineAlertNotification.swift */; };
 		B7A1E7000000000000000A02 /* PineAlertFrequencyGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B02 /* PineAlertFrequencyGuard.swift */; };
 		B7A1E7000000000000000A03 /* PineAlertRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B03 /* PineAlertRouter.swift */; };
 		B7A1E7000000000000000A04 /* PineAlertChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B04 /* PineAlertChannel.swift */; };
 		B7A1E7000000000000000A05 /* UserNotificationChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B05 /* UserNotificationChannel.swift */; };
+		AE02000000000000000000A2 /* AlertEventBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A2 /* AlertEventBus.swift */; };
 		B7A1E7000000000000000A06 /* InAppBannerChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B06 /* InAppBannerChannel.swift */; };
 		B7A1E7000000000000000A07 /* PineAlertDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */; };
 		B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */; };
 		B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B09 /* ScriptSourceHash.swift */; };
+		AE02000000000000000000A3 /* UnseenAlertsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A3 /* UnseenAlertsStore.swift */; };
 		B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B10 /* PineAlertStore.swift */; };
 		B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */; };
 		B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B12 /* PineAlertEditor.swift */; };
@@ -264,6 +267,7 @@
 		B7A1E7000000000000000A14 /* PineAlertCallSite.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B14 /* PineAlertCallSite.swift */; };
 		B7A1E7000000000000000A15 /* PineAlertCallValidator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B15 /* PineAlertCallValidator.swift */; };
 		B7A1E7000000000000000A16 /* PineAlertValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */; };
+		AE02000000000000000000A4 /* UnseenAlertsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */; };
 		B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */; };
 		B7A1E7000000000000000A18 /* PineAlertDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */; };
 		B7A1E7000000000000000A90 /* PineAlertChannelFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */; };
@@ -1105,15 +1109,18 @@
 		B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseTests.swift; sourceTree = "<group>"; };
 		B10000000000000000000101 /* CoinGeckoProvisionalStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CoinGeckoProvisionalStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B00 /* PineAlertSubscription.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertSubscription.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A1 /* AlertDomainEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertDomainEvent.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B01 /* PineAlertNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertNotification.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B02 /* PineAlertFrequencyGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertFrequencyGuard.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B03 /* PineAlertRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertRouter.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B04 /* PineAlertChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertChannel.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B05 /* UserNotificationChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserNotificationChannel.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A2 /* AlertEventBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlertEventBus.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B06 /* InAppBannerChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InAppBannerChannel.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertDispatcher.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PineAlerts.swift"; sourceTree = "<group>"; };
 		B7A1E7000000000000000B09 /* ScriptSourceHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptSourceHash.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A3 /* UnseenAlertsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnseenAlertsStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B10 /* PineAlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertStore.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCoordinator.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B12 /* PineAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertEditor.swift; sourceTree = "<group>"; };
@@ -1121,6 +1128,7 @@
 		B7A1E7000000000000000B14 /* PineAlertCallSite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCallSite.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B15 /* PineAlertCallValidator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCallValidator.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertValidationTests.swift; sourceTree = "<group>"; };
+		AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnseenAlertsStoreTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertRoutingTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertDispatcherTests.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertChannelFixtures.swift; sourceTree = "<group>"; };
@@ -1691,6 +1699,7 @@
 			isa = PBXGroup;
 			children = (
 				B7A1E7000000000000000B01 /* PineAlertNotification.swift */,
+				AE01000000000000000000A1 /* AlertDomainEvent.swift */,
 				B7A1E7000000000000000B00 /* PineAlertSubscription.swift */,
 				BPL000000000000000000101 /* BitcoinPowerLaw.swift */,
 				B90000000000000000000101 /* PriceAlertModels.swift */,
@@ -1745,6 +1754,7 @@
 				B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */,
 				B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */,
 				B7A1E7000000000000000B06 /* InAppBannerChannel.swift */,
+				AE01000000000000000000A2 /* AlertEventBus.swift */,
 				B7A1E7000000000000000B05 /* UserNotificationChannel.swift */,
 				B7A1E7000000000000000B04 /* PineAlertChannel.swift */,
 				B7A1E7000000000000000B03 /* PineAlertRouter.swift */,
@@ -1838,6 +1848,7 @@
 			children = (
 				B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */,
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
+				AE01000000000000000000A3 /* UnseenAlertsStore.swift */,
 				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
 				AA1000000000000000000111 /* PortfolioAssetInfoViewModel.swift */,
@@ -2088,6 +2099,7 @@
 				B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */,
 				B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */,
 				B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */,
+				AE01000000000000000000A4 /* UnseenAlertsStoreTests.swift */,
 				B7A1E7000000000000000B16 /* PineAlertValidationTests.swift */,
 				B097225F93BEF5359393C9F1 /* AppDatabaseTests.swift */,
 				KCP000000000000000000301 /* KeychainPolicyTests.swift */,
@@ -2733,15 +2745,18 @@
 				B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */,
 				B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */,
 				B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */,
+				AE02000000000000000000A3 /* UnseenAlertsStore.swift in Sources */,
 				B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */,
 				B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */,
 				B7A1E7000000000000000A07 /* PineAlertDispatcher.swift in Sources */,
 				B7A1E7000000000000000A06 /* InAppBannerChannel.swift in Sources */,
+				AE02000000000000000000A2 /* AlertEventBus.swift in Sources */,
 				B7A1E7000000000000000A05 /* UserNotificationChannel.swift in Sources */,
 				B7A1E7000000000000000A04 /* PineAlertChannel.swift in Sources */,
 				B7A1E7000000000000000A03 /* PineAlertRouter.swift in Sources */,
 				B7A1E7000000000000000A02 /* PineAlertFrequencyGuard.swift in Sources */,
 				B7A1E7000000000000000A01 /* PineAlertNotification.swift in Sources */,
+				AE02000000000000000000A1 /* AlertDomainEvent.swift in Sources */,
 				B7A1E7000000000000000A00 /* PineAlertSubscription.swift in Sources */,
 				ABF0C1E1D8411B09852421E9 /* AppDatabase+PaperTrading.swift in Sources */,
 				8C0B924C6D4E512ED27B3642 /* AppDatabase+Portfolio.swift in Sources */,
@@ -3448,6 +3463,7 @@
 				B7A1E7000000000000000A90 /* PineAlertChannelFixtures.swift in Sources */,
 				B7A1E7000000000000000A18 /* PineAlertDispatcherTests.swift in Sources */,
 				B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */,
+				AE02000000000000000000A4 /* UnseenAlertsStoreTests.swift in Sources */,
 				B7A1E7000000000000000A16 /* PineAlertValidationTests.swift in Sources */,
 				3282180CE83BD06D09B6D49B /* AppDatabaseTests.swift in Sources */,
 				KCP000000000000000000201 /* KeychainPolicyTests.swift in Sources */,

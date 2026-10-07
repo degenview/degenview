@@ -14,9 +14,11 @@ final class PineAlertStore: ObservableObject {
     @Published private(set) var chartDatasets: [UUID: PineDatasetKey] = [:]
 
     private let database: AppDatabase
+    private let eventBus: AlertEventBus
 
-    init(database: AppDatabase = .shared) {
+    init(database: AppDatabase = .shared, eventBus: AlertEventBus = .shared) {
         self.database = database
+        self.eventBus = eventBus
         subscriptions = database.pineAlertSubscriptions()
         history = database.recentPineAlertEvents()
     }
@@ -77,6 +79,7 @@ final class PineAlertStore: ObservableObject {
         if history.count > AppDatabase.pineAlertHistoryLimit {
             history.removeLast(history.count - AppDatabase.pineAlertHistoryLimit)
         }
+        eventBus.publish(.scriptAlertTriggered(eventID: notification.id, at: notification.triggeredAt))
         return true
     }
 

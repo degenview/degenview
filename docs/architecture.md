@@ -307,6 +307,13 @@ DegenView/
     `PineAlertDispatcher` to independent `PineAlertChannel`s (macOS notification, in-app banner, webhook).
     Subscriptions are the `pine_alert_subscription` document table. They are separate from the
     price-alert snapshot, so `replaceSnapshot` never touches them.
+17. Every alert trigger the app learns of is published as an `AlertDomainEvent` on
+    `AlertEventBus` (Combine subject, main actor): price alerts from `AlertStore.reload()` for each
+    new `alert_event` id (the one place agent- and app-evaluated triggers meet; includes ones fired
+    while the app was closed), script alerts from `PineAlertStore.record`. `UnseenAlertsStore`
+    subscribes and drives the red bubble on the sidebar bell. "Seen" is the `alerts.lastSeenAt`
+    setting, set when the Alerts window becomes key; events while it is key never count. A new
+    trigger path must publish here.
 
 ## Drawing undo and redo
 

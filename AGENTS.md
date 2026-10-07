@@ -104,6 +104,12 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
 - Icon lookups key off `ChartViewModel.iconKey`, never `uniqueID` — `uniqueID` survives
   `updateTicker` by design and would pin the old coin's artwork to a renamed card
 
+### Alert events
+- Every alert trigger is an `AlertDomainEvent` published on `AlertEventBus` (`AlertStore.reload()` for
+  price alerts, `PineAlertStore.record` for script alerts). A new trigger path must publish there.
+  `UnseenAlertsStore` turns them into the sidebar bell's unseen count; "seen" is the
+  `alerts.lastSeenAt` setting, never a flag on the events (`replaceSnapshot` rewrites them)
+
 ### Webhooks
 - `docs/webhooks.md` has the behaviour; `docs/architecture.md` has the flow. Endpoints are global
   (`WebhookEndpointStore`, `webhook_endpoint` table). The URL and header values are templates stored in
@@ -359,6 +365,9 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
     Delete and Clear History ask first. History groups by day; prices read `$67,432.19`, `$1.2346`,
     `$0.00000278` — never a long decimal tail — in rows, the banner and the macOS notification
+    The tab bar spans the full width. A fired alert (price or script) puts a red count on the sidebar
+    bell, also for ones the agent fired while the app was closed; opening the window clears it and
+    relaunch keeps it clear; alerts firing while the window is key never show a bubble
 13c. Replay: toolbar Replay ▸ Select Bar on Chart shows the "Click a candle" strip; the marker
     follows the pointer with a date tag and Esc / Cancel exit. Click a candle: strip shows
     Paused, the card gets an orange border and "Replay" badge. Play / pause / step ⇧→ ⇧← ⇧↓,
