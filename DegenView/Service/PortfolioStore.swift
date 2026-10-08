@@ -121,7 +121,7 @@ final class PortfolioStore: ObservableObject {
         isLoadingInitialValues = !initial.portfolios.isEmpty
         ledger = PortfolioLedger(
             snapshot: initial,
-            persist: canPersist ? { value in try database.savePortfolioLedger(value) } : nil)
+            persist: canPersist ? { @Sendable value in try database.savePortfolioLedger(value) } : nil)
         if initialQuotes != loadedQuotes {
             quoteStore.save(initialQuotes)
         }

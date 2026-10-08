@@ -9,7 +9,7 @@ struct EmptyStateSuggestions: Equatable {
     static let previewLimit = 3
 
     /// Sidebar order, capped.
-    let favorites: [FavoriteItem]
+    let favorites: [WatchlistInstrument]
     /// Favorites that did not fit.
     let hiddenFavoriteCount: Int
     /// Newest first, capped, without markets that are already favorites.
@@ -19,13 +19,13 @@ struct EmptyStateSuggestions: Equatable {
 
     var hasAny: Bool { !favorites.isEmpty || !recents.isEmpty || !savedViews.isEmpty }
 
-    init(favorites: [FavoriteItem], recents: [RecentMarket], savedViews: [SavedView]) {
+    init(favorites: [WatchlistInstrument], recents: [RecentMarket], savedViews: [SavedView]) {
         self.favorites = Array(favorites.prefix(Self.itemLimit))
         hiddenFavoriteCount = max(0, favorites.count - Self.itemLimit)
 
-        let favoriteKeys = Set(favorites.map { Self.key(source: $0.config.source, symbol: $0.config.symbol) })
+        let favoriteKeys = Set(favorites.map(\.instrument.key))
         self.recents = Array(
-            recents.filter { !favoriteKeys.contains(Self.key(source: $0.source, symbol: $0.fullSymbol)) }
+            recents.filter { !favoriteKeys.contains(InstrumentID(source: $0.source, symbol: $0.fullSymbol).key) }
                 .prefix(Self.itemLimit))
 
         self.savedViews = savedViews.sorted { $0.createdAt > $1.createdAt }
@@ -38,9 +38,5 @@ struct EmptyStateSuggestions: Equatable {
             $0.portfolioChart == nil && $0.coinMarketCapChart == nil && $0.bitcoinPowerLaw == nil
         }
         return Array(markets.prefix(previewLimit))
-    }
-
-    private static func key(source: DataSourceType, symbol: String) -> String {
-        "\(source.rawValue):\(symbol.uppercased())"
     }
 }

@@ -16,9 +16,9 @@ final class PineAlertStore: ObservableObject {
     private let database: AppDatabase
     private let eventBus: AlertEventBus
 
-    init(database: AppDatabase = .shared, eventBus: AlertEventBus = .shared) {
+    init(database: AppDatabase = .shared, eventBus: AlertEventBus? = nil) {
         self.database = database
-        self.eventBus = eventBus
+        self.eventBus = eventBus ?? .shared
         subscriptions = database.pineAlertSubscriptions()
         history = database.recentPineAlertEvents()
     }

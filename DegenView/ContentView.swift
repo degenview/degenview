@@ -29,9 +29,13 @@ struct ContentView: View {
     @StateObject private var contentViewModel: ContentViewModel
 
     @State private var showAddSheet = false
-    @State private var showAddFavoriteSheet = false
+    @State private var showAddWatchlistSymbolSheet = false
+    @State private var newListFor: WatchlistInstrument?
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
-    @StateObject private var favoritesStore = FavoritesStore.shared
+    /// Points; zero until the user first drags the watchlist's edge.
+    @AppStorage("watchlistSidebarLength") private var watchlistSidebarLength = 0.0
+    @StateObject private var watchlists = WatchlistStore.shared
+    @StateObject private var watchlistSidebar = WatchlistSidebarViewModel()
     @ObservedObject private var recents = RecentMarketsStore.shared
     @State private var showLayoutPicker = false
     @State private var layoutPromptName = ""
@@ -63,16 +67,27 @@ struct ContentView: View {
                 }
                 .zIndex(1)
 
-                chartColumn
-
-                if showFavorites {
-                    Divider()
-                    FavoritesSidebar(
-                        store: favoritesStore,
-                        onAdd: { showAddFavoriteSheet = true },
-                        onSelect: contentViewModel.openFavorite
+                // The watchlist is a resizable pane: drag its edge, double-click it to go back to the
+                // default width. The width is shared by every window.
+                SplitContainer(
+                    axis: .horizontal, secondaryLength: $watchlistSidebarLength,
+                    isSecondaryVisible: showFavorites, minPrimary: UI.windowMinWidth - UI.toolSidebarWidth,
+                    minSecondary: watchlistSidebar.minimumWidth, maxSecondary: WatchlistSidebarViewModel.maximumWidth,
+                    defaultLength: watchlistSidebar.defaultWidth
+                ) {
+                    chartColumn
+                } secondary: {
+                    WatchlistSidebar(
+                        viewModel: watchlistSidebar,
+                        actions: WatchlistInstrumentActions(
+                            open: contentViewModel.openWatchlistInstrument,
+                            addChart: contentViewModel.addWatchlistInstrumentAsChart,
+                            openInNewTab: { WindowCoordinator.shared.newTab(for: $0, beside: contentViewModel.tabID) }),
+                        // The pane stays built while hidden, so a hidden sidebar must not ask for prices.
+                        isWindowVisible: contentViewModel.isWindowVisible && showFavorites,
+                        focusedMarket: contentViewModel.resolvedFocusedChart?.instrumentID,
+                        onAddSymbol: { showAddWatchlistSymbolSheet = true }
                     )
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
             // The title is the tab label, and an empty tab still needs the
@@ -83,8 +98,10 @@ struct ContentView: View {
                 toolbarContent
             }
             .frame(
-                minWidth: UI.windowMinWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
-                idealWidth: UI.windowIdealWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
+                minWidth: UI.windowMinWidth + (showFavorites ? watchlistSidebar.minimumWidth : 0),
+                idealWidth: UI.windowIdealWidth
+                    + (showFavorites
+                        ? (watchlistSidebarLength > 0 ? CGFloat(watchlistSidebarLength) : watchlistSidebar.defaultWidth) : 0),
                 minHeight: UI.windowMinHeight,
                 idealHeight: UI.windowIdealHeight
             )
@@ -140,6 +157,7 @@ struct ContentView: View {
             SavedLayoutPickerSheet(layout: contentViewModel.layout, store: contentViewModel.layout.store)
         }
         .focusedSceneValue(\.savedLayout, contentViewModel.layout)
+        .watchlistNewListPrompt(for: $newListFor)
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(
                 onAddPortfolio: { config in
@@ -164,12 +182,13 @@ struct ContentView: View {
                 )
             }
         }
-        .sheet(isPresented: $showAddFavoriteSheet) {
+        .sheet(isPresented: $showAddWatchlistSymbolSheet) {
             AddTickerSheet(
-                title: "Add Favorite", actionLabel: "Favorite",
-                subtitle: "Save a market to your favorites sidebar.", systemImage: "star.fill"
+                title: "Add to \(watchlistSidebar.list?.name ?? "Watchlist")", actionLabel: "Add",
+                subtitle: "Search a market, stock or prediction market to follow in this watchlist.",
+                systemImage: "list.bullet.rectangle", recordsRecents: false, dismissesOnAdd: false
             ) { selected in
-                try favoritesStore.add(selected)
+                try watchlistSidebar.add(selected)
             }
         }
         .sheet(isPresented: $showReplayDatePicker) {
@@ -199,13 +218,13 @@ struct ContentView: View {
             Text(paperTrading.lastError ?? "")
         }
         .onChange(of: showAddSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
-        .onChange(of: showAddFavoriteSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+        .onChange(of: showAddWatchlistSymbolSheet) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
         .onChange(of: showLayoutPicker) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
     }
 
@@ -281,11 +300,11 @@ struct ContentView: View {
             if contentViewModel.chartViewModels.isEmpty {
                 EmptyStateView(
                     suggestions: EmptyStateSuggestions(
-                        favorites: favoritesStore.items, recents: recents.items,
+                        favorites: watchlists.favorites?.instruments ?? [], recents: recents.items,
                         savedViews: contentViewModel.layout.store.views),
                     offersStocks: AlpacaCredentialsStore.isConfigured,
                     onAddTapped: { showAddSheet = true },
-                    onOpenFavorite: contentViewModel.openFavorite,
+                    onOpenFavorite: contentViewModel.openWatchlistInstrument,
                     onOpenRecent: { openMarket($0.result) },
                     onOpenView: { contentViewModel.openSavedView($0) },
                     onOpenSuggestion: openMarket,
@@ -449,8 +468,8 @@ struct ContentView: View {
             } label: {
                 Image(systemName: showFavorites ? "sidebar.right" : "sidebar.right")
             }
-            .accessibilityLabel(showFavorites ? "Hide Favorites" : "Show Favorites")
-            .help(showFavorites ? "Hide Favorites" : "Show Favorites")
+            .accessibilityLabel(showFavorites ? "Hide Watchlists" : "Show Watchlists")
+            .help(showFavorites ? "Hide Watchlists" : "Show Watchlists")
         }
         // Its own bubble and a text label, so it isn't mistaken for the tab bar's `+`.
         if #available(macOS 26, *) {
@@ -528,18 +547,17 @@ struct ContentView: View {
                                 )
                         }
 
+                        // Takes only what the cards leave. It used to hold a 20pt minimum the sizing maths
+                        // never counted, which overflowed the grid and pushed the top row out of view.
                         Color.clear
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .frame(minHeight: 20)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    // Dropping anywhere in the column that is not on a card, including the gaps around the
+                    // cards, appends to it.
+                    .background {
+                        Color.clear
                             .contentShape(Rectangle())
-                            .overlay(alignment: .top) {
-                                if gridDropTarget == .existing(columnID: column.id, before: nil) {
-                                    Capsule()
-                                        .fill(Color.accentColor)
-                                        .frame(height: 3)
-                                        .padding(.horizontal, 8)
-                                }
-                            }
                             .onDrop(
                                 of: [.utf8PlainText],
                                 delegate: ChartGridDropDelegate(
@@ -551,7 +569,16 @@ struct ContentView: View {
                                 )
                             )
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .overlay(alignment: .bottom) {
+                        if gridDropTarget == .existing(columnID: column.id, before: nil) {
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(height: 3)
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, 1)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
 
                 if let previewID = previewedNewColumnChartID {
@@ -688,19 +715,10 @@ struct ContentView: View {
                     )
                 }
             },
-            isFavorite: favoritesStore.contains(source: vm.source, symbol: vm.ticker),
-            onToggleFavorite: {
-                favoritesStore.toggle(
-                    config: TickerConfig(
-                        symbol: vm.ticker,
-                        source: vm.source,
-                        displayName: vm.displayName,
-                        pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
-                    ),
-                    name: vm.title,
-                    ticker: favoriteTicker(for: vm)
-                )
-            },
+            isFavorite: watchlists.isFavorite(InstrumentID(source: vm.source, symbol: vm.ticker)),
+            onToggleFavorite: { try? watchlists.toggleFavorite(watchlistInstrument(for: vm)) },
+            watchlistItem: watchlistInstrument(for: vm),
+            onNewWatchlist: { newListFor = $0 },
             onZoomRegion: {
                 if vm.isBitcoinPowerLaw {
                     contentViewModel.registerPowerLawZoomRegion($0, for: vm)
@@ -750,6 +768,25 @@ struct ContentView: View {
         .background {
             PaperQuoteFeed(viewModel: vm, quote: vm.liveQuote, store: paperTrading)
         }
+        // The chart a watchlist click goes to. Only drawn when there is more than one card to tell apart,
+        // and it never takes a click.
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                .opacity(contentViewModel.isFocused(vm) ? 1 : 0)
+                .allowsHitTesting(false)
+        }
+        .simultaneousGesture(TapGesture().onEnded { contentViewModel.focusChart(vm.chartID) })
+    }
+
+    /// This chart's market as a watchlist entry, labelled like its card header.
+    private func watchlistInstrument(for vm: ChartViewModel) -> WatchlistInstrument {
+        WatchlistInstrument(
+            instrument: InstrumentID(source: vm.source, symbol: vm.ticker),
+            name: vm.title,
+            label: favoriteTicker(for: vm),
+            displayName: vm.displayName,
+            pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries)
     }
 
     private func favoriteTicker(for vm: ChartViewModel) -> String {

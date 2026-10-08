@@ -9,7 +9,7 @@ extension AppDatabase {
         // configuration can evolve through Codable defaults instead of schema changes.
         for table in [
             "favorite", "saved_view", "tab", "portfolio", "paper_account", "price_alert", "pine_alert_subscription",
-            "webhook_endpoint",
+            "webhook_endpoint", "watchlist",
         ] {
             try createDocumentTable(table, db: db)
         }
@@ -174,6 +174,7 @@ enum DocumentTable: String {
     case priceAlert = "price_alert"
     case pineAlertSubscription = "pine_alert_subscription"
     case webhookEndpoint = "webhook_endpoint"
+    case watchlist
 }
 
 extension AppDatabase {
@@ -221,6 +222,26 @@ extension AppDatabase {
                     return nil
                 }
             }
+    }
+
+    /// Like `documents`, but a row that no longer decodes fails the read. For stores that
+    /// rewrite what they load, where skipping a row would erase it on the next write.
+    static func documentsStrict<T: Decodable>(_ type: T.Type, in table: DocumentTable, db: Database) throws -> [T] {
+        try String.fetchAll(db, sql: "SELECT payload FROM \(table.rawValue) ORDER BY position")
+            .map { try decoder.decode(T.self, from: Data($0.utf8)) }
+    }
+
+    /// Writes one row, leaving the others alone.
+    static func upsertDocument<T: Encodable & Identifiable>(
+        _ item: T, position: Int, in table: DocumentTable, db: Database
+    ) throws where T.ID == UUID {
+        try db.execute(
+            sql: "INSERT OR REPLACE INTO \(table.rawValue) (id, position, payload) VALUES (?, ?, ?)",
+            arguments: [item.id.uuidString, position, try json(item)])
+    }
+
+    static func deleteDocument(id: UUID, in table: DocumentTable, db: Database) throws {
+        try db.execute(sql: "DELETE FROM \(table.rawValue) WHERE id = ?", arguments: [id.uuidString])
     }
 
     static func replaceDocuments<T: Encodable & Identifiable>(

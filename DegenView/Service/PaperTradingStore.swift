@@ -42,7 +42,7 @@ final class PaperTradingStore: ObservableObject {
         snapshot = initial
         let engine = PaperTradingEngine(
             snapshot: initial,
-            persist: canPersist ? { value in try database.savePaperTrading(value) } : nil)
+            persist: canPersist ? { @Sendable value in try database.savePaperTrading(value) } : nil)
         self.engine = engine
         execution = PaperTradingExecutionService(engine: engine)
     }

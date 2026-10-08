@@ -19,9 +19,7 @@ final class RecordingWebhookTransport: WebhookTransport, @unchecked Sendable {
     }
 
     func send(_ request: URLRequest) async throws -> Int {
-        lock.lock()
-        recorded.append(request)
-        lock.unlock()
+        lock.withLock { recorded.append(request) }
         return try await respond(request)
     }
 }

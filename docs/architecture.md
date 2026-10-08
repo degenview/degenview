@@ -22,7 +22,8 @@ DegenView/
 │   ├── ReplaySession.swift            # Replay status, clock, interval, and speed
 │   ├── SavedView.swift                # Named dashboard snapshots
 │   ├── LayoutSnapshot.swift           # Persisted-layout fingerprint compared for dirty state
-│   ├── FavoriteItem.swift             # Persisted app-wide market shortcuts
+│   ├── InstrumentID.swift             # Source-qualified market identity
+│   ├── Watchlist/                     # Watchlist, entries, sections, flags, quotes, layout engine, text format
 │   ├── Crosshair.swift                # Shared per-tab crosshair state
 │   ├── Script/                        # Script library: LocalScript, versions, drafts, compile records
 │   ├── PreviewMarket.swift            # A crypto or stock market the Script Manager preview charts
@@ -87,7 +88,7 @@ DegenView/
 │   ├── AddTickerSheet.swift           # Crypto/stock/prediction-market/CMC/Portfolio picker
 │   ├── ToolSidebar.swift              # Crosshair, trend-line, Fib, brush, and ruler tools
 │   ├── AppToolbar.swift               # Portfolio + Script Manager title-bar buttons, shared by every tab kind
-│   ├── FavoritesSidebar.swift         # Persistent app-wide watchlist
+│   ├── Watchlist/                     # Watchlist sidebar, rows, menus, drag and drop, import sheet
 │   ├── PortfolioDashboardView.swift   # Overview, holdings, history, imports, transaction UI
 │   ├── PortfolioOverviewView.swift    # Portfolio tab: balance, 24h/period change, value chart, allocation, top holdings
 │   ├── RecentMarketsCard.swift        # Add Chart: the last picked markets, under the suggestions
@@ -178,7 +179,8 @@ DegenView/
     ├── IconResolver.swift             # Multi-source artwork lookup and cache
     ├── TabsStore.swift                # Tabs and session persistence
     ├── SavedViewStore.swift           # Shared saved-layout library (throwing writes, recency)
-    ├── FavoritesStore.swift           # Shared watchlist persistence
+    ├── WatchlistStore.swift           # Shared watchlist persistence (+ favorites migration)
+    ├── Watchlist/                     # WatchlistQuoteCoordinator, quote book, provider seam
     ├── DrawingStore.swift             # Instrument-keyed trend-line, Fib, and brush persistence
     ├── DrawingUndoCoordinator.swift   # Per-window native drawing undo/redo history
     ├── WindowCoordinator.swift        # Native tab grouping and restoration
@@ -211,7 +213,7 @@ DegenView/
    for latest/Altcoin data and a six-hour cache for daily Fear and Greed history.
 6. User data lives in one SQLite database, `degenview.sqlite` in Application Support,
    opened through `AppDatabase` (GRDB `DatabasePool`, WAL). `TabsStore`, saved views,
-   `FavoritesStore`, `DrawingStore`, `PortfolioStore`, `PaperTradingStore`, and alert
+   `WatchlistStore`, `DrawingStore`, `PortfolioStore`, `PaperTradingStore`, and alert
    persistence each own their tables and keep their public API; nested chart configuration
    stays a JSON payload column so it evolves through Codable defaults rather than schema
    changes. The schema is a single idempotent `createSchema`; there are no migrations. State that
@@ -465,7 +467,7 @@ titles, redo invalidation, persistence, and isolated window histories over a sha
   Charts can move within or between columns, and a column is removed as soon as its last
   chart moves away or is deleted. New charts are assigned to the shortest column.
 - Additional columns require approximately 280 points per resulting column. Existing
-  columns are never removed merely because the window or Favorites sidebar narrows.
+  columns are never removed merely because the window or watchlist sidebar narrows.
 
 ## CoinMarketCap data flow
 

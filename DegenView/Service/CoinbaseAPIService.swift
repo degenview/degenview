@@ -321,6 +321,15 @@ extension CoinbaseAPIService: BatchQuoteDataSource {
     private struct Stats: Decodable {
         let open: String
         let last: String
+        let volume: String?
+    }
+
+    /// 24h volume as a dollar turnover where the product is dollar-quoted, otherwise in base units.
+    /// Coinbase reports base volume only, so turnover is that volume priced at the last trade.
+    static func volume(productID: String, baseVolume: Double, price: Double) -> (value: Double, kind: SourceVolumeKind) {
+        let quote = productID.uppercased().split(separator: "-").last.map(String.init) ?? ""
+        if ["USD", "USDC", "USDT"].contains(quote) { return (baseVolume * price, .quoteCurrency) }
+        return (baseVolume, .base)
     }
 
     /// Coinbase has no multi-product price call, but `/stats` is one small request per product
@@ -335,7 +344,13 @@ extension CoinbaseAPIService: BatchQuoteDataSource {
                         let stats = try? JSONDecoder().decode(Stats.self, from: data),
                         let price = Double(stats.last), price > 0
                     else { return (request.symbol, nil) }
-                    return (request.symbol, SourceQuote(price: price, previousDayPrice: Double(stats.open)))
+                    var quote = SourceQuote(price: price, previousDayPrice: Double(stats.open), timestamp: Date())
+                    if let base = stats.volume.flatMap(Double.init) {
+                        let volume = Self.volume(productID: id, baseVolume: base, price: price)
+                        quote.volume24h = volume.value
+                        quote.volumeKind = volume.kind
+                    }
+                    return (request.symbol, quote)
                 }
             }
             var quotes: [String: SourceQuote] = [:]

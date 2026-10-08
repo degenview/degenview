@@ -52,13 +52,15 @@ final class DEXScreenerService: TickerDataSource {
     static let apiBase = "https://api.dexscreener.com/latest/dex"
 
     private let baseURL = DEXScreenerService.apiBase
-    private let session = AppSupport.defaultSession
+    private let session: URLSession
 
     /// DEXScreener publishes no candles on its free tier, so charts for the pools it
     /// finds come from GeckoTerminal, which indexes the same pools and does.
     private let charts = GeckoTerminalService()
 
-    init() {}
+    init(session: URLSession = AppSupport.defaultSession) {
+        self.session = session
+    }
 
     // MARK: - Kline Fetching
 
@@ -237,7 +239,11 @@ extension DEXScreenerService: BatchQuoteDataSource {
             guard let pair = byAddress[request.symbol.lowercased()],
                 let price = Double(pair.priceUsd ?? ""), price > 0
             else { continue }
-            quotes[request.symbol] = SourceQuote(price: price, changePercent24h: pair.priceChange?.h24)
+            var quote = SourceQuote(price: price, changePercent24h: pair.priceChange?.h24)
+            quote.volume24h = pair.volume?.h24
+            quote.volumeKind = pair.volume?.h24 == nil ? nil : .quoteCurrency
+            quote.timestamp = Date()
+            quotes[request.symbol] = quote
         }
         return quotes
     }

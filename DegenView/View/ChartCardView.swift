@@ -10,6 +10,9 @@ struct ChartCardView: View {
     let onRetry: () -> Void
     let isFavorite: Bool
     let onToggleFavorite: () -> Void
+    /// This card's market as a watchlist entry. With it, right-clicking the star offers every list.
+    var watchlistItem: WatchlistInstrument? = nil
+    var onNewWatchlist: ((WatchlistInstrument) -> Void)? = nil
     /// Hands the card's backing `NSView` to the scroll-zoom monitor.
     let onZoomRegion: (NSView) -> Void
     /// Hands the Y-axis gutter's `NSView` to the price-zoom drag monitor.
@@ -46,7 +49,6 @@ struct ChartCardView: View {
     @StateObject private var portfolioStore = PortfolioStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
-    @ViewBuilder
     /// Over a ruler's edge or corner the cursor says what a drag would do.
     private var plotCursor: PlotCursor {
         if viewModel.hoveredBrushID != nil { return .move }
@@ -91,18 +93,23 @@ struct ChartCardView: View {
     private var marketCard: some View {
         VStack(spacing: 2) {
             headerView
-            VStack(spacing: 0) {
-                chartArea
-                // Below, not inside, the chart area: its overlays and hit regions must
-                // keep the price canvas's size, or `viewModel.plot(in:)` would drift. One
-                // stacked pane per non-overlay applied instance, in applied order.
-                if showsPinePanes {
-                    let panes = viewModel.panePineOutputs
-                    VStack(spacing: 0) {
-                        ForEach(Array(panes.enumerated()), id: \.offset) { _, output in
-                            PineScriptPaneView(
-                                pine: output, candles: viewModel.visibleKlines,
-                                height: viewModel.pinePaneHeight(forChartHeight: chartHeight, count: panes.count))
+            // The plot takes whatever the header leaves, measured rather than assumed, so the chart
+            // fills the card whatever the header's height and never leaves a gap below it.
+            GeometryReader { proxy in
+                let plotHeight = max(ChartLayout.chartMinHeight, proxy.size.height)
+                VStack(spacing: 0) {
+                    chartArea(plotHeight: plotHeight)
+                    // Below, not inside, the chart area: its overlays and hit regions must
+                    // keep the price canvas's size, or `viewModel.plot(in:)` would drift. One
+                    // stacked pane per non-overlay applied instance, in applied order.
+                    if showsPinePanes {
+                        let panes = viewModel.panePineOutputs
+                        VStack(spacing: 0) {
+                            ForEach(Array(panes.enumerated()), id: \.offset) { _, output in
+                                PineScriptPaneView(
+                                    pine: output, candles: viewModel.visibleKlines,
+                                    height: viewModel.pinePaneHeight(forChartHeight: plotHeight, count: panes.count))
+                            }
                         }
                     }
                 }
@@ -202,7 +209,12 @@ struct ChartCardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
-            .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
+            .help(isFavorite ? "Click to remove from Favorites. Right-click for all watchlists." : "Click to add to Favorites. Right-click for all watchlists.")
+            .contextMenu {
+                if let watchlistItem {
+                    WatchlistMembershipMenu(store: .shared, item: watchlistItem, onNewWatchlist: onNewWatchlist)
+                }
+            }
 
             if !viewModel.source.isPredictionMarket {
                 Button {
@@ -277,10 +289,10 @@ struct ChartCardView: View {
 
     private var showsPinePanes: Bool { viewModel.showsPinePanes }
 
-    private var pinePanesHeight: CGFloat { viewModel.pinePanesHeight(forChartHeight: chartHeight) }
-
+    /// `plotHeight` is the card's measured plot height, which also covers any Pine panes under the chart.
     @ViewBuilder
-    private var chartArea: some View {
+    private func chartArea(plotHeight chartHeight: CGFloat) -> some View {
+        let pinePanesHeight = viewModel.pinePanesHeight(forChartHeight: chartHeight)
         // Computed once per layout pass and shared by both renderers — the warm-up
         // candles ahead of the visible window never reach the chart itself.
         let indicators = viewModel.indicators
