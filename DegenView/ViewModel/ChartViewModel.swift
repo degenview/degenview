@@ -181,6 +181,7 @@ final class ChartViewModel: ObservableObject {
 
     /// The tab's authoritative replay clock. The canonical fetched series remains
     /// untouched; every chart/indicator/interaction consumer reads through this gate.
+    private var granularReplayCache = GranularReplayCache()
     @Published private(set) var replayTimestamp: Date?
     @Published private(set) var replaySelectionTimestamp: Date?
     @Published private(set) var granularReplayData: [KlineData] = []
@@ -421,7 +422,14 @@ final class ChartViewModel: ObservableObject {
         }
     }
 
-    func resolvedReplayInterval(_ requested: ReplayInterval) -> ReplayInterval {
+    /// The chart bar a replay beginning at `date` starts on (the first bar when `date` is earlier).
+    private func replayFetchStart(from date: Date?) -> Date? {
+        guard let first = klineData.first?.openTime else { return nil }
+        guard let date else { return first }
+        return klineData.last(where: { $0.openTime <= date })?.openTime ?? first
+    }
+
+    func resolvedReplayInterval(_ requested: ReplayInterval, from date: Date? = nil) -> ReplayInterval {
         guard requested == .automatic else {
             return supportedReplayIntervals.contains(requested) ? requested : .chartBar
         }
@@ -430,29 +438,37 @@ final class ChartViewModel: ObservableObject {
             guard let seconds = interval.seconds else { return nil }
             return (interval, seconds)
         }.sorted { $0.1 < $1.1 }
-        guard let first = klineData.first, let last = klineData.last else { return .chartBar }
-        let span = last.openTime.timeIntervalSince(first.openTime) + currentReplayChartSeconds
+        guard let first = replayFetchStart(from: date), let last = klineData.last else { return .chartBar }
+        let span = last.openTime.timeIntervalSince(first) + currentReplayChartSeconds
         return concrete.first(where: { span / $0.1 <= 100_000 })?.0 ?? concrete.last?.0 ?? .chartBar
     }
 
-    func loadGranularReplayData(interval requested: ReplayInterval) async throws -> ReplayInterval {
-        let interval = resolvedReplayInterval(requested)
+    /// Loads the fine-grained history a replay steps through, from the chart bar holding `date`
+    /// (the whole chart when nil). Bars before that point are never stepped through, so they
+    /// are not downloaded; they show as the chart's own candles.
+    func loadGranularReplayData(interval requested: ReplayInterval, from date: Date? = nil) async throws
+        -> ReplayInterval
+    {
+        let interval = resolvedReplayInterval(requested, from: date)
         guard interval != .chartBar,
             let source = api as? GranularReplayDataSource,
-            let first = klineData.first,
+            let start = replayFetchStart(from: date),
             let last = klineData.last
         else {
             granularReplayData = []
             granularReplayInterval = nil
             return .chartBar
         }
-        let data = try await source.fetchReplayKlines(
-            symbol: apiSymbol,
-            interval: interval,
-            start: first.openTime,
-            end: last.openTime.addingTimeInterval(currentReplayChartSeconds),
-            maximumCount: 100_000
-        )
+        let end = last.openTime.addingTimeInterval(currentReplayChartSeconds)
+        let key = GranularReplayCache.Key(symbol: apiSymbol, interval: interval)
+        let data: [KlineData]
+        if let cached = granularReplayCache.slice(key, start: start, end: end) {
+            data = cached
+        } else {
+            data = try await source.fetchReplayKlines(
+                symbol: apiSymbol, interval: interval, start: start, end: end, maximumCount: 100_000)
+            granularReplayCache.store(key, start: start, end: end, data: data)
+        }
         guard !data.isEmpty else {
             granularReplayData = []
             granularReplayInterval = nil

@@ -269,11 +269,14 @@ struct ContentView: View {
     @ViewBuilder
     private var chartsOnly: some View {
         VStack(spacing: 0) {
-            if contentViewModel.replay.isActive {
+            if contentViewModel.replay.isBarVisible {
                 VStack(spacing: 0) {
                     ReplayControlBar(
                         engine: contentViewModel.replay,
                         onChangeStart: contentViewModel.beginReplaySelection,
+                        onChooseDate: { showReplayDatePicker = true },
+                        onRandomBar: contentViewModel.selectRandomReplayBar,
+                        onFirstBar: contentViewModel.selectFirstReplayBar,
                         onCancelSelection: contentViewModel.cancelReplaySelection,
                         onReturnToLive: contentViewModel.returnToLive,
                         availableIntervals: contentViewModel.availableReplayIntervals,
@@ -346,7 +349,7 @@ struct ContentView: View {
                 }
             }
         }
-        .animation(.easeOut(duration: 0.2), value: contentViewModel.replay.isActive)
+        .animation(.easeOut(duration: 0.2), value: contentViewModel.replay.isBarVisible)
     }
 
     // MARK: - Toolbar
@@ -373,51 +376,27 @@ struct ContentView: View {
             }
         }
 
-        let isReplaying = contentViewModel.replay.isActive
+        let isReplaying = contentViewModel.replay.isBarVisible
         let hasMarket = !contentViewModel.marketChartViewModels.isEmpty
-        SidebarMenu(
+        SidebarIconButton(
             icon: "clock.arrow.circlepath",
-            label: isReplaying ? "Historical bar replay, active" : "Historical bar replay",
+            label: isReplaying ? "Close historical bar replay" : "Historical bar replay",
             tooltip: replayTooltip(isReplaying: isReplaying, hasMarket: hasMarket),
             isActive: isReplaying,
             tint: ReplayStyle.accent,
             activeStyle: .tinted
         ) {
-            Button {
-                contentViewModel.beginReplaySelection()
-            } label: {
-                Label("Select Bar on Chart", systemImage: "cursorarrow.click.2")
-            }
-            Button {
-                showReplayDatePicker = true
-            } label: {
-                Label("Choose Date & Time…", systemImage: "calendar")
-            }
-            Divider()
-            Button {
-                contentViewModel.selectRandomReplayBar()
-            } label: {
-                Label("Random Bar", systemImage: "dice")
-            }
-            Button {
-                contentViewModel.selectFirstReplayBar()
-            } label: {
-                Label("First Available Bar", systemImage: "backward.end")
-            }
             if isReplaying {
-                Divider()
-                Button {
-                    contentViewModel.returnToLive()
-                } label: {
-                    Label("Return to Latest", systemImage: "dot.radiowaves.left.and.right")
-                }
+                contentViewModel.returnToLive()
+            } else {
+                contentViewModel.openReplayBar()
             }
         }
         .disabled(!hasMarket)
     }
 
     private func replayTooltip(isReplaying: Bool, hasMarket: Bool) -> String {
-        if isReplaying { return "Replay Active" }
+        if isReplaying { return "Close Replay" }
         return hasMarket ? "Historical Replay" : "Historical Replay — add a market chart first"
     }
 

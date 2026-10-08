@@ -2,6 +2,8 @@ import Foundation
 
 enum ReplayStatus: String, Codable, Equatable {
     case inactive
+    /// The replay bar is open but no start has been chosen; charts are still live.
+    case ready
     case selectingStart
     case paused
     case playing

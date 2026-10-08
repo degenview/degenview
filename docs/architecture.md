@@ -71,7 +71,7 @@ DegenView/
 │   ├── PaperQuoteFeed.swift           # Zero-size view behind each chart card: observes the chart and streams its last price and Binance/Coinbase best bid/ask to `PaperTradingStore.stream` (ContentView does not observe charts, so this cannot live there). Util/PaperQuoteSample decides what counts as a fresh book
 │   ├── PaperQuickTradeButtons.swift   # SELL / BUY pills in a chart card header
 │   └── PaperTradingStyle.swift        # Buy green / sell red, P&L colour; labels and tints in `Model/PaperTradingModels+Presentation`. PaperBadge, PaperSideChip, PaperIconButton / PaperIconGlyph are the shared bits
-│   ├── ReplayControlBar.swift         # The docked strip: status, transport, speed/resolution, scrubber, clock, notice, way back to live; swaps to a hint while picking a start. Pieces: ReplayStatusChip, ReplayTransportControls, ReplayPickerMenu, ReplayScrubber, ReplayClockReadout, ReplayNoticeChip, ReplayIconButton
+│   ├── ReplayControlBar.swift         # The docked strip: status, transport, speed/resolution, scrubber, clock, notice, way back to live; offers the start options before one is chosen and swaps to a hint while picking on the chart. Pieces: ReplayStatusChip, ReplayTransportControls, ReplayPickerMenu, ReplayScrubber, ReplayClockReadout, ReplayNoticeChip, ReplayIconButton
 │   ├── ReplayStyle.swift              # Replay accent (orange), per-state colour/title, date formats
 │   ├── ReplaySelectionMarker.swift    # Start-picker hover marker: line, date tag, dimmed future
 │   ├── ReplayStartSheet.swift         # Date/time picker clamped to the loaded span, presets, bar-snap preview

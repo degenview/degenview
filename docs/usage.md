@@ -28,7 +28,7 @@
    and click one to open it in the current tab.
 8. Press **⌘T** or use the tab bar's **+** for an empty tab. Drag tabs out into windows or
    merge them again through the tab bar or **File → Merge All Windows**.
-9. Open the toolbar **Replay** menu and choose **Select Bar on Chart**. Move over a chart to
+9. Click the sidebar **Replay** button; the replay bar opens at once. Choose **Select Bar on Chart** in it (or Date & Time, Random Bar, First Bar). Move over a chart to
    snap the orange marker to a historical candle (the plot to its right dims), then click to
    begin; **Esc** or **Cancel** backs out. **Choose Date & Time…** opens a picker limited to
    the loaded chart. Use the replay strip to step forward or back (⇧→ / ⇧←), play or pause

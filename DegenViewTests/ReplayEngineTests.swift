@@ -37,6 +37,37 @@ final class ReplayEngineTests: XCTestCase {
         XCTAssertNil(changeCandles([0, 5]).priceChangePercent)
     }
 
+    func testOpenShowsBarWithoutGatingCharts() {
+        let engine = ReplayEngine()
+        engine.open()
+        XCTAssertEqual(engine.status, .ready)
+        XCTAssertTrue(engine.isBarVisible)
+        XCTAssertFalse(engine.isActive)
+        XCTAssertFalse(engine.canAdvance)
+        XCTAssertNil(engine.session)
+    }
+
+    func testCancelSelectionFromReadyKeepsBarOpen() {
+        let engine = ReplayEngine()
+        engine.open()
+        engine.beginSelecting()
+        XCTAssertEqual(engine.status, .selectingStart)
+        engine.cancelSelection()
+        XCTAssertEqual(engine.status, .ready)
+    }
+
+    func testStopAndStartFromReady() {
+        let engine = ReplayEngine()
+        engine.open()
+        engine.stop()
+        XCTAssertEqual(engine.status, .inactive)
+        XCTAssertFalse(engine.isBarVisible)
+        engine.open()
+        let timeline = dates(3)
+        engine.start(at: timeline[0], symbol: "BTCUSDT", timeframe: .oneHour, timeline: timeline)
+        XCTAssertEqual(engine.status, .paused)
+    }
+
     func testStartSelectionAndInitialCursor() {
         let engine = ReplayEngine()
         let timeline = dates(100)

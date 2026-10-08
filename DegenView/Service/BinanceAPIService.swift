@@ -144,41 +144,45 @@ final class BinanceAPIService: GranularReplayDataSource {
         maximumCount: Int = 100_000
     ) async throws -> [KlineData] {
         guard let token = interval.apiInterval, let seconds = interval.seconds, start <= end else { return [] }
-        var cursor = start
-        var result: [KlineData] = []
-        result.reserveCapacity(min(maximumCount, 10_000))
-
-        while cursor <= end, result.count < maximumCount {
-            guard var components = URLComponents(string: "\(baseURL)/api/v3/klines") else {
-                throw BinanceAPIError.invalidURL
-            }
-            let pageLimit = min(1_000, maximumCount - result.count)
-            components.queryItems = [
-                URLQueryItem(name: "symbol", value: symbol.uppercased()),
-                URLQueryItem(name: "interval", value: token),
-                URLQueryItem(name: "startTime", value: String(Int64(cursor.timeIntervalSince1970 * 1_000))),
-                URLQueryItem(name: "endTime", value: String(Int64(end.timeIntervalSince1970 * 1_000))),
-                URLQueryItem(name: "limit", value: String(pageLimit)),
-            ]
-            guard let url = components.url else { throw BinanceAPIError.invalidURL }
-            let (data, response) = try await session.data(from: url)
-            guard let http = response as? HTTPURLResponse else { throw BinanceAPIError.invalidResponse }
-            guard http.statusCode == 200 else {
-                if http.statusCode == 429 { throw BinanceAPIError.rateLimited }
-                throw BinanceAPIError.httpError(http.statusCode)
-            }
-            guard let json = try JSONSerialization.jsonObject(with: data) as? [[Any]] else {
-                throw BinanceAPIError.parseError("Expected replay kline array")
-            }
-            let page = json.compactMap(KlineData.init(raw:)).sorted { $0.openTime < $1.openTime }
-            guard let last = page.last else { break }
-            result.append(contentsOf: page)
-            let next = last.openTime.addingTimeInterval(seconds)
-            guard next > cursor else { break }
-            cursor = next
-            if page.count < pageLimit { break }
+        // Fixed time windows of one page each, so the pages are independent and can load together.
+        let pageLimit = 1_000
+        let window = Double(pageLimit) * seconds
+        let wanted = Int(((end.timeIntervalSince(start)) / window).rounded(.down)) + 1
+        let pageCount = min(wanted, (maximumCount + pageLimit - 1) / pageLimit)
+        let pages = try await fetchPagesConcurrently(count: pageCount) { [self] index in
+            let from = start.addingTimeInterval(Double(index) * window)
+            let to = min(end, from.addingTimeInterval(window - 0.001))
+            return try await fetchReplayPage(
+                symbol: symbol, token: token, start: from, end: to, limit: pageLimit)
         }
+        let result = pages.flatMap { $0 }
         return Self.sanitized(result, maximumCount: maximumCount)
+    }
+
+    private func fetchReplayPage(
+        symbol: String, token: String, start: Date, end: Date, limit: Int
+    ) async throws -> [KlineData] {
+        guard var components = URLComponents(string: "\(baseURL)/api/v3/klines") else {
+            throw BinanceAPIError.invalidURL
+        }
+        components.queryItems = [
+            URLQueryItem(name: "symbol", value: symbol.uppercased()),
+            URLQueryItem(name: "interval", value: token),
+            URLQueryItem(name: "startTime", value: String(Int64(start.timeIntervalSince1970 * 1_000))),
+            URLQueryItem(name: "endTime", value: String(Int64(end.timeIntervalSince1970 * 1_000))),
+            URLQueryItem(name: "limit", value: String(limit)),
+        ]
+        guard let url = components.url else { throw BinanceAPIError.invalidURL }
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse else { throw BinanceAPIError.invalidResponse }
+        guard http.statusCode == 200 else {
+            if http.statusCode == 429 { throw BinanceAPIError.rateLimited }
+            throw BinanceAPIError.httpError(http.statusCode)
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [[Any]] else {
+            throw BinanceAPIError.parseError("Expected replay kline array")
+        }
+        return json.compactMap(KlineData.init(raw:)).sorted { $0.openTime < $1.openTime }
     }
 
     private static func intervalSeconds(_ interval: String) -> TimeInterval {
