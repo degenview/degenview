@@ -47,4 +47,15 @@ final class WatchlistQuoteFormatTests: XCTestCase {
         XCTAssertTrue(spoken.contains("Stale"))
         XCTAssertEqual(WatchlistQuoteFormat.spoken(name: "Bitcoin", quote: nil, source: .binance), "Bitcoin, no quote")
     }
+
+    func testSpokenLabelNamesTheFlagAndIsUnchangedWithout() {
+        let quote = WatchlistQuote(last: 100, changePercent: 1.5, freshness: .live)
+        let plain = WatchlistQuoteFormat.spoken(name: "Bitcoin", quote: quote, source: .binance)
+        let flagged = WatchlistQuoteFormat.spoken(name: "Bitcoin", quote: quote, source: .binance, flag: .red)
+
+        XCTAssertEqual(flagged, plain + ", red flag")
+        XCTAssertEqual(
+            WatchlistQuoteFormat.spoken(name: "Bitcoin", quote: nil, source: .binance, flag: .blue),
+            "Bitcoin, no quote, blue flag")
+    }
 }

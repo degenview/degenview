@@ -80,7 +80,8 @@ struct WatchlistSectionRow: View {
 #Preview("Aligned with rows") {
     let book = WatchlistQuoteBook()
     let display = WatchlistDisplaySettings()
-    @MainActor func row(_ symbol: String, price: Double, change: Double) -> some View {
+    // Symbol rows own their leading inset (so a flag can sit in it); headings take the list's inset.
+    @MainActor func row(_ symbol: String, price: Double, change: Double, flag: WatchlistFlag? = nil) -> some View {
         let id = InstrumentID(source: .binance, symbol: symbol)
         book.apply([
             id: WatchlistQuote(
@@ -89,18 +90,27 @@ struct WatchlistSectionRow: View {
         ])
         return WatchlistInstrumentRow(
             item: WatchlistInstrument(instrument: id, name: symbol, label: symbol),
-            cell: book.cell(for: id), flag: nil, display: display, menu: { EmptyView() })
+            cell: book.cell(for: id), flag: flag, display: display, menu: { EmptyView() }
+        )
+        .padding(.trailing, WatchlistMetrics.edgeInset)
+    }
+    func heading(_ title: String, count: Int) -> some View {
+        WatchlistSectionRow(section: WatchlistSection(title: title), count: count) {}
+            .padding(.horizontal, WatchlistMetrics.edgeInset)
     }
     return VStack(spacing: 0) {
-        row("BTCUSDT", price: 82_514, change: -1.4)
+        row("BTCUSDT", price: 82_514, change: -1.4, flag: .red)
         row("ETHUSDT", price: 2_537, change: 1.6)
-        WatchlistSectionRow(section: WatchlistSection(title: "Majors"), count: 2) {}
-        row("SOLUSDT", price: 113.2, change: -3.4)
-        row("DOGEUSDT", price: 0.087, change: 1.9)
-        WatchlistSectionRow(section: WatchlistSection(title: "Watching"), count: 0) {}
+        heading("Majors", count: 3)
+        row("SOLUSDT", price: 113.2, change: -3.4, flag: .yellow)
+        row("DOGEUSDT", price: 0.087, change: 1.9, flag: .green)
+        row("ADAUSDT", price: 0.25, change: -1.3, flag: .blue)
+        row("PEPEUSDT", price: 0.000004, change: -1.0, flag: .purple)
+        row("DOTUSDT", price: 1.1, change: -0.6, flag: .orange)
+        heading("Watching", count: 0)
         WatchlistEmptySectionRow()
+            .padding(.horizontal, WatchlistMetrics.edgeInset)
     }
-    .padding(.horizontal, WatchlistMetrics.edgeInset)
     .frame(width: 270)
     .background(.bar)
 }

@@ -117,10 +117,16 @@ struct WatchlistHeader: View {
             Menu("Filter by Flag") {
                 ForEach(WatchlistFlag.allCases) { flag in
                     Toggle(
-                        flag.title,
                         isOn: Binding(
                             get: { viewModel.flagFilter == flag },
-                            set: { viewModel.flagFilter = $0 ? flag : nil }))
+                            set: { viewModel.flagFilter = $0 ? flag : nil })
+                    ) {
+                        Label {
+                            Text(flag.title)
+                        } icon: {
+                            Image(nsImage: flag.swatch).renderingMode(.original)
+                        }
+                    }
                 }
                 Divider()
                 Button("Show All") { viewModel.flagFilter = nil }.disabled(viewModel.flagFilter == nil)

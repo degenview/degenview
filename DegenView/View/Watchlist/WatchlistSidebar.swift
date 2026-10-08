@@ -157,7 +157,7 @@ struct WatchlistSidebar: View {
                 rowView(row, list: list, isFirst: row.id == rows.first?.id)
                     .listRowInsets(
                         EdgeInsets(
-                            top: 1, leading: WatchlistMetrics.edgeInset, bottom: 1,
+                            top: 1, leading: leadingInset(for: row), bottom: 1,
                             trailing: WatchlistMetrics.edgeInset)
                     )
                     .listRowSeparator(.hidden)
@@ -208,6 +208,13 @@ struct WatchlistSidebar: View {
         }
     }
 
+    /// Symbol rows take no leading inset from the list and add the standard one themselves, so a flag can be drawn
+    /// in that gutter inside the row. Headings and placeholders use the list's inset; every visible edge is the same.
+    private func leadingInset(for row: WatchlistLayoutEngine.Row) -> CGFloat {
+        if case .instrument = row { return 0 }
+        return WatchlistMetrics.edgeInset
+    }
+
     private func toggle(_ section: WatchlistSection) {
         if reduceMotion {
             viewModel.toggleCollapsed(section)
@@ -231,9 +238,7 @@ struct WatchlistSidebar: View {
                 .textFieldStyle(.plain)
                 .onExitCommand { viewModel.clearFilter() }
             if let flag = viewModel.flagFilter {
-                Label(flag.title, systemImage: "flag.fill")
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(flag.color)
+                WatchlistFlagMark(flag: flag)
                     .help("Showing only \(flag.title.lowercased())-flagged symbols")
             }
             if viewModel.isFiltering {
