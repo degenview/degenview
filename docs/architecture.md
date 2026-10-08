@@ -52,6 +52,7 @@ DegenView/
 │   ├── CoinMarketCapChartView.swift   # Fixed-scale CMC plots, season scale, sentiment gauge
 │   ├── ChartPlot.swift                # Shared axes, indicators, drawings, overlays
 │   ├── ChartCardView.swift            # Card header, chart, drawing editors, errors
+│   ├── ChartIndicatorStrip.swift      # Header chips + "+" for built-in and Pine indicators (Chip, AddMenu, ListPopover, EMAPeriodPopover)
 │   ├── ChartGridDropDelegate.swift    # Column-aware chart drag/drop destinations
 │   ├── PriceAlertEditor.swift         # Compact absolute/percentage rule editor
 │   ├── AlertsCenterView.swift         # Alerts window: header, IconTabBar tabs, rule/history lists

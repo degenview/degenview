@@ -231,6 +231,10 @@ struct TickerConfig: Codable, Equatable, Hashable {
     /// Confirmed bullish/bearish Supertrend change markers. nil = off.
     var showTrendFlips: Bool?
 
+    /// Raw values of the applied built-in indicators that are switched off without being removed.
+    /// nil = none hidden.
+    var hiddenIndicators: [String]?
+
     /// Human-readable label shown on the card. Only set for sources whose `symbol`
     /// is an opaque identifier — a Polymarket CLOB token id is 77 digits, so the
     /// market question has to ride along. Nil for crypto (the symbol reads fine).
@@ -257,7 +261,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         bearishColorHex: String? = nil, yAxisDecimalPlaces: Int? = nil, yZoom: Double? = nil,
         showVolume: Bool? = nil, showRSI: Bool? = nil, showEMA: Bool? = nil,
         emaPeriod: Int? = nil, showBollinger: Bool? = nil, showTrendFlips: Bool? = nil,
-        displayName: String? = nil,
+        hiddenIndicators: [String]? = nil, displayName: String? = nil,
         pmSeries: [PmSeriesConfig]? = nil, portfolioChart: PortfolioChartConfig? = nil,
         coinMarketCapChart: CoinMarketCapChartConfig? = nil,
         bitcoinPowerLaw: BitcoinPowerLawConfig? = nil,
@@ -277,6 +281,7 @@ struct TickerConfig: Codable, Equatable, Hashable {
         self.emaPeriod = emaPeriod
         self.showBollinger = showBollinger
         self.showTrendFlips = showTrendFlips
+        self.hiddenIndicators = hiddenIndicators
         self.displayName = displayName
         self.pmSeries = pmSeries
         self.portfolioChart = portfolioChart

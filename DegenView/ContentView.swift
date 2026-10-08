@@ -728,7 +728,6 @@ struct ContentView: View {
             },
             onAxisRegion: { contentViewModel.registerAxisRegion($0, for: vm) },
             onPlotRegion: { contentViewModel.registerPlotRegion($0, for: vm) },
-            onLegendRegion: { contentViewModel.registerLegendRegion($0, for: vm) },
             isToolArmed: contentViewModel.activeTool != .none,
             showTrendHandles: contentViewModel.activeTool == .trendLine
                 || contentViewModel.activeTool == .fibonacciRetracement,

@@ -71,7 +71,6 @@
 		6577CDE9675CEA434B62BA5E /* PineAlertFrequency+DisplayName.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D1151CD9D3101BD63693450 /* PineAlertFrequency+DisplayName.swift */; };
 		6C7A5C58318BD1F8BD0CAF07 /* PineCompletionInsertion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01A8D5472529B698EC7D3831 /* PineCompletionInsertion.swift */; };
 		6F453F45F7D7688E5D5AB697 /* WatchlistSidebarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */; };
-		7049175C48A8B16635AD5AA0 /* PineIndicatorLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508C01C8E134EA17A69491B8 /* PineIndicatorLegend.swift */; };
 		70E3D1C1F1ED5C3DD3D16F16 /* WatchlistEmptySectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */; };
 		730B05857C01A9AD27D01061 /* PineSourceSymbolIndex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0C68C3592470286D1F7834 /* PineSourceSymbolIndex.swift */; };
 		7B4557DFEF2369AC0D3E3C84 /* WatchlistModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92614D37D7173C96866B93A /* WatchlistModelTests.swift */; };
@@ -121,6 +120,7 @@
 		A00000000000000000000014 /* SavedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000115 /* SavedView.swift */; };
 		A00000000000000000000016 /* IconResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000117 /* IconResolver.swift */; };
 		A00000000000000000000017 /* DataSourceType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000118 /* DataSourceType.swift */; };
+		INB0000000000000000000A1 /* ChartIndicatorItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A1 /* ChartIndicatorItem.swift */; };
 		A00000000000000000000018 /* TickerDataSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000119 /* TickerDataSource.swift */; };
 		A00000000000000000000019 /* CoinGeckoAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011A /* CoinGeckoAPIService.swift */; };
 		A0000000000000000000001A /* DEXScreenerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000011B /* DEXScreenerService.swift */; };
@@ -193,6 +193,7 @@
 		AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001700 /* PredictionTrendingTests.swift */; };
 		AA1000000000000000001800 /* CandleColorPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001900 /* CandleColorPreview.swift */; };
 		AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000001901 /* ChartSettingsSheetTests.swift */; };
+		INB0000000000000000000A9 /* ChartIndicatorItemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A9 /* ChartIndicatorItemTests.swift */; };
 		AA1000000000000000002000 /* SettingsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002100 /* SettingsPage.swift */; };
 		AA1000000000000000002001 /* SettingsField.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002101 /* SettingsField.swift */; };
 		AA1000000000000000002002 /* SettingsStatusBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1000000000000000002102 /* SettingsStatusBadge.swift */; };
@@ -324,6 +325,7 @@
 		B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */; };
 		B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B09 /* ScriptSourceHash.swift */; };
 		B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B10 /* PineAlertStore.swift */; };
+		INB0000000000000000000A3 /* SavedScriptsModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A3 /* SavedScriptsModel.swift */; };
 		B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */; };
 		B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B12 /* PineAlertEditor.swift */; };
 		B7A1E7000000000000000A13 /* PineAlertListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A1E7000000000000000B13 /* PineAlertListView.swift */; };
@@ -457,6 +459,11 @@
 		CMC000000000000000000002 /* CoinMarketCapChartView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000102 /* CoinMarketCapChartView.swift */; };
 		CMC000000000000000000003 /* CoinMarketCapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CMC000000000000000000103 /* CoinMarketCapTests.swift */; };
 		CS0000000000000000000001 /* ChartScriptsTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000101 /* ChartScriptsTab.swift */; };
+		INB0000000000000000000A8 /* ChartIndicatorStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A8 /* ChartIndicatorStrip.swift */; };
+		INB0000000000000000000A7 /* ChartIndicatorAddMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A7 /* ChartIndicatorAddMenu.swift */; };
+		INB0000000000000000000A6 /* ChartIndicatorListPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A6 /* ChartIndicatorListPopover.swift */; };
+		INB0000000000000000000A5 /* ChartIndicatorChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A5 /* ChartIndicatorChip.swift */; };
+		INB0000000000000000000A4 /* EMAPeriodPopover.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A4 /* EMAPeriodPopover.swift */; };
 		CS0000000000000000000002 /* ScriptInstanceRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000102 /* ScriptInstanceRow.swift */; };
 		CS0000000000000000000003 /* SettingsIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = CS0000000000000000000103 /* SettingsIconButton.swift */; };
 		D001349E33F5CA88663404EC /* PaperPanelFooter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1CA88663404ECE90E958E60 /* PaperPanelFooter.swift */; };
@@ -875,6 +882,7 @@
 		P20000000000000000000001 /* PineBrokerEmulator.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000101 /* PineBrokerEmulator.swift */; };
 		P20000000000000000000002 /* PineTimestamp.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000102 /* PineTimestamp.swift */; };
 		P20000000000000000000003 /* PineStrategyReportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000103 /* PineStrategyReportView.swift */; };
+		INB0000000000000000000A2 /* PineLegendRowInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = IND0000000000000000000A2 /* PineLegendRowInfo.swift */; };
 		P20000000000000000000004 /* PineStrategyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000104 /* PineStrategyTests.swift */; };
 		P30000000000000000000001 /* PineTypeChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000101 /* PineTypeChecker.swift */; };
 		P30000000000000000000002 /* PineTypeCheckerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P30000000000000000000102 /* PineTypeCheckerTests.swift */; };
@@ -996,7 +1004,6 @@
 		4C93B66B9A7D5B05EDBFDD5D /* WatchlistLayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistLayoutEngineTests.swift; sourceTree = "<group>"; };
 		4E4123EABC4553381228A682 /* PineSignatureResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSignatureResolver.swift; sourceTree = "<group>"; };
 		4FB44E8815AC66085626889B /* WatchlistInstrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistInstrument.swift; sourceTree = "<group>"; };
-		508C01C8E134EA17A69491B8 /* PineIndicatorLegend.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PineIndicatorLegend.swift; sourceTree = "<group>"; };
 		51CACC12DBC053B4D3F1B872 /* PineSymbolCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineSymbolCatalog.swift; sourceTree = "<group>"; };
 		543C4B8E279366D7E2D02E1D /* InstrumentIDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstrumentIDTests.swift; sourceTree = "<group>"; };
 		54C00DF57E0039CBACBD7AE0 /* AppDatabase+PaperTrading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PaperTrading.swift"; sourceTree = "<group>"; };
@@ -1070,6 +1077,7 @@
 		A00000000000000000000115 /* SavedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedView.swift; sourceTree = "<group>"; };
 		A00000000000000000000117 /* IconResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IconResolver.swift; sourceTree = "<group>"; };
 		A00000000000000000000118 /* DataSourceType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceType.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A1 /* ChartIndicatorItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorItem.swift; sourceTree = "<group>"; };
 		A00000000000000000000119 /* TickerDataSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TickerDataSource.swift; sourceTree = "<group>"; };
 		A0000000000000000000011A /* CoinGeckoAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinGeckoAPIService.swift; sourceTree = "<group>"; };
 		A0000000000000000000011B /* DEXScreenerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DEXScreenerService.swift; sourceTree = "<group>"; };
@@ -1135,6 +1143,7 @@
 		AA1000000000000000001700 /* PredictionTrendingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PredictionTrendingTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000001900 /* CandleColorPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CandleColorPreview.swift; sourceTree = "<group>"; };
 		AA1000000000000000001901 /* ChartSettingsSheetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartSettingsSheetTests.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A9 /* ChartIndicatorItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorItemTests.swift; sourceTree = "<group>"; };
 		AA1000000000000000002100 /* SettingsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPage.swift; sourceTree = "<group>"; };
 		AA1000000000000000002101 /* SettingsField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsField.swift; sourceTree = "<group>"; };
 		AA1000000000000000002102 /* SettingsStatusBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsStatusBadge.swift; sourceTree = "<group>"; };
@@ -1247,6 +1256,7 @@
 		B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppDatabase+PineAlerts.swift"; sourceTree = "<group>"; };
 		B7A1E7000000000000000B09 /* ScriptSourceHash.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptSourceHash.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B10 /* PineAlertStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertStore.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A3 /* SavedScriptsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedScriptsModel.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertCoordinator.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B12 /* PineAlertEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertEditor.swift; sourceTree = "<group>"; };
 		B7A1E7000000000000000B13 /* PineAlertListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineAlertListView.swift; sourceTree = "<group>"; };
@@ -1335,6 +1345,11 @@
 		CMC000000000000000000102 /* CoinMarketCapChartView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapChartView.swift; sourceTree = "<group>"; };
 		CMC000000000000000000103 /* CoinMarketCapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinMarketCapTests.swift; sourceTree = "<group>"; };
 		CS0000000000000000000101 /* ChartScriptsTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartScriptsTab.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A8 /* ChartIndicatorStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorStrip.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A7 /* ChartIndicatorAddMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorAddMenu.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A6 /* ChartIndicatorListPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorListPopover.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A5 /* ChartIndicatorChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartIndicatorChip.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A4 /* EMAPeriodPopover.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EMAPeriodPopover.swift; sourceTree = "<group>"; };
 		CS0000000000000000000102 /* ScriptInstanceRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScriptInstanceRow.swift; sourceTree = "<group>"; };
 		CS0000000000000000000103 /* SettingsIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsIconButton.swift; sourceTree = "<group>"; };
 		D10000000000000000000101 /* ChartTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartTab.swift; sourceTree = "<group>"; };
@@ -1698,6 +1713,7 @@
 		P20000000000000000000101 /* PineBrokerEmulator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineBrokerEmulator.swift; sourceTree = "<group>"; };
 		P20000000000000000000102 /* PineTimestamp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTimestamp.swift; sourceTree = "<group>"; };
 		P20000000000000000000103 /* PineStrategyReportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyReportView.swift; sourceTree = "<group>"; };
+		IND0000000000000000000A2 /* PineLegendRowInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLegendRowInfo.swift; sourceTree = "<group>"; };
 		P20000000000000000000104 /* PineStrategyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineStrategyTests.swift; sourceTree = "<group>"; };
 		P30000000000000000000101 /* PineTypeChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeChecker.swift; sourceTree = "<group>"; };
 		P30000000000000000000102 /* PineTypeCheckerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineTypeCheckerTests.swift; sourceTree = "<group>"; };
@@ -1892,6 +1908,7 @@
 				A00000000000000000000105 /* SymbolInfo.swift */,
 				A00000000000000000000115 /* SavedView.swift */,
 				A00000000000000000000118 /* DataSourceType.swift */,
+				IND0000000000000000000A1 /* ChartIndicatorItem.swift */,
 				SP0000000000000000000516 /* PreviewMarket.swift */,
 				SP0000000000000000000515 /* ScriptPreviewLayout.swift */,
 				SP0000000000000000000900 /* ScriptManagerSession.swift */,
@@ -2014,6 +2031,7 @@
 				FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */,
 				B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */,
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
+				IND0000000000000000000A3 /* SavedScriptsModel.swift */,
 				AE01000000000000000000A3 /* UnseenAlertsStore.swift */,
 				SM0000000000000000000102 /* ScriptManagerViewModel.swift */,
 				SM0000000000000000000103 /* ScriptEditorViewModel.swift */,
@@ -2171,6 +2189,11 @@
 				CS0000000000000000000103 /* SettingsIconButton.swift */,
 				CS0000000000000000000102 /* ScriptInstanceRow.swift */,
 				CS0000000000000000000101 /* ChartScriptsTab.swift */,
+				IND0000000000000000000A8 /* ChartIndicatorStrip.swift */,
+				IND0000000000000000000A7 /* ChartIndicatorAddMenu.swift */,
+				IND0000000000000000000A6 /* ChartIndicatorListPopover.swift */,
+				IND0000000000000000000A5 /* ChartIndicatorChip.swift */,
+				IND0000000000000000000A4 /* EMAPeriodPopover.swift */,
 				A00000000000000000000112 /* CandleChartView.swift */,
 				C10000000000000000000106 /* LineChartView.swift */,
 				CMC000000000000000000102 /* CoinMarketCapChartView.swift */,
@@ -2396,6 +2419,7 @@
 				E7A000000000000000007101 /* LayoutSnapshotTests.swift */,
 				AA1000000000000000001700 /* PredictionTrendingTests.swift */,
 				AA1000000000000000001901 /* ChartSettingsSheetTests.swift */,
+				IND0000000000000000000A9 /* ChartIndicatorItemTests.swift */,
 				AA1000000000000000002109 /* SettingsTabTests.swift */,
 				AA1000000000000000002B03 /* AppInfoTests.swift */,
 				AA1000000000000000002D05 /* UpdateCheckViewModelTests.swift */,
@@ -2729,7 +2753,7 @@
 				D20000000000000000000102 /* PineScriptPaneView.swift */,
 				F1EA25FBAE59FAA75F033BC2 /* PineSize+Drawing.swift */,
 				P20000000000000000000103 /* PineStrategyReportView.swift */,
-				508C01C8E134EA17A69491B8 /* PineIndicatorLegend.swift */,
+				IND0000000000000000000A2 /* PineLegendRowInfo.swift */,
 			);
 			path = View;
 			sourceTree = "<group>";
@@ -3000,6 +3024,7 @@
 				B7A1E7000000000000000A12 /* PineAlertEditor.swift in Sources */,
 				B7A1E7000000000000000A11 /* PineAlertCoordinator.swift in Sources */,
 				B7A1E7000000000000000A10 /* PineAlertStore.swift in Sources */,
+				INB0000000000000000000A3 /* SavedScriptsModel.swift in Sources */,
 				AE02000000000000000000A3 /* UnseenAlertsStore.swift in Sources */,
 				B7A1E7000000000000000A09 /* ScriptSourceHash.swift in Sources */,
 				B7A1E7000000000000000A08 /* AppDatabase+PineAlerts.swift in Sources */,
@@ -3239,6 +3264,7 @@
 				BB0000000000000000000004 /* ChartPlot+Brush.swift in Sources */,
 				D20000000000000000000001 /* PineChartLayer.swift in Sources */,
 				P20000000000000000000003 /* PineStrategyReportView.swift in Sources */,
+				INB0000000000000000000A2 /* PineLegendRowInfo.swift in Sources */,
 				D20000000000000000000002 /* PineScriptPaneView.swift in Sources */,
 				C10000000000000000000005 /* ChartStyle.swift in Sources */,
 				C10000000000000000000006 /* LineChartView.swift in Sources */,
@@ -3256,6 +3282,7 @@
 				A00000000000000000000014 /* SavedView.swift in Sources */,
 				A00000000000000000000016 /* IconResolver.swift in Sources */,
 				A00000000000000000000017 /* DataSourceType.swift in Sources */,
+				INB0000000000000000000A1 /* ChartIndicatorItem.swift in Sources */,
 				SP0000000000000000000016 /* PreviewMarket.swift in Sources */,
 				SP0000000000000000000015 /* ScriptPreviewLayout.swift in Sources */,
 				SP0000000000000000000901 /* ScriptManagerSession.swift in Sources */,
@@ -3271,6 +3298,11 @@
 				CS0000000000000000000003 /* SettingsIconButton.swift in Sources */,
 				CS0000000000000000000002 /* ScriptInstanceRow.swift in Sources */,
 				CS0000000000000000000001 /* ChartScriptsTab.swift in Sources */,
+				INB0000000000000000000A8 /* ChartIndicatorStrip.swift in Sources */,
+				INB0000000000000000000A7 /* ChartIndicatorAddMenu.swift in Sources */,
+				INB0000000000000000000A6 /* ChartIndicatorListPopover.swift in Sources */,
+				INB0000000000000000000A5 /* ChartIndicatorChip.swift in Sources */,
+				INB0000000000000000000A4 /* EMAPeriodPopover.swift in Sources */,
 				A0000000000000000000001C /* ColorHex.swift in Sources */,
 				58630E0C416C081AF0953889 /* KlineCache.swift in Sources */,
 				d58e678f4f4143a992f14a23 /* ImageCache.swift in Sources */,
@@ -3538,7 +3570,6 @@
 				F2CBCC8662B78B49001F5F23 /* PineDatasetKey.swift in Sources */,
 				F268D436B1FFE019AE743970 /* PineInstanceRuntime.swift in Sources */,
 				96F8A7015403A8D9DF2832E0 /* PineInstanceResult.swift in Sources */,
-				7049175C48A8B16635AD5AA0 /* PineIndicatorLegend.swift in Sources */,
 				424518CA454DEB587747B72E /* PineInstanceSettingsPopover.swift in Sources */,
 				AB10B9BBA4621D1D5D508267 /* WebhookEndpoint.swift in Sources */,
 				AB1019736D4EFB03C400D268 /* WebhookDelivery.swift in Sources */,
@@ -3801,6 +3832,7 @@
 				E7A000000000000000007001 /* LayoutSnapshotTests.swift in Sources */,
 				AA1000000000000000001600 /* PredictionTrendingTests.swift in Sources */,
 				AA1000000000000000001801 /* ChartSettingsSheetTests.swift in Sources */,
+				INB0000000000000000000A9 /* ChartIndicatorItemTests.swift in Sources */,
 				AA1000000000000000002009 /* SettingsTabTests.swift in Sources */,
 				AA1000000000000000002A03 /* AppInfoTests.swift in Sources */,
 				AA1000000000000000002C05 /* UpdateCheckViewModelTests.swift in Sources */,
