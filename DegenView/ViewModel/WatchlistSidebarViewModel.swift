@@ -219,12 +219,30 @@ final class WatchlistSidebarViewModel: ObservableObject {
     /// The list's native row move (`ForEach.onMove`): `toOffset` is an index into the rows as shown, which
     /// maps straight onto the flat entry list, so a drop between sections, under a heading or after a
     /// section's last symbol all land where the insertion line was. One drop is one store write.
+    ///
+    /// While a sort or filter is on, the rows are not in stored order, so a symbol's place inside a section is not
+    /// the user's to choose: a drop only changes its section (it goes last in that section's stored order and the
+    /// sort places it). Headings are never sorted, so they reorder in every mode.
     func moveRows(fromOffsets: IndexSet, toOffset: Int) {
-        guard let list, canReorder,
-            let move = WatchlistLayoutEngine.resolveMove(rows: rows, sources: fromOffsets, destination: toOffset)
-        else { return }
-        perform { try store.moveEntries(move.ids, before: move.before, in: list.id) }
+        guard let list else { return }
+        let shown = rows
+        let movesHeading = fromOffsets.contains { index in
+            guard shown.indices.contains(index), case .section = shown[index] else { return false }
+            return true
+        }
+        if canReorder || movesHeading {
+            guard let move = WatchlistLayoutEngine.resolveMove(rows: shown, sources: fromOffsets, destination: toOffset)
+            else { return }
+            perform { try store.moveEntries(move.ids, before: move.before, in: list.id) }
+        } else if let move = WatchlistLayoutEngine.resolveSectionMove(
+            rows: shown, sources: fromOffsets, destination: toOffset)
+        {
+            perform { try store.moveInstruments(move.ids, toSection: move.section, in: list.id) }
+        }
     }
+
+    /// Rows can be dragged whenever a list is shown and editable; what a drop means depends on `canReorder`.
+    var canDrag: Bool { list != nil && !store.loadFailed }
 
     /// Highlights the row for the market the focused chart shows, or nothing when the list does not hold it.
     /// Selecting a row opens it, so this also makes clicking a symbol again work after another chart took focus.

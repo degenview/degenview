@@ -196,4 +196,35 @@ final class WatchlistModelTests: XCTestCase {
         let empty = WatchlistInstrument(instrument: InstrumentID(source: .kalshi, symbol: "A/B"), name: "X", label: "")
         XCTAssertEqual(empty.subtitle, "Kalshi")
     }
+
+    func testSeveralInstrumentsMoveToTheEndOfASectionInOrder() throws {
+        var list = try sample()
+        let watching = try XCTUnwrap(list.sections.last)
+        let ids = try ["ETHUSDT", "BTCUSDT"].map { try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: $0))).id }
+
+        try list.moveInstruments(ids, toSection: watching.id)
+
+        XCTAssertEqual(symbols(list), ["ROOT", "#Majors", "#Watching", "LINKUSDT", "ETHUSDT", "BTCUSDT"])
+    }
+
+    func testSeveralInstrumentsMoveToTheRoot() throws {
+        var list = try sample()
+        let link = try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: "LINKUSDT")))
+
+        try list.moveInstruments([link.id], toSection: nil)
+
+        XCTAssertEqual(symbols(list), ["ROOT", "LINKUSDT", "#Majors", "BTCUSDT", "ETHUSDT", "#Watching"])
+    }
+
+    func testMovingInstrumentsMovesNothingIfAnythingIsUnknown() throws {
+        var list = try sample()
+        let before = list
+        let root = try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: "ROOT")))
+        let majors = try XCTUnwrap(list.sections.first)
+
+        XCTAssertThrowsError(try list.moveInstruments([root.id, UUID()], toSection: majors.id))
+        XCTAssertThrowsError(try list.moveInstruments([root.id], toSection: UUID()))
+        XCTAssertThrowsError(try list.moveInstruments([majors.id], toSection: nil), "a heading is not an instrument")
+        XCTAssertEqual(list, before)
+    }
 }

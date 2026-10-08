@@ -36,7 +36,10 @@ Sorting orders the markets inside each section; section headings stay where they
 order is never rewritten. Click a column heading to sort (largest first for numbers, A to Z for
 symbols), again to flip, again to return to Manual. Filtering matches name, symbol and provider and
 hides sections left empty. Drag symbols (or a whole section by its heading) to reorder: between sections, to
-the top or end of a section, into an empty one. Dragging is turned off while a sort or filter is active. Sort, columns and the
+the top or end of a section, into an empty one. While a sort or filter is active the order on screen is not the
+stored order, so a drop only moves a symbol to another section (it goes last in that section's stored order and the
+sort places it); dragging within a section does nothing until you return to Manual order. Section headings can be
+dragged in any mode. Sort, columns and the
 subtitle line are saved per list.
 
 ## Quotes

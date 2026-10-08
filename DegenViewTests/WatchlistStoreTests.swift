@@ -323,4 +323,19 @@ final class WatchlistStoreTests: XCTestCase {
 
         XCTAssertEqual(store.list(list.id), before)
     }
+
+    func testMovingSymbolsToASectionIsOneCommitAndSurvivesReload() throws {
+        let store = makeStore()
+        let list = try store.createWatchlist(name: "Crypto")
+        let ideas = try store.addSection(title: "Ideas", in: list.id)
+        for symbol in ["AAA", "BBB"] { try store.addInstrument(item(symbol), to: list.id) }
+        let ids = try XCTUnwrap(store.list(list.id)).instruments.map(\.id)
+
+        try store.moveInstruments(ids, toSection: ideas.id, in: list.id)
+
+        let reloaded = try XCTUnwrap(makeStore().list(list.id))
+        XCTAssertEqual(reloaded.instruments.map(\.instrument.symbol), ["AAA", "BBB"])
+        XCTAssertEqual(reloaded.owningSection(of: ids[0])?.id, ideas.id)
+        XCTAssertEqual(reloaded.owningSection(of: ids[1])?.id, ideas.id)
+    }
 }
