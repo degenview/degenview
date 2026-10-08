@@ -15,9 +15,7 @@ final class RecordingPineAlertChannel: PineAlertChannel, @unchecked Sendable {
     }
 
     func deliver(_ notification: PineAlertNotification) async throws {
-        lock.lock()
-        storage.append(notification)
-        lock.unlock()
+        lock.withLock { storage.append(notification) }
     }
 }
 

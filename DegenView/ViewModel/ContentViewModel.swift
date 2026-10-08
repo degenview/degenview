@@ -174,8 +174,10 @@ final class ContentViewModel: ObservableObject {
 
     init(
         tabID: UUID, api: BinanceAPIService = BinanceAPIService(),
-        savedViews: SavedViewStore = .shared, tabs: TabsStore = .shared
+        savedViews: SavedViewStore? = nil, tabs: TabsStore? = nil
     ) {
+        let savedViews = savedViews ?? .shared
+        let tabs = tabs ?? .shared
         self.tabID = tabID
         self.api = api
         self.tabs = tabs

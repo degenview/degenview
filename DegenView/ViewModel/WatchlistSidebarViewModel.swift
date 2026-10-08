@@ -20,12 +20,13 @@ final class WatchlistSidebarViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     init(
-        store: WatchlistStore = .shared, quotes: WatchlistQuoteBook = .shared,
-        coordinator: WatchlistQuoteCoordinator = .shared
+        store: WatchlistStore? = nil, quotes: WatchlistQuoteBook? = nil,
+        coordinator: WatchlistQuoteCoordinator? = nil
     ) {
+        let store = store ?? .shared
         self.store = store
-        self.quotes = quotes
-        self.coordinator = coordinator
+        self.quotes = quotes ?? .shared
+        self.coordinator = coordinator ?? .shared
         selectedID = store.resolvedSelection(nil)
     }
 

@@ -22,7 +22,8 @@ final class UnseenAlertsStore: ObservableObject {
     private var subscription: AnyCancellable?
 
     /// A first run has nothing to compare against, so history from before this build is not "new".
-    init(bus: AlertEventBus = .shared, database: AppDatabase = .shared, now: @escaping () -> Date = Date.init) {
+    init(bus: AlertEventBus? = nil, database: AppDatabase = .shared, now: @escaping () -> Date = Date.init) {
+        let bus = bus ?? .shared
         self.database = database
         self.now = now
         if let saved = database.setting(Date.self, key: Self.lastSeenKey) {

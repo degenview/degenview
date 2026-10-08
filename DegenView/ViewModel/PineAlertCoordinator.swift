@@ -15,7 +15,8 @@ final class PineAlertCoordinator {
     }
     private var attached: [WeakChart] = []
 
-    init(store: PineAlertStore = .shared, dispatcher: PineAlertDispatcher = PineAlertDispatcher()) {
+    init(store: PineAlertStore? = nil, dispatcher: PineAlertDispatcher = PineAlertDispatcher()) {
+        let store = store ?? .shared
         self.store = store
         self.dispatcher = dispatcher
         frequencyGuard = PineAlertFrequencyGuard(seeded: store.recentDedupeKeys())

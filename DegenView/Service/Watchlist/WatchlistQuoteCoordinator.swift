@@ -75,15 +75,15 @@ final class WatchlistQuoteCoordinator {
     private var isPolling = false
 
     init(
-        provider: any WatchlistQuoteProvider = LiveWatchlistQuoteProvider.shared,
-        book: WatchlistQuoteBook = .shared,
+        provider: (any WatchlistQuoteProvider)? = nil,
+        book: WatchlistQuoteBook? = nil,
         coinbase: any CoinbaseTickSource = CoinbaseWebSocketService(),
         clock: @escaping () -> Date = Date.init,
         runsLoop: Bool = true,
         configuration: Configuration = Configuration()
     ) {
-        self.provider = provider
-        self.book = book
+        self.provider = provider ?? LiveWatchlistQuoteProvider.shared
+        self.book = book ?? .shared
         self.coinbase = coinbase
         self.clock = clock
         self.runsLoop = runsLoop

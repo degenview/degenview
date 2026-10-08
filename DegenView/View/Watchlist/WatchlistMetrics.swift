@@ -31,7 +31,7 @@ enum WatchlistMetrics {
 
 extension View {
     /// The panel's standard left and right content insets.
-    func watchlistHorizontalInsets() -> some View {
+    nonisolated func watchlistHorizontalInsets() -> some View {
         padding(.leading, WatchlistMetrics.leadingInset).padding(.trailing, WatchlistMetrics.trailingInset)
     }
 }

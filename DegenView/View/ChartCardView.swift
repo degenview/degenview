@@ -49,7 +49,6 @@ struct ChartCardView: View {
     @StateObject private var portfolioStore = PortfolioStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
-    @ViewBuilder
     /// Over a ruler's edge or corner the cursor says what a drag would do.
     private var plotCursor: PlotCursor {
         if viewModel.hoveredBrushID != nil { return .move }
