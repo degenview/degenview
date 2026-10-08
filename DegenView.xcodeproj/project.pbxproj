@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		DB37045B73B69BEB9BEDFF2F /* WatchlistListMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1E16FBB333DCDCE2EB91B4D /* WatchlistListMetricsTests.swift */; };
+		BD58DB60F8F6B4A7669E8D14 /* WatchlistFlagGutter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F89BC00A23CABDE8F7D66127 /* WatchlistFlagGutter.swift */; };
 		A348E6B512F15579A1DF7FCC /* WatchlistFlagShapeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */; };
 		CED0F9CA6D6437ADBBF77FB2 /* WatchlistFlag+Swatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */; };
 		14BB0F55653CEFE2B2219F7A /* WatchlistFlagMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */; };
@@ -945,6 +947,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F1E16FBB333DCDCE2EB91B4D /* WatchlistListMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistListMetricsTests.swift; sourceTree = "<group>"; };
+		F89BC00A23CABDE8F7D66127 /* WatchlistFlagGutter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagGutter.swift; sourceTree = "<group>"; };
 		5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagShapeTests.swift; sourceTree = "<group>"; };
 		E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistFlag+Swatch.swift"; sourceTree = "<group>"; };
 		EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagMark.swift; sourceTree = "<group>"; };
@@ -2218,6 +2222,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				F1E16FBB333DCDCE2EB91B4D /* WatchlistListMetricsTests.swift */,
 				5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */,
 				4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */,
 				17FAB2AFABC1BDCDDE689445 /* FocusedChartTests.swift */,
@@ -2748,6 +2753,7 @@
 		94BF126227BB45E4039C1852 /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				F89BC00A23CABDE8F7D66127 /* WatchlistFlagGutter.swift */,
 				E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */,
 				EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */,
 				FCC7F6B4CD5DBC94C78702BE /* WatchlistFlagShape.swift */,
@@ -2940,6 +2946,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BD58DB60F8F6B4A7669E8D14 /* WatchlistFlagGutter.swift in Sources */,
 				CED0F9CA6D6437ADBBF77FB2 /* WatchlistFlag+Swatch.swift in Sources */,
 				14BB0F55653CEFE2B2219F7A /* WatchlistFlagMark.swift in Sources */,
 				33758831E17E3A92969071B6 /* WatchlistFlagShape.swift in Sources */,
@@ -3706,6 +3713,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				DB37045B73B69BEB9BEDFF2F /* WatchlistListMetricsTests.swift in Sources */,
 				A348E6B512F15579A1DF7FCC /* WatchlistFlagShapeTests.swift in Sources */,
 				95DD51A6B749272DF5EECB5C /* WatchlistRowMoveTests.swift in Sources */,
 				7F38CAB070F5D60BF61D80CB /* FocusedChartTests.swift in Sources */,

@@ -244,10 +244,13 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   panel uses `WatchlistMetrics.leadingInset` (8) and `trailingInset` (12), so logos, section titles and column heads share one left edge and
   values and chevrons one right edge. Headings and the empty-section placeholder are not selectable
   (`.selectionDisabled()`); only instrument rows carry a `.tag`, and it is the entry's `UUID`
-- A flag is a small bookmark on its side (`WatchlistFlagMark`) drawn in the row's leading gutter, left of the logo:
-  never inline in the name line, or it pushes the logo. Symbol rows therefore get `listRowInsets(leading: 0)` and
-  add `WatchlistMetrics.leadingInset` themselves; headings and placeholders keep the list's inset, so every visible left
-  edge is still `leadingInset`. The flag is a background so the logo, which starts a few points inside it, covers its flat end. Menu swatches are non-template `NSImage`s (`WatchlistFlag.swatch`) so AppKit keeps the colour
+- A flag is a small bookmark on its side (`WatchlistFlagMark`), drawn as the row's `listRowBackground`
+  (`WatchlistFlagGutter`) so it spans the full row and touches the panel's left border; never inline in the row
+  content, which starts inside the list's own side padding (8pt left, 9pt right, `WatchlistMetrics.listCell*`,
+  checked by `WatchlistListMetricsTests` against a hosted sidebar). Rows get `rowLeadingInset`/`rowTrailingInset`
+  so content lands on `leadingInset` (8) / `trailingInset` (12): logos, section titles and column heads share the
+  left edge, values and column titles the right. The logo starts 3pt inside the bookmark and covers its end. Menu
+  swatches are non-template `NSImage`s (`WatchlistFlag.swatch`) so AppKit keeps the colour
 - Watchlist reordering is the List's native `ForEach.onMove` over the flat rows (off while sorted or filtered).
   `WatchlistLayoutEngine.resolveMove` maps the drop onto stored entries and `WatchlistStore.moveEntries` writes
   it once. Do not add SwiftUI `onDrag`/`onDrop`/`onTapGesture` to rows: layered over the List's own table

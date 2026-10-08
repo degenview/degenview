@@ -157,8 +157,8 @@ struct WatchlistSidebar: View {
                 rowView(row, list: list, isFirst: row.id == rows.first?.id)
                     .listRowInsets(
                         EdgeInsets(
-                            top: 1, leading: leadingInset(for: row), bottom: 1,
-                            trailing: WatchlistMetrics.trailingInset)
+                            top: 1, leading: WatchlistMetrics.rowLeadingInset, bottom: 1,
+                            trailing: WatchlistMetrics.rowTrailingInset)
                     )
                     .listRowSeparator(.hidden)
             }
@@ -198,6 +198,8 @@ struct WatchlistSidebar: View {
                 display: list.display, menu: { menu(for: item) }
             )
             .tag(item.id)
+            // The flag lives in the row's full-width background so it can touch the panel's edge.
+            .listRowBackground(store.flag(for: item.instrument).map { WatchlistFlagGutter(flag: $0) })
             .contextMenu { menu(for: item) }
             .accessibilityAction(named: "Add as New Chart") { actions.addChart(item) }
             .accessibilityAction(named: "Remove from Watchlist") { viewModel.remove(item) }
@@ -206,13 +208,6 @@ struct WatchlistSidebar: View {
             WatchlistEmptySectionRow()
                 .selectionDisabled()
         }
-    }
-
-    /// Symbol rows take no leading inset from the list and add the standard one themselves, so a flag can be drawn
-    /// in that gutter inside the row. Headings and placeholders use the list's inset; every visible edge is the same.
-    private func leadingInset(for row: WatchlistLayoutEngine.Row) -> CGFloat {
-        if case .instrument = row { return 0 }
-        return WatchlistMetrics.leadingInset
     }
 
     private func toggle(_ section: WatchlistSection) {

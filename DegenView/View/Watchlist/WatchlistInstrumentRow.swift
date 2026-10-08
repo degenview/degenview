@@ -42,17 +42,7 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
             }
         }
         .padding(.vertical, 2)
-        // The row owns its leading inset (the list gives it none), so the flag can be drawn in that gutter,
-        // inside the row's own bounds, without moving the logo. It is a background, so the logo, which starts
-        // a few points inside the bookmark, covers its flat end.
-        .padding(.leading, WatchlistMetrics.leadingInset)
         .opacity(isDimmed ? 0.6 : 1)
-        .background(alignment: .leading) {
-            if let flag {
-                WatchlistFlagMark(flag: flag)
-                    .allowsHitTesting(false)
-            }
-        }
         .contentShape(Rectangle())
         .overlay(alignment: .trailing) {
             if isHovering {
