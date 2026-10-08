@@ -19,8 +19,6 @@ work. Items are grouped by area rather than priority.
 
 ## Watchlists and Market Data
 
-- [ ] **Support multiple favorites lists.** Let users create, rename, reorder, and delete
-  separate lists of favorite markets or symbols.
 - [ ] **Support Coinbase WebSocket feeds.** Add live Coinbase market-data streams behind
   the existing data-source abstraction, including connection lifecycle and reconnect
   handling.
