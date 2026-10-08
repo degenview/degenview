@@ -30,6 +30,7 @@ struct ContentView: View {
 
     @State private var showAddSheet = false
     @State private var showAddWatchlistSymbolSheet = false
+    @State private var newListFor: WatchlistInstrument?
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var watchlists = WatchlistStore.shared
     @StateObject private var watchlistSidebar = WatchlistSidebarViewModel()
@@ -145,6 +146,7 @@ struct ContentView: View {
             SavedLayoutPickerSheet(layout: contentViewModel.layout, store: contentViewModel.layout.store)
         }
         .focusedSceneValue(\.savedLayout, contentViewModel.layout)
+        .watchlistNewListPrompt(for: $newListFor)
         .sheet(isPresented: $showAddSheet) {
             AddTickerSheet(
                 onAddPortfolio: { config in
@@ -695,15 +697,9 @@ struct ContentView: View {
                 }
             },
             isFavorite: watchlists.isFavorite(InstrumentID(source: vm.source, symbol: vm.ticker)),
-            onToggleFavorite: {
-                try? watchlists.toggleFavorite(
-                    WatchlistInstrument(
-                        instrument: InstrumentID(source: vm.source, symbol: vm.ticker),
-                        name: vm.title,
-                        label: favoriteTicker(for: vm),
-                        displayName: vm.displayName,
-                        pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries))
-            },
+            onToggleFavorite: { try? watchlists.toggleFavorite(watchlistInstrument(for: vm)) },
+            watchlistItem: watchlistInstrument(for: vm),
+            onNewWatchlist: { newListFor = $0 },
             onZoomRegion: {
                 if vm.isBitcoinPowerLaw {
                     contentViewModel.registerPowerLawZoomRegion($0, for: vm)
@@ -753,6 +749,25 @@ struct ContentView: View {
         .background {
             PaperQuoteFeed(viewModel: vm, quote: vm.liveQuote, store: paperTrading)
         }
+        // The chart a watchlist click goes to. Only drawn when there is more than one card to tell apart,
+        // and it never takes a click.
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                .opacity(contentViewModel.isFocused(vm) ? 1 : 0)
+                .allowsHitTesting(false)
+        }
+        .simultaneousGesture(TapGesture().onEnded { contentViewModel.focusChart(vm.chartID) })
+    }
+
+    /// This chart's market as a watchlist entry, labelled like its card header.
+    private func watchlistInstrument(for vm: ChartViewModel) -> WatchlistInstrument {
+        WatchlistInstrument(
+            instrument: InstrumentID(source: vm.source, symbol: vm.ticker),
+            name: vm.title,
+            label: favoriteTicker(for: vm),
+            displayName: vm.displayName,
+            pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries)
     }
 
     private func favoriteTicker(for vm: ChartViewModel) -> String {

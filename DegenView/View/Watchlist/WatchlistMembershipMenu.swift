@@ -5,7 +5,8 @@ import SwiftUI
 struct WatchlistMembershipMenu: View {
     @ObservedObject var store: WatchlistStore
     let item: WatchlistInstrument
-    let onNewWatchlist: (WatchlistInstrument) -> Void
+    /// Nil hides "New Watchlist…", for screens that cannot ask for a name.
+    var onNewWatchlist: ((WatchlistInstrument) -> Void)?
 
     var body: some View {
         Menu("Add to Watchlist") {
@@ -22,8 +23,10 @@ struct WatchlistMembershipMenu: View {
                             }
                         }))
             }
-            Divider()
-            Button("New Watchlist…") { onNewWatchlist(item) }
+            if let onNewWatchlist {
+                Divider()
+                Button("New Watchlist…") { onNewWatchlist(item) }
+            }
         }
         .disabled(store.loadFailed)
     }

@@ -10,6 +10,9 @@ struct ChartCardView: View {
     let onRetry: () -> Void
     let isFavorite: Bool
     let onToggleFavorite: () -> Void
+    /// This card's market as a watchlist entry. With it, right-clicking the star offers every list.
+    var watchlistItem: WatchlistInstrument? = nil
+    var onNewWatchlist: ((WatchlistInstrument) -> Void)? = nil
     /// Hands the card's backing `NSView` to the scroll-zoom monitor.
     let onZoomRegion: (NSView) -> Void
     /// Hands the Y-axis gutter's `NSView` to the price-zoom drag monitor.
@@ -202,7 +205,12 @@ struct ChartCardView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isFavorite ? "Remove from Favorites" : "Add to Favorites")
-            .help(isFavorite ? "Remove from Favorites" : "Add to Favorites")
+            .help(isFavorite ? "Click to remove from Favorites. Right-click for all watchlists." : "Click to add to Favorites. Right-click for all watchlists.")
+            .contextMenu {
+                if let watchlistItem {
+                    WatchlistMembershipMenu(store: .shared, item: watchlistItem, onNewWatchlist: onNewWatchlist)
+                }
+            }
 
             if !viewModel.source.isPredictionMarket {
                 Button {
