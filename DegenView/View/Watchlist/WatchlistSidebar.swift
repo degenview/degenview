@@ -8,7 +8,7 @@ struct WatchlistSidebar: View {
     /// Observed so a value-sorted list reorders (at most once a second) as quotes arrive.
     @ObservedObject var quotes: WatchlistQuoteBook
     let actions: WatchlistInstrumentActions
-    /// Prices are only fetched while the window can be seen.
+    /// Prices are only fetched while the sidebar is open and the window can be seen.
     let isWindowVisible: Bool
     let onAddSymbol: () -> Void
 
@@ -53,9 +53,9 @@ struct WatchlistSidebar: View {
                     listNames: store.lists(containing: item.instrument).map(\.name))
             }
         }
-        .frame(width: viewModel.sidebarWidth)
+        // The container sizes it; the divider on its leading edge resizes it.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.bar)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.sidebarWidth)
         .onAppear { viewModel.syncQuotes(isWindowVisible: isWindowVisible) }
         .onDisappear { viewModel.stopQuotes() }
         .onChange(of: isWindowVisible) { viewModel.syncQuotes(isWindowVisible: isWindowVisible) }
