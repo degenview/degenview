@@ -6,8 +6,8 @@ import SwiftUI
 struct WatchlistFlagShape: Shape {
     var tailPointsRight = true
     /// How deep the V is cut into the tail.
-    var notchDepth: CGFloat = 3.5
-    var cornerRadius: CGFloat = 2
+    var notchDepth: CGFloat = 2.5
+    var cornerRadius: CGFloat = 1.5
 
     func path(in rect: CGRect) -> Path {
         let width = rect.width

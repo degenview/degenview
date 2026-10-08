@@ -23,10 +23,10 @@ enum WatchlistMetrics {
     /// The inset to give a list row so its content ends at `trailingInset`.
     static var rowTrailingInset: CGFloat { max(0, trailingInset - listCellTrailing) }
 
-    /// A flag's size. It is drawn from x = 0, touching the panel's left edge, behind the logo, which begins at
-    /// `leadingInset` and so covers the end of the bookmark by a few points. It takes no layout space, so a
-    /// flagged row's logo and text sit exactly where an unflagged row's do.
-    static let flagMarkSize = CGSize(width: 11, height: 14)
+    /// A flag's size. It is drawn from x = 0, touching the panel's left edge, and is narrower than `leadingInset`
+    /// so it ends short of the asset logo with a small gap. It takes no layout space, so a flagged row's logo and
+    /// text sit exactly where an unflagged row's do.
+    static let flagMarkSize = CGSize(width: 6, height: 14)
 }
 
 extension View {

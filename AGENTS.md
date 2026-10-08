@@ -249,7 +249,7 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   content, which starts inside the list's own side padding (8pt left, 9pt right, `WatchlistMetrics.listCell*`,
   checked by `WatchlistListMetricsTests` against a hosted sidebar). Rows get `rowLeadingInset`/`rowTrailingInset`
   so content lands on `leadingInset` (8) / `trailingInset` (12): logos, section titles and column heads share the
-  left edge, values and column titles the right. The logo starts 3pt inside the bookmark and covers its end. Menu
+  left edge, values and column titles the right. The bookmark is 6pt wide, so it ends 2pt short of the logo. Menu
   swatches are non-template `NSImage`s (`WatchlistFlag.swatch`) so AppKit keeps the colour
 - Watchlist reordering is the List's native `ForEach.onMove` over the flat rows (off while sorted or filtered).
   `WatchlistLayoutEngine.resolveMove` maps the drop onto stored entries and `WatchlistStore.moveEntries` writes
