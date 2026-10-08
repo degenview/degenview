@@ -478,6 +478,33 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(input.options, [.string("size.tiny"), .string("size.small"), .string("size.large")])
     }
 
+    func testBoxExtendAndTableCellAlignmentAndSizeAreStoredAndSettable() throws {
+        let program = compile(
+            """
+            var box b = box.new(0, 10.0, 3, 5.0, extend = extend.right)
+            var table t = table.new(position.top_right, 2, 1)
+            table.cell(t, 0, 0, "left top", width = 30, height = 10, text_halign = text.align_left,
+                 text_valign = text.align_top)
+            table.cell(t, 1, 0, "plain")
+            if bar_index == 1
+                box.set_extend(b, extend.both)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let first = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(first.boxes.first?.extend, .right)
+        let cells = try XCTUnwrap(first.tables.first?.cells)
+        let styled = try XCTUnwrap(cells.first { $0.column == 0 })
+        XCTAssertEqual(
+            [styled.textHorizontalAlign, styled.textVerticalAlign], [.left, .top])
+        XCTAssertEqual([styled.width, styled.height], [30, 10])
+        let plain = try XCTUnwrap(cells.first { $0.column == 1 })
+        XCTAssertEqual(
+            [plain.textHorizontalAlign, plain.textVerticalAlign], [.center, .center])
+        XCTAssertEqual([plain.width, plain.height], [0, 0])
+        let later = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(later.boxes.first?.extend, .both)
+    }
+
     func testBoxTextBorderStyleAndLabelAlignmentAreStoredAndSettable() throws {
         let program = compile(
             """

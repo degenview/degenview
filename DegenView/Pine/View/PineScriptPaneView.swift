@@ -10,6 +10,8 @@ struct PineScriptPaneView: View {
     let candles: [KlineData]
     var height: CGFloat
     var style: ChartStyle = .default
+    /// The price chart's reserved slots right of the last candle, so bar slots still line up.
+    var futureSlots = 0
 
     var body: some View {
         GeometryReader { geometry in
@@ -19,7 +21,8 @@ struct PineScriptPaneView: View {
                 priceRange: script.valueRange(padding: style.pricePadding),
                 style: style,
                 scale: .number,
-                yAxisDecimalPlaces: nil
+                yAxisDecimalPlaces: nil,
+                futureSlots: futureSlots
             )
 
             Canvas { context, size in

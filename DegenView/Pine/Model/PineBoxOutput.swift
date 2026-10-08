@@ -14,6 +14,8 @@ struct PineBoxOutput: Sendable, Identifiable, Equatable {
             && PineDrawingCoordinate.isKnown(top) && PineDrawingCoordinate.isKnown(bottom)
     }
     var borderStyle: PineLineStyle = .solid
+    /// `extend.*`: the box runs on to the plot's left and/or right edge.
+    var extend: PineLineExtend = .none
     /// Text inside the box (`text =` or `box.set_text`). Wrap, font family and formatting are not modelled.
     var text = ""
     var textColor: UInt32 = 0x0000_00ff

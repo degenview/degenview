@@ -43,6 +43,66 @@ final class PineSecurityDataTests: XCTestCase {
         }
     }
 
+    // MARK: - Lower timeframes
+
+    private var chartKey: String { chart.tickerID }
+
+    func testLowerTimeframeServesTheIntrabarsOfEachChartBar() throws {
+        let minutes = (0..<10).map { candle(first + Double($0) * 60, close: Double($0 + 1)) }
+        let data = [PineSecurityKey(symbol: chartKey, interval: 60): minutes]
+        let result = try run(
+            """
+            [o, c] = request.security_lower_tf(syminfo.tickerid, "1", [open, close])
+            plot(array.size(c))
+            plot(array.sum(c))
+            plot(array.get(c, array.size(c) - 1))
+            """, bars: bars(2, spacing: 300), data: data)
+        XCTAssertEqual(result[0], [5, 5])
+        XCTAssertEqual(result[1], [15, 40])
+        XCTAssertEqual(result[2], [5, 10])
+    }
+
+    func testTheExpressionKeepsItsStateAcrossIntrabarsAndChartBars() throws {
+        let minutes = (0..<10).map { candle(first + Double($0) * 60, close: Double($0 + 1)) }
+        let data = [PineSecurityKey(symbol: chartKey, interval: 60): minutes]
+        let result = try run(
+            """
+            running = request.security_lower_tf(syminfo.tickerid, "1", ta.cum(close))
+            plot(array.get(running, array.size(running) - 1))
+            """, bars: bars(2, spacing: 300), data: data)
+        XCTAssertEqual(result[0], [15, 55], "a running total over all ten intrabars, not restarted per chart bar")
+    }
+
+    func testAChartBarWithoutIntrabarsGetsEmptyArrays() throws {
+        let minutes = (0..<5).map { candle(first + Double($0) * 60, close: Double($0 + 1)) }
+        let data = [PineSecurityKey(symbol: chartKey, interval: 60): minutes]
+        let result = try run(
+            """
+            c = request.security_lower_tf(syminfo.tickerid, "1", close)
+            plot(array.size(c))
+            """, bars: bars(3, spacing: 300), data: data)
+        XCTAssertEqual(result[0], [5, 0, 0])
+    }
+
+    func testWithoutAProviderLowerTimeframeArraysAreEmpty() throws {
+        let result = try run(
+            """
+            c = request.security_lower_tf(syminfo.tickerid, "1", close)
+            plot(array.size(c))
+            """, bars: bars(2, spacing: 300))
+        XCTAssertEqual(result[0], [0, 0])
+    }
+
+    func testTheIntrabarBaseIsTheCoarsestSizeThatDividesTheTimeframe() {
+        let expected: [(TimeInterval, ReplayInterval?)] = [
+            (60, .oneMinute), (180, .oneMinute), (720, .oneMinute), (900, .fifteenMinutes),
+            (2_880, .oneMinute), (3_600, .oneHour), (14_400, .oneHour), (86_400, .oneDay), (30, nil),
+        ]
+        for (seconds, base) in expected {
+            XCTAssertEqual(PineIntrabarSeries.base(forSeconds: seconds), base, "\(seconds) s")
+        }
+    }
+
     // MARK: - Another symbol
 
     func testAnotherSymbolOnTheChartsTimeframeReadsItsCloses() throws {

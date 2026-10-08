@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		08140D720747DCD75D40D0D8 /* PineIntrabarSeries.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36667BFF1FD6A75C3102502B /* PineIntrabarSeries.swift */; };
 		012FA59A01E37DB7199602D6 /* PineCompletionTrigger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1575126347F7C3A1C0C095DF /* PineCompletionTrigger.swift */; };
 		015CD0991A7E2329466DC44A /* WatchlistFlag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59809A0C4A07DAEDFFF85644 /* WatchlistFlag.swift */; };
 		01D959CC3970F1205766CA12 /* PineCompletionPerformanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55D0413EACE0A1782DDF6AB7 /* PineCompletionPerformanceTests.swift */; };
@@ -959,6 +960,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		36667BFF1FD6A75C3102502B /* PineIntrabarSeries.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIntrabarSeries.swift; sourceTree = "<group>"; };
 		01A8D5472529B698EC7D3831 /* PineCompletionInsertion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionInsertion.swift; sourceTree = "<group>"; };
 		0569375BA039C3EE72341425 /* PineCompletionKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineCompletionKind.swift; sourceTree = "<group>"; };
 		0589A63EA219E610DD0BF70B /* WatchlistDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDisplaySettings.swift; sourceTree = "<group>"; };
@@ -1961,6 +1963,7 @@
 				SM0000000000000000000101 /* ScriptStore.swift */,
 				D74FA683164311453A6D0F47 /* PineSecurityFeed.swift */,
 				D73CCA7806794DB3F953B793 /* PineFetchedSecurityData.swift */,
+				36667BFF1FD6A75C3102502B /* PineIntrabarSeries.swift */,
 				D7B5A98B99DD955E3B4F5062 /* PineSecurityTarget.swift */,
 				D754B9A44B0BB6622A3A37BA /* PineLibraryRegistry.swift */,
 				SM0000000000000000000108 /* ScriptNameValidator.swift */,
@@ -3064,6 +3067,7 @@
 				SM0000000000000000000001 /* ScriptStore.swift in Sources */,
 				D7133D1DACEFA57590D5D984 /* PineSecurityFeed.swift in Sources */,
 				D76E43AB93BE9E4F07ADD553 /* PineFetchedSecurityData.swift in Sources */,
+				08140D720747DCD75D40D0D8 /* PineIntrabarSeries.swift in Sources */,
 				D7CA027EDBEDED1FF507C0B6 /* PineSecurityTarget.swift in Sources */,
 				D73F2B29001FA02E053B3F02 /* PineLibraryRegistry.swift in Sources */,
 				SM0000000000000000000008 /* ScriptNameValidator.swift in Sources */,

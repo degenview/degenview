@@ -8,8 +8,10 @@ extension PineChartLayer {
     func drawBoxes(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
         for box in pine.boxes where box.isComplete {
-            let left = x(forBar: box.left, plot: plot, slot: slot)
-            let right = x(forBar: box.right, plot: plot, slot: slot)
+            var left = x(forBar: box.left, plot: plot, slot: slot)
+            var right = x(forBar: box.right, plot: plot, slot: slot)
+            if box.extend.extendsLeft { left = min(left, right) - plot.plotRect.width * 2 }
+            if box.extend.extendsRight { right = max(left, right) + plot.plotRect.width * 2 }
             let top = plot.y(for: box.top)
             let bottom = plot.y(for: box.bottom)
             let rect = CGRect(

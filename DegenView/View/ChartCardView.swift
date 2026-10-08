@@ -106,7 +106,8 @@ struct ChartCardView: View {
                             ForEach(Array(panes.enumerated()), id: \.offset) { _, output in
                                 PineScriptPaneView(
                                     pine: output, candles: viewModel.visibleKlines,
-                                    height: viewModel.pinePaneHeight(forChartHeight: plotHeight, count: panes.count))
+                                    height: viewModel.pinePaneHeight(forChartHeight: plotHeight, count: panes.count),
+                                    futureSlots: viewModel.pineFutureSlots(of: viewModel.visiblePineOutputs))
                             }
                         }
                     }
