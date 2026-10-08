@@ -236,6 +236,7 @@ extension PineRuntimeSession {
                 "request.security_lower_tf only supports the chart's own symbol in this release.", call.range)
         }
         let seconds = values["timeframe"].textValue.flatMap(PineTime.seconds(ofTimeframe:))
+        let recentBars = max(0, values["calc_bars_count"].intValue ?? 0)
         let usable = seconds.map { $0 <= barSeconds } ?? false
         if !usable, barSeconds > 0, values["ignore_invalid_timeframe"] != .bool(true) {
             throw PineDiagnostic.error(
@@ -247,7 +248,15 @@ extension PineRuntimeSession {
             working.arrays[id] = items
             return .ref(.array, id)
         }
-        if let seconds, seconds < barSeconds, let candles = lowerTimeframeCandles(values["symbol"], seconds) {
+        // `calc_bars_count` limits the request to the newest chart bars: older ones get no intrabars.
+        let outsideWindow = recentBars > 0 && working.barIndex < lastBarIndex - recentBars + 1
+        if outsideWindow {
+            if case .tuple(let items, _) = expression { return .tuple(items.map { _ in array([]) }) }
+            return array([])
+        }
+        if let seconds, seconds < barSeconds,
+            let candles = lowerTimeframeCandles(values["symbol"], seconds, recentBars: recentBars)
+        {
             return try serveIntrabars(candles, seconds, expression, call, &context, array)
         }
         // The chart's own timeframe: each chart bar is its own single intrabar. A lower one has no data here.
@@ -265,11 +274,13 @@ extension PineRuntimeSession {
     }
 
     /// The provider's intrabar candles of the chart's own symbol at `seconds`, nil when it holds none.
-    private func lowerTimeframeCandles(_ symbolValue: PineRuntimeValue?, _ seconds: TimeInterval) -> [KlineData]? {
+    private func lowerTimeframeCandles(
+        _ symbolValue: PineRuntimeValue?, _ seconds: TimeInterval, recentBars: Int
+    ) -> [KlineData]? {
         if case .string(let text)? = symbolValue, !(text.isEmpty || text == symbol.tickerID) { return nil }
         // Not through `series(_:)`: that answers once per run, and a live provider tops its intrabars up.
-        guard let candles = securityData?.candles(for: PineSecurityKey(symbol: symbol.tickerID, interval: seconds)),
-            !candles.isEmpty
+        let key = PineSecurityKey(symbol: symbol.tickerID, interval: seconds, recentBars: recentBars)
+        guard let candles = securityData?.candles(for: key), !candles.isEmpty
         else { return nil }
         return candles
     }

@@ -4,6 +4,9 @@ import Foundation
 struct PineSecurityKey: Hashable, Sendable {
     var symbol: String
     var interval: TimeInterval
+    /// `calc_bars_count` of a `request.security_lower_tf` call: only the newest this many chart bars get
+    /// intrabars. 0 is every bar.
+    var recentBars = 0
 }
 
 /// Supplies the candles `request.security` reads from a series the chart does not carry: another symbol,

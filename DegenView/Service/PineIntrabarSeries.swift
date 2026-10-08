@@ -61,7 +61,12 @@ final class PineIntrabarSeries: PineSecurityDataProvider, @unchecked Sendable {
         for key in keys {
             guard let base = Self.base(forSeconds: key.interval), let size = base.seconds else { continue }
             let earliest = end.addingTimeInterval(-size * Double(Self.maximumCandles))
-            wanted[base] = max(first.openTime, earliest)
+            var start = max(first.openTime, earliest)
+            // `calc_bars_count`: nothing is read before the newest chart bars, so nothing is fetched for them.
+            if key.recentBars > 0 {
+                start = max(start, end.addingTimeInterval(-spacing * Double(key.recentBars)))
+            }
+            wanted[base] = wanted[base].map { min($0, start) } ?? start
         }
         let fetched = await withTaskGroup(of: Fetched.self) { group in
             for (base, start) in wanted {

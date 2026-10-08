@@ -11,9 +11,10 @@ extension PineCompiler {
     private static let commonArguments: Set<String> = [
         "title", "shorttitle", "overlay", "format", "precision", "max_bars_back",
         "max_lines_count", "max_labels_count", "max_boxes_count", "max_polylines_count",
-        // Accepted and ignored: drawings always paint above the candles in the app's own order, and
-        // request.* calls are never restricted to the "dynamic" contexts Pine requires a flag for.
-        "behind_chart", "explicit_plot_zorder", "dynamic_requests",
+        "behind_chart",
+        // Accepted and ignored: plots and drawings are painted in the app's own order, and request.*
+        // calls are never restricted to the "dynamic" contexts Pine requires a flag for.
+        "explicit_plot_zorder", "dynamic_requests",
         // Which price scale an overlay joins (left, right, none): the chart has one value axis.
         "scale",
     ]
@@ -108,6 +109,7 @@ extension PineCompiler {
         case ("max_labels_count", .int(let v)): metadata.maxLabelsCount = v
         case ("max_boxes_count", .int(let v)): metadata.maxBoxesCount = v
         case ("max_polylines_count", .int(let v)): metadata.maxPolylinesCount = v
+        case ("behind_chart", .bool(let v)): metadata.behindChart = v
         default: applyStrategySetting(name, value, &metadata)
         }
     }

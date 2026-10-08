@@ -280,7 +280,8 @@ final class PineRuntimeSession {
             polylines: working.polylines.values.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
-            strategy: isStrategy ? working.broker.report() : nil)
+            strategy: isStrategy ? working.broker.report() : nil,
+            behindChart: program.declaration.overlay && (program.declaration.behindChart ?? true))
     }
 
     // MARK: - Bookkeeping

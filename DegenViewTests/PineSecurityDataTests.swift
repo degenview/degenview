@@ -73,6 +73,17 @@ final class PineSecurityDataTests: XCTestCase {
         XCTAssertEqual(result[0], [15, 55], "a running total over all ten intrabars, not restarted per chart bar")
     }
 
+    func testCalcBarsCountLimitsIntrabarsToTheNewestChartBars() throws {
+        let minutes = (0..<15).map { candle(first + Double($0) * 60, close: Double($0 + 1)) }
+        let data = [PineSecurityKey(symbol: chartKey, interval: 60, recentBars: 2): minutes]
+        let result = try run(
+            """
+            c = request.security_lower_tf(syminfo.tickerid, "1", close, calc_bars_count = 2)
+            plot(array.size(c))
+            """, bars: bars(3, spacing: 300), data: data)
+        XCTAssertEqual(result[0], [0, 5, 5], "the oldest chart bar is outside the window")
+    }
+
     func testAChartBarWithoutIntrabarsGetsEmptyArrays() throws {
         let minutes = (0..<5).map { candle(first + Double($0) * 60, close: Double($0 + 1)) }
         let data = [PineSecurityKey(symbol: chartKey, interval: 60): minutes]
