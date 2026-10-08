@@ -6,7 +6,6 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
     @ObservedObject var cell: WatchlistQuoteCell
     let flag: WatchlistFlag?
     let display: WatchlistDisplaySettings
-    let isIndented: Bool
     @ViewBuilder let menu: () -> MenuContent
 
     @State private var iconURL: URL?
@@ -48,7 +47,6 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
                     .frame(width: column.width, alignment: .trailing)
             }
         }
-        .padding(.leading, isIndented ? 10 : 0)
         .padding(.vertical, 2)
         .opacity(isDimmed ? 0.6 : 1)
         .contentShape(Rectangle())
