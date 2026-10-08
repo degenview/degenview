@@ -165,6 +165,7 @@ extension PineRuntimeSession {
                 borderWidth: b["border_width"].intValue ?? 1,
                 backgroundColor: b["bgcolor"].colorValue(fallback: Self.defaultColor),
                 borderStyle: .parse(b["border_style"].textValue, absent: .solid),
+                extend: .parse(b["extend"].textValue, absent: .none),
                 text: b["text"].textValue ?? "",
                 textColor: b["text_color"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 textSize: .parse(b["text_size"].textValue, absent: .normal),
@@ -233,7 +234,10 @@ extension PineRuntimeSession {
                 column: column, row: row, text: b["text"].textValue ?? "",
                 textColor: b["text_color"].colorValue(fallback: Self.opaqueBlack) ?? 0,
                 backgroundColor: b["bgcolor"].colorValue(fallback: nil),
-                textSize: .parse(b["text_size"].textValue, absent: .normal)))
+                textSize: .parse(b["text_size"].textValue, absent: .normal),
+                textHorizontalAlign: .parse(b["text_halign"].textValue, absent: .center),
+                textVerticalAlign: .parse(b["text_valign"].textValue, absent: .center),
+                width: max(0, b["width"]?.number ?? 0), height: max(0, b["height"]?.number ?? 0)))
         working.tables[id] = table
         return .void
     }
@@ -495,6 +499,7 @@ extension PineRuntimeSession {
         case "set_border_color": box.borderColor = Optional(a).colorValue(fallback: nil)
         case "set_border_width": box.borderWidth = a.intValue ?? box.borderWidth
         case "set_border_style": box.borderStyle = .parse(a.textValue, absent: box.borderStyle)
+        case "set_extend": box.extend = PineLineExtend(pineName: a.textValue) ?? box.extend
         case "set_text": box.text = a.textValue ?? ""
         case "set_text_color": box.textColor = Optional(a).colorValue(fallback: nil) ?? 0
         case "set_text_size": box.textSize = .parse(a.textValue, absent: box.textSize)

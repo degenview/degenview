@@ -46,7 +46,8 @@ struct CandleChartView: View {
                 yZoom: yZoom,
                 scale: .currency,
                 yAxisDecimalPlaces: yAxisDecimalPlaces,
-                style: style
+                style: style,
+                scriptExtent: PineChartLayer.overlayExtent(of: pineOutputs, candles: candles, style: style)
             )
 
             let scripts = pineOutputs.map { PineChartLayer(pine: $0, candles: candles, style: style) }

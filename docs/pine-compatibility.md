@@ -297,9 +297,15 @@ row) → `PineAlertDispatcher` (channels).
   (`NSE:NIFTY`, a 4-hour candle) has no data. The fetch gives up after 8 s and uses what arrived.
 - A collection or object an expression returns (`request.security(…, array.from(a, b))`) is copied into the
   chart's state; handles inside a returned map or matrix, and drawing handles, become `na`.
-- **`request.security_lower_tf`**: at the chart's own timeframe each chart bar is its own single intrabar, so
-  it returns one-element arrays (a tuple expression a tuple of them); at a shorter timeframe there is no
-  intrabar data and it returns empty arrays; a longer or malformed timeframe is `PINE4021` unless the script
+- **`request.security_lower_tf`**: the expression runs on every intrabar of the chart bar, in a state of its own,
+  so a `ta.*` call in it sees the intrabar series. The intrabars are the chart's own symbol at that timeframe,
+  fetched when the script is built (`PineSecurityFeed`, `PineIntrabarSeries`) from the finest replay candle size
+  that divides it (12 minutes from 1-minute candles, 4 hours from 1-hour ones), folded to the requested length,
+  over the chart's span but at most the newest 60,000 base candles. Binance, Coinbase and the US exchanges
+  (Alpaca) have them; the chart's refresh tops them up, so the forming bar keeps its intrabars. A source
+  without them (CoinGecko, DEX pairs, prediction markets), or a fetch that fails or takes over 30 s, leaves
+  every array empty, which is what Pine returns for a timeframe it cannot serve. At the chart's own timeframe
+  each chart bar is its own single intrabar. A longer or malformed timeframe is `PINE4021` unless the script
   passes `ignore_invalid_timeframe`. Every other `request.*` function is `PINE9003` at compile time.
 
 ### Technical analysis and library functions
@@ -325,7 +331,7 @@ row) → `PineAlertDispatcher` (channels).
 - Every `label.style_*`: bubbles with a pointer (`label_up/down/left/right` and the four `label_lower/upper_
   left/right` corners), `label_center`, `circle`/`square`/`diamond` shapes holding the text, the glyph styles
   `cross`, `xcross`, `flag`, `triangleup/down`, `arrowup/down`, `none` and `text_outline`.
-- Boxes take `text`, `text_size`, `text_color`, `text_halign/valign` and `border_style`, with `box.set_*` for each;
+- Boxes take `text`, `text_size`, `text_color`, `text_halign/valign`, `border_style` and `extend`, with `box.set_*` for each;
   lines draw `line.style_arrow_left/right/both` heads; labels keep `textalign` / `label.set_textalign`.
 - Drawings made from points: `line.new(first_point, second_point, …)`, `label.new(point, …)`,
   `box.new(top_left, bottom_right, …)`, `line.set_first_point/set_second_point`, `label.set_point`,
@@ -399,9 +405,9 @@ the corpus run (below) only shows that scripts compile and run.
 | `lookahead_on` | Always the developing bar; never looks ahead. | Equal to Pine for the `expr[1]` idiom. For an expression that reads the current higher-timeframe bar Pine returns the final bar on earlier chart bars of the bucket (it leaks the future); this engine does not. | No |
 | `gaps_on` | `na` except on the chart bar where a new value arrives. | | No |
 | Higher-timeframe data | Built by folding the chart's own bars (UTC calendar; weeks start Monday; months, quarters and years follow the calendar), after the candles the app fetched from before the chart's first bar (up to 300 beyond the chart's span, fewer if the source has less). | If that fetch fails, the series is only as deep as the chart's history, so a 1,000-bar chart yields few daily, weekly or monthly bars and indicators with a long warm-up show `na` for a long time. The fetched history is a snapshot taken when the script is built, and it comes from the data source's own candles, which can differ slightly from candles folded from the chart's bars. A chart with missing bars gives incomplete higher-timeframe bars. TradingView uses the provider's own higher-timeframe history. | No |
-| `request.security` arguments | `symbol`, `timeframe`, `expression`, `gaps`, `lookahead`, `ignore_invalid_symbol`, `ignore_invalid_timeframe`. | `currency` and `calc_bars_count` are accepted and ignored. The chart's own symbol serves timeframes at least as long as the chart's; another symbol serves any of the app's candle sizes the data sources have (see the app's provider above), as a snapshot taken when the script is built, which does not tick: a realtime bar reads the last candle fetched. `request.security_lower_tf` is still chart-symbol only. | n/a |
+| `request.security` arguments | `symbol`, `timeframe`, `expression`, `gaps`, `lookahead`, `ignore_invalid_symbol`, `ignore_invalid_timeframe`. | `currency` and `calc_bars_count` are accepted and ignored. The chart's own symbol serves timeframes at least as long as the chart's; another symbol serves any of the app's candle sizes the data sources have (see the app's provider above), as a snapshot taken when the script is built, which does not tick: a realtime bar reads the last candle fetched. `request.security_lower_tf` is chart-symbol only. | n/a |
 | Globals inside the expression | Inputs and constants are readable. | A global *series* is not recomputed on the higher timeframe, and `myVar[1]` of a main variable is `na` there. Pine re-evaluates what the expression depends on in the other context. | No |
-| `request.security_lower_tf` | One-element arrays at the chart's own timeframe; empty arrays at a shorter one. | There is no intrabar data, so scripts that rely on it (delta, intrabar volume profile) run but show nothing for it. Pine returns empty arrays only when a timeframe cannot be served; whether it accepts the chart's own timeframe (here: yes) is an assumption. | Partly (the empty result is Pine's documented behaviour for an unserved timeframe) |
+| `request.security_lower_tf` | Intrabars from the data sources, as above; one-element arrays at the chart's own timeframe; empty arrays where there is no intrabar data. | The intrabars come from a fetch, not the exchange feed TradingView uses, so volume and the last intrabar of a forming bar can differ slightly; history is limited to the newest 60,000 base candles. A script that needs more than the chart's recent part sees empty arrays further back. Whether Pine accepts the chart's own timeframe (here: yes) is an assumption. | Partly |
 | `ta.*` definitions | `median`, `range`, `variance`, `dev`, `swma`, `cmo`, `cci`, `hma`, `highestbars`, `lowestbars`, `percentrank`, `correlation`, `vwap`, `dmi`, `sar`, `linreg` follow Pine's documented formulas. | Checked against an independent implementation of the formulas on a fixed fixture, not against TradingView: ties in `highestbars`/`lowestbars` take the most recent bar, `percentrank` counts the previous `length` values at or below the current one, `vwap` restarts at UTC midnight and uses the bar's own volume, `sar` follows the equivalent Pine code in the reference manual, `linreg(source, length, offset)` is `intercept + slope * (length - 1 - offset)` of the least-squares line (the one with a numpy cross-check). `sma` and a few older functions skip `na` inside a window; the new ones return `na` if any value in it is `na`. | No (formulas only) |
 | `str.format_time` | Unicode (ICU) date patterns, UTC by default. | Pine documents Java-style patterns; the common letters (`yyyy MM MMM dd HH hh mm ss SSS a EEE Z`) agree, rarer ones may not. An unknown zone name falls back to UTC. | No |
 | Conditions | `na` is false in `if`, `while`, `?:`, `not`, `and`, `or`. | Matches the v6 rule that a bool is never `na`; the runtime does not know a variable's declared type, so it cannot tell a bool `na` from a number `na` and rejects only numbers and strings. | Per the v6 manual |
@@ -419,7 +425,7 @@ the corpus run (below) only shows that scripts compile and run.
 | Maps | Insertion-ordered; a whole float and the int of the same value are one key; value and key types are not enforced. `for k in map` (one variable) binds the value. | Pine requires `for [k, v] in map`. | No |
 | Matrices | The operations listed above. | No element-wise arithmetic, `matrix.mult`, determinants, inverses, `matrix.reshape` or `concat`. | No |
 | Polylines and linefills | Straight segments, filled when closed with a fill color; a linefill disappears with either of its lines and at most 50 are kept. | `curved = true` is not drawn curved; `chart.point.from_index` leaves `time` as `na`; the drawing code has no unit test. | No |
-| Tables | `new`, `cell`, `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules; the drawing code has no unit test. | No |
+| Tables | `new`, `cell` (with `text_halign`, `text_valign`, and `width`/`height` as minimum percentages of the plot), `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules, and `width`/`height` do not apply to a merged cell; the drawing code has no unit test. | No |
 | Labels | Every `label.style_*`; `label.set_tooltip` / `tooltip =` and `textalign` are stored. | The chart does not show tooltips and does not apply multi-line alignment. The shape and glyph styles (`circle`, `square`, `diamond`, `cross`, `xcross`, `flag`, `triangle*`, `arrow*`) are simplified drawings with the text above, below or inside; `text_outline` is plain text. Placement is unit-tested, the drawing is not. | No |
 | Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
 | Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. Other `margin_*` arguments are `PINE9001`. | n/a |
@@ -473,14 +479,15 @@ affected.
 ## Known incompatibilities
 
 The current grammar does not yet implement values of the built-in `footprint` and `volume_row` types (the names parse in signatures and
-declarations, but `request.footprint` is unsupported and `footprint.*` calls are `PINE4007`), or real intrabar data for `request.security_lower_tf` (the engine only sees the
-chart's own bars). The table above lists where implemented features differ from TradingView. Label `yloc` is treated as `yloc.price`.
+declarations, but `request.footprint` is unsupported and `footprint.*` calls are `PINE4007`). The table above lists where implemented features differ from TradingView. Label `yloc` is treated as `yloc.price`.
 Qualifier metadata types exist, but full compile-time overload/qualifier inference is not
 yet complete. Stateful TA warm-up matches the documented seed approach for common data,
 but missing-value and conditional-call behavior needs a larger differential corpus. Non-overlay
 scripts draw in their own pane (bottom 30% of the card) with a value axis fitted to their
-visible outputs; `barcolor` still recolors the price candles. The pane has no crosshair,
-and overlay values do not yet join price autoscaling. Plot style/location/size
+visible outputs; `barcolor` still recolors the price candles. The pane has no crosshair.
+Overlay scripts join the price scale (plots, `plotcandle`, `hline`, and boxes, lines, labels and polylines over
+the bars shown), and drawings placed past the latest bar (`bar_index + n`) get empty bar slots on the right of the
+candle chart, at most as many as there are candles shown. Drawings placed by time are not counted. Plot style/location/size
 coverage is partial. Runtime byte accounting, recursion detection, and a compact bytecode
 lowering pass are planned; the current executable representation is the typed AST.
 

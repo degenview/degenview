@@ -12,6 +12,9 @@ struct ChartPlot {
     let style: ChartStyle
     let scale: PriceScale
     let yAxisDecimalPlaces: Int?
+    /// Bar slots kept free right of the last point, where an overlay script draws past the latest bar. They
+    /// narrow every slot, so each mapping between a point index and an x position includes them.
+    var futureSlots = 0
 
     // MARK: - Geometry
 
@@ -26,17 +29,19 @@ struct ChartPlot {
         yZoom: Double,
         scale: PriceScale,
         yAxisDecimalPlaces: Int?,
-        style: ChartStyle = .default
+        style: ChartStyle = .default,
+        scriptExtent: PineChartLayer.OverlayExtent = .none
     ) -> ChartPlot {
         ChartPlot(
             plotRect: Self.rect(in: size, insets: style.chartInsets),
             priceRange: Self.zoomed(
-                Self.priceRange(for: points, padding: style.pricePadding),
+                Self.priceRange(for: points, including: scriptExtent.values, padding: style.pricePadding),
                 by: yZoom
             ),
             style: style,
             scale: scale,
-            yAxisDecimalPlaces: yAxisDecimalPlaces
+            yAxisDecimalPlaces: yAxisDecimalPlaces,
+            futureSlots: scriptExtent.futureBars
         )
     }
 
@@ -82,10 +87,14 @@ struct ChartPlot {
 
     /// Vertical domain covering every point, padded so the series never touches the
     /// frame. Uses high/low, which equal the close on flat (line) points.
-    static func priceRange(for points: [KlineData], padding: CGFloat) -> (min: Double, max: Double) {
+    ///
+    /// `including` are further prices the domain must reach, such as an overlay script's plots.
+    static func priceRange(
+        for points: [KlineData], including extra: [Double] = [], padding: CGFloat
+    ) -> (min: Double, max: Double) {
         guard !points.isEmpty else { return (0.01, 1) }
-        let low = points.map(\.lowPrice).min() ?? 0
-        let high = points.map(\.highPrice).max() ?? 1
+        let low = (points.map(\.lowPrice) + extra).min() ?? 0
+        let high = (points.map(\.highPrice) + extra).max() ?? 1
         if low == high {
             let inset = max(abs(low) * 0.01, 0.01)
             return (low - inset, high + inset)
@@ -106,7 +115,7 @@ struct ChartPlot {
 
     /// Slot width for a series of `count` points — the horizontal step between them.
     func slotWidth(forCount count: Int) -> CGFloat {
-        plotRect.width / CGFloat(max(1, count))
+        plotRect.width / CGFloat(max(1, count + futureSlots))
     }
 
     /// Center X of the point at `index`.

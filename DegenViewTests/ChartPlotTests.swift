@@ -82,4 +82,63 @@ final class ChartPlotTests: XCTestCase {
             15
         )
     }
+
+    // MARK: - Overlay scripts
+
+    private func candles(_ count: Int) -> [KlineData] {
+        (0..<count).map { KlineData(time: Date(timeIntervalSince1970: Double($0) * 60), price: Double(100 + $0)) }
+    }
+
+    func testFutureSlotsNarrowEverySlotAndKeepTheMappingConsistent() {
+        let points = candles(10)
+        let extent = PineChartLayer.OverlayExtent(futureBars: 10, values: [])
+        let plain = ChartPlot.make(
+            points: points, size: CGSize(width: 400, height: 240), yZoom: 1, scale: .currency,
+            yAxisDecimalPlaces: nil)
+        let padded = ChartPlot.make(
+            points: points, size: CGSize(width: 400, height: 240), yZoom: 1, scale: .currency,
+            yAxisDecimalPlaces: nil, scriptExtent: extent)
+        XCTAssertEqual(padded.slotWidth(forCount: 10) * 2, plain.slotWidth(forCount: 10), accuracy: 0.0001)
+        let slot = padded.slotWidth(forCount: 10)
+        XCTAssertEqual(
+            padded.fractionalIndex(forX: padded.x(forIndex: 9, slotWidth: slot), slotWidth: slot), 9, accuracy: 0.0001)
+        XCTAssertLessThan(padded.x(forIndex: 9, slotWidth: slot), padded.plotRect.midX + slot)
+        XCTAssertEqual(padded.x(forIndex: 19, slotWidth: slot), padded.plotRect.maxX - slot / 2, accuracy: 0.0001)
+    }
+
+    func testScriptValuesWidenThePriceRange() {
+        let points = candles(5)
+        let plain = ChartPlot.priceRange(for: points, padding: 0)
+        let widened = ChartPlot.priceRange(for: points, including: [90, 130], padding: 0)
+        XCTAssertEqual(plain.min, 100, accuracy: 0.0001)
+        XCTAssertEqual(widened.min, 90, accuracy: 0.0001)
+        XCTAssertEqual(widened.max, 130, accuracy: 0.0001)
+    }
+
+    func testAnOverlayScriptReservesSlotsForDrawingsPastTheLastBar() {
+        let points = candles(20)
+        var output = PineVisualOutput(overlay: true)
+        output.barCount = 20
+        output.labels = [
+            PineLabelOutput(
+                id: 1, x: 19 + 6, y: 150, text: "p90", color: nil, textColor: 0, style: .labelLeft, size: .normal)
+        ]
+        output.boxes = [
+            PineBoxOutput(
+                id: 2, left: 19 + 3, top: 160, right: 19 + 5, bottom: 140, borderColor: nil, borderWidth: 1,
+                backgroundColor: nil)
+        ]
+        let extent = PineChartLayer.overlayExtent(of: [output], candles: points, style: .default)
+        XCTAssertEqual(extent.futureBars, 6)
+        XCTAssertTrue(extent.values.contains(150) && extent.values.contains(160) && extent.values.contains(140))
+
+        var pane = output
+        pane.overlay = false
+        XCTAssertEqual(PineChartLayer.overlayExtent(of: [pane], candles: points, style: .default), .none)
+
+        output.labels[0].x = 19 + 5_000
+        XCTAssertEqual(
+            PineChartLayer.overlayExtent(of: [output], candles: points, style: .default).futureBars, 20,
+            "a far-off drawing never takes more than the candles' own width")
+    }
 }

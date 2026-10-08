@@ -754,6 +754,7 @@ final class ChartViewModel: ObservableObject {
         pineFeedTask = Task.detached(priority: .userInitiated) { [weak self] in
             var compiled = supplied
             var host: PineExecutionHost?
+            var liveSecurity: PineSecurityDataProvider?
             for await operation in operations {
                 if Task.isCancelled { return }
                 var outcome: PineExecutionOutcome
@@ -766,12 +767,12 @@ final class ChartViewModel: ObservableObject {
                         host = nil
                         continue
                     }
-                    let securityData = await PineSecurityFeed.prepare(
+                    liveSecurity = await PineSecurityFeed.prepare(
                         program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
                         bars: bars)
                     let fresh = PineExecutionHost(
                         program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
-                        securityData: securityData)
+                        securityData: liveSecurity)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):
@@ -779,6 +780,8 @@ final class ChartViewModel: ObservableObject {
                     outcome = await host.ingest(update)
                 case .sync(let snapshot):
                     guard let host else { continue }
+                    // Intrabars for `request.security_lower_tf` follow the market with the chart's own refresh.
+                    await (liveSecurity as? PineIntrabarSeries)?.refresh()
                     outcome = await host.sync(snapshot: snapshot)
                 }
                 guard let program = compiled else { continue }
@@ -962,6 +965,7 @@ final class ChartViewModel: ObservableObject {
         runtime.feedTask = Task.detached(priority: .userInitiated) { [weak self] in
             var compiled = supplied
             var host: PineExecutionHost?
+            var liveSecurity: PineSecurityDataProvider?
             let resolvedSource: String
             if let suppliedSource {
                 resolvedSource = suppliedSource
@@ -991,12 +995,12 @@ final class ChartViewModel: ObservableObject {
                         host = nil
                         continue
                     }
-                    let securityData = await PineSecurityFeed.prepare(
+                    liveSecurity = await PineSecurityFeed.prepare(
                         program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
                         bars: bars)
                     let fresh = PineExecutionHost(
                         program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
-                        securityData: securityData)
+                        securityData: liveSecurity)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):
@@ -1004,6 +1008,8 @@ final class ChartViewModel: ObservableObject {
                     outcome = await host.ingest(update)
                 case .sync(let snapshot):
                     guard let host else { continue }
+                    // Intrabars for `request.security_lower_tf` follow the market with the chart's own refresh.
+                    await (liveSecurity as? PineIntrabarSeries)?.refresh()
                     outcome = await host.sync(snapshot: snapshot)
                 }
                 guard let program = compiled else { continue }
@@ -1157,8 +1163,18 @@ final class ChartViewModel: ObservableObject {
             size: size,
             yZoom: yZoom,
             scale: priceScale,
-            yAxisDecimalPlaces: yAxisDecimalPlaces
+            yAxisDecimalPlaces: yAxisDecimalPlaces,
+            // The candle chart draws overlay scripts and makes room for what they draw; the line chart draws none.
+            scriptExtent: usesLineChart
+                ? .none
+                : PineChartLayer.overlayExtent(of: visiblePineOutputs, candles: visibleKlines, style: .default)
         )
+    }
+
+    /// Slots the candle chart reserves right of the last candle for what `outputs` draw there.
+    func pineFutureSlots(of outputs: [PineVisualOutput]) -> Int {
+        usesLineChart
+            ? 0 : PineChartLayer.overlayExtent(of: outputs, candles: visibleKlines, style: .default).futureBars
     }
 
     /// Convert a click into a time+price anchor that survives zoom and timeframe changes.

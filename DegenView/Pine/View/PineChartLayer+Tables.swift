@@ -28,14 +28,16 @@ extension PineChartLayer {
 
     func drawTables(_ context: inout GraphicsContext, plot: ChartPlot) {
         for table in pine.tables where table.columns > 0 && table.rows > 0 && !table.cells.isEmpty {
-            let layout = measure(table, &context)
             let area = plot.plotRect.insetBy(dx: Self.tableMargin, dy: Self.tableMargin)
+            let layout = measure(table, in: area.size, &context)
             let origin = origin(of: layout.size, at: table.position, in: area)
             draw(table, layout, at: origin, &context)
         }
     }
 
-    private func measure(_ table: PineTableOutput, _ context: inout GraphicsContext) -> TableLayout {
+    private func measure(
+        _ table: PineTableOutput, in area: CGSize, _ context: inout GraphicsContext
+    ) -> TableLayout {
         var layout = TableLayout(
             widths: Array(repeating: 0, count: table.columns),
             heights: Array(repeating: 0, count: table.rows), cells: [])
@@ -45,8 +47,9 @@ extension PineChartLayer {
                     .font(.system(size: cell.textSize.fontSize))
                     .foregroundColor(Color(pineRGBA: cell.textColor)))
             let size = text.measure(in: CGSize(width: 400, height: 200))
-            let width = size.width + Self.cellPadding.width
-            let height = size.height + Self.cellPadding.height
+            // `width` and `height` are minimums, as a percentage of the plot.
+            let width = max(size.width + Self.cellPadding.width, area.width * cell.width / 100)
+            let height = max(size.height + Self.cellPadding.height, area.height * cell.height / 100)
             if cell.columnSpan == 1 { layout.widths[cell.column] = max(layout.widths[cell.column], width) }
             if cell.rowSpan == 1 { layout.heights[cell.row] = max(layout.heights[cell.row], height) }
             layout.cells.append((cell, text))
@@ -93,7 +96,10 @@ extension PineChartLayer {
             if let background = cell.backgroundColor {
                 context.fill(Path(rect), with: .color(Color(pineRGBA: background)))
             }
-            context.draw(text, at: CGPoint(x: rect.midX, y: rect.midY))
+            let placement = PineDrawingGeometry.boxTextPlacement(
+                in: rect, horizontal: cell.textHorizontalAlign, vertical: cell.textVerticalAlign,
+                margin: Self.cellPadding.width / 2)
+            context.draw(text, at: placement.point, anchor: placement.anchor)
         }
         if let border = table.borderColor, table.borderWidth > 0 {
             context.stroke(

@@ -207,10 +207,13 @@ extension PineRuntimeSession {
         "ignore_invalid_timeframe", "calc_bars_count",
     ]
 
-    /// `request.security_lower_tf`: the values of an expression on each intrabar of the chart bar. The engine
-    /// only has the chart's own bars, so there is no intrabar data: every array is empty, which is what
-    /// Pine returns when a timeframe cannot be served. A tuple expression gives a tuple of empty arrays.
-    /// An invalid symbol or timeframe is an error unless the script passed `ignore_invalid_*`, as in Pine.
+    /// `request.security_lower_tf`: the values of an expression on each intrabar of the chart bar. The
+    /// intrabars are the candles the session's `PineSecurityDataProvider` holds for the chart's own symbol at
+    /// that timeframe; without any, every array is empty, which is what Pine returns when a timeframe cannot
+    /// be served. A tuple expression gives a tuple of arrays. The expression runs once per intrabar, in a state
+    /// of its own, so `ta.*` calls in it see the intrabar series. At the chart's own timeframe each bar is its
+    /// own single intrabar. An invalid symbol or timeframe is an error unless the script passed
+    /// `ignore_invalid_*`, as in Pine.
     func securityLowerTimeframeCall(
         _ call: PineCall, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
@@ -244,6 +247,9 @@ extension PineRuntimeSession {
             working.arrays[id] = items
             return .ref(.array, id)
         }
+        if let seconds, seconds < barSeconds, let candles = lowerTimeframeCandles(values["symbol"], seconds) {
+            return try serveIntrabars(candles, seconds, expression, call, &context, array)
+        }
         // The chart's own timeframe: each chart bar is its own single intrabar. A lower one has no data here.
         var intrabars: PineRuntimeValue?
         if let seconds, seconds == barSeconds {
@@ -256,6 +262,61 @@ extension PineRuntimeSession {
             return .tuple(values.map { array([$0]) })
         }
         return array(intrabars.map { [$0] } ?? [])
+    }
+
+    /// The provider's intrabar candles of the chart's own symbol at `seconds`, nil when it holds none.
+    private func lowerTimeframeCandles(_ symbolValue: PineRuntimeValue?, _ seconds: TimeInterval) -> [KlineData]? {
+        if case .string(let text)? = symbolValue, !(text.isEmpty || text == symbol.tickerID) { return nil }
+        // Not through `series(_:)`: that answers once per run, and a live provider tops its intrabars up.
+        guard let candles = securityData?.candles(for: PineSecurityKey(symbol: symbol.tickerID, interval: seconds)),
+            !candles.isEmpty
+        else { return nil }
+        return candles
+    }
+
+    /// The expression on every intrabar that opens inside the chart bar, through the call site's own state.
+    /// The state is committed per intrabar; an unconfirmed chart bar starts from the last confirmed state on
+    /// its next run, so a realtime tick never carries intrabars forward twice.
+    private func serveIntrabars(
+        _ candles: [KlineData], _ interval: TimeInterval, _ expression: PineExpression, _ call: PineCall,
+        _ context: inout PineRuntimeContext, _ makeArray: ([PineRuntimeValue]) -> PineRuntimeValue
+    ) throws -> PineRuntimeValue {
+        let key = siteKey(call.site, context)
+        var site = working.securities[key] ?? PineSecuritySite()
+        let bar = context.bar
+        if site.processedBar == bar.openTime { return site.barResult }
+        let end = bar.openTime.addingTimeInterval(barSeconds)
+        var low = 0
+        var high = candles.count
+        while low < high {
+            let middle = (low + high) / 2
+            if candles[middle].openTime < bar.openTime { low = middle + 1 } else { high = middle }
+        }
+        let request = SecurityRequest(
+            interval: interval, expression: expression, lookaheadOn: false, gapsOn: false, foreign: nil)
+        var results: [PineRuntimeValue] = []
+        var index = low
+        while index < candles.count, candles[index].openTime < end {
+            results.append(try evaluateHigherTimeframe(&site, candles[index], request, commit: true))
+            index += 1
+        }
+        let value: PineRuntimeValue
+        if case .tuple(let items, _) = expression {
+            value = .tuple(
+                (0..<items.count).map { column in
+                    makeArray(
+                        results.map { result in
+                            if case .tuple(let parts) = result, column < parts.count { return parts[column] }
+                            return .na
+                        })
+                })
+        } else {
+            value = makeArray(results)
+        }
+        site.processedBar = bar.openTime
+        site.barResult = value
+        working.securities[key] = site
+        return value
     }
 
     private func securityInterval(
