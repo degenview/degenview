@@ -20,12 +20,13 @@ final class PineExecutionController {
     init(
         program: PineCompiledProgram, dataset: PineDatasetKey, inputs: [String: PineInputValue] = [:],
         theme: PineChartTheme = .dark, symbol: PineSymbolInfo = PineSymbolInfo(),
-        securityData: PineSecurityDataProvider? = nil
+        securityData: PineSecurityDataProvider? = nil, visibleRange: ClosedRange<Date>? = nil
     ) {
         self.program = program
         self.dataset = dataset
         session = PineRuntimeSession(
-            program: program, inputs: inputs, theme: theme, symbol: symbol, securityData: securityData)
+            program: program, inputs: inputs, theme: theme, symbol: symbol, securityData: securityData,
+            visibleRange: visibleRange)
     }
 
     // MARK: - Loading

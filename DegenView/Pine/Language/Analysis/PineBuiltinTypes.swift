@@ -16,13 +16,14 @@ enum PineBuiltinTypes {
 
     static let intSeries: Set<String> = [
         "time", "time_close", "bar_index", "last_bar_index", "last_bar_time", "timenow",
-        "time_tradingday", "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek",
+        "time_tradingday", "chart.left_visible_bar_time", "chart.right_visible_bar_time",
+        "year", "month", "dayofmonth", "hour", "minute", "second", "dayofweek",
         "strategy.closedtrades", "strategy.opentrades", "strategy.wintrades", "strategy.losstrades",
     ]
 
     static let simpleStrings: Set<String> = [
         "syminfo.ticker", "syminfo.tickerid", "syminfo.currency", "syminfo.type", "syminfo.root",
-        "syminfo.prefix", "syminfo.timezone",
+        "syminfo.prefix", "syminfo.timezone", "syminfo.basecurrency",
     ]
 
     static let simpleFloats: Set<String> = ["syminfo.mintick", "syminfo.pointvalue"]

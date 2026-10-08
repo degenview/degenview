@@ -93,9 +93,8 @@ enum PineSymbolCatalog {
     private static let reservedVariables: Set<String> = [
         "weekofyear", "session.isfirstbar", "session.isfirstbar_regular", "session.islastbar",
         "session.islastbar_regular", "session.ismarket", "session.ispremarket",
-        "session.ispostmarket", "syminfo.session", "syminfo.mincontract", "syminfo.basecurrency",
-        "syminfo.description", "syminfo.volumetype", "chart.left_visible_bar_time",
-        "chart.right_visible_bar_time",
+        "session.ispostmarket", "syminfo.session", "syminfo.mincontract",
+        "syminfo.description", "syminfo.volumetype",
     ]
 
     /// Whether `name` is a Pine variable this release does not implement (it evaluates to `na`).

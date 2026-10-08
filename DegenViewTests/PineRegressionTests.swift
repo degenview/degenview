@@ -900,15 +900,44 @@ final class PineRegressionTests: XCTestCase {
     func testPineVariablesThisReleaseDoesNotModelAreNa() throws {
         let program = compile(
             """
-            plot(na(chart.left_visible_bar_time) ? 1 : 0)
-            plot(na(chart.right_visible_bar_time) ? 1 : 0)
             plot(na(session.ismarket) ? 1 : 0)
             plot(na(syminfo.description) ? 1 : 0)
             plot(na(weekofyear) ? 1 : 0)
             """)
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
-        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1], [1], [1]])
+        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1]])
+    }
+
+    func testVisibleBarTimesAreTheChartsWindowOrTheWholeRun() throws {
+        let program = compile("plot(chart.left_visible_bar_time)\nplot(chart.right_visible_bar_time)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let series = bars([1, 2, 3, 4], spacing: 60)
+        let whole = try PineRuntimeSession(program: program).evaluate(bars: series).output
+        XCTAssertEqual(whole.plots.map { $0.values.last ?? nil }, [0, 180_000], "first and last bar, in ms")
+        let window = Date(timeIntervalSince1970: 60)...Date(timeIntervalSince1970: 120)
+        let shown = try PineRuntimeSession(program: program, visibleRange: window).evaluate(bars: series).output
+        XCTAssertEqual(
+            shown.plots.map(\.values),
+            [[60_000, 60_000, 60_000, 60_000], [120_000, 120_000, 120_000, 120_000]])
+    }
+
+    func testBaseCurrencyOfAPairAndNaWithoutOne() throws {
+        let program = compile("plot(str.length(syminfo.basecurrency))")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let pair = PineSymbolInfo(ticker: "ETHUSDT", tickerID: "binance:ETHUSDT", baseCurrency: "ETH")
+        let output = try PineRuntimeSession(program: program, symbol: pair).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[3]])
+        let none = try PineRuntimeSession(
+            program: compile("plot(na(syminfo.basecurrency) ? 1 : 0)")
+        ).evaluate(bars: bars([1])).output
+        XCTAssertEqual(none.plots.map(\.values), [[1]])
+        for (ticker, base) in [
+            ("BTCUSDT", "BTC"), ("BTC-USD", "BTC"), ("eth/usdc", "ETH"), ("SOLBTC", "SOL"), ("USDT", nil),
+            ("AAPL", nil),
+        ] {
+            XCTAssertEqual(PineSymbolInfo.baseCurrency(ofPair: ticker), base, ticker)
+        }
     }
 
     func testSymbolFactsAndHlcc4() throws {

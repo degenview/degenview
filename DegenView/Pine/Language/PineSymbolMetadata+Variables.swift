@@ -18,6 +18,8 @@ extension PineSymbolMetadata {
         last_bar_index :: Index of the last chart bar.
         last_bar_time :: UNIX time of the last chart bar.
         timenow :: Current UNIX time, in milliseconds.
+        chart.left_visible_bar_time :: UNIX time of the leftmost candle on the chart when the script was built.
+        chart.right_visible_bar_time :: UNIX time of the rightmost candle on the chart when the script was built.
         ta.tr :: True range of the current bar.
         barstate.isfirst :: True on the first bar.
         barstate.islast :: True on the last bar.
@@ -28,6 +30,7 @@ extension PineSymbolMetadata {
         syminfo.tickerid :: Symbol id with its source prefix.
         syminfo.ticker :: Symbol name.
         syminfo.mintick :: Minimum price increment.
+        syminfo.basecurrency :: The base asset of a pair, such as BTC for BTCUSDT; na when the symbol is not a pair.
         timeframe.period :: The chart timeframe as text.
         strategy.position_size :: Size of the open position; negative when short.
         strategy.equity :: Initial capital plus net and open profit.
