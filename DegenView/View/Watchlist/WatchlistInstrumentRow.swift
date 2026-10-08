@@ -99,7 +99,7 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
                 .monospacedDigit().foregroundStyle(directionColor)
         case .changePercent:
             let glyph = WatchlistQuoteFormat.direction(cell.quote).glyph
-            Text((glyph.isEmpty ? "" : glyph + " ") + WatchlistQuoteFormat.percent(cell.quote))
+            Text((glyph.isEmpty ? "" : glyph + " ") + WatchlistQuoteFormat.percent(cell.quote, source: source))
                 .monospacedDigit().foregroundStyle(directionColor)
                 .help(cell.quote?.changeBasis?.label ?? "")
         case .volume:

@@ -74,6 +74,7 @@ struct ContentView: View {
                             open: contentViewModel.openWatchlistInstrument,
                             addChart: contentViewModel.addWatchlistInstrumentAsChart,
                             openInNewTab: { WindowCoordinator.shared.newTab(for: $0, beside: contentViewModel.tabID) }),
+                        isWindowVisible: contentViewModel.isWindowVisible,
                         onAddSymbol: { showAddWatchlistSymbolSheet = true }
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))

@@ -55,11 +55,13 @@ struct WatchlistQuote: Equatable, Sendable {
     var volumeKind: VolumeKind?
     var timestamp: Date?
     var freshness: Freshness
+    /// Why a quote is missing, when the provider said ("Add your Alpaca API key in Settings").
+    var note: String?
 
     init(
         last: Double? = nil, change: Double? = nil, changePercent: Double? = nil,
         changeBasis: ChangeBasis? = nil, volume: Double? = nil, volumeKind: VolumeKind? = nil,
-        timestamp: Date? = nil, freshness: Freshness = .unavailable
+        timestamp: Date? = nil, freshness: Freshness = .unavailable, note: String? = nil
     ) {
         self.last = last
         self.change = change
@@ -69,6 +71,11 @@ struct WatchlistQuote: Equatable, Sendable {
         self.volumeKind = volumeKind
         self.timestamp = timestamp
         self.freshness = freshness
+        self.note = note
+    }
+
+    static func unsupported(_ note: String? = nil) -> WatchlistQuote {
+        WatchlistQuote(freshness: .unsupported, note: note)
     }
 
     /// The same quote re-labelled, for the last known value of a source that stopped answering.

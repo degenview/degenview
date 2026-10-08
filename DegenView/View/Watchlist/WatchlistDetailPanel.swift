@@ -27,13 +27,14 @@ struct WatchlistDetailPanel: View {
                 row("Last", WatchlistQuoteFormat.last(cell.quote, source: item.instrument.source))
                 row(
                     "Change",
-                    "\(WatchlistQuoteFormat.change(cell.quote, source: item.instrument.source)) (\(WatchlistQuoteFormat.percent(cell.quote)))"
+                    "\(WatchlistQuoteFormat.change(cell.quote, source: item.instrument.source)) (\(WatchlistQuoteFormat.percent(cell.quote, source: item.instrument.source)))"
                 )
                 if let basis = cell.quote?.changeBasis {
                     row("Measured", basis.label)
                 }
                 row("Volume", WatchlistQuoteFormat.volume(cell.quote))
                 row("Status", cell.quote?.freshness.label ?? WatchlistQuote.Freshness.unavailable.label)
+                if let note = cell.quote?.note { row("Note", note) }
                 if let timestamp = cell.quote?.timestamp {
                     row("Updated", timestamp.formatted(date: .omitted, time: .standard))
                 }

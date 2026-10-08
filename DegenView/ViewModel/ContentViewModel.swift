@@ -166,7 +166,7 @@ final class ContentViewModel: ObservableObject {
     private var drawingUndoCoordinator: DrawingUndoCoordinator?
     private var observers: [NSObjectProtocol] = []
     /// Hidden tabs don't poll — see `updateVisibility(_:)`.
-    private var isWindowVisible = false
+    @Published private(set) var isWindowVisible = false
     private var didInitialLoad = false
 
     init(

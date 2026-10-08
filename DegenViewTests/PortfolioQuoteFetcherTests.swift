@@ -218,8 +218,10 @@ final class PortfolioQuoteFetcherTests: XCTestCase {
         let items = URLComponents(url: try XCTUnwrap(requests[0].url), resolvingAgainstBaseURL: false)?.queryItems
         XCTAssertEqual(items?.first { $0.name == "symbols" }?.value, "[\"BTCUSDT\",\"ETHUSDT\"]")
         // Keyed by the symbol as it was passed in.
-        XCTAssertEqual(quotes["btcusdt"], SourceQuote(price: 99_000.25, previousDayPrice: 90_000.5))
-        XCTAssertEqual(quotes["ETHUSDT"], SourceQuote(price: 3_300, previousDayPrice: 3_000))
+        XCTAssertEqual(quotes["btcusdt"]?.price, 99_000.25)
+        XCTAssertEqual(quotes["btcusdt"]?.previousDayPrice, 90_000.5)
+        XCTAssertEqual(quotes["ETHUSDT"]?.price, 3_300)
+        XCTAssertEqual(quotes["ETHUSDT"]?.previousDayPrice, 3_000)
     }
 
     func testBinanceRejectionThrowsSoTheCallerCanFallBack() async {
@@ -248,7 +250,9 @@ final class PortfolioQuoteFetcherTests: XCTestCase {
             QuoteRequest(symbol: "BTC-USD", metadata: [:]), QuoteRequest(symbol: "GONE-USD", metadata: [:]),
         ])
 
-        XCTAssertEqual(quotes, ["BTC-USD": SourceQuote(price: 99, previousDayPrice: 90)])
+        XCTAssertEqual(Array(quotes.keys), ["BTC-USD"])
+        XCTAssertEqual(quotes["BTC-USD"]?.price, 99)
+        XCTAssertEqual(quotes["BTC-USD"]?.previousDayPrice, 90)
     }
 
     // MARK: - Startup: the value doesn't wait for the chart
