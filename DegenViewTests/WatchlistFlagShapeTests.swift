@@ -17,10 +17,11 @@ final class WatchlistFlagShapeTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(size.height, 12)
     }
 
-    func testTheLogoStartsInsideTheBookmarkSoItCoversItsFlatEnd() {
-        // The mark is drawn from x = 0; the logo begins at the leading inset, a few points before the end.
-        XCTAssertLessThan(WatchlistMetrics.leadingInset, size.width)
-        XCTAssertGreaterThan(WatchlistMetrics.leadingInset, size.width / 2, "only a little of it is covered")
+    func testTheBookmarkEndsShortOfTheLogo() {
+        // The mark is drawn from x = 0; the logo begins at the leading inset.
+        let gap = WatchlistMetrics.leadingInset - size.width
+        XCTAssertGreaterThanOrEqual(gap, 1.5, "a visible gap between the flag and the logo")
+        XCTAssertLessThanOrEqual(gap, 4, "but the flag still reads as belonging to the row")
     }
 
     func testByDefaultTheFlatEndIsOnTheLeftAgainstTheBorderAndTheNotchPointsAtTheLogo() {
@@ -34,7 +35,7 @@ final class WatchlistFlagShapeTests: XCTestCase {
         XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.4, y: 0.4)))
         XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.4, y: size.height - 0.4)))
         XCTAssertFalse(path.contains(CGPoint(x: size.width - 0.4, y: middle)), "the V is cut into the right end")
-        XCTAssertTrue(path.contains(CGPoint(x: 5, y: middle)), "left of the notch tip the middle is solid")
+        XCTAssertTrue(path.contains(CGPoint(x: 2, y: middle)), "left of the notch tip the middle is solid")
     }
 
     func testTheOtherOrientationPutsTheNotchOnTheLeft() {

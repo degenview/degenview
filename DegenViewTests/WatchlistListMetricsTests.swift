@@ -90,6 +90,9 @@ final class WatchlistListMetricsTests: XCTestCase {
         let flagged = try colour(row: 0, x: 1)
         XCTAssertGreaterThan(flagged.redComponent, 0.7, "the flag's red is drawn on the border: \(flagged)")
         XCTAssertLessThan(flagged.greenComponent, 0.5)
+        // Past the bookmark and before the logo (which starts at x = 8) the row is clear: they do not touch.
+        let gap = try colour(row: 0, x: Int(WatchlistMetrics.leadingInset) - 1)
+        XCTAssertFalse(gap.redComponent > 0.7 && gap.greenComponent < 0.5, "the flag ends before the logo: \(gap)")
         let plain = try colour(row: 1, x: 1)
         XCTAssertFalse(plain.redComponent > 0.7 && plain.greenComponent < 0.5, "an unflagged row has no flag: \(plain)")
     }
