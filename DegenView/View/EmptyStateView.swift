@@ -134,7 +134,7 @@ struct EmptyStateView: View {
                 Button("\(suggestions.hiddenFavoriteCount) more", action: onShowFavorites)
                     .buttonStyle(.link)
                     .font(.caption)
-                    .help("Show the favorites sidebar")
+                    .help("Show the watchlist sidebar")
             }
         } content: {
             LazyVGrid(columns: chipColumns, spacing: 8) {

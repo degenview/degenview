@@ -468,8 +468,8 @@ struct ContentView: View {
             } label: {
                 Image(systemName: showFavorites ? "sidebar.right" : "sidebar.right")
             }
-            .accessibilityLabel(showFavorites ? "Hide Favorites" : "Show Favorites")
-            .help(showFavorites ? "Hide Favorites" : "Show Favorites")
+            .accessibilityLabel(showFavorites ? "Hide Watchlists" : "Show Watchlists")
+            .help(showFavorites ? "Hide Watchlists" : "Show Watchlists")
         }
         // Its own bubble and a text label, so it isn't mistaken for the tab bar's `+`.
         if #available(macOS 26, *) {
