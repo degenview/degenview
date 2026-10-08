@@ -38,7 +38,7 @@ struct WatchlistQuote: Equatable, Sendable {
         }
 
         /// Whether the price can be shown as current.
-        var isCurrent: Bool { self == .live || self == .delayed }
+        var isCurrent: Bool { self == .live || self == .delayed || self == .marketClosed }
     }
 
     enum VolumeKind: String, Sendable {

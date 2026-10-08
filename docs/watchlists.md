@@ -52,6 +52,15 @@ out for ten minutes. A value a provider doesn't supply is a dash, never zero.
 | Alpaca (stocks) | previous regular-session close |
 | Polymarket, Kalshi | the start of the past day; shown in percentage points |
 
+A price is "current" while DegenView has refreshed it recently, whatever time the provider says it last
+traded: a few poll intervals (45 seconds for Binance and stocks, 90 for Coinbase, 2 minutes for CoinGecko and
+prediction markets). Only a price that has stopped refreshing is dimmed and labelled stale. A stock outside
+US hours reads "Market closed" and is not dimmed (its close is its current price). A failed source is retried
+after 5 seconds, backing off to 30 (60 if rate limited); Coinbase products the socket goes quiet on are
+refreshed from REST every 30 seconds. A market with no price and a reason (a rate limit, a missing key) shows
+a warning icon with the reason instead of a bare dash. The price is green when the market is up and red when
+it is down.
+
 Volume is dollar turnover where the provider reports it (Binance on dollar pairs, Coinbase priced from
 base volume, DEXScreener, CoinGecko), shares for stocks, and units otherwise. Direction is shown with an
 arrow as well as colour.
