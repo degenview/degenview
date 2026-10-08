@@ -65,7 +65,9 @@ enum PineIgnoredFeatures {
                 "text_font_family": "Box text uses the default font.",
                 "text_formatting": "Box text has no bold or italic formatting.",
             ],
-            "request.security": request,
+            "request.security": request.merging([
+                "calc_bars_count": "The whole history is always requested."
+            ]) { first, _ in first },
             "request.security_lower_tf": request,
         ]
         let marker = [
@@ -105,7 +107,6 @@ enum PineIgnoredFeatures {
     static let unimplementedVariable = "It is not modelled here, so it is always `na`."
 
     private static let declaration: [String: String] = [
-        "behind_chart": "Drawings are always painted above the candles.",
         "explicit_plot_zorder": "Plots and drawings are painted in the app's own order.",
         "scale": "The chart has one value axis, so the scale is not changed.",
     ]
@@ -132,7 +133,6 @@ enum PineIgnoredFeatures {
     ]
 
     private static let request: [String: String] = [
-        "currency": "Prices are not converted to another currency.",
-        "calc_bars_count": "The whole history is always requested.",
+        "currency": "Prices are not converted to another currency."
     ]
 }

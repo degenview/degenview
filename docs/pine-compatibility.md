@@ -207,8 +207,10 @@ row) → `PineAlertDispatcher` (channels).
   source input). `runtime.error(message)` stops the script with `PINE4030` and the script's message.
   `ticker.new/standard/modify/inherit` build symbol ids; since only the chart's own symbol can be served,
   `standard`, `modify` and `inherit` return what they are given.
-- Declaration arguments `behind_chart` (either value), `explicit_plot_zorder` and `dynamic_requests` are
-  accepted and ignored; `max_polylines_count` is honoured. `margin_long` and `margin_short` are accepted and ignored (the broker has no margin model); other arguments that change behaviour (`margin_top` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
+- `behind_chart` is honoured for `overlay=true` scripts: by default (as in Pine) their plots and drawings are
+  painted under the candles, and with `behind_chart = false` over them. Strategy trade markers always stay in
+  front, tables sit outside the plot either way. Declaration arguments `explicit_plot_zorder` and
+  `dynamic_requests` are accepted and ignored; `max_polylines_count` is honoured. `margin_long` and `margin_short` are accepted and ignored (the broker has no margin model); other arguments that change behaviour (`margin_top` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
   (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
 
 ### Types, methods and collections
@@ -297,7 +299,8 @@ row) → `PineAlertDispatcher` (channels).
   (`NSE:NIFTY`, a 4-hour candle) has no data. The fetch gives up after 8 s and uses what arrived.
 - A collection or object an expression returns (`request.security(…, array.from(a, b))`) is copied into the
   chart's state; handles inside a returned map or matrix, and drawing handles, become `na`.
-- **`request.security_lower_tf`**: the expression runs on every intrabar of the chart bar, in a state of its own,
+- **`request.security_lower_tf`**: with `calc_bars_count` only the newest that many chart bars get intrabars
+  (older ones get empty arrays) and only those are fetched. The expression runs on every intrabar of the chart bar, in a state of its own,
   so a `ta.*` call in it sees the intrabar series. The intrabars are the chart's own symbol at that timeframe,
   fetched when the script is built (`PineSecurityFeed`, `PineIntrabarSeries`) from the finest replay candle size
   that divides it (12 minutes from 1-minute candles, 4 hours from 1-hour ones), folded to the requested length,
@@ -428,7 +431,7 @@ the corpus run (below) only shows that scripts compile and run.
 | Tables | `new`, `cell` (with `text_halign`, `text_valign`, and `width`/`height` as minimum percentages of the plot), `delete`, `clear`, `merge_cells` and the `table.set_*` table-level setters. | No `table.cell_set_*` functions (`PINE4007`); merged cells are laid out by the app's own rules, and `width`/`height` do not apply to a merged cell; the drawing code has no unit test. | No |
 | Labels | Every `label.style_*`; `label.set_tooltip` / `tooltip =` and `textalign` are stored. | The chart does not show tooltips and does not apply multi-line alignment. The shape and glyph styles (`circle`, `square`, `diamond`, `cross`, `xcross`, `flag`, `triangle*`, `arrow*`) are simplified drawings with the text above, below or inside; `text_outline` is plain text. Placement is unit-tested, the drawing is not. | No |
 | Boxes and lines | Box text (clipped to the box, placed by alignment), dashed box borders, arrowheads on `line.style_arrow_*`. | Text wrap, font family and formatting are accepted and ignored. The drawing code is not unit-tested (the placement and arrowhead geometry is). | No |
-| Declaration | `behind_chart` (either value), `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Drawings are always painted above the candles in the app's own order; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. Other `margin_*` arguments are `PINE9001`. | n/a |
+| Declaration | `behind_chart` puts an overlay script under (default) or over the candles; `explicit_plot_zorder`, `dynamic_requests` and `scale` are accepted and ignored; `max_polylines_count` limits polylines. | Plots and drawings are painted in the app's own order, not the script's `explicit_plot_zorder`; `request.*` calls are never restricted to a "dynamic" context; there is one value axis, so `scale.left` / `scale.right` / `scale.none` change nothing. Other `margin_*` arguments are `PINE9001`. | n/a |
 | Drawings with `na` coordinates | They exist and stay hidden until every coordinate is known; their getters read `na`. | Setting a coordinate to `na` later keeps the previous one instead of hiding the drawing again. | No |
 | Libraries | `library()`, `export` and `import` work as described under "Libraries and `import`". | Only the libraries in the Script Manager are available: nothing is downloaded from TradingView, and a path is matched on its library name alone, so the user and version parts are accepted and ignored (two versions of one library cannot coexist). The name is the script's file name, or else the title in its `library("…")`. A library constant that builds a collection is rebuilt on every read. A compiled importer holds the library as it was at compile time: after editing a library, an importer that is already running picks the change up when it is next recompiled (saved, or its chart reloaded). | n/a |
 | Limits | 500k source characters; 50k tokens and nodes; 20M instructions per bar; 10 s deadline. | Pine bounds a bar by time (about 500 ms), not by steps; the deadline is checked between bars, so one runaway bar can take several seconds first. A slow script can report `PINE8007` on a slow machine (see the corpus section). | n/a |

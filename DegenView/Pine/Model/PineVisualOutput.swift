@@ -20,5 +20,7 @@ struct PineVisualOutput: Sendable {
     var candles: [PineCandleOutput] = []
     var alerts: [PineAlertEvent] = []
     var strategy: PineStrategyReport?
+    /// `behind_chart` of an overlay script: its plots and drawings are painted under the candles.
+    var behindChart = false
     static let empty = PineVisualOutput(overlay: true)
 }

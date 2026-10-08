@@ -631,6 +631,18 @@ final class PineRegressionTests: XCTestCase {
             "arguments that change behaviour stay unsupported")
     }
 
+    func testBehindChartDefaultsToTrueForOverlaysAndFollowsTheDeclaration() throws {
+        func behind(_ header: String) throws -> Bool {
+            let program = compile("plot(close)", header: header)
+            XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+            return try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output.behindChart
+        }
+        XCTAssertTrue(try behind("indicator(\"T\", overlay = true)"))
+        XCTAssertTrue(try behind("indicator(\"T\", overlay = true, behind_chart = true)"))
+        XCTAssertFalse(try behind("indicator(\"T\", overlay = true, behind_chart = false)"))
+        XCTAssertFalse(try behind("indicator(\"T\")"), "it applies to overlays only")
+    }
+
     func testStrategyMarginArgumentsAreAcceptedAndIgnored() {
         let strategy = "strategy(\"T\", margin_long = 10, margin_short = 10, slippage = 1)"
         let program = compile("plot(close)", header: strategy)

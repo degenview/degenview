@@ -31,6 +31,18 @@ final class PineIgnoredFeatureTests: XCTestCase {
         XCTAssertTrue(warning.message.contains("solid"), "it says what happens instead: \(warning.message)")
     }
 
+    func testBehindChartAndLowerTimeframeCalcBarsCountAreHonouredButSecurityStillWarns() {
+        let honoured = compile(
+            """
+            [c] = request.security_lower_tf(syminfo.tickerid, "1", [close], calc_bars_count = 10)
+            plot(array.size(c))
+            """, header: "indicator(\"T\", overlay = true, behind_chart = false)")
+        XCTAssertEqual(warnings(honoured).count, 0, "\(honoured.diagnostics)")
+        let ignored = compile(
+            "plot(request.security(syminfo.tickerid, \"60\", close, calc_bars_count = 10))")
+        XCTAssertEqual(warnings(ignored).map(\.code), ["PINE7001"])
+    }
+
     func testStrategyDeclarationAndOrderArgumentsWarn() {
         let program = compile(
             """
