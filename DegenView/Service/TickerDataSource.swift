@@ -116,10 +116,26 @@ struct QuoteRequest: Hashable, Sendable {
     let metadata: [String: String]
 }
 
+/// What a source's 24h volume figure is measured in.
+enum SourceVolumeKind: Sendable {
+    /// Turnover in dollars (or a dollar stablecoin).
+    case quoteCurrency
+    case shares
+    /// Units of the traded asset.
+    case base
+}
+
 /// A current price with the price 24 hours earlier, when the source reports one.
+///
+/// Volume and the source's own timestamp ride along where the same call already returns them,
+/// so a watchlist row costs no extra request.
 struct SourceQuote: Equatable, Sendable {
     let price: Double
     let previousDayPrice: Double?
+    var volume24h: Double? = nil
+    var volumeKind: SourceVolumeKind? = nil
+    /// When the source says this price was struck; nil when it does not say.
+    var timestamp: Date? = nil
 }
 
 /// Optional capability for sources that can price many assets in one call, far cheaper than

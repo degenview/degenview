@@ -7,6 +7,13 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BEC3243D98F6E10EF653F762 /* WatchlistQuoteCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBBC65FD4CCD55D247C7F85F /* WatchlistQuoteCoordinatorTests.swift */; };
+		E8D208F8958DE1E6CFD066FF /* WatchlistProviderQuoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8013BF998D3DCD4CEDF971AF /* WatchlistProviderQuoteTests.swift */; };
+		903AD38796AAA87238CD6750 /* WatchlistQuoteCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A8342CE7FB8806F3CE9D488 /* WatchlistQuoteCoordinator.swift */; };
+		5D5A71CC14502AD8D92FEBCC /* WatchlistQuoteProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEA668BEFB60271040CAE8DA /* WatchlistQuoteProvider.swift */; };
+		36F8CABDA980E52B525B7F17 /* CoinbaseTickSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5D6C97E80ED321770E8AE37 /* CoinbaseTickSource.swift */; };
+		4C49C45485829C9CA793F571 /* WatchlistQuote+Source.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261F33B6117BC39CAE191FBE /* WatchlistQuote+Source.swift */; };
+		DA4FE48718532D8EE20E1B85 /* WatchlistFreshness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6954DB9B89F6278B7A28364E /* WatchlistFreshness.swift */; };
 		935A370ADC603D23C5C5490E /* WatchlistSidebarViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */; };
 		E717833245A7CC6F0E515F5D /* WatchlistQuoteBookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */; };
 		54C20832BA836DD0D7223E87 /* WatchlistQuoteFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */; };
@@ -927,6 +934,13 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FBBC65FD4CCD55D247C7F85F /* WatchlistQuoteCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteCoordinatorTests.swift; sourceTree = "<group>"; };
+		8013BF998D3DCD4CEDF971AF /* WatchlistProviderQuoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistProviderQuoteTests.swift; sourceTree = "<group>"; };
+		4A8342CE7FB8806F3CE9D488 /* WatchlistQuoteCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteCoordinator.swift; sourceTree = "<group>"; };
+		EEA668BEFB60271040CAE8DA /* WatchlistQuoteProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteProvider.swift; sourceTree = "<group>"; };
+		E5D6C97E80ED321770E8AE37 /* CoinbaseTickSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseTickSource.swift; sourceTree = "<group>"; };
+		261F33B6117BC39CAE191FBE /* WatchlistQuote+Source.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistQuote+Source.swift"; sourceTree = "<group>"; };
+		6954DB9B89F6278B7A28364E /* WatchlistFreshness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFreshness.swift; sourceTree = "<group>"; };
 		3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSidebarViewModelTests.swift; sourceTree = "<group>"; };
 		F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteBookTests.swift; sourceTree = "<group>"; };
 		F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteFormatTests.swift; sourceTree = "<group>"; };
@@ -2182,6 +2196,8 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				FBBC65FD4CCD55D247C7F85F /* WatchlistQuoteCoordinatorTests.swift */,
+				8013BF998D3DCD4CEDF971AF /* WatchlistProviderQuoteTests.swift */,
 				3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */,
 				F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */,
 				F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */,
@@ -2681,6 +2697,8 @@
 		E072D082708E29CB762D092B /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				261F33B6117BC39CAE191FBE /* WatchlistQuote+Source.swift */,
+				6954DB9B89F6278B7A28364E /* WatchlistFreshness.swift */,
 				B53604C8E9A50D210F9D5930 /* WatchlistLayoutEngine.swift */,
 				DCBD8D932283EFAA203FE1DD /* WatchlistInstrument+Display.swift */,
 				8CA33B5D8704D4B0AA7D76EE /* WatchlistQuoteFormat.swift */,
@@ -2725,6 +2743,9 @@
 		1F6A9585750BDE83948D3819 /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				4A8342CE7FB8806F3CE9D488 /* WatchlistQuoteCoordinator.swift */,
+				EEA668BEFB60271040CAE8DA /* WatchlistQuoteProvider.swift */,
+				E5D6C97E80ED321770E8AE37 /* CoinbaseTickSource.swift */,
 				49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */,
 				F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */,
 			);
@@ -2886,6 +2907,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				903AD38796AAA87238CD6750 /* WatchlistQuoteCoordinator.swift in Sources */,
+				5D5A71CC14502AD8D92FEBCC /* WatchlistQuoteProvider.swift in Sources */,
+				36F8CABDA980E52B525B7F17 /* CoinbaseTickSource.swift in Sources */,
+				4C49C45485829C9CA793F571 /* WatchlistQuote+Source.swift in Sources */,
+				DA4FE48718532D8EE20E1B85 /* WatchlistFreshness.swift in Sources */,
 				CFCE79EEE7FD73C7FD527FC4 /* WatchlistImportSheet.swift in Sources */,
 				DE244CDA2279F9FC6E7BD903 /* WatchlistDetailPanel.swift in Sources */,
 				4399D492D9B1259D691C65F4 /* WatchlistHeader.swift in Sources */,
@@ -3640,6 +3666,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BEC3243D98F6E10EF653F762 /* WatchlistQuoteCoordinatorTests.swift in Sources */,
+				E8D208F8958DE1E6CFD066FF /* WatchlistProviderQuoteTests.swift in Sources */,
 				935A370ADC603D23C5C5490E /* WatchlistSidebarViewModelTests.swift in Sources */,
 				E717833245A7CC6F0E515F5D /* WatchlistQuoteBookTests.swift in Sources */,
 				54C20832BA836DD0D7223E87 /* WatchlistQuoteFormatTests.swift in Sources */,

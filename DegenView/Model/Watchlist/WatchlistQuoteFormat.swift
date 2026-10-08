@@ -14,8 +14,12 @@ enum WatchlistQuoteFormat {
         return PriceFormatter.changeAmount(change, scale: source.priceScale)
     }
 
-    static func percent(_ quote: WatchlistQuote?) -> String {
+    /// Prediction markets move in percentage points of probability, not percent of a price.
+    static func percent(_ quote: WatchlistQuote?, source: DataSourceType? = nil) -> String {
         guard let percent = quote?.changePercent else { return missing }
+        if let source, source.isPredictionMarket, let change = quote?.change {
+            return PriceFormatter.changeAmount(change, scale: source.priceScale)
+        }
         return String(format: "%+.2f%%", percent)
     }
 

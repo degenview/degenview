@@ -260,7 +260,12 @@ extension BinanceAPIService: BatchQuoteDataSource {
         let symbol: String
         let lastPrice: String
         let openPrice: String
+        let volume: String?
+        let quoteVolume: String?
+        let closeTime: Double?
     }
+
+    private static let dollarQuotes: Set<String> = ["USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI", "USD"]
 
     /// One `/ticker/24hr` call for every symbol. `openPrice` is the rolling 24h open, a truer
     /// day-change reference than a candle picked from the last 25 hours. One unknown symbol
@@ -292,7 +297,20 @@ extension BinanceAPIService: BatchQuoteDataSource {
         for request in requests {
             guard let ticker = bySymbol[request.symbol.uppercased()], let price = Double(ticker.lastPrice), price > 0
             else { continue }
-            quotes[request.symbol] = SourceQuote(price: price, previousDayPrice: Double(ticker.openPrice))
+            var quote = SourceQuote(
+                price: price, previousDayPrice: Double(ticker.openPrice),
+                timestamp: ticker.closeTime.map { Date(timeIntervalSince1970: $0 / 1000) })
+            // Turnover is only a dollar figure on a dollar-quoted pair; otherwise report units traded.
+            if Self.dollarQuotes.contains(where: ticker.symbol.uppercased().hasSuffix),
+                let turnover = ticker.quoteVolume.flatMap(Double.init)
+            {
+                quote.volume24h = turnover
+                quote.volumeKind = .quoteCurrency
+            } else if let units = ticker.volume.flatMap(Double.init) {
+                quote.volume24h = units
+                quote.volumeKind = .base
+            }
+            quotes[request.symbol] = quote
         }
         return quotes
     }

@@ -265,8 +265,26 @@ extension AlpacaAPIService: BatchQuoteDataSource {
         let dailyBar: Bar?
         let prevDailyBar: Bar?
 
-        struct Trade: Decodable { let p: Double }
-        struct Bar: Decodable { let c: Double }
+        struct Trade: Decodable {
+            let p: Double
+            let t: String?
+        }
+        struct Bar: Decodable {
+            let c: Double
+            let v: Double?
+        }
+    }
+
+    /// Alpaca stamps nanoseconds, which `ISO8601DateFormatter` cannot read; milliseconds are plenty.
+    static func parseTimestamp(_ text: String?) -> Date? {
+        guard var text, !text.isEmpty else { return nil }
+        if let dot = text.firstIndex(of: "."), let end = text[dot...].firstIndex(where: { !$0.isNumber && $0 != "." }) {
+            let fraction = text[text.index(after: dot)..<end].prefix(3)
+            text = String(text[..<dot]) + "." + fraction + String(text[end...])
+        }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: text) ?? ISO8601DateFormatter().date(from: text)
     }
 
     /// One `/snapshots` call for every ticker: the latest trade, and the previous session's close
@@ -290,7 +308,10 @@ extension AlpacaAPIService: BatchQuoteDataSource {
             guard let snapshot = snapshots[request.symbol.uppercased()],
                 let price = snapshot.latestTrade?.p ?? snapshot.dailyBar?.c, price > 0
             else { continue }
-            quotes[request.symbol] = SourceQuote(price: price, previousDayPrice: snapshot.prevDailyBar?.c)
+            quotes[request.symbol] = SourceQuote(
+                price: price, previousDayPrice: snapshot.prevDailyBar?.c, volume24h: snapshot.dailyBar?.v,
+                volumeKind: snapshot.dailyBar?.v == nil ? nil : .shares,
+                timestamp: Self.parseTimestamp(snapshot.latestTrade?.t))
         }
         return quotes
     }

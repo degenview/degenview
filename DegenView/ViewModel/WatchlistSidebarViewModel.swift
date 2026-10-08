@@ -6,6 +6,9 @@ import Foundation
 final class WatchlistSidebarViewModel: ObservableObject {
     let store: WatchlistStore
     let quotes: WatchlistQuoteBook
+    private let coordinator: WatchlistQuoteCoordinator
+    /// This window's identity as a quote consumer.
+    private let consumerID = UUID()
 
     @Published private(set) var selectedID: UUID?
     @Published var filterText = ""
@@ -16,9 +19,13 @@ final class WatchlistSidebarViewModel: ObservableObject {
     @Published var showsDetail = false
     @Published var errorMessage: String?
 
-    init(store: WatchlistStore = .shared, quotes: WatchlistQuoteBook = .shared) {
+    init(
+        store: WatchlistStore = .shared, quotes: WatchlistQuoteBook = .shared,
+        coordinator: WatchlistQuoteCoordinator = .shared
+    ) {
         self.store = store
         self.quotes = quotes
+        self.coordinator = coordinator
         selectedID = store.resolvedSelection(nil)
     }
 
@@ -53,6 +60,24 @@ final class WatchlistSidebarViewModel: ObservableObject {
     /// Width the sidebar needs for the list's columns.
     var sidebarWidth: CGFloat {
         UI.watchlistSidebarWidth(extraColumns: max(0, (list?.display.columns.count ?? 2) - 2))
+    }
+
+    // MARK: Quotes
+
+    /// Markets worth pricing now: every row that is on screen, meaning not hidden in a folded section.
+    var quoteInstruments: [InstrumentID] {
+        list?.visibleInstruments.map(\.instrument) ?? []
+    }
+
+    /// Tells the quote coordinator what this window needs. Called when the sidebar appears, the list's
+    /// contents change, or the window is shown or hidden.
+    func syncQuotes(isWindowVisible: Bool) {
+        coordinator.update(consumer: consumerID, instruments: quoteInstruments, isActive: isWindowVisible)
+    }
+
+    /// The sidebar went away: stop asking for prices on its behalf.
+    func stopQuotes() {
+        coordinator.release(consumer: consumerID)
     }
 
     // MARK: Selection

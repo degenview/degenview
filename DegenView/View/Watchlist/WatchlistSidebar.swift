@@ -8,6 +8,8 @@ struct WatchlistSidebar: View {
     /// Observed so a value-sorted list reorders (at most once a second) as quotes arrive.
     @ObservedObject var quotes: WatchlistQuoteBook
     let actions: WatchlistInstrumentActions
+    /// Prices are only fetched while the window can be seen.
+    let isWindowVisible: Bool
     let onAddSymbol: () -> Void
 
     @State private var prompt: WatchlistPrompt?
@@ -19,13 +21,14 @@ struct WatchlistSidebar: View {
     @State private var hoverKey: String?
 
     init(
-        viewModel: WatchlistSidebarViewModel, actions: WatchlistInstrumentActions,
+        viewModel: WatchlistSidebarViewModel, actions: WatchlistInstrumentActions, isWindowVisible: Bool,
         onAddSymbol: @escaping () -> Void
     ) {
         self.store = viewModel.store
         self.viewModel = viewModel
         self.quotes = viewModel.quotes
         self.actions = actions
+        self.isWindowVisible = isWindowVisible
         self.onAddSymbol = onAddSymbol
     }
 
@@ -53,6 +56,12 @@ struct WatchlistSidebar: View {
         .frame(width: viewModel.sidebarWidth)
         .background(.bar)
         .animation(.easeInOut(duration: 0.15), value: viewModel.sidebarWidth)
+        .onAppear { viewModel.syncQuotes(isWindowVisible: isWindowVisible) }
+        .onDisappear { viewModel.stopQuotes() }
+        .onChange(of: isWindowVisible) { viewModel.syncQuotes(isWindowVisible: isWindowVisible) }
+        .onChange(of: viewModel.quoteInstruments.map(\.key)) {
+            viewModel.syncQuotes(isWindowVisible: isWindowVisible)
+        }
         .alert(
             prompt?.title ?? "", isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } }),
             presenting: prompt

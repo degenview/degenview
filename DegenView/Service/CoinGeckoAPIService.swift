@@ -716,13 +716,23 @@ extension CoinGeckoAPIService: BatchQuoteDataSource {
         let id: String
         let currentPrice: Double?
         let changePercent24h: Double?
+        let totalVolume: Double?
+        let lastUpdated: String?
 
         enum CodingKeys: String, CodingKey {
             case id
             case currentPrice = "current_price"
             case changePercent24h = "price_change_percentage_24h"
+            case totalVolume = "total_volume"
+            case lastUpdated = "last_updated"
         }
     }
+
+    private static let lastUpdatedFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
 
     /// `/coins/markets` prices every coin id in one call, which costs the limiter a single slot
     /// however many coins there are; fetching a candle series per coin costs one slot each.
@@ -759,7 +769,11 @@ extension CoinGeckoAPIService: BatchQuoteDataSource {
         var quotes: [String: SourceQuote] = [:]
         for symbol in symbols {
             guard let coin = byID[symbol.lowercased()], let price = coin.currentPrice, price > 0 else { continue }
-            quotes[symbol] = SourceQuote(price: price, changePercent24h: coin.changePercent24h)
+            var quote = SourceQuote(price: price, changePercent24h: coin.changePercent24h)
+            quote.volume24h = coin.totalVolume
+            quote.volumeKind = coin.totalVolume == nil ? nil : .quoteCurrency
+            quote.timestamp = coin.lastUpdated.flatMap { Self.lastUpdatedFormatter.date(from: $0) }
+            quotes[symbol] = quote
         }
         return quotes
     }
