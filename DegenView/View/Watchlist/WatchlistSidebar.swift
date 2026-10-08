@@ -158,7 +158,7 @@ struct WatchlistSidebar: View {
                     .listRowInsets(
                         EdgeInsets(
                             top: 1, leading: leadingInset(for: row), bottom: 1,
-                            trailing: WatchlistMetrics.edgeInset)
+                            trailing: WatchlistMetrics.trailingInset)
                     )
                     .listRowSeparator(.hidden)
             }
@@ -212,7 +212,7 @@ struct WatchlistSidebar: View {
     /// in that gutter inside the row. Headings and placeholders use the list's inset; every visible edge is the same.
     private func leadingInset(for row: WatchlistLayoutEngine.Row) -> CGFloat {
         if case .instrument = row { return 0 }
-        return WatchlistMetrics.edgeInset
+        return WatchlistMetrics.leadingInset
     }
 
     private func toggle(_ section: WatchlistSection) {
@@ -252,7 +252,7 @@ struct WatchlistSidebar: View {
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, WatchlistMetrics.edgeInset)
+        .watchlistHorizontalInsets()
         .padding(.bottom, 8)
     }
 

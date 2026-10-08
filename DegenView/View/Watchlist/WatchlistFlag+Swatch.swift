@@ -6,7 +6,7 @@ extension WatchlistFlag {
     @MainActor
     var swatch: NSImage {
         if let cached = Self.swatches[self] { return cached }
-        let renderer = ImageRenderer(content: WatchlistFlagMark(flag: self, size: CGSize(width: 12, height: 10)))
+        let renderer = ImageRenderer(content: WatchlistFlagMark(flag: self, size: CGSize(width: 10, height: 13)))
         renderer.scale = 3
         let image = renderer.nsImage ?? NSImage()
         image.isTemplate = false

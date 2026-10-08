@@ -33,7 +33,7 @@ struct WatchlistHeader: View {
             optionsMenu
         }
         .buttonStyle(.plain)
-        .padding(.horizontal, WatchlistMetrics.edgeInset)
+        .watchlistHorizontalInsets()
         .padding(.vertical, 10)
     }
 

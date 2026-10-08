@@ -72,7 +72,7 @@ struct WatchlistSectionRow: View {
             section: WatchlistSection(title: "A section title long enough that it has to be truncated"), count: 40
         ) {}
     }
-    .padding(.horizontal, WatchlistMetrics.edgeInset)
+    .watchlistHorizontalInsets()
     .frame(width: 270)
     .background(.bar)
 }
@@ -92,11 +92,11 @@ struct WatchlistSectionRow: View {
             item: WatchlistInstrument(instrument: id, name: symbol, label: symbol),
             cell: book.cell(for: id), flag: flag, display: display, menu: { EmptyView() }
         )
-        .padding(.trailing, WatchlistMetrics.edgeInset)
+        .padding(.trailing, WatchlistMetrics.trailingInset)
     }
     func heading(_ title: String, count: Int) -> some View {
         WatchlistSectionRow(section: WatchlistSection(title: title), count: count) {}
-            .padding(.horizontal, WatchlistMetrics.edgeInset)
+            .watchlistHorizontalInsets()
     }
     return VStack(spacing: 0) {
         row("BTCUSDT", price: 82_514, change: -1.4, flag: .red)
@@ -109,7 +109,7 @@ struct WatchlistSectionRow: View {
         row("DOTUSDT", price: 1.1, change: -0.6, flag: .orange)
         heading("Watching", count: 0)
         WatchlistEmptySectionRow()
-            .padding(.horizontal, WatchlistMetrics.edgeInset)
+            .watchlistHorizontalInsets()
     }
     .frame(width: 270)
     .background(.bar)
