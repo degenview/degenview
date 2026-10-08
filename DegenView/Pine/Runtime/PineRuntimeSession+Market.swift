@@ -50,6 +50,7 @@ extension PineRuntimeSession {
         case "syminfo.timezone": symbol.type == "crypto" ? .string("Etc/UTC") : .na
         case "syminfo.pointvalue": .float(1)
         case "syminfo.type": .string(symbol.type)
+        case "syminfo.basecurrency": symbol.baseCurrency.map { .string($0) } ?? .na
         default: nil
         }
     }
@@ -68,6 +69,13 @@ extension PineRuntimeSession {
     private func namespaced(_ name: String, _ bar: KlineData) -> PineRuntimeValue? {
         if name.hasPrefix("strategy.") { return strategyValue(name, bar) }
         if name.hasPrefix("chart.is_") { return chartType(name) }
+        // The candles on screen when the script was built; with none given, the run's first and last bar.
+        if name == "chart.left_visible_bar_time" {
+            return (visibleRange?.lowerBound ?? firstBarTime).map { .int(PineTime.milliseconds($0)) } ?? .na
+        }
+        if name == "chart.right_visible_bar_time" {
+            return (visibleRange?.upperBound ?? lastBarTime).map { .int(PineTime.milliseconds($0)) } ?? .na
+        }
         if name.hasPrefix("timeframe.") { return PineTime.timeframe(name, barSeconds: barSeconds) }
         return nil
     }
