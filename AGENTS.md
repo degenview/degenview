@@ -28,13 +28,14 @@ sandboxing off.
 - **@MainActor** on all ViewModels that publish UI state
 - **No SwiftUI Charts** — candles are hand-drawn via AppKit `Canvas`
 - **Protocol abstraction** for data sources: `TickerDataSource` protocol, `DataSourceFactory` singleton
-- **Persistence**: user data (tabs, saved views, favorites, drawings, portfolios, paper
+- **Persistence**: user data (tabs, saved views, watchlists, drawings, portfolios, paper
   trading, alerts) lives in SQLite (`degenview.sqlite`, WAL) through `AppDatabase`, shared
   with the alert agent. Small caches stay in `JSONStore<T>`; closed daily candles for
   portfolio history are the exception — large, append-mostly, read by range — and live in the
   `candle`/`candle_coverage` tables via `PortfolioCandleStore`. The schema is one
   `AppDatabase.createSchema` in `AppDatabase+Schema.swift` (`IF NOT EXISTS`); there are no
-  versioned migrations and no readers for older data — this is the first version
+  versioned migrations and no readers for older data — this is the first version. The one
+  exception is the old `favorite` table, read once by `WatchlistStore+FavoritesMigration`
 - **Pine is a feature folder**: everything for the Pine Script engine lives under
   `DegenView/Pine/` (`Language`, `Runtime`, `Broker`, `Model`, `Editor`, `View`). One type per
   file still applies; a long type is split into `Type+Concern.swift` extensions (members
@@ -220,6 +221,35 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   Binance → Coinbase → the rest, and `TickerSearchViewModel.orderedSources` keeps that order
   (sources with results first). A new crypto source goes in that list at its intended rank
 
+### Watchlists
+- `docs/watchlists.md` has the behaviour. `WatchlistStore` is the one source of truth (it replaced
+  `FavoritesStore`): `watchlist` document table, one row per list with its flat ordered `entries`
+  (instrument or section). Mutations validate, persist in one transaction, then publish. A list that
+  fails to read sets `loadFailed` and every mutation throws — never write an empty list over data that
+  did not load. Favorites live on as the list with `isFavorites` (the chart-card star); old `favorite`
+  rows migrate once and are left untouched
+- Identity is `InstrumentID` (source + the provider's own id; `chain` is metadata, not identity). Never
+  key a watchlist by ticker text. Drawings, alerts and paper trading keep their own key formats; do not
+  add another. CoinMarketCap cards are not instruments
+- Flags are global per market (`setting` key `watchlist.flags`), not per list. Sorting, filtering and
+  the selected list never change the stored order; `WatchlistLayoutEngine` is pure and sorts inside
+  each section. Per-window state (selected list, filter, highlighted row) is `WatchlistSidebarViewModel`
+- Quotes are transient: `WatchlistQuoteBook` (one observable cell per market, so a tick redraws one row)
+  fed by `WatchlistQuoteCoordinator`, which merges every sidebar's needs by `InstrumentID`, makes one
+  batched request per source, shares one Coinbase socket, and backs off per source. It never writes to
+  the database and does not use `MarketQuoteCoordinator` (alerts own that). Provider quote calls return
+  `SourceQuote`, which the agent target also compiles: keep those edits Foundation-only. A new quote
+  field goes through `WatchlistQuote(source:quote:receivedAt:)`; a missing reference is nil, never zero
+- Watchlist rows drag with their own UTType (`WatchlistDragPayload`), never plain text, so
+  `ChartGridDropDelegate` cannot see them. The move is committed once, on drop
+- Each tab has a transient `focusedChartID` (not in `LayoutSnapshot`). A row click calls
+  `ContentViewModel.openWatchlistInstrument`: a market already on screen takes focus, otherwise the
+  focused chart switches via `ChartViewModel.updateTicker`, the one safe in-place switch (cancels the
+  fetch, bumps the generation, clears selections, drafts and Pine results, reloads that market's
+  drawings). `uniqueID` follows the market; `chartID` is the identity. Do not mutate `ticker` any other way
+- Tests never touch the real database: `ContentViewModel(tabID:savedViews:tabs:)` takes in-memory
+  stores and `ChartViewModel.serviceResolver` stubs the provider a switch refetches from
+
 ### Tabs and windows
 - Each tab is a real `NSWindow` in a tab group, rendering one `ContentView` +
   `ContentViewModel` keyed by a `ChartTab.id`. The scene is `WindowGroup(for: UUID.self)`,
@@ -359,7 +389,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
 13a. Portfolio and Script Manager buttons sit in the title bar of a chart tab, the portfolio tab
     and the Script Manager tab. Each focuses the existing tab (never a duplicate); from the
     Script Manager tab, Portfolio opens inside the same tab group. "Add Chart" is its own
-    labelled bubble, apart from the Favorites button
+    labelled bubble, apart from the watchlist toggle
 13b. Alerts window (bell in the tool strip): tabs Active / Triggered / Paused / All / History / Scripts
     with counts, each row showing the coin artwork with its source logo. Search matches symbol and name;
     a search with no hits says so, an empty tab explains itself. Hover a rule for edit and pause/resume;
@@ -402,6 +432,22 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     is back. The market picker offers only Crypto and Stock. A favorited script highlights one sidebar row
     (whichever you click), right-click ▸ Duplicate makes "<name> copy" and selects it, and the
     "Community scripts" link sits under the list
+
+15. Watchlists: relaunch keeps your old favorites in "Favorites", in order. Create "Crypto" from the
+    selector, add BINANCE:BTCUSDT, BINANCE:ETHUSDT and COINBASE:BTC-USD from the + sheet (it stays open,
+    Recents don't grow). Add sections Majors and Watching; drag symbols between them and a section by its
+    header; the insertion line shows where it lands and nothing is written until you drop. Click Chg%
+    to sort, again to flip, again for Manual — the manual order returns. Filter "btc" and the flag filter;
+    drag is off while either is active. Columns menu adds Vol and the panel widens. Prices and Chg%
+    appear without any chart for them; hide the sidebar or minimise the window and requests stop
+16. Watchlist and charts: with two chart cards, click one (a faint accent ring shows the focused card),
+    click ETHUSDT — only that card switches, drawings follow their own market (draw on BTC, switch to ETH
+    and back), price alerts and paper positions are unchanged, and the layout reads "(unsaved)". Right-click
+    BTCUSDT ▸ Add as New Chart adds a card; a market already shown just takes focus. Open in New Tab keeps the
+    old behaviour. Right-click the chart-card star and a search result in Add Chart for Add to Watchlist
+17. Watchlists across windows: open a second window; rename or reorder a list in one and the other
+    follows, while each keeps its own selected list. Quit and relaunch: lists, sections, order, flags
+    and columns are back. ⋯ ▸ Export to File and Import Symbols round-trip, with a summary of skipped rows
 
 Adding a new `.swift` file means four hand-edits to `project.pbxproj` (`PBXBuildFile`,
 `PBXFileReference`, the group's `children`, the `Sources` phase). The project does not use
