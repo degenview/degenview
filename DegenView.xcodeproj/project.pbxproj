@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A348E6B512F15579A1DF7FCC /* WatchlistFlagShapeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */; };
+		CED0F9CA6D6437ADBBF77FB2 /* WatchlistFlag+Swatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */; };
+		14BB0F55653CEFE2B2219F7A /* WatchlistFlagMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */; };
+		33758831E17E3A92969071B6 /* WatchlistFlagShape.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCC7F6B4CD5DBC94C78702BE /* WatchlistFlagShape.swift */; };
 		95DD51A6B749272DF5EECB5C /* WatchlistRowMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */; };
 		0900FA2E5DFCE6B353A54381 /* WatchlistLayoutEngine+Move.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFAF38089D6902F7F5DB5B41 /* WatchlistLayoutEngine+Move.swift */; };
 		70E3D1C1F1ED5C3DD3D16F16 /* WatchlistEmptySectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */; };
@@ -941,6 +945,10 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagShapeTests.swift; sourceTree = "<group>"; };
+		E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistFlag+Swatch.swift"; sourceTree = "<group>"; };
+		EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagMark.swift; sourceTree = "<group>"; };
+		FCC7F6B4CD5DBC94C78702BE /* WatchlistFlagShape.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlagShape.swift; sourceTree = "<group>"; };
 		4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistRowMoveTests.swift; sourceTree = "<group>"; };
 		EFAF38089D6902F7F5DB5B41 /* WatchlistLayoutEngine+Move.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistLayoutEngine+Move.swift"; sourceTree = "<group>"; };
 		F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistEmptySectionRow.swift; sourceTree = "<group>"; };
@@ -2210,6 +2218,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				5EE264817D1348CFF8933036 /* WatchlistFlagShapeTests.swift */,
 				4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */,
 				17FAB2AFABC1BDCDDE689445 /* FocusedChartTests.swift */,
 				306B7AF2E858FCD13BF95C3A /* ChartSwitchTests.swift */,
@@ -2739,6 +2748,9 @@
 		94BF126227BB45E4039C1852 /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				E24F99ACB5E0F0AFAAF50329 /* WatchlistFlag+Swatch.swift */,
+				EF6876275493ACB95D43558C /* WatchlistFlagMark.swift */,
+				FCC7F6B4CD5DBC94C78702BE /* WatchlistFlagShape.swift */,
 				F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */,
 				29E1ACE8107FB7CF6C9F664D /* WatchlistMetrics.swift */,
 				D38CBC0A26EA8985C9A55858 /* WatchlistResultContextMenu.swift */,
@@ -2928,6 +2940,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CED0F9CA6D6437ADBBF77FB2 /* WatchlistFlag+Swatch.swift in Sources */,
+				14BB0F55653CEFE2B2219F7A /* WatchlistFlagMark.swift in Sources */,
+				33758831E17E3A92969071B6 /* WatchlistFlagShape.swift in Sources */,
 				0900FA2E5DFCE6B353A54381 /* WatchlistLayoutEngine+Move.swift in Sources */,
 				70E3D1C1F1ED5C3DD3D16F16 /* WatchlistEmptySectionRow.swift in Sources */,
 				2F5B40764735841A81763DC4 /* WatchlistMetrics.swift in Sources */,
@@ -3691,6 +3706,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A348E6B512F15579A1DF7FCC /* WatchlistFlagShapeTests.swift in Sources */,
 				95DD51A6B749272DF5EECB5C /* WatchlistRowMoveTests.swift in Sources */,
 				7F38CAB070F5D60BF61D80CB /* FocusedChartTests.swift in Sources */,
 				ED4C6806D3ABC9E458107F7B /* ChartSwitchTests.swift in Sources */,

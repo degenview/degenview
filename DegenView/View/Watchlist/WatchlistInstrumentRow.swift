@@ -21,16 +21,10 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
                 }
 
             VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    if let flag {
-                        Circle().fill(flag.color).frame(width: 7, height: 7)
-                            .accessibilityLabel("\(flag.title) flag")
-                    }
-                    Text(item.name)
-                        .font(.callout.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
+                Text(item.name)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 if display.showsDescription {
                     Text(item.label)
                         .font(.caption)
@@ -48,7 +42,16 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
             }
         }
         .padding(.vertical, 2)
+        // The row owns its leading inset (the list gives it none), so the flag can be drawn in that gutter,
+        // inside the row's own bounds, without moving the logo.
+        .padding(.leading, WatchlistMetrics.edgeInset)
         .opacity(isDimmed ? 0.6 : 1)
+        .overlay(alignment: .leading) {
+            if let flag {
+                WatchlistFlagMark(flag: flag)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(Rectangle())
         .overlay(alignment: .trailing) {
             if isHovering {
@@ -68,7 +71,8 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            WatchlistQuoteFormat.spoken(name: item.name, quote: cell.quote, source: item.instrument.source))
+            WatchlistQuoteFormat.spoken(
+                name: item.name, quote: cell.quote, source: item.instrument.source, flag: flag))
         .accessibilityAddTraits(.isButton)
     }
 

@@ -31,11 +31,17 @@ struct WatchlistInstrumentMenu: View {
         Menu("Set Flag") {
             ForEach(WatchlistFlag.allCases) { flag in
                 Toggle(
-                    flag.title,
                     isOn: Binding(
                         get: { store.flag(for: item.instrument) == flag },
                         set: { isOn in viewModel.perform { try store.setFlag(isOn ? flag : nil, for: item.instrument) } }
-                    ))
+                    )
+                ) {
+                    Label {
+                        Text(flag.title)
+                    } icon: {
+                        Image(nsImage: flag.swatch).renderingMode(.original)
+                    }
+                }
             }
             Divider()
             Button("Clear Flag") { viewModel.perform { try store.setFlag(nil, for: item.instrument) } }

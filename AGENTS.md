@@ -244,6 +244,10 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   panel uses `WatchlistMetrics.edgeInset`, so symbols, section titles and column heads share one left edge and
   values and chevrons one right edge. Headings and the empty-section placeholder are not selectable
   (`.selectionDisabled()`); only instrument rows carry a `.tag`, and it is the entry's `UUID`
+- A flag is a small bookmark on its side (`WatchlistFlagMark`) drawn in the row's leading gutter, left of the logo:
+  never inline in the name line, or it pushes the logo. Symbol rows therefore get `listRowInsets(leading: 0)` and
+  add `WatchlistMetrics.edgeInset` themselves; headings and placeholders keep the list's inset, so every visible left
+  edge is still 12. Menu swatches are non-template `NSImage`s (`WatchlistFlag.swatch`) so AppKit keeps the colour
 - Watchlist reordering is the List's native `ForEach.onMove` over the flat rows (off while sorted or filtered).
   `WatchlistLayoutEngine.resolveMove` maps the drop onto stored entries and `WatchlistStore.moveEntries` writes
   it once. Do not add SwiftUI `onDrag`/`onDrop`/`onTapGesture` to rows: layered over the List's own table

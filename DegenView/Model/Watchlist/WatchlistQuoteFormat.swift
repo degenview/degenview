@@ -67,13 +67,21 @@ enum WatchlistQuoteFormat {
     }
 
     /// One sentence a screen reader can use for a row.
-    static func spoken(name: String, quote: WatchlistQuote?, source: DataSourceType) -> String {
-        guard let quote, quote.last != nil else { return "\(name), no quote" }
-        var parts = [name, last(quote, source: source)]
-        if quote.changePercent != nil {
-            parts.append("\(direction(quote).spoken) \(percent(quote).replacingOccurrences(of: "%", with: " percent"))")
+    static func spoken(
+        name: String, quote: WatchlistQuote?, source: DataSourceType, flag: WatchlistFlag? = nil
+    ) -> String {
+        var parts = [name]
+        if let quote, quote.last != nil {
+            parts.append(last(quote, source: source))
+            if quote.changePercent != nil {
+                parts.append(
+                    "\(direction(quote).spoken) \(percent(quote).replacingOccurrences(of: "%", with: " percent"))")
+            }
+            if !quote.freshness.isCurrent { parts.append(quote.freshness.label) }
+        } else {
+            parts.append("no quote")
         }
-        if !quote.freshness.isCurrent { parts.append(quote.freshness.label) }
+        if let flag { parts.append("\(flag.title.lowercased()) flag") }
         return parts.joined(separator: ", ")
     }
 }

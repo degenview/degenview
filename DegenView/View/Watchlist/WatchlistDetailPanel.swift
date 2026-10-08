@@ -18,7 +18,10 @@ struct WatchlistDetailPanel: View {
                 }
                 Spacer()
                 if let flag {
-                    Label(flag.title, systemImage: "flag.fill").labelStyle(.iconOnly).foregroundStyle(flag.color)
+                    HStack(spacing: 5) {
+                        WatchlistFlagMark(flag: flag)
+                        Text(flag.title).font(.caption).foregroundStyle(.secondary)
+                    }
                 }
             }
 
