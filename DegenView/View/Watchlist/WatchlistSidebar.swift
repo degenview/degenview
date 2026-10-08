@@ -10,6 +10,8 @@ struct WatchlistSidebar: View {
     let actions: WatchlistInstrumentActions
     /// Prices are only fetched while the sidebar is open and the window can be seen.
     let isWindowVisible: Bool
+    /// The market the tab's focused chart shows; the matching row is highlighted.
+    let focusedMarket: InstrumentID?
     let onAddSymbol: () -> Void
 
     @State private var prompt: WatchlistPrompt?
@@ -17,19 +19,18 @@ struct WatchlistSidebar: View {
     @State private var showsImport = false
     @State private var confirmsDelete = false
     @State private var alertAsset: PortfolioAsset?
-    @State private var draggedID: UUID?
-    @State private var hoverKey: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         viewModel: WatchlistSidebarViewModel, actions: WatchlistInstrumentActions, isWindowVisible: Bool,
-        onAddSymbol: @escaping () -> Void
+        focusedMarket: InstrumentID?, onAddSymbol: @escaping () -> Void
     ) {
         self.store = viewModel.store
         self.viewModel = viewModel
         self.quotes = viewModel.quotes
         self.actions = actions
         self.isWindowVisible = isWindowVisible
+        self.focusedMarket = focusedMarket
         self.onAddSymbol = onAddSymbol
     }
 
@@ -63,6 +64,12 @@ struct WatchlistSidebar: View {
         .onChange(of: viewModel.quoteInstruments.map(\.key)) {
             viewModel.syncQuotes(isWindowVisible: isWindowVisible)
         }
+        // Selecting a symbol opens it; the highlighted row follows the focused chart's market.
+        .onChange(of: viewModel.selectedEntryID) {
+            if let item = viewModel.selectedInstrument { actions.open(item) }
+        }
+        .onChange(of: focusedMarket, initial: true) { viewModel.syncSelection(to: focusedMarket) }
+        .onChange(of: viewModel.list?.id) { viewModel.syncSelection(to: focusedMarket) }
         .alert(
             prompt?.title ?? "", isPresented: Binding(get: { prompt != nil }, set: { if !$0 { prompt = nil } }),
             presenting: prompt
@@ -155,15 +162,9 @@ struct WatchlistSidebar: View {
                     )
                     .listRowSeparator(.hidden)
             }
-
-            if viewModel.canReorder {
-                Color.clear
-                    .frame(height: 28)
-                    .overlay(alignment: .top) { insertionLine(visible: hoverKey == "end") }
-                    .onDrop(of: [WatchlistDragPayload.type], delegate: dropDelegate(.end))
-                    .listRowSeparator(.hidden)
-                    .accessibilityHidden(true)
-            }
+            // The list's own row move: native lift, insertion line and auto-scroll, one write on drop.
+            // Off while the list is sorted or filtered, since a drop could not mean a stored position.
+            .onMove(perform: viewModel.canReorder ? { viewModel.moveRows(fromOffsets: $0, toOffset: $1) } : nil)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
@@ -181,20 +182,15 @@ struct WatchlistSidebar: View {
     private func rowView(_ row: WatchlistLayoutEngine.Row, list: Watchlist, isFirst: Bool) -> some View {
         switch row {
         case .section(let section, let count):
-            WatchlistSectionRow(
-                section: section, count: count, isFirst: isFirst, isDropTarget: hoverKey == section.id.uuidString,
-                onToggle: { toggle(section) }
-            )
-            // A heading folds on click; it is never "selected", so it never paints the row blue.
-            .selectionDisabled()
-            .modifier(draggable(section.id))
-            .onDrop(of: [WatchlistDragPayload.type], delegate: dropDelegate(.sectionHeader(section)))
-            .contextMenu {
-                Button("Rename Section…") { present(.renameSection(id: section.id, current: section.title)) }
-                Button("Add Section…") { present(.newSection) }
-                Divider()
-                Button("Delete Section", role: .destructive) { viewModel.deleteSection(section) }
-            }
+            WatchlistSectionRow(section: section, count: count, isFirst: isFirst, onToggle: { toggle(section) })
+                // A heading folds on click; it is never "selected", so it never paints the row blue.
+                .selectionDisabled()
+                .contextMenu {
+                    Button("Rename Section…") { present(.renameSection(id: section.id, current: section.title)) }
+                    Button("Add Section…") { present(.newSection) }
+                    Divider()
+                    Button("Delete Section", role: .destructive) { viewModel.deleteSection(section) }
+                }
 
         case .instrument(let item, _):
             WatchlistInstrumentRow(
@@ -202,24 +198,13 @@ struct WatchlistSidebar: View {
                 display: list.display, menu: { menu(for: item) }
             )
             .tag(item.id)
-            .overlay(alignment: .top) { insertionLine(visible: hoverKey == item.id.uuidString) }
-            .onTapGesture {
-                viewModel.selectedEntryID = item.id
-                actions.open(item)
-            }
-            .modifier(draggable(item.id))
-            .onDrop(of: [WatchlistDragPayload.type], delegate: dropDelegate(.row(item.id)))
             .contextMenu { menu(for: item) }
             .accessibilityAction(named: "Add as New Chart") { actions.addChart(item) }
             .accessibilityAction(named: "Remove from Watchlist") { viewModel.remove(item) }
 
-        case .emptySection(let sectionID):
-            WatchlistEmptySectionRow(isDropTarget: hoverKey == sectionID.uuidString)
+        case .emptySection:
+            WatchlistEmptySectionRow()
                 .selectionDisabled()
-                .onDrop(
-                    of: [WatchlistDragPayload.type],
-                    delegate: dropDelegate(
-                        .sectionHeader(list.sections.first { $0.id == sectionID } ?? WatchlistSection(title: ""))))
         }
     }
 
@@ -266,26 +251,6 @@ struct WatchlistSidebar: View {
         .padding(.bottom, 8)
     }
 
-    private func insertionLine(visible: Bool) -> some View {
-        Rectangle()
-            .fill(Color.accentColor)
-            .frame(height: 2)
-            .opacity(visible ? 1 : 0)
-            .allowsHitTesting(false)
-    }
-
-    private func dropDelegate(_ target: WatchlistDropDelegate.Target) -> WatchlistDropDelegate {
-        WatchlistDropDelegate(target: target, viewModel: viewModel, draggedID: $draggedID, hoverKey: $hoverKey)
-    }
-
-    /// Dragging is offered only while the list is shown whole and in its stored order.
-    private func draggable(_ id: UUID) -> some ViewModifier {
-        WatchlistDraggable(enabled: viewModel.canReorder) {
-            draggedID = id
-            return WatchlistDragPayload.provider(for: id)
-        }
-    }
-
     // MARK: Actions
 
     private func present(_ next: WatchlistPrompt) {
@@ -313,20 +278,5 @@ struct WatchlistSidebar: View {
     private func export() {
         guard let text = viewModel.exportText, let name = viewModel.list?.name else { return }
         if let failure = WatchlistFileIO.save(text, suggestedName: name) { viewModel.errorMessage = failure }
-    }
-}
-
-/// Attaches the drag only when reordering is allowed, so a sorted or filtered row does not
-/// pick up a payload that could not be dropped anywhere meaningful.
-private struct WatchlistDraggable: ViewModifier {
-    let enabled: Bool
-    let provider: () -> NSItemProvider
-
-    func body(content: Content) -> some View {
-        if enabled {
-            content.onDrag(provider)
-        } else {
-            content
-        }
     }
 }

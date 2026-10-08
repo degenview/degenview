@@ -10,8 +10,6 @@ struct WatchlistSectionRow: View {
     let count: Int
     /// The heading opens the list, so it needs no space above it.
     var isFirst = false
-    /// A symbol or section is being dragged over this heading.
-    var isDropTarget = false
     let onToggle: () -> Void
 
     @State private var isHovering = false
@@ -28,7 +26,7 @@ struct WatchlistSectionRow: View {
 
             Rectangle()
                 .fill(ruleColor)
-                .frame(height: isDropTarget ? 2 : 1 / displayScale)
+                .frame(height: 1 / displayScale)
                 .frame(minWidth: 12, maxWidth: .infinity)
 
             Text("\(count)")
@@ -57,12 +55,11 @@ struct WatchlistSectionRow: View {
     }
 
     private var titleColor: Color {
-        if isDropTarget { return .accentColor }
-        return isHovering ? .primary : .secondary
+        isHovering ? .primary : .secondary
     }
 
     private var ruleColor: Color {
-        isDropTarget ? .accentColor : Color(nsColor: .separatorColor)
+        Color(nsColor: .separatorColor)
     }
 }
 
@@ -71,7 +68,6 @@ struct WatchlistSectionRow: View {
         WatchlistSectionRow(section: WatchlistSection(title: "Majors"), count: 3, isFirst: true) {}
         WatchlistSectionRow(section: WatchlistSection(title: "Watching"), count: 12) {}
         WatchlistSectionRow(section: WatchlistSection(title: "Folded away", isCollapsed: true), count: 5) {}
-        WatchlistSectionRow(section: WatchlistSection(title: "Dragging over"), count: 2, isDropTarget: true) {}
         WatchlistSectionRow(
             section: WatchlistSection(title: "A section title long enough that it has to be truncated"), count: 40
         ) {}

@@ -244,8 +244,11 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   panel uses `WatchlistMetrics.edgeInset`, so symbols, section titles and column heads share one left edge and
   values and chevrons one right edge. Headings and the empty-section placeholder are not selectable
   (`.selectionDisabled()`); only instrument rows carry a `.tag`, and it is the entry's `UUID`
-- Watchlist rows drag with their own UTType (`WatchlistDragPayload`), never plain text, so
-  `ChartGridDropDelegate` cannot see them. The move is committed once, on drop
+- Watchlist reordering is the List's native `ForEach.onMove` over the flat rows (off while sorted or filtered).
+  `WatchlistLayoutEngine.resolveMove` maps the drop onto stored entries and `WatchlistStore.moveEntries` writes
+  it once. Do not add SwiftUI `onDrag`/`onDrop`/`onTapGesture` to rows: layered over the List's own table
+  handling they made dragging fail most of the time. Selecting a row opens it in the focused chart and the
+  highlighted row mirrors the focused chart's market (`syncSelection`); only instrument rows are tagged/selectable
 - The watchlist is the secondary pane of a `SplitContainer` (drag its edge, double-click to reset); the
   width is the global `watchlistSidebarLength` default, clamped between `WatchlistSidebarViewModel.minimumWidth`
   (every column plus room for a name) and 640. The pane stays built while hidden, so the sidebar is told

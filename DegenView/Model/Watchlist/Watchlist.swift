@@ -147,6 +147,14 @@ struct Watchlist: Identifiable, Codable, Equatable, Sendable {
         }
     }
 
+    /// Moves several entries together to sit before `targetID` (or at the end), keeping their relative order.
+    /// Nothing moves if any id is unknown.
+    mutating func move(_ ids: [UUID], before targetID: UUID?) throws {
+        guard ids.allSatisfy({ index(of: $0) != nil }) else { throw WatchlistError.notFound }
+        if let targetID, ids.contains(targetID) { return }
+        for id in ids { try move(id, before: targetID) }
+    }
+
     /// Moves an instrument to the end of a section's block, or to the end of the root block.
     mutating func moveInstrument(_ entryID: UUID, toSection sectionID: UUID?) throws {
         guard let from = index(of: entryID), entries[from].instrument != nil else { throw WatchlistError.notFound }

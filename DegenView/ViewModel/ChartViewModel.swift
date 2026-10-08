@@ -36,8 +36,7 @@ final class ChartViewModel: ObservableObject {
     /// Whether this chart already shows `instrument`. Compared by the id each provider's API takes, so a
     /// bare Binance `BTC` and `BTCUSDT` are the same market.
     func shows(_ instrument: InstrumentID) -> Bool {
-        source == instrument.source
-            && instrumentID.apiSymbol.caseInsensitiveCompare(instrument.apiSymbol) == .orderedSame
+        instrumentID.isSameMarket(as: instrument)
     }
 
     private var api: TickerDataSource

@@ -113,18 +113,128 @@ final class WatchlistSidebarViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.defaultWidth, UI.watchlistSidebarBaseWidth, accuracy: 0.5)
     }
 
-    func testDroppingAnInstrumentOnASectionHeaderPutsItFirstInThatSection() throws {
+    /// root: R | Majors: A B | Watching: C — rows in the order the list shows them.
+    private func seedSections() throws -> (list: Watchlist, majors: WatchlistSection, watching: WatchlistSection) {
         let favorites = try XCTUnwrap(store.favorites)
+        try store.addInstrument(item("ROOT"), to: favorites.id)
         let majors = try store.addSection(title: "Majors", in: favorites.id)
         try store.addInstrument(item("AAA"), to: favorites.id, section: majors.id)
-        try store.addInstrument(item("BBB"), to: favorites.id)
-        let bbb = try XCTUnwrap(store.favorites?.instruments.last)
+        try store.addInstrument(item("BBB"), to: favorites.id, section: majors.id)
+        let watching = try store.addSection(title: "Watching", in: favorites.id)
+        try store.addInstrument(item("CCC"), to: favorites.id, section: watching.id)
+        return (try XCTUnwrap(store.favorites), majors, watching)
+    }
 
-        viewModel.moveToTop(bbb.id, of: majors)
+    private func order() -> [String] {
+        (store.favorites?.entries ?? []).map {
+            switch $0 {
+            case .instrument(let item): return item.instrument.symbol
+            case .section(let section): return "#" + section.title
+            }
+        }
+    }
 
-        let list = try XCTUnwrap(store.favorites)
-        XCTAssertEqual(list.instruments.map(\.instrument.symbol), ["BBB", "AAA"])
-        XCTAssertEqual(list.owningSection(of: bbb.id)?.id, majors.id)
+    private func rowIndex(of symbol: String) throws -> Int {
+        try XCTUnwrap(
+            viewModel.rows.firstIndex {
+                if case .instrument(let item, _) = $0 { return item.instrument.symbol == symbol }
+                return false
+            })
+    }
+
+    func testDraggingASymbolToAnotherSectionMovesItThere() throws {
+        _ = try seedSections()
+        // Rows: ROOT, #Majors, AAA, BBB, #Watching, CCC. Drop AAA between #Watching and CCC.
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "AAA")), toOffset: try rowIndex(of: "CCC"))
+
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "BBB", "#Watching", "AAA", "CCC"])
+    }
+
+    func testDroppingAfterASectionsLastSymbolKeepsItInThatSection() throws {
+        _ = try seedSections()
+        // Drop ROOT just above #Watching, which is the end of Majors.
+        let heading = try XCTUnwrap(viewModel.rows.firstIndex { if case .section(let s, _) = $0 { return s.title == "Watching" } else { return false } })
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "ROOT")), toOffset: heading)
+
+        XCTAssertEqual(order(), ["#Majors", "AAA", "BBB", "ROOT", "#Watching", "CCC"])
+    }
+
+    func testDroppingUnderAHeadingPutsTheSymbolFirstInThatSection() throws {
+        _ = try seedSections()
+        // Destination = the row right under #Majors, i.e. before AAA.
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "CCC")), toOffset: try rowIndex(of: "AAA"))
+
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "CCC", "AAA", "BBB", "#Watching"])
+    }
+
+    func testDroppingAtTheBottomOfTheListAppendsToTheLastSection() throws {
+        _ = try seedSections()
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "AAA")), toOffset: viewModel.rows.count)
+
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "BBB", "#Watching", "CCC", "AAA"])
+    }
+
+    func testDraggingAHeadingMovesItsSymbolsWithIt() throws {
+        let seeded = try seedSections()
+        let majorsRow = try XCTUnwrap(
+            viewModel.rows.firstIndex { if case .section(let s, _) = $0 { return s.id == seeded.majors.id } else { return false } })
+
+        viewModel.moveRows(fromOffsets: IndexSet(integer: majorsRow), toOffset: viewModel.rows.count)
+
+        XCTAssertEqual(order(), ["ROOT", "#Watching", "CCC", "#Majors", "AAA", "BBB"])
+    }
+
+    func testAnEmptySectionIsAValidDropTarget() throws {
+        let favorites = try XCTUnwrap(store.favorites)
+        try store.addInstrument(item("AAA"), to: favorites.id)
+        try store.addSection(title: "Ideas", in: favorites.id)
+        // Rows: AAA, #Ideas, <placeholder>. Drop AAA onto the placeholder.
+        XCTAssertEqual(viewModel.rows.count, 3)
+        viewModel.moveRows(fromOffsets: IndexSet(integer: 0), toOffset: 2)
+
+        XCTAssertEqual(order(), ["#Ideas", "AAA"])
+    }
+
+    func testDroppingWhereItAlreadyIsWritesNothing() throws {
+        _ = try seedSections()
+        let before = store.favorites?.updatedAt
+        let aaa = try rowIndex(of: "AAA")
+
+        viewModel.moveRows(fromOffsets: IndexSet(integer: aaa), toOffset: aaa)
+        viewModel.moveRows(fromOffsets: IndexSet(integer: aaa), toOffset: aaa + 1)
+
+        XCTAssertEqual(store.favorites?.updatedAt, before)
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "AAA", "BBB", "#Watching", "CCC"])
+    }
+
+    func testRowsCannotBeDraggedWhileSortedOrFiltered() throws {
+        _ = try seedSections()
+        let aaa = try rowIndex(of: "AAA")
+        let expected = order()
+
+        viewModel.setSort(WatchlistSort(key: .symbol, ascending: true))
+        viewModel.moveRows(fromOffsets: IndexSet(integer: aaa), toOffset: viewModel.rows.count)
+        XCTAssertEqual(order(), expected)
+
+        viewModel.setSort(.manual)
+        viewModel.filterText = "a"
+        viewModel.moveRows(fromOffsets: IndexSet(integer: 0), toOffset: viewModel.rows.count)
+        XCTAssertEqual(order(), expected)
+    }
+
+    func testTheHighlightedRowFollowsTheFocusedChartsMarket() throws {
+        let favorites = try XCTUnwrap(store.favorites)
+        try store.addInstrument(item("BTCUSDT"), to: favorites.id)
+        let entry = try XCTUnwrap(store.favorites?.instruments.first)
+
+        viewModel.syncSelection(to: InstrumentID(source: .binance, symbol: "BTC"))
+        XCTAssertEqual(viewModel.selectedEntryID, entry.id, "a bare BTC chart is the BTCUSDT row")
+
+        viewModel.syncSelection(to: InstrumentID(source: .coinbase, symbol: "BTC-USD"))
+        XCTAssertNil(viewModel.selectedEntryID, "another provider's market is not in the list")
+
+        viewModel.syncSelection(to: nil)
+        XCTAssertNil(viewModel.selectedEntryID)
     }
 
     func testErrorsSurfaceAsMessagesInsteadOfThrowing() throws {

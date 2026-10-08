@@ -214,19 +214,25 @@ final class WatchlistSidebarViewModel: ObservableObject {
         perform { try store.updateDisplay(of: list.id) { $0.showsDescription = shows } }
     }
 
-    // MARK: Drag and drop
+    // MARK: Reordering
 
-    /// Moves an entry once, when it is dropped. `targetID` nil means the end of the list.
-    func move(_ draggedID: UUID, before targetID: UUID?) {
-        guard let list, canReorder else { return }
-        perform { try store.moveEntry(draggedID, before: targetID, in: list.id) }
+    /// The list's native row move (`ForEach.onMove`): `toOffset` is an index into the rows as shown, which
+    /// maps straight onto the flat entry list, so a drop between sections, under a heading or after a
+    /// section's last symbol all land where the insertion line was. One drop is one store write.
+    func moveRows(fromOffsets: IndexSet, toOffset: Int) {
+        guard let list, canReorder,
+            let move = WatchlistLayoutEngine.resolveMove(rows: rows, sources: fromOffsets, destination: toOffset)
+        else { return }
+        perform { try store.moveEntries(move.ids, before: move.before, in: list.id) }
     }
 
-    /// An instrument dropped on a section header lands first in that section.
-    func moveToTop(_ draggedID: UUID, of section: WatchlistSection) {
-        guard let list, canReorder, let index = list.index(of: section.id) else { return }
-        let next = list.entries.dropFirst(index + 1).first { $0.id != draggedID }
-        move(draggedID, before: next?.id)
+    /// Highlights the row for the market the focused chart shows, or nothing when the list does not hold it.
+    /// Selecting a row opens it, so this also makes clicking a symbol again work after another chart took focus.
+    func syncSelection(to market: InstrumentID?) {
+        let target = market.flatMap { market in
+            list?.instruments.first { $0.instrument.isSameMarket(as: market) }?.id
+        }
+        if selectedEntryID != target { selectedEntryID = target }
     }
 
     // MARK: Import and export

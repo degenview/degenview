@@ -173,6 +173,11 @@ final class WatchlistStore: ObservableObject {
         try mutate(listID) { try $0.move(entryID, before: targetID) }
     }
 
+    /// One drop, one transaction: every moved entry lands before `targetID` (nil = the end), in the order given.
+    func moveEntries(_ entryIDs: [UUID], before targetID: UUID?, in listID: UUID) throws {
+        try mutate(listID) { try $0.move(entryIDs, before: targetID) }
+    }
+
     func moveInstrument(_ entryID: UUID, toSection sectionID: UUID?, in listID: UUID) throws {
         try mutate(listID) { try $0.moveInstrument(entryID, toSection: sectionID) }
     }

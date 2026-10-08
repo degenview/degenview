@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		95DD51A6B749272DF5EECB5C /* WatchlistRowMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */; };
+		0900FA2E5DFCE6B353A54381 /* WatchlistLayoutEngine+Move.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFAF38089D6902F7F5DB5B41 /* WatchlistLayoutEngine+Move.swift */; };
 		70E3D1C1F1ED5C3DD3D16F16 /* WatchlistEmptySectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */; };
 		2F5B40764735841A81763DC4 /* WatchlistMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29E1ACE8107FB7CF6C9F664D /* WatchlistMetrics.swift */; };
 		7F38CAB070F5D60BF61D80CB /* FocusedChartTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17FAB2AFABC1BDCDDE689445 /* FocusedChartTests.swift */; };
@@ -37,8 +39,6 @@
 		D46F6C108D3F537F81FB7C22 /* WatchlistMembershipMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */; };
 		A9CB9A774FABAC0F9D31D0A5 /* WatchlistFileIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */; };
 		E63299E344D29DAA73A5AC16 /* WatchlistPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */; };
-		B3395356D350A5D17582EAE9 /* WatchlistDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */; };
-		E82FA108D255E1BD3321CD45 /* WatchlistDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */; };
 		6F453F45F7D7688E5D5AB697 /* WatchlistSidebarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */; };
 		2FD7E872CD8CFE24B08DD4A5 /* WatchlistQuoteBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */; };
 		2ACF5960D9D9E7C417EF19BE /* WatchlistQuoteCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */; };
@@ -941,6 +941,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistRowMoveTests.swift; sourceTree = "<group>"; };
+		EFAF38089D6902F7F5DB5B41 /* WatchlistLayoutEngine+Move.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistLayoutEngine+Move.swift"; sourceTree = "<group>"; };
 		F75D7E1193986BACEB4FD86C /* WatchlistEmptySectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistEmptySectionRow.swift; sourceTree = "<group>"; };
 		29E1ACE8107FB7CF6C9F664D /* WatchlistMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistMetrics.swift; sourceTree = "<group>"; };
 		17FAB2AFABC1BDCDDE689445 /* FocusedChartTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusedChartTests.swift; sourceTree = "<group>"; };
@@ -971,8 +973,6 @@
 		57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistMembershipMenu.swift; sourceTree = "<group>"; };
 		8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFileIO.swift; sourceTree = "<group>"; };
 		126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistPrompt.swift; sourceTree = "<group>"; };
-		F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDropDelegate.swift; sourceTree = "<group>"; };
-		23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDragPayload.swift; sourceTree = "<group>"; };
 		FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSidebarViewModel.swift; sourceTree = "<group>"; };
 		49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteBook.swift; sourceTree = "<group>"; };
 		F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteCell.swift; sourceTree = "<group>"; };
@@ -2210,6 +2210,7 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				4C37DA328DF843CB90CAAEE7 /* WatchlistRowMoveTests.swift */,
 				17FAB2AFABC1BDCDDE689445 /* FocusedChartTests.swift */,
 				306B7AF2E858FCD13BF95C3A /* ChartSwitchTests.swift */,
 				FBBC65FD4CCD55D247C7F85F /* WatchlistQuoteCoordinatorTests.swift */,
@@ -2713,6 +2714,7 @@
 		E072D082708E29CB762D092B /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				EFAF38089D6902F7F5DB5B41 /* WatchlistLayoutEngine+Move.swift */,
 				261F33B6117BC39CAE191FBE /* WatchlistQuote+Source.swift */,
 				6954DB9B89F6278B7A28364E /* WatchlistFreshness.swift */,
 				B53604C8E9A50D210F9D5930 /* WatchlistLayoutEngine.swift */,
@@ -2754,8 +2756,6 @@
 				57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */,
 				8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */,
 				126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */,
-				F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */,
-				23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */,
 				AA45D9C26DC64C8A1E63AA6B /* WatchlistSidebar.swift */,
 			);
 			path = Watchlist;
@@ -2928,6 +2928,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0900FA2E5DFCE6B353A54381 /* WatchlistLayoutEngine+Move.swift in Sources */,
 				70E3D1C1F1ED5C3DD3D16F16 /* WatchlistEmptySectionRow.swift in Sources */,
 				2F5B40764735841A81763DC4 /* WatchlistMetrics.swift in Sources */,
 				2D783182FD44B560087D24C7 /* WatchlistResultContextMenu.swift in Sources */,
@@ -2950,8 +2951,6 @@
 				D46F6C108D3F537F81FB7C22 /* WatchlistMembershipMenu.swift in Sources */,
 				A9CB9A774FABAC0F9D31D0A5 /* WatchlistFileIO.swift in Sources */,
 				E63299E344D29DAA73A5AC16 /* WatchlistPrompt.swift in Sources */,
-				B3395356D350A5D17582EAE9 /* WatchlistDropDelegate.swift in Sources */,
-				E82FA108D255E1BD3321CD45 /* WatchlistDragPayload.swift in Sources */,
 				6F453F45F7D7688E5D5AB697 /* WatchlistSidebarViewModel.swift in Sources */,
 				2FD7E872CD8CFE24B08DD4A5 /* WatchlistQuoteBook.swift in Sources */,
 				2ACF5960D9D9E7C417EF19BE /* WatchlistQuoteCell.swift in Sources */,
@@ -3692,6 +3691,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				95DD51A6B749272DF5EECB5C /* WatchlistRowMoveTests.swift in Sources */,
 				7F38CAB070F5D60BF61D80CB /* FocusedChartTests.swift in Sources */,
 				ED4C6806D3ABC9E458107F7B /* ChartSwitchTests.swift in Sources */,
 				BEC3243D98F6E10EF653F762 /* WatchlistQuoteCoordinatorTests.swift in Sources */,
