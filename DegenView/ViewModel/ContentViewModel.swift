@@ -1359,6 +1359,17 @@ final class ContentViewModel: ObservableObject {
         }
     }
 
+    /// "Add as New Chart": a fresh card through the normal add flow. A market already on
+    /// screen is not added twice.
+    func addWatchlistInstrumentAsChart(_ instrument: WatchlistInstrument) {
+        let config = instrument.tickerConfig
+        Task {
+            try? await addTicker(
+                symbol: config.symbol, source: config.source, displayName: config.displayName,
+                pmSeries: config.pmSeries)
+        }
+    }
+
     /// Update a chart's ticker symbol and/or source, then refetch.
     func updateTicker(
         _ vm: ChartViewModel, symbol: String, source: DataSourceType, displayName: String? = nil,

@@ -29,9 +29,10 @@ struct ContentView: View {
     @StateObject private var contentViewModel: ContentViewModel
 
     @State private var showAddSheet = false
-    @State private var showAddFavoriteSheet = false
+    @State private var showAddWatchlistSymbolSheet = false
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
     @StateObject private var watchlists = WatchlistStore.shared
+    @StateObject private var watchlistSidebar = WatchlistSidebarViewModel()
     @ObservedObject private var recents = RecentMarketsStore.shared
     @State private var showLayoutPicker = false
     @State private var layoutPromptName = ""
@@ -68,9 +69,12 @@ struct ContentView: View {
                 if showFavorites {
                     Divider()
                     WatchlistSidebar(
-                        store: watchlists,
-                        onAdd: { showAddFavoriteSheet = true },
-                        onSelect: contentViewModel.openWatchlistInstrument
+                        viewModel: watchlistSidebar,
+                        actions: WatchlistInstrumentActions(
+                            open: contentViewModel.openWatchlistInstrument,
+                            addChart: contentViewModel.addWatchlistInstrumentAsChart,
+                            openInNewTab: { WindowCoordinator.shared.newTab(for: $0, beside: contentViewModel.tabID) }),
+                        onAddSymbol: { showAddWatchlistSymbolSheet = true }
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
@@ -83,8 +87,8 @@ struct ContentView: View {
                 toolbarContent
             }
             .frame(
-                minWidth: UI.windowMinWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
-                idealWidth: UI.windowIdealWidth + (showFavorites ? UI.favoritesSidebarWidth : 0),
+                minWidth: UI.windowMinWidth + (showFavorites ? watchlistSidebar.sidebarWidth : 0),
+                idealWidth: UI.windowIdealWidth + (showFavorites ? watchlistSidebar.sidebarWidth : 0),
                 minHeight: UI.windowMinHeight,
                 idealHeight: UI.windowIdealHeight
             )
@@ -164,13 +168,13 @@ struct ContentView: View {
                 )
             }
         }
-        .sheet(isPresented: $showAddFavoriteSheet) {
+        .sheet(isPresented: $showAddWatchlistSymbolSheet) {
             AddTickerSheet(
-                title: "Add Favorite", actionLabel: "Favorite",
-                subtitle: "Save a market to your favorites sidebar.", systemImage: "star.fill"
+                title: "Add to \(watchlistSidebar.list?.name ?? "Watchlist")", actionLabel: "Add",
+                subtitle: "Search a market, stock or prediction market to follow in this watchlist.",
+                systemImage: "list.bullet.rectangle", recordsRecents: false, dismissesOnAdd: false
             ) { selected in
-                guard let favorites = watchlists.favorites else { throw WatchlistError.notFound }
-                try watchlists.add(selected, to: favorites.id)
+                try watchlistSidebar.add(selected)
             }
         }
         .sheet(isPresented: $showReplayDatePicker) {
@@ -200,13 +204,13 @@ struct ContentView: View {
             Text(paperTrading.lastError ?? "")
         }
         .onChange(of: showAddSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
-        .onChange(of: showAddFavoriteSheet) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+        .onChange(of: showAddWatchlistSymbolSheet) { _, _ in
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
         .onChange(of: showLayoutPicker) { _, _ in
-            contentViewModel.isShowingSheet = showAddSheet || showAddFavoriteSheet || showLayoutPicker
+            contentViewModel.isShowingSheet = showAddSheet || showAddWatchlistSymbolSheet || showLayoutPicker
         }
     }
 

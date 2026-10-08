@@ -66,19 +66,9 @@ final class ChartViewModel: ObservableObject {
 
     /// The symbol used for API calls — source-dependent.
     var apiSymbol: String {
-        switch source {
-        case .binance:
-            let upper = ticker.uppercased()
-            if upper.hasSuffix("USDT") || upper.hasSuffix("USDC") || upper.hasSuffix("BUSD") {
-                return upper
-            }
-            return "\(upper)USDT"
-        case .coinbase:
-            return CoinbaseAPIService.productID(ticker)
-        case .coingecko, .dexscreener, .alpaca, .polymarket, .kalshi, .coinMarketCap:
-            // ticker IS the fullSymbol (coin ID, pair address, CLOB token id, or Kalshi "SERIES/MARKET")
-            return ticker
-        }
+        // For every source but Binance and Coinbase the ticker IS the fullSymbol (coin ID,
+        // pair address, CLOB token id, or Kalshi "SERIES/MARKET").
+        InstrumentID(source: source, symbol: ticker).apiSymbol
     }
 
     /// Base asset symbol for icon lookup (strips quote currency suffixes).

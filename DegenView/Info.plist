@@ -21,6 +21,16 @@
 	<array>
 		<dict>
 			<key>UTTypeIdentifier</key>
+			<string>com.cryptocharts.watchlist-entry</string>
+			<key>UTTypeDescription</key>
+			<string>Watchlist Entry</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
 			<string>com.cryptocharts.pine-script</string>
 			<key>UTTypeDescription</key>
 			<string>Pine Script</string>
