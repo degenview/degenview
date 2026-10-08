@@ -298,4 +298,29 @@ final class WatchlistStoreTests: XCTestCase {
         XCTAssertEqual(copy.instruments.map(\.instrument), try XCTUnwrap(store.list(source.id)).instruments.map(\.instrument))
         XCTAssertEqual(copy.sections.map(\.title), ["Majors"])
     }
+
+    func testMovingSeveralEntriesIsOneCommitAndSurvivesReload() throws {
+        let store = makeStore()
+        let list = try store.createWatchlist(name: "Crypto")
+        for symbol in ["AAA", "BBB", "CCC"] { try store.addInstrument(item(symbol), to: list.id) }
+        let ids = try XCTUnwrap(store.list(list.id)).instruments.map(\.id)
+
+        try store.moveEntries([ids[2], ids[0]], before: ids[1], in: list.id)
+
+        let symbols = { (store: WatchlistStore) in store.list(list.id)?.instruments.map(\.instrument.symbol) }
+        XCTAssertEqual(symbols(store), ["CCC", "AAA", "BBB"])
+        XCTAssertEqual(symbols(makeStore()), ["CCC", "AAA", "BBB"])
+    }
+
+    func testADropThatChangesNothingDoesNotWrite() throws {
+        let store = makeStore()
+        let list = try store.createWatchlist(name: "Crypto")
+        for symbol in ["AAA", "BBB"] { try store.addInstrument(item(symbol), to: list.id) }
+        let ids = try XCTUnwrap(store.list(list.id)).instruments.map(\.id)
+        let before = store.list(list.id)
+
+        try store.moveEntries([ids[0]], before: ids[1], in: list.id)
+
+        XCTAssertEqual(store.list(list.id), before)
+    }
 }

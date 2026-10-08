@@ -85,6 +85,7 @@ struct ContentView: View {
                             openInNewTab: { WindowCoordinator.shared.newTab(for: $0, beside: contentViewModel.tabID) }),
                         // The pane stays built while hidden, so a hidden sidebar must not ask for prices.
                         isWindowVisible: contentViewModel.isWindowVisible && showFavorites,
+                        focusedMarket: contentViewModel.resolvedFocusedChart?.instrumentID,
                         onAddSymbol: { showAddWatchlistSymbolSheet = true }
                     )
                 }

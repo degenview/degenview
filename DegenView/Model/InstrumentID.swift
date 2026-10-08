@@ -63,6 +63,12 @@ struct InstrumentID: Codable, Hashable, Sendable {
         }
     }
 
+    /// Whether both name one market on one provider, comparing by the id the provider's API takes, so a bare
+    /// Binance `BTC` and `BTCUSDT` match where `==` (which compares stored keys) would not.
+    func isSameMarket(as other: InstrumentID) -> Bool {
+        source == other.source && apiSymbol.caseInsensitiveCompare(other.apiSymbol) == .orderedSame
+    }
+
     static func normalized(_ symbol: String, source: DataSourceType) -> String {
         switch source {
         case .binance, .coinbase, .alpaca: return symbol.uppercased()

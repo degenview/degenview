@@ -35,7 +35,8 @@ setting). Filtering by flag is a view over that map, not a copy of the markets.
 Sorting orders the markets inside each section; section headings stay where they are, and the stored
 order is never rewritten. Click a column heading to sort (largest first for numbers, A to Z for
 symbols), again to flip, again to return to Manual. Filtering matches name, symbol and provider and
-hides sections left empty. Dragging is turned off while a sort or filter is active. Sort, columns and the
+hides sections left empty. Drag symbols (or a whole section by its heading) to reorder: between sections, to
+the top or end of a section, into an empty one. Dragging is turned off while a sort or filter is active. Sort, columns and the
 subtitle line are saved per list.
 
 ## Quotes

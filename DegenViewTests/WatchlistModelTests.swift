@@ -150,4 +150,27 @@ final class WatchlistModelTests: XCTestCase {
         list.display.sort = WatchlistSort(key: .symbol, ascending: false)
         XCTAssertEqual(symbols(list), order)
     }
+
+    func testSeveralEntriesMoveTogetherInTheirOwnOrder() throws {
+        var list = try sample()
+        let ids = try ["ETHUSDT", "BTCUSDT"].map { symbol in
+            try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: symbol))).id
+        }
+        let link = try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: "LINKUSDT")))
+
+        try list.move(ids, before: link.id)
+
+        XCTAssertEqual(symbols(list), ["ROOT", "#Majors", "#Watching", "ETHUSDT", "BTCUSDT", "LINKUSDT"])
+    }
+
+    func testMovingSeveralToTheEndAndAnUnknownIdMovesNothing() throws {
+        var list = try sample()
+        let root = try XCTUnwrap(list.entry(for: InstrumentID(source: .binance, symbol: "ROOT")))
+        try list.move([root.id], before: nil)
+        XCTAssertEqual(symbols(list).last, "ROOT")
+
+        let before = list
+        XCTAssertThrowsError(try list.move([root.id, UUID()], before: nil))
+        XCTAssertEqual(list, before)
+    }
 }
