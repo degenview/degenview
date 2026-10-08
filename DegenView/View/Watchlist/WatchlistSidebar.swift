@@ -19,6 +19,7 @@ struct WatchlistSidebar: View {
     @State private var alertAsset: PortfolioAsset?
     @State private var draggedID: UUID?
     @State private var hoverKey: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(
         viewModel: WatchlistSidebarViewModel, actions: WatchlistInstrumentActions, isWindowVisible: Bool,
@@ -146,9 +147,12 @@ struct WatchlistSidebar: View {
     private func rowList(_ rows: [WatchlistLayoutEngine.Row], list: Watchlist) -> some View {
         List(selection: $viewModel.selectedEntryID) {
             ForEach(rows) { row in
-                rowView(row, list: list)
-                    .tag(row.entryID)
-                    .listRowInsets(EdgeInsets(top: 1, leading: 12, bottom: 1, trailing: 12))
+                rowView(row, list: list, isFirst: row.id == rows.first?.id)
+                    .listRowInsets(
+                        EdgeInsets(
+                            top: 1, leading: WatchlistMetrics.edgeInset, bottom: 1,
+                            trailing: WatchlistMetrics.edgeInset)
+                    )
                     .listRowSeparator(.hidden)
             }
 
@@ -174,13 +178,15 @@ struct WatchlistSidebar: View {
     }
 
     @ViewBuilder
-    private func rowView(_ row: WatchlistLayoutEngine.Row, list: Watchlist) -> some View {
+    private func rowView(_ row: WatchlistLayoutEngine.Row, list: Watchlist, isFirst: Bool) -> some View {
         switch row {
         case .section(let section, let count):
             WatchlistSectionRow(
-                section: section, count: count, isDropTarget: hoverKey == section.id.uuidString,
-                onToggle: { withAnimation(.easeInOut(duration: 0.15)) { viewModel.toggleCollapsed(section) } }
+                section: section, count: count, isFirst: isFirst, isDropTarget: hoverKey == section.id.uuidString,
+                onToggle: { toggle(section) }
             )
+            // A heading folds on click; it is never "selected", so it never paints the row blue.
+            .selectionDisabled()
             .modifier(draggable(section.id))
             .onDrop(of: [WatchlistDragPayload.type], delegate: dropDelegate(.sectionHeader(section)))
             .contextMenu {
@@ -190,12 +196,12 @@ struct WatchlistSidebar: View {
                 Button("Delete Section", role: .destructive) { viewModel.deleteSection(section) }
             }
 
-        case .instrument(let item, let sectionID):
+        case .instrument(let item, _):
             WatchlistInstrumentRow(
                 item: item, cell: quotes.cell(for: item.instrument), flag: store.flag(for: item.instrument),
-                display: list.display, isIndented: sectionID != nil,
-                menu: { menu(for: item) }
+                display: list.display, menu: { menu(for: item) }
             )
+            .tag(item.id)
             .overlay(alignment: .top) { insertionLine(visible: hoverKey == item.id.uuidString) }
             .onTapGesture {
                 viewModel.selectedEntryID = item.id
@@ -207,13 +213,21 @@ struct WatchlistSidebar: View {
             .accessibilityAction(named: "Add as New Chart") { actions.addChart(item) }
             .accessibilityAction(named: "Remove from Watchlist") { viewModel.remove(item) }
 
-        case .emptySection:
-            Text("Empty section")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-                .padding(.leading, 28)
-                .padding(.vertical, 2)
-                .accessibilityHidden(true)
+        case .emptySection(let sectionID):
+            WatchlistEmptySectionRow(isDropTarget: hoverKey == sectionID.uuidString)
+                .selectionDisabled()
+                .onDrop(
+                    of: [WatchlistDragPayload.type],
+                    delegate: dropDelegate(
+                        .sectionHeader(list.sections.first { $0.id == sectionID } ?? WatchlistSection(title: ""))))
+        }
+    }
+
+    private func toggle(_ section: WatchlistSection) {
+        if reduceMotion {
+            viewModel.toggleCollapsed(section)
+        } else {
+            withAnimation(.easeInOut(duration: 0.15)) { viewModel.toggleCollapsed(section) }
         }
     }
 
@@ -248,7 +262,7 @@ struct WatchlistSidebar: View {
                 .accessibilityLabel("Clear filter")
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, WatchlistMetrics.edgeInset)
         .padding(.bottom, 8)
     }
 

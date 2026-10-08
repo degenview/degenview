@@ -240,6 +240,10 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   the database and does not use `MarketQuoteCoordinator` (alerts own that). Provider quote calls return
   `SourceQuote`, which the agent target also compiles: keep those edits Foundation-only. A new quote
   field goes through `WatchlistQuote(source:quote:receivedAt:)`; a missing reference is nil, never zero
+- Sections are flat headings (`WatchlistSectionRow`): never indent the symbols under them. Every part of the
+  panel uses `WatchlistMetrics.edgeInset`, so symbols, section titles and column heads share one left edge and
+  values and chevrons one right edge. Headings and the empty-section placeholder are not selectable
+  (`.selectionDisabled()`); only instrument rows carry a `.tag`, and it is the entry's `UUID`
 - Watchlist rows drag with their own UTType (`WatchlistDragPayload`), never plain text, so
   `ChartGridDropDelegate` cannot see them. The move is committed once, on drop
 - The watchlist is the secondary pane of a `SplitContainer` (drag its edge, double-click to reset); the

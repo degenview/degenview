@@ -23,7 +23,7 @@ struct WatchlistColumnHeader: View {
         }
         .font(.caption2.weight(.medium))
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, WatchlistMetrics.edgeInset)
         .padding(.vertical, 4)
     }
 
