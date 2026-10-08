@@ -7,6 +7,25 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		81AA6C7AE9DB91A7F8C2E056 /* WatchlistStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */; };
+		30302BB49CA179E2797AAB89 /* WatchlistTextFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */; };
+		7B4557DFEF2369AC0D3E3C84 /* WatchlistModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92614D37D7173C96866B93A /* WatchlistModelTests.swift */; };
+		C95A702CB9FA92C370084D3C /* InstrumentIDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543C4B8E279366D7E2D02E1D /* InstrumentIDTests.swift */; };
+		B88601567F1A8F6EB928D223 /* WatchlistSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA45D9C26DC64C8A1E63AA6B /* WatchlistSidebar.swift */; };
+		2F84A190AA9914F4B8439A66 /* WatchlistStore+FavoritesMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 826AE166E66E2FADEDED88B2 /* WatchlistStore+FavoritesMigration.swift */; };
+		5556F22F029D494D30AB0322 /* WatchlistStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6208F0C1C9D732E03B913DC0 /* WatchlistStore.swift */; };
+		8251E12435F28A9076EB0E2B /* WatchlistTextFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F19E788A5A9FFCF9317055B /* WatchlistTextFormat.swift */; };
+		FCF757ACB92F65A634DFB54D /* WatchlistSort.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3B6D5B859A047C9C1E67C9D /* WatchlistSort.swift */; };
+		29103A83B185C573B2473B9F /* WatchlistSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F829D039FF3E420A9874DE0 /* WatchlistSection.swift */; };
+		05E7B9969C8ED4F9A6EF6AEB /* WatchlistInstrument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FB44E8815AC66085626889B /* WatchlistInstrument.swift */; };
+		BEF2C40371F769C029F470ED /* WatchlistImportReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1742C14DE3B65F3387D3EB09 /* WatchlistImportReport.swift */; };
+		015CD0991A7E2329466DC44A /* WatchlistFlag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59809A0C4A07DAEDFFF85644 /* WatchlistFlag.swift */; };
+		0BCD35556177D5B8D0176231 /* WatchlistError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89E1879B053400C67B3C8ECF /* WatchlistError.swift */; };
+		107B7CD5ED0A0C8FE7411D2D /* WatchlistEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 705CB60BC9892274A58E0B29 /* WatchlistEntry.swift */; };
+		5B6881EC6E6858ABCACC8CA9 /* WatchlistDisplaySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0589A63EA219E610DD0BF70B /* WatchlistDisplaySettings.swift */; };
+		7D779295A47CEB614C842AF5 /* WatchlistColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 668D1DBCBA46CA68F27FFE7F /* WatchlistColumn.swift */; };
+		9C418AC54B86CAA18B415DE4 /* Watchlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0CF8A506E3956FE335C161F7 /* Watchlist.swift */; };
+		E31BB450163149762546FDDB /* InstrumentID.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB9EB3569114D0CC654E20FC /* InstrumentID.swift */; };
 		AB10F061C5E7038A67593849 /* WebhookSendSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10AEC28E9190CFA54A6356 /* WebhookSendSection.swift */; };
 		AB10DAA41473A2E9CA5B06E2 /* WebhookMessageEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10220BA015CDFEDD18AD65 /* WebhookMessageEditor.swift */; };
 		AB10226EE076A5C6C1D88EEF /* WebhookPickerEmptyState.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB10CBB3F9A56BD56390A520 /* WebhookPickerEmptyState.swift */; };
@@ -581,9 +600,6 @@
 		E9BFE5EDD08EFDF1A8799293 /* PriceFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763ED08073ED0807493107C6 /* PriceFormatter.swift */; };
 		EAD2458EA9D12466C1B4265E /* ChartViewModelPineInstancePersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49183ED8491C0A50D3F2B4CB /* ChartViewModelPineInstancePersistenceTests.swift */; };
 		EC643A7261A4C0F752C37873 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C880371EEA29513F2A4311F2 /* GRDB */; };
-		F10000000000000000000001 /* FavoriteItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000101 /* FavoriteItem.swift */; };
-		F10000000000000000000002 /* FavoritesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000102 /* FavoritesStore.swift */; };
-		F10000000000000000000003 /* FavoritesSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000103 /* FavoritesSidebar.swift */; };
 		F20000000000000000000001 /* DrawingStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000101 /* DrawingStore.swift */; };
 		F20000000000000000000002 /* DrawingUndoCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000102 /* DrawingUndoCoordinator.swift */; };
 		F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */; };
@@ -886,6 +902,25 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistStoreTests.swift; sourceTree = "<group>"; };
+		086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistTextFormatTests.swift; sourceTree = "<group>"; };
+		A92614D37D7173C96866B93A /* WatchlistModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistModelTests.swift; sourceTree = "<group>"; };
+		543C4B8E279366D7E2D02E1D /* InstrumentIDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstrumentIDTests.swift; sourceTree = "<group>"; };
+		AA45D9C26DC64C8A1E63AA6B /* WatchlistSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSidebar.swift; sourceTree = "<group>"; };
+		826AE166E66E2FADEDED88B2 /* WatchlistStore+FavoritesMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistStore+FavoritesMigration.swift"; sourceTree = "<group>"; };
+		6208F0C1C9D732E03B913DC0 /* WatchlistStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistStore.swift; sourceTree = "<group>"; };
+		6F19E788A5A9FFCF9317055B /* WatchlistTextFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistTextFormat.swift; sourceTree = "<group>"; };
+		B3B6D5B859A047C9C1E67C9D /* WatchlistSort.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSort.swift; sourceTree = "<group>"; };
+		3F829D039FF3E420A9874DE0 /* WatchlistSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSection.swift; sourceTree = "<group>"; };
+		4FB44E8815AC66085626889B /* WatchlistInstrument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistInstrument.swift; sourceTree = "<group>"; };
+		1742C14DE3B65F3387D3EB09 /* WatchlistImportReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistImportReport.swift; sourceTree = "<group>"; };
+		59809A0C4A07DAEDFFF85644 /* WatchlistFlag.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFlag.swift; sourceTree = "<group>"; };
+		89E1879B053400C67B3C8ECF /* WatchlistError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistError.swift; sourceTree = "<group>"; };
+		705CB60BC9892274A58E0B29 /* WatchlistEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistEntry.swift; sourceTree = "<group>"; };
+		0589A63EA219E610DD0BF70B /* WatchlistDisplaySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDisplaySettings.swift; sourceTree = "<group>"; };
+		668D1DBCBA46CA68F27FFE7F /* WatchlistColumn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistColumn.swift; sourceTree = "<group>"; };
+		0CF8A506E3956FE335C161F7 /* Watchlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Watchlist.swift; sourceTree = "<group>"; };
+		EB9EB3569114D0CC654E20FC /* InstrumentID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstrumentID.swift; sourceTree = "<group>"; };
 		AB10AEC28E9190CFA54A6356 /* WebhookSendSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookSendSection.swift; sourceTree = "<group>"; };
 		AB10220BA015CDFEDD18AD65 /* WebhookMessageEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookMessageEditor.swift; sourceTree = "<group>"; };
 		AB10CBB3F9A56BD56390A520 /* WebhookPickerEmptyState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebhookPickerEmptyState.swift; sourceTree = "<group>"; };
@@ -1401,9 +1436,6 @@
 		E7DF41EBF17CEF7111B3D323 /* PineIndentGuideRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineIndentGuideRenderer.swift; sourceTree = "<group>"; };
 		E7E2FD84391392E5D135AC32 /* PineLexicalSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineLexicalSnapshot.swift; sourceTree = "<group>"; };
 		E7F0DBDED4012864B42F0386 /* PineEditorTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PineEditorTestSupport.swift; sourceTree = "<group>"; };
-		F10000000000000000000101 /* FavoriteItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoriteItem.swift; sourceTree = "<group>"; };
-		F10000000000000000000102 /* FavoritesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesStore.swift; sourceTree = "<group>"; };
-		F10000000000000000000103 /* FavoritesSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FavoritesSidebar.swift; sourceTree = "<group>"; };
 		F10180C8BEB258415D79C88D /* PineCompiler+Inputs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineCompiler+Inputs.swift"; sourceTree = "<group>"; };
 		F101CA1CFAF62096921987DC /* PinePlotStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinePlotStyle.swift; sourceTree = "<group>"; };
 		F101E0E537176C3A3A7F026C /* PineParser+Expressions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PineParser+Expressions.swift"; sourceTree = "<group>"; };
@@ -1698,6 +1730,8 @@
 		A00000000000000000000310 /* Model */ = {
 			isa = PBXGroup;
 			children = (
+				E072D082708E29CB762D092B /* Watchlist */,
+				EB9EB3569114D0CC654E20FC /* InstrumentID.swift */,
 				B7A1E7000000000000000B01 /* PineAlertNotification.swift */,
 				AE01000000000000000000A1 /* AlertDomainEvent.swift */,
 				B7A1E7000000000000000B00 /* PineAlertSubscription.swift */,
@@ -1714,7 +1748,6 @@
 				F30000000000000000000101 /* PaperTradingModels.swift */,
 				D18F3DF1373F3C2F40608D7F /* PaperTradingModels+Presentation.swift */,
 				E30000000000000000000101 /* ReplaySession.swift */,
-				F10000000000000000000101 /* FavoriteItem.swift */,
 				A00000000000000000000103 /* KlineData.swift */,
 				CB1000000000000000000104 /* CoinbaseGranularity.swift */,
 				CB1000000000000000000103 /* CoinbaseTick.swift */,
@@ -1750,6 +1783,8 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				826AE166E66E2FADEDED88B2 /* WatchlistStore+FavoritesMigration.swift */,
+				6208F0C1C9D732E03B913DC0 /* WatchlistStore.swift */,
 				B7A1E7000000000000000B09 /* ScriptSourceHash.swift */,
 				B7A1E7000000000000000B08 /* AppDatabase+PineAlerts.swift */,
 				B7A1E7000000000000000B07 /* PineAlertDispatcher.swift */,
@@ -1793,7 +1828,6 @@
 				D1EB3601608151AE37F9D333 /* BookTickerCoalescer.swift */,
 				D19C3B541BE04C749EF5604F /* PaperTradingCSVExporter.swift */,
 				E30000000000000000000102 /* ReplayEngine.swift */,
-				F10000000000000000000102 /* FavoritesStore.swift */,
 				E20000000000000000000101 /* AlpacaCredentials.swift */,
 				KCP000000000000000000101 /* KeychainPolicy.swift */,
 				E20000000000000000000102 /* AlpacaAPIService.swift */,
@@ -1875,6 +1909,7 @@
 		A00000000000000000000313 /* View */ = {
 			isa = PBXGroup;
 			children = (
+				94BF126227BB45E4039C1852 /* Watchlist */,
 				B7A1E7000000000000000B13 /* PineAlertListView.swift */,
 				B7A1E7000000000000000B12 /* PineAlertEditor.swift */,
 				BPL000000000000000000103 /* BitcoinPowerLawChartView.swift */,
@@ -1989,7 +2024,6 @@
 				E3F100000000000000000016 /* ReplayScrubber.swift */,
 				E3F100000000000000000018 /* ReplaySelectionMarker.swift */,
 				E3F100000000000000000020 /* ReplayStartSheet.swift */,
-				F10000000000000000000103 /* FavoritesSidebar.swift */,
 				E20000000000000000000104 /* AppSettingsView.swift */,
 				A0000000000000000000010A /* ChartCardView.swift */,
 				A00000000000000000000908 /* ToolSidebar.swift */,
@@ -2096,6 +2130,10 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */,
+				086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */,
+				A92614D37D7173C96866B93A /* WatchlistModelTests.swift */,
+				543C4B8E279366D7E2D02E1D /* InstrumentIDTests.swift */,
 				B7A1E7000000000000000B90 /* PineAlertChannelFixtures.swift */,
 				B7A1E7000000000000000B18 /* PineAlertDispatcherTests.swift */,
 				B7A1E7000000000000000B17 /* PineAlertRoutingTests.swift */,
@@ -2584,6 +2622,32 @@
 			path = Language;
 			sourceTree = "<group>";
 		};
+		E072D082708E29CB762D092B /* Watchlist */ = {
+			isa = PBXGroup;
+			children = (
+				6F19E788A5A9FFCF9317055B /* WatchlistTextFormat.swift */,
+				B3B6D5B859A047C9C1E67C9D /* WatchlistSort.swift */,
+				3F829D039FF3E420A9874DE0 /* WatchlistSection.swift */,
+				4FB44E8815AC66085626889B /* WatchlistInstrument.swift */,
+				1742C14DE3B65F3387D3EB09 /* WatchlistImportReport.swift */,
+				59809A0C4A07DAEDFFF85644 /* WatchlistFlag.swift */,
+				89E1879B053400C67B3C8ECF /* WatchlistError.swift */,
+				705CB60BC9892274A58E0B29 /* WatchlistEntry.swift */,
+				0589A63EA219E610DD0BF70B /* WatchlistDisplaySettings.swift */,
+				668D1DBCBA46CA68F27FFE7F /* WatchlistColumn.swift */,
+				0CF8A506E3956FE335C161F7 /* Watchlist.swift */,
+			);
+			path = Watchlist;
+			sourceTree = "<group>";
+		};
+		94BF126227BB45E4039C1852 /* Watchlist */ = {
+			isa = PBXGroup;
+			children = (
+				AA45D9C26DC64C8A1E63AA6B /* WatchlistSidebar.swift */,
+			);
+			path = Watchlist;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -2739,6 +2803,21 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B88601567F1A8F6EB928D223 /* WatchlistSidebar.swift in Sources */,
+				2F84A190AA9914F4B8439A66 /* WatchlistStore+FavoritesMigration.swift in Sources */,
+				5556F22F029D494D30AB0322 /* WatchlistStore.swift in Sources */,
+				8251E12435F28A9076EB0E2B /* WatchlistTextFormat.swift in Sources */,
+				FCF757ACB92F65A634DFB54D /* WatchlistSort.swift in Sources */,
+				29103A83B185C573B2473B9F /* WatchlistSection.swift in Sources */,
+				05E7B9969C8ED4F9A6EF6AEB /* WatchlistInstrument.swift in Sources */,
+				BEF2C40371F769C029F470ED /* WatchlistImportReport.swift in Sources */,
+				015CD0991A7E2329466DC44A /* WatchlistFlag.swift in Sources */,
+				0BCD35556177D5B8D0176231 /* WatchlistError.swift in Sources */,
+				107B7CD5ED0A0C8FE7411D2D /* WatchlistEntry.swift in Sources */,
+				5B6881EC6E6858ABCACC8CA9 /* WatchlistDisplaySettings.swift in Sources */,
+				7D779295A47CEB614C842AF5 /* WatchlistColumn.swift in Sources */,
+				9C418AC54B86CAA18B415DE4 /* Watchlist.swift in Sources */,
+				E31BB450163149762546FDDB /* InstrumentID.swift in Sources */,
 				B7A1E7000000000000000A15 /* PineAlertCallValidator.swift in Sources */,
 				B7A1E7000000000000000A14 /* PineAlertCallSite.swift in Sources */,
 				B7A1E7000000000000000A13 /* PineAlertListView.swift in Sources */,
@@ -2932,9 +3011,6 @@
 				E3F100000000000000000015 /* ReplayScrubber.swift in Sources */,
 				E3F100000000000000000017 /* ReplaySelectionMarker.swift in Sources */,
 				E3F100000000000000000019 /* ReplayStartSheet.swift in Sources */,
-				F10000000000000000000001 /* FavoriteItem.swift in Sources */,
-				F10000000000000000000002 /* FavoritesStore.swift in Sources */,
-				F10000000000000000000003 /* FavoritesSidebar.swift in Sources */,
 				E20000000000000000000001 /* AlpacaCredentials.swift in Sources */,
 				KCP000000000000000000001 /* KeychainPolicy.swift in Sources */,
 				E20000000000000000000002 /* AlpacaAPIService.swift in Sources */,
@@ -3460,6 +3536,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				81AA6C7AE9DB91A7F8C2E056 /* WatchlistStoreTests.swift in Sources */,
+				30302BB49CA179E2797AAB89 /* WatchlistTextFormatTests.swift in Sources */,
+				7B4557DFEF2369AC0D3E3C84 /* WatchlistModelTests.swift in Sources */,
+				C95A702CB9FA92C370084D3C /* InstrumentIDTests.swift in Sources */,
 				B7A1E7000000000000000A90 /* PineAlertChannelFixtures.swift in Sources */,
 				B7A1E7000000000000000A18 /* PineAlertDispatcherTests.swift in Sources */,
 				B7A1E7000000000000000A17 /* PineAlertRoutingTests.swift in Sources */,

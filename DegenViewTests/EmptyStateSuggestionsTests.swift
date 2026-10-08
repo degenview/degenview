@@ -3,8 +3,8 @@ import XCTest
 @testable import DegenView
 
 final class EmptyStateSuggestionsTests: XCTestCase {
-    private func favorite(_ symbol: String, _ source: DataSourceType = .binance) -> FavoriteItem {
-        FavoriteItem(name: symbol, ticker: symbol, config: TickerConfig(symbol: symbol, source: source))
+    private func favorite(_ symbol: String, _ source: DataSourceType = .binance) -> WatchlistInstrument {
+        WatchlistInstrument(instrument: InstrumentID(source: source, symbol: symbol), name: symbol, label: symbol)
     }
 
     private func recent(_ symbol: String, _ source: DataSourceType = .binance) -> RecentMarket {
@@ -54,7 +54,7 @@ final class EmptyStateSuggestionsTests: XCTestCase {
 
         let suggestions = EmptyStateSuggestions(favorites: all, recents: [], savedViews: [])
 
-        XCTAssertEqual(suggestions.favorites.map(\.ticker), all.prefix(EmptyStateSuggestions.itemLimit).map(\.ticker))
+        XCTAssertEqual(suggestions.favorites.map(\.label), all.prefix(EmptyStateSuggestions.itemLimit).map(\.label))
         XCTAssertEqual(suggestions.hiddenFavoriteCount, 3)
     }
 

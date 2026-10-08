@@ -21,14 +21,7 @@ final class AppDatabaseTests: XCTestCase {
 
     // MARK: - Workspace
 
-    func testFavoritesAndSavedViewsKeepOrder() {
-        let favorites = [
-            FavoriteItem(name: "Bitcoin", ticker: "BTC", config: TickerConfig(symbol: "BTCUSDT", source: .binance)),
-            FavoriteItem(name: "Ether", ticker: "ETH", config: TickerConfig(symbol: "ETHUSDT", source: .binance)),
-        ]
-        database.replaceDocuments(favorites, in: .favorite)
-        XCTAssertEqual(FavoritesStore(database: database).items, favorites)
-
+    func testSavedViewsKeepOrder() {
         let views = ["B", "A"].map {
             SavedView(
                 name: $0, tickers: ["BTCUSDT"], timeRange: .oneDay, createdAt: Date(),

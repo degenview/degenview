@@ -7,7 +7,7 @@ struct EmptyStateView: View {
     /// Whether to offer stocks too; they need an Alpaca feed, so a chip would go nowhere without one.
     let offersStocks: Bool
     let onAddTapped: () -> Void
-    let onOpenFavorite: (FavoriteItem) -> Void
+    let onOpenFavorite: (WatchlistInstrument) -> Void
     let onOpenRecent: (RecentMarket) -> Void
     let onOpenView: (SavedView) -> Void
     let onOpenSuggestion: (TickerSearchResult) -> Void
@@ -140,9 +140,9 @@ struct EmptyStateView: View {
             LazyVGrid(columns: chipColumns, spacing: 8) {
                 ForEach(suggestions.favorites) { item in
                     MarketChip(
-                        ticker: item.config.symbol, source: item.config.source,
-                        displayName: item.config.displayName,
-                        title: item.ticker, subtitle: item.name
+                        ticker: item.instrument.symbol, source: item.instrument.source,
+                        displayName: item.displayName,
+                        title: item.label, subtitle: item.name
                     ) { onOpenFavorite(item) }
                 }
             }
@@ -380,8 +380,10 @@ private struct SavedViewCard: View {
 #Preview("Full") {
     let sample = EmptyStateSuggestions(
         favorites: [
-            FavoriteItem(name: "Bitcoin", ticker: "BTC", config: TickerConfig(symbol: "BTCUSDT", source: .binance)),
-            FavoriteItem(name: "Ethereum", ticker: "ETH", config: TickerConfig(symbol: "ETH-USD", source: .coinbase)),
+            WatchlistInstrument(
+                instrument: InstrumentID(source: .binance, symbol: "BTCUSDT"), name: "Bitcoin", label: "BTC"),
+            WatchlistInstrument(
+                instrument: InstrumentID(source: .coinbase, symbol: "ETH-USD"), name: "Ethereum", label: "ETH"),
         ],
         recents: [
             RecentMarket(

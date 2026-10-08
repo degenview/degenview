@@ -31,7 +31,7 @@ struct ContentView: View {
     @State private var showAddSheet = false
     @State private var showAddFavoriteSheet = false
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
-    @StateObject private var favoritesStore = FavoritesStore.shared
+    @StateObject private var watchlists = WatchlistStore.shared
     @ObservedObject private var recents = RecentMarketsStore.shared
     @State private var showLayoutPicker = false
     @State private var layoutPromptName = ""
@@ -67,10 +67,10 @@ struct ContentView: View {
 
                 if showFavorites {
                     Divider()
-                    FavoritesSidebar(
-                        store: favoritesStore,
+                    WatchlistSidebar(
+                        store: watchlists,
                         onAdd: { showAddFavoriteSheet = true },
-                        onSelect: contentViewModel.openFavorite
+                        onSelect: contentViewModel.openWatchlistInstrument
                     )
                     .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
@@ -169,7 +169,8 @@ struct ContentView: View {
                 title: "Add Favorite", actionLabel: "Favorite",
                 subtitle: "Save a market to your favorites sidebar.", systemImage: "star.fill"
             ) { selected in
-                try favoritesStore.add(selected)
+                guard let favorites = watchlists.favorites else { throw WatchlistError.notFound }
+                try watchlists.add(selected, to: favorites.id)
             }
         }
         .sheet(isPresented: $showReplayDatePicker) {
@@ -281,11 +282,11 @@ struct ContentView: View {
             if contentViewModel.chartViewModels.isEmpty {
                 EmptyStateView(
                     suggestions: EmptyStateSuggestions(
-                        favorites: favoritesStore.items, recents: recents.items,
+                        favorites: watchlists.favorites?.instruments ?? [], recents: recents.items,
                         savedViews: contentViewModel.layout.store.views),
                     offersStocks: AlpacaCredentialsStore.isConfigured,
                     onAddTapped: { showAddSheet = true },
-                    onOpenFavorite: contentViewModel.openFavorite,
+                    onOpenFavorite: contentViewModel.openWatchlistInstrument,
                     onOpenRecent: { openMarket($0.result) },
                     onOpenView: { contentViewModel.openSavedView($0) },
                     onOpenSuggestion: openMarket,
@@ -688,18 +689,15 @@ struct ContentView: View {
                     )
                 }
             },
-            isFavorite: favoritesStore.contains(source: vm.source, symbol: vm.ticker),
+            isFavorite: watchlists.isFavorite(InstrumentID(source: vm.source, symbol: vm.ticker)),
             onToggleFavorite: {
-                favoritesStore.toggle(
-                    config: TickerConfig(
-                        symbol: vm.ticker,
-                        source: vm.source,
+                try? watchlists.toggleFavorite(
+                    WatchlistInstrument(
+                        instrument: InstrumentID(source: vm.source, symbol: vm.ticker),
+                        name: vm.title,
+                        label: favoriteTicker(for: vm),
                         displayName: vm.displayName,
-                        pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries
-                    ),
-                    name: vm.title,
-                    ticker: favoriteTicker(for: vm)
-                )
+                        pmSeries: vm.pmSeries.isEmpty ? nil : vm.pmSeries))
             },
             onZoomRegion: {
                 if vm.isBitcoinPowerLaw {

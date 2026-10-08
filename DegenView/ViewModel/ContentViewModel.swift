@@ -1331,14 +1331,14 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
-    /// Load a favorite here when this tab has room; otherwise give it its own tab.
-    func openFavorite(_ favorite: FavoriteItem) {
+    /// Load a watchlist market here when this tab has room; otherwise give it its own tab.
+    func openWatchlistInstrument(_ instrument: WatchlistInstrument) {
         if chartViewModels.count > 1 {
-            WindowCoordinator.shared.newTab(for: favorite, beside: tabID)
+            WindowCoordinator.shared.newTab(for: instrument, beside: tabID)
             return
         }
 
-        let config = favorite.config
+        let config = instrument.tickerConfig
         if let existing = marketChartViewModels.first {
             updateTicker(
                 existing,
