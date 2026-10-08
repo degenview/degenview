@@ -26,10 +26,24 @@ final class ChartViewModel: ObservableObject {
         powerLawXZoom = (powerLawXZoom * factor).clamped(to: 1...20)
     }
 
-    /// Unique identifier — derived from initial ticker+source, stable across updates.
-    let uniqueID: String
+    /// The market this chart shows, as a string. Follows `updateTicker`, so it never names a market
+    /// the chart has left; `chartID` is the identity that survives a switch.
+    var uniqueID: String { "\(ticker)_\(source.rawValue)" }
+
+    /// The market this chart shows.
+    var instrumentID: InstrumentID { InstrumentID(source: source, symbol: ticker) }
+
+    /// Whether this chart already shows `instrument`. Compared by the id each provider's API takes, so a
+    /// bare Binance `BTC` and `BTCUSDT` are the same market.
+    func shows(_ instrument: InstrumentID) -> Bool {
+        source == instrument.source
+            && instrumentID.apiSymbol.caseInsensitiveCompare(instrument.apiSymbol) == .orderedSame
+    }
 
     private var api: TickerDataSource
+
+    /// Where a market switch finds the provider for its new source. Tests substitute a stub.
+    var serviceResolver: (DataSourceType) -> TickerDataSource = { DataSourceFactory.shared.service(for: $0) }
 
     /// What the card header and settings sheet call this chart.
     ///
@@ -95,9 +109,8 @@ final class ChartViewModel: ObservableObject {
     /// Prediction markets report one price per timestamp, so they draw as a line.
     var usesLineChart: Bool { source.isPredictionMarket }
 
-    /// Identity of the icon currently wanted. `uniqueID` deliberately survives
-    /// `updateTicker`, so it can't drive the icon lookup — the card would keep
-    /// showing the previous coin's artwork.
+    /// Identity of the icon currently wanted: the market's own key, so the card never keeps
+    /// showing a previous coin's artwork after a switch.
     var iconKey: String { "\(source.rawValue):\(ticker)" }
 
     /// All tradable choices for multi-outcome prediction-market events. Empty for single-choice
@@ -561,7 +574,6 @@ final class ChartViewModel: ObservableObject {
         self.ticker = ticker
         self.source = source
         self.displayName = displayName
-        self.uniqueID = "\(ticker)_\(source.rawValue)"
         self.api = api ?? DataSourceFactory.shared.service(for: source)
         self.drawingStore = drawingStore ?? .shared
         observeDrawings()
@@ -1593,11 +1605,24 @@ final class ChartViewModel: ObservableObject {
         return true
     }
 
-    /// Update ticker symbol and/or source, re-fetch data.
+    /// Point this chart at another market. The one safe in-place switch: everything tied to the old
+    /// market is cancelled or cleared, so nothing it started can land on the new one, while the
+    /// chart's own identity (`chartID`, its place in the grid), timeframe, colours and
+    /// indicators stay. The caller refetches.
+    ///
+    /// Drawings are not carried over: they belong to a market in `DrawingStore`, so the new market
+    /// shows its own and the old market's come back when the chart returns to it.
     func updateTicker(
         symbol: String, source: DataSourceType, displayName: String? = nil,
         pmSeries: [PmSeriesConfig]? = nil
     ) {
+        // A response or refresh the old market started finds its generation gone and is dropped.
+        fetchTask?.cancel()
+        fetchTask = nil
+        fetchGeneration += 1
+        isFetching = false
+        errorMessage = nil
+        lastUpdated = nil
         clearGranularReplayData()
         ticker = symbol
         self.source = source
@@ -1612,11 +1637,34 @@ final class ChartViewModel: ObservableObject {
         stopPineFeed()
         pineDataset = nil
         pineOutput = .empty
+        pineResults = [:]
         for runtime in pineRuntimes.values { runtime.stop() }
-        api = DataSourceFactory.shared.service(for: source)
+        api = serviceResolver(source)
         trendLines = drawingStore.lines(ticker: ticker, source: source)
-        resetBrushState()
+        fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
         brushes = drawingStore.brushes(ticker: ticker, source: source)
+        resetTransientDrawingState()
+        applyCapabilityFallback()
+    }
+
+    /// Selections, drafts and measurements belong to the market they were made on.
+    private func resetTransientDrawingState() {
+        cancelDraft()
+        cancelFibonacciDraft()
+        resetBrushState()
+        selectedLineID = nil
+        editingLineID = nil
+        selectedFibonacciID = nil
+        editingFibonacciID = nil
+        clearRulers()
+    }
+
+    /// Settings that mean nothing for the new market are switched off, never reinterpreted: volume
+    /// bars need a source that reports turnover, and a fixed price precision chosen for one asset
+    /// would misread another, so it returns to automatic.
+    private func applyCapabilityFallback() {
+        if usesLineChart || !source.providesVolume { showVolume = false }
+        yAxisDecimalPlaces = nil
     }
 
     private func observeDrawings() {

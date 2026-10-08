@@ -56,6 +56,7 @@ struct SearchResultRow: View {
                 .strokeBorder(isSelected ? Color.accentColor.opacity(0.5) : .clear)
         )
         .onHover { isHovered = $0 }
+        .watchlistContextMenu(for: result)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

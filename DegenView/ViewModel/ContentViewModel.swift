@@ -167,16 +167,20 @@ final class ContentViewModel: ObservableObject {
     private var observers: [NSObjectProtocol] = []
     /// Hidden tabs don't poll — see `updateVisibility(_:)`.
     @Published private(set) var isWindowVisible = false
+    /// The chart watchlist clicks go to. Separate from hover, drag and drawing selection.
+    @Published private(set) var focusedChartID: UUID?
     private var didInitialLoad = false
+    private let tabs: TabsStore
 
     init(
         tabID: UUID, api: BinanceAPIService = BinanceAPIService(),
-        savedViews: SavedViewStore = .shared
+        savedViews: SavedViewStore = .shared, tabs: TabsStore = .shared
     ) {
         self.tabID = tabID
         self.api = api
+        self.tabs = tabs
 
-        let tab = TabsStore.shared.ensureTab(tabID)
+        let tab = tabs.ensureTab(tabID)
         // A tab whose layout was deleted since it was last open is Unnamed again.
         self.layout = SavedLayoutController(store: savedViews, activeViewID: tab.savedViewID)
         pendingReplayRestore = tab.replaySession
@@ -930,6 +934,7 @@ final class ContentViewModel: ObservableObject {
 
         case .leftMouseDown:
             guard let hit = plotHit(at: event) else { return event }
+            focusChart(hit.vm.chartID)
             clearDrawingState(except: hit.vm)
             if beginBrushMove(hit) { return nil }
             return event
@@ -1293,9 +1298,10 @@ final class ContentViewModel: ObservableObject {
     /// - Parameter displayName: label to show instead of the raw symbol, for sources
     ///   whose symbol is an opaque id (Polymarket CLOB token ids).
     /// - Parameter pmSeries: all tradable choices for multi-outcome Polymarket events.
+    @discardableResult
     func addTicker(
         symbol: String, source: DataSourceType, displayName: String? = nil, pmSeries: [PmSeriesConfig]? = nil
-    ) async throws {
+    ) async throws -> ChartViewModel {
         // Duplicate check: same symbol + same source
         guard
             !chartViewModels.contains(where: {
@@ -1315,11 +1321,13 @@ final class ContentViewModel: ObservableObject {
         await vm.fetchData(for: selectedTimeRange, count: candleCount)
         markChanged()
         connectWebSocket()
+        return vm
     }
 
     /// Remove a ticker and persist the change.
     func removeTicker(_ vm: ChartViewModel) {
-        chartViewModels.removeAll { $0.uniqueID == vm.uniqueID }
+        chartViewModels.removeAll { $0.chartID == vm.chartID }
+        if focusedChartID == vm.chartID { focusedChartID = nil }
         PineAlertCoordinator.shared.chartRemoved(chartID: vm.chartID)
         chartColumns = chartColumns.compactMap { column in
             var updated = column
@@ -1331,43 +1339,74 @@ final class ContentViewModel: ObservableObject {
         connectWebSocket()
     }
 
-    /// Load a watchlist market here when this tab has room; otherwise give it its own tab.
+    // MARK: - Focused chart and watchlist navigation
+
+    /// The chart a watchlist click goes to: the one last clicked while it is still here, otherwise the
+    /// first market chart. Focus is per tab, transient, and not part of a saved layout.
+    var resolvedFocusedChart: ChartViewModel? {
+        if let id = focusedChartID, let focused = marketChartViewModels.first(where: { $0.chartID == id }) {
+            return focused
+        }
+        return marketChartViewModels.first
+    }
+
+    /// Whether a card should show the focus ring: only when there is more than one to tell apart.
+    func isFocused(_ vm: ChartViewModel) -> Bool {
+        marketChartViewModels.count > 1 && resolvedFocusedChart?.chartID == vm.chartID
+    }
+
+    func focusChart(_ chartID: UUID) {
+        guard focusedChartID != chartID, marketChartViewModels.contains(where: { $0.chartID == chartID }) else { return }
+        focusedChartID = chartID
+    }
+
+    /// A single click on a watchlist row: show that market in the focused chart. A market already on
+    /// screen just takes focus; with no market chart in the tab, one is added.
     func openWatchlistInstrument(_ instrument: WatchlistInstrument) {
-        if chartViewModels.count > 1 {
-            WindowCoordinator.shared.newTab(for: instrument, beside: tabID)
+        if let existing = marketChartViewModels.first(where: { $0.shows(instrument.instrument) }) {
+            focusChart(existing.chartID)
             return
         }
-
-        let config = instrument.tickerConfig
-        if let existing = marketChartViewModels.first {
-            updateTicker(
-                existing,
-                symbol: config.symbol,
-                source: config.source,
-                displayName: config.displayName,
-                pmSeries: config.pmSeries
-            )
+        if let target = resolvedFocusedChart {
+            switchChart(target, to: instrument)
         } else {
-            Task {
-                try? await addTicker(
-                    symbol: config.symbol,
-                    source: config.source,
-                    displayName: config.displayName,
-                    pmSeries: config.pmSeries
-                )
-            }
+            addWatchlistInstrumentAsChart(instrument)
         }
     }
 
-    /// "Add as New Chart": a fresh card through the normal add flow. A market already on
-    /// screen is not added twice.
+    /// "Add as New Chart": a fresh card through the normal add flow, placed in the shortest column.
+    /// A market already on screen takes focus instead of being added twice.
     func addWatchlistInstrumentAsChart(_ instrument: WatchlistInstrument) {
+        if let existing = marketChartViewModels.first(where: { $0.shows(instrument.instrument) }) {
+            focusChart(existing.chartID)
+            return
+        }
         let config = instrument.tickerConfig
         Task {
-            try? await addTicker(
-                symbol: config.symbol, source: config.source, displayName: config.displayName,
-                pmSeries: config.pmSeries)
+            guard
+                let added = try? await addTicker(
+                    symbol: config.symbol, source: config.source, displayName: config.displayName,
+                    pmSeries: config.pmSeries)
+            else { return }
+            focusChart(added.chartID)
         }
+    }
+
+    /// Points one chart at another market and keeps focus on it. Dirties the saved layout, since the
+    /// chart's configuration changed; watchlist edits never do.
+    func switchChart(_ vm: ChartViewModel, to instrument: WatchlistInstrument) {
+        guard !vm.shows(instrument.instrument) else {
+            focusChart(vm.chartID)
+            return
+        }
+        let config = instrument.tickerConfig
+        crosshair.clear()
+        updateTicker(
+            vm, symbol: config.symbol, source: config.source, displayName: config.displayName,
+            pmSeries: config.pmSeries)
+        focusChart(vm.chartID)
+        // The cards' paper-trading markers are computed by the view from the chart's current market.
+        objectWillChange.send()
     }
 
     /// Update a chart's ticker symbol and/or source, then refetch.
@@ -1481,7 +1520,7 @@ final class ContentViewModel: ObservableObject {
     private func syncTab() {
         guard !isHydrating else { return }
         let configs = makeTickerConfigs()
-        TabsStore.shared.update(tabID) { tab in
+        tabs.update(tabID) { tab in
             tab.name = tabName
             tab.savedViewID = layout.activeViewID
             tab.tickerConfigs = configs

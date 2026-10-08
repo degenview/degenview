@@ -31,6 +31,7 @@ struct AddTickerSheet: View {
     @State private var stockText = ""
     @State private var addError: String?
     @State private var addedNotice: String?
+    @State private var newListFor: WatchlistInstrument?
     @State private var needsAlpacaSetup = false
     @StateObject private var portfolioStore = PortfolioStore.shared
     @ObservedObject private var recents = RecentMarketsStore.shared
@@ -198,6 +199,7 @@ struct AddTickerSheet: View {
         .onDisappear {
             cancelSearches()
         }
+        .watchlistNewListPrompt(for: $newListFor)
     }
 
     private var footer: some View {
