@@ -65,7 +65,6 @@ enum PineIgnoredFeatures {
                 "text_font_family": "Box text uses the default font.",
                 "text_formatting": "Box text has no bold or italic formatting.",
             ],
-            "polyline.new": ["curved": "The segments are drawn straight."],
             "request.security": request,
             "request.security_lower_tf": request,
         ]

@@ -87,7 +87,8 @@ extension PineRuntimeSession {
         return store(\.polylines, kind: .polyline, limit: program.declaration.maxPolylinesCount) { id in
             PinePolylineOutput(
                 id: id, points: points, closed: closed, lineColor: lineColor, fillColor: fillColor,
-                style: .parse(b["line_style"].textValue, absent: .solid), width: b["line_width"].intValue ?? 1)
+                style: .parse(b["line_style"].textValue, absent: .solid), width: b["line_width"].intValue ?? 1,
+                curved: b["curved"]?.bool ?? false)
         }
     }
 }
