@@ -98,12 +98,19 @@ final class WatchlistSidebarViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.list?.display.columns, [.last, .change, .changePercent])
     }
 
-    func testSidebarWidthGrowsWithExtraColumnsUpToACap() throws {
-        let base = viewModel.sidebarWidth
+    func testMinimumWidthLeavesRoomForEveryColumnAndGrowsWithMore() throws {
+        let base = viewModel.minimumWidth
+        XCTAssertGreaterThanOrEqual(viewModel.defaultWidth, base)
         viewModel.setColumn(.volume, visible: true)
-        XCTAssertGreaterThan(viewModel.sidebarWidth, base)
+        XCTAssertGreaterThan(viewModel.minimumWidth, base)
+        XCTAssertGreaterThanOrEqual(viewModel.defaultWidth, viewModel.minimumWidth)
         for column in WatchlistColumn.allCases { viewModel.setColumn(column, visible: true) }
-        XCTAssertLessThanOrEqual(viewModel.sidebarWidth, 470)
+        XCTAssertLessThan(viewModel.minimumWidth, WatchlistSidebarViewModel.maximumWidth)
+    }
+
+    func testTheDefaultWidthNeverClipsTheDefaultColumns() {
+        XCTAssertGreaterThanOrEqual(viewModel.defaultWidth, viewModel.minimumWidth)
+        XCTAssertEqual(viewModel.defaultWidth, UI.watchlistSidebarBaseWidth, accuracy: 0.5)
     }
 
     func testDroppingAnInstrumentOnASectionHeaderPutsItFirstInThatSection() throws {

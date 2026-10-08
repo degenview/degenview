@@ -242,6 +242,14 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   field goes through `WatchlistQuote(source:quote:receivedAt:)`; a missing reference is nil, never zero
 - Watchlist rows drag with their own UTType (`WatchlistDragPayload`), never plain text, so
   `ChartGridDropDelegate` cannot see them. The move is committed once, on drop
+- The watchlist is the secondary pane of a `SplitContainer` (drag its edge, double-click to reset); the
+  width is the global `watchlistSidebarLength` default, clamped between `WatchlistSidebarViewModel.minimumWidth`
+  (every column plus room for a name) and 640. The pane stays built while hidden, so the sidebar is told
+  it is inactive then and must not request prices
+- Chart cards measure their plot (`GeometryReader` under the header) instead of assuming a chrome height,
+  and the grid's end-of-column drop zone is a column background, never a spacer: anything in a column
+  with a minimum height the `ChartLayout` sizing doesn't count overflows the grid, and SwiftUI re-centres
+  the overflow, pushing the first row's top edge out of view
 - Each tab has a transient `focusedChartID` (not in `LayoutSnapshot`). A row click calls
   `ContentViewModel.openWatchlistInstrument`: a market already on screen takes focus, otherwise the
   focused chart switches via `ChartViewModel.updateTicker`, the one safe in-place switch (cancels the

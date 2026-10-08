@@ -57,10 +57,20 @@ final class WatchlistSidebarViewModel: ObservableObject {
         return list?.instruments.first { $0.id == id }
     }
 
-    /// Width the sidebar needs for the list's columns.
-    var sidebarWidth: CGFloat {
-        UI.watchlistSidebarWidth(extraColumns: max(0, (list?.display.columns.count ?? 2) - 2))
+    /// The narrowest the panel can be while every column of the list still fits, with room left for a name.
+    var minimumWidth: CGFloat {
+        let columns = list?.display.columns ?? WatchlistDisplaySettings().columns
+        // Row padding, icon and gaps, a name's minimum, then each column and the gap before it.
+        return 124 + columns.reduce(0) { $0 + $1.width + 6 }
     }
+
+    /// The width before the user drags the divider: roomy for the list's columns.
+    var defaultWidth: CGFloat {
+        max(minimumWidth, UI.watchlistSidebarWidth(extraColumns: max(0, (list?.display.columns.count ?? 2) - 2)))
+    }
+
+    /// The widest the user may drag it.
+    static let maximumWidth: CGFloat = 640
 
     // MARK: Quotes
 

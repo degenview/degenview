@@ -32,6 +32,8 @@ struct ContentView: View {
     @State private var showAddWatchlistSymbolSheet = false
     @State private var newListFor: WatchlistInstrument?
     @AppStorage("showFavoritesSidebar") private var showFavorites = false
+    /// Points; zero until the user first drags the watchlist's edge.
+    @AppStorage("watchlistSidebarLength") private var watchlistSidebarLength = 0.0
     @StateObject private var watchlists = WatchlistStore.shared
     @StateObject private var watchlistSidebar = WatchlistSidebarViewModel()
     @ObservedObject private var recents = RecentMarketsStore.shared
@@ -65,20 +67,26 @@ struct ContentView: View {
                 }
                 .zIndex(1)
 
-                chartColumn
-
-                if showFavorites {
-                    Divider()
+                // The watchlist is a resizable pane: drag its edge, double-click it to go back to the
+                // default width. The width is shared by every window.
+                SplitContainer(
+                    axis: .horizontal, secondaryLength: $watchlistSidebarLength,
+                    isSecondaryVisible: showFavorites, minPrimary: UI.windowMinWidth - UI.toolSidebarWidth,
+                    minSecondary: watchlistSidebar.minimumWidth, maxSecondary: WatchlistSidebarViewModel.maximumWidth,
+                    defaultLength: watchlistSidebar.defaultWidth
+                ) {
+                    chartColumn
+                } secondary: {
                     WatchlistSidebar(
                         viewModel: watchlistSidebar,
                         actions: WatchlistInstrumentActions(
                             open: contentViewModel.openWatchlistInstrument,
                             addChart: contentViewModel.addWatchlistInstrumentAsChart,
                             openInNewTab: { WindowCoordinator.shared.newTab(for: $0, beside: contentViewModel.tabID) }),
-                        isWindowVisible: contentViewModel.isWindowVisible,
+                        // The pane stays built while hidden, so a hidden sidebar must not ask for prices.
+                        isWindowVisible: contentViewModel.isWindowVisible && showFavorites,
                         onAddSymbol: { showAddWatchlistSymbolSheet = true }
                     )
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
             // The title is the tab label, and an empty tab still needs the
@@ -89,8 +97,10 @@ struct ContentView: View {
                 toolbarContent
             }
             .frame(
-                minWidth: UI.windowMinWidth + (showFavorites ? watchlistSidebar.sidebarWidth : 0),
-                idealWidth: UI.windowIdealWidth + (showFavorites ? watchlistSidebar.sidebarWidth : 0),
+                minWidth: UI.windowMinWidth + (showFavorites ? watchlistSidebar.minimumWidth : 0),
+                idealWidth: UI.windowIdealWidth
+                    + (showFavorites
+                        ? (watchlistSidebarLength > 0 ? CGFloat(watchlistSidebarLength) : watchlistSidebar.defaultWidth) : 0),
                 minHeight: UI.windowMinHeight,
                 idealHeight: UI.windowIdealHeight
             )
@@ -536,18 +546,17 @@ struct ContentView: View {
                                 )
                         }
 
+                        // Takes only what the cards leave. It used to hold a 20pt minimum the sizing maths
+                        // never counted, which overflowed the grid and pushed the top row out of view.
                         Color.clear
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .frame(minHeight: 20)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    // Dropping anywhere in the column that is not on a card, including the gaps around the
+                    // cards, appends to it.
+                    .background {
+                        Color.clear
                             .contentShape(Rectangle())
-                            .overlay(alignment: .top) {
-                                if gridDropTarget == .existing(columnID: column.id, before: nil) {
-                                    Capsule()
-                                        .fill(Color.accentColor)
-                                        .frame(height: 3)
-                                        .padding(.horizontal, 8)
-                                }
-                            }
                             .onDrop(
                                 of: [.utf8PlainText],
                                 delegate: ChartGridDropDelegate(
@@ -559,7 +568,16 @@ struct ContentView: View {
                                 )
                             )
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .overlay(alignment: .bottom) {
+                        if gridDropTarget == .existing(columnID: column.id, before: nil) {
+                            Capsule()
+                                .fill(Color.accentColor)
+                                .frame(height: 3)
+                                .padding(.horizontal, 8)
+                                .padding(.bottom, 1)
+                                .allowsHitTesting(false)
+                        }
+                    }
                 }
 
                 if let previewID = previewedNewColumnChartID {
