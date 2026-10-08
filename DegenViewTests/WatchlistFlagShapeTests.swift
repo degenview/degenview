@@ -23,36 +23,35 @@ final class WatchlistFlagShapeTests: XCTestCase {
         XCTAssertGreaterThan(WatchlistMetrics.leadingInset, size.width / 2, "only a little of it is covered")
     }
 
-    func testByDefaultTheNotchIsOnTheLeftAndTheFlatEndFacesTheLogo() {
+    func testByDefaultTheFlatEndIsOnTheLeftAgainstTheBorderAndTheNotchPointsAtTheLogo() {
         let path = WatchlistFlagShape().path(in: rect)
         let middle = size.height / 2
-        // Flat right end, with its rounded corners cut a little.
-        for y in [size.height * 0.25, middle, size.height * 0.75] {
-            XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.3, y: y)), "flat right edge at y \(y)")
-        }
-        XCTAssertFalse(path.contains(CGPoint(x: size.width - 0.05, y: 0.05)))
-        // Tail tips at the left corners; the V between them is empty; solid right of the notch tip.
-        XCTAssertTrue(path.contains(CGPoint(x: 0.4, y: 0.4)))
-        XCTAssertTrue(path.contains(CGPoint(x: 0.4, y: size.height - 0.4)))
-        XCTAssertFalse(path.contains(CGPoint(x: 0.4, y: middle)), "the V is cut into the left end")
-        XCTAssertTrue(path.contains(CGPoint(x: 5, y: middle)), "right of the notch tip the middle is solid")
-    }
-
-    func testTheOtherOrientationPutsTheNotchOnTheRight() {
-        let path = WatchlistFlagShape(tailPointsRight: true).path(in: rect)
-        let middle = size.height / 2
-        XCTAssertEqual(path.boundingRect, rect)
         for y in [size.height * 0.25, middle, size.height * 0.75] {
             XCTAssertTrue(path.contains(CGPoint(x: 0.3, y: y)), "flat left edge at y \(y)")
         }
-        XCTAssertFalse(path.contains(CGPoint(x: size.width - 0.4, y: middle)), "the V is cut into the right end")
+        XCTAssertFalse(path.contains(CGPoint(x: 0.05, y: 0.05)), "rounded corner")
+        // Tail tips at the right corners; the V between them is empty; solid left of the notch tip.
         XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.4, y: 0.4)))
+        XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.4, y: size.height - 0.4)))
+        XCTAssertFalse(path.contains(CGPoint(x: size.width - 0.4, y: middle)), "the V is cut into the right end")
+        XCTAssertTrue(path.contains(CGPoint(x: 5, y: middle)), "left of the notch tip the middle is solid")
+    }
+
+    func testTheOtherOrientationPutsTheNotchOnTheLeft() {
+        let path = WatchlistFlagShape(tailPointsRight: false).path(in: rect)
+        let middle = size.height / 2
+        XCTAssertEqual(path.boundingRect, rect)
+        for y in [size.height * 0.25, middle, size.height * 0.75] {
+            XCTAssertTrue(path.contains(CGPoint(x: size.width - 0.3, y: y)), "flat right edge at y \(y)")
+        }
+        XCTAssertFalse(path.contains(CGPoint(x: 0.4, y: middle)), "the V is cut into the left end")
+        XCTAssertTrue(path.contains(CGPoint(x: 0.4, y: 0.4)))
     }
 
     func testTheShapeFollowsItsOffsetFrame() {
         let moved = CGRect(origin: CGPoint(x: 20, y: 5), size: size)
         XCTAssertEqual(WatchlistFlagShape().path(in: moved).boundingRect, moved)
-        XCTAssertEqual(WatchlistFlagShape(tailPointsRight: true).path(in: moved).boundingRect, moved)
+        XCTAssertEqual(WatchlistFlagShape(tailPointsRight: false).path(in: moved).boundingRect, moved)
     }
 
     @MainActor

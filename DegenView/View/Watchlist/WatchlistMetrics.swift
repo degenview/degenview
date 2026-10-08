@@ -2,16 +2,29 @@ import SwiftUI
 
 /// Sizes the watchlist panel shares, so its parts line up by construction.
 enum WatchlistMetrics {
-    /// Where left-aligned content starts: asset logos, section titles, the "Symbol" column title and the
-    /// panel header all use this one value, so they share a left edge. It is narrower than the right edge so a
-    /// flag's bookmark can sit behind the logo.
+    /// Where left-aligned content starts, measured from the panel's left edge: asset logos, section titles, the
+    /// "Symbol" column title and the panel header all use this one value, so they share a left edge. It is narrower
+    /// than the right edge so a flag's bookmark, which touches the border, sits behind the logo.
     static let leadingInset: CGFloat = 8
 
-    /// Where right-aligned content ends: column values, chevrons and the header buttons.
+    /// Where right-aligned content ends, measured from the panel's right edge: column values, column titles,
+    /// chevrons and the header buttons.
     static let trailingInset: CGFloat = 12
 
-    /// A flag's size. It is drawn in the leading gutter starting at x = 0, behind the logo, which begins at
-    /// `leadingInset` and so covers the bookmark's flat end by a few points. It takes no layout space, so a
+    /// Padding SwiftUI's `List` adds inside its table on each side of every row (measured by
+    /// `WatchlistListMetricsTests`: half of the table's 17pt cell spacing, rounded either way). Rows ask the list
+    /// for the difference, so their content lands on `leadingInset` / `trailingInset` instead of past them.
+    static let listCellLeading: CGFloat = 8
+    static let listCellTrailing: CGFloat = 9
+
+    /// The inset to give a list row so its content starts at `leadingInset`: none, the list already pads it.
+    static var rowLeadingInset: CGFloat { max(0, leadingInset - listCellLeading) }
+
+    /// The inset to give a list row so its content ends at `trailingInset`.
+    static var rowTrailingInset: CGFloat { max(0, trailingInset - listCellTrailing) }
+
+    /// A flag's size. It is drawn from x = 0, touching the panel's left edge, behind the logo, which begins at
+    /// `leadingInset` and so covers the end of the bookmark by a few points. It takes no layout space, so a
     /// flagged row's logo and text sit exactly where an unflagged row's do.
     static let flagMarkSize = CGSize(width: 11, height: 14)
 }
