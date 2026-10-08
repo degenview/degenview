@@ -158,20 +158,32 @@ final class WatchlistProviderQuoteTests: XCTestCase {
         XCTAssertTrue(WatchlistQuoteFormat.percent(quote, source: .polymarket).hasSuffix("pp"))
     }
 
-    func testSourceTimestampDecidesFreshness() {
-        let old = SourceQuote(price: 1, previousDayPrice: 1, timestamp: now.addingTimeInterval(-3_600))
-        XCTAssertEqual(WatchlistQuote(source: .binance, quote: old, receivedAt: now).freshness, .stale)
-        let recent = SourceQuote(price: 1, previousDayPrice: 1, timestamp: now.addingTimeInterval(-30))
-        XCTAssertEqual(WatchlistQuote(source: .binance, quote: recent, receivedAt: now).freshness, .live)
+    func testAFreshPollIsCurrentWhateverTheProvidersOwnTimestampSays() {
+        // A coin that last traded an hour ago still has the right price, and we just confirmed it.
+        let quiet = SourceQuote(price: 1, previousDayPrice: 1, timestamp: now.addingTimeInterval(-3_600))
+        let quote = WatchlistQuote(source: .coingecko, quote: quiet, receivedAt: now)
+        XCTAssertEqual(quote.freshness, .live)
+        XCTAssertEqual(quote.timestamp, now.addingTimeInterval(-3_600), "the provider's time is kept for display")
     }
 
-    func testAStockOutsideUSHoursReadsMarketClosedNotStale() {
+    func testAPriceGoesStaleOnlyWhenWeStopRefreshingIt() {
+        for source in [DataSourceType.binance, .coinbase, .coingecko, .dexscreener, .alpaca, .polymarket] {
+            let window = WatchlistFreshness.maximumAge(for: source)
+            let interval = WatchlistFreshness.refreshInterval(for: source)
+            XCTAssertGreaterThan(window, interval * 2, "\(source) must survive a missed round")
+            XCTAssertEqual(WatchlistFreshness.evaluate(source: source, receivedAt: now, now: now.addingTimeInterval(window - 1)).isCurrent, true)
+            XCTAssertEqual(WatchlistFreshness.evaluate(source: source, receivedAt: now, now: now.addingTimeInterval(window + 1)), .stale)
+        }
+    }
+
+    func testAStockOutsideUSHoursReadsMarketClosedAndStaysCurrent() {
         // Saturday 2026-10-10 12:00 UTC.
         let saturday = Date(timeIntervalSince1970: 1_791_633_600)
-        let friday = SourceQuote(price: 1, previousDayPrice: 1, timestamp: saturday.addingTimeInterval(-86_400))
-        XCTAssertEqual(WatchlistQuote(source: .alpaca, quote: friday, receivedAt: saturday).freshness, .marketClosed)
-        // A crypto source with the same age is just stale.
-        XCTAssertEqual(WatchlistQuote(source: .binance, quote: friday, receivedAt: saturday).freshness, .stale)
+        let quote = WatchlistQuote(
+            source: .alpaca, quote: SourceQuote(price: 1, previousDayPrice: 1), receivedAt: saturday)
+        XCTAssertEqual(quote.freshness, .marketClosed)
+        XCTAssertTrue(quote.freshness.isCurrent, "the close is still the current price, so the row is not dimmed")
+        XCTAssertEqual(WatchlistQuote(source: .binance, quote: SourceQuote(price: 1, previousDayPrice: 1), receivedAt: saturday).freshness, .live)
     }
 
     func testCoinbaseTickMapsOpenAndVolume() {

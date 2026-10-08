@@ -5,7 +5,6 @@ extension WatchlistQuote {
     /// the previous close for stocks); with no usable reference the change stays nil rather than
     /// being guessed from other data.
     init(source: DataSourceType, quote: SourceQuote, receivedAt: Date) {
-        let timestamp = quote.timestamp ?? receivedAt
         var change: Double?
         var percent: Double?
         if let previous = quote.previousDayPrice, previous.isFinite, quote.price.isFinite {
@@ -20,8 +19,9 @@ extension WatchlistQuote {
         }
         self.init(
             last: quote.price, change: change, changePercent: percent, changeBasis: Self.basis(for: source),
-            volume: quote.volume24h, volumeKind: quote.volumeKind.map(Self.kind), timestamp: timestamp,
-            freshness: WatchlistFreshness.evaluate(source: source, timestamp: timestamp, now: receivedAt))
+            volume: quote.volume24h, volumeKind: quote.volumeKind.map(Self.kind),
+            timestamp: quote.timestamp ?? receivedAt,
+            freshness: WatchlistFreshness.evaluate(source: source, receivedAt: receivedAt, now: receivedAt))
     }
 
     /// A trade from the Coinbase ticker channel, which carries the 24h open and volume.
@@ -42,7 +42,7 @@ extension WatchlistQuote {
         self.init(
             last: tick.price, change: change, changePercent: percent, changeBasis: .rolling24h, volume: volume,
             volumeKind: kind, timestamp: tick.time,
-            freshness: WatchlistFreshness.evaluate(source: .coinbase, timestamp: receivedAt, now: receivedAt))
+            freshness: WatchlistFreshness.evaluate(source: .coinbase, receivedAt: receivedAt, now: receivedAt))
     }
 
     static func basis(for source: DataSourceType) -> ChangeBasis {

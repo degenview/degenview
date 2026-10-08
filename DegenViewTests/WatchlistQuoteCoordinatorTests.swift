@@ -282,10 +282,49 @@ final class WatchlistQuoteCoordinatorTests: XCTestCase {
         await coordinator.pollOnce()
         XCTAssertEqual(book.quote(for: btc)?.freshness, .live)
 
-        coordinator.ageQuotes(now: now.addingTimeInterval(60))
+        coordinator.ageQuotes(now: now.addingTimeInterval(30))
         XCTAssertEqual(book.quote(for: btc)?.freshness, .live)
         coordinator.ageQuotes(now: now.addingTimeInterval(600))
         XCTAssertEqual(book.quote(for: btc)?.freshness, .stale)
+    }
+
+    func testAnOldProviderTimestampDoesNotMakeAFreshPriceStale() async {
+        provider.answer(.coingecko) { _, requests in
+            Dictionary(
+                uniqueKeysWithValues: requests.map {
+                    ($0.symbol, SourceQuote(price: 5, previousDayPrice: 4, timestamp: Date(timeIntervalSince1970: 1)))
+                })
+        }
+        coordinator.update(consumer: UUID(), instruments: [sol], isActive: true)
+
+        await coordinator.pollOnce()
+
+        XCTAssertEqual(book.quote(for: sol)?.freshness, .live)
+    }
+
+    func testAFailedRoundRecoversWithinSecondsNotMinutes() async {
+        provider.answerEverything(.binance)
+        coordinator.update(consumer: UUID(), instruments: [btc], isActive: true)
+        await coordinator.pollOnce()
+
+        provider.answer(.binance) { _, _ in throw WatchlistQuoteFailure.failed("offline") }
+        now = now.addingTimeInterval(5)
+        await coordinator.pollOnce()
+        provider.answerEverything(.binance)
+        now = now.addingTimeInterval(5)
+        await coordinator.pollOnce()
+
+        XCTAssertEqual(book.quote(for: btc)?.freshness, .live, "back within one backoff step of 5 seconds")
+    }
+
+    func testAFailureWithNoPriceYetKeepsItsReasonForTheRow() async {
+        provider.answer(.coingecko) { _, _ in throw WatchlistQuoteFailure.rateLimited }
+        coordinator.update(consumer: UUID(), instruments: [sol], isActive: true)
+
+        await coordinator.pollOnce()
+
+        XCTAssertNil(book.quote(for: sol)?.last)
+        XCTAssertEqual(book.quote(for: sol)?.note, "Rate limited by the provider")
     }
 
     // MARK: Prediction markets
@@ -398,6 +437,21 @@ final class WatchlistQuoteCoordinatorTests: XCTestCase {
         await coordinator.pollOnce()
 
         XCTAssertEqual(provider.calls(to: .coinbase).map(\.symbols), [["ETH-USD"]])
+    }
+
+    func testACoinbaseProductTheSocketHasGoneQuietOnIsRefreshedFromREST() async {
+        provider.answerEverything(.coinbase)
+        coordinator.update(consumer: UUID(), instruments: [coinbaseBTC], isActive: true)
+        socket.onTick?(CoinbaseTick(productID: "BTC-USD", price: 1, size: 1, time: now, tradeID: 1))
+        coordinator.flushCoinbase()
+
+        now = now.addingTimeInterval(10)
+        await coordinator.pollOnce()
+        XCTAssertTrue(provider.calls(to: .coinbase).isEmpty)
+
+        now = now.addingTimeInterval(25)
+        await coordinator.pollOnce()
+        XCTAssertEqual(provider.calls(to: .coinbase).map(\.symbols), [["BTC-USD"]])
     }
 
     // MARK: No persistence

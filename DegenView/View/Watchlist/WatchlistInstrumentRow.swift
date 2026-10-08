@@ -88,12 +88,31 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
         }
     }
 
+    /// The price takes the colour of the move: green when the market is up, red when down.
+    private var lastColor: Color {
+        switch WatchlistQuoteFormat.direction(cell.quote) {
+        case .up: return .green
+        case .down: return .red
+        case .flat: return .primary
+        }
+    }
+
     @ViewBuilder
     private func valueText(for column: WatchlistColumn) -> some View {
         let source = item.instrument.source
         switch column {
         case .last:
-            Text(WatchlistQuoteFormat.last(cell.quote, source: source)).monospacedDigit()
+            if cell.quote?.last == nil, let note = cell.quote?.note {
+                // No price and a reason: say so rather than leaving a bare dash.
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help(note)
+                    .accessibilityLabel(note)
+            } else {
+                Text(WatchlistQuoteFormat.last(cell.quote, source: source))
+                    .monospacedDigit()
+                    .foregroundStyle(lastColor)
+            }
         case .change:
             Text(WatchlistQuoteFormat.change(cell.quote, source: source))
                 .monospacedDigit().foregroundStyle(directionColor)

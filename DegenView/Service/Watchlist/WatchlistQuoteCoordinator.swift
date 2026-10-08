@@ -22,14 +22,18 @@ final class WatchlistQuoteCoordinator {
     }()
 
     struct Configuration {
+        /// How often the loop wakes. Each source is refreshed at its own `WatchlistFreshness.refreshInterval`,
+        /// which is a multiple of this.
         var pollInterval: Duration = .seconds(5)
-        /// Prediction markets have no batch call, so they are read less often.
-        var predictionInterval: TimeInterval = 30
-        var maximumBackoff: TimeInterval = 60
+        /// A source that fails is tried again after this long, doubling up to the cap, so a brief outage
+        /// costs a few seconds rather than a minute. A rate limit backs off further.
+        var failureBackoff: ClosedRange<TimeInterval> = 5...30
+        var rateLimitBackoff: ClosedRange<TimeInterval> = 15...60
         var rejectedRetry: TimeInterval = 600
-        /// Coinbase products without a socket price yet are filled from REST, this many per round.
-        var coinbaseFallbackBatch = 20
+        /// Coinbase products the socket has not answered yet are filled from REST after this long...
         var coinbaseFallbackDelay: TimeInterval = 6
+        /// ...and any product the socket has been quiet about is refreshed from REST this often.
+        var coinbaseRefresh: TimeInterval = 30
         var coinbaseFlush: Duration = .milliseconds(250)
         var chainLookupsPerRound = 5
     }
@@ -57,6 +61,8 @@ final class WatchlistQuoteCoordinator {
 
     private var consumers: [UUID: Consumer] = [:]
     private var known: [InstrumentID: WatchlistQuote] = [:]
+    /// When each price was last confirmed by its provider; what freshness is judged by.
+    private var received: [InstrumentID: Date] = [:]
     private var sources: [DataSourceType: SourceState] = [:]
     private var rejected: [InstrumentID: Date] = [:]
     private var chains: [InstrumentID: String] = [:]
@@ -185,8 +191,8 @@ final class WatchlistQuoteCoordinator {
     private func isDue(_ source: DataSourceType, now: Date) -> Bool {
         let state = sources[source] ?? SourceState()
         guard now >= state.nextAllowed else { return false }
-        if source.isPredictionMarket { return now.timeIntervalSince(state.lastPoll) >= config.predictionInterval }
-        return true
+        // A second of slack: the loop sleeps its interval after each round, so rounds drift a little late.
+        return now.timeIntervalSince(state.lastPoll) >= WatchlistFreshness.refreshInterval(for: source) - 1
     }
 
     /// The source to poll `instrument` through, or nil when it should not be polled this round.
@@ -195,9 +201,12 @@ final class WatchlistQuoteCoordinator {
         switch instrument.source {
         case .coinMarketCap: return nil
         case .coinbase:
-            // The socket supplies prices; REST only fills a product the socket has not answered.
-            guard known[instrument] == nil,
-                let since = coinbaseSubscribedAt[instrument],
+            // The socket supplies prices; REST fills a product it has not answered, and refreshes one it has
+            // gone quiet on, so a thin market's price is never left to age.
+            if let last = received[instrument] {
+                return now.timeIntervalSince(last) >= config.coinbaseRefresh ? .coinbase : nil
+            }
+            guard let since = coinbaseSubscribedAt[instrument],
                 now.timeIntervalSince(since) >= config.coinbaseFallbackDelay
             else { return nil }
             return .coinbase
@@ -274,7 +283,8 @@ final class WatchlistQuoteCoordinator {
 
         switch outcome.failure {
         case .rateLimited?, .failed?:
-            state.backoff = min(max(state.backoff * 2, 10), config.maximumBackoff)
+            let range = outcome.failure == .rateLimited ? config.rateLimitBackoff : config.failureBackoff
+            state.backoff = min(max(state.backoff * 2, range.lowerBound), range.upperBound)
             state.nextAllowed = now.addingTimeInterval(state.backoff)
             for instrument in instruments { updates[instrument] = fallback(for: instrument, note: outcome.failure?.message) }
         case .credentialsMissing?:
@@ -289,6 +299,7 @@ final class WatchlistQuoteCoordinator {
                 let symbol = Self.requestSymbol(for: instrument)
                 if let quote = outcome.quotes[symbol] {
                     updates[instrument] = WatchlistQuote(source: source, quote: quote, receivedAt: now)
+                    received[instrument] = now
                     rejected[instrument] = nil
                 } else if outcome.rejected.contains(symbol), sourceAnswered {
                     rejected[instrument] = now.addingTimeInterval(config.rejectedRetry)
@@ -317,10 +328,11 @@ final class WatchlistQuoteCoordinator {
     /// Downgrades prices whose window has passed since they were stamped.
     func ageQuotes(now: Date) {
         var updates: [InstrumentID: WatchlistQuote] = [:]
-        for (instrument, quote) in known where quote.freshness == .live {
-            guard let timestamp = quote.timestamp else { continue }
-            let freshness = WatchlistFreshness.evaluate(source: instrument.source, timestamp: timestamp, now: now)
-            if freshness != .live { updates[instrument] = quote.with(freshness: freshness) }
+        for (instrument, quote) in known where quote.freshness.isCurrent {
+            guard let confirmed = received[instrument] else { continue }
+            if WatchlistFreshness.evaluate(source: instrument.source, receivedAt: confirmed, now: now) == .stale {
+                updates[instrument] = quote.with(freshness: .stale)
+            }
         }
         guard !updates.isEmpty else { return }
         known.merge(updates) { _, new in new }
@@ -385,6 +397,8 @@ final class WatchlistQuoteCoordinator {
         guard !pendingCoinbase.isEmpty else { return }
         let batch = pendingCoinbase
         pendingCoinbase = [:]
+        let now = clock()
+        for instrument in batch.keys { received[instrument] = now }
         known.merge(batch) { _, new in new }
         book.apply(batch)
     }
