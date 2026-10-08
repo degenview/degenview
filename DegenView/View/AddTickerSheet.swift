@@ -5,6 +5,10 @@ struct AddTickerSheet: View {
     let actionLabel: String
     let subtitle: String
     let systemImage: String
+    /// Off where adding is not "opening a market", such as filling a watchlist.
+    let recordsRecents: Bool
+    /// Off to keep the sheet open after an add, confirming it, so several markets go in one visit.
+    let dismissesOnAdd: Bool
     let onAdd: @MainActor (TickerSearchResult) async throws -> Void
     let onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)?
     let onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)?
@@ -26,6 +30,7 @@ struct AddTickerSheet: View {
     @State private var predictionProvider: DataSourceType = .polymarket
     @State private var stockText = ""
     @State private var addError: String?
+    @State private var addedNotice: String?
     @State private var needsAlpacaSetup = false
     @StateObject private var portfolioStore = PortfolioStore.shared
     @ObservedObject private var recents = RecentMarketsStore.shared
@@ -42,6 +47,8 @@ struct AddTickerSheet: View {
         subtitle: String = "Search a market, stock or index and add it as a live chart.",
         systemImage: String = "chart.xyaxis.line",
         initialTab: Tab = .crypto,
+        recordsRecents: Bool = true,
+        dismissesOnAdd: Bool = true,
         onAddPortfolio: (@MainActor (PortfolioChartConfig) -> Void)? = nil,
         onAddCoinMarketCap: (@MainActor (CoinMarketCapChartConfig) -> Void)? = nil,
         onAddBitcoinPowerLaw: (@MainActor () -> Void)? = nil,
@@ -55,6 +62,8 @@ struct AddTickerSheet: View {
         self.onAddPortfolio = onAddPortfolio
         self.onAddCoinMarketCap = onAddCoinMarketCap
         self.onAddBitcoinPowerLaw = onAddBitcoinPowerLaw
+        self.recordsRecents = recordsRecents
+        self.dismissesOnAdd = dismissesOnAdd
         self.onAdd = onAdd
     }
 
@@ -183,6 +192,7 @@ struct AddTickerSheet: View {
         .animation(.easeInOut(duration: 0.18), value: kalshiVM.groups.reduce(0) { $0 + $1.results.count })
         .onChange(of: selectedTab) {
             addError = nil
+            addedNotice = nil
             needsAlpacaSetup = false
         }
         .onDisappear {
@@ -433,6 +443,8 @@ struct AddTickerSheet: View {
         if let error = addError ?? (selectedTab == .predictionMarkets ? predictionVM.errorMessage : nil) {
             NoticeCard(
                 systemImage: "exclamationmark.triangle.fill", tint: addError == nil ? .orange : .red, title: error)
+        } else if let addedNotice {
+            NoticeCard(systemImage: "checkmark.circle.fill", tint: .green, title: addedNotice)
         } else if selectedTab == .predictionMarkets, !predictionVM.isSearching,
             !predictionMarketText.trimmingCharacters(in: .whitespaces).isEmpty,
             !predictionVM.hasResults
@@ -516,9 +528,15 @@ struct AddTickerSheet: View {
                 }
 
                 try await onAdd(selected)
-                recents.record(selected)
-                dismiss()
+                if recordsRecents { recents.record(selected) }
+                if dismissesOnAdd {
+                    dismiss()
+                } else {
+                    addError = nil
+                    addedNotice = "Added \(selected.symbol)"
+                }
             } catch {
+                addedNotice = nil
                 addError = error.localizedDescription
             }
         }

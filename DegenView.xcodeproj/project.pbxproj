@@ -7,6 +7,31 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		935A370ADC603D23C5C5490E /* WatchlistSidebarViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */; };
+		E717833245A7CC6F0E515F5D /* WatchlistQuoteBookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */; };
+		54C20832BA836DD0D7223E87 /* WatchlistQuoteFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */; };
+		3B924AC9CB0BB34F64286023 /* WatchlistLayoutEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C93B66B9A7D5B05EDBFDD5D /* WatchlistLayoutEngineTests.swift */; };
+		CFCE79EEE7FD73C7FD527FC4 /* WatchlistImportSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 398AEB70A585AC5B0EA5B22A /* WatchlistImportSheet.swift */; };
+		DE244CDA2279F9FC6E7BD903 /* WatchlistDetailPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 396CAE3E4B8515138D7401BF /* WatchlistDetailPanel.swift */; };
+		4399D492D9B1259D691C65F4 /* WatchlistHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225FD95B7EEEFB1018B69C36 /* WatchlistHeader.swift */; };
+		1E86BA20ADDF8E03E12444FA /* WatchlistColumnHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AAEE562A0A32D11F7D5458A /* WatchlistColumnHeader.swift */; };
+		E52494D2B342BB15436E83F5 /* WatchlistSectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B092BF2D323D6403541294 /* WatchlistSectionRow.swift */; };
+		AF9746058E115527206F83E5 /* WatchlistInstrumentRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BB69B6F73DB89D61874F0F0 /* WatchlistInstrumentRow.swift */; };
+		264C2C5965DF7DD1A7305CFF /* WatchlistInstrumentMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20C8599BA8CE5D268C7887D /* WatchlistInstrumentMenu.swift */; };
+		F6F45630D9EAC026C1E498EB /* WatchlistFlag+Color.swift in Sources */ = {isa = PBXBuildFile; fileRef = 582218B1F4B9E7BA0483C1ED /* WatchlistFlag+Color.swift */; };
+		CF598380CE664BDA1A796B3A /* WatchlistInstrumentActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF56E6D8B8B45BC9F935895F /* WatchlistInstrumentActions.swift */; };
+		D46F6C108D3F537F81FB7C22 /* WatchlistMembershipMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */; };
+		A9CB9A774FABAC0F9D31D0A5 /* WatchlistFileIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */; };
+		E63299E344D29DAA73A5AC16 /* WatchlistPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */; };
+		B3395356D350A5D17582EAE9 /* WatchlistDropDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */; };
+		E82FA108D255E1BD3321CD45 /* WatchlistDragPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */; };
+		6F453F45F7D7688E5D5AB697 /* WatchlistSidebarViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */; };
+		2FD7E872CD8CFE24B08DD4A5 /* WatchlistQuoteBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */; };
+		2ACF5960D9D9E7C417EF19BE /* WatchlistQuoteCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */; };
+		82EF536A4894EAAC1CB0035C /* WatchlistLayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B53604C8E9A50D210F9D5930 /* WatchlistLayoutEngine.swift */; };
+		B2925DCF278DF778B29D912D /* WatchlistInstrument+Display.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCBD8D932283EFAA203FE1DD /* WatchlistInstrument+Display.swift */; };
+		44EF8751966EE187A2772055 /* WatchlistQuoteFormat.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CA33B5D8704D4B0AA7D76EE /* WatchlistQuoteFormat.swift */; };
+		A0C58F1609AA80150E51E914 /* WatchlistQuote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E1CF6C1C4BFCD9E0E9BF00D /* WatchlistQuote.swift */; };
 		81AA6C7AE9DB91A7F8C2E056 /* WatchlistStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */; };
 		30302BB49CA179E2797AAB89 /* WatchlistTextFormatTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */; };
 		7B4557DFEF2369AC0D3E3C84 /* WatchlistModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A92614D37D7173C96866B93A /* WatchlistModelTests.swift */; };
@@ -902,6 +927,31 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSidebarViewModelTests.swift; sourceTree = "<group>"; };
+		F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteBookTests.swift; sourceTree = "<group>"; };
+		F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteFormatTests.swift; sourceTree = "<group>"; };
+		4C93B66B9A7D5B05EDBFDD5D /* WatchlistLayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistLayoutEngineTests.swift; sourceTree = "<group>"; };
+		398AEB70A585AC5B0EA5B22A /* WatchlistImportSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistImportSheet.swift; sourceTree = "<group>"; };
+		396CAE3E4B8515138D7401BF /* WatchlistDetailPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDetailPanel.swift; sourceTree = "<group>"; };
+		225FD95B7EEEFB1018B69C36 /* WatchlistHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistHeader.swift; sourceTree = "<group>"; };
+		8AAEE562A0A32D11F7D5458A /* WatchlistColumnHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistColumnHeader.swift; sourceTree = "<group>"; };
+		C2B092BF2D323D6403541294 /* WatchlistSectionRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSectionRow.swift; sourceTree = "<group>"; };
+		2BB69B6F73DB89D61874F0F0 /* WatchlistInstrumentRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistInstrumentRow.swift; sourceTree = "<group>"; };
+		C20C8599BA8CE5D268C7887D /* WatchlistInstrumentMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistInstrumentMenu.swift; sourceTree = "<group>"; };
+		582218B1F4B9E7BA0483C1ED /* WatchlistFlag+Color.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistFlag+Color.swift"; sourceTree = "<group>"; };
+		DF56E6D8B8B45BC9F935895F /* WatchlistInstrumentActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistInstrumentActions.swift; sourceTree = "<group>"; };
+		57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistMembershipMenu.swift; sourceTree = "<group>"; };
+		8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistFileIO.swift; sourceTree = "<group>"; };
+		126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistPrompt.swift; sourceTree = "<group>"; };
+		F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDropDelegate.swift; sourceTree = "<group>"; };
+		23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistDragPayload.swift; sourceTree = "<group>"; };
+		FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistSidebarViewModel.swift; sourceTree = "<group>"; };
+		49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteBook.swift; sourceTree = "<group>"; };
+		F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteCell.swift; sourceTree = "<group>"; };
+		B53604C8E9A50D210F9D5930 /* WatchlistLayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistLayoutEngine.swift; sourceTree = "<group>"; };
+		DCBD8D932283EFAA203FE1DD /* WatchlistInstrument+Display.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "WatchlistInstrument+Display.swift"; sourceTree = "<group>"; };
+		8CA33B5D8704D4B0AA7D76EE /* WatchlistQuoteFormat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuoteFormat.swift; sourceTree = "<group>"; };
+		5E1CF6C1C4BFCD9E0E9BF00D /* WatchlistQuote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistQuote.swift; sourceTree = "<group>"; };
 		617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistStoreTests.swift; sourceTree = "<group>"; };
 		086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistTextFormatTests.swift; sourceTree = "<group>"; };
 		A92614D37D7173C96866B93A /* WatchlistModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchlistModelTests.swift; sourceTree = "<group>"; };
@@ -1783,6 +1833,7 @@
 		A00000000000000000000311 /* Service */ = {
 			isa = PBXGroup;
 			children = (
+				1F6A9585750BDE83948D3819 /* Watchlist */,
 				826AE166E66E2FADEDED88B2 /* WatchlistStore+FavoritesMigration.swift */,
 				6208F0C1C9D732E03B913DC0 /* WatchlistStore.swift */,
 				B7A1E7000000000000000B09 /* ScriptSourceHash.swift */,
@@ -1880,6 +1931,7 @@
 		A00000000000000000000312 /* ViewModel */ = {
 			isa = PBXGroup;
 			children = (
+				FA37594B91078834667EADFF /* WatchlistSidebarViewModel.swift */,
 				B7A1E7000000000000000B11 /* PineAlertCoordinator.swift */,
 				B7A1E7000000000000000B10 /* PineAlertStore.swift */,
 				AE01000000000000000000A3 /* UnseenAlertsStore.swift */,
@@ -2130,6 +2182,10 @@
 		E40000000000000000000401 /* DegenViewTests */ = {
 			isa = PBXGroup;
 			children = (
+				3FCAAEA9D0B160387B8DDD8B /* WatchlistSidebarViewModelTests.swift */,
+				F3798BE046CEE104D1904581 /* WatchlistQuoteBookTests.swift */,
+				F1F85CBE5F9DAE7F2358D4BA /* WatchlistQuoteFormatTests.swift */,
+				4C93B66B9A7D5B05EDBFDD5D /* WatchlistLayoutEngineTests.swift */,
 				617BD5B269E71B355506EA0D /* WatchlistStoreTests.swift */,
 				086DB1E152B428F677EDC99A /* WatchlistTextFormatTests.swift */,
 				A92614D37D7173C96866B93A /* WatchlistModelTests.swift */,
@@ -2625,6 +2681,10 @@
 		E072D082708E29CB762D092B /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				B53604C8E9A50D210F9D5930 /* WatchlistLayoutEngine.swift */,
+				DCBD8D932283EFAA203FE1DD /* WatchlistInstrument+Display.swift */,
+				8CA33B5D8704D4B0AA7D76EE /* WatchlistQuoteFormat.swift */,
+				5E1CF6C1C4BFCD9E0E9BF00D /* WatchlistQuote.swift */,
 				6F19E788A5A9FFCF9317055B /* WatchlistTextFormat.swift */,
 				B3B6D5B859A047C9C1E67C9D /* WatchlistSort.swift */,
 				3F829D039FF3E420A9874DE0 /* WatchlistSection.swift */,
@@ -2643,7 +2703,30 @@
 		94BF126227BB45E4039C1852 /* Watchlist */ = {
 			isa = PBXGroup;
 			children = (
+				398AEB70A585AC5B0EA5B22A /* WatchlistImportSheet.swift */,
+				396CAE3E4B8515138D7401BF /* WatchlistDetailPanel.swift */,
+				225FD95B7EEEFB1018B69C36 /* WatchlistHeader.swift */,
+				8AAEE562A0A32D11F7D5458A /* WatchlistColumnHeader.swift */,
+				C2B092BF2D323D6403541294 /* WatchlistSectionRow.swift */,
+				2BB69B6F73DB89D61874F0F0 /* WatchlistInstrumentRow.swift */,
+				C20C8599BA8CE5D268C7887D /* WatchlistInstrumentMenu.swift */,
+				582218B1F4B9E7BA0483C1ED /* WatchlistFlag+Color.swift */,
+				DF56E6D8B8B45BC9F935895F /* WatchlistInstrumentActions.swift */,
+				57FB7CB9E578568855F20AA8 /* WatchlistMembershipMenu.swift */,
+				8C5E6925D25A45D89B37A419 /* WatchlistFileIO.swift */,
+				126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */,
+				F02555F6D558CF6C356CE353 /* WatchlistDropDelegate.swift */,
+				23313D3C6860446198BDF913 /* WatchlistDragPayload.swift */,
 				AA45D9C26DC64C8A1E63AA6B /* WatchlistSidebar.swift */,
+			);
+			path = Watchlist;
+			sourceTree = "<group>";
+		};
+		1F6A9585750BDE83948D3819 /* Watchlist */ = {
+			isa = PBXGroup;
+			children = (
+				49BD2D9E0AFE3895C37BA358 /* WatchlistQuoteBook.swift */,
+				F609DADDDB0D67E720BCFE04 /* WatchlistQuoteCell.swift */,
 			);
 			path = Watchlist;
 			sourceTree = "<group>";
@@ -2803,6 +2886,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CFCE79EEE7FD73C7FD527FC4 /* WatchlistImportSheet.swift in Sources */,
+				DE244CDA2279F9FC6E7BD903 /* WatchlistDetailPanel.swift in Sources */,
+				4399D492D9B1259D691C65F4 /* WatchlistHeader.swift in Sources */,
+				1E86BA20ADDF8E03E12444FA /* WatchlistColumnHeader.swift in Sources */,
+				E52494D2B342BB15436E83F5 /* WatchlistSectionRow.swift in Sources */,
+				AF9746058E115527206F83E5 /* WatchlistInstrumentRow.swift in Sources */,
+				264C2C5965DF7DD1A7305CFF /* WatchlistInstrumentMenu.swift in Sources */,
+				F6F45630D9EAC026C1E498EB /* WatchlistFlag+Color.swift in Sources */,
+				CF598380CE664BDA1A796B3A /* WatchlistInstrumentActions.swift in Sources */,
+				D46F6C108D3F537F81FB7C22 /* WatchlistMembershipMenu.swift in Sources */,
+				A9CB9A774FABAC0F9D31D0A5 /* WatchlistFileIO.swift in Sources */,
+				E63299E344D29DAA73A5AC16 /* WatchlistPrompt.swift in Sources */,
+				B3395356D350A5D17582EAE9 /* WatchlistDropDelegate.swift in Sources */,
+				E82FA108D255E1BD3321CD45 /* WatchlistDragPayload.swift in Sources */,
+				6F453F45F7D7688E5D5AB697 /* WatchlistSidebarViewModel.swift in Sources */,
+				2FD7E872CD8CFE24B08DD4A5 /* WatchlistQuoteBook.swift in Sources */,
+				2ACF5960D9D9E7C417EF19BE /* WatchlistQuoteCell.swift in Sources */,
+				82EF536A4894EAAC1CB0035C /* WatchlistLayoutEngine.swift in Sources */,
+				B2925DCF278DF778B29D912D /* WatchlistInstrument+Display.swift in Sources */,
+				44EF8751966EE187A2772055 /* WatchlistQuoteFormat.swift in Sources */,
+				A0C58F1609AA80150E51E914 /* WatchlistQuote.swift in Sources */,
 				B88601567F1A8F6EB928D223 /* WatchlistSidebar.swift in Sources */,
 				2F84A190AA9914F4B8439A66 /* WatchlistStore+FavoritesMigration.swift in Sources */,
 				5556F22F029D494D30AB0322 /* WatchlistStore.swift in Sources */,
@@ -3536,6 +3640,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				935A370ADC603D23C5C5490E /* WatchlistSidebarViewModelTests.swift in Sources */,
+				E717833245A7CC6F0E515F5D /* WatchlistQuoteBookTests.swift in Sources */,
+				54C20832BA836DD0D7223E87 /* WatchlistQuoteFormatTests.swift in Sources */,
+				3B924AC9CB0BB34F64286023 /* WatchlistLayoutEngineTests.swift in Sources */,
 				81AA6C7AE9DB91A7F8C2E056 /* WatchlistStoreTests.swift in Sources */,
 				30302BB49CA179E2797AAB89 /* WatchlistTextFormatTests.swift in Sources */,
 				7B4557DFEF2369AC0D3E3C84 /* WatchlistModelTests.swift in Sources */,

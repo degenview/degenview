@@ -48,6 +48,21 @@ struct InstrumentID: Codable, Hashable, Sendable {
         "\(source.watchlistSlug):\(symbol)"
     }
 
+    /// The id the provider's API takes. A bare Binance asset (`BTC`) is quoted in USDT and
+    /// Coinbase ids go through `CoinbaseAPIService.productID`.
+    var apiSymbol: String {
+        switch source {
+        case .binance:
+            let upper = symbol.uppercased()
+            if upper.hasSuffix("USDT") || upper.hasSuffix("USDC") || upper.hasSuffix("BUSD") { return upper }
+            return "\(upper)USDT"
+        case .coinbase:
+            return CoinbaseAPIService.productID(symbol)
+        case .coingecko, .dexscreener, .alpaca, .polymarket, .kalshi, .coinMarketCap:
+            return symbol
+        }
+    }
+
     static func normalized(_ symbol: String, source: DataSourceType) -> String {
         switch source {
         case .binance, .coinbase, .alpaca: return symbol.uppercased()

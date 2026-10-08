@@ -368,8 +368,12 @@ enum UI {
     static let searchFieldHeight: CGFloat = 36
     static let addTickerSheetWidth: CGFloat = 900
     static let addTickerSheetHeight: CGFloat = 620
-    /// Width of the optional favorites rail on the right.
-    static let favoritesSidebarWidth: CGFloat = 260
+    /// Watchlist panel width with the two default columns (Last and Chg%).
+    static let watchlistSidebarBaseWidth: CGFloat = 270
+    /// Width the panel grows by for each column beyond those two, up to a sensible cap.
+    static func watchlistSidebarWidth(extraColumns: Int) -> CGFloat {
+        min(watchlistSidebarBaseWidth + CGFloat(max(0, extraColumns)) * 64, 470)
+    }
     /// Sheet frame dimensions for Chart Settings.
     static let chartSettingsSheetWidth: CGFloat = 760
     static let chartSettingsSheetHeight: CGFloat = 680
