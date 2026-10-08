@@ -173,4 +173,27 @@ final class WatchlistModelTests: XCTestCase {
         XCTAssertThrowsError(try list.move([root.id, UUID()], before: nil))
         XCTAssertEqual(list, before)
     }
+
+    func testSubtitleNamesTheProviderInsteadOfRepeatingTheTitle() {
+        let crypto = WatchlistInstrument(
+            instrument: InstrumentID(source: .binance, symbol: "BTCUSDT"), name: "BTC/USDT", label: "BTC/USDT")
+        XCTAssertEqual(crypto.subtitle, "Binance")
+
+        let sameIgnoringCase = WatchlistInstrument(
+            instrument: InstrumentID(source: .coinbase, symbol: "ETH-USD"), name: "ETH/USD", label: "eth/usd")
+        XCTAssertEqual(sameIgnoringCase.subtitle, "Coinbase")
+    }
+
+    func testSubtitleKeepsALabelThatSaysSomethingTheTitleDoesNot() {
+        let stock = WatchlistInstrument(
+            instrument: InstrumentID(source: .alpaca, symbol: "AAPL"), name: "Apple Inc.", label: "AAPL")
+        XCTAssertEqual(stock.subtitle, "AAPL · Alpaca (IEX)")
+
+        let outcome = WatchlistInstrument(
+            instrument: InstrumentID(source: .polymarket, symbol: "123"), name: "Tweets this week?", label: "280-299")
+        XCTAssertEqual(outcome.subtitle, "280-299 · Polymarket")
+
+        let empty = WatchlistInstrument(instrument: InstrumentID(source: .kalshi, symbol: "A/B"), name: "X", label: "")
+        XCTAssertEqual(empty.subtitle, "Kalshi")
+    }
 }
