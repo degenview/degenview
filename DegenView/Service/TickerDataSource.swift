@@ -109,6 +109,32 @@ protocol GranularReplayDataSource: TickerDataSource {
     ) async throws -> [KlineData]
 }
 
+/// Runs `fetch(0)…fetch(count - 1)` with at most `maxConcurrent` in flight and returns the results
+/// in index order. The first error cancels what is still running and is rethrown. Replay history
+/// is paged by time window, so its pages do not depend on each other and need not run one by one.
+func fetchPagesConcurrently<T: Sendable>(
+    count: Int,
+    maxConcurrent: Int = 5,
+    fetch: @escaping @Sendable (Int) async throws -> T
+) async throws -> [T] {
+    guard count > 0 else { return [] }
+    return try await withThrowingTaskGroup(of: (Int, T).self) { group in
+        var results = [T?](repeating: nil, count: count)
+        var next = 0
+        func addNext() {
+            let index = next
+            next += 1
+            group.addTask { (index, try await fetch(index)) }
+        }
+        while next < min(count, maxConcurrent) { addNext() }
+        while let (index, value) = try await group.next() {
+            results[index] = value
+            if next < count { addNext() }
+        }
+        return results.compactMap { $0 }
+    }
+}
+
 /// One asset to price: the source's own symbol, plus whatever the source needs beyond it
 /// (a DEX pair also needs its chain).
 struct QuoteRequest: Hashable, Sendable {

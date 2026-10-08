@@ -109,6 +109,7 @@
 		A00000000000000000000005 /* SymbolInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000105 /* SymbolInfo.swift */; };
 		A00000000000000000000006 /* BinanceAPIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000106 /* BinanceAPIService.swift */; };
 		A00000000000000000000008 /* ChartViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000108 /* ChartViewModel.swift */; };
+		A00000000000000000000B01 /* GranularReplayCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000B02 /* GranularReplayCache.swift */; };
 		A00000000000000000000009 /* ContentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A00000000000000000000109 /* ContentViewModel.swift */; };
 		A0000000000000000000000A /* ChartCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010A /* ChartCardView.swift */; };
 		A0000000000000000000000B /* AddTickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0000000000000000000010B /* AddTickerSheet.swift */; };
@@ -596,6 +597,7 @@
 		E31BB450163149762546FDDB /* InstrumentID.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB9EB3569114D0CC654E20FC /* InstrumentID.swift */; };
 		E3F100000000000000000001 /* ReplayStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000002 /* ReplayStyle.swift */; };
 		E3F100000000000000000003 /* ReplayStatusChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000004 /* ReplayStatusChip.swift */; };
+		E3F100000000000000000C01 /* ReplayStartOptions.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000C02 /* ReplayStartOptions.swift */; };
 		E3F100000000000000000005 /* ReplayClockReadout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000006 /* ReplayClockReadout.swift */; };
 		E3F100000000000000000007 /* ReplayNoticeChip.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000008 /* ReplayNoticeChip.swift */; };
 		E3F100000000000000000009 /* ReplayIconButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000010 /* ReplayIconButton.swift */; };
@@ -605,6 +607,8 @@
 		E3F100000000000000000017 /* ReplaySelectionMarker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000018 /* ReplaySelectionMarker.swift */; };
 		E3F100000000000000000019 /* ReplayStartSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3F100000000000000000020 /* ReplayStartSheet.swift */; };
 		E40000000000000000000001 /* ReplayEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000101 /* ReplayEngineTests.swift */; };
+		E40000000000000000000A01 /* ReplayBarFlowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000A02 /* ReplayBarFlowTests.swift */; };
+		E40000000000000000000B01 /* GranularReplayLoadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E40000000000000000000B02 /* GranularReplayLoadingTests.swift */; };
 		E52494D2B342BB15436E83F5 /* WatchlistSectionRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2B092BF2D323D6403541294 /* WatchlistSectionRow.swift */; };
 		E5EED415D5FE4404B25A73CA /* PineSymbolMetadata+Drawings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9203FC4029CEA999F64EA710 /* PineSymbolMetadata+Drawings.swift */; };
 		E63299E344D29DAA73A5AC16 /* WatchlistPrompt.swift in Sources */ = {isa = PBXBuildFile; fileRef = 126885BE825E20B9186FAA29 /* WatchlistPrompt.swift */; };
@@ -1065,6 +1069,7 @@
 		A00000000000000000000105 /* SymbolInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SymbolInfo.swift; sourceTree = "<group>"; };
 		A00000000000000000000106 /* BinanceAPIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BinanceAPIService.swift; sourceTree = "<group>"; };
 		A00000000000000000000108 /* ChartViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartViewModel.swift; sourceTree = "<group>"; };
+		A00000000000000000000B02 /* GranularReplayCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GranularReplayCache.swift; sourceTree = "<group>"; };
 		A00000000000000000000109 /* ContentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewModel.swift; sourceTree = "<group>"; };
 		A0000000000000000000010A /* ChartCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChartCardView.swift; sourceTree = "<group>"; };
 		A0000000000000000000010B /* AddTickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddTickerSheet.swift; sourceTree = "<group>"; };
@@ -1477,6 +1482,7 @@
 		E30000000000000000000103 /* ReplayControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayControlBar.swift; sourceTree = "<group>"; };
 		E3F100000000000000000002 /* ReplayStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStyle.swift; sourceTree = "<group>"; };
 		E3F100000000000000000004 /* ReplayStatusChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStatusChip.swift; sourceTree = "<group>"; };
+		E3F100000000000000000C02 /* ReplayStartOptions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStartOptions.swift; sourceTree = "<group>"; };
 		E3F100000000000000000006 /* ReplayClockReadout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayClockReadout.swift; sourceTree = "<group>"; };
 		E3F100000000000000000008 /* ReplayNoticeChip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayNoticeChip.swift; sourceTree = "<group>"; };
 		E3F100000000000000000010 /* ReplayIconButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayIconButton.swift; sourceTree = "<group>"; };
@@ -1486,6 +1492,8 @@
 		E3F100000000000000000018 /* ReplaySelectionMarker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplaySelectionMarker.swift; sourceTree = "<group>"; };
 		E3F100000000000000000020 /* ReplayStartSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayStartSheet.swift; sourceTree = "<group>"; };
 		E40000000000000000000101 /* ReplayEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayEngineTests.swift; sourceTree = "<group>"; };
+		E40000000000000000000A02 /* ReplayBarFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReplayBarFlowTests.swift; sourceTree = "<group>"; };
+		E40000000000000000000B02 /* GranularReplayLoadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GranularReplayLoadingTests.swift; sourceTree = "<group>"; };
 		E40000000000000000000102 /* DegenViewTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DegenViewTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5D6C97E80ED321770E8AE37 /* CoinbaseTickSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoinbaseTickSource.swift; sourceTree = "<group>"; };
 		E60CA374E62AB0BAD0D6D6DD /* TickerSearchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = TickerSearchViewModel.swift; sourceTree = "<group>"; };
@@ -2039,6 +2047,7 @@
 				B90000000000000000000105 /* AlertStore.swift */,
 				D10FC07E64DE20AB76844081 /* ChartLiveQuote.swift */,
 				A00000000000000000000108 /* ChartViewModel.swift */,
+				A00000000000000000000B02 /* GranularReplayCache.swift */,
 				BB0000000000000000000103 /* ChartViewModel+Brush.swift */,
 				SP0000000000000000000512 /* ScriptPreviewViewModel.swift */,
 				F1B8CBD557B345ECE9AD8AF6 /* PineFeedOperation.swift */,
@@ -2166,6 +2175,7 @@
 				E30000000000000000000103 /* ReplayControlBar.swift */,
 				E3F100000000000000000002 /* ReplayStyle.swift */,
 				E3F100000000000000000004 /* ReplayStatusChip.swift */,
+				E3F100000000000000000C02 /* ReplayStartOptions.swift */,
 				E3F100000000000000000006 /* ReplayClockReadout.swift */,
 				E3F100000000000000000008 /* ReplayNoticeChip.swift */,
 				E3F100000000000000000010 /* ReplayIconButton.swift */,
@@ -2432,6 +2442,8 @@
 				D1EF4F02981B5CA97714F8EC /* PaperQuoteFeedTests.swift */,
 				D17A2E4F0D8B00266E4E08E1 /* PaperTradingPresentationTests.swift */,
 				E40000000000000000000101 /* ReplayEngineTests.swift */,
+				E40000000000000000000A02 /* ReplayBarFlowTests.swift */,
+				E40000000000000000000B02 /* GranularReplayLoadingTests.swift */,
 				FB0000000000000000000102 /* FibonacciRetracementTests.swift */,
 				F20000000000000000000103 /* DrawingUndoCoordinatorTests.swift */,
 				C31A92071EBF1FE0B33AF4C9 /* ChartScriptInstanceDecodeTests.swift */,
@@ -3204,6 +3216,7 @@
 				E30000000000000000000003 /* ReplayControlBar.swift in Sources */,
 				E3F100000000000000000001 /* ReplayStyle.swift in Sources */,
 				E3F100000000000000000003 /* ReplayStatusChip.swift in Sources */,
+				E3F100000000000000000C01 /* ReplayStartOptions.swift in Sources */,
 				E3F100000000000000000005 /* ReplayClockReadout.swift in Sources */,
 				E3F100000000000000000007 /* ReplayNoticeChip.swift in Sources */,
 				E3F100000000000000000009 /* ReplayIconButton.swift in Sources */,
@@ -3236,6 +3249,7 @@
 				A00000000000000000000005 /* SymbolInfo.swift in Sources */,
 				A00000000000000000000006 /* BinanceAPIService.swift in Sources */,
 				A00000000000000000000008 /* ChartViewModel.swift in Sources */,
+				A00000000000000000000B01 /* GranularReplayCache.swift in Sources */,
 				BB0000000000000000000003 /* ChartViewModel+Brush.swift in Sources */,
 				SP0000000000000000000012 /* ScriptPreviewViewModel.swift in Sources */,
 				F20457394F3384A13A396F56 /* PineFeedOperation.swift in Sources */,
@@ -3845,6 +3859,8 @@
 				D0F31F051806EF4F02981B5C /* PaperQuoteFeedTests.swift in Sources */,
 				D05E7E8FC19B7A2E4F0D8B00 /* PaperTradingPresentationTests.swift in Sources */,
 				E40000000000000000000001 /* ReplayEngineTests.swift in Sources */,
+				E40000000000000000000A01 /* ReplayBarFlowTests.swift in Sources */,
+				E40000000000000000000B01 /* GranularReplayLoadingTests.swift in Sources */,
 				FB0000000000000000000002 /* FibonacciRetracementTests.swift in Sources */,
 				F20000000000000000000003 /* DrawingUndoCoordinatorTests.swift in Sources */,
 				F56B35836B83370834DFE656 /* PineRegressionTests.swift in Sources */,

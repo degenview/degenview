@@ -229,17 +229,15 @@ final class CoinbaseAPIService: GranularReplayDataSource {
 
         let id = Self.productID(symbol)
         let span = Double(plan.source * CoinbaseGranularity.pageBuckets)
-        var cursor = start
-        var result: [KlineData] = []
-        result.reserveCapacity(min(maximumCount, 10_000))
-
-        while cursor <= end, result.count < maximumCount {
-            let pageEnd = min(end, cursor.addingTimeInterval(span))
-            result.append(
-                contentsOf: try await fetchPage(id: id, granularity: plan.source, start: cursor, end: pageEnd))
-            // An empty window is a quiet stretch, not the end of history — step over it.
-            cursor = pageEnd.addingTimeInterval(TimeInterval(plan.source))
+        let step = span + Double(plan.source)
+        let pageCount = Int((end.timeIntervalSince(start) / step).rounded(.down)) + 1
+        // Every window is known up front, so they load together (the request gate still paces them).
+        let pages = try await fetchPagesConcurrently(count: pageCount, maxConcurrent: 4) { [self] index in
+            let from = start.addingTimeInterval(Double(index) * step)
+            let to = min(end, from.addingTimeInterval(span))
+            return try await fetchPage(id: id, granularity: plan.source, start: from, end: to)
         }
+        let result = pages.flatMap { $0 }
         return Array(Self.sanitized(result).filter { $0.openTime >= start }.prefix(maximumCount))
     }
 

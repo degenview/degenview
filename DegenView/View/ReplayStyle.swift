@@ -11,7 +11,7 @@ enum ReplayStyle {
         switch status {
         case .playing: return .green
         case .completed: return .secondary
-        case .inactive, .selectingStart, .paused: return accent
+        case .inactive, .ready, .selectingStart, .paused: return accent
         }
     }
 
@@ -19,6 +19,7 @@ enum ReplayStyle {
         if isPreparing { return "Loading history" }
         switch status {
         case .inactive: return "Off"
+        case .ready: return "Choose a start"
         case .selectingStart: return "Pick a start"
         case .paused: return "Paused"
         case .playing: return "Playing"

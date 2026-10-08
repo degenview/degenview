@@ -422,7 +422,7 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     The tab bar spans the full width. A fired alert (price or script) puts a red count on the sidebar
     bell, also for ones the agent fired while the app was closed; opening the window clears it and
     relaunch keeps it clear; alerts firing while the window is key never show a bubble
-13c. Replay: toolbar Replay ▸ Select Bar on Chart shows the "Click a candle" strip; the marker
+13c. Replay: the sidebar Replay button opens the bar at once (charts stay live) with Select Bar on Chart, Date & Time…, Random, First Bar; Select Bar shows the "Click a candle" strip; the marker
     follows the pointer with a date tag and Esc / Cancel exit. Click a candle: strip shows
     Paused, the card gets an orange border and "Replay" badge. Play / pause / step ⇧→ ⇧← ⇧↓,
     drag and click the timeline (pauses, tick marks the start), speed and Bars menus (Auto

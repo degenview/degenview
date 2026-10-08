@@ -1,11 +1,14 @@
 import SwiftUI
 
-/// The strip above the charts while a replay is active: status, transport, speed and resolution,
-/// the timeline, the cursor's clock and the way back to live. While picking a start it swaps the
-/// transport for a hint. On a narrow window the timeline drops to a second row.
+/// The strip above the charts while a replay is open: status, transport, speed and resolution,
+/// the timeline, the cursor's clock and the way back to live. Before a start is chosen it offers
+/// the ways to pick one; while picking on the chart it swaps the transport for a hint. On a narrow window the timeline drops to a second row.
 struct ReplayControlBar: View {
     @ObservedObject var engine: ReplayEngine
     let onChangeStart: () -> Void
+    let onChooseDate: () -> Void
+    let onRandomBar: () -> Void
+    let onFirstBar: () -> Void
     let onCancelSelection: () -> Void
     let onReturnToLive: () -> Void
     var availableIntervals: [ReplayInterval] = [.automatic, .chartBar]
@@ -18,7 +21,9 @@ struct ReplayControlBar: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            if engine.status == .selectingStart {
+            if engine.status == .ready {
+                readyRow
+            } else if engine.status == .selectingStart {
                 selectingRow
             } else {
                 ViewThatFits(in: .horizontal) {
@@ -74,6 +79,19 @@ struct ReplayControlBar: View {
         }
     }
 
+    private var readyRow: some View {
+        HStack(spacing: 12) {
+            ReplayStatusChip(status: .ready, isPreparing: isPreparing)
+            ReplayStartOptions(
+                onSelectOnChart: onChangeStart, onChooseDate: onChooseDate,
+                onRandomBar: onRandomBar, onFirstBar: onFirstBar
+            )
+            .disabled(isPreparing)
+            Spacer(minLength: 8)
+            closeActions
+        }
+    }
+
     private var selectingRow: some View {
         HStack(spacing: 10) {
             ReplayStatusChip(status: .selectingStart)
@@ -120,6 +138,12 @@ struct ReplayControlBar: View {
     private var actions: some View {
         HStack(spacing: 2) {
             ReplayIconButton(systemImage: "scope", label: "Choose a new starting point", action: onChangeStart)
+            closeActions
+        }
+    }
+
+    private var closeActions: some View {
+        HStack(spacing: 2) {
             Button(action: onReturnToLive) {
                 HStack(spacing: 5) {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 10, weight: .bold))

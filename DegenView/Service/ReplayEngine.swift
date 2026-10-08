@@ -12,7 +12,10 @@ final class ReplayEngine: ObservableObject {
     private var playbackTask: Task<Void, Never>?
     var onStateChange: (() -> Void)?
 
-    var isActive: Bool { status != .inactive }
+    /// Charts are gated by the replay clock (picking a start or replaying). False while only the bar is open.
+    var isActive: Bool { status != .inactive && status != .ready }
+    /// The replay bar is on screen.
+    var isBarVisible: Bool { status != .inactive }
     var canAdvance: Bool { status == .paused || status == .playing }
     var currentTimestamp: Date? { session?.currentTimestamp }
 
@@ -39,6 +42,13 @@ final class ReplayEngine: ObservableObject {
 
     deinit { playbackTask?.cancel() }
 
+    /// Shows the replay bar without touching the charts; the start is chosen from the bar.
+    func open() {
+        guard status == .inactive else { return }
+        status = .ready
+        changed()
+    }
+
     func beginSelecting() {
         pauseLoop()
         status = .selectingStart
@@ -55,7 +65,7 @@ final class ReplayEngine: ObservableObject {
             self.session = session
             status = .paused
         } else {
-            status = .inactive
+            status = .ready
         }
         changed()
     }
