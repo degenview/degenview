@@ -18,6 +18,14 @@ extension WatchlistInstrument {
         }
     }
 
+    /// The line under the name: the provider ("Binance"). Where the short label says something the name does not
+    /// (a stock's ticker, a prediction market's outcome) it comes first: "AAPL · Alpaca (IEX)".
+    var subtitle: String {
+        let source = instrument.source.displayName
+        guard label.caseInsensitiveCompare(name) != .orderedSame, !label.isEmpty else { return source }
+        return "\(label) · \(source)"
+    }
+
     /// Prediction markets have no price to cross, so they offer no price alert.
     var supportsPriceAlert: Bool {
         !instrument.source.isPredictionMarket

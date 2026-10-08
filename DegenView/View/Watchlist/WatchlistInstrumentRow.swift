@@ -26,7 +26,7 @@ struct WatchlistInstrumentRow<MenuContent: View>: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
                 if display.showsDescription {
-                    Text(item.label)
+                    Text(item.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
