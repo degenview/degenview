@@ -98,4 +98,52 @@ final class WatchlistRowMoveTests: XCTestCase {
         let result = WatchlistLayoutEngine.resolveMove(rows: rows, sources: sources, destination: row("B"))
         XCTAssertNil(result, "A and B dropped onto B stay where they are")
     }
+
+    // MARK: Section-only moves (a sort or filter is on)
+
+    private func sectionMove(_ names: [String], to destination: Int) -> WatchlistLayoutEngine.SectionMove? {
+        WatchlistLayoutEngine.resolveSectionMove(
+            rows: rows, sources: IndexSet(names.map(row)), destination: destination)
+    }
+
+    func testSectionMoveBelowASymbolOfAnotherSectionTargetsThatSection() {
+        // Drop ROOT under C: C's section is Watching.
+        XCTAssertEqual(sectionMove(["ROOT"], to: row("C") + 1), .init(ids: [ids["ROOT"]!], section: ids["#Watching"]))
+    }
+
+    func testSectionMoveUnderAHeadingTargetsThatSection() {
+        XCTAssertEqual(sectionMove(["C"], to: row("#Majors") + 1), .init(ids: [ids["C"]!], section: ids["#Majors"]))
+    }
+
+    func testSectionMoveJustAboveTheNextHeadingIsTheEndOfTheSectionAbove() {
+        // Between B (Majors) and #Watching: Majors.
+        XCTAssertEqual(sectionMove(["C"], to: row("#Watching")), .init(ids: [ids["C"]!], section: ids["#Majors"]))
+    }
+
+    func testSectionMoveAboveEverythingIsTheRoot() {
+        XCTAssertEqual(sectionMove(["A"], to: 0), .init(ids: [ids["A"]!], section: nil))
+    }
+
+    func testSectionMoveOntoAnEmptySectionsPlaceholderTargetsThatSection() {
+        XCTAssertEqual(sectionMove(["A"], to: 8), .init(ids: [ids["A"]!], section: ids["#Empty"]))
+        XCTAssertEqual(sectionMove(["A"], to: 7), .init(ids: [ids["A"]!], section: ids["#Empty"]))
+    }
+
+    func testSectionMoveWithinTheSameSectionIsNothing() {
+        XCTAssertNil(sectionMove(["A"], to: row("B") + 1), "A dropped below B stays in Majors")
+        XCTAssertNil(sectionMove(["A"], to: row("A")), "A dropped above itself stays in Majors")
+        XCTAssertNil(sectionMove(["ROOT"], to: 0), "ROOT dropped at the top stays at the root")
+    }
+
+    func testSectionMoveOnlyMovesTheSymbolsNotAlreadyThere() {
+        // A and C dropped under B: A is already in Majors, C is not.
+        XCTAssertEqual(
+            sectionMove(["A", "C"], to: row("B") + 1), .init(ids: [ids["C"]!], section: ids["#Majors"]))
+    }
+
+    func testSectionMoveIgnoresHeadingsAndPlaceholders() {
+        XCTAssertNil(sectionMove(["#Majors"], to: rows.count))
+        XCTAssertNil(WatchlistLayoutEngine.resolveSectionMove(rows: rows, sources: IndexSet(integer: 7), destination: 0))
+        XCTAssertNil(WatchlistLayoutEngine.resolveSectionMove(rows: rows, sources: IndexSet(integer: 99), destination: 0))
+    }
 }

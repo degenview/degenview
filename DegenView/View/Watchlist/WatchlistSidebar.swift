@@ -162,9 +162,9 @@ struct WatchlistSidebar: View {
                     )
                     .listRowSeparator(.hidden)
             }
-            // The list's own row move: native lift, insertion line and auto-scroll, one write on drop.
-            // Off while the list is sorted or filtered, since a drop could not mean a stored position.
-            .onMove(perform: viewModel.canReorder ? { viewModel.moveRows(fromOffsets: $0, toOffset: $1) } : nil)
+            // The list's own row move: native lift, insertion line and auto-scroll, one write on drop. While the
+            // list is sorted or filtered a drop moves a symbol between sections but cannot place it within one.
+            .onMove(perform: viewModel.canDrag ? { viewModel.moveRows(fromOffsets: $0, toOffset: $1) } : nil)
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)

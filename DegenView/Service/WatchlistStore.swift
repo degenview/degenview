@@ -178,6 +178,11 @@ final class WatchlistStore: ObservableObject {
         try mutate(listID) { try $0.move(entryIDs, before: targetID) }
     }
 
+    /// Several symbols into one section (or the root) in one commit.
+    func moveInstruments(_ entryIDs: [UUID], toSection sectionID: UUID?, in listID: UUID) throws {
+        try mutate(listID) { try $0.moveInstruments(entryIDs, toSection: sectionID) }
+    }
+
     func moveInstrument(_ entryID: UUID, toSection sectionID: UUID?, in listID: UUID) throws {
         try mutate(listID) { try $0.moveInstrument(entryID, toSection: sectionID) }
     }

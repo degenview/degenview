@@ -251,7 +251,9 @@ WebSocket needs a signed API key, so both providers refresh over REST. Kalshi id
   so content lands on `leadingInset` (8) / `trailingInset` (12): logos, section titles and column heads share the
   left edge, values and column titles the right. The bookmark is 6pt wide, so it ends 2pt short of the logo. Menu
   swatches are non-template `NSImage`s (`WatchlistFlag.swatch`) so AppKit keeps the colour
-- Watchlist reordering is the List's native `ForEach.onMove` over the flat rows (off while sorted or filtered).
+- Watchlist reordering is the List's native `ForEach.onMove` over the flat rows. In Manual unfiltered mode `resolveMove`
+  gives a position; while sorted or filtered a symbol's position is derived, so `resolveSectionMove` only changes its
+  section (end of that section's stored order) and headings still reorder.
   `WatchlistLayoutEngine.resolveMove` maps the drop onto stored entries and `WatchlistStore.moveEntries` writes
   it once. Do not add SwiftUI `onDrag`/`onDrop`/`onTapGesture` to rows: layered over the List's own table
   handling they made dragging fail most of the time. Selecting a row opens it in the focused chart and the

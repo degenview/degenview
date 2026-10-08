@@ -207,19 +207,70 @@ final class WatchlistSidebarViewModelTests: XCTestCase {
         XCTAssertEqual(order(), ["ROOT", "#Majors", "AAA", "BBB", "#Watching", "CCC"])
     }
 
-    func testRowsCannotBeDraggedWhileSortedOrFiltered() throws {
+    func testWhileSortedASymbolCanStillMoveToAnotherSection() throws {
         _ = try seedSections()
-        let aaa = try rowIndex(of: "AAA")
+        viewModel.setSort(WatchlistSort(key: .symbol, ascending: false))
+        let before = store.favorites?.display.sort
+        // Rows (sorted within sections): ROOT, #Majors, BBB, AAA, #Watching, CCC. Drop AAA under CCC.
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "AAA")), toOffset: viewModel.rows.count)
+
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "BBB", "#Watching", "CCC", "AAA"], "last in the stored order of Watching")
+        XCTAssertEqual(store.favorites?.display.sort, before, "the sort is untouched")
+        // It shows where the sort puts it: CCC then AAA is A..C descending, so CCC first.
+        let shown = viewModel.rows.compactMap { row -> String? in
+            if case .instrument(let item, _) = row { return item.instrument.symbol }
+            return nil
+        }
+        XCTAssertEqual(shown, ["ROOT", "BBB", "CCC", "AAA"])
+    }
+
+    func testWhileSortedADropInsideTheSameSectionDoesNothing() throws {
+        _ = try seedSections()
+        viewModel.setSort(WatchlistSort(key: .symbol, ascending: false))
         let expected = order()
+        let updated = store.favorites?.updatedAt
 
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "AAA")), toOffset: try rowIndex(of: "BBB"))
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "BBB")), toOffset: try rowIndex(of: "AAA") + 1)
+
+        XCTAssertEqual(order(), expected)
+        XCTAssertEqual(store.favorites?.updatedAt, updated, "nothing was written")
+    }
+
+    func testWhileSortedASymbolCanMoveToTheRootAndAHeadingStillReorders() throws {
+        let seeded = try seedSections()
         viewModel.setSort(WatchlistSort(key: .symbol, ascending: true))
-        viewModel.moveRows(fromOffsets: IndexSet(integer: aaa), toOffset: viewModel.rows.count)
-        XCTAssertEqual(order(), expected)
 
-        viewModel.setSort(.manual)
-        viewModel.filterText = "a"
-        viewModel.moveRows(fromOffsets: IndexSet(integer: 0), toOffset: viewModel.rows.count)
-        XCTAssertEqual(order(), expected)
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "AAA")), toOffset: 0)
+        XCTAssertEqual(order(), ["ROOT", "AAA", "#Majors", "BBB", "#Watching", "CCC"])
+
+        let majorsRow = try XCTUnwrap(
+            viewModel.rows.firstIndex { if case .section(let s, _) = $0 { return s.id == seeded.majors.id } else { return false } })
+        viewModel.moveRows(fromOffsets: IndexSet(integer: majorsRow), toOffset: viewModel.rows.count)
+        XCTAssertEqual(order(), ["ROOT", "AAA", "#Watching", "CCC", "#Majors", "BBB"], "headings reorder while sorted")
+    }
+
+    func testWhileFilteredASymbolCanMoveBetweenVisibleSections() throws {
+        _ = try seedSections()
+        viewModel.filterText = "BBB"  // only BBB matches (the provider name "Binance" would match "B" everywhere)
+        let favoritesBefore = store.favorites?.entries.count
+        // Rows now: #Majors, BBB. Nothing below it is visible, so the drop target is Majors itself: no change.
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "BBB")), toOffset: viewModel.rows.count)
+        XCTAssertEqual(order(), ["ROOT", "#Majors", "AAA", "BBB", "#Watching", "CCC"])
+
+        viewModel.filterText = "CCC"  // only CCC (in Watching) matches; drop it at the very top = the root
+        viewModel.moveRows(fromOffsets: IndexSet(integer: try rowIndex(of: "CCC")), toOffset: 0)
+        XCTAssertEqual(order(), ["ROOT", "CCC", "#Majors", "AAA", "BBB", "#Watching"])
+        XCTAssertEqual(store.favorites?.entries.count, favoritesBefore, "nothing was added or lost")
+        XCTAssertEqual(viewModel.filterText, "CCC", "the filter is left alone")
+    }
+
+    func testRowsAreDraggableWheneverAListIsShown() throws {
+        XCTAssertTrue(viewModel.canDrag)
+        viewModel.setSort(WatchlistSort(key: .last, ascending: true))
+        viewModel.filterText = "x"
+        XCTAssertTrue(viewModel.canDrag)
+        XCTAssertFalse(viewModel.canReorder, "but positions only mean something in Manual order")
     }
 
     func testTheHighlightedRowFollowsTheFocusedChartsMarket() throws {
