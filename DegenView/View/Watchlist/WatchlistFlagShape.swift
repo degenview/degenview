@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// A bookmark turned on its side: a flat end with softly rounded corners, and a V cut into the other end.
-/// With the default `tailPointsRight` the flat end is the left one, so it reads as a ribbon pinned to the
-/// panel's left edge with its notched tail trailing toward the logo.
+/// By default the notched tail is on the left, against the panel's edge, and the flat end faces the logo.
+/// `tailPointsRight` puts the notch on the right instead.
 struct WatchlistFlagShape: Shape {
-    var tailPointsRight = true
+    var tailPointsRight = false
     /// How deep the V is cut into the tail.
     var notchDepth: CGFloat = 3
     var cornerRadius: CGFloat = 1.5
