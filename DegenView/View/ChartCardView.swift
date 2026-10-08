@@ -19,9 +19,6 @@ struct ChartCardView: View {
     let onAxisRegion: (NSView) -> Void
     /// Hands the plot area's `NSView` to the trend-line drawing monitor.
     var onPlotRegion: (NSView) -> Void = { _ in }
-    /// Hands the Pine indicator legend's `NSView` to the drawing-tool monitor, so a click on
-    /// its eye/gear/remove icons is never swallowed as "begin drawing".
-    var onLegendRegion: (NSView) -> Void = { _ in }
     /// Whether any tool is armed — drives the crosshair cursor over the plot.
     var isToolArmed: Bool = false
     /// Narrower than `isToolArmed`: only the trend-line tool shows endpoint handles.
@@ -46,6 +43,7 @@ struct ChartCardView: View {
 
     @State private var showSettings = false
     @State private var showAlertEditor = false
+    @State private var headerHovering = false
     @StateObject private var portfolioStore = PortfolioStore.shared
     @Environment(\.colorScheme) private var colorScheme
 
@@ -160,32 +158,42 @@ struct ChartCardView: View {
 
     private var headerView: some View {
         HStack(alignment: .firstTextBaseline) {
-            Button {
-                showSettings = true
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        ChartIconView(viewModel: viewModel)
-                        // Market questions are long — keep the header on one line.
-                        Text(viewModel.title)
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                        Image(systemName: "gearshape.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary.opacity(0.6))
-                        if viewModel.replayTimestamp != nil {
-                            Label("Replay", systemImage: "clock.arrow.circlepath")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(ReplayStyle.accent)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 2)
-                                .background(ReplayStyle.accent.opacity(0.14), in: Capsule())
-                                .accessibilityLabel("Historical replay mode")
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            ChartIconView(viewModel: viewModel)
+                            // Market questions are long — keep the header on one line.
+                            Text(viewModel.title)
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
                         }
                     }
+                    .buttonStyle(.plain)
+                    // The symbol gives way last: the indicator strip folds into a pill before it truncates.
+                    .layoutPriority(2)
+                    if viewModel.replayTimestamp != nil {
+                        Label("Replay", systemImage: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(ReplayStyle.accent)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(ReplayStyle.accent.opacity(0.14), in: Capsule())
+                            .accessibilityLabel("Historical replay mode")
+                            .layoutPriority(1)
+                    }
+                    ChartIndicatorStrip(
+                        viewModel: viewModel, isHeaderHovered: headerHovering, onStyleChanged: onStyleChanged,
+                        onOpenSettings: { showSettings = true })
+                }
 
+                Button {
+                    showSettings = true
+                } label: {
                     if let choice = viewModel.leadingMarketChoice {
                         Text(
                             "\(choice.label) · \(PriceFormatter.headline(choice.price, scale: viewModel.priceScale))"
@@ -199,8 +207,8 @@ struct ChartCardView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             Spacer()
 
@@ -241,6 +249,7 @@ struct ChartCardView: View {
                 .foregroundStyle(viewModel.priceChangeIsPositive ? .green : .red)
             }
         }
+        .onHover { headerHovering = $0 }
     }
 
     private var alertAsset: PortfolioAsset {
@@ -328,7 +337,7 @@ struct ChartCardView: View {
                     bearishColor: viewModel.bearishColor,
                     yAxisDecimalPlaces: viewModel.yAxisDecimalPlaces,
                     yZoom: viewModel.yZoom,
-                    showVolume: viewModel.showVolume,
+                    showVolume: viewModel.isDrawn(.volume),
                     indicators: indicators,
                     pineOutputs: viewModel.visiblePineOutputs,
                     trendLines: viewModel.trendLines,
@@ -365,11 +374,6 @@ struct ChartCardView: View {
                     orders: paperOrders, accountCurrency: paperAccountCurrency, unrealizedPnL: paperUnrealizedPnL,
                     onModify: onPaperModify, onCancel: onPaperCancel, onClose: onPaperClose)
             }
-        }
-        .overlay(alignment: .topLeading) {
-            PineIndicatorLegend(viewModel: viewModel, onLegendRegion: onLegendRegion, onStyleChanged: onStyleChanged)
-                .padding(.leading, 8)
-                .padding(.top, 28)
         }
         // The mouse monitor only sees moves inside the window, so a pointer that leaves
         // it altogether would strand the crosshair on the last chart it touched.

@@ -436,6 +436,10 @@ Use the following manual flow for native window/tab behavior and end-to-end UI c
     plain text and it goes as text/plain. A disabled webhook still tests. A price alert with two
     webhooks (one dead) shows `Webhooks 1/2 delivered`; deleting a used webhook asks first with the
     count. A script alert posts once per admitted `alert()`, and loading a script over history posts nothing
+13f. Indicator strip: an empty chart card shows a faint `+` right of the symbol (tooltip "Add Indicator"); its menu
+    adds RSI/EMA/Bollinger/Volume/Trend Flips and saved scripts. Chips show names only; hover one for
+    eye (dims it and hides its plot, kept across relaunch), settings (EMA period, script inputs) and remove. More than 3 fold into `+N`; a narrow
+    card becomes a chart-icon + count pill, never truncating the symbol. Layout shows "(unsaved)" after any change
 14a. Script editor: type `ta.sma(` → `()`; `)` steps over it; Backspace in `()` removes both; select
     text and type `(` / `"`; one ⌘Z undoes each. Return after `if x` indents; ⌘/, Tab/⇧Tab on a
     multi-line selection, ⌥↑↓ and ⇧⌥↓ work and each undoes in one step. Caret beside a bracket

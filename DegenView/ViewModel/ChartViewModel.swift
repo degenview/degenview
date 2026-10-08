@@ -224,17 +224,31 @@ final class ChartViewModel: ObservableObject {
 
     /// Turnover bars under the candles. Off by default — only Binance reports the
     /// quote volume they're drawn from.
-    @Published var showVolume: Bool = false
+    @Published var showVolume: Bool = false {
+        didSet { if !showVolume { hiddenBuiltIns.remove(.volume) } }
+    }
 
     /// RSI line across the bottom of the plot. Off by default. Computed from closes,
     /// so unlike volume it works on every source.
-    @Published var showRSI: Bool = false
+    @Published var showRSI: Bool = false {
+        didSet { if !showRSI { hiddenBuiltIns.remove(.rsi) } }
+    }
 
     /// Price-scale overlays: an EMA at `emaPeriod`, and Bollinger bands.
-    @Published var showEMA: Bool = false
+    @Published var showEMA: Bool = false {
+        didSet { if !showEMA { hiddenBuiltIns.remove(.ema) } }
+    }
     @Published var emaPeriod: Int = Indicator.emaDefaultPeriod
-    @Published var showBollinger: Bool = false
-    @Published var showTrendFlips: Bool = false
+    @Published var showBollinger: Bool = false {
+        didSet { if !showBollinger { hiddenBuiltIns.remove(.bollinger) } }
+    }
+    @Published var showTrendFlips: Bool = false {
+        didSet { if !showTrendFlips { hiddenBuiltIns.remove(.trendFlips) } }
+    }
+
+    /// Applied built-ins that are switched off without being removed (the chip's eye). A flag turned
+    /// off drops its entry, so re-adding an indicator always shows it.
+    @Published var hiddenBuiltIns: Set<BuiltInIndicator> = []
 
     // MARK: - Pine script
 
@@ -272,11 +286,11 @@ final class ChartViewModel: ObservableObject {
         IndicatorSeries.make(
             candles: replayKlines,
             visibleCount: visibleCount,
-            showRSI: showRSI,
-            showEMA: showEMA,
+            showRSI: isDrawn(.rsi),
+            showEMA: isDrawn(.ema),
             emaPeriod: emaPeriod,
-            showBollinger: showBollinger,
-            showTrendFlips: showTrendFlips
+            showBollinger: isDrawn(.bollinger),
+            showTrendFlips: isDrawn(.trendFlips)
         )
     }
 
@@ -595,6 +609,7 @@ final class ChartViewModel: ObservableObject {
         emaPeriod = config.emaPeriod ?? Indicator.emaDefaultPeriod
         showBollinger = config.showBollinger ?? false
         showTrendFlips = config.showTrendFlips ?? false
+        hiddenBuiltIns = Set((config.hiddenIndicators ?? []).compactMap(BuiltInIndicator.init(rawValue:)))
         trendLines = drawingStore.lines(ticker: ticker, source: source)
         fibonacciRetracements = drawingStore.fibs(ticker: ticker, source: source)
         brushes = drawingStore.brushes(ticker: ticker, source: source)

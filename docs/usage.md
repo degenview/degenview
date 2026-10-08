@@ -7,7 +7,9 @@
 2. Pick a timeframe in the toolbar and scroll over a chart to zoom its history. Drag the
    price axis to zoom vertically.
 3. Open a chart's gear menu to change its instrument, colors, decimal precision, and
-   technical indicators. Use its **Scripts** tab to edit and apply a Pine v6-style
+   technical indicators. Indicators also live in the card header, right of the symbol: a chip per
+   applied indicator (hover for hide, settings, remove) and a **+** ("Add Indicator") for built-ins
+   and saved scripts. Use the sheet's **Scripts** tab to edit and apply a Pine v6-style
    indicator or change the generated inputs. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines,
    **Fib Retracement**, **Brush**, and the **Ruler**. With the Brush, press and drag to draw

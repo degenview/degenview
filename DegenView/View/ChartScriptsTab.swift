@@ -8,8 +8,7 @@ struct ChartScriptsTab: View {
     let onStyleChanged: () -> Void
 
     @ObservedObject private var pineAlerts = PineAlertStore.shared
-    @State private var savedScripts: [LocalScript] = []
-    @State private var scriptLoadError: String?
+    @ObservedObject private var saved = SavedScriptsModel.shared
     @State private var addScriptError: String?
     @State private var editingInstanceID: UUID?
     /// The applied script awaiting a "remove" confirmation — only asked when removing it also deletes an alert.
@@ -22,7 +21,7 @@ struct ChartScriptsTab: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                if let scriptLoadError {
+                if let scriptLoadError = saved.loadError {
                     NoticeCard(
                         systemImage: "xmark.octagon.fill", tint: .red, title: "Couldn't load your scripts",
                         detail: scriptLoadError)
@@ -53,10 +52,7 @@ struct ChartScriptsTab: View {
             Text("This script has an alert on this chart. Removing the script deletes the alert too.")
         }
         .sheet(item: $alertTarget) { PineAlertEditor(viewModel: viewModel, instanceID: $0.id) }
-        .task { await loadSavedScripts() }
-        .onReceive(NotificationCenter.default.publisher(for: .localScriptsDidChange)) { _ in
-            Task { await loadSavedScripts() }
-        }
+        .task { await saved.loadIfNeeded() }
     }
 
     // MARK: - Header
@@ -107,7 +103,7 @@ struct ChartScriptsTab: View {
                 ScriptsEmptyState(
                     systemImage: "chart.xyaxis.line", title: "No scripts on this chart",
                     message: "Choose Add Script to overlay an indicator or strategy on the candles.")
-            } else if scriptLoadError == nil {
+            } else if saved.loadError == nil {
                 ScriptsEmptyState(
                     systemImage: "curlybraces", title: "No scripts yet",
                     message: "Write one in the Script Manager and it shows up here."
@@ -253,19 +249,12 @@ struct ChartScriptsTab: View {
 
     // MARK: - Scripts
 
-    /// Libraries only export code to other scripts, so they are never offered for a chart.
-    private var indicatorScripts: [LocalScript] { appliableScripts(of: .indicator) }
-    private var strategyScripts: [LocalScript] { appliableScripts(of: .strategy) }
-    private var hasSavedScripts: Bool { !indicatorScripts.isEmpty || !strategyScripts.isEmpty }
-
-    private func appliableScripts(of type: ScriptType) -> [LocalScript] {
-        savedScripts
-            .filter { $0.type == type }
-            .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-    }
+    private var indicatorScripts: [LocalScript] { saved.indicatorScripts }
+    private var strategyScripts: [LocalScript] { saved.strategyScripts }
+    private var hasSavedScripts: Bool { saved.hasAppliableScripts }
 
     private func savedScript(for instance: ChartScriptInstance) -> LocalScript? {
-        savedScripts.first { $0.id == instance.scriptID }
+        saved.script(withID: instance.scriptID)
     }
 
     /// The script's declared title, else its saved name, so a row never reads just "Script".
@@ -275,26 +264,9 @@ struct ChartScriptsTab: View {
         return savedScript(for: instance)?.name ?? "Script"
     }
 
-    @MainActor private func loadSavedScripts() async {
-        do {
-            savedScripts = try await ScriptStore.shared.allScripts()
-            scriptLoadError = nil
-        } catch {
-            scriptLoadError = error.localizedDescription
-        }
-    }
-
     private func addScriptToChart(_ script: LocalScript) {
-        guard
-            viewModel.addPineInstance(
-                scriptID: script.id, revisionID: script.latestRevisionID ?? UUID(), source: script.source
-            ) != nil
-        else {
-            addScriptError = "\"\(script.name)\" didn't compile, so it wasn't added. Fix it in the Script Manager."
-            return
-        }
-        addScriptError = nil
-        onStyleChanged()
+        addScriptError = saved.add(script, to: viewModel)
+        if addScriptError == nil { onStyleChanged() }
     }
 
     private func move(_ id: UUID, to index: Int) {
