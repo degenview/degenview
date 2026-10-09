@@ -460,7 +460,7 @@ no observable effect (`max_bars_back`, `dynamic_requests`) are not warned about.
 | `PINE7001` | an argument that has no effect, e.g. `hline(linestyle = …)`, `strategy.close(comment = …)`, `margin_long` |
 | `PINE7002` | a function that does nothing: `strategy.risk.*` |
 | `PINE7003` | a variable that is always `na` (see "Variables the engine does not model") |
-| `PINE7004` | an argument value drawn as something else, e.g. `plot.style_linebr` |
+| `PINE7004` | an argument value drawn as something else, e.g. `plot.style_stepline_diamond` |
 
 ## Identifier rules
 

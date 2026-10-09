@@ -80,14 +80,14 @@ final class PineIgnoredFeatureTests: XCTestCase {
             //@version=6
             strategy("T")
             strategy.risk.max_drawdown(10, strategy.percent_of_equity)
-            plot(close, style = plot.style_linebr)
+            plot(close, style = plot.style_stepline_diamond)
             plot(syminfo.session == "regular" ? 1 : 0)
             """
         let program = PineCompiler.compile(source: source)
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let found = warnings(program)
         XCTAssertEqual(found.map(\.code), ["PINE7002", "PINE7004", "PINE7003"], "\(found)")
-        XCTAssertEqual(covered(found[1], in: source), "plot.style_linebr")
+        XCTAssertEqual(covered(found[1], in: source), "plot.style_stepline_diamond")
         XCTAssertEqual(covered(found[2], in: source), "syminfo.session")
     }
 

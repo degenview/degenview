@@ -96,10 +96,7 @@ enum PineIgnoredFeatures {
     /// Pine constant.
     static let values: [String: [String: [String: String]]] = [
         "plot": [
-            "style": [
-                "plot.style_linebr": "Gaps are not broken; it is drawn as a plain line.",
-                "plot.style_stepline_diamond": "It is drawn as a plain line.",
-            ]
+            "style": ["plot.style_stepline_diamond": "It is drawn as a plain line."]
         ]
     ]
 

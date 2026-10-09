@@ -171,6 +171,7 @@ extension PineRuntimeSession {
         case "plot.style_area", "plot.style_areabr": .area
         case "plot.style_circles": .circles
         case "plot.style_cross": .cross
+        // `linebr` too: a line already ends at an `na` bar.
         default: .line
         }
     }
