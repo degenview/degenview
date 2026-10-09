@@ -123,7 +123,6 @@ enum PineIgnoredFeatures {
 
     private static let colorSeries: [String: String] = [
         "offset": "The colors are not shifted; each applies to the bar that produced it.",
-        "title": "The title is not listed anywhere.",
         "editable": "The color cannot be edited from the chart.",
         "show_last": "The colors are applied to every bar, not only the last ones.",
         "force_overlay": "The colors apply to the pane the script declares.",

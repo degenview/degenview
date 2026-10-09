@@ -10,7 +10,8 @@
    technical indicators. Indicators also live in the card header, right of the symbol: a chip per
    applied indicator (hover for hide, settings, remove) and a **+** ("Add Indicator") for built-ins
    and saved scripts. Use the sheet's **Scripts** tab to edit and apply a Pine v6-style
-   indicator or change the generated inputs. The settings window can be resized.
+   indicator or change the generated inputs. A script's settings (gear on its chip) also has a
+   **Style** page to hide, recolor or thicken what it draws. The settings window can be resized.
 4. Use the left tool strip for the synchronized crosshair, persistent trend lines,
    **Fib Retracement**, **Brush**, and the **Ruler**. With the Brush, press and drag to draw
    a freehand stroke; click a stroke to restyle it, drag it to move it, press Delete to

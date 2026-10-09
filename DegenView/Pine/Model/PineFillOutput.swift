@@ -6,6 +6,7 @@ struct PineFillOutput: Sendable, Identifiable {
     var plotA: Int
     var plotB: Int
     var colors: [UInt32?]
+    var title: String? = nil
     /// Per-bar gradients for the `fill(p1, p2, top_value, bottom_value, top_color,
     /// bottom_color)` overload; parallel to `colors` and empty for flat fills.
     var gradients: [PineFillGradient?] = []

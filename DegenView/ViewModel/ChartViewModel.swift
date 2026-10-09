@@ -916,6 +916,17 @@ final class ChartViewModel: ObservableObject {
         // No rebuild — rendering reads `isVisible` directly; the runtime keeps ticking.
     }
 
+    /// Replaces one instance's Style choices (see `PineStyleOverrides`). Choices that match no output of
+    /// the script's current result are dropped. No rebuild: rendering applies them to the output.
+    func setPineInstanceStyle(_ id: UUID, overrides: [String: String]) {
+        guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        var kept = overrides
+        if let result = pineResults[id], result.state == .ready {
+            kept = PineStyleOverrides.pruned(overrides, keeping: PineStyleRows.rows(for: result.output))
+        }
+        scriptInstances[index].styleOverrides = kept
+    }
+
     /// Replaces one instance's inputs and rebuilds just that instance.
     func setPineInstanceInputs(_ id: UUID, inputs: [String: PineInputValue]) {
         guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
@@ -1129,7 +1140,9 @@ final class ChartViewModel: ObservableObject {
     /// Every visible instance's latest output, in `scriptInstances` order — later instances
     /// composite on top, matching TradingView's "last added on top".
     var visiblePineOutputs: [PineVisualOutput] {
-        scriptInstances.filter(\.isVisible).compactMap { pineResults[$0.id]?.output }
+        scriptInstances.filter(\.isVisible).compactMap {
+            pineResults[$0.id]?.output.applying(styleOverrides: $0.styleOverrides)
+        }
     }
 
     /// The subset that draws in its own pane under the candles (`overlay == false`).

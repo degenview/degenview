@@ -31,6 +31,15 @@ final class PineIgnoredFeatureTests: XCTestCase {
         XCTAssertTrue(warning.message.contains("solid"), "it says what happens instead: \(warning.message)")
     }
 
+    func testBgcolorAndBarcolorTitlesDoNotWarnBecauseTheStyleSectionListsThem() {
+        let program = compile(
+            """
+            bgcolor(color.red, title = "Zone")
+            barcolor(color.blue, title = "Bars")
+            """, header: "indicator(\"T\", overlay = true)")
+        XCTAssertEqual(warnings(program).count, 0, "\(program.diagnostics)")
+    }
+
     func testBehindChartAndLowerTimeframeCalcBarsCountAreHonouredButSecurityStillWarns() {
         let honoured = compile(
             """

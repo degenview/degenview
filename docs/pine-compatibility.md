@@ -128,6 +128,14 @@ that combination was derived from the rules above, not checked against TradingVi
   plotshape (incl. `shape.circle`, `location.absolute`, `size`), plotchar, plotcandle, bgcolor,
   and barcolor. `display` is honoured on plot, plotshape, plotchar, and plotcandle; a
   `display.none` plot is not drawn but a `fill()` may still reference it.
+- **Style section.** A script's settings (the indicator chip's gear, or Chart Settings ▸ Scripts) has a
+  Style page like TradingView's Style tab: one row per `plot`, `hline`, `fill`, `plotshape`/`plotchar`,
+  `plotcandle`, `bgcolor` and `barcolor`, named by its `title` (or "Plot 1", "Fill 1"…). Each row hides
+  the output (a hidden plot still feeds a `fill()` that uses it); a color swatch appears only when the script
+  uses one fixed color, and a width stepper only for line-drawing plot styles. Choices are stored with the
+  chart's script (`styleOverrides`), saved with the layout, and keyed by call site, so they can attach to
+  the wrong output when an edit adds or removes an earlier call. `editable`, `show_last`, `linestyle` and
+  `linewidth` are still ignored. The Script Manager preview has no Style page.
 - `alert()` and `alertcondition()` record an event (bar, time, message) that the Scripts tab
   lists. Only events raised on realtime bars can notify, and only through a **script alert**
   subscription (see below). `alert.freq_once_per_bar_close` fires only on confirmed bars. The

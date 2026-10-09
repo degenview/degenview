@@ -110,7 +110,7 @@ struct ScriptInstanceRow<InputsPopover: View>: View {
                 action: onToggleVisible)
             alertButton
             SettingsIconButton(
-                systemImage: "slider.horizontal.3", label: "Edit \(title) inputs",
+                systemImage: "slider.horizontal.3", label: "Edit \(title) settings",
                 action: { isEditingInputs = true }
             )
             .popover(isPresented: $isEditingInputs) { inputsPopover() }
@@ -137,7 +137,7 @@ struct ScriptInstanceRow<InputsPopover: View>: View {
 
     @ViewBuilder private var menu: some View {
         Button(isVisible ? "Hide on Chart" : "Show on Chart", action: onToggleVisible)
-        Button("Edit Inputs…") { isEditingInputs = true }
+        Button("Settings…") { isEditingInputs = true }
         switch alert {
         case .existing: Button("View Alert…", action: onAlert)
         case .create(let blockedReason): Button("Create Alert…", action: onAlert).disabled(blockedReason != nil)
