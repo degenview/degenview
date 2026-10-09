@@ -208,8 +208,8 @@ row) → `PineAlertDispatcher` (channels).
   `ticker.new/standard/modify/inherit` build symbol ids; since only the chart's own symbol can be served,
   `standard`, `modify` and `inherit` return what they are given.
 - `behind_chart` is honoured for `overlay=true` scripts: by default (as in Pine) their plots and drawings are
-  painted under the candles, and with `behind_chart = false` over them. Strategy trade markers always stay in
-  front, tables sit outside the plot either way. Declaration arguments `explicit_plot_zorder` and
+  painted under the candles, and with `behind_chart = false` over them. `plotcandle()` and strategy trade
+  markers always stay in front (a script's candles recolor the real ones), tables sit outside the plot either way. Declaration arguments `explicit_plot_zorder` and
   `dynamic_requests` are accepted and ignored; `max_polylines_count` is honoured. `margin_long` and `margin_short` are accepted and ignored (the broker has no margin model); other arguments that change behaviour (`margin_top` and so on) stay `PINE9001`. Constants fold through `const` variables and named constants
   (`const color BASE = …`, `color.new(BASE, 88)`, `const string TINY = size.tiny`), so inputs may default to them.
 

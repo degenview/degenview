@@ -68,13 +68,14 @@ struct CandleChartView: View {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
                     // `behind_chart` (Pine's default) puts an overlay script's plots and drawings under the
-                    // candles; trades always stay on top.
+                    // candles; `plotcandle()` and trades always stay on top.
                     for script in scripts where script.pine.overlay && script.pine.behindChart {
-                        script.drawVisuals(&layer, plot: plot)
+                        script.drawVisuals(&layer, plot: plot, includingCandles: false)
                     }
                     drawCandles(context: &layer, plot: plot, scripts: scripts)
                     for script in scripts where script.pine.overlay {
                         if script.pine.behindChart {
+                            script.drawCandles(context: &layer, plot: plot)
                             script.drawStrategyTrades(context: &layer, plot: plot)
                         } else {
                             script.drawForeground(&layer, plot: plot)
