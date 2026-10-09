@@ -163,7 +163,9 @@ struct ScriptPreviewPane: View {
                         .frame(width: ChartStyle.default.chartInsets.trailing)
                 }
                 if chart.showsPinePane {
-                    PineScriptPaneView(pine: chart.pineOutput, candles: chart.visibleKlines, height: paneHeight)
+                    PineScriptPaneView(
+                        pine: chart.pineOutput, candles: chart.visibleKlines, height: paneHeight,
+                        futureSlots: chart.pineFutureSlots(of: [chart.pineOutput]))
                 }
             }
         }

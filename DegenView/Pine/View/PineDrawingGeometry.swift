@@ -23,6 +23,32 @@ extension PineLineStyle {
 
 /// Pure geometry for the pieces of a script drawing that are more than a stroke or a fill.
 enum PineDrawingGeometry {
+    /// The path through `points`: straight segments, or with `curved` a Catmull-Rom spline that passes
+    /// through every point. A closed path wraps around, so the curve is smooth at the joint too.
+    static func polylinePath(through points: [CGPoint], curved: Bool, closed: Bool) -> Path {
+        var path = Path()
+        guard let first = points.first else { return path }
+        path.move(to: first)
+        guard curved, points.count > 2 else {
+            for point in points.dropFirst() { path.addLine(to: point) }
+            if closed { path.closeSubpath() }
+            return path
+        }
+        let count = points.count
+        func point(_ index: Int) -> CGPoint {
+            closed ? points[(index % count + count) % count] : points[min(max(index, 0), count - 1)]
+        }
+        for index in 0..<(closed ? count : count - 1) {
+            let (p0, p1, p2, p3) = (point(index - 1), point(index), point(index + 1), point(index + 2))
+            path.addCurve(
+                to: p2,
+                control1: CGPoint(x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6),
+                control2: CGPoint(x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6))
+        }
+        if closed { path.closeSubpath() }
+        return path
+    }
+
     /// The triangle of an arrowhead at `tip` for a line arriving from `origin`.
     static func arrowhead(tip: CGPoint, from origin: CGPoint, length: CGFloat, halfWidth: CGFloat) -> [CGPoint] {
         let dx = tip.x - origin.x

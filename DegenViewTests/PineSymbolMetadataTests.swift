@@ -54,7 +54,7 @@ final class PineSymbolMetadataTests: XCTestCase {
 
     func testUnimplementedNamesAreNeverOffered() {
         var reserved = ["fixnan", "plotarrow", "plotbar", "weekofyear", "session.ismarket", "syminfo.session"]
-        reserved.append("chart.left_visible_bar_time")
+        reserved.append("syminfo.description")
         for name in reserved {
             XCTAssertFalse(PineSymbolCatalog.isCompletable(name), name)
             let parts = name.split(separator: ".").map(String.init)

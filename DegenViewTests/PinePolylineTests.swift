@@ -83,6 +83,40 @@ final class PinePolylineTests: XCTestCase {
         XCTAssertEqual(polyline.width, 3)
     }
 
+    func testPolylineKeepsCurved() throws {
+        let result = try output(
+            """
+            var array<chart.point> pts = array.new<chart.point>()
+            if barstate.islast
+                array.push(pts, chart.point.from_index(1, 10.0))
+                array.push(pts, chart.point.from_index(4, 12.0))
+                array.push(pts, chart.point.from_index(2, 8.0))
+                polyline.new(pts, curved = true)
+                polyline.new(pts)
+            """)
+        XCTAssertEqual(result.polylines.map(\.curved), [true, false])
+    }
+
+    func testCurvedPathPassesThroughEveryPointAndStraightDoesNot() {
+        let points = [CGPoint(x: 0, y: 0), CGPoint(x: 10, y: 10), CGPoint(x: 20, y: 0), CGPoint(x: 30, y: 10)]
+        for closed in [false, true] {
+            let curved = PineDrawingGeometry.polylinePath(through: points, curved: true, closed: closed)
+            var ends: [CGPoint] = []
+            curved.forEach { element in
+                switch element {
+                case .move(let to), .line(let to), .curve(let to, _, _): ends.append(to)
+                default: break
+                }
+            }
+            XCTAssertEqual(Array(ends.prefix(points.count)), points)
+            XCTAssertEqual(curved.currentPoint, closed ? points[0] : points.last)
+        }
+        let straight = PineDrawingGeometry.polylinePath(through: points, curved: false, closed: false)
+        var curves = 0
+        straight.forEach { if case .curve = $0 { curves += 1 } }
+        XCTAssertEqual(curves, 0)
+    }
+
     func testPolylineWithTimeAnchorsMapsTimesToBarIndexes() throws {
         let result = try output(
             """

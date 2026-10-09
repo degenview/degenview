@@ -44,6 +44,11 @@ final class PineRuntimeSession {
     var securityGlobals: [String: PineRuntimeValue]?
     var lastBarIndex = -1
     var lastBarTime: Date?
+    /// Open time of the first bar of the run, the fallback for `chart.left_visible_bar_time`.
+    var firstBarTime: Date?
+    /// The open times of the first and last candle the chart shows, for `chart.left_visible_bar_time` and
+    /// `chart.right_visible_bar_time`. Nil reads the whole run.
+    let visibleRange: ClosedRange<Date>?
     /// Open time of the bar most recently committed. Anything at or before it is stale.
     var lastCommittedOpenTime: Date?
     /// Call sites that already fired `alert.freq_once_per_bar` on the current bar. Like `intrabar` it
@@ -67,9 +72,11 @@ final class PineRuntimeSession {
     init(
         program: PineCompiledProgram, inputs: [String: PineInputValue] = [:],
         limits: PineLimits = .default, mintick: Double? = nil, theme: PineChartTheme = .dark,
-        symbol: PineSymbolInfo = PineSymbolInfo(), securityData: PineSecurityDataProvider? = nil
+        symbol: PineSymbolInfo = PineSymbolInfo(), securityData: PineSecurityDataProvider? = nil,
+        visibleRange: ClosedRange<Date>? = nil
     ) {
         self.securityData = securityData
+        self.visibleRange = visibleRange
         self.program = program
         self.symbol = symbol
         self.inputs = inputs
@@ -131,6 +138,7 @@ final class PineRuntimeSession {
         barSeconds = 0
         lastBarIndex = -1
         lastBarTime = nil
+        firstBarTime = nil
         mintick = suppliedMintick ?? Self.defaultMintick
     }
 
@@ -158,6 +166,7 @@ final class PineRuntimeSession {
         }
         lastBarIndex = bars.count - 1 + (precedesLiveBar ? 1 : 0)
         lastBarTime = bars.last.map { $0.openTime.addingTimeInterval(precedesLiveBar ? barSeconds : 0) }
+        firstBarTime = bars.first?.openTime
         let start = Date()
         var states: [PineBarFlags] = []
         states.reserveCapacity(bars.count)
@@ -271,7 +280,8 @@ final class PineRuntimeSession {
             polylines: working.polylines.values.sorted { $0.id < $1.id },
             tables: working.tables.values.sorted { $0.id < $1.id },
             candles: working.candles.values.sorted { $0.id < $1.id }, alerts: working.alerts,
-            strategy: isStrategy ? working.broker.report() : nil)
+            strategy: isStrategy ? working.broker.report() : nil,
+            behindChart: program.declaration.overlay && (program.declaration.behindChart ?? true))
     }
 
     // MARK: - Bookkeeping

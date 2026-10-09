@@ -8,7 +8,8 @@ import Foundation
 /// A series that cannot be fetched is left out, and the session then reports it (another symbol) or builds the
 /// series from the chart's bars (the chart's own symbol).
 ///
-/// The result is a snapshot taken when the script is built: it does not tick with the market.
+/// The `request.security` result is a snapshot taken when the script is built: it does not tick with the
+/// market. A `request.security_lower_tf` series is a `PineIntrabarSeries`, which the chart tops up on each refresh.
 enum PineSecurityFeed {
     /// Candles asked for beyond what the chart's span needs, so an expression's own lookback is warm.
     static let warmupCandles = 300
@@ -29,13 +30,22 @@ enum PineSecurityFeed {
         let spacing = bars.count > 1 ? bars[1].openTime.timeIntervalSince(bars[0].openTime) : 0
         let span = Double(bars.count) * spacing
         var wanted: [(PineSecurityKey, PineSecurityTarget)] = []
+        var intrabars: [PineSecurityKey] = []
         for key in recorder.keys {
+            // The chart's own symbol on a bar length shorter than the chart's is `request.security_lower_tf`.
+            if spacing > 0, key.interval < spacing, key.symbol == chart.tickerID {
+                intrabars.append(key)
+                continue
+            }
             guard let target = PineSecurityTarget.resolve(key, chart: chart) else { continue }
             wanted.append((key, target))
         }
-        guard !wanted.isEmpty else { return nil }
-        let fetched = await fetch(wanted, chartSpan: span)
-        return fetched.series.isEmpty ? nil : fetched
+        guard !wanted.isEmpty || !intrabars.isEmpty else { return nil }
+        let fetched = wanted.isEmpty ? PineFetchedSecurityData() : await fetch(wanted, chartSpan: span)
+        guard !intrabars.isEmpty else { return fetched.series.isEmpty ? nil : fetched }
+        let series = PineIntrabarSeries(security: fetched, source: chart.source, apiSymbol: chart.apiSymbol)
+        await series.load(intrabars, bars: bars, spacing: spacing)
+        return series.isEmpty ? nil : series
     }
 
     /// Whether the script, or a library it imports, calls `request.security`.

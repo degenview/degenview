@@ -46,7 +46,8 @@ struct CandleChartView: View {
                 yZoom: yZoom,
                 scale: .currency,
                 yAxisDecimalPlaces: yAxisDecimalPlaces,
-                style: style
+                style: style,
+                scriptExtent: PineChartLayer.overlayExtent(of: pineOutputs, candles: candles, style: style)
             )
 
             let scripts = pineOutputs.map { PineChartLayer(pine: $0, candles: candles, style: style) }
@@ -66,9 +67,19 @@ struct CandleChartView: View {
                     if showVolume {
                         drawVolumeBars(context: &layer, plot: plot)
                     }
+                    // `behind_chart` (Pine's default) puts an overlay script's plots and drawings under the
+                    // candles; `plotcandle()` and trades always stay on top.
+                    for script in scripts where script.pine.overlay && script.pine.behindChart {
+                        script.drawVisuals(&layer, plot: plot, includingCandles: false)
+                    }
                     drawCandles(context: &layer, plot: plot, scripts: scripts)
                     for script in scripts where script.pine.overlay {
-                        script.drawForeground(&layer, plot: plot)
+                        if script.pine.behindChart {
+                            script.drawCandles(context: &layer, plot: plot)
+                            script.drawStrategyTrades(context: &layer, plot: plot)
+                        } else {
+                            script.drawForeground(&layer, plot: plot)
+                        }
                     }
 
                     // Price-scale overlays share the candles' clip: a zoomed-in

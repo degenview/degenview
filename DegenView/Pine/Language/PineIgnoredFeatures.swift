@@ -65,8 +65,9 @@ enum PineIgnoredFeatures {
                 "text_font_family": "Box text uses the default font.",
                 "text_formatting": "Box text has no bold or italic formatting.",
             ],
-            "polyline.new": ["curved": "The segments are drawn straight."],
-            "request.security": request,
+            "request.security": request.merging([
+                "calc_bars_count": "The whole history is always requested."
+            ]) { first, _ in first },
             "request.security_lower_tf": request,
         ]
         let marker = [
@@ -95,10 +96,7 @@ enum PineIgnoredFeatures {
     /// Pine constant.
     static let values: [String: [String: [String: String]]] = [
         "plot": [
-            "style": [
-                "plot.style_linebr": "Gaps are not broken; it is drawn as a plain line.",
-                "plot.style_stepline_diamond": "It is drawn as a plain line.",
-            ]
+            "style": ["plot.style_stepline_diamond": "It is drawn as a plain line."]
         ]
     ]
 
@@ -106,7 +104,6 @@ enum PineIgnoredFeatures {
     static let unimplementedVariable = "It is not modelled here, so it is always `na`."
 
     private static let declaration: [String: String] = [
-        "behind_chart": "Drawings are always painted above the candles.",
         "explicit_plot_zorder": "Plots and drawings are painted in the app's own order.",
         "scale": "The chart has one value axis, so the scale is not changed.",
     ]
@@ -126,14 +123,12 @@ enum PineIgnoredFeatures {
 
     private static let colorSeries: [String: String] = [
         "offset": "The colors are not shifted; each applies to the bar that produced it.",
-        "title": "The title is not listed anywhere.",
         "editable": "The color cannot be edited from the chart.",
         "show_last": "The colors are applied to every bar, not only the last ones.",
         "force_overlay": "The colors apply to the pane the script declares.",
     ]
 
     private static let request: [String: String] = [
-        "currency": "Prices are not converted to another currency.",
-        "calc_bars_count": "The whole history is always requested.",
+        "currency": "Prices are not converted to another currency."
     ]
 }

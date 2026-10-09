@@ -31,6 +31,27 @@ final class PineIgnoredFeatureTests: XCTestCase {
         XCTAssertTrue(warning.message.contains("solid"), "it says what happens instead: \(warning.message)")
     }
 
+    func testBgcolorAndBarcolorTitlesDoNotWarnBecauseTheStyleSectionListsThem() {
+        let program = compile(
+            """
+            bgcolor(color.red, title = "Zone")
+            barcolor(color.blue, title = "Bars")
+            """, header: "indicator(\"T\", overlay = true)")
+        XCTAssertEqual(warnings(program).count, 0, "\(program.diagnostics)")
+    }
+
+    func testBehindChartAndLowerTimeframeCalcBarsCountAreHonouredButSecurityStillWarns() {
+        let honoured = compile(
+            """
+            [c] = request.security_lower_tf(syminfo.tickerid, "1", [close], calc_bars_count = 10)
+            plot(array.size(c))
+            """, header: "indicator(\"T\", overlay = true, behind_chart = false)")
+        XCTAssertEqual(warnings(honoured).count, 0, "\(honoured.diagnostics)")
+        let ignored = compile(
+            "plot(request.security(syminfo.tickerid, \"60\", close, calc_bars_count = 10))")
+        XCTAssertEqual(warnings(ignored).map(\.code), ["PINE7001"])
+    }
+
     func testStrategyDeclarationAndOrderArgumentsWarn() {
         let program = compile(
             """
@@ -68,14 +89,14 @@ final class PineIgnoredFeatureTests: XCTestCase {
             //@version=6
             strategy("T")
             strategy.risk.max_drawdown(10, strategy.percent_of_equity)
-            plot(close, style = plot.style_linebr)
+            plot(close, style = plot.style_stepline_diamond)
             plot(syminfo.session == "regular" ? 1 : 0)
             """
         let program = PineCompiler.compile(source: source)
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let found = warnings(program)
         XCTAssertEqual(found.map(\.code), ["PINE7002", "PINE7004", "PINE7003"], "\(found)")
-        XCTAssertEqual(covered(found[1], in: source), "plot.style_linebr")
+        XCTAssertEqual(covered(found[1], in: source), "plot.style_stepline_diamond")
         XCTAssertEqual(covered(found[2], in: source), "syminfo.session")
     }
 

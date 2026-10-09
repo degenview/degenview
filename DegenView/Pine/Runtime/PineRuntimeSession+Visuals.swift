@@ -70,7 +70,7 @@ extension PineRuntimeSession {
         var marker =
             working.markers[site]
             ?? PineMarkerOutput(
-                id: site, kind: isShape ? .shape : .character, values: [],
+                id: site, kind: isShape ? .shape : .character, title: b["title"].textValue, values: [],
                 character: isShape ? nil : b["char"].textValue, color: color,
                 location: .parse(b["location"].textValue, absent: .abovebar),
                 style: .parse(b["style"].textValue, absent: .triangleup),
@@ -100,7 +100,9 @@ extension PineRuntimeSession {
         guard case .ref(.plot, let first)? = b["plot1"], case .ref(.plot, let second)? = b["plot2"] else {
             return .void
         }
-        var output = working.fills[site] ?? .init(id: site, plotA: first, plotB: second, colors: [])
+        var output =
+            working.fills[site]
+            ?? .init(id: site, plotA: first, plotB: second, colors: [], title: b["title"].textValue)
         if isGradient {
             output.colors.append(nil)
             output.gradients.append(gradient(b))
@@ -153,11 +155,11 @@ extension PineRuntimeSession {
     private func colorSeries(
         _ call: PineCall, _ site: Int, _ context: inout PineRuntimeContext
     ) throws -> PineRuntimeValue {
-        let b = try bind(call, ["color"], &context)
+        let b = try bind(call, ["color", "offset", "editable", "show_last", "title"], &context)
         let isBackground = call.name == "bgcolor"
         var output =
             (isBackground ? working.backgrounds[site] : working.barColors[site])
-            ?? .init(id: site, colors: [])
+            ?? .init(id: site, title: b["title"].textValue, colors: [])
         output.colors.append(Optional(b["color"] ?? .na).colorValue(fallback: nil))
         if isBackground { working.backgrounds[site] = output } else { working.barColors[site] = output }
         return .void
@@ -171,6 +173,7 @@ extension PineRuntimeSession {
         case "plot.style_area", "plot.style_areabr": .area
         case "plot.style_circles": .circles
         case "plot.style_cross": .cross
+        // `linebr` too: a line already ends at an `na` bar.
         default: .line
         }
     }

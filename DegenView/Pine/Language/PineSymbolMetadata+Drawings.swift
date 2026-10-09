@@ -66,6 +66,7 @@ extension PineSymbolMetadata {
         box.set_border_color(id: series box, color: series color) -> void :: Sets the border color.
         box.set_border_width(id: series box, width: series int) -> void :: Sets the border width.
         box.set_border_style(id: series box, style: series string) -> void :: Sets the border style.
+        box.set_extend(id: series box, extend: series string) -> void :: Sets how the box extends.
         box.set_text(id: series box, text: series string) -> void :: Sets the box text.
         box.set_text_color(id: series box, text_color: series color) -> void :: Sets the text color.
         box.set_text_size(id: series box, text_size: series string) -> void :: Sets the text size.

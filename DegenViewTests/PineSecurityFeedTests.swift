@@ -45,6 +45,15 @@ final class PineSecurityFeedTests: XCTestCase {
             ])
     }
 
+    func testALowerTimeframeRequestIsRecordedAtItsOwnLength() throws {
+        let keys = try recorded(
+            """
+            [o, c] = request.security_lower_tf(syminfo.tickerid, "12", [open, close])
+            plot(array.size(c))
+            """)
+        XCTAssertEqual(keys, [PineSecurityKey(symbol: chart.tickerID, interval: 720)])
+    }
+
     func testASymbolChosenByAnInputIsRecordedAsChosen() throws {
         let program = PineCompiler.compile(
             source: """

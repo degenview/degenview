@@ -8,8 +8,10 @@ extension PineChartLayer {
     func drawBoxes(context: inout GraphicsContext, plot: ChartPlot) {
         let slot = slotWidth(plot)
         for box in pine.boxes where box.isComplete {
-            let left = x(forBar: box.left, plot: plot, slot: slot)
-            let right = x(forBar: box.right, plot: plot, slot: slot)
+            var left = x(forBar: box.left, plot: plot, slot: slot)
+            var right = x(forBar: box.right, plot: plot, slot: slot)
+            if box.extend.extendsLeft { left = min(left, right) - plot.plotRect.width * 2 }
+            if box.extend.extendsRight { right = max(left, right) + plot.plotRect.width * 2 }
             let top = plot.y(for: box.top)
             let bottom = plot.y(for: box.bottom)
             let rect = CGRect(
@@ -70,13 +72,11 @@ extension PineChartLayer {
         guard !pine.polylines.isEmpty else { return }
         let slot = slotWidth(plot)
         for polyline in pine.polylines where polyline.points.count > 1 {
-            var path = Path()
-            for (offset, point) in polyline.points.enumerated() {
-                let location = CGPoint(
-                    x: x(forBar: point.index, plot: plot, slot: slot), y: plot.y(for: point.price))
-                if offset == 0 { path.move(to: location) } else { path.addLine(to: location) }
+            let locations = polyline.points.map {
+                CGPoint(x: x(forBar: $0.index, plot: plot, slot: slot), y: plot.y(for: $0.price))
             }
-            if polyline.closed { path.closeSubpath() }
+            let path = PineDrawingGeometry.polylinePath(
+                through: locations, curved: polyline.curved, closed: polyline.closed)
             if polyline.closed, let fill = polyline.fillColor {
                 context.fill(path, with: .color(Color(pineRGBA: fill)))
             }

@@ -478,6 +478,33 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(input.options, [.string("size.tiny"), .string("size.small"), .string("size.large")])
     }
 
+    func testBoxExtendAndTableCellAlignmentAndSizeAreStoredAndSettable() throws {
+        let program = compile(
+            """
+            var box b = box.new(0, 10.0, 3, 5.0, extend = extend.right)
+            var table t = table.new(position.top_right, 2, 1)
+            table.cell(t, 0, 0, "left top", width = 30, height = 10, text_halign = text.align_left,
+                 text_valign = text.align_top)
+            table.cell(t, 1, 0, "plain")
+            if bar_index == 1
+                box.set_extend(b, extend.both)
+            """)
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let first = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
+        XCTAssertEqual(first.boxes.first?.extend, .right)
+        let cells = try XCTUnwrap(first.tables.first?.cells)
+        let styled = try XCTUnwrap(cells.first { $0.column == 0 })
+        XCTAssertEqual(
+            [styled.textHorizontalAlign, styled.textVerticalAlign], [.left, .top])
+        XCTAssertEqual([styled.width, styled.height], [30, 10])
+        let plain = try XCTUnwrap(cells.first { $0.column == 1 })
+        XCTAssertEqual(
+            [plain.textHorizontalAlign, plain.textVerticalAlign], [.center, .center])
+        XCTAssertEqual([plain.width, plain.height], [0, 0])
+        let later = try PineRuntimeSession(program: program).evaluate(bars: bars([1, 2])).output
+        XCTAssertEqual(later.boxes.first?.extend, .both)
+    }
+
     func testBoxTextBorderStyleAndLabelAlignmentAreStoredAndSettable() throws {
         let program = compile(
             """
@@ -602,6 +629,18 @@ final class PineRegressionTests: XCTestCase {
         XCTAssertEqual(
             codes(compile("plot(close)", header: "indicator(\"T\", margin_top = 5)")), ["PINE9001"],
             "arguments that change behaviour stay unsupported")
+    }
+
+    func testBehindChartDefaultsToTrueForOverlaysAndFollowsTheDeclaration() throws {
+        func behind(_ header: String) throws -> Bool {
+            let program = compile("plot(close)", header: header)
+            XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+            return try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output.behindChart
+        }
+        XCTAssertTrue(try behind("indicator(\"T\", overlay = true)"))
+        XCTAssertTrue(try behind("indicator(\"T\", overlay = true, behind_chart = true)"))
+        XCTAssertFalse(try behind("indicator(\"T\", overlay = true, behind_chart = false)"))
+        XCTAssertFalse(try behind("indicator(\"T\")"), "it applies to overlays only")
     }
 
     func testStrategyMarginArgumentsAreAcceptedAndIgnored() {
@@ -873,15 +912,44 @@ final class PineRegressionTests: XCTestCase {
     func testPineVariablesThisReleaseDoesNotModelAreNa() throws {
         let program = compile(
             """
-            plot(na(chart.left_visible_bar_time) ? 1 : 0)
-            plot(na(chart.right_visible_bar_time) ? 1 : 0)
             plot(na(session.ismarket) ? 1 : 0)
             plot(na(syminfo.description) ? 1 : 0)
             plot(na(weekofyear) ? 1 : 0)
             """)
         XCTAssertTrue(program.isValid, "\(program.diagnostics)")
         let output = try PineRuntimeSession(program: program).evaluate(bars: bars([1])).output
-        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1], [1], [1]])
+        XCTAssertEqual(output.plots.map(\.values), [[1], [1], [1]])
+    }
+
+    func testVisibleBarTimesAreTheChartsWindowOrTheWholeRun() throws {
+        let program = compile("plot(chart.left_visible_bar_time)\nplot(chart.right_visible_bar_time)")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let series = bars([1, 2, 3, 4], spacing: 60)
+        let whole = try PineRuntimeSession(program: program).evaluate(bars: series).output
+        XCTAssertEqual(whole.plots.map { $0.values.last ?? nil }, [0, 180_000], "first and last bar, in ms")
+        let window = Date(timeIntervalSince1970: 60)...Date(timeIntervalSince1970: 120)
+        let shown = try PineRuntimeSession(program: program, visibleRange: window).evaluate(bars: series).output
+        XCTAssertEqual(
+            shown.plots.map(\.values),
+            [[60_000, 60_000, 60_000, 60_000], [120_000, 120_000, 120_000, 120_000]])
+    }
+
+    func testBaseCurrencyOfAPairAndNaWithoutOne() throws {
+        let program = compile("plot(str.length(syminfo.basecurrency))")
+        XCTAssertTrue(program.isValid, "\(program.diagnostics)")
+        let pair = PineSymbolInfo(ticker: "ETHUSDT", tickerID: "binance:ETHUSDT", baseCurrency: "ETH")
+        let output = try PineRuntimeSession(program: program, symbol: pair).evaluate(bars: bars([1])).output
+        XCTAssertEqual(output.plots.map(\.values), [[3]])
+        let none = try PineRuntimeSession(
+            program: compile("plot(na(syminfo.basecurrency) ? 1 : 0)")
+        ).evaluate(bars: bars([1])).output
+        XCTAssertEqual(none.plots.map(\.values), [[1]])
+        for (ticker, base) in [
+            ("BTCUSDT", "BTC"), ("BTC-USD", "BTC"), ("eth/usdc", "ETH"), ("SOLBTC", "SOL"), ("USDT", nil),
+            ("AAPL", nil),
+        ] {
+            XCTAssertEqual(PineSymbolInfo.baseCurrency(ofPair: ticker), base, ticker)
+        }
     }
 
     func testSymbolFactsAndHlcc4() throws {

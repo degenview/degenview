@@ -448,6 +448,19 @@ final class PineStrategyTests: XCTestCase {
         XCTAssertEqual((fill.gradients[1]?.bottomColor ?? 1) & 0xFF, 0)
     }
 
+    func testBgcolorAndBarcolorKeepTheirTitles() throws {
+        let output = try run(
+            """
+            //@version=6
+            indicator("Titles", overlay = true)
+            bgcolor(color.red, title = "Zone")
+            barcolor(color.blue, 0, true, na, "Trend")
+            """, bars: closes([1])
+        ).output
+        XCTAssertEqual(output.backgrounds.first?.title, "Zone")
+        XCTAssertEqual(output.barColors.first?.title, "Trend")
+    }
+
     func testPlotStylesMap() throws {
         let output = try run(
             """

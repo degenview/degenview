@@ -575,9 +575,8 @@ final class PineEngineTests: XCTestCase {
 
     func testStepRangeBreakoutScriptCompilesAndDraws() throws {
         let program = PineCompiler.compile(source: Self.stepRangeBreakoutSource)
-        // The script uses `plot.style_linebr`, which draws as a plain line and says so with a warning.
         XCTAssertEqual(program.diagnostics.filter { $0.severity == .error }, [])
-        XCTAssertEqual(Set(program.diagnostics.map(\.code)), ["PINE7004"])
+        XCTAssertEqual(program.diagnostics, [])
         XCTAssertEqual(program.inputSchema.inputs.count, 9)
 
         // Flat range long enough to confirm a zone, a bullish breakout, then a collapse

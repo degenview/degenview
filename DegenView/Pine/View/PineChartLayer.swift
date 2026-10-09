@@ -20,9 +20,18 @@ struct PineChartLayer {
 
     /// Above the candles, in the chart's deterministic draw order.
     func drawForeground(_ context: inout GraphicsContext, plot: ChartPlot) {
+        drawVisuals(&context, plot: plot)
+        drawStrategyTrades(context: &context, plot: plot)
+    }
+
+    /// Everything but the strategy's trade markers, which stay in front of the candles even when the
+    /// script's own plots and drawings sit behind them (`behind_chart`).
+    /// `plotcandle()` is left out when `includingCandles` is false: it recolors the real candles, so it
+    /// has to be drawn after them (`drawCandles`) whatever `behind_chart` says.
+    func drawVisuals(_ context: inout GraphicsContext, plot: ChartPlot, includingCandles: Bool = true) {
         drawFills(context: &context, plot: plot)
         drawBoxes(context: &context, plot: plot)
-        drawCandles(context: &context, plot: plot)
+        if includingCandles { drawCandles(context: &context, plot: plot) }
         drawPlots(context: &context, plot: plot)
         drawLinefills(context: &context, plot: plot)
         drawPolylines(context: &context, plot: plot)
@@ -30,7 +39,6 @@ struct PineChartLayer {
         drawHorizontalLines(context: &context, plot: plot)
         drawMarkers(context: &context, plot: plot)
         drawLabels(context: &context, plot: plot)
-        drawStrategyTrades(context: &context, plot: plot)
     }
 
     /// `barcolor()` for the candle at `index`, if the script set one.

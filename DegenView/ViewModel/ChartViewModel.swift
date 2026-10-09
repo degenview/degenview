@@ -261,6 +261,7 @@ final class ChartViewModel: ObservableObject {
     @Published private(set) var pineStatus = "No script applied"
     /// Resolves `chart.fg_color` / `chart.bg_color`; set by the card from its color scheme.
     private(set) var pineTheme: PineChartTheme = .dark
+    private var pineWindowTask: Task<Void, Never>?
     /// Feeds the chart's Pine host, one operation at a time and in order.
     private var pineFeed: AsyncStream<PineFeedOperation>.Continuation?
     private var pineFeedTask: Task<Void, Never>?
@@ -721,6 +722,28 @@ final class ChartViewModel: ObservableObject {
         return ScriptSourceHash.sha256(source)
     }
 
+    /// What a script reads through `syminfo.*` for this chart.
+    private func pineSymbolInfo(dataset: PineDatasetKey, source: DataSourceType) -> PineSymbolInfo {
+        let base: String?
+        switch source {
+        case .binance, .coinbase: base = PineSymbolInfo.baseCurrency(ofPair: ticker)
+        case .coingecko: base = ticker.isEmpty ? nil : ticker.uppercased()
+        default: base = nil
+        }
+        return PineSymbolInfo(
+            ticker: ticker, tickerID: dataset.symbolKey,
+            type: source == .alpaca ? "stock" : source.isPredictionMarket ? "prediction" : "crypto",
+            baseCurrency: base)
+    }
+
+    /// Open times of the first and last candle on screen, for `chart.left_visible_bar_time` and
+    /// `chart.right_visible_bar_time`.
+    private var pineVisibleRange: ClosedRange<Date>? {
+        let shown = visibleKlines
+        guard let first = shown.first?.openTime, let last = shown.last?.openTime, first <= last else { return nil }
+        return first...last
+    }
+
     /// The dataset a fetch for `range` fills.
     private func pineDataset(for range: TimeRange) -> PineDatasetKey {
         PineDatasetKey(symbolKey: "\(source.rawValue):\(ticker)", timeframe: range.rawValue)
@@ -743,9 +766,8 @@ final class ChartViewModel: ObservableObject {
         let dataset = pineDataset(for: requestedRange ?? .oneDay)
         let inputs = config.inputs
         let theme = pineTheme
-        let symbol = PineSymbolInfo(
-            ticker: ticker, tickerID: dataset.symbolKey,
-            type: self.source == .alpaca ? "stock" : self.source.isPredictionMarket ? "prediction" : "crypto")
+        let symbol = pineSymbolInfo(dataset: dataset, source: self.source)
+        let visibleRange = pineVisibleRange
         let securityChart = PineSecurityTarget.Chart(
             tickerID: dataset.symbolKey, source: self.source, apiSymbol: apiSymbol)
         let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
@@ -754,6 +776,7 @@ final class ChartViewModel: ObservableObject {
         pineFeedTask = Task.detached(priority: .userInitiated) { [weak self] in
             var compiled = supplied
             var host: PineExecutionHost?
+            var liveSecurity: PineSecurityDataProvider?
             for await operation in operations {
                 if Task.isCancelled { return }
                 var outcome: PineExecutionOutcome
@@ -766,12 +789,12 @@ final class ChartViewModel: ObservableObject {
                         host = nil
                         continue
                     }
-                    let securityData = await PineSecurityFeed.prepare(
+                    liveSecurity = await PineSecurityFeed.prepare(
                         program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
                         bars: bars)
                     let fresh = PineExecutionHost(
                         program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
-                        securityData: securityData)
+                        securityData: liveSecurity, visibleRange: visibleRange)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):
@@ -779,6 +802,8 @@ final class ChartViewModel: ObservableObject {
                     outcome = await host.ingest(update)
                 case .sync(let snapshot):
                     guard let host else { continue }
+                    // Intrabars for `request.security_lower_tf` follow the market with the chart's own refresh.
+                    await (liveSecurity as? PineIntrabarSeries)?.refresh()
                     outcome = await host.sync(snapshot: snapshot)
                 }
                 guard let program = compiled else { continue }
@@ -891,6 +916,17 @@ final class ChartViewModel: ObservableObject {
         // No rebuild — rendering reads `isVisible` directly; the runtime keeps ticking.
     }
 
+    /// Replaces one instance's Style choices (see `PineStyleOverrides`). Choices that match no output of
+    /// the script's current result are dropped. No rebuild: rendering applies them to the output.
+    func setPineInstanceStyle(_ id: UUID, overrides: [String: String]) {
+        guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
+        var kept = overrides
+        if let result = pineResults[id], result.state == .ready {
+            kept = PineStyleOverrides.pruned(overrides, keeping: PineStyleRows.rows(for: result.output))
+        }
+        scriptInstances[index].styleOverrides = kept
+    }
+
     /// Replaces one instance's inputs and rebuilds just that instance.
     func setPineInstanceInputs(_ id: UUID, inputs: [String: PineInputValue]) {
         guard let index = scriptInstances.firstIndex(where: { $0.id == id }) else { return }
@@ -950,9 +986,8 @@ final class ChartViewModel: ObservableObject {
         let dataset = pineDataset(for: requestedRange ?? .oneDay)
         let inputs = instance.inputs
         let theme = pineTheme
-        let symbol = PineSymbolInfo(
-            ticker: ticker, tickerID: dataset.symbolKey,
-            type: source == .alpaca ? "stock" : source.isPredictionMarket ? "prediction" : "crypto")
+        let symbol = pineSymbolInfo(dataset: dataset, source: source)
+        let visibleRange = pineVisibleRange
         let securityChart = PineSecurityTarget.Chart(
             tickerID: dataset.symbolKey, source: source, apiSymbol: apiSymbol)
         let (operations, feed) = AsyncStream.makeStream(of: PineFeedOperation.self)
@@ -962,6 +997,7 @@ final class ChartViewModel: ObservableObject {
         runtime.feedTask = Task.detached(priority: .userInitiated) { [weak self] in
             var compiled = supplied
             var host: PineExecutionHost?
+            var liveSecurity: PineSecurityDataProvider?
             let resolvedSource: String
             if let suppliedSource {
                 resolvedSource = suppliedSource
@@ -991,12 +1027,12 @@ final class ChartViewModel: ObservableObject {
                         host = nil
                         continue
                     }
-                    let securityData = await PineSecurityFeed.prepare(
+                    liveSecurity = await PineSecurityFeed.prepare(
                         program: program, inputs: inputs, theme: theme, symbol: symbol, chart: securityChart,
                         bars: bars)
                     let fresh = PineExecutionHost(
                         program: program, dataset: dataset, inputs: inputs, theme: theme, symbol: symbol,
-                        securityData: securityData)
+                        securityData: liveSecurity, visibleRange: visibleRange)
                     host = fresh
                     outcome = await fresh.rebuild(bars: bars, live: live)
                 case .ingest(let update):
@@ -1004,6 +1040,8 @@ final class ChartViewModel: ObservableObject {
                     outcome = await host.ingest(update)
                 case .sync(let snapshot):
                     guard let host else { continue }
+                    // Intrabars for `request.security_lower_tf` follow the market with the chart's own refresh.
+                    await (liveSecurity as? PineIntrabarSeries)?.refresh()
                     outcome = await host.sync(snapshot: snapshot)
                 }
                 guard let program = compiled else { continue }
@@ -1102,7 +1140,9 @@ final class ChartViewModel: ObservableObject {
     /// Every visible instance's latest output, in `scriptInstances` order — later instances
     /// composite on top, matching TradingView's "last added on top".
     var visiblePineOutputs: [PineVisualOutput] {
-        scriptInstances.filter(\.isVisible).compactMap { pineResults[$0.id]?.output }
+        scriptInstances.filter(\.isVisible).compactMap {
+            pineResults[$0.id]?.output.applying(styleOverrides: $0.styleOverrides)
+        }
     }
 
     /// The subset that draws in its own pane under the candles (`overlay == false`).
@@ -1157,8 +1197,18 @@ final class ChartViewModel: ObservableObject {
             size: size,
             yZoom: yZoom,
             scale: priceScale,
-            yAxisDecimalPlaces: yAxisDecimalPlaces
+            yAxisDecimalPlaces: yAxisDecimalPlaces,
+            // The candle chart draws overlay scripts and makes room for what they draw; the line chart draws none.
+            scriptExtent: usesLineChart
+                ? .none
+                : PineChartLayer.overlayExtent(of: visiblePineOutputs, candles: visibleKlines, style: .default)
         )
+    }
+
+    /// Slots the candle chart reserves right of the last candle for what `outputs` draw there.
+    func pineFutureSlots(of outputs: [PineVisualOutput]) -> Int {
+        usesLineChart
+            ? 0 : PineChartLayer.overlayExtent(of: outputs, candles: visibleKlines, style: .default).futureBars
     }
 
     /// Convert a click into a time+price anchor that survives zoom and timeframe changes.
@@ -1839,6 +1889,28 @@ final class ChartViewModel: ObservableObject {
         let wanted = Swift.max(1, count)
         guard wanted != visibleCount else { return }
         visibleCount = wanted
+        schedulePineWindowRefresh()
+    }
+
+    private static let visibleTimeNames = ["chart.left_visible_bar_time", "chart.right_visible_bar_time"]
+
+    /// A script that reads the visible bars' times follows the zoom: rebuilt once the zoom settles. Other
+    /// scripts do not depend on the window and are left alone.
+    private func schedulePineWindowRefresh() {
+        func reads(_ source: String?) -> Bool {
+            guard let source else { return false }
+            return Self.visibleTimeNames.contains { source.contains($0) }
+        }
+        let instances = scriptInstances.map(\.id).filter { reads(pineRuntimes[$0]?.resolvedSource) }
+        let primary = reads(pineConfiguration?.appliedSource)
+        guard primary || !instances.isEmpty else { return }
+        pineWindowTask?.cancel()
+        pineWindowTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            if primary { self.reevaluatePine() }
+            for id in instances { self.reevaluatePineInstance(id) }
+        }
     }
 
     /// Candles to request for a visible window of `count`.
