@@ -169,6 +169,12 @@ certificate and key), `MACOS_CERT_PASSWORD`, `MACOS_CODESIGN_IDENTITY`,
 `MACOS_PROFILE_HELPER` (base64 provisioning profiles), and an App Store Connect API key
 for `notarytool`: `ASC_KEY_P8` (base64 `.p8`), `ASC_KEY_ID`, `ASC_ISSUER_ID`.
 
+iCloud Sync is opt-in at build time: `DEGENVIEW_ICLOUD=1 ./tools/bundle.sh` compiles the CloudKit
+bridge (macOS with the Xcode command line tools) and signs the app with iCloud entitlements, which
+needs the App ID, container and provisioning profile described in
+[docs/icloud-sync.md](docs/icloud-sync.md). Run `tools/verify-icloud.sh target/DegenView.app` on the
+result. Without the variable nothing changes.
+
 On Linux the release tarball ships a `degenview.desktop` launcher and `degenview.png` icon. To
 get a launcher and dock icon, install them:
 

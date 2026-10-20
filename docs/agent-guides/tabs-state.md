@@ -8,7 +8,9 @@
   hidden tabs suspend. Stores and portfolio/paper/alert/webhook/Pine hosts are shared `Arc<Mutex>`;
   presentation state is per tab/window.
 - Saved-layout dirty state is a `LayoutSnapshot` fingerprint, not a flag. It covers timeframe,
-  chart configs, and columns—not zoom, drawings, replay, or market data. `store::saved_view` owns
+  chart configs, and columns—not zoom, drawings, replay, or market data. (An Autosave layout also
+  writes on a drawing-only edit, via `ChartWorkspace::drawings_dirty`, so drawings reach iCloud
+  Sync; the toolbar's unsaved state still ignores them.) `store::saved_view` owns
   the library; the workspace owns the active layout. Named layouts autosave after two seconds and
   flush before switch/quit; Unnamed never autosaves.
 - Tab title is focused-chart title, then active-layout name, then “New tab”. Session persistence is

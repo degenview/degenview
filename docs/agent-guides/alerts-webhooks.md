@@ -3,7 +3,12 @@
 ## Alerts
 
 - `AlertHost` is the in-app price-alert owner: it loads persistence, drains `alert_command`, and
-  exposes the evaluated snapshot. There is no separate login-item alert agent yet.
+  exposes the evaluated snapshot. The embedded login-item alert agent (`alert_runtime`) runs the
+  same host while the app is closed; exactly one process owns evaluation (a file lock).
+- iCloud Sync: only an alert's definition syncs. Remote changes arrive as `alert_command`s, never
+  table writes. An alert synced from another Mac is *muted* here (`price_alert_local`,
+  `AlertEngine::set_muted`): defined but neither polled nor evaluated, so it notifies from one
+  Mac. Keep runtime fields out of `sync::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag; snapshot replacement rewrites
   events. `ui::alert_banner` appears over every workspace.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
