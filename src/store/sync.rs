@@ -9,6 +9,8 @@ use super::Store;
 use crate::sync::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy};
 use crate::sync::project::{Projected, project_row, project_setting};
 use rusqlite::{OptionalExtension, params};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::collections::HashSet;
 
@@ -687,7 +689,8 @@ impl Store {
     ) -> rusqlite::Result<Option<EntityMeta>> {
         self.connection
             .query_row(
-                "SELECT logical_revision, origin_device, synced_hash, system_fields, deleted, deleted_ms
+                "SELECT logical_revision, origin_device, synced_hash, system_fields, deleted, deleted_ms,
+                    base_payload
                  FROM sync_entity WHERE entity_type = ?1 AND sync_id = ?2",
                 params![kind.prefix(), sync_id],
                 |row| {
@@ -698,6 +701,7 @@ impl Store {
                         system_fields: row.get(3)?,
                         deleted: row.get(4)?,
                         deleted_ms: row.get(5)?,
+                        base_payload: row.get(6)?,
                     })
                 },
             )
@@ -904,11 +908,202 @@ impl Store {
         )
     }
 
-    fn in_savepoint(
+    // MARK: Applying remote changes
+
+    /// Every row of a synced table as JSON, in order. A row that is not JSON fails the read: a
+    /// collection with an unreadable row must never be rewritten.
+    pub fn raw_rows(&self, table: &str) -> rusqlite::Result<Vec<Value>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!("SELECT payload FROM {table} ORDER BY position"))?;
+        let payloads = statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        payloads
+            .into_iter()
+            .map(|payload| {
+                serde_json::from_str(&payload)
+                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+            })
+            .collect()
+    }
+
+    /// Replaces a synced table with `rows`, through the same tracked path as every other write.
+    /// Refuses unless every existing row, and every new row, decodes as the table's model: this
+    /// version must never write something it cannot read back, nor overwrite what a newer
+    /// version wrote.
+    pub fn write_raw_rows(&self, table: &str, rows: &[Value]) -> rusqlite::Result<()> {
+        let unreadable = |reason: &str| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(format!(
+                "{table}: {reason}"
+            ))))
+        };
+        for existing in self.raw_rows(table)? {
+            if !row_decodes(table, &existing.to_string()) {
+                return Err(unreadable("an existing row cannot be decoded"));
+            }
+        }
+        if rows.iter().any(|row| !row_decodes(table, &row.to_string())) {
+            return Err(unreadable("a new row cannot be decoded"));
+        }
+        let docs: Vec<RawDoc> = rows.iter().cloned().map(RawDoc).collect();
+        self.replace_documents(table, &docs)
+    }
+
+    pub fn raw_setting(&self, key: &str) -> rusqlite::Result<Option<Value>> {
+        self.connection
+            .query_row("SELECT value FROM setting WHERE key = ?1", [key], |row| {
+                row.get::<_, String>(0)
+            })
+            .optional()?
+            .map(|text| {
+                serde_json::from_str(&text)
+                    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+            })
+            .transpose()
+    }
+
+    /// Writes or clears a setting through the tracked path.
+    pub fn write_raw_setting(&self, key: &str, value: Option<&Value>) -> rusqlite::Result<()> {
+        self.write_setting(key, value.map(Value::to_string).as_deref())
+    }
+
+    /// Records that the cloud holds exactly `link.synced_hash` for this entity, so writing that
+    /// content locally is not an edit.
+    pub fn link_entity(&self, link: &EntityLink) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO sync_entity
+                (entity_type, sync_id, local_id, logical_revision, origin_device, synced_hash,
+                 base_payload, system_fields, cloud_modified_ms, deleted, deleted_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 0, NULL)
+             ON CONFLICT (entity_type, sync_id) DO UPDATE SET
+                local_id = excluded.local_id,
+                logical_revision = MAX(logical_revision, excluded.logical_revision),
+                synced_hash = excluded.synced_hash,
+                base_payload = excluded.base_payload,
+                system_fields = excluded.system_fields,
+                cloud_modified_ms = excluded.cloud_modified_ms,
+                deleted = 0, deleted_ms = NULL",
+            params![
+                link.kind.prefix(),
+                link.sync_id,
+                link.local_id,
+                link.revision,
+                link.origin_device,
+                link.synced_hash,
+                link.base_payload,
+                link.system_fields,
+                link.now_ms
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// The entity is gone locally and in the cloud.
+    pub fn tombstone_entity(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+        local_id: &str,
+        now_ms: i64,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO sync_entity
+                (entity_type, sync_id, local_id, logical_revision, origin_device, deleted, deleted_ms)
+             VALUES (?1, ?2, ?3, 1, '', 1, ?4)
+             ON CONFLICT (entity_type, sync_id) DO UPDATE SET
+                synced_hash = NULL, system_fields = NULL, base_payload = NULL,
+                deleted = 1, deleted_ms = excluded.deleted_ms",
+            params![kind.prefix(), sync_id, local_id, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Forgets what the cloud holds for an entity that must be uploaded again as new.
+    pub fn forget_synced(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_entity SET synced_hash = NULL, system_fields = NULL, base_payload = NULL,
+                deleted = 0, deleted_ms = NULL WHERE entity_type = ?1 AND sync_id = ?2",
+            params![kind.prefix(), sync_id],
+        )?;
+        Ok(())
+    }
+
+    /// Queues an upload for an entity by identity, for callers that already changed the row.
+    pub fn queue_entity_upsert(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+        local_id: &str,
+    ) -> rusqlite::Result<()> {
+        let Some(state) = self.sync_state()? else {
+            return Ok(());
+        };
+        let stub = Projected {
+            kind,
+            sync_id: sync_id.to_string(),
+            local_id: local_id.to_string(),
+            payload: Vec::new(),
+            hash: String::new(),
+        };
+        self.queue_upsert(&stub, &state.device_id)
+    }
+
+    pub fn outbox_entry(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+    ) -> rusqlite::Result<Option<OutboxRow>> {
+        Ok(self
+            .outbox()?
+            .into_iter()
+            .find(|row| row.kind == kind && row.sync_id == sync_id))
+    }
+
+    pub fn cancel_outbox(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "DELETE FROM sync_outbox WHERE entity_type = ?1 AND sync_id = ?2",
+            params![kind.prefix(), sync_id],
+        )?;
+        Ok(())
+    }
+
+    /// Notes a conflict the user may want to look at; both versions stay recoverable.
+    pub fn record_conflict(&self, conflict: &ConflictRecord, now_ms: i64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO sync_conflict
+                (entity_type, sync_id, kind, local_payload, remote_payload, remote_device,
+                 copy_entity_type, copy_sync_id, created_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                conflict.entity.prefix(),
+                conflict.sync_id,
+                conflict.kind,
+                conflict.local_payload,
+                conflict.remote_payload,
+                conflict.remote_device,
+                conflict.copy_entity.map(EntityKind::prefix),
+                conflict.copy_sync_id,
+                now_ms
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn conflicts(&self) -> rusqlite::Result<Vec<(String, String, String)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT entity_type, sync_id, kind FROM sync_conflict WHERE resolved_ms IS NULL ORDER BY id",
+        )?;
+        statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect()
+    }
+
+    pub(crate) fn in_savepoint<R>(
         &self,
         name: &str,
-        f: impl FnOnce() -> rusqlite::Result<()>,
-    ) -> rusqlite::Result<()> {
+        f: impl FnOnce() -> rusqlite::Result<R>,
+    ) -> rusqlite::Result<R> {
         self.connection
             .execute_batch(&format!("SAVEPOINT {name}"))?;
         let result = f();
@@ -933,6 +1128,65 @@ pub struct InboxRecord {
     pub system_fields: Option<Vec<u8>>,
 }
 
+/// What the cloud holds for an entity after a remote record was applied locally.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityLink {
+    pub kind: EntityKind,
+    pub sync_id: String,
+    pub local_id: String,
+    pub synced_hash: String,
+    pub system_fields: Vec<u8>,
+    pub base_payload: Option<Vec<u8>>,
+    pub revision: i64,
+    pub origin_device: String,
+    pub now_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictRecord {
+    pub entity: EntityKind,
+    pub sync_id: String,
+    pub kind: String,
+    pub local_payload: Option<Vec<u8>>,
+    pub remote_payload: Option<Vec<u8>>,
+    pub remote_device: Option<String>,
+    pub copy_entity: Option<EntityKind>,
+    pub copy_sync_id: Option<String>,
+}
+
+/// A row of a synced table as raw JSON. Ids come from the row's own `id` field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RawDoc(pub Value);
+
+impl super::Document for RawDoc {
+    fn document_id(&self) -> String {
+        match self.0.get("id") {
+            Some(Value::String(text)) => text.clone(),
+            Some(other) => other.to_string(),
+            None => String::new(),
+        }
+    }
+}
+
+/// Whether this version can read a row of `table`. A write must never produce, or silently
+/// overwrite, a row the app's own model would refuse.
+pub fn row_decodes(table: &str, payload: &str) -> bool {
+    use crate::model;
+    match table {
+        "watchlist" => serde_json::from_str::<model::watchlist::Watchlist>(payload).is_ok(),
+        "saved_view" => serde_json::from_str::<model::SavedView>(payload).is_ok(),
+        "chart_template" => {
+            serde_json::from_str::<model::chart_template::ChartAppearanceTemplate>(payload).is_ok()
+        }
+        "drawing_template" => {
+            serde_json::from_str::<model::drawing_template::DrawingTemplate>(payload).is_ok()
+        }
+        "price_alert" => serde_json::from_str::<model::alert::PriceAlert>(payload).is_ok(),
+        _ => false,
+    }
+}
+
 /// The result of loading an outbox entry's live entity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Load {
@@ -952,6 +1206,8 @@ pub struct EntityMeta {
     pub system_fields: Option<Vec<u8>>,
     pub deleted: bool,
     pub deleted_ms: Option<i64>,
+    /// The last payload both sides agreed on, kept for kinds that merge three ways.
+    pub base_payload: Option<Vec<u8>>,
 }
 
 /// What a reconcile pass queued.

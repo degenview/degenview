@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-struct Raw(Value);
+pub(super) struct Raw(pub(super) Value);
 
 impl Document for Raw {
     fn document_id(&self) -> String {
@@ -26,25 +26,28 @@ impl Document for Raw {
     }
 }
 
-fn list(id: u64, name: &str) -> Raw {
+pub(super) fn list(id: u64, name: &str) -> Raw {
     Raw(json!({"id": id, "name": name, "entries": [], "is_favorites": false}))
 }
 
-struct Mac {
-    store: SharedStore,
-    core: SyncCore<MockTransport>,
-    now: Arc<AtomicI64>,
-    batches: Vec<RemoteBatch>,
-    effects: Vec<Effect>,
-    hold_applies: bool,
-    unapplied: Vec<u64>,
+pub(super) struct Mac {
+    pub(super) store: SharedStore,
+    pub(super) core: SyncCore<MockTransport>,
+    pub(super) now: Arc<AtomicI64>,
+    pub(super) batches: Vec<RemoteBatch>,
+    pub(super) effects: Vec<Effect>,
+    pub(super) hold_applies: bool,
+    pub(super) unapplied: Vec<u64>,
+    /// Apply fetched changes to the store for real, as the app does.
+    pub(super) apply: bool,
+    pub(super) reports: Vec<super::apply::ApplyReport>,
 }
 
-fn mac(cloud: &MockCloud, name: &str, user: &str, bound: Option<&str>) -> Mac {
+pub(super) fn mac(cloud: &MockCloud, name: &str, user: &str, bound: Option<&str>) -> Mac {
     mac_with(cloud, name, user, bound, true)
 }
 
-fn mac_with(
+pub(super) fn mac_with(
     cloud: &MockCloud,
     name: &str,
     user: &str,
@@ -72,11 +75,13 @@ fn mac_with(
         effects: Vec::new(),
         hold_applies: false,
         unapplied: Vec::new(),
+        apply: false,
+        reports: Vec::new(),
     }
 }
 
 impl Mac {
-    fn lists(&self, rows: &[(u64, &str)]) {
+    pub(super) fn lists(&self, rows: &[(u64, &str)]) {
         let docs: Vec<_> = rows.iter().map(|(id, name)| list(*id, name)).collect();
         self.store
             .lock()
@@ -85,16 +90,16 @@ impl Mac {
             .unwrap();
     }
 
-    fn advance(&self, ms: i64) {
+    pub(super) fn advance(&self, ms: i64) {
         self.now.fetch_add(ms, Ordering::Relaxed);
     }
 
-    fn start(&mut self) {
+    pub(super) fn start(&mut self) {
         self.core.start();
         self.run();
     }
 
-    fn deliver(&mut self, event: TransportEvent) {
+    pub(super) fn deliver(&mut self, event: TransportEvent) {
         let effects = self.core.handle(event);
         for effect in effects {
             if let Effect::RemoteChanges(batch) = &effect {
@@ -102,6 +107,10 @@ impl Mac {
                 if self.hold_applies {
                     self.unapplied.push(batch.id);
                 } else {
+                    if self.apply {
+                        let report = self.apply_to_store(batch);
+                        self.reports.push(report);
+                    }
                     self.core.remote_applied(batch.id);
                 }
             }
@@ -111,7 +120,7 @@ impl Mac {
     }
 
     /// Delivers events until the transport is quiet, ticking first.
-    fn run(&mut self) {
+    pub(super) fn run(&mut self) {
         self.core.tick();
         for _ in 0..200 {
             let events = self.core.transport_mut().take_events();
@@ -125,7 +134,19 @@ impl Mac {
         panic!("sync did not settle");
     }
 
-    fn apply_held(&mut self) {
+    pub(super) fn apply_to_store(&mut self, batch: &RemoteBatch) -> super::apply::ApplyReport {
+        let state = self.store.lock().unwrap().sync_state().unwrap().unwrap();
+        let ctx = super::apply::ApplyCtx {
+            device_id: state.device_id,
+            device_name: state.device_name,
+            now_ms: self.now.load(Ordering::Relaxed),
+            date: "2026-10-20".into(),
+        };
+        let store = self.store.lock().unwrap();
+        super::apply::apply_batch(&store, batch, &ctx).unwrap()
+    }
+
+    pub(super) fn apply_held(&mut self) {
         for id in std::mem::take(&mut self.unapplied) {
             self.core.remote_applied(id);
         }
@@ -133,7 +154,7 @@ impl Mac {
     }
 
     /// The status is never "up to date" while anything waits to upload or is in flight.
-    fn check_invariant(&self) {
+    pub(super) fn check_invariant(&self) {
         let status = self.core.status();
         if status.phase == Phase::UpToDate {
             assert_eq!(status.pending, 0, "UpToDate with pending changes");
@@ -150,16 +171,22 @@ impl Mac {
         }
     }
 
-    fn outbox(&self) -> Vec<crate::store::sync::OutboxRow> {
+    pub(super) fn outbox(&self) -> Vec<crate::store::sync::OutboxRow> {
         self.store.lock().unwrap().outbox().unwrap()
     }
 
-    fn phase(&self) -> Phase {
+    pub(super) fn phase(&self) -> Phase {
         self.core.status().phase
     }
 }
 
-fn raw(name: &str, payload: &Value, revision: u64, modified_ms: i64, device: &str) -> RawRecord {
+pub(super) fn raw(
+    name: &str,
+    payload: &Value,
+    revision: u64,
+    modified_ms: i64,
+    device: &str,
+) -> RawRecord {
     RawRecord {
         name: name.to_string(),
         schema_version: SCHEMA_VERSION,
@@ -171,13 +198,13 @@ fn raw(name: &str, payload: &Value, revision: u64, modified_ms: i64, device: &st
     }
 }
 
-fn canonical(id: u64, name: &str) -> Vec<u8> {
+pub(super) fn canonical(id: u64, name: &str) -> Vec<u8> {
     project_row("watchlist", &id.to_string(), &list(id, name).0.to_string())[0]
         .payload
         .clone()
 }
 
-fn payload_name(cloud: &MockCloud, record: &str) -> Option<String> {
+pub(super) fn payload_name(cloud: &MockCloud, record: &str) -> Option<String> {
     let raw = cloud.record(record)?;
     let value: Value = serde_json::from_slice(&raw.payload).ok()?;
     value["name"].as_str().map(String::from)
