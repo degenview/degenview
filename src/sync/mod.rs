@@ -5,3 +5,5 @@
 #![allow(dead_code)]
 
 pub mod policy;
+pub mod record;
+pub mod validate;
