@@ -1005,3 +1005,303 @@ fn an_unreadable_future_drawing_travels_untouched() {
         "the future drawing is preserved exactly"
     );
 }
+
+// MARK: Alerts
+
+use crate::model::alert::{
+    AlertAsset, AlertCondition, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
+    MarketQuote, PriceAlert,
+};
+use crate::model::alert_engine::AlertEngine;
+
+const T0: i64 = 1_700_000_000_000;
+
+fn btc() -> AlertAsset {
+    AlertAsset::new(
+        InstrumentId::new(DataSource::Binance, "btcusdt"),
+        "BTC",
+        "Bitcoin",
+    )
+}
+
+fn quote(price: f64, at: i64, fingerprint: &str) -> MarketQuote {
+    MarketQuote {
+        asset: btc(),
+        price,
+        currency: crate::model::alert::AlertCurrency::default(),
+        source_timestamp_ms: at,
+        received_at_ms: at,
+        maximum_age_secs: 60.0,
+        fingerprint: fingerprint.into(),
+        candle: None,
+    }
+}
+
+/// What the process that owns alert evaluation does each second: apply queued commands, honour
+/// the per-Mac "not evaluated here" flags, and save the snapshot. Returns the engine.
+fn owner_tick(mac: &Mac, now: i64) -> AlertEngine {
+    let store = mac.store.lock().unwrap();
+    let mut engine = AlertEngine::new(store.load_alert_snapshot().unwrap());
+    engine.set_muted(store.muted_alerts());
+    let commands = store.pending_alert_commands();
+    for command in &commands {
+        engine.apply(command, now);
+    }
+    let ids: Vec<u64> = commands.iter().map(|c| c.id).collect();
+    store
+        .save_alert_snapshot_and_acknowledge(engine.snapshot(), &ids)
+        .unwrap();
+    engine
+}
+
+fn send_command(mac: &Mac, payload: AlertRuntimeCommandPayload) {
+    let command = AlertRuntimeCommand::new(payload, T0);
+    mac.store
+        .lock()
+        .unwrap()
+        .enqueue_alert_command(&command)
+        .unwrap();
+}
+
+fn create_alert(mac: &Mac, target: f64) -> u64 {
+    let alert = PriceAlert::new(btc(), AlertCondition::CrossesAbove { target }, T0);
+    let id = alert.id;
+    send_command(
+        mac,
+        AlertRuntimeCommandPayload::Save {
+            alert: Box::new(alert),
+            baseline: Some(90.0),
+        },
+    );
+    owner_tick(mac, T0);
+    id
+}
+
+/// Lets both Macs sync, with each running its alert owner between rounds.
+fn settle_with_alerts(a: &mut Mac, b: &mut Mac) {
+    for _ in 0..4 {
+        settle(a, b);
+        owner_tick(a, T0 + 1);
+        owner_tick(b, T0 + 1);
+    }
+    settle(a, b);
+}
+
+fn alerts_on(mac: &Mac) -> Vec<PriceAlert> {
+    mac.store
+        .lock()
+        .unwrap()
+        .load_alert_snapshot()
+        .unwrap()
+        .map(|s| s.alerts)
+        .unwrap_or_default()
+}
+
+#[test]
+fn an_alert_arrives_on_the_other_mac_defined_but_switched_off() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let id = create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+
+    let on_b = alerts_on(&b);
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(on_b[0].id, id);
+    assert_eq!(
+        on_b[0].state,
+        AlertState::Active,
+        "the definition says active"
+    );
+    let store = b.store.lock().unwrap();
+    assert_eq!(
+        store.alert_local(&id.to_string()).unwrap(),
+        Some((false, "remote".into()))
+    );
+    assert!(store.muted_alerts().contains(&id));
+    drop(store);
+    // Applying must not echo back, and the alert owner's rewrite must not either.
+    assert_eq!(outbox_len(&b), 0);
+    assert_eq!(outbox_len(&a), 0);
+    // A still evaluates its own alert.
+    assert!(
+        a.store
+            .lock()
+            .unwrap()
+            .alert_local(&id.to_string())
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn a_switched_off_alert_does_not_fire_on_the_receiving_mac_and_can_be_switched_on() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let id = create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+
+    let mut engine = owner_tick(&b, T0 + 2);
+    assert!(
+        engine
+            .process(&quote(90.0, T0 + 3, "q1"), None, None)
+            .is_empty()
+    );
+    assert!(
+        engine
+            .process(&quote(120.0, T0 + 4, "q2"), None, None)
+            .is_empty(),
+        "muted: no event"
+    );
+    assert!(engine.active_assets().is_empty());
+
+    // The user switches it on here: a per-Mac choice that never syncs.
+    b.store
+        .lock()
+        .unwrap()
+        .set_alert_local(&id.to_string(), true, "remote")
+        .unwrap();
+    let mut engine = owner_tick(&b, T0 + 5);
+    assert_eq!(engine.active_assets().len(), 1);
+    assert!(
+        engine
+            .process(&quote(150.0, T0 + 6, "q3"), None, None)
+            .is_empty(),
+        "first quote sets the side"
+    );
+    assert_eq!(outbox_len(&b), 0, "switching on is not an edit");
+}
+
+#[test]
+fn alert_runtime_progress_never_uploads() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+    let saves = cloud.save_attempts();
+    // A's alert crosses, fires, and is spent; the engine rewrites its runtime fields.
+    let mut engine = owner_tick(&a, T0 + 10);
+    engine.process(&quote(90.0, T0 + 11, "r1"), None, None);
+    let fired = engine.process(&quote(101.0, T0 + 12, "r2"), None, None);
+    assert_eq!(fired.len(), 1);
+    a.store
+        .lock()
+        .unwrap()
+        .save_alert_snapshot_and_acknowledge(engine.snapshot(), &[])
+        .unwrap();
+    settle_with_alerts(&mut a, &mut b);
+    assert_eq!(
+        cloud.save_attempts(),
+        saves,
+        "firing is local progress, not an edit"
+    );
+    assert_eq!(alerts_on(&a)[0].state, AlertState::Triggered);
+    assert_eq!(alerts_on(&b)[0].state, AlertState::Active);
+}
+
+#[test]
+fn pausing_an_alert_pauses_it_on_the_other_mac() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let id = create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+    send_command(
+        &a,
+        AlertRuntimeCommandPayload::SetState {
+            id,
+            state: AlertState::Paused,
+            baseline: None,
+        },
+    );
+    settle_with_alerts(&mut a, &mut b);
+    assert_eq!(alerts_on(&b)[0].state, AlertState::Paused);
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn editing_an_alert_target_updates_the_other_mac() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let id = create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+    let mut edited = alerts_on(&a).remove(0);
+    edited.condition = AlertCondition::CrossesAbove { target: 250.0 };
+    send_command(
+        &a,
+        AlertRuntimeCommandPayload::Save {
+            alert: Box::new(edited),
+            baseline: None,
+        },
+    );
+    settle_with_alerts(&mut a, &mut b);
+    let on_b = alerts_on(&b);
+    assert_eq!(on_b[0].id, id);
+    assert_eq!(
+        on_b[0].condition,
+        AlertCondition::CrossesAbove { target: 250.0 }
+    );
+    assert!(
+        b.store.lock().unwrap().muted_alerts().contains(&id),
+        "still off on B"
+    );
+}
+
+#[test]
+fn deleting_an_alert_deletes_it_on_the_other_mac() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let id = create_alert(&a, 100.0);
+    settle_with_alerts(&mut a, &mut b);
+    send_command(&a, AlertRuntimeCommandPayload::Delete(id));
+    settle_with_alerts(&mut a, &mut b);
+    assert!(alerts_on(&a).is_empty());
+    assert!(alerts_on(&b).is_empty());
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .alert_local(&id.to_string())
+            .unwrap()
+            .is_none()
+    );
+    assert!(!cloud.names().iter().any(|n| n.starts_with("alert.")));
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn an_alert_made_on_each_mac_stays_active_where_it_was_made() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let on_a = create_alert(&a, 100.0);
+    let on_b = create_alert(&b, 200.0);
+    settle_with_alerts(&mut a, &mut b);
+    assert_eq!(alerts_on(&a).len(), 2);
+    assert_eq!(alerts_on(&b).len(), 2);
+    let muted_a = a.store.lock().unwrap().muted_alerts();
+    let muted_b = b.store.lock().unwrap().muted_alerts();
+    assert_eq!(muted_a, [on_b].into(), "A evaluates its own, not B's");
+    assert_eq!(muted_b, [on_a].into());
+}
+
+#[test]
+fn a_remote_alert_that_cannot_be_read_is_kept_not_applied() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    // Valid envelope, but the asset is not something this version understands.
+    let broken = json!({"id": 4242, "asset": "not an asset", "condition": 5, "intent": "active"});
+    cloud.put_from_elsewhere(raw("alert.4242", &broken, 1, 1, "Z"), "Z");
+    settle_with_alerts(&mut a, &mut b);
+    assert!(alerts_on(&b).is_empty());
+    let kept = b.store.lock().unwrap().inbox().unwrap();
+    assert!(
+        kept.iter()
+            .any(|r| r.record_name == "alert.4242" && r.reason == "invalid")
+    );
+}
