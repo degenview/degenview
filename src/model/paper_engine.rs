@@ -3,6 +3,8 @@
 //! `PaperTradingSnapshot`. Ported from `PaperTradingEngine.swift`. Quotes arrive
 //! via `process`; the engine itself never touches the network.
 
+use std::collections::HashSet;
+
 use super::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade,
     PaperCommissionConfiguration, PaperCurrency, PaperFill, PaperFillPriceSource, PaperInstrument,
@@ -352,6 +354,16 @@ impl PaperTradingEngine {
 
     /// Feed a live quote. Only quotes that could have moved an order are persisted.
     pub fn process(&mut self, quote: PaperQuote) -> Result<(), PaperTradingError> {
+        self.process_except(quote, &HashSet::new())
+    }
+
+    /// Like `process`, but never fills the orders of the accounts in `skip`: an account that
+    /// another Mac runs is only shown here, so a working order is not filled twice.
+    pub fn process_except(
+        &mut self,
+        quote: PaperQuote,
+        skip: &HashSet<u64>,
+    ) -> Result<(), PaperTradingError> {
         if let Some(previous) = self.snapshot.quotes.get(&quote.instrument_key)
             && quote.timestamp < previous.timestamp
         {
@@ -364,7 +376,11 @@ impl PaperTradingEngine {
                 .snapshot
                 .orders
                 .iter()
-                .filter(|order| order.instrument.key == key && order.status.is_working())
+                .filter(|order| {
+                    order.instrument.key == key
+                        && order.status.is_working()
+                        && !skip.contains(&order.account_id)
+                })
                 .collect();
             working.sort_by_key(|order| order.created_at);
             working.iter().map(|order| order.id).collect()

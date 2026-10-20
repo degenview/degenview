@@ -262,3 +262,97 @@ fn duplicate_and_out_of_order_deliveries_do_not_duplicate_anything() {
     assert_eq!(rows(&b, "watchlist")[0]["name"], "v2");
     assert_eq!(outbox_len(&b), 0);
 }
+
+// MARK: Portfolios and paper trading
+
+fn save_portfolio(mac: &Mac) {
+    use crate::model::portfolio::{Portfolio, PortfolioLedgerSnapshot};
+    let snapshot = PortfolioLedgerSnapshot {
+        portfolios: vec![Portfolio::new(1, "Main", 1_000)],
+        ..Default::default()
+    };
+    mac.store
+        .lock()
+        .unwrap()
+        .save_portfolio_ledger(&snapshot)
+        .unwrap();
+}
+
+#[test]
+fn a_portfolio_saved_just_before_a_crash_uploads_after_restart() {
+    let (cloud, mut a, mut b) = pair();
+    save_portfolio(&a);
+    assert_eq!(outbox_len(&a), 1);
+    restart(&mut a, &cloud, "Mac A");
+    let shared = a.store.lock().unwrap().id_space().to_global(1);
+    assert_eq!(cloud.names(), [format!("portfolio.{shared}")]);
+    assert_eq!(outbox_len(&a), 0);
+    b.core.start();
+    settle(&mut a, &mut b);
+    let on_b = b.store.lock().unwrap().portfolio_ledger().unwrap();
+    assert_eq!(on_b.portfolios.len(), 1);
+    assert_eq!(on_b.portfolios[0].id, shared);
+}
+
+#[test]
+fn applying_a_portfolio_batch_twice_changes_nothing_the_second_time() {
+    let (_cloud, mut a, mut b) = pair();
+    save_portfolio(&a);
+    a.core.start();
+    b.core.start();
+    settle(&mut a, &mut b);
+    assert_eq!(b.batches.len(), 1);
+    let batch = b.batches[0].clone();
+    let before = b.store.lock().unwrap().portfolio_ledger().unwrap();
+    let state = b.store.lock().unwrap().sync_state().unwrap().unwrap();
+    let ctx = ApplyCtx {
+        device_id: state.device_id,
+        device_name: state.device_name,
+        now_ms: 1,
+        date: "2026-10-20".into(),
+    };
+    let store = b.store.lock().unwrap();
+    let report = apply_batch(&store, &mut NoScripts, &batch, &ctx).unwrap();
+    assert_eq!(store.portfolio_ledger().unwrap(), before);
+    assert!(
+        store.outbox().unwrap().is_empty(),
+        "a replay is not an edit"
+    );
+    assert_eq!(report.conflicts, 0);
+}
+
+#[test]
+fn a_crash_after_the_cloud_accepted_a_paper_account_does_not_duplicate_it() {
+    use crate::model::paper::{PaperAccountSettings, PaperCurrency};
+    let (cloud, mut a, mut b) = pair();
+    let mut host = crate::paper_host::PaperHost::load(a.store.clone());
+    host.create_account(
+        "Main",
+        PaperCurrency::Usd,
+        1_000.0,
+        PaperAccountSettings::default(),
+    )
+    .unwrap();
+    a.advance(6_000);
+    a.core.start();
+    let events = a.core.transport_mut().take_events();
+    for event in events {
+        a.deliver(event);
+    }
+    assert_eq!(cloud.save_attempts(), 1);
+    restart(&mut a, &cloud, "Mac A");
+    b.core.start();
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.names().len(), 1, "one logical record");
+    assert_eq!(outbox_len(&a), 0);
+    assert_eq!(
+        b.store
+            .lock()
+            .unwrap()
+            .paper_trading()
+            .unwrap()
+            .accounts
+            .len(),
+        1
+    );
+}

@@ -1812,6 +1812,11 @@ impl DegenViewApp {
             {
                 watchlist.reload();
             }
+            if report.tables.contains("paper_account")
+                && let Ok(mut paper) = self.paper.lock()
+            {
+                paper.reload();
+            }
             if (report.tables.contains("portfolio")
                 || report.tables.contains("portfolio_transaction"))
                 && let Ok(mut portfolio) = self.portfolio.lock()

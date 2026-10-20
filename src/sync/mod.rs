@@ -32,6 +32,8 @@ mod crash_tests;
 #[cfg(test)]
 mod initial_tests;
 #[cfg(test)]
+mod paper_tests;
+#[cfg(test)]
 mod perf_tests;
 #[cfg(test)]
 mod portfolio_tests;

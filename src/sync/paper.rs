@@ -5,7 +5,7 @@
 //! same order and disagree about the result, so everything an account owns travels as a single
 //! bundle, and one Mac at a time (the `owner`) runs it. The others show a mirror.
 
-use super::ids::{Direction, IdSpace, map_fields};
+use super::ids::{Direction, IdSpace, map_fields_with};
 use super::project::{Projected, project_bundle};
 use serde_json::{Map, Value};
 
@@ -81,19 +81,46 @@ pub fn split_bundle(bundle: &Value) -> Option<Parts> {
     })
 }
 
-/// Rewrites every id in the parts, in place.
-pub fn map_parts(parts: &mut Parts, ids: IdSpace, direction: Direction) {
-    map_fields(&mut parts.account, &["id"], ids, direction);
+/// The owner of an account that nobody runs: a conflict copy waits for the user to take it over.
+pub const PAUSED: &str = "paused";
+
+/// Rewrites every id in the parts through `map`, in place.
+pub fn map_parts_with(parts: &mut Parts, map: &dyn Fn(u64) -> u64) {
+    map_fields_with(&mut parts.account, &["id"], map);
     for ((key, _), rows) in COLLECTIONS.iter().zip(parts.rows.iter_mut()) {
         for row in rows {
-            map_fields(row, id_fields(key), ids, direction);
+            map_fields_with(row, id_fields(key), map);
             if *key == "order_events"
                 && let Some(order) = row.get_mut("order")
             {
-                map_fields(order, &ORDER_IDS, ids, direction);
+                map_fields_with(order, &ORDER_IDS, map);
             }
         }
     }
+}
+
+/// Rewrites every id in the parts between this database's ids and the shared ones.
+pub fn map_parts(parts: &mut Parts, ids: IdSpace, direction: Direction) {
+    map_parts_with(parts, &|id| ids.map(direction, id));
+}
+
+/// Gives every record in the parts an id of its own, as a copy of the account needs: the order
+/// ids, fill ids and the rest all change together, so the copy refers only to itself.
+pub fn renumber(parts: &mut Parts, mut fresh: impl FnMut() -> u64) {
+    let mut own: Vec<u64> = parts.account_id().into_iter().collect();
+    for ((key, _), rows) in COLLECTIONS.iter().zip(&parts.rows) {
+        for row in rows {
+            if *key != "positions" {
+                own.extend(row.get("id").and_then(Value::as_u64));
+            }
+            if *key == "orders" {
+                own.extend(row.get("oco_group_id").and_then(Value::as_u64));
+            }
+        }
+    }
+    let mapping: std::collections::HashMap<u64, u64> =
+        own.into_iter().map(|id| (id, fresh())).collect();
+    map_parts_with(parts, &|id| mapping.get(&id).copied().unwrap_or(id));
 }
 
 /// The entity an account syncs as: the bundle with shared ids, named by the shared account id.
@@ -151,6 +178,42 @@ mod tests {
         }
         map_parts(&mut mapped, ids, Direction::ToLocal);
         assert_eq!(mapped, original);
+    }
+
+    #[test]
+    fn a_copy_refers_only_to_itself() {
+        let mut parts = sample();
+        let mut next = 1_000;
+        renumber(&mut parts, || {
+            next += 1;
+            next
+        });
+        let text = bundle_value(&parts).to_string();
+        // None of the original small ids survive, and the links between records still hold.
+        for old in ["\"id\":2", "\"id\":5", "\"order_id\":5", "\"account_id\":2"] {
+            assert!(!text.contains(old), "{old} in {text}");
+        }
+        let order = parts.rows[0][0]["id"].clone();
+        assert_eq!(parts.rows[1][0]["order_id"], order);
+        assert_eq!(parts.rows[3][0]["order"]["id"], order);
+        let account = parts.account["id"].clone();
+        assert!(
+            parts
+                .rows
+                .iter()
+                .flatten()
+                .all(|row| row["account_id"] == account)
+        );
+        let ids: std::collections::HashSet<_> = [
+            parts.account["id"].as_u64().unwrap(),
+            parts.rows[0][0]["id"].as_u64().unwrap(),
+            parts.rows[1][0]["id"].as_u64().unwrap(),
+            parts.rows[3][0]["id"].as_u64().unwrap(),
+            parts.rows[4][0]["id"].as_u64().unwrap(),
+            parts.rows[5][0]["id"].as_u64().unwrap(),
+        ]
+        .into();
+        assert_eq!(ids.len(), 6, "every record got a different id");
     }
 
     #[test]

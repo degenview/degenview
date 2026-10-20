@@ -15,6 +15,7 @@ use crate::sync::policy::{
 #[cfg(test)]
 use crate::sync::project::project_row;
 use crate::sync::project::{Projected, project_row_in, project_setting, project_transaction};
+pub use paper::Elsewhere;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

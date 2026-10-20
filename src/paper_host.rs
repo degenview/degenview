@@ -13,6 +13,7 @@ use crate::model::paper::{
 use crate::model::paper_engine::PaperTradingEngine;
 use crate::model::paper_ticket::TicketDraft;
 use crate::store::SharedStore;
+use crate::store::sync::Elsewhere;
 use crate::ui::paper_account_sheet::{
     AccountSheetOutcome, PaperAccountSheetState, show as show_account_sheet,
 };
@@ -28,6 +29,7 @@ use crate::ui::paper_tables::{
     PositionsInput, PositionsState,
 };
 use eframe::egui;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,6 +64,9 @@ pub struct PaperHost {
     engine: PaperTradingEngine,
     load_error: Option<PaperHostError>,
     last_error: Option<PaperHostError>,
+    /// Accounts another Mac runs through iCloud Sync. They are shown but never filled here, so a
+    /// working order is not filled twice; acting on one takes it over.
+    elsewhere: HashMap<u64, Elsewhere>,
 }
 
 impl PaperHost {
@@ -80,20 +85,70 @@ impl PaperHost {
                 // would put the previous session's price into a new order ticket until the first
                 // live update arrives.
                 snapshot.quotes.clear();
-                Self {
+                let mut host = Self {
                     store,
                     engine: PaperTradingEngine::new(snapshot),
                     load_error: None,
                     last_error: None,
-                }
+                    elsewhere: HashMap::new(),
+                };
+                host.refresh_ownership();
+                host
             }
             Err(error) => Self {
                 store,
                 engine: PaperTradingEngine::new(PaperTradingSnapshot::default()),
                 load_error: Some(error.clone()),
                 last_error: Some(error),
+                elsewhere: HashMap::new(),
             },
         }
+    }
+
+    fn refresh_ownership(&mut self) {
+        self.elsewhere = self
+            .store
+            .lock()
+            .ok()
+            .and_then(|store| store.paper_elsewhere().ok())
+            .unwrap_or_default();
+    }
+
+    /// Re-reads everything after iCloud Sync changed it underneath. Live quotes stay; an account
+    /// that vanished is not selected any more. A snapshot that cannot be read leaves the one in
+    /// memory alone.
+    pub fn reload(&mut self) {
+        if self.load_error.is_some() {
+            return;
+        }
+        let loaded = self
+            .store
+            .lock()
+            .map_err(|_| PaperHostError::StoreUnavailable)
+            .and_then(|store| {
+                store
+                    .paper_trading()
+                    .map_err(|error| PaperHostError::Load(error.to_string()))
+            });
+        match loaded {
+            Ok(mut snapshot) => {
+                snapshot.quotes = self.engine.snapshot().quotes.clone();
+                let selected_exists = snapshot
+                    .selected_account_id
+                    .is_some_and(|id| snapshot.accounts.iter().any(|a| a.id == id));
+                if !selected_exists {
+                    snapshot.selected_account_id = snapshot.accounts.first().map(|a| a.id);
+                }
+                self.engine = PaperTradingEngine::new(snapshot);
+                self.refresh_ownership();
+            }
+            Err(error) => self.last_error = Some(error),
+        }
+    }
+
+    /// Who runs the account when it is not this Mac.
+    pub fn owned_elsewhere(&self, account_id: u64) -> Option<&Elsewhere> {
+        self.elsewhere.get(&account_id)
     }
 
     pub fn snapshot(&self) -> &PaperTradingSnapshot {
@@ -169,7 +224,9 @@ impl PaperHost {
         account_id: u64,
         settings: PaperAccountSettings,
     ) -> Result<(), PaperHostError> {
-        self.apply(move |engine| engine.update_settings(account_id, settings))
+        self.apply_for(Some(account_id), move |engine| {
+            engine.update_settings(account_id, settings)
+        })
     }
 
     pub fn reset_account(
@@ -179,19 +236,31 @@ impl PaperHost {
         initial_balance: f64,
         settings: PaperAccountSettings,
     ) -> Result<(), PaperHostError> {
-        self.apply(move |engine| engine.reset_account(id, currency, initial_balance, settings))
+        self.apply_for(Some(id), move |engine| {
+            engine.reset_account(id, currency, initial_balance, settings)
+        })
     }
 
     pub fn delete_account(&mut self, id: u64) -> Result<(), PaperHostError> {
-        self.apply(|engine| engine.delete_account(id))
+        self.apply_for(Some(id), |engine| engine.delete_account(id))
     }
 
     pub fn submit(&mut self, request: PaperOrderRequest) -> Result<u64, PaperHostError> {
-        self.apply(move |engine| engine.submit(request))
+        let account = request.account_id;
+        self.apply_for(Some(account), move |engine| engine.submit(request))
+    }
+
+    fn account_of_order(&self, order_id: u64) -> Option<u64> {
+        self.snapshot()
+            .orders
+            .iter()
+            .find(|order| order.id == order_id)
+            .map(|order| order.account_id)
     }
 
     pub fn cancel(&mut self, order_id: u64) -> Result<(), PaperHostError> {
-        self.apply(|engine| engine.cancel(order_id))
+        let account = self.account_of_order(order_id);
+        self.apply_for(account, |engine| engine.cancel(order_id))
     }
 
     pub fn modify(
@@ -199,7 +268,8 @@ impl PaperHost {
         order_id: u64,
         changes: PaperOrderChanges,
     ) -> Result<(), PaperHostError> {
-        self.apply(move |engine| engine.modify(order_id, changes))
+        let account = self.account_of_order(order_id);
+        self.apply_for(account, move |engine| engine.modify(order_id, changes))
     }
 
     pub fn move_order(&mut self, order_id: u64, price: f64) -> Result<(), PaperHostError> {
@@ -238,12 +308,15 @@ impl PaperHost {
             .quotes
             .get(&quote.instrument_key)
             .is_some_and(|previous| quote.timestamp < previous.timestamp);
+        let skip: HashSet<u64> = self.elsewhere.keys().copied().collect();
         let should_persist = !is_outdated
             && self.snapshot().orders.iter().any(|order| {
-                order.instrument.key == quote.instrument_key && order.status.is_working()
+                order.instrument.key == quote.instrument_key
+                    && order.status.is_working()
+                    && !skip.contains(&order.account_id)
             });
         let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
-        let result = candidate.process(quote);
+        let result = candidate.process_except(quote, &skip);
         if should_persist {
             let saved = self
                 .store
@@ -349,10 +422,20 @@ impl PaperHost {
         })
     }
 
-    /// Runs an engine operation, persists whatever state it produced (including rejected-order
-    /// audit rows), and publishes only after persistence succeeds.
+    /// Runs an engine operation not tied to one account.
     fn apply<T>(
         &mut self,
+        operation: impl FnOnce(&mut PaperTradingEngine) -> Result<T, PaperTradingError>,
+    ) -> Result<T, PaperHostError> {
+        self.apply_for(None, operation)
+    }
+
+    /// Runs an engine operation, persists whatever state it produced (including rejected-order
+    /// audit rows), and publishes only after persistence succeeds. A successful operation on an
+    /// account another Mac runs takes that account over in the same save.
+    fn apply_for<T>(
+        &mut self,
+        account: Option<u64>,
         operation: impl FnOnce(&mut PaperTradingEngine) -> Result<T, PaperTradingError>,
     ) -> Result<T, PaperHostError> {
         if let Some(error) = &self.load_error {
@@ -362,18 +445,40 @@ impl PaperHost {
 
         let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
         let result = operation(&mut candidate);
+        let claim = account
+            .filter(|id| self.elsewhere.contains_key(id))
+            .filter(|_| result.is_ok());
         let saved = self
             .store
             .lock()
             .map_err(|_| PaperHostError::StoreUnavailable)
             .and_then(|store| {
+                let persistence =
+                    |error: rusqlite::Error| PaperHostError::Persistence(error.to_string());
+                let previous = match claim {
+                    Some(id) => {
+                        let key = id.to_string();
+                        let before = store.paper_owner(&key).map_err(persistence)?;
+                        store.set_paper_owner(&key, None).map_err(persistence)?;
+                        Some((key, before))
+                    }
+                    None => None,
+                };
                 store
                     .save_paper_trading(candidate.snapshot())
-                    .map_err(|error| PaperHostError::Persistence(error.to_string()))
+                    .map_err(|error| {
+                        if let Some((key, Some(owner))) = &previous {
+                            let _ = store.set_paper_owner(key, Some(owner));
+                        }
+                        persistence(error)
+                    })
             });
         if let Err(error) = saved {
             self.last_error = Some(error.clone());
             return Err(error);
+        }
+        if let Some(id) = claim {
+            self.elsewhere.remove(&id);
         }
 
         self.engine = candidate;
@@ -534,6 +639,9 @@ impl PaperPanel {
             },
         );
         divider(ui);
+        if let Some(elsewhere) = account_id.and_then(|id| host.owned_elsewhere(id)) {
+            owner_note(ui, elsewhere);
+        }
         if let Some(error) = host.last_error() {
             error_banner(ui, &error.message());
         }
@@ -815,6 +923,32 @@ fn divider(ui: &mut egui::Ui) {
         .rect_filled(line, 0.0, crate::ui::theme::separator());
 }
 
+/// What a mirrored account says about itself, in one quiet line.
+pub fn owner_text(elsewhere: &Elsewhere) -> String {
+    if elsewhere.paused {
+        "Paused: two Macs changed this account. Placing an order here takes it over.".to_owned()
+    } else if elsewhere.name.is_empty() {
+        "Running on another Mac. Placing an order here takes it over.".to_owned()
+    } else {
+        format!(
+            "Running on {}. Placing an order here takes it over.",
+            elsewhere.name
+        )
+    }
+}
+
+fn owner_note(ui: &mut egui::Ui, elsewhere: &Elsewhere) {
+    egui::Frame::new()
+        .inner_margin(egui::Margin::symmetric(12, 6))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(owner_text(elsewhere))
+                    .small()
+                    .color(crate::ui::theme::text_secondary()),
+            );
+        });
+}
+
 fn error_banner(ui: &mut egui::Ui, message: &str) {
     egui::Frame::new()
         .fill(crate::ui::theme::DOWN.gamma_multiply(0.14))
@@ -863,6 +997,67 @@ mod tests {
             take_profit: None,
             stop_loss: None,
         }
+    }
+
+    #[test]
+    fn the_note_for_a_mirrored_account_names_the_mac_or_says_it_is_paused() {
+        let named = Elsewhere {
+            name: "Studio".into(),
+            paused: false,
+        };
+        assert_eq!(
+            owner_text(&named),
+            "Running on Studio. Placing an order here takes it over."
+        );
+        let unknown = Elsewhere {
+            name: String::new(),
+            paused: false,
+        };
+        assert!(owner_text(&unknown).starts_with("Running on another Mac."));
+        let paused = Elsewhere {
+            name: String::new(),
+            paused: true,
+        };
+        assert!(owner_text(&paused).starts_with("Paused"));
+    }
+
+    #[test]
+    fn reload_picks_up_what_sync_wrote_and_keeps_live_quotes() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = host
+            .create_account(
+                "Mine",
+                PaperCurrency::Usd,
+                1_000.0,
+                PaperAccountSettings::default(),
+            )
+            .unwrap();
+        host.process_quote(PaperQuote {
+            instrument_key: "Binance:BTCUSDT".into(),
+            bid: Some(1.0),
+            ask: Some(2.0),
+            last: Some(1.5),
+            timestamp: 5,
+            is_market_open: true,
+        })
+        .unwrap();
+        {
+            let guard = store.lock().unwrap();
+            let mut snapshot = guard.paper_trading().unwrap();
+            snapshot
+                .accounts
+                .push(crate::model::paper::PaperAccount::new(77, "From iCloud", 1));
+            snapshot.selected_account_id = Some(999);
+            guard.save_paper_trading(&snapshot).unwrap();
+            guard.set_paper_owner("77", Some("other-mac")).unwrap();
+        }
+        host.reload();
+        assert_eq!(host.snapshot().accounts.len(), 2);
+        assert_eq!(host.snapshot().selected_account_id, Some(id));
+        assert!(host.snapshot().quotes.contains_key("Binance:BTCUSDT"));
+        assert!(host.owned_elsewhere(77).is_some());
+        assert!(host.owned_elsewhere(id).is_none());
     }
 
     #[test]

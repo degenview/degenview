@@ -188,7 +188,11 @@ pub(super) fn mac_with(
     state.initial_sync_done = initial_done;
     store.save_sync_state(&state).unwrap();
     let store: SharedStore = Arc::new(Mutex::new(store));
-    let now = Arc::new(AtomicI64::new(10_000_000));
+    // The store stamps rows with the wall clock, so the core's clock starts there too.
+    let started = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(10_000_000, |elapsed| elapsed.as_millis() as i64);
+    let now = Arc::new(AtomicI64::new(started));
     let clock = {
         let now = now.clone();
         Box::new(move || now.load(Ordering::Relaxed))
@@ -609,7 +613,7 @@ fn a_network_failure_backs_off_and_then_succeeds() {
     assert!(cloud.names().is_empty());
     let row = &a.outbox()[0];
     assert_eq!(row.attempts, 1);
-    assert!(row.next_attempt_ms.unwrap() > 10_000_000);
+    assert!(row.next_attempt_ms.unwrap() > a.now.load(Ordering::Relaxed) - 1);
     assert_eq!(a.phase(), Phase::WaitingForNetwork);
     // No tight loop: ticking again before the retry time sends nothing.
     a.run();
@@ -682,7 +686,8 @@ fn quota_errors_are_shown_and_retried_slowly() {
     a.lists(&[(1, "Tech")]);
     a.start();
     assert_eq!(a.phase(), Phase::Error(ErrorKind::Quota));
-    assert!(a.outbox()[0].next_attempt_ms.unwrap() >= 10_000_000 + 3_600_000);
+    let started = a.now.load(Ordering::Relaxed);
+    assert!(a.outbox()[0].next_attempt_ms.unwrap() >= started + 3_600_000);
     a.advance(1_800_000);
     a.run();
     assert!(cloud.names().is_empty());

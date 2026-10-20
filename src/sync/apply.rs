@@ -28,6 +28,7 @@ use crate::store::sync::{
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+mod paper;
 mod portfolio;
 
 /// Who is applying, and when. Passed in so applying is deterministic under test.
@@ -348,8 +349,7 @@ impl<'a> Work<'a> {
             EntityKind::LayoutDrawing => self.apply_drawing(record),
             EntityKind::Alert => self.apply_alert(record),
             EntityKind::Script => self.apply_script(record),
-            // Applied once its stage lands; until then it waits, untouched, in the inbox.
-            EntityKind::PaperAccount => self.keep(record, "unsupported"),
+            EntityKind::PaperAccount => self.apply_paper(record),
         }
     }
 
@@ -1412,6 +1412,7 @@ impl<'a> Work<'a> {
             EntityKind::Alert => return self.delete_alert(id),
             EntityKind::Script => return self.delete_script(id),
             EntityKind::PortfolioTransaction => return self.delete_transaction(name),
+            EntityKind::PaperAccount => return self.delete_paper(name),
             _ => {}
         }
         if let Some(table) = table_of(kind)

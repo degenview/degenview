@@ -96,6 +96,21 @@ pub fn map_fields(object: &mut Value, fields: &[&str], space: IdSpace, direction
     }
 }
 
+/// Rewrites the number stored under each of `fields` through `map`, for ids that are not
+/// translated between spaces but replaced outright.
+pub fn map_fields_with(object: &mut Value, fields: &[&str], map: &dyn Fn(u64) -> u64) {
+    let Some(entries) = object.as_object_mut() else {
+        return;
+    };
+    for field in fields {
+        if let Some(value) = entries.get_mut(*field)
+            && let Some(id) = value.as_u64()
+        {
+            *value = map(id).into();
+        }
+    }
+}
+
 /// Rewrites the portfolio id of a portfolio card, and the key derived from it, wherever a card
 /// appears (a chart in a layout, a row of a watchlist). A card with no portfolio is every
 /// portfolio and has nothing to rewrite.

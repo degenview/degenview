@@ -12,6 +12,15 @@ use serde::Serialize;
 /// How long a changed account waits before it uploads, so a burst of fills sends once.
 pub const UPLOAD_DEBOUNCE_MS: i64 = 5_000;
 
+/// Who runs an account that this Mac only shows.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Elsewhere {
+    /// The other Mac's name, empty when it is not known.
+    pub name: String,
+    /// A conflict copy that nobody runs yet.
+    pub paused: bool,
+}
+
 impl Store {
     /// Which Mac runs this account (a local account id). Absent means this one.
     pub fn paper_owner(&self, local_id: &str) -> rusqlite::Result<Option<String>> {
@@ -22,6 +31,12 @@ impl Store {
                 |row| row.get(0),
             )
             .optional()
+    }
+
+    pub fn paper_account_exists(&self, local_id: &str) -> rusqlite::Result<bool> {
+        self.connection
+            .prepare("SELECT 1 FROM paper_account WHERE id = ?1")?
+            .exists([local_id])
     }
 
     /// Records which Mac runs an account; `None` returns it to this Mac.
@@ -37,6 +52,77 @@ impl Store {
                 [local_id],
             )?,
         };
+        Ok(())
+    }
+
+    /// Accounts another Mac runs, by local account id.
+    pub fn paper_elsewhere(&self) -> rusqlite::Result<HashMap<u64, Elsewhere>> {
+        let own = self.paper_self()?;
+        let mut elsewhere = HashMap::new();
+        for (account, owner) in self.paper_owners()? {
+            let Ok(account) = account.parse::<u64>() else {
+                continue;
+            };
+            if owner == own {
+                continue;
+            }
+            let paused = owner == crate::sync::paper::PAUSED;
+            let name = self.device_name(&owner)?.unwrap_or_default();
+            elsewhere.insert(account, Elsewhere { name, paused });
+        }
+        Ok(elsewhere)
+    }
+
+    /// Stores an account and everything it owns exactly as given, replacing what was there. The
+    /// caller decides the owner; nothing is queued for upload.
+    pub fn write_paper_account(&self, parts: &Parts) -> rusqlite::Result<()> {
+        let Some(id) = parts.account_id().map(|id| id.to_string()) else {
+            return Ok(());
+        };
+        let payload = parts.account.to_string();
+        let updated = self.connection.execute(
+            "UPDATE paper_account SET payload = ?2 WHERE id = ?1",
+            params![id, payload],
+        )?;
+        if updated == 0 {
+            self.connection.execute(
+                "INSERT INTO paper_account (id, position, payload)
+                 VALUES (?1, (SELECT COALESCE(MAX(position), -1) + 1 FROM paper_account), ?2)",
+                params![id, payload],
+            )?;
+        }
+        for ((_, table), rows) in COLLECTIONS.iter().zip(&parts.rows) {
+            self.connection
+                .execute(&format!("DELETE FROM {table} WHERE account_id = ?1"), [&id])?;
+            let mut insert = self.connection.prepare(&format!(
+                "INSERT INTO {table} (account_id, payload) VALUES (?1, ?2)"
+            ))?;
+            for row in rows {
+                insert.execute(params![id, row.to_string()])?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Removes an account and everything it owns. If it was the selected account the selection
+    /// is cleared, for the app to choose another.
+    pub fn delete_paper_account(&self, local_id: &str) -> rusqlite::Result<()> {
+        self.connection
+            .execute("DELETE FROM paper_account WHERE id = ?1", [local_id])?;
+        for (_, table) in COLLECTIONS {
+            self.connection.execute(
+                &format!("DELETE FROM {table} WHERE account_id = ?1"),
+                [local_id],
+            )?;
+        }
+        self.connection.execute(
+            "DELETE FROM paper_account_local WHERE account_id = ?1",
+            [local_id],
+        )?;
+        self.connection.execute(
+            "DELETE FROM setting WHERE key = 'paper.selectedAccountID' AND value = ?1",
+            [local_id],
+        )?;
         Ok(())
     }
 

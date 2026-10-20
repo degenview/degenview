@@ -1,0 +1,303 @@
+//! Paper-trading accounts across two Macs: one Mac runs an account, the other mirrors it.
+
+use super::core_tests::{Mac, mac};
+use super::mock::MockCloud;
+use crate::model::paper::{
+    PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide,
+    PaperOrderStatus, PaperOrderType, PaperQuote, PaperTimeInForce,
+};
+use crate::paper_host::PaperHost;
+use crate::store::sync::OutboxState;
+
+fn pair() -> (MockCloud, Mac, Mac) {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "Mac A", "acct", Some("acct"));
+    let mut b = mac(&cloud, "Mac B", "acct", Some("acct"));
+    a.apply = true;
+    b.apply = true;
+    a.core.start();
+    b.core.start();
+    (cloud, a, b)
+}
+
+/// Lets both Macs upload and fetch until nothing moves, after the upload debounce has passed.
+fn settle(a: &mut Mac, b: &mut Mac) {
+    a.advance(6_000);
+    b.advance(6_000);
+    for _ in 0..6 {
+        a.core.request_sync();
+        a.run();
+        b.core.request_sync();
+        b.run();
+    }
+}
+
+fn device(mac: &Mac) -> String {
+    mac.store
+        .lock()
+        .unwrap()
+        .sync_state()
+        .unwrap()
+        .unwrap()
+        .device_id
+}
+
+fn host(mac: &Mac) -> PaperHost {
+    PaperHost::load(mac.store.clone())
+}
+
+fn open(host: &mut PaperHost, name: &str) -> u64 {
+    host.create_account(
+        name,
+        PaperCurrency::Usd,
+        100_000.0,
+        PaperAccountSettings::default(),
+    )
+    .expect("account")
+}
+
+fn limit_buy(account: u64, price: f64) -> PaperOrderRequest {
+    PaperOrderRequest {
+        account_id: account,
+        instrument: PaperInstrument::chart("BTCUSDT", "BTCUSDT", crate::model::DataSource::Binance),
+        side: PaperOrderSide::Buy,
+        kind: PaperOrderType::Limit,
+        quantity: 1.0,
+        limit_price: Some(price),
+        stop_price: None,
+        time_in_force: PaperTimeInForce::GoodTilCanceled,
+        take_profit: None,
+        stop_loss: None,
+    }
+}
+
+fn quote(last: f64) -> PaperQuote {
+    PaperQuote {
+        instrument_key: "Binance:BTCUSDT".to_owned(),
+        bid: Some(last - 0.5),
+        ask: Some(last + 0.5),
+        last: Some(last),
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() as i64),
+        is_market_open: true,
+    }
+}
+
+fn snapshot(mac: &Mac) -> crate::model::paper::PaperTradingSnapshot {
+    mac.store.lock().unwrap().paper_trading().unwrap()
+}
+
+#[test]
+fn an_account_made_on_one_mac_is_mirrored_on_the_other_without_echoing_back() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+    let on_b = snapshot(&b);
+    assert_eq!(on_b.accounts.len(), 1);
+    assert_eq!(on_b.accounts[0].id, shared);
+    assert_eq!(on_b.accounts[0].name, "Main");
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0, "no echo");
+    // B shows it as A's.
+    let mirrored = host(&b);
+    assert!(mirrored.owned_elsewhere(shared).is_some());
+    assert!(host(&a).owned_elsewhere(id).is_none());
+    assert_eq!(
+        b.store
+            .lock()
+            .unwrap()
+            .paper_owner(&shared.to_string())
+            .unwrap(),
+        Some(device(&a))
+    );
+}
+
+#[test]
+fn only_the_owner_fills_a_working_order() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    on_a.process_quote(quote(110.0)).unwrap();
+    on_a.submit(limit_buy(id, 100.0)).unwrap();
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+
+    let mut on_b = host(&b);
+    on_b.process_quote(quote(99.0)).unwrap();
+    let order = &snapshot(&b).orders[0];
+    assert_eq!(order.account_id, shared);
+    assert!(order.status.is_working(), "the mirror never fills");
+    assert!(snapshot(&b).fills.is_empty());
+
+    on_a.process_quote(quote(99.0)).unwrap();
+    assert!(on_a.snapshot().orders[0].status == PaperOrderStatus::Filled);
+    settle(&mut a, &mut b);
+    assert_eq!(snapshot(&b).fills.len(), 1, "B sees A's fill");
+    assert_eq!(snapshot(&b).orders[0].status, PaperOrderStatus::Filled);
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0);
+}
+
+#[test]
+fn placing_an_order_on_the_mirror_takes_the_account_over() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    on_a.process_quote(quote(110.0)).unwrap();
+    on_a.submit(limit_buy(id, 100.0)).unwrap();
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+
+    let mut on_b = host(&b);
+    assert!(on_b.owned_elsewhere(shared).is_some());
+    on_b.process_quote(quote(110.0)).unwrap();
+    on_b.submit(limit_buy(shared, 90.0))
+        .expect("order on the mirror");
+    assert!(on_b.owned_elsewhere(shared).is_none(), "B runs it now");
+    settle(&mut a, &mut b);
+
+    // A now mirrors it, with both orders, and does not fill them.
+    let mut on_a = host(&a);
+    assert!(on_a.owned_elsewhere(id).is_some());
+    assert_eq!(on_a.snapshot().orders.len(), 2);
+    on_a.process_quote(quote(95.0)).unwrap();
+    on_a.process_quote(quote(80.0)).unwrap();
+    assert!(on_a.snapshot().orders.iter().all(|o| o.status.is_working()));
+    // The orders have different ids even though both Macs minted "order 2" or so on their own.
+    let ids: std::collections::HashSet<_> = snapshot(&a).orders.iter().map(|o| o.id).collect();
+    assert_eq!(ids.len(), 2);
+    assert_eq!(
+        a.store
+            .lock()
+            .unwrap()
+            .paper_owner(&id.to_string())
+            .unwrap(),
+        Some(device(&b))
+    );
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0);
+}
+
+#[test]
+fn concurrent_changes_to_one_account_keep_both_versions() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+
+    // Neither has seen the other's change.
+    on_a.process_quote(quote(110.0)).unwrap();
+    on_a.submit(limit_buy(id, 100.0)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    let mut on_b = host(&b);
+    on_b.process_quote(quote(110.0)).unwrap();
+    on_b.submit(limit_buy(shared, 90.0)).unwrap();
+    settle(&mut a, &mut b);
+
+    for mac in [&a, &b] {
+        let accounts = snapshot(mac).accounts;
+        assert_eq!(accounts.len(), 2, "the account and a copy of the loser");
+        let copies: Vec<_> = accounts
+            .iter()
+            .filter(|account| account.name.contains("conflict from"))
+            .collect();
+        assert_eq!(copies.len(), 1);
+        assert!(copies[0].id >= crate::sync::ids::LEGACY_LIMIT, "a fresh id");
+        // Each version's order survives, one in the account and one in the copy.
+        let orders = snapshot(mac).orders;
+        assert_eq!(orders.len(), 2);
+        assert!(orders.iter().any(|o| o.account_id == copies[0].id));
+        let copy_orders: Vec<_> = orders
+            .iter()
+            .filter(|o| o.account_id == copies[0].id)
+            .collect();
+        assert!(
+            copy_orders
+                .iter()
+                .all(|o| o.id >= crate::sync::ids::LEGACY_LIMIT)
+        );
+        assert_eq!(
+            mac.store
+                .lock()
+                .unwrap()
+                .paper_owner(&copies[0].id.to_string())
+                .unwrap(),
+            Some("paused".to_string()),
+            "nothing runs the copy"
+        );
+    }
+    let noticed: usize = [&a, &b]
+        .iter()
+        .map(|mac| mac.store.lock().unwrap().conflicts().unwrap().len())
+        .sum();
+    assert!(noticed >= 1, "the Mac that merged tells the user");
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0);
+}
+
+#[test]
+fn deleting_an_account_removes_it_on_the_other_mac() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let keep = open(&mut on_a, "Keep");
+    let drop = open(&mut on_a, "Drop");
+    settle(&mut a, &mut b);
+    assert_eq!(snapshot(&b).accounts.len(), 2);
+    on_a.delete_account(drop).unwrap();
+    settle(&mut a, &mut b);
+    let on_b = snapshot(&b);
+    assert_eq!(on_b.accounts.len(), 1);
+    assert_eq!(on_b.accounts[0].name, "Keep");
+    assert_eq!(
+        on_b.accounts[0].id,
+        a.store.lock().unwrap().id_space().to_global(keep)
+    );
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0);
+}
+
+#[test]
+fn an_account_over_the_record_limit_is_blocked_and_kept_locally() {
+    let (cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Huge");
+    // A journal big enough to exceed one record.
+    {
+        let store = a.store.lock().unwrap();
+        let mut snapshot = store.paper_trading().unwrap();
+        for entry in 0..2_000 {
+            snapshot
+                .journal
+                .push(crate::model::paper::PaperJournalEntry {
+                    id: 100 + entry,
+                    account_id: id,
+                    timestamp: entry as i64,
+                    message: "x".repeat(600),
+                });
+        }
+        store.save_paper_trading(&snapshot).unwrap();
+    }
+    settle(&mut a, &mut b);
+    let rows = a.outbox();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].state, OutboxState::Blocked);
+    assert!(cloud.names().is_empty());
+    assert!(
+        snapshot(&a).journal.len() >= 2_000,
+        "nothing is lost locally"
+    );
+    assert!(snapshot(&b).accounts.is_empty());
+}
+
+#[test]
+fn the_ids_of_a_mirror_never_move_the_local_counter() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    on_a.process_quote(quote(110.0)).unwrap();
+    on_a.submit(limit_buy(id, 100.0)).unwrap();
+    settle(&mut a, &mut b);
+    // B makes an account of its own after the mirror arrived: a small id, not a huge one.
+    let mut on_b = host(&b);
+    let own = open(&mut on_b, "Mine");
+    assert!(own < crate::sync::ids::LEGACY_LIMIT, "minted {own}");
+}
