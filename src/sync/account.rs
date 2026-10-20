@@ -122,6 +122,42 @@ pub fn resolve_account_change(
     }
 }
 
+/// After iCloud confirmed that this Mac's data there was deleted: stop syncing and forget the
+/// binding and everything learned about the cloud. Local data is untouched, and turning sync on
+/// again starts a fresh first-time merge.
+pub fn after_cloud_delete(store: &Store) -> rusqlite::Result<()> {
+    if let Some(mut state) = store.sync_state()? {
+        state.enabled = false;
+        state.account_hash = None;
+        state.account_bound_ms = None;
+        state.dataset_id = None;
+        state.initial_sync_done = false;
+        state.engine_state = None;
+        state.engine_state_account_hash = None;
+        store.save_sync_state(&state)?;
+    }
+    store.reset_sync_data()
+}
+
+/// Another Mac deleted DegenView's data in iCloud. Either upload this Mac's data again as a fresh
+/// start (`reupload`), or stop syncing. Nothing local is removed either way.
+pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> rusqlite::Result<()> {
+    store.reset_sync_data()?;
+    if let Some(mut state) = store.sync_state()? {
+        state.initial_sync_done = false;
+        state.engine_state = None;
+        state.engine_state_account_hash = None;
+        state.dataset_id = None;
+        state.enabled = reupload;
+        if !reupload {
+            state.account_hash = None;
+            state.account_bound_ms = None;
+        }
+        store.save_sync_state(&state)?;
+    }
+    Ok(())
+}
+
 /// A copy of the whole database, named by time, that opens as an ordinary DegenView database.
 pub fn stash(store: &Store, backups_dir: &Path, now_ms: i64) -> rusqlite::Result<PathBuf> {
     std::fs::create_dir_all(backups_dir)
@@ -338,6 +374,48 @@ mod tests {
         // Nothing was queued to delete anything from either account.
         assert!(store.outbox().unwrap().is_empty());
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn after_a_cloud_delete_sync_is_off_unbound_and_local_data_is_untouched() {
+        let store = Store::open_in_memory().unwrap();
+        enable(&store, "Studio", "hw", "Production").unwrap();
+        bind(&store, "acct", 1).unwrap();
+        let mut state = store.sync_state().unwrap().unwrap();
+        state.initial_sync_done = true;
+        state.engine_state = Some(vec![1]);
+        store.save_sync_state(&state).unwrap();
+        with_data(&store);
+        after_cloud_delete(&store).unwrap();
+        let state = store.sync_state().unwrap().unwrap();
+        assert!(!state.enabled);
+        assert!(state.account_hash.is_none());
+        assert!(!state.initial_sync_done);
+        assert!(state.engine_state.is_none());
+        assert!(store.outbox().unwrap().is_empty());
+        assert_eq!(store.setting::<String>("appTheme").as_deref(), Some("dark"));
+    }
+
+    #[test]
+    fn after_another_mac_deletes_the_cloud_data_this_mac_can_start_over_or_stop() {
+        let store = Store::open_in_memory().unwrap();
+        enable(&store, "Studio", "hw", "Production").unwrap();
+        bind(&store, "acct", 1).unwrap();
+        with_data(&store);
+        resolve_remote_deletion(&store, true).unwrap();
+        let again = store.sync_state().unwrap().unwrap();
+        assert!(
+            again.enabled,
+            "still syncing, bound, and about to merge afresh"
+        );
+        assert_eq!(again.account_hash.as_deref(), Some("acct"));
+        assert!(!again.initial_sync_done);
+        assert!(store.outbox().unwrap().is_empty());
+        resolve_remote_deletion(&store, false).unwrap();
+        let off = store.sync_state().unwrap().unwrap();
+        assert!(!off.enabled);
+        assert!(off.account_hash.is_none());
+        assert_eq!(store.setting::<String>("appTheme").as_deref(), Some("dark"));
     }
 
     #[test]

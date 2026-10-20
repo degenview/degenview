@@ -271,6 +271,13 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
             for failure in sent.failedZoneSaves {
                 fail(Codec.kind(of: failure.error), failure.error.localizedDescription)
             }
+            // The deletion this Mac asked for (see `deleteZone`) went through.
+            if sent.deletedZoneIDs.contains(zoneID) {
+                emitter.emit(["event": "zone_deleted"])
+            }
+            for (_, error) in sent.failedZoneDeletes {
+                fail(Codec.kind(of: error), error.localizedDescription)
+            }
         default:
             break
         }

@@ -163,6 +163,8 @@ pub enum TransportEvent {
         failed: Vec<SendFailure>,
     },
     Zone(ZoneEvent),
+    /// The zone this Mac asked to delete is gone (confirmation of `DeleteZone`).
+    ZoneDeleted,
     Network {
         available: bool,
     },

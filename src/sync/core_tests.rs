@@ -1198,3 +1198,67 @@ fn an_upsert_whose_row_vanished_is_dropped_and_reconciled() {
     a.run();
     assert!(a.outbox().iter().all(|r| r.op == OutboxOp::Delete) || a.outbox().is_empty());
 }
+
+// MARK: Deleting everything in iCloud
+
+#[test]
+fn deleting_cloud_data_is_confirmed_by_icloud_before_it_counts() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert!(!a.core.status().cloud_deleted);
+    a.core.delete_cloud_data();
+    assert_eq!(a.phase(), Phase::Syncing, "waiting for iCloud to confirm");
+    a.run();
+    assert!(cloud.names().is_empty());
+    assert!(a.core.status().cloud_deleted);
+    assert_eq!(a.lists_len(), 1, "nothing local was touched");
+}
+
+#[test]
+fn only_the_account_this_database_is_bound_to_can_be_deleted() {
+    let cloud = MockCloud::new();
+    // Signed in as a different account than the one this database syncs with.
+    let mut a = mac(&cloud, "A", "someone-else", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    a.core.delete_cloud_data();
+    a.run();
+    assert!(
+        !a.core
+            .transport_mut()
+            .commands
+            .contains(&TransportCommand::DeleteZone)
+    );
+    assert!(!a.core.status().cloud_deleted);
+}
+
+#[test]
+fn a_mac_that_did_not_ask_for_the_deletion_pauses_instead_of_deleting_anything() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    let mut b = mac(&cloud, "B", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    b.start();
+    a.core.delete_cloud_data();
+    a.run();
+    b.core.transport_mut().zone_event(ZoneEvent::Deleted);
+    b.run();
+    assert_eq!(b.phase(), Phase::Paused(PauseReason::RemoteDataDeleted));
+    assert!(!b.core.status().cloud_deleted);
+    assert_eq!(b.lists_len(), 0);
+}
+
+impl Mac {
+    pub(super) fn lists_len(&self) -> usize {
+        self.store
+            .lock()
+            .unwrap()
+            .raw_rows("watchlist")
+            .unwrap()
+            .len()
+    }
+}

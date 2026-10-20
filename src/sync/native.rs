@@ -283,6 +283,7 @@ pub fn event_from_json(text_json: &str) -> Result<TransportEvent, String> {
             "encrypted_data_reset" => ZoneEvent::EncryptedDataReset,
             _ => ZoneEvent::Deleted,
         }),
+        "zone_deleted" => TransportEvent::ZoneDeleted,
         "network" => TransportEvent::Network {
             available: value
                 .get("available")

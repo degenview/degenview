@@ -61,6 +61,12 @@ pub enum SyncAction {
     /// Keep a large delete from reaching iCloud and the other Macs.
     KeepHeldDeletes,
     DismissConflict(i64),
+    /// Delete every DegenView record in iCloud for the account this Mac syncs with.
+    DeleteCloudData,
+    /// Another Mac deleted the data in iCloud: upload this Mac's again, or stop.
+    ResolveRemoteDeletion {
+        reupload: bool,
+    },
 }
 
 /// Something only the user can decide.
@@ -72,6 +78,8 @@ pub enum SyncPrompt {
     Join(JoinSummary),
     /// A different Apple Account is signed in than the one this database syncs with.
     AccountChanged,
+    /// Another Mac deleted DegenView's data in iCloud.
+    RemoteDataDeleted,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,6 +99,8 @@ pub struct SyncView {
     pub prompt: Option<SyncPrompt>,
     pub categories: Vec<(Category, bool)>,
     pub conflicts: Vec<ConflictSummary>,
+    /// iCloud confirmed that all DegenView data there was deleted at this Mac's request.
+    pub cloud_deleted: bool,
 }
 
 impl SyncView {
@@ -110,6 +120,7 @@ impl SyncView {
             prompt: None,
             categories: Category::ALL.iter().map(|c| (*c, true)).collect(),
             conflicts: Vec::new(),
+            cloud_deleted: false,
         }
     }
 }
@@ -122,6 +133,7 @@ enum WorkerMsg {
     Restart,
     ClearPause,
     SyncNow,
+    DeleteCloudData,
     Tick,
     /// Only tests end the worker early; the process exiting ends it otherwise.
     #[cfg_attr(not(test), allow(dead_code))]
@@ -313,6 +325,18 @@ impl SyncHost {
                 }
             }
         }
+        // iCloud confirmed the deletion this Mac asked for: forget the binding and stop.
+        let confirmed = lock(&self.shared)
+            .view
+            .as_ref()
+            .is_some_and(|view| view.cloud_deleted);
+        if confirmed {
+            let _ = account::after_cloud_delete(&lock(&self.store));
+            self.tell(WorkerMsg::Stop);
+            if let Some(view) = lock(&self.shared).view.as_mut() {
+                view.cloud_deleted = false;
+            }
+        }
         self.scan_scripts_if_due();
         self.refresh_view();
         std::mem::take(&mut lock(&self.shared).reports)
@@ -448,6 +472,16 @@ impl SyncHost {
             SyncAction::DismissConflict(id) => {
                 let _ = lock(&self.store).dismiss_conflict(id, now_ms());
             }
+            SyncAction::DeleteCloudData => self.tell(WorkerMsg::DeleteCloudData),
+            SyncAction::ResolveRemoteDeletion { reupload } => {
+                let _ = account::resolve_remote_deletion(&lock(&self.store), reupload);
+                if reupload {
+                    self.tell(WorkerMsg::ClearPause);
+                    self.tell(WorkerMsg::Restart);
+                } else {
+                    self.tell(WorkerMsg::Stop);
+                }
+            }
         }
     }
 
@@ -555,6 +589,8 @@ impl SyncHost {
             None
         } else if mismatched || matches!(view.phase, Phase::Paused(PauseReason::AccountChanged)) {
             Some(SyncPrompt::AccountChanged)
+        } else if matches!(view.phase, Phase::Paused(PauseReason::RemoteDataDeleted)) {
+            Some(SyncPrompt::RemoteDataDeleted)
         } else if pending_account {
             Some(SyncPrompt::ConfirmAccount)
         } else if view.phase == Phase::AwaitingJoin {
@@ -596,6 +632,7 @@ fn run_worker<T: SyncTransport>(
             }
             Ok(WorkerMsg::ClearPause) => core.clear_pause(),
             Ok(WorkerMsg::SyncNow) => core.request_sync(),
+            Ok(WorkerMsg::DeleteCloudData) => core.delete_cloud_data(),
             Ok(WorkerMsg::Tick) | Err(RecvTimeoutError::Timeout) => core.tick(),
             Ok(WorkerMsg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
                 core.stop();
@@ -611,6 +648,7 @@ fn run_worker<T: SyncTransport>(
             if let Some(view) = shared.view.as_mut() {
                 view.phase = status.phase;
                 view.last_error = status.last_error.clone();
+                view.cloud_deleted = status.cloud_deleted;
             }
             if had_effects {
                 drop(shared);

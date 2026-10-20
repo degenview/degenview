@@ -93,6 +93,8 @@ pub struct Status {
     pub last_send_ms: Option<i64>,
     pub last_fetch_ms: Option<i64>,
     pub last_error: Option<String>,
+    /// iCloud confirmed that this Mac's request to delete all DegenView data there is done.
+    pub cloud_deleted: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,6 +129,15 @@ pub struct SyncCore<T: SyncTransport> {
     reconcile_needed: bool,
     effects: Vec<Effect>,
     scripts: Option<super::scripts::ScriptCache>,
+    /// A requested deletion of all data in iCloud: asked for, then confirmed.
+    cloud_delete: CloudDelete,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CloudDelete {
+    Idle,
+    Requested,
+    Confirmed,
 }
 
 impl<T: SyncTransport> SyncCore<T> {
@@ -149,6 +160,7 @@ impl<T: SyncTransport> SyncCore<T> {
             reconcile_needed: false,
             effects: Vec::new(),
             scripts: None,
+            cloud_delete: CloudDelete::Idle,
         }
     }
 
@@ -215,6 +227,19 @@ impl<T: SyncTransport> SyncCore<T> {
     pub fn clear_pause(&mut self) {
         self.pause = None;
         self.reconcile_needed = true;
+    }
+
+    /// Asks iCloud to delete every DegenView record for this account. Nothing local is touched
+    /// here; `Status::cloud_deleted` turns true once iCloud confirms, and only then should the
+    /// caller forget the binding.
+    pub fn delete_cloud_data(&mut self) {
+        // Only ever the account this database is bound to: never whichever one happens to be
+        // signed in.
+        if !self.started || !self.bound_account() {
+            return;
+        }
+        self.cloud_delete = CloudDelete::Requested;
+        self.transport.send(TransportCommand::DeleteZone);
     }
 
     /// "Sync Now": fetch and upload, without discarding or resetting anything.
@@ -423,6 +448,11 @@ impl<T: SyncTransport> SyncCore<T> {
                 failed,
             } => self.on_sent(saved, deleted, failed),
             TransportEvent::Zone(event) => self.on_zone(event),
+            TransportEvent::ZoneDeleted => {
+                if self.cloud_delete == CloudDelete::Requested {
+                    self.cloud_delete = CloudDelete::Confirmed;
+                }
+            }
             TransportEvent::Network { available } => {
                 self.network_up = available;
                 if available {
@@ -478,6 +508,10 @@ impl<T: SyncTransport> SyncCore<T> {
 
     fn on_zone(&mut self, event: ZoneEvent) {
         match event {
+            // Our own requested deletion surfacing as a zone change is not another Mac's doing.
+            ZoneEvent::Deleted | ZoneEvent::Purged if self.cloud_delete != CloudDelete::Idle => {
+                self.cloud_delete = CloudDelete::Confirmed;
+            }
             ZoneEvent::Deleted | ZoneEvent::Purged => {
                 self.pause = Some(PauseReason::RemoteDataDeleted);
             }
@@ -854,6 +888,7 @@ impl<T: SyncTransport> SyncCore<T> {
             last_send_ms: state.as_ref().and_then(|s| s.last_send_ms),
             last_fetch_ms: state.as_ref().and_then(|s| s.last_fetch_ms),
             last_error: self.last_error.as_ref().map(|(_, message)| message.clone()),
+            cloud_deleted: self.cloud_delete == CloudDelete::Confirmed,
         }
     }
 
@@ -887,6 +922,9 @@ impl<T: SyncTransport> SyncCore<T> {
             && !is_transient(*kind)
         {
             return Phase::Error(*kind);
+        }
+        if self.cloud_delete == CloudDelete::Requested {
+            return Phase::Syncing;
         }
         if !state.initial_sync_done {
             return if self.fetch_in_flight {

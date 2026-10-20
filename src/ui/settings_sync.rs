@@ -140,6 +140,45 @@ pub fn body(ui: &mut egui::Ui, sync: &SyncHost, now_ms: i64) {
     small(ui, NOT_SYNCED);
     ui.add_space(8.0);
     small(ui, PRIVACY);
+    delete_section(ui, sync, &view);
+}
+
+/// The word the user types to confirm deleting everything in iCloud.
+pub const DELETE_WORD: &str = "delete";
+
+/// Deleting iCloud data is a different thing from turning sync off, and says so.
+fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
+    let id = egui::Id::new("icloud-delete-confirm");
+    let mut typed: String = ui.data_mut(|data| data.get_temp(id).unwrap_or_default());
+    ui.add_space(18.0);
+    section(
+        ui,
+        "Delete iCloud data",
+        Some(
+            "Removes everything DegenView stored in iCloud and stops syncing. Your data on this Mac is kept, and other Macs keep theirs.",
+        ),
+        |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                ui.add(
+                    egui::TextEdit::singleline(&mut typed)
+                        .hint_text(format!("Type “{DELETE_WORD}” to confirm"))
+                        .desired_width(220.0),
+                );
+                let ready = delete_confirmed(&typed) && !view.cloud_deleted;
+                if kit::push_button(ui, None, "Delete My iCloud Data", ready).clicked() {
+                    sync.act(SyncAction::DeleteCloudData);
+                    typed.clear();
+                }
+            });
+        },
+    );
+    ui.data_mut(|data| data.insert_temp(id, typed));
+}
+
+/// Whether what was typed confirms the deletion.
+pub fn delete_confirmed(typed: &str) -> bool {
+    typed.trim().eq_ignore_ascii_case(DELETE_WORD)
 }
 
 fn small(ui: &mut egui::Ui, text: &str) {
@@ -241,6 +280,25 @@ fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             });
         }
         SyncPrompt::Join(summary) => join_prompt(ui, sync, summary),
+        SyncPrompt::RemoteDataDeleted => {
+            kit::notice_card(
+                ui,
+                Icon::TriangleFill,
+                kit::ORANGE,
+                "DegenView's data in iCloud was deleted",
+                Some("Another Mac deleted it. Everything on this Mac is still here."),
+                None,
+            );
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                if kit::push_button(ui, None, "Upload This Mac's Data Again", true).clicked() {
+                    sync.act(SyncAction::ResolveRemoteDeletion { reupload: true });
+                }
+                if kit::push_button(ui, None, "Turn Sync Off", true).clicked() {
+                    sync.act(SyncAction::ResolveRemoteDeletion { reupload: false });
+                }
+            });
+        }
         SyncPrompt::AccountChanged => {
             kit::notice_card(
                 ui,
@@ -467,6 +525,15 @@ mod tests {
     fn conflicts_say_both_versions_were_kept() {
         assert!(conflict_text("layout").contains("Both versions were kept"));
         assert!(conflict_text("script").starts_with("A Pine script"));
+    }
+
+    #[test]
+    fn deleting_icloud_data_needs_the_word_typed() {
+        assert!(!delete_confirmed(""));
+        assert!(!delete_confirmed("del"));
+        assert!(!delete_confirmed("yes"));
+        assert!(delete_confirmed("delete"));
+        assert!(delete_confirmed("  Delete "));
     }
 
     #[test]

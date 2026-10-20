@@ -362,7 +362,10 @@ impl SyncTransport for MockTransport {
             }
             TransportCommand::Send => self.send_staged(),
             TransportCommand::Fetch => self.fetch(),
-            TransportCommand::DeleteZone => self.cloud.delete_zone_contents(),
+            TransportCommand::DeleteZone => {
+                self.cloud.delete_zone_contents();
+                self.events.push_back(TransportEvent::ZoneDeleted);
+            }
             TransportCommand::Stop => {}
         }
     }

@@ -351,6 +351,61 @@ fn large_deletes_wait_for_confirmation_and_can_be_kept_in_icloud() {
 }
 
 #[test]
+fn deleting_icloud_data_unbinds_after_icloud_confirms_and_keeps_local_data() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.put_watchlist(10, "Mine");
+    a.set_up(JoinMode::Merge);
+    assert_eq!(cloud.names(), ["watchlist.10"]);
+    a.host.act(SyncAction::DeleteCloudData);
+    a.wait("sync off", |v| !v.enabled);
+    assert!(cloud.names().is_empty(), "iCloud's copy is gone");
+    assert_eq!(a.rows("watchlist").len(), 1, "this Mac's copy is kept");
+    let state = a.store.lock().unwrap().sync_state().unwrap().unwrap();
+    assert!(
+        state.account_hash.is_none(),
+        "forgotten, so turning sync on starts afresh"
+    );
+    assert!(!state.initial_sync_done);
+}
+
+#[test]
+fn another_macs_deletion_offers_to_upload_again_and_does_so() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.put_watchlist(10, "Mine");
+    a.set_up(JoinMode::Merge);
+    // Another Mac wipes iCloud; this Mac is told.
+    cloud.delete_zone_contents();
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw("UPDATE sync_state SET enabled = enabled")
+        .unwrap();
+    a.host.tell(WorkerMsg::Event(TransportEvent::Zone(
+        crate::sync::transport::ZoneEvent::Deleted,
+    )));
+    a.wait("the prompt", |v| {
+        v.prompt == Some(SyncPrompt::RemoteDataDeleted)
+    });
+    assert_eq!(a.rows("watchlist").len(), 1);
+    a.host
+        .act(SyncAction::ResolveRemoteDeletion { reupload: true });
+    a.wait("the join prompt", |v| {
+        matches!(v.prompt, Some(SyncPrompt::Join(_)))
+    });
+    a.host.act(SyncAction::ChooseJoin(JoinMode::Merge));
+    a.wait("up to date", |v| {
+        v.phase == Phase::UpToDate && v.pending == 0
+    });
+    assert_eq!(
+        cloud.names(),
+        ["watchlist.10"],
+        "uploaded again from this Mac"
+    );
+}
+
+#[test]
 fn today_is_a_calendar_date() {
     let text = super::today();
     assert_eq!(text.len(), 10);
