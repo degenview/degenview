@@ -20,6 +20,7 @@ mod service;
 mod snapshot_host;
 mod store;
 mod sync;
+mod sync_host;
 mod tab_window_host;
 mod ui;
 mod update_host;
@@ -29,7 +30,17 @@ mod workspace;
 use app::DegenViewApp;
 use eframe::egui;
 
+pub use sync_host::{EventSink, TransportFactory};
+
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
+    run_gui_with(None)
+}
+
+/// Runs the app. `sync` connects iCloud Sync to CloudKit; builds without it pass `None` and the
+/// feature stays out of Settings.
+pub fn run_gui_with(
+    sync: Option<std::sync::Arc<dyn TransportFactory>>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let store = store::open_default()?;
     // A finished update leaves the previous app in a hidden folder until the new one has started.
     service::work_queue::submit(service::self_update::cleanup_stale);
@@ -50,7 +61,13 @@ pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
     Ok(eframe::run_native(
         "DegenView",
         options,
-        Box::new(move |creation| Ok(Box::new(DegenViewApp::new(creation, store.clone())))),
+        Box::new(move |creation| {
+            Ok(Box::new(DegenViewApp::new(
+                creation,
+                store.clone(),
+                sync.clone(),
+            )))
+        }),
     )?)
 }
 

@@ -67,6 +67,44 @@ impl WatchlistStore {
         &self.flags
     }
 
+    /// Takes the lists and flags from the store again, discarding what is held in memory. Used
+    /// after another process or iCloud Sync wrote them: this store otherwise writes back from its
+    /// own copy and would undo that change on the next edit.
+    pub fn reload(&mut self) {
+        let (loaded, loaded_flags) = {
+            let store = self.store.lock().expect("store lock poisoned");
+            (
+                store.documents_strict::<Watchlist>("watchlist"),
+                store.setting_strict::<Flags>("watchlist.flags"),
+            )
+        };
+        let error = loaded
+            .as_ref()
+            .err()
+            .map(ToString::to_string)
+            .or_else(|| loaded_flags.as_ref().err().map(ToString::to_string));
+        if error.is_some() {
+            // Keep what is in memory and refuse writes, as at startup.
+            self.load_failed = true;
+            self.last_error = error;
+            return;
+        }
+        let mut lists = loaded.unwrap_or_default();
+        self.flags = loaded_flags.unwrap_or_default().unwrap_or_default();
+        self.load_failed = false;
+        self.last_error = None;
+        let had_favorites = lists.iter().any(|list| list.is_favorites);
+        if !had_favorites {
+            let mut favorites = Watchlist::new("Favorites");
+            favorites.is_favorites = true;
+            lists.push(favorites);
+        }
+        self.lists = lists;
+        if !had_favorites {
+            self.persist();
+        }
+    }
+
     pub fn load_failed(&self) -> bool {
         self.load_failed
     }
@@ -313,6 +351,59 @@ mod tests {
 
     fn item(symbol: &str) -> WatchlistInstrument {
         WatchlistInstrument::from_market(DataSource::Binance, symbol, symbol)
+    }
+
+    #[test]
+    fn reload_takes_what_another_writer_stored_instead_of_undoing_it() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared.clone());
+        let favorites = store.favorites();
+        store.add_to_list(favorites, item("BTCUSDT"));
+        // Another writer (iCloud Sync) stores a new list behind this store's back.
+        let mut lists: Vec<Watchlist> = shared
+            .lock()
+            .unwrap()
+            .documents_strict("watchlist")
+            .unwrap();
+        lists.push(Watchlist::new("From another Mac"));
+        shared
+            .lock()
+            .unwrap()
+            .replace_documents("watchlist", &lists)
+            .unwrap();
+        assert_eq!(
+            store.lists().len(),
+            1,
+            "the in-memory copy does not know yet"
+        );
+        store.reload();
+        assert_eq!(store.lists().len(), 2);
+        // The next edit keeps the other writer's list rather than writing the old copy back.
+        store.add_to_list(favorites, item("ETHUSDT"));
+        let stored: Vec<Watchlist> = shared
+            .lock()
+            .unwrap()
+            .documents_strict("watchlist")
+            .unwrap();
+        assert!(stored.iter().any(|l| l.name == "From another Mac"));
+    }
+
+    #[test]
+    fn reload_recreates_a_missing_favorites_list_and_recovers_from_a_bad_row() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared.clone());
+        shared
+            .lock()
+            .unwrap()
+            .replace_documents::<Watchlist>("watchlist", &[])
+            .unwrap();
+        store.reload();
+        assert!(store.lists().iter().any(|l| l.is_favorites));
+        assert!(!store.load_failed());
     }
 
     #[test]

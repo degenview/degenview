@@ -233,6 +233,33 @@ impl ScriptManager {
         self.id
     }
 
+    // MARK: iCloud Sync
+
+    /// The open script, if its editor holds text that is not saved. Cheap: iCloud Sync asks every
+    /// frame so it never overwrites what is being typed.
+    pub fn open_unsaved_id(&self) -> Option<String> {
+        self.open
+            .as_ref()
+            .filter(|open| open.editor.is_dirty())
+            .map(|open| open.id.clone())
+    }
+
+    /// Changes whenever the library does: a script created, saved, renamed, starred or deleted.
+    pub fn library_signature(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for script in &self.scripts {
+            (
+                &script.id,
+                &script.name,
+                script.modified_at_ms,
+                script.is_favorite,
+            )
+                .hash(&mut hasher);
+        }
+        hasher.finish()
+    }
+
     // MARK: Unsaved changes
 
     /// The scripts whose text differs from what is saved: the open editor's, and the drafts kept

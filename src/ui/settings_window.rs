@@ -38,12 +38,13 @@ pub enum SettingsSection {
     Webhooks,
     Snapshots,
     Mcp,
+    Sync,
     Storage,
     About,
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Appearance,
         Self::Alpaca,
         Self::CoinMarketCap,
@@ -51,9 +52,17 @@ impl SettingsSection {
         Self::Webhooks,
         Self::Snapshots,
         Self::Mcp,
+        Self::Sync,
         Self::Storage,
         Self::About,
     ];
+
+    /// The sections this build shows. iCloud Sync only exists where it can work.
+    pub fn visible() -> impl Iterator<Item = Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|section| *section != Self::Sync || crate::platform::has_icloud_sync())
+    }
 
     pub fn title(self) -> &'static str {
         match self {
@@ -65,6 +74,7 @@ impl SettingsSection {
             Self::Snapshots => "Snapshots",
             Self::Storage => "Storage",
             Self::Mcp => "MCP Server",
+            Self::Sync => "iCloud Sync",
             Self::About => "About",
         }
     }
@@ -80,6 +90,7 @@ impl SettingsSection {
             Self::Snapshots => Color32::from_rgb(255, 55, 95),
             Self::Storage => Color32::from_rgb(52, 199, 89),
             Self::Mcp => Color32::from_rgb(191, 90, 242),
+            Self::Sync => Color32::from_rgb(64, 156, 255),
             Self::About => Color32::from_rgb(142, 142, 147),
         }
     }
@@ -95,6 +106,7 @@ impl SettingsSection {
             Self::Snapshots => "snapshots",
             Self::Storage => "storage",
             Self::Mcp => "mcp",
+            Self::Sync => "icloud",
             Self::About => "about",
         }
     }
@@ -131,6 +143,7 @@ pub struct SettingsInput<'a> {
     pub mcp: McpSettingsInput<'a>,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsInput<'a>,
     pub updates: &'a crate::update_host::UpdateHost,
+    pub sync: &'a crate::sync_host::SyncHost,
     pub now_ms: i64,
 }
 
@@ -304,6 +317,7 @@ impl SettingsSection {
             Self::Snapshots => Icon::Camera,
             Self::Storage => Icon::Layers,
             Self::Mcp => Icon::LockFill,
+            Self::Sync => Icon::Cycle,
             Self::About => Icon::InfoCircle,
         }
     }
@@ -480,6 +494,15 @@ pub fn show(
                 actions.push(SettingsAction::QuitForUpdate);
             }
         }
+        SettingsSection::Sync => {
+            page_shell(
+                &mut page,
+                section,
+                "Keep your watchlists, layouts, drawings, templates and scripts the same on every Mac.",
+                false,
+                |ui| crate::ui::settings_sync::body(ui, input.sync, input.now_ms),
+            );
+        }
         SettingsSection::Webhooks => {
             let mut webhook_actions = Vec::new();
             let footer = page_shell(
@@ -505,7 +528,7 @@ pub fn show(
 fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
     let area = ui.max_rect();
     let mut y = area.top() + 10.0;
-    for section in SettingsSection::ALL {
+    for section in SettingsSection::visible() {
         let rect = Rect::from_min_size(
             Pos2::new(area.left() + 10.0, y),
             Vec2::new(area.width() - 20.0, 30.0),

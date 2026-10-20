@@ -273,6 +273,10 @@ pub struct DegenViewApp {
     alerts_open: Arc<AtomicBool>,
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
+    /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
+    sync: crate::sync_host::SyncHost,
+    /// The Script Manager's library as last seen by sync, to notice a save.
+    script_signature: u64,
     alert_editor: Arc<Mutex<Option<PriceAlertEditorState>>>,
     /// The Alerts window's tab, search and dialogs, kept across frames.
     alert_center_state: Arc<Mutex<AlertCenterState>>,
@@ -645,7 +649,11 @@ fn show_tab(
 }
 
 impl DegenViewApp {
-    pub fn new(creation: &eframe::CreationContext<'_>, store: SharedStore) -> Self {
+    pub fn new(
+        creation: &eframe::CreationContext<'_>,
+        store: SharedStore,
+        sync_factory: Option<Arc<dyn crate::sync_host::TransportFactory>>,
+    ) -> Self {
         let app_theme = store
             .lock()
             .ok()
@@ -693,6 +701,19 @@ impl DegenViewApp {
             let store = store.lock().expect("store lock poisoned");
             PineSubscriptionHost::load(&store)
         }));
+        let sync = {
+            let ctx = creation.egui_ctx.clone();
+            let backups = crate::store::data_dir()
+                .map(|dir| dir.join("SyncBackups"))
+                .unwrap_or_else(|| std::env::temp_dir().join("DegenViewSyncBackups"));
+            crate::sync_host::SyncHost::new(
+                store.clone(),
+                sync_factory,
+                crate::script_manager::store::ScriptStore::default_location(),
+                backups,
+                Arc::new(move || ctx.request_repaint()),
+            )
+        };
         let actions = Arc::new(Mutex::new(Vec::new()));
         let alerts_open = Arc::new(AtomicBool::new(false));
         let alert_editor = Arc::new(Mutex::new(None));
@@ -814,6 +835,8 @@ impl DegenViewApp {
             script_webhooks: Arc::new(Mutex::new(None)),
             alerts_open,
             updates: UpdateHost::new(),
+            sync,
+            script_signature: 0,
             alert_editor,
             banner,
             notifier,
@@ -1764,6 +1787,44 @@ impl DegenViewApp {
     /// Runs active Pine alert subscriptions over every open chart's candles and dispatches any that
     /// fire (webhooks + macOS notification via `dispatch_pine`). Each subscription keeps a
     /// persistent execution controller, so alerts follow the real tick/close lifecycle.
+    /// Applies what iCloud Sync fetched and reloads the stores this app holds in memory.
+    fn tick_sync(&mut self, ctx: &egui::Context) {
+        // Script files change outside the database: tell sync when the library or the text being
+        // typed changes.
+        let mut unsaved = std::collections::HashSet::new();
+        let mut signature = 0u64;
+        for slot in &self.tabs {
+            if let Ok(content) = slot.content.try_lock()
+                && let TabContent::Pine(manager) = &*content
+            {
+                signature ^= manager.library_signature();
+                unsaved.extend(manager.open_unsaved_id());
+            }
+        }
+        if signature != self.script_signature {
+            self.script_signature = signature;
+            self.sync.note_scripts_changed();
+        }
+        self.sync.set_unsaved_scripts(unsaved);
+        for report in self.sync.tick() {
+            if (report.tables.contains("watchlist") || report.settings.contains("watchlist.flags"))
+                && let Ok(mut watchlist) = self.watchlist.lock()
+            {
+                watchlist.reload();
+            }
+            if report.settings.contains(crate::ui::theme::THEME_KEY) {
+                let theme = self
+                    .store
+                    .lock()
+                    .ok()
+                    .and_then(|store| store.setting(crate::ui::theme::THEME_KEY))
+                    .unwrap_or_default();
+                crate::ui::theme::apply(ctx, theme);
+            }
+            ctx.request_repaint();
+        }
+    }
+
     fn tick_pine(&mut self) {
         let store = self.store.lock().expect("store lock poisoned");
         let now = now_ms();
@@ -1897,6 +1958,7 @@ impl DegenViewApp {
         let runtime_control = Arc::clone(&self.alert_runtime_control);
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
+        let sync = self.sync.clone();
         let builder = egui::ViewportBuilder::default()
             .with_title("Settings")
             .with_inner_size(settings_window::WINDOW_SIZE)
@@ -1971,6 +2033,7 @@ impl DegenViewApp {
                         &health,
                         mcp_input,
                         &updates,
+                        &sync,
                         now,
                         &reference_count,
                     );
@@ -2433,6 +2496,7 @@ impl eframe::App for DegenViewApp {
         self.tick_pine();
         self.tick_mcp(ctx);
         self.updates.tick(ctx);
+        self.tick_sync(ctx);
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
             self.save_session();
         }

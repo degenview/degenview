@@ -1239,6 +1239,50 @@ impl Store {
             .optional()
     }
 
+    /// Conflicts waiting for the user, newest last, with where each version went.
+    pub fn open_conflicts(&self) -> rusqlite::Result<Vec<ConflictSummary>> {
+        let mut statement = self.connection.prepare(
+            "SELECT id, entity_type, sync_id, kind, copy_sync_id, created_ms FROM sync_conflict
+             WHERE resolved_ms IS NULL ORDER BY id",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok(ConflictSummary {
+                    id: row.get(0)?,
+                    entity_type: row.get(1)?,
+                    sync_id: row.get(2)?,
+                    kind: row.get(3)?,
+                    copy_sync_id: row.get(4)?,
+                    created_ms: row.get(5)?,
+                })
+            })?
+            .collect()
+    }
+
+    /// The user has looked at a conflict (both versions were kept either way).
+    pub fn dismiss_conflict(&self, id: i64, now_ms: i64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_conflict SET resolved_ms = ?2, resolution = 'dismissed'
+             WHERE id = ?1 AND resolved_ms IS NULL",
+            params![id, now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// The user confirmed a large delete: let it go to iCloud and the other Macs.
+    pub fn release_held(&self) -> rusqlite::Result<usize> {
+        self.connection.execute(
+            "UPDATE sync_outbox SET state = 'pending' WHERE state = 'held'",
+            [],
+        )
+    }
+
+    /// The user does not want a large delete to reach iCloud: it stays on the other Macs.
+    pub fn drop_held(&self) -> rusqlite::Result<usize> {
+        self.connection
+            .execute("DELETE FROM sync_outbox WHERE state = 'held'", [])
+    }
+
     pub fn conflicts(&self) -> rusqlite::Result<Vec<(String, String, String)>> {
         let mut statement = self.connection.prepare(
             "SELECT entity_type, sync_id, kind FROM sync_conflict WHERE resolved_ms IS NULL ORDER BY id",
@@ -1278,6 +1322,18 @@ pub struct InboxRecord {
     pub revision: u64,
     pub origin_device: String,
     pub modified_ms: i64,
+}
+
+/// A conflict the user may want to look at.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConflictSummary {
+    pub id: i64,
+    pub entity_type: String,
+    pub sync_id: String,
+    pub kind: String,
+    /// The recoverable copy that holds the version that did not win.
+    pub copy_sync_id: Option<String>,
+    pub created_ms: i64,
 }
 
 /// What the cloud holds for an entity after a remote record was applied locally.
