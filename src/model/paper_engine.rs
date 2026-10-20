@@ -29,6 +29,8 @@ impl PaperTradingEngine {
             .chain(snapshot.order_events.iter().map(|event| event.id))
             .chain(snapshot.closed_trades.iter().map(|trade| trade.id))
             .chain(snapshot.journal.iter().map(|entry| entry.id))
+            // Ids at or above the legacy limit belong to records that arrived from another Mac.
+            .filter(|id| *id < crate::sync::ids::LEGACY_LIMIT)
             .max()
             .map_or(1, |max| max + 1);
         Self {
@@ -1185,6 +1187,23 @@ mod tests {
             )
             .unwrap();
         (engine, id)
+    }
+
+    #[test]
+    fn counter_ignores_ids_that_arrived_from_another_mac() {
+        let (engine, _) = engine_with_account();
+        let mut snapshot = engine.snapshot().clone();
+        snapshot.accounts[0].id = crate::sync::ids::GLOBAL_BASE | (7 << 24) | 3;
+        let mut engine = PaperTradingEngine::new(snapshot);
+        let local = engine
+            .create_account(
+                "Local",
+                PaperCurrency::Usd,
+                1_000.0,
+                PaperAccountSettings::default(),
+            )
+            .unwrap();
+        assert!(local < crate::sync::ids::LEGACY_LIMIT, "minted {local}");
     }
 
     #[test]

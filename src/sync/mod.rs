@@ -7,6 +7,7 @@
 pub mod account;
 pub mod apply;
 pub mod core;
+pub mod ids;
 pub mod initial;
 pub mod merge;
 pub mod native;

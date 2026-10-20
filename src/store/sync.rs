@@ -42,6 +42,9 @@ pub struct SyncState {
     pub last_fetch_ms: Option<i64>,
     pub last_send_ms: Option<i64>,
     pub last_error: Option<String>,
+    /// 31 random bits that namespace this database's counter ids when they cross into a synced
+    /// record (see `sync::ids`). Kept by a copied database so a lineage keeps meaning the same ids.
+    pub id_tag: u32,
 }
 
 pub const DEFAULT_ZONE: &str = "DegenViewZone";
@@ -66,6 +69,18 @@ pub fn new_device_id() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// 31 random bits, never zero (zero marks an unassigned tag).
+pub fn new_id_tag() -> u32 {
+    let mut bytes = [0u8; 4];
+    if getrandom::fill(&mut bytes).is_err() {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(1, |elapsed| elapsed.as_nanos() as u64);
+        bytes = (nanos as u32).to_le_bytes();
+    }
+    (u32::from_le_bytes(bytes) & 0x7fff_ffff).max(1)
+}
+
 impl Store {
     pub(super) fn create_sync_schema(&self) -> rusqlite::Result<()> {
         self.connection.execute_batch(
@@ -88,7 +103,8 @@ impl Store {
                 engine_state_account_hash TEXT,
                 last_fetch_ms INTEGER,
                 last_send_ms INTEGER,
-                last_error TEXT
+                last_error TEXT,
+                id_tag INTEGER NOT NULL DEFAULT 0
             );
             CREATE TABLE IF NOT EXISTS sync_entity (
                 entity_type TEXT NOT NULL,
@@ -157,7 +173,19 @@ impl Store {
                 evaluate_here INTEGER NOT NULL,
                 origin TEXT NOT NULL DEFAULT 'local'
             );",
-        )
+        )?;
+        // Databases created by an earlier development build lack the column.
+        let has_id_tag = self
+            .connection
+            .prepare("SELECT 1 FROM pragma_table_info('sync_state') WHERE name = 'id_tag'")?
+            .exists([])?;
+        if !has_id_tag {
+            self.connection.execute(
+                "ALTER TABLE sync_state ADD COLUMN id_tag INTEGER NOT NULL DEFAULT 0",
+                [],
+            )?;
+        }
+        Ok(())
     }
 
     /// The categories the user switched off. A missing entry is on.
@@ -212,7 +240,7 @@ impl Store {
                 "SELECT enabled, device_id, device_name, hardware_hash, container_id, environment,
                     account_hash, account_bound_ms, dataset_id, zone_name, categories,
                     initial_sync_done, engine_state, engine_state_account_hash, last_fetch_ms,
-                    last_send_ms, last_error
+                    last_send_ms, last_error, id_tag
                  FROM sync_state WHERE id = 1",
                 [],
                 |row| {
@@ -234,6 +262,7 @@ impl Store {
                         last_fetch_ms: row.get(14)?,
                         last_send_ms: row.get(15)?,
                         last_error: row.get(16)?,
+                        id_tag: row.get(17)?,
                     })
                 },
             )
@@ -251,6 +280,11 @@ impl Store {
             "INSERT OR IGNORE INTO sync_state (id, device_id, device_name, hardware_hash)
              VALUES (1, ?1, ?2, ?3)",
             params![new_device_id(), device_name, hardware_hash],
+        )?;
+        // Zero means unassigned: a fresh row, or one that predates the column.
+        self.connection.execute(
+            "UPDATE sync_state SET id_tag = ?1 WHERE id = 1 AND id_tag = 0",
+            params![new_id_tag()],
         )?;
         self.sync_state()?
             .ok_or(rusqlite::Error::QueryReturnedNoRows)
@@ -1711,6 +1745,33 @@ mod tests {
         assert_eq!(again.device_name, "Mac A");
         assert_eq!(first.device_id.len(), 32);
         assert_eq!(first.zone_name, DEFAULT_ZONE);
+    }
+
+    #[test]
+    fn id_tag_is_assigned_once_and_kept() {
+        let store = Store::open_in_memory().unwrap();
+        let first = store.ensure_sync_state("Mac A", "hw-a").unwrap();
+        assert!(first.id_tag > 0 && first.id_tag < 1 << 31);
+        assert_eq!(
+            store.ensure_sync_state("Mac B", "hw-b").unwrap().id_tag,
+            first.id_tag
+        );
+        let mut saved = store.sync_state().unwrap().unwrap();
+        saved.last_error = Some("x".into());
+        store.save_sync_state(&saved).unwrap();
+        assert_eq!(store.sync_state().unwrap().unwrap().id_tag, first.id_tag);
+    }
+
+    #[test]
+    fn database_without_the_id_tag_column_is_upgraded() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .connection
+            .execute_batch("ALTER TABLE sync_state DROP COLUMN id_tag")
+            .unwrap();
+        store.create_sync_schema().unwrap();
+        let state = store.ensure_sync_state("Mac", "hw").unwrap();
+        assert!(state.id_tag > 0);
     }
 
     #[test]
