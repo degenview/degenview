@@ -215,6 +215,25 @@ Without `--features icloud` the Settings page is hidden.
 
 Record the results here when they exist. There are none yet.
 
+## Performance
+
+Measured in a release build on an Apple Silicon Mac with an in-memory database
+(`cargo test --release --lib sync::perf_tests -- --ignored --nocapture`; ignored by default as
+timings are machine-specific). The write hook only projects rows whose text changed.
+
+| Operation | Sync off | Sync on | Added |
+| --- | --- | --- | --- |
+| Save 30 layouts × 20 drawings, nothing changed | 0.55 ms | 0.54 ms | ~0 |
+| …one drawing edited | 0.55 ms | 0.79 ms | 0.25 ms |
+| Save 20 watchlists × 50 entries, nothing changed | 0.77 ms | 0.74 ms | ~0 |
+| Alert engine rewrites 100 alerts (every row's runtime fields differ) | 0.32 ms | 1.54 ms | 1.2 ms, about once a second while alerts run |
+| Apply 200 fetched records in one transaction | | 5 ms | |
+| Reconcile 30 layouts (600 drawings) + 20 watchlists | | 7 ms | |
+
+Nothing here runs on the render thread except the SQLite write hook itself, and no CloudKit call
+is ever made from it. Not measured: initial sync of a very large library over a real network,
+memory use, CPU use of the worker while idle, and CloudKit operation counts.
+
 ## What is not verified
 
 * Whether a **Developer ID** profile can carry `icloud-container-identifiers`, `icloud-services`,

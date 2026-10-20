@@ -385,9 +385,36 @@ impl Store {
             }
             map
         };
-        let old_entities = project(&mut old.iter().map(|(id, p)| (id.as_str(), p.as_str())));
-        let new_entities = project(&mut new.iter().map(|(id, _, p)| (id.as_str(), p.as_str())));
-        self.queue_differences(&old_entities, &new_entities)
+        // Most rows are rewritten byte for byte. They cannot have changed, so only rows whose text
+        // differs, appeared or vanished are projected: this keeps a save of thirty layouts, or the
+        // alert engine's rewrite of its list, cheap.
+        let old_text: HashMap<&str, &str> = old
+            .iter()
+            .map(|(id, p)| (id.as_str(), p.as_str()))
+            .collect();
+        let new_text: HashMap<&str, &str> = new
+            .iter()
+            .map(|(id, _, p)| (id.as_str(), p.as_str()))
+            .collect();
+        let old_entities = project(
+            &mut old
+                .iter()
+                .filter(|(id, p)| new_text.get(id.as_str()) != Some(&p.as_str()))
+                .map(|(id, p)| (id.as_str(), p.as_str())),
+        );
+        let new_entities = project(
+            &mut new
+                .iter()
+                .filter(|(id, _, p)| old_text.get(id.as_str()) != Some(&p.as_str()))
+                .map(|(id, _, p)| (id.as_str(), p.as_str())),
+        );
+        // How many of the table's entities existed before, for the mass-delete check. Layout
+        // drawings follow their layout and are never counted on their own.
+        let mut totals = HashMap::new();
+        if let TablePolicy::Synced(kind) = table_policy(table) {
+            totals.insert(kind, old.len());
+        }
+        self.queue_differences(&old_entities, &new_entities, &totals)
     }
 
     /// Queues the change to a portable setting; local settings are ignored.
@@ -407,13 +434,15 @@ impl Store {
             }
             map
         };
-        self.queue_differences(&single(old), &single(new))
+        let totals = HashMap::from([(EntityKind::Setting, usize::from(old.is_some()))]);
+        self.queue_differences(&single(old), &single(new), &totals)
     }
 
     fn queue_differences(
         &self,
         old: &HashMap<EntityKey, Projected>,
         new: &HashMap<EntityKey, Projected>,
+        totals: &HashMap<EntityKind, usize>,
     ) -> rusqlite::Result<()> {
         let Some(state) = self.sync_state()? else {
             return Ok(());
@@ -447,7 +476,12 @@ impl Store {
             .filter(|entity| !off.contains(&entity.kind.category()))
             .collect();
         vanished.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
-        let held_layouts = self.mass_deleted_layouts(old, &vanished);
+        let held_layouts = self.mass_deleted_layouts(totals, &vanished);
+        let gone_by_kind: HashMap<EntityKind, usize> =
+            vanished.iter().fold(HashMap::new(), |mut counts, entity| {
+                *counts.entry(entity.kind).or_default() += 1;
+                counts
+            });
         for entity in vanished {
             let already = self
                 .entity_mark(entity.kind, &entity.sync_id)?
@@ -461,7 +495,10 @@ impl Store {
                     .split('.')
                     .next()
                     .is_some_and(|layout| held_layouts.contains(layout)),
-                _ => is_mass_delete(entity.kind, old, &vanished_count(old, new, entity.kind)),
+                _ => is_mass_delete_count(
+                    gone_by_kind.get(&entity.kind).copied().unwrap_or(0),
+                    totals.get(&entity.kind).copied().unwrap_or(0),
+                ),
             };
             let state = if held {
                 OutboxState::Held
@@ -476,14 +513,14 @@ impl Store {
     /// Layouts whose delete is held, so the deletes of their drawings are held with them.
     fn mass_deleted_layouts(
         &self,
-        old: &HashMap<EntityKey, Projected>,
+        totals: &HashMap<EntityKind, usize>,
         vanished: &[&Projected],
     ) -> std::collections::HashSet<String> {
         let gone = vanished
             .iter()
             .filter(|entity| entity.kind == EntityKind::Layout)
             .count();
-        if is_mass_delete_count(gone, count_kind(old, EntityKind::Layout)) {
+        if is_mass_delete_count(gone, totals.get(&EntityKind::Layout).copied().unwrap_or(0)) {
             vanished
                 .iter()
                 .filter(|entity| entity.kind == EntityKind::Layout)
@@ -1587,24 +1624,6 @@ impl Store {
         }
         Ok(done)
     }
-}
-
-fn count_kind(entities: &HashMap<EntityKey, Projected>, kind: EntityKind) -> usize {
-    entities.keys().filter(|(k, _)| *k == kind).count()
-}
-
-fn vanished_count(
-    old: &HashMap<EntityKey, Projected>,
-    new: &HashMap<EntityKey, Projected>,
-    kind: EntityKind,
-) -> usize {
-    old.keys()
-        .filter(|key| key.0 == kind && !new.contains_key(*key))
-        .count()
-}
-
-fn is_mass_delete(kind: EntityKind, old: &HashMap<EntityKey, Projected>, gone: &usize) -> bool {
-    is_mass_delete_count(*gone, count_kind(old, kind))
 }
 
 fn is_mass_delete_count(gone: usize, before: usize) -> bool {

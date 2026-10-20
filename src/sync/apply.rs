@@ -203,10 +203,17 @@ impl<'a> Work<'a> {
             return Ok(None);
         };
         let rows = self.rows(table)?;
+        let favorites = kind == EntityKind::Watchlist && sync_id == FAVORITES_ID;
         for (index, row) in rows.iter().enumerate() {
             let id = Self::row_id(row);
-            // A layout's id is its row id, so only that row needs projecting.
-            if kind == EntityKind::Layout && id != sync_id {
+            // An entity's sync id is its row id (apart from the Favorites list, found by its
+            // flag), so only the matching row needs projecting. Without this, applying n records
+            // would project n rows n times.
+            if favorites {
+                if row.get("is_favorites").and_then(Value::as_bool) != Some(true) {
+                    continue;
+                }
+            } else if kind != EntityKind::LayoutDrawing && id != sync_id {
                 continue;
             }
             for entity in project_row(table, &id, &row.to_string()) {
