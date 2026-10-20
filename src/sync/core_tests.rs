@@ -660,6 +660,30 @@ fn repeated_failures_back_off_further() {
 }
 
 #[test]
+fn a_run_of_unexplained_failures_is_shown_and_clears_when_an_upload_lands() {
+    let cloud = MockCloud::new();
+    for _ in 0..3 {
+        cloud.inject(Fault::Send(ErrorKind::Unknown, None));
+    }
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    assert_eq!(a.phase(), Phase::Syncing, "one failure is quiet");
+    for expected in [Phase::Syncing, Phase::Error(ErrorKind::Unknown)] {
+        let due = a.outbox()[0].next_attempt_ms.unwrap();
+        a.advance(due - a.now.load(Ordering::Relaxed) + 1);
+        a.run();
+        assert_eq!(a.phase(), expected);
+    }
+    assert!(a.core.status().last_error.is_some());
+    let due = a.outbox()[0].next_attempt_ms.unwrap();
+    a.advance(due - a.now.load(Ordering::Relaxed) + 1);
+    a.run();
+    assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert_eq!(a.phase(), Phase::UpToDate);
+}
+
+#[test]
 fn a_missing_zone_is_created_and_the_upload_retried() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));

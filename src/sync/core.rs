@@ -29,6 +29,9 @@ const STALE_AFTER_MS: i64 = 60 * 24 * 60 * 60 * 1_000;
 /// quarter of what is synced: that looks like a problem, not a clean-up, so nothing is removed.
 const STALE_DELETE_LIMIT: usize = 20;
 
+/// Failed uploads in a row, with no recognised cause, after which the page says so.
+const UNEXPLAINED_FAILURES: u32 = 3;
+
 /// Entries handed to the engine per stage command.
 const STAGE_BATCH: usize = 100;
 
@@ -132,6 +135,9 @@ pub struct SyncCore<T: SyncTransport> {
     fetch_in_flight: bool,
     initial_fetch_done: bool,
     last_error: Option<(ErrorKind, String)>,
+    /// Uploads in a row that failed for no reason the engine recognises. A few are noise; a run of
+    /// them is something the user should be told about.
+    failure_streak: u32,
     pause: Option<PauseReason>,
     unapplied: HashSet<u64>,
     pending_state: Option<Vec<u8>>,
@@ -170,6 +176,7 @@ impl<T: SyncTransport> SyncCore<T> {
             fetch_in_flight: false,
             initial_fetch_done: false,
             last_error: None,
+            failure_streak: 0,
             pause: None,
             unapplied: HashSet::new(),
             pending_state: None,
@@ -817,6 +824,7 @@ impl<T: SyncTransport> SyncCore<T> {
             let _ = store.set_last_send(now);
             drop(store);
             self.last_error = None;
+            self.failure_streak = 0;
         }
         for done in deleted {
             self.inflight.remove(&done.outbox_seq);
@@ -828,6 +836,7 @@ impl<T: SyncTransport> SyncCore<T> {
             let _ = store.set_last_send(now);
             drop(store);
             self.last_error = None;
+            self.failure_streak = 0;
         }
         for failure in failed {
             self.on_failure(failure, now);
@@ -877,6 +886,11 @@ impl<T: SyncTransport> SyncCore<T> {
             .unwrap_or_else(PoisonError::into_inner)
             .fail_outbox(seq, at_ms, &failure.message);
         self.last_error = Some((failure.kind, failure.message.clone()));
+        self.failure_streak = if failure.kind == ErrorKind::Unknown {
+            self.failure_streak + 1
+        } else {
+            0
+        };
     }
 
     /// The cloud changed this record since we last saw it. Stage 5 resolves last-writer-wins;
@@ -1003,7 +1017,8 @@ impl<T: SyncTransport> SyncCore<T> {
             return Phase::WaitingForNetwork;
         }
         if let Some((kind, _)) = &self.last_error
-            && !is_transient(*kind)
+            && (!is_transient(*kind)
+                || (*kind == ErrorKind::Unknown && self.failure_streak >= UNEXPLAINED_FAILURES))
         {
             return Phase::Error(*kind);
         }

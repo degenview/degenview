@@ -549,7 +549,12 @@ fn small(ui: &mut egui::Ui, text: &str) {
 fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
     section(ui, "Status", None, |ui| {
         card(ui, |ui| {
-            let (label, tone) = phase_label(view.phase);
+            let (mut label, tone) = phase_label(view.phase);
+            if matches!(view.phase, Phase::Error(_))
+                && view.last_error.as_deref().is_some_and(schema_not_deployed)
+            {
+                label = "iCloud isn't set up for this release yet".to_owned();
+            }
             row(ui, "Status", |ui| status_badge(ui, &label, tone));
             let last = view.last_send_ms.max(view.last_fetch_ms);
             if let Some(last) = last {
@@ -602,10 +607,22 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             && matches!(view.phase, Phase::Error(_))
         {
             ui.add_space(8.0);
-            small(ui, error);
+            if schema_not_deployed(error) {
+                small(ui, SCHEMA_NOT_DEPLOYED_HELP);
+            } else {
+                small(ui, error);
+            }
         }
     });
 }
+
+/// CloudKit's answer when a release build uploads before the record type has been deployed from
+/// the Development environment to Production.
+fn schema_not_deployed(message: &str) -> bool {
+    message.contains("in production schema")
+}
+
+const SCHEMA_NOT_DEPLOYED_HELP: &str = "iCloud refused the upload because this release's iCloud database has not been deployed to production yet. Nothing is lost: your changes keep waiting here and upload on their own once it is.";
 
 /// Decisions that must not be missed sit at the top of the page.
 fn prompts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
@@ -887,6 +904,14 @@ mod tests {
         assert!(!delete_confirmed("yes"));
         assert!(delete_confirmed("delete"));
         assert!(delete_confirmed("  Delete "));
+    }
+
+    #[test]
+    fn the_production_schema_error_is_recognised() {
+        assert!(schema_not_deployed(
+            "Error saving record <CKRecordID: 0x1; recordName=watchlist.1> to server: Cannot create new type DegenViewSyncRecord in production schema"
+        ));
+        assert!(!schema_not_deployed("The network connection was lost"));
     }
 
     #[test]
