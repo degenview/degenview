@@ -270,6 +270,9 @@ pub struct OutboxRow {
     pub op: OutboxOp,
     pub state: OutboxState,
     pub attempts: i64,
+    pub queued_ms: i64,
+    pub next_attempt_ms: Option<i64>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -542,11 +545,28 @@ impl Store {
 
     /// Everything waiting to upload, oldest first.
     pub fn outbox(&self) -> rusqlite::Result<Vec<OutboxRow>> {
-        let mut statement = self.connection.prepare(
-            "SELECT seq, entity_type, sync_id, op, state, attempts FROM sync_outbox ORDER BY seq",
-        )?;
+        self.outbox_where("1 = 1", [])
+    }
+
+    /// Pending entries whose retry time has come, oldest first.
+    pub fn outbox_due(&self, now_ms: i64) -> rusqlite::Result<Vec<OutboxRow>> {
+        self.outbox_where(
+            "state = 'pending' AND (next_attempt_ms IS NULL OR next_attempt_ms <= ?1)",
+            [now_ms],
+        )
+    }
+
+    fn outbox_where<P: rusqlite::Params>(
+        &self,
+        condition: &str,
+        params: P,
+    ) -> rusqlite::Result<Vec<OutboxRow>> {
+        let mut statement = self.connection.prepare(&format!(
+            "SELECT seq, entity_type, sync_id, op, state, attempts, queued_ms, next_attempt_ms,
+                last_error FROM sync_outbox WHERE {condition} ORDER BY seq"
+        ))?;
         let rows = statement
-            .query_map([], |row| {
+            .query_map(params, |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
@@ -554,31 +574,384 @@ impl Store {
                     row.get::<_, String>(3)?,
                     row.get::<_, String>(4)?,
                     row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
+                    row.get::<_, Option<String>>(8)?,
                 ))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows
             .into_iter()
-            .filter_map(|(seq, kind, sync_id, op, state, attempts)| {
-                Some(OutboxRow {
+            .filter_map(
+                |(
                     seq,
-                    kind: EntityKind::from_prefix(&kind)?,
+                    kind,
                     sync_id,
-                    op: if op == "delete" {
-                        OutboxOp::Delete
-                    } else {
-                        OutboxOp::Upsert
-                    },
-                    state: match state.as_str() {
-                        "held" => OutboxState::Held,
-                        "blocked" => OutboxState::Blocked,
-                        _ => OutboxState::Pending,
-                    },
+                    op,
+                    state,
                     attempts,
-                })
-            })
+                    queued_ms,
+                    next_attempt_ms,
+                    last_error,
+                )| {
+                    Some(OutboxRow {
+                        seq,
+                        kind: EntityKind::from_prefix(&kind)?,
+                        sync_id,
+                        op: if op == "delete" {
+                            OutboxOp::Delete
+                        } else {
+                            OutboxOp::Upsert
+                        },
+                        state: match state.as_str() {
+                            "held" => OutboxState::Held,
+                            "blocked" => OutboxState::Blocked,
+                            _ => OutboxState::Pending,
+                        },
+                        attempts,
+                        queued_ms,
+                        next_attempt_ms,
+                        last_error,
+                    })
+                },
+            )
             .collect())
     }
+
+    /// The live entity for an outbox entry, projected fresh so a payload is never stale.
+    pub fn load_projected(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<Load> {
+        let by_id = |table: &str, id: &str| -> rusqlite::Result<Option<String>> {
+            self.connection
+                .query_row(
+                    &format!("SELECT payload FROM {table} WHERE id = ?1"),
+                    [id],
+                    |row| row.get(0),
+                )
+                .optional()
+        };
+        let pick = |table: &str, id: &str, payload: Option<String>| {
+            payload
+                .into_iter()
+                .flat_map(|payload| project_row(table, id, &payload))
+                .find(|entity| entity.kind == kind && entity.sync_id == sync_id)
+        };
+        let found = match kind {
+            EntityKind::Script => return Ok(Load::NotStored),
+            EntityKind::Layout => pick("saved_view", sync_id, by_id("saved_view", sync_id)?),
+            EntityKind::LayoutDrawing => {
+                let layout = sync_id.split('.').next().unwrap_or_default();
+                pick("saved_view", layout, by_id("saved_view", layout)?)
+            }
+            EntityKind::Watchlist => {
+                let mut statement = self
+                    .connection
+                    .prepare("SELECT id, payload FROM watchlist")?;
+                let rows = statement
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+                rows.into_iter()
+                    .flat_map(|(id, payload)| project_row("watchlist", &id, &payload))
+                    .find(|entity| entity.sync_id == sync_id)
+            }
+            EntityKind::ChartTemplate => {
+                pick("chart_template", sync_id, by_id("chart_template", sync_id)?)
+            }
+            EntityKind::DrawingTemplate => pick(
+                "drawing_template",
+                sync_id,
+                by_id("drawing_template", sync_id)?,
+            ),
+            EntityKind::Alert => pick("price_alert", sync_id, by_id("price_alert", sync_id)?),
+            EntityKind::Setting => {
+                let value: Option<String> = self
+                    .connection
+                    .query_row(
+                        "SELECT value FROM setting WHERE key = ?1",
+                        [sync_id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                value.and_then(|value| project_setting(sync_id, &value))
+            }
+        };
+        Ok(found.map_or(Load::Gone, Load::Found))
+    }
+
+    /// Sync metadata for one entity.
+    pub fn entity_meta(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+    ) -> rusqlite::Result<Option<EntityMeta>> {
+        self.connection
+            .query_row(
+                "SELECT logical_revision, origin_device, synced_hash, system_fields, deleted, deleted_ms
+                 FROM sync_entity WHERE entity_type = ?1 AND sync_id = ?2",
+                params![kind.prefix(), sync_id],
+                |row| {
+                    Ok(EntityMeta {
+                        revision: row.get(0)?,
+                        origin_device: row.get(1)?,
+                        synced_hash: row.get(2)?,
+                        system_fields: row.get(3)?,
+                        deleted: row.get(4)?,
+                        deleted_ms: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+    }
+
+    /// The cloud accepted an upload. Records what the cloud now holds, then removes the outbox
+    /// entry only if it is still the one that was sent: a newer local edit keeps its place.
+    pub fn ack_saved(
+        &self,
+        seq: i64,
+        kind: EntityKind,
+        sync_id: &str,
+        sent_hash: &str,
+        system_fields: &[u8],
+        now_ms: i64,
+    ) -> rusqlite::Result<()> {
+        self.in_savepoint("ack_saved", || {
+            self.connection.execute(
+                "UPDATE sync_entity SET synced_hash = ?3, system_fields = ?4, cloud_modified_ms = ?5
+                 WHERE entity_type = ?1 AND sync_id = ?2",
+                params![kind.prefix(), sync_id, sent_hash, system_fields, now_ms],
+            )?;
+            self.connection
+                .execute("DELETE FROM sync_outbox WHERE seq = ?1", [seq])?;
+            Ok(())
+        })
+    }
+
+    /// The cloud confirmed a delete (or that the record was already gone).
+    pub fn ack_deleted(&self, seq: i64, kind: EntityKind, sync_id: &str) -> rusqlite::Result<()> {
+        self.in_savepoint("ack_deleted", || {
+            self.connection.execute(
+                "UPDATE sync_entity SET synced_hash = NULL, system_fields = NULL
+                 WHERE entity_type = ?1 AND sync_id = ?2 AND deleted = 1",
+                params![kind.prefix(), sync_id],
+            )?;
+            self.connection
+                .execute("DELETE FROM sync_outbox WHERE seq = ?1", [seq])?;
+            Ok(())
+        })
+    }
+
+    /// Keeps the cloud's change tag current without touching the outbox.
+    pub fn set_system_fields(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+        system_fields: &[u8],
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_entity SET system_fields = ?3 WHERE entity_type = ?1 AND sync_id = ?2",
+            params![kind.prefix(), sync_id, system_fields],
+        )?;
+        Ok(())
+    }
+
+    /// An upload failed and will be retried at `next_attempt_ms`.
+    pub fn fail_outbox(&self, seq: i64, next_attempt_ms: i64, error: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_outbox SET attempts = attempts + 1, next_attempt_ms = ?2, last_error = ?3
+             WHERE seq = ?1",
+            params![seq, next_attempt_ms, error],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_outbox_state(
+        &self,
+        seq: i64,
+        state: OutboxState,
+        error: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_outbox SET state = ?2, last_error = ?3 WHERE seq = ?1",
+            params![
+                seq,
+                match state {
+                    OutboxState::Pending => "pending",
+                    OutboxState::Held => "held",
+                    OutboxState::Blocked => "blocked",
+                },
+                error
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Drops an outbox entry, but only the exact one that was looked at.
+    pub fn remove_outbox(&self, seq: i64) -> rusqlite::Result<()> {
+        self.connection
+            .execute("DELETE FROM sync_outbox WHERE seq = ?1", [seq])?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn execute_raw(&self, sql: &str) -> rusqlite::Result<usize> {
+        self.connection.execute(sql, [])
+    }
+
+    /// Makes an entry due immediately without counting a failed attempt.
+    pub fn retry_now(&self, seq: i64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_outbox SET next_attempt_ms = NULL WHERE seq = ?1",
+            [seq],
+        )?;
+        Ok(())
+    }
+
+    /// Forgets the cloud's change tag for one entity so the next save creates it afresh.
+    pub fn clear_system_fields(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_entity SET system_fields = NULL WHERE entity_type = ?1 AND sync_id = ?2",
+            params![kind.prefix(), sync_id],
+        )?;
+        Ok(())
+    }
+
+    /// iCloud lost its keys or the zone was wiped: nothing is known to be in the cloud any more.
+    pub fn forget_cloud_state(&self) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_entity SET system_fields = NULL, synced_hash = NULL WHERE deleted = 0",
+            [],
+        )?;
+        Ok(())
+    }
+
+    /// Persists the engine checkpoint together with the account it belongs to.
+    pub fn save_engine_state(
+        &self,
+        state: Option<&[u8]>,
+        account_hash: Option<&str>,
+        now_ms: i64,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_state SET engine_state = ?1, engine_state_account_hash = ?2,
+                last_fetch_ms = ?3 WHERE id = 1",
+            params![state, account_hash, now_ms],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_last_send(&self, now_ms: i64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_state SET last_send_ms = ?1 WHERE id = 1",
+            [now_ms],
+        )?;
+        Ok(())
+    }
+
+    /// Keeps a remote record that is not applied, to be reconsidered later (an update may teach
+    /// this version to read it).
+    pub fn put_inbox(&self, record: &InboxRecord, now_ms: i64) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT OR REPLACE INTO sync_inbox
+                (record_name, entity_type, schema_version, reason, payload, system_fields, received_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                record.record_name,
+                record.entity_type,
+                record.schema_version,
+                record.reason,
+                record.payload,
+                record.system_fields,
+                now_ms
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn inbox(&self) -> rusqlite::Result<Vec<InboxRecord>> {
+        let mut statement = self.connection.prepare(
+            "SELECT record_name, entity_type, schema_version, reason, payload, system_fields
+             FROM sync_inbox ORDER BY received_ms, record_name",
+        )?;
+        statement
+            .query_map([], |row| {
+                Ok(InboxRecord {
+                    record_name: row.get(0)?,
+                    entity_type: row.get(1)?,
+                    schema_version: row.get(2)?,
+                    reason: row.get(3)?,
+                    payload: row.get(4)?,
+                    system_fields: row.get(5)?,
+                })
+            })?
+            .collect()
+    }
+
+    pub fn remove_inbox(&self, record_name: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "DELETE FROM sync_inbox WHERE record_name = ?1",
+            [record_name],
+        )?;
+        Ok(())
+    }
+
+    /// Conflicts the user has not resolved or dismissed.
+    pub fn open_conflict_count(&self) -> rusqlite::Result<usize> {
+        self.connection.query_row(
+            "SELECT COUNT(*) FROM sync_conflict WHERE resolved_ms IS NULL",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n as usize),
+        )
+    }
+
+    fn in_savepoint(
+        &self,
+        name: &str,
+        f: impl FnOnce() -> rusqlite::Result<()>,
+    ) -> rusqlite::Result<()> {
+        self.connection
+            .execute_batch(&format!("SAVEPOINT {name}"))?;
+        let result = f();
+        if result.is_err() {
+            self.connection
+                .execute_batch(&format!("ROLLBACK TO {name}"))?;
+        }
+        self.connection.execute_batch(&format!("RELEASE {name}"))?;
+        result
+    }
+}
+
+/// A remote record kept in `sync_inbox` instead of being applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboxRecord {
+    pub record_name: String,
+    pub entity_type: String,
+    pub schema_version: u32,
+    /// `newer_schema`, `invalid`, `unknown_type`, `orphan` or `initial_pending`.
+    pub reason: String,
+    pub payload: Vec<u8>,
+    pub system_fields: Option<Vec<u8>>,
+}
+
+/// The result of loading an outbox entry's live entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Load {
+    Found(Projected),
+    /// The row no longer exists; a delete or a reconcile will follow.
+    Gone,
+    /// Not held in SQLite (scripts are files); the caller must supply it.
+    NotStored,
+}
+
+/// Sync bookkeeping for one entity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityMeta {
+    pub revision: i64,
+    pub origin_device: String,
+    pub synced_hash: Option<String>,
+    pub system_fields: Option<Vec<u8>>,
+    pub deleted: bool,
+    pub deleted_ms: Option<i64>,
 }
 
 /// What a reconcile pass queued.

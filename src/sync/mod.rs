@@ -4,7 +4,16 @@
 // The sync layer lands in stages; items are wired up as later stages consume them.
 #![allow(dead_code)]
 
+pub mod core;
+pub mod outbox;
 pub mod policy;
 pub mod project;
 pub mod record;
+pub mod transport;
 pub mod validate;
+
+#[cfg(test)]
+pub mod mock;
+
+#[cfg(test)]
+mod core_tests;
