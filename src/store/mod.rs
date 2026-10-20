@@ -302,6 +302,8 @@ impl Store {
         self.connection
             .execute_batch("SAVEPOINT replace_documents")?;
         let result = (|| {
+            // With sync on, the upload intent commits with the rows or not at all.
+            let tracked = self.tracked_old_rows(table)?;
             self.connection
                 .execute(&format!("DELETE FROM {table}"), [])?;
             let mut statement = self.connection.prepare(&format!(
@@ -309,6 +311,9 @@ impl Store {
             ))?;
             for (id, position, payload) in &encoded {
                 statement.execute(rusqlite::params![id, position, payload])?;
+            }
+            if let Some(old) = tracked {
+                self.track_documents(table, &old, &encoded)?;
             }
             Ok(())
         })();
@@ -406,18 +411,49 @@ impl Store {
     pub fn set_setting<T: Serialize>(&self, key: &str, value: &T) -> rusqlite::Result<()> {
         let payload = serde_json::to_string(value)
             .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
-        self.connection.execute(
-            "INSERT OR REPLACE INTO setting (key, value) VALUES (?1, ?2)",
-            rusqlite::params![key, payload],
-        )?;
+        self.write_setting(key, Some(&payload))
+    }
+
+    /// Writes or clears a setting. A portable one also queues its upload in the same savepoint.
+    fn write_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
+        let tracked = sync::tracks_setting(key) && self.sync_enabled();
+        if !tracked {
+            return self.apply_setting(key, value);
+        }
+        self.connection.execute_batch("SAVEPOINT write_setting")?;
+        let result = (|| {
+            let old: Option<String> = self
+                .connection
+                .query_row("SELECT value FROM setting WHERE key = ?1", [key], |row| {
+                    row.get(0)
+                })
+                .optional()?;
+            self.apply_setting(key, value)?;
+            self.track_setting(key, old.as_deref(), value)
+        })();
+        if result.is_err() {
+            self.connection.execute_batch("ROLLBACK TO write_setting")?;
+        }
+        self.connection.execute_batch("RELEASE write_setting")?;
+        result
+    }
+
+    fn apply_setting(&self, key: &str, value: Option<&str>) -> rusqlite::Result<()> {
+        match value {
+            Some(value) => self.connection.execute(
+                "INSERT OR REPLACE INTO setting (key, value) VALUES (?1, ?2)",
+                rusqlite::params![key, value],
+            ),
+            None => self
+                .connection
+                .execute("DELETE FROM setting WHERE key = ?1", [key]),
+        }?;
         Ok(())
     }
 
     #[allow(dead_code)] // settings UI (Stage 6) uses this to clear a key
     pub fn remove_setting(&self, key: &str) -> rusqlite::Result<()> {
-        self.connection
-            .execute("DELETE FROM setting WHERE key = ?1", [key])?;
-        Ok(())
+        self.write_setting(key, None)
     }
 }
 
