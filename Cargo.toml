@@ -2,6 +2,7 @@
 name = "degenview"
 version = "0.5.1"
 edition = "2024"
+rust-version = "1.95"
 description = "A native macOS market dashboard, rewritten in Rust"
 license = "GPL-3.0-only"
 

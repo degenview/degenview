@@ -115,7 +115,7 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 ## Requirements
 
 - macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64)
-- [Rust](https://rustup.rs) toolchain (`cargo` on your `PATH`)
+- [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
   and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS
 - No CoinMarketCap API key is required; adding one in Settings is optional
