@@ -2175,6 +2175,8 @@ impl DegenViewApp {
                         })
                         .collect()
                 };
+                let muted = store.muted_alerts();
+                let sync_enabled = store.sync_enabled();
                 let actions = if let Ok(host) = alert_host.lock() {
                     let snapshot = host.snapshot();
                     let input = AlertCenterInput {
@@ -2200,6 +2202,8 @@ impl DegenViewApp {
                             Some((delivered, rows.len()))
                         },
                         script_alerts: &script_alerts,
+                        muted: &muted,
+                        sync_enabled,
                         now_ms: now_ms(),
                         utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now_ms()),
                     };
@@ -2220,6 +2224,15 @@ impl DegenViewApp {
                                 AlertRuntimeCommandPayload::ClearHistory,
                                 now_ms(),
                             ));
+                        }
+                        AlertCenterAction::SetEvaluateHere(id, watch) => {
+                            let key = id.to_string();
+                            let origin = store
+                                .alert_local(&key)
+                                .ok()
+                                .flatten()
+                                .map_or_else(|| "local".to_owned(), |(_, origin)| origin);
+                            let _ = store.set_alert_local(&key, watch, &origin);
                         }
                         AlertCenterAction::Toggle(id) => {
                             if let Ok(host) = alert_host.lock() {

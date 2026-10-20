@@ -86,6 +86,8 @@ pub enum AlertCenterAction {
     Edit(AlertId),
     /// Pause an active alert, resume a paused one, re-enable a triggered one.
     Toggle(AlertId),
+    /// Watch an alert on this Mac, or stop. A choice about this Mac only; it never syncs.
+    SetEvaluateHere(AlertId, bool),
     Duplicate(AlertId),
     Delete(AlertId),
     ClearHistory,
@@ -109,6 +111,10 @@ pub struct AlertCenterInput<'a> {
     /// `(delivered, total)` webhook results for a trigger, if it posted to any.
     pub webhook_summary: &'a dyn Fn(u64) -> Option<(usize, usize)>,
     pub script_alerts: &'a [ScriptAlertRow],
+    /// Alerts defined here but not watched on this Mac (they came from another Mac).
+    pub muted: &'a std::collections::HashSet<AlertId>,
+    /// iCloud Sync is on, so the per-Mac watch choice is offered.
+    pub sync_enabled: bool,
     pub now_ms: i64,
     pub utc_offset_secs: i64,
 }
@@ -247,6 +253,22 @@ pub fn status(alert: &PriceAlert, quote_is_fresh: bool) -> (&'static str, Tone, 
             "This rule type is not supported by this version.",
         ),
     }
+}
+
+/// [`status`], but an alert this Mac is not watching says so instead of claiming to be active.
+pub fn status_here(
+    alert: &PriceAlert,
+    quote_is_fresh: bool,
+    muted: bool,
+) -> (&'static str, Tone, &'static str) {
+    if muted && alert.state == AlertState::Active {
+        return (
+            "Not watching here",
+            Tone::Neutral,
+            "This alert came from another Mac and is switched off on this one, so it notifies from one Mac only. Choose Watch on This Mac to turn it on here too.",
+        );
+    }
+    status(alert, quote_is_fresh)
 }
 
 pub fn toggle_title(state: AlertState) -> &'static str {
@@ -852,6 +874,7 @@ fn rule_menu(
     ui: &mut egui::Ui,
     state: &mut AlertCenterState,
     alert: &PriceAlert,
+    watch: Option<bool>,
     actions: &mut Vec<AlertCenterAction>,
 ) {
     let toggle_icon = if alert.state == AlertState::Active {
@@ -872,6 +895,24 @@ fn rule_menu(
     ) {
         actions.push(AlertCenterAction::Toggle(alert.id));
         ui.close();
+    }
+    // `watch` is `Some(currently watched here)` while iCloud Sync is on.
+    if let Some(watched) = watch {
+        let (icon, title) = if watched {
+            (Icon::EyeSlash, "Stop Watching on This Mac")
+        } else {
+            (Icon::Eye, "Watch on This Mac")
+        };
+        if kit::menu_item(
+            ui,
+            icon,
+            title,
+            alert.state != AlertState::Unsupported,
+            false,
+        ) {
+            actions.push(AlertCenterAction::SetEvaluateHere(alert.id, !watched));
+            ui.close();
+        }
     }
     if kit::menu_item(ui, Icon::CopyDoc, "Duplicate", true, false) {
         actions.push(AlertCenterAction::Duplicate(alert.id));
@@ -896,7 +937,11 @@ fn rule_row(
     let hovered = ui.rect_contains_pointer(rect);
     let quote = (input.quote)(&alert.asset.key());
     let live = live_price(alert, quote);
-    let (status_text, tone, status_help) = status(alert, quote.is_some_and(|q| q.fresh));
+    let (status_text, tone, status_help) = status_here(
+        alert,
+        quote.is_some_and(|q| q.fresh),
+        input.muted.contains(&alert.id),
+    );
     let center_y = rect.center().y;
 
     let mut row = ui.new_child(egui::UiBuilder::new().max_rect(rect));
@@ -912,8 +957,9 @@ fn rule_row(
     // Right to left: actions, status, target, condition.
     let mut right = rect.right() - 14.0;
     let more = Rect::from_min_size(Pos2::new(right - 26.0, center_y - 13.0), Vec2::splat(26.0));
+    let watch = input.sync_enabled.then(|| !input.muted.contains(&alert.id));
     more_button(ui, more, Id::new(("alert-more", alert.id)), |ui| {
-        rule_menu(ui, state, alert, actions);
+        rule_menu(ui, state, alert, watch, actions);
     });
     let toggle = more.translate(Vec2::new(-28.0, 0.0));
     let toggle_icon = if alert.state == AlertState::Active {
@@ -1038,7 +1084,8 @@ fn rule_row(
         .show(|ui| {
             ui.set_width(180.0);
             ui.spacing_mut().item_spacing.y = 0.0;
-            rule_menu(ui, state, alert, actions);
+            let watch = input.sync_enabled.then(|| !input.muted.contains(&alert.id));
+            rule_menu(ui, state, alert, watch, actions);
         });
 }
 
@@ -1318,6 +1365,9 @@ mod tests {
         }
     }
 
+    static NO_MUTED: std::sync::LazyLock<std::collections::HashSet<AlertId>> =
+        std::sync::LazyLock::new(Default::default);
+
     fn input<'a>(
         alerts: &'a [PriceAlert],
         history: &'a [AlertTriggerEvent],
@@ -1331,9 +1381,21 @@ mod tests {
             quote: &|_| None,
             webhook_summary: &|_| None,
             script_alerts: &[],
+            muted: &NO_MUTED,
+            sync_enabled: false,
             now_ms: 10_000_000,
             utc_offset_secs: 0,
         }
+    }
+
+    #[test]
+    fn a_muted_alert_says_it_is_not_watching_here_and_other_states_are_unchanged() {
+        let active = alert("BTC", "Bitcoin", AlertState::Active, 0);
+        assert_eq!(status_here(&active, true, true).0, "Not watching here");
+        assert_eq!(status_here(&active, true, false), status(&active, true));
+        let paused = alert("BTC", "Bitcoin", AlertState::Paused, 0);
+        assert_eq!(status_here(&paused, true, true), status(&paused, true));
+        assert!(status_here(&active, true, true).2.contains("another Mac"));
     }
 
     #[test]
