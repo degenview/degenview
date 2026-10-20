@@ -6,6 +6,7 @@
 //! Projections work on JSON values, not typed models: the store hook sees raw payload strings
 //! and must not depend on every model's Rust type.
 
+use super::ids::{Direction, IdSpace, map_fields};
 use super::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy};
 use super::record::{FAVORITES_ID, sha256_hex};
 use serde_json::{Map, Value};
@@ -52,9 +53,20 @@ const ALERT_DEFINITION_FIELDS: [&str; 9] = [
     "webhook_message",
 ];
 
-/// The entities one row of a document table syncs as. Empty for local tables and for rows that
-/// are not valid JSON objects.
+/// The database tag the tests project with.
+#[cfg(test)]
+pub const TEST_TAG: u32 = 0x0abc_def1;
+
+/// `project_row_in` for a database whose id tag does not matter to the test.
+#[cfg(test)]
 pub fn project_row(table: &str, id: &str, payload: &str) -> Vec<Projected> {
+    project_row_in(IdSpace::new(TEST_TAG), table, id, payload)
+}
+
+/// The entities one row of a document table syncs as. Empty for local tables and for rows that
+/// are not valid JSON objects. `ids` turns this database's counter ids into ones that mean the
+/// same on every Mac.
+pub fn project_row_in(ids: IdSpace, table: &str, id: &str, payload: &str) -> Vec<Projected> {
     let TablePolicy::Synced(kind) = table_policy(table) else {
         return Vec::new();
     };
@@ -87,6 +99,16 @@ pub fn project_row(table: &str, id: &str, payload: &str) -> Vec<Projected> {
             id.to_string(),
             &project_alert(&row),
         )],
+        EntityKind::Portfolio => {
+            let mut value = Value::Object(row);
+            map_fields(&mut value, &["id"], ids, Direction::ToGlobal);
+            vec![Projected::new(
+                kind,
+                ids.to_global_string(id),
+                id.to_string(),
+                &value,
+            )]
+        }
         _ => vec![Projected::new(
             kind,
             id.to_string(),
@@ -94,6 +116,26 @@ pub fn project_row(table: &str, id: &str, payload: &str) -> Vec<Projected> {
             &Value::Object(row),
         )],
     }
+}
+
+/// A portfolio transaction, whose table is not a document table, as the entity it syncs as.
+pub fn project_transaction(ids: IdSpace, id: &str, payload: &str) -> Option<Projected> {
+    let mut value = serde_json::from_str::<Value>(payload).ok()?;
+    if !value.is_object() {
+        return None;
+    }
+    map_fields(
+        &mut value,
+        &["id", "portfolio_id"],
+        ids,
+        Direction::ToGlobal,
+    );
+    Some(Projected::new(
+        EntityKind::PortfolioTransaction,
+        ids.to_global_string(id),
+        id.to_string(),
+        &value,
+    ))
 }
 
 /// The entity a `setting` value syncs as, if the key is portable.

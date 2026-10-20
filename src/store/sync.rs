@@ -6,10 +6,13 @@
 #![allow(dead_code)]
 
 use super::Store;
+use crate::sync::ids::IdSpace;
 use crate::sync::policy::{
     Category, EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy,
 };
-use crate::sync::project::{Projected, project_row, project_setting};
+#[cfg(test)]
+use crate::sync::project::project_row;
+use crate::sync::project::{Projected, project_row_in, project_setting, project_transaction};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -386,6 +389,19 @@ fn now_ms() -> i64 {
 impl Store {
     /// The current rows of `table`, only when they will need diffing: sync is on and the table
     /// syncs. Read inside the write's savepoint, before the rows are replaced.
+    /// This database's id space; see `sync::ids`.
+    pub(crate) fn id_space(&self) -> IdSpace {
+        let tag: Option<u32> = self
+            .connection
+            .query_row("SELECT id_tag FROM sync_state WHERE id = 1", [], |row| {
+                row.get(0)
+            })
+            .optional()
+            .ok()
+            .flatten();
+        IdSpace::new(tag.unwrap_or(0))
+    }
+
     pub(super) fn tracked_old_rows(
         &self,
         table: &str,
@@ -410,10 +426,11 @@ impl Store {
         old: &[(String, String)],
         new: &[(String, i64, String)],
     ) -> rusqlite::Result<()> {
+        let ids = self.id_space();
         let project = |rows: &mut dyn Iterator<Item = (&str, &str)>| {
             let mut map: HashMap<EntityKey, Projected> = HashMap::new();
             for (id, payload) in rows {
-                for entity in project_row(table, id, payload) {
+                for entity in project_row_in(ids, table, id, payload) {
                     map.insert((entity.kind, entity.sync_id.clone()), entity);
                 }
             }
@@ -511,8 +528,20 @@ impl Store {
             .collect();
         vanished.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
         let held_layouts = self.mass_deleted_layouts(totals, &vanished);
-        let gone_by_kind: HashMap<EntityKind, usize> =
-            vanished.iter().fold(HashMap::new(), |mut counts, entity| {
+        // A transaction that goes with its portfolio follows that delete, held or not, and does
+        // not count towards a mass delete of its own.
+        let mut with_portfolio: HashMap<String, OutboxState> = HashMap::new();
+        for entity in &vanished {
+            if entity.kind == EntityKind::PortfolioTransaction
+                && let Some(state) = self.portfolio_delete_state(entity)?
+            {
+                with_portfolio.insert(entity.sync_id.clone(), state);
+            }
+        }
+        let gone_by_kind: HashMap<EntityKind, usize> = vanished
+            .iter()
+            .filter(|entity| !with_portfolio.contains_key(&entity.sync_id))
+            .fold(HashMap::new(), |mut counts, entity| {
                 *counts.entry(entity.kind).or_default() += 1;
                 counts
             });
@@ -521,6 +550,10 @@ impl Store {
                 .entity_mark(entity.kind, &entity.sync_id)?
                 .is_some_and(|mark| mark.deleted);
             if already {
+                continue;
+            }
+            if let Some(state) = with_portfolio.get(&entity.sync_id) {
+                self.queue_delete(entity, &device, *state)?;
                 continue;
             }
             let held = match entity.kind {
@@ -542,6 +575,88 @@ impl Store {
             self.queue_delete(entity, &device, state)?;
         }
         Ok(())
+    }
+
+    /// The state of the delete queued for the portfolio a vanished transaction belonged to.
+    fn portfolio_delete_state(
+        &self,
+        transaction: &Projected,
+    ) -> rusqlite::Result<Option<OutboxState>> {
+        let Ok(Value::Object(payload)) = serde_json::from_slice::<Value>(&transaction.payload)
+        else {
+            return Ok(None);
+        };
+        let Some(portfolio) = payload.get("portfolio_id").and_then(Value::as_u64) else {
+            return Ok(None);
+        };
+        let state: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT state FROM sync_outbox
+                 WHERE entity_type = ?1 AND sync_id = ?2 AND op = 'delete'",
+                params![EntityKind::Portfolio.prefix(), portfolio.to_string()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(state.map(|state| {
+            if state == "held" {
+                OutboxState::Held
+            } else {
+                OutboxState::Pending
+            }
+        }))
+    }
+
+    /// The current transaction rows, only when they will need diffing.
+    pub(super) fn tracked_old_transactions(
+        &self,
+    ) -> rusqlite::Result<Option<Vec<(String, String)>>> {
+        if !self.sync_enabled() {
+            return Ok(None);
+        }
+        let mut statement = self
+            .connection
+            .prepare("SELECT id, payload FROM portfolio_transaction")?;
+        let rows = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(Some(rows))
+    }
+
+    /// Queues the differences between the old and new transaction rows, in the savepoint of the
+    /// ledger save. Runs after the portfolios were tracked, so a deleted portfolio's delete is
+    /// already queued when its transactions are looked at.
+    pub(super) fn track_transactions(
+        &self,
+        old: &[(String, String)],
+        new: &[(String, String)],
+    ) -> rusqlite::Result<()> {
+        let ids = self.id_space();
+        let old_text: HashMap<&str, &str> = old
+            .iter()
+            .map(|(id, p)| (id.as_str(), p.as_str()))
+            .collect();
+        let new_text: HashMap<&str, &str> = new
+            .iter()
+            .map(|(id, p)| (id.as_str(), p.as_str()))
+            .collect();
+        let project = |rows: &mut dyn Iterator<Item = &(String, String)>| {
+            rows.filter_map(|(id, payload)| project_transaction(ids, id, payload))
+                .map(|entity| ((entity.kind, entity.sync_id.clone()), entity))
+                .collect::<HashMap<EntityKey, Projected>>()
+        };
+        let old_entities = project(
+            &mut old
+                .iter()
+                .filter(|(id, p)| new_text.get(id.as_str()) != Some(&p.as_str())),
+        );
+        let new_entities = project(
+            &mut new
+                .iter()
+                .filter(|(id, p)| old_text.get(id.as_str()) != Some(&p.as_str())),
+        );
+        let totals = HashMap::from([(EntityKind::PortfolioTransaction, old.len())]);
+        self.queue_differences(&old_entities, &new_entities, &totals)
     }
 
     /// Layouts whose delete is held, so the deletes of their drawings are held with them.
@@ -744,17 +859,24 @@ impl Store {
                 )
                 .optional()
         };
+        let ids = self.id_space();
         let pick = |table: &str, id: &str, payload: Option<String>| {
             payload
                 .into_iter()
-                .flat_map(|payload| project_row(table, id, &payload))
+                .flat_map(|payload| project_row_in(ids, table, id, &payload))
                 .find(|entity| entity.kind == kind && entity.sync_id == sync_id)
         };
         let found = match kind {
             EntityKind::Script => return Ok(Load::NotStored),
-            // Their loaders arrive with their projections.
-            EntityKind::Portfolio | EntityKind::PortfolioTransaction | EntityKind::PaperAccount => {
-                return Ok(Load::NotStored);
+            EntityKind::PaperAccount => return Ok(Load::NotStored),
+            EntityKind::Portfolio => {
+                let local = ids.to_local_string(sync_id);
+                pick("portfolio", &local, by_id("portfolio", &local)?)
+            }
+            EntityKind::PortfolioTransaction => {
+                let local = ids.to_local_string(sync_id);
+                by_id("portfolio_transaction", &local)?
+                    .and_then(|payload| project_transaction(ids, &local, &payload))
             }
             EntityKind::Layout => pick("saved_view", sync_id, by_id("saved_view", sync_id)?),
             EntityKind::LayoutDrawing => {
@@ -771,7 +893,7 @@ impl Store {
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()?;
                 rows.into_iter()
-                    .flat_map(|(id, payload)| project_row("watchlist", &id, &payload))
+                    .flat_map(|(id, payload)| project_row_in(ids, "watchlist", &id, &payload))
                     .find(|entity| entity.sync_id == sync_id)
             }
             EntityKind::ChartTemplate => {
@@ -1531,10 +1653,13 @@ impl Store {
             EntityKind::ChartTemplate,
             EntityKind::DrawingTemplate,
             EntityKind::Alert,
+            EntityKind::Portfolio,
+            EntityKind::PortfolioTransaction,
             EntityKind::Setting,
         ] {
             by_kind.insert(kind, HashMap::new());
         }
+        let ids = self.id_space();
         for table in crate::store::DOCUMENT_TABLES {
             if !matches!(table_policy(table), TablePolicy::Synced(_)) {
                 continue;
@@ -1548,7 +1673,25 @@ impl Store {
                 })?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             for (id, payload) in rows {
-                for entity in project_row(table, &id, &payload) {
+                for entity in project_row_in(ids, table, &id, &payload) {
+                    by_kind
+                        .entry(entity.kind)
+                        .or_default()
+                        .insert(entity.sync_id.clone(), entity);
+                }
+            }
+        }
+        {
+            let mut statement = self
+                .connection
+                .prepare("SELECT id, payload FROM portfolio_transaction")?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (id, payload) in rows {
+                if let Some(entity) = project_transaction(ids, &id, &payload) {
                     by_kind
                         .entry(entity.kind)
                         .or_default()

@@ -341,6 +341,8 @@ fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
             &json!({"host": null, "include_trading": false, "scale": "X1", "consented": ["trusted.example"]}),
         )
         .unwrap();
+    // The later edit wins; two edits in one millisecond would be decided by random device ids.
+    std::thread::sleep(std::time::Duration::from_millis(3));
     a.store
         .lock()
         .unwrap()

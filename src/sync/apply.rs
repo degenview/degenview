@@ -15,7 +15,7 @@ use super::merge::{
 };
 use super::policy::{EntityKind, Merge};
 use super::project::{
-    ScriptSnapshot, canonical_json, drawing_id, project_row, project_script, project_setting,
+    ScriptSnapshot, canonical_json, drawing_id, project_row_in, project_script, project_setting,
 };
 use super::record::{FAVORITES_ID, RecordName, sha256_hex};
 use super::scripts::ScriptSink;
@@ -122,6 +122,7 @@ struct Work<'a> {
     settings: BTreeMap<String, Option<Value>>,
     disabled: std::collections::HashSet<super::policy::Category>,
     report: ApplyReport,
+    ids: super::ids::IdSpace,
 }
 
 pub fn table_of(kind: EntityKind) -> Option<&'static str> {
@@ -151,6 +152,7 @@ impl<'a> Work<'a> {
             settings: BTreeMap::new(),
             disabled: store.disabled_categories(),
             report: ApplyReport::default(),
+            ids: store.id_space(),
         }
     }
 
@@ -206,6 +208,7 @@ impl<'a> Work<'a> {
         let Some(table) = table_of(kind) else {
             return Ok(None);
         };
+        let ids = self.ids;
         let rows = self.rows(table)?;
         let favorites = kind == EntityKind::Watchlist && sync_id == FAVORITES_ID;
         for (index, row) in rows.iter().enumerate() {
@@ -217,10 +220,18 @@ impl<'a> Work<'a> {
                 if row.get("is_favorites").and_then(Value::as_bool) != Some(true) {
                     continue;
                 }
-            } else if kind != EntityKind::LayoutDrawing && id != sync_id {
-                continue;
+            } else if kind != EntityKind::LayoutDrawing {
+                // Only portfolios have counter ids that change on the way out.
+                let row_sync_id = if kind == EntityKind::Portfolio {
+                    ids.to_global_string(&id)
+                } else {
+                    id.clone()
+                };
+                if row_sync_id != sync_id {
+                    continue;
+                }
             }
-            for entity in project_row(table, &id, &row.to_string()) {
+            for entity in project_row_in(ids, table, &id, &row.to_string()) {
                 if entity.kind == kind && entity.sync_id == sync_id {
                     return Ok(Some(Local {
                         index,
@@ -998,11 +1009,12 @@ impl<'a> Work<'a> {
             self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
             return Ok(());
         };
-        let drawings: Vec<String> = project_row("saved_view", id, &local.row.to_string())
-            .into_iter()
-            .filter(|e| e.kind == EntityKind::LayoutDrawing)
-            .map(|e| e.sync_id)
-            .collect();
+        let drawings: Vec<String> =
+            project_row_in(self.ids, "saved_view", id, &local.row.to_string())
+                .into_iter()
+                .filter(|e| e.kind == EntityKind::LayoutDrawing)
+                .map(|e| e.sync_id)
+                .collect();
         let edited_since = meta
             .as_ref()
             .is_none_or(|m| m.synced_hash.as_deref() != Some(local.hash.as_str()))
