@@ -19,6 +19,7 @@ pub mod paper;
 pub mod pine;
 pub mod portfolio;
 pub mod saved_view;
+pub mod sync;
 pub mod watchlist;
 pub mod webhook;
 
@@ -247,7 +248,9 @@ impl Store {
                 UNIQUE (source, event_id, endpoint_id)
             );
             CREATE INDEX IF NOT EXISTS webhook_delivery_on_event ON webhook_delivery (event_id);",
-        )
+        )?;
+
+        self.create_sync_schema()
     }
 
     // MARK: Documents
