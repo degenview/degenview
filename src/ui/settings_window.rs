@@ -498,7 +498,7 @@ pub fn show(
             page_shell(
                 &mut page,
                 section,
-                "Keep your watchlists, layouts, drawings, templates and scripts the same on every Mac.",
+                "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac.",
                 false,
                 |ui| crate::ui::settings_sync::body(ui, input.sync, input.now_ms),
             );
