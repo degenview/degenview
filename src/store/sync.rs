@@ -10,6 +10,7 @@ use crate::sync::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy
 use crate::sync::project::{Projected, project_row, project_setting};
 use rusqlite::{OptionalExtension, params};
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 /// The singleton row describing this Mac's sync identity and checkpoint.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -577,6 +578,147 @@ impl Store {
                 })
             })
             .collect())
+    }
+}
+
+/// What a reconcile pass queued.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Reconciled {
+    pub upserts: usize,
+    pub deletes: usize,
+}
+
+impl Store {
+    /// Brings the outbox in line with everything stored, for changes the write hooks never saw:
+    /// edits made by an older build, script files changed in Finder, and data that existed
+    /// before sync was turned on. Safe to run repeatedly: an entity already queued, or already
+    /// matching the cloud, is left alone.
+    pub fn reconcile_stored(&self) -> rusqlite::Result<Reconciled> {
+        let mut by_kind: HashMap<EntityKind, HashMap<String, Projected>> = HashMap::new();
+        for kind in [
+            EntityKind::Layout,
+            EntityKind::LayoutDrawing,
+            EntityKind::Watchlist,
+            EntityKind::ChartTemplate,
+            EntityKind::DrawingTemplate,
+            EntityKind::Alert,
+            EntityKind::Setting,
+        ] {
+            by_kind.insert(kind, HashMap::new());
+        }
+        for table in crate::store::DOCUMENT_TABLES {
+            if !matches!(table_policy(table), TablePolicy::Synced(_)) {
+                continue;
+            }
+            let mut statement = self
+                .connection
+                .prepare(&format!("SELECT id, payload FROM {table}"))?;
+            let rows = statement
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            for (id, payload) in rows {
+                for entity in project_row(table, &id, &payload) {
+                    by_kind
+                        .entry(entity.kind)
+                        .or_default()
+                        .insert(entity.sync_id.clone(), entity);
+                }
+            }
+        }
+        let mut statement = self.connection.prepare("SELECT key, value FROM setting")?;
+        let settings = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for (key, value) in settings {
+            if let Some(entity) = project_setting(&key, &value) {
+                by_kind
+                    .entry(EntityKind::Setting)
+                    .or_default()
+                    .insert(entity.sync_id.clone(), entity);
+            }
+        }
+        let mut total = Reconciled::default();
+        let mut kinds: Vec<_> = by_kind.into_iter().collect();
+        kinds.sort_by_key(|(kind, _)| kind.prefix());
+        for (kind, current) in kinds {
+            let done = self.reconcile_kind(kind, &current)?;
+            total.upserts += done.upserts;
+            total.deletes += done.deletes;
+        }
+        Ok(total)
+    }
+
+    /// Reconciles one kind against the complete set of entities that currently exist for it.
+    pub fn reconcile_kind(
+        &self,
+        kind: EntityKind,
+        current: &HashMap<String, Projected>,
+    ) -> rusqlite::Result<Reconciled> {
+        let Some(state) = self.sync_state()? else {
+            return Ok(Reconciled::default());
+        };
+        let device = state.device_id;
+        let mut done = Reconciled::default();
+
+        let queued_upserts: HashSet<String> = self
+            .outbox()?
+            .into_iter()
+            .filter(|row| row.kind == kind && row.op == OutboxOp::Upsert)
+            .map(|row| row.sync_id)
+            .collect();
+        let mut ids: Vec<_> = current.keys().collect();
+        ids.sort();
+        for id in ids {
+            let entity = &current[id];
+            let mark = self.entity_mark(kind, id)?;
+            let matches_cloud = mark.as_ref().is_some_and(|m| {
+                !m.deleted && m.synced_hash.as_deref() == Some(entity.hash.as_str())
+            });
+            let already_pending =
+                queued_upserts.contains(id) && mark.as_ref().is_some_and(|m| !m.deleted);
+            if !matches_cloud && !already_pending {
+                self.queue_upsert(entity, &device)?;
+                done.upserts += 1;
+            }
+        }
+
+        let mut statement = self.connection.prepare(
+            "SELECT sync_id, local_id FROM sync_entity WHERE entity_type = ?1 AND deleted = 0",
+        )?;
+        let known = statement
+            .query_map([kind.prefix()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut missing: Vec<_> = known
+            .iter()
+            .filter(|(sync_id, _)| !current.contains_key(sync_id))
+            .collect();
+        missing.sort();
+        // A layout's drawings follow the layout; only parents are judged for a mass delete.
+        let held =
+            kind != EntityKind::LayoutDrawing && is_mass_delete_count(missing.len(), known.len());
+        for (sync_id, local_id) in missing {
+            let gone = Projected {
+                kind,
+                sync_id: sync_id.clone(),
+                local_id: local_id.clone(),
+                payload: Vec::new(),
+                hash: String::new(),
+            };
+            let state = if held {
+                OutboxState::Held
+            } else {
+                OutboxState::Pending
+            };
+            self.queue_delete(&gone, &device, state)?;
+            done.deletes += 1;
+        }
+        Ok(done)
     }
 }
 
@@ -1305,6 +1447,198 @@ mod hook_tests {
             .set_setting("snapshot.prefs", &prefs(vec!["h.example"]))
             .unwrap();
         assert!(outbox(&store).is_empty());
+    }
+
+    #[test]
+    fn reconcile_finds_data_that_predates_sync_and_is_then_quiet() {
+        let store = store(false);
+        put(&store, "watchlist", &[watchlist(1, "A"), watchlist(2, "B")]);
+        store.set_setting("appTheme", &"dark").unwrap();
+        assert!(outbox(&store).is_empty());
+        let mut state = store.sync_state().unwrap().unwrap();
+        state.enabled = true;
+        store.save_sync_state(&state).unwrap();
+
+        let first = store.reconcile_stored().unwrap();
+        assert_eq!(
+            first,
+            Reconciled {
+                upserts: 3,
+                deletes: 0
+            }
+        );
+        let seqs: Vec<_> = store.outbox().unwrap().iter().map(|r| r.seq).collect();
+        let second = store.reconcile_stored().unwrap();
+        assert_eq!(second, Reconciled::default());
+        let again: Vec<_> = store.outbox().unwrap().iter().map(|r| r.seq).collect();
+        assert_eq!(seqs, again);
+    }
+
+    #[test]
+    fn reconcile_skips_entities_that_match_the_cloud() {
+        let store = store(true);
+        put(&store, "watchlist", &[watchlist(1, "A")]);
+        let hash = project_row("watchlist", "1", &watchlist(1, "A").0.to_string())[0]
+            .hash
+            .clone();
+        mark_synced(&store, EntityKind::Watchlist, "1", &hash);
+        store
+            .connection
+            .execute("DELETE FROM sync_outbox", [])
+            .unwrap();
+        assert_eq!(store.reconcile_stored().unwrap(), Reconciled::default());
+    }
+
+    #[test]
+    fn reconcile_catches_an_edit_an_older_build_made() {
+        let store = store(true);
+        put(&store, "watchlist", &[watchlist(1, "A")]);
+        let hash = project_row("watchlist", "1", &watchlist(1, "A").0.to_string())[0]
+            .hash
+            .clone();
+        mark_synced(&store, EntityKind::Watchlist, "1", &hash);
+        store
+            .connection
+            .execute("DELETE FROM sync_outbox", [])
+            .unwrap();
+        // An older build writes without the hook.
+        store
+            .connection
+            .execute(
+                "UPDATE watchlist SET payload = ?1 WHERE id = '1'",
+                [watchlist(1, "Edited").0.to_string()],
+            )
+            .unwrap();
+        assert_eq!(store.reconcile_stored().unwrap().upserts, 1);
+    }
+
+    #[test]
+    fn reconcile_queues_deletes_for_rows_an_older_build_removed() {
+        let store = store(true);
+        put(&store, "watchlist", &[watchlist(1, "A"), watchlist(2, "B")]);
+        store
+            .connection
+            .execute("DELETE FROM sync_outbox", [])
+            .unwrap();
+        store
+            .connection
+            .execute("DELETE FROM watchlist WHERE id = '1'", [])
+            .unwrap();
+        let done = store.reconcile_stored().unwrap();
+        assert_eq!(done.deletes, 1);
+        assert!(is_tombstone(&store, EntityKind::Watchlist, "1"));
+        let deletes: Vec<_> = store
+            .outbox()
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.op == OutboxOp::Delete)
+            .collect();
+        assert_eq!(deletes.len(), 1);
+    }
+
+    #[test]
+    fn reconcile_holds_a_mass_delete() {
+        let store = store(true);
+        let rows: Vec<_> = (1..=6).map(|id| watchlist(id, "x")).collect();
+        put(&store, "watchlist", &rows);
+        store
+            .connection
+            .execute("DELETE FROM sync_outbox", [])
+            .unwrap();
+        store
+            .connection
+            .execute("DELETE FROM watchlist", [])
+            .unwrap();
+        store.reconcile_stored().unwrap();
+        let held = store
+            .outbox()
+            .unwrap()
+            .iter()
+            .filter(|r| r.state == OutboxState::Held)
+            .count();
+        assert_eq!(held, 6);
+    }
+
+    #[test]
+    fn reconcile_never_touches_local_only_data() {
+        let store = store(true);
+        put(&store, "tab", &[watchlist(1, "A")]);
+        store.set_setting("alert.health", &json!({})).unwrap();
+        assert_eq!(store.reconcile_stored().unwrap(), Reconciled::default());
+    }
+
+    fn script(id: &str, source: &str) -> Projected {
+        crate::sync::project::project_script(&crate::sync::project::ScriptSnapshot {
+            id: id.into(),
+            name: format!("Script {id}"),
+            source: source.into(),
+            script_type: "indicator".into(),
+            is_favorite: false,
+            created_ms: 1,
+            modified_ms: 2,
+        })
+    }
+
+    #[test]
+    fn script_files_reconcile_like_rows() {
+        let store = store(true);
+        let current: HashMap<_, _> = [
+            ("a".to_string(), script("a", "x")),
+            ("b".to_string(), script("b", "y")),
+        ]
+        .into();
+        assert_eq!(
+            store
+                .reconcile_kind(EntityKind::Script, &current)
+                .unwrap()
+                .upserts,
+            2
+        );
+        assert_eq!(
+            store.reconcile_kind(EntityKind::Script, &current).unwrap(),
+            Reconciled::default()
+        );
+
+        for entity in current.values() {
+            mark_synced(&store, EntityKind::Script, &entity.sync_id, &entity.hash);
+        }
+        store
+            .connection
+            .execute("DELETE FROM sync_outbox", [])
+            .unwrap();
+        let edited: HashMap<_, _> = [
+            ("a".to_string(), script("a", "x2")),
+            ("b".to_string(), script("b", "y")),
+        ]
+        .into();
+        assert_eq!(
+            store.reconcile_kind(EntityKind::Script, &edited).unwrap(),
+            Reconciled {
+                upserts: 1,
+                deletes: 0
+            }
+        );
+
+        let only_b: HashMap<_, _> = [("b".to_string(), script("b", "y"))].into();
+        let done = store.reconcile_kind(EntityKind::Script, &only_b).unwrap();
+        assert_eq!(done.deletes, 1);
+        assert!(is_tombstone(&store, EntityKind::Script, "a"));
+    }
+
+    #[test]
+    fn a_script_that_returns_after_deletion_is_uploaded_again() {
+        let store = store(true);
+        let one: HashMap<_, _> = [("a".to_string(), script("a", "x"))].into();
+        store.reconcile_kind(EntityKind::Script, &one).unwrap();
+        store
+            .reconcile_kind(EntityKind::Script, &HashMap::new())
+            .unwrap();
+        assert!(is_tombstone(&store, EntityKind::Script, "a"));
+        store.reconcile_kind(EntityKind::Script, &one).unwrap();
+        assert!(!is_tombstone(&store, EntityKind::Script, "a"));
+        let rows = store.outbox().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].op, OutboxOp::Upsert);
     }
 
     #[test]

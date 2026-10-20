@@ -186,6 +186,38 @@ fn drawing_id(drawing: &Value) -> Option<u64> {
     drawing.as_object()?.values().next()?.get("id")?.as_u64()
 }
 
+/// A user script as the scanner sees it. Scripts live in files, not SQLite, so the caller builds
+/// this from the script library. Drafts and revisions never sync.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptSnapshot {
+    pub id: String,
+    pub name: String,
+    pub source: String,
+    pub script_type: String,
+    pub is_favorite: bool,
+    pub created_ms: i64,
+    pub modified_ms: i64,
+}
+
+pub fn project_script(script: &ScriptSnapshot) -> Projected {
+    let body = serde_json::json!({
+        "id": script.id,
+        "name": script.name,
+        "source": script.source,
+        "script_type": script.script_type,
+        "is_favorite": script.is_favorite,
+        "created_ms": script.created_ms,
+        "modified_ms": script.modified_ms,
+        "sha256": sha256_hex(script.source.as_bytes()),
+    });
+    Projected::new(
+        EntityKind::Script,
+        script.id.clone(),
+        script.id.clone(),
+        &body,
+    )
+}
+
 /// JSON with object keys sorted at every level, so equal data always hashes equal regardless of
 /// serde_json's map ordering features.
 pub fn canonical_json(value: &Value) -> Vec<u8> {
@@ -405,6 +437,30 @@ mod tests {
             &row(json!({"id": 10, "name": "x", "charts": [{"id": 1}, "junk"]})),
         );
         assert_eq!(parts.len(), 1);
+    }
+
+    #[test]
+    fn a_script_projects_with_a_content_hash() {
+        let script = ScriptSnapshot {
+            id: "0123456789abcdef0123456789abcdef".into(),
+            name: "My Strategy".into(),
+            source: "//@version=6\n".into(),
+            script_type: "indicator".into(),
+            is_favorite: false,
+            created_ms: 1,
+            modified_ms: 2,
+        };
+        let a = project_script(&script);
+        assert_eq!(a.kind, EntityKind::Script);
+        assert_eq!(a.sync_id, script.id);
+        let body: Value = serde_json::from_slice(&a.payload).unwrap();
+        assert_eq!(body["sha256"], sha256_hex(b"//@version=6\n"));
+        let renamed = ScriptSnapshot {
+            name: "Renamed".into(),
+            ..script.clone()
+        };
+        assert_ne!(a.hash, project_script(&renamed).hash);
+        assert_eq!(a.hash, project_script(&script).hash);
     }
 
     #[test]
