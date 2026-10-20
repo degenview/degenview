@@ -35,8 +35,11 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   signed app at launch because `keychain-access-groups` is restricted. Profiles expire in 2044 or
   with the certificate. The keychain access group
   is `<TEAMID>.es.nico.degenview.shared`; `keychain_webhook_secrets::ACCESS_GROUP_SUFFIX` must keep
-  matching it. The updater still does not verify code signatures, so the pre-publication
-  asset-substitution window stays open; structural validation is not binary authenticity.
+  matching it. After unpacking, the updater runs `codesign --verify --deep --strict` with a Developer
+  ID Application requirement pinned to the running app's own Team ID (app and login item), then
+  `spctl --assess` for notarization (`code_signature`). A running app with no Team ID (unsigned or
+  ad-hoc) is not installable and offers **View Release**. Verification happens in the staging folder
+  next to the app, so it is not re-run at swap time.
 - Downloads follow only HTTPS redirects on GitHub/githubusercontent hosts, bound archive entries
   and size, reject unsafe paths, limit `ditto`, and validate both app/login-item bundle ids, the
   executable set, and links. Update `update_archive` constants when bundle layout changes.

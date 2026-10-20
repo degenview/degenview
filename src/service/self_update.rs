@@ -1,8 +1,9 @@
 //! Replaces the running macOS app bundle with a newer release.
 //!
 //! Two steps so nothing on disk changes until the user says so: `prepare` downloads the release
-//! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it and sanity-checks
-//! the bundle; `apply_and_relaunch` swaps the bundle in place, then a detached shell waits for this
+//! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it, sanity-checks
+//! the bundle and verifies its Developer ID signature against the running app's Team ID;
+//! `apply_and_relaunch` swaps the bundle in place, then a detached shell waits for this
 //! process to exit and reopens the app. The previous bundle is kept in the staging folder until the
 //! new version starts and calls `cleanup_stale`, so a build that never launches can be restored by
 //! hand.
@@ -11,7 +12,7 @@
 //! renames); an app in a folder the user cannot write to simply is not installable.
 
 use crate::service::update_check::{Release, ReleaseAsset};
-use crate::service::{tag_signature, update_archive, update_download};
+use crate::service::{code_signature, tag_signature, update_archive, update_download};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -114,6 +115,9 @@ pub fn install_target() -> Result<PathBuf, String> {
     if !is_writable(parent) {
         return Err(format!("{} is not writable.", parent.display()));
     }
+    // An update must be signed by the team that signed this app; without one there is nothing to
+    // compare against.
+    code_signature::team_id(&app)?;
     Ok(app)
 }
 
@@ -136,7 +140,7 @@ fn is_writable(dir: &Path) -> bool {
 }
 
 /// Blocking: checks the release tag's signature, then downloads, verifies and unpacks the
-/// release's zip next to `app`. Nothing is replaced yet, and nothing is downloaded for a tag that
+/// release's zip next to `app`, whose Developer ID Team ID the new bundle must be signed with. Nothing is replaced yet, and nothing is downloaded for a tag that
 /// is not signed by a pinned key.
 pub fn prepare(
     app: &Path,
@@ -149,12 +153,13 @@ pub fn prepare(
         .ok_or("This release has no download for this Mac.")?;
     progress(Progress::new(Stage::Verifying));
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
+    let team_id = code_signature::team_id(app)?;
     let parent = app.parent().ok_or("The app has no parent folder.")?;
     let staging = parent.join(STAGING_NAME);
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir(&staging)
         .map_err(|error| format!("Could not create {STAGING_NAME}: {error}"))?;
-    prepare_in(&staging, app, asset, progress).inspect_err(|_| {
+    prepare_in(&staging, app, asset, &team_id, progress).inspect_err(|_| {
         let _ = std::fs::remove_dir_all(&staging);
     })
 }
@@ -163,6 +168,7 @@ fn prepare_in(
     staging: &Path,
     app: &Path,
     asset: &ReleaseAsset,
+    team_id: &str,
     progress: &dyn Fn(Progress),
 ) -> Result<Prepared, String> {
     progress(Progress::new(Stage::Downloading));
@@ -187,6 +193,7 @@ fn prepare_in(
     let _ = std::fs::remove_file(&zip);
     let new_app = extracted.join(APP_NAME);
     update_archive::check_bundle(&new_app)?;
+    code_signature::verify_bundle(&new_app, &new_app.join(update_archive::HELPER_APP), team_id)?;
     Ok(Prepared {
         app: app.to_path_buf(),
         staging: staging.to_path_buf(),
@@ -441,9 +448,18 @@ mod tests {
             release.asset.is_some(),
             "a macOS asset for this architecture"
         );
+        // The download must be signed by the installed app's team, so this needs a signed install.
+        let installed = Path::new("/Applications/DegenView.app");
+        let Ok(team_id) = code_signature::team_id(installed) else {
+            eprintln!("skipped: no Developer ID signed DegenView in /Applications");
+            return;
+        };
         let root = scratch("live");
         let app = fake_app(&root, "old");
-        let prepared = prepare(&app, &release, &|_| {}).unwrap();
+        let staging = root.join(STAGING_NAME);
+        fs::create_dir(&staging).unwrap();
+        let asset = release.asset.as_ref().unwrap();
+        let prepared = prepare_in(&staging, &app, asset, &team_id, &|_| {}).unwrap();
         assert!(update_archive::check_bundle(&prepared.new_app).is_ok());
         swap(&prepared).unwrap();
         assert_ne!(

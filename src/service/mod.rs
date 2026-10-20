@@ -6,6 +6,7 @@ pub mod cache_control;
 mod candles;
 pub mod catalog;
 pub mod cmc;
+pub mod code_signature;
 mod coinbase;
 mod coingecko;
 mod dexscreener;
