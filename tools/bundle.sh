@@ -14,6 +14,16 @@ helper_profile="${DEGENVIEW_HELPER_PROFILE:-}"
 # the profile macOS kills the signed app at launch. The helper never gets iCloud entitlements.
 icloud="${DEGENVIEW_ICLOUD:-}"
 icloud_environment="${DEGENVIEW_ICLOUD_ENVIRONMENT:-Production}"
+aps_environment=production
+# A development build (DEGENVIEW_DEV_BUILD=1, signed with an Apple Development identity and a Mac
+# Development profile) talks to CloudKit's Development environment, where record types can be
+# created. Debug assertions make the app expect that environment; a release never has them.
+if [ -n "${DEGENVIEW_DEV_BUILD:-}" ]; then
+    icloud=1
+    icloud_environment=Development
+    aps_environment=development
+    export CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true
+fi
 # Cargo.toml is the one place the version lives; tools/release.sh bumps it before tagging.
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 if [ -z "$version" ]; then
@@ -107,6 +117,7 @@ if [ -n "$identity" ]; then
         sed -e "s|__KEYCHAIN_ACCESS_GROUP__|$access_group|g" \
             -e "s|__TEAM_ID__|$team_id|g" \
             -e "s|__ICLOUD_ENVIRONMENT__|$icloud_environment|g" \
+            -e "s|__APS_ENVIRONMENT__|$aps_environment|g" \
             -e "s|__APPLICATION_IDENTIFIER__|$team_id.$bundle_id|g" \
             "$template" > "$entitlements"
         codesign --force --options runtime --timestamp --entitlements "$entitlements" \

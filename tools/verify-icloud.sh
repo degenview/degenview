@@ -24,7 +24,7 @@ echo "$app_ents" | grep -q "iCloud.es.nico.degenview" \
     || fail "the app's container is not iCloud.es.nico.degenview"
 echo "$app_ents" | grep -q "<string>CloudKit</string>" \
     || fail "the app lacks the CloudKit service entitlement"
-echo "$app_ents" | tr -d '\n ' | grep -q "icloud-container-environment</key><string>$expected</string>" \
+echo "$app_ents" | tr -d '[:space:]' | grep -q "icloud-container-environment</key><string>$expected</string>" \
     || fail "the app's iCloud environment is not $expected"
 
 # A release must be Production: a Development build would write people's data to test storage.
@@ -43,7 +43,8 @@ if [ -f "$profile" ]; then
     decoded=$(security cms -D -i "$profile" 2>/dev/null || true)
     echo "$decoded" | grep -q "iCloud.es.nico.degenview" \
         || fail "the embedded provisioning profile does not grant the iCloud container"
-    echo "$decoded" | grep -q "CloudKit" \
+    # The profile lists services explicitly or with a wildcard.
+    echo "$decoded" | tr -d '[:space:]' | grep -qE "icloud-services</key>(<array><string>CloudKit|<string>\*</string>)" \
         || fail "the embedded provisioning profile does not grant CloudKit"
 else
     fail "the app has no embedded provisioning profile"
