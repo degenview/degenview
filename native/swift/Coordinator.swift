@@ -2,6 +2,7 @@
 // merge and what to apply; this file only moves records between CloudKit and Rust. It keeps no
 // copy of the user's data beyond what is staged for the next send.
 
+import AppKit
 import CloudKit
 import Foundation
 import Network
@@ -122,7 +123,22 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
             staged.removeAll()
             engine = CKSyncEngine(configuration)
         }
+        registerForPushes()
         emitter.emit(["event": "ready"])
+    }
+
+    /// CloudKit wakes the engine with a silent push when another Mac changes something, but only
+    /// for an app that has registered with Apple's push service. Without this the engine still
+    /// works, and changes arrive only on the periodic poll and on Sync Now.
+    private func registerForPushes() {
+        DispatchQueue.main.async {
+            NSApplication.shared.registerForRemoteNotifications()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                NSLog(
+                    "DegenView sync: registered for remote notifications = %@",
+                    NSApplication.shared.isRegisteredForRemoteNotifications ? "yes" : "no")
+            }
+        }
     }
 
     private func currentAccount() async -> (status: CKAccountStatus, hash: String?) {
