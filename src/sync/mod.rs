@@ -25,6 +25,8 @@ mod apply_tests;
 #[cfg(test)]
 mod core_tests;
 #[cfg(test)]
+mod crash_tests;
+#[cfg(test)]
 mod initial_tests;
 #[cfg(test)]
 mod script_tests;
