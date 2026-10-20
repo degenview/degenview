@@ -65,7 +65,15 @@ pub fn project_row(table: &str, id: &str, payload: &str) -> Vec<Projected> {
         EntityKind::Layout => project_layout(id, row),
         EntityKind::Watchlist => {
             let favorites = row.get("is_favorites").and_then(Value::as_bool) == Some(true);
-            let sync_id = if favorites { FAVORITES_ID } else { id };
+            let mut row = row;
+            let sync_id = if favorites {
+                // Every Mac has its own Favorites row id. Leaving it in the payload would make
+                // each Mac see the other's version as different and re-upload it forever.
+                row.insert("id".into(), 0.into());
+                FAVORITES_ID
+            } else {
+                id
+            };
             vec![Projected::new(
                 kind,
                 sync_id.to_string(),
@@ -353,6 +361,13 @@ mod tests {
         );
         assert_eq!(favorites[0].sync_id, "favorites");
         assert_eq!(favorites[0].local_id, "1739");
+        // Two Macs' Favorites with different row ids project to identical bytes.
+        let other_mac = project_row(
+            "watchlist",
+            "5555",
+            &row(json!({"id": 5555, "name": "Favorites", "is_favorites": true})),
+        );
+        assert_eq!(favorites[0].hash, other_mac[0].hash);
         let other = project_row(
             "watchlist",
             "8",

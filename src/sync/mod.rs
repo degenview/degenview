@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 pub mod core;
+pub mod merge;
 pub mod outbox;
 pub mod policy;
 pub mod project;
