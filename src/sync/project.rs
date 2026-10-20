@@ -119,6 +119,11 @@ pub fn project_row_in(ids: IdSpace, table: &str, id: &str, payload: &str) -> Vec
     }
 }
 
+/// A bundle of several tables' rows as one entity (see `sync::paper`).
+pub(crate) fn project_bundle(sync_id: String, local_id: String, bundle: &Value) -> Projected {
+    Projected::new(EntityKind::PaperAccount, sync_id, local_id, bundle)
+}
+
 /// A portfolio transaction, whose table is not a document table, as the entity it syncs as.
 pub fn project_transaction(ids: IdSpace, id: &str, payload: &str) -> Option<Projected> {
     let mut value = serde_json::from_str::<Value>(payload).ok()?;

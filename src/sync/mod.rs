@@ -12,6 +12,7 @@ pub mod initial;
 pub mod merge;
 pub mod native;
 pub mod outbox;
+pub mod paper;
 pub mod policy;
 pub mod project;
 pub mod record;

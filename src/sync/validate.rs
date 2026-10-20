@@ -143,7 +143,7 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             if owner.is_empty() || owner.chars().count() > MAX_DEVICE_ID_CHARS {
                 return Err("bundle owner is not a device id".into());
             }
-            for key in PAPER_COLLECTIONS {
+            for (key, _) in super::paper::COLLECTIONS {
                 let rows = array(object, key)?;
                 if rows.len() > MAX_PAPER_ROWS {
                     return Err(format!("`{key}` has {} rows", rows.len()));
@@ -178,16 +178,6 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
         }
     }
 }
-
-/// The account-scoped collections a paper bundle carries next to the account itself.
-pub const PAPER_COLLECTIONS: [&str; 6] = [
-    "orders",
-    "fills",
-    "positions",
-    "order_events",
-    "closed_trades",
-    "journal",
-];
 
 fn object(value: &Value) -> Result<&serde_json::Map<String, Value>, String> {
     value

@@ -6,6 +6,8 @@
 #![allow(dead_code)]
 
 use super::Store;
+
+mod paper;
 use crate::sync::ids::IdSpace;
 use crate::sync::policy::{
     Category, EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy,
@@ -121,6 +123,7 @@ impl Store {
                 cloud_modified_ms INTEGER,
                 deleted INTEGER NOT NULL DEFAULT 0,
                 deleted_ms INTEGER,
+                local_hash TEXT,
                 PRIMARY KEY (entity_type, sync_id)
             );
             CREATE INDEX IF NOT EXISTS sync_entity_on_local ON sync_entity (entity_type, local_id);
@@ -171,20 +174,32 @@ impl Store {
                 last_seen_ms INTEGER NOT NULL,
                 is_self INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS paper_account_local (
+                account_id TEXT PRIMARY KEY,
+                owner_device TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS price_alert_local (
                 alert_id TEXT PRIMARY KEY,
                 evaluate_here INTEGER NOT NULL,
                 origin TEXT NOT NULL DEFAULT 'local'
             );",
         )?;
-        // Databases created by an earlier development build lack the column.
-        let has_id_tag = self
+        // Databases created by an earlier development build lack these columns.
+        self.add_column("sync_state", "id_tag", "INTEGER NOT NULL DEFAULT 0")?;
+        self.add_column("sync_entity", "local_hash", "TEXT")?;
+        Ok(())
+    }
+
+    fn add_column(&self, table: &str, column: &str, declaration: &str) -> rusqlite::Result<()> {
+        let present = self
             .connection
-            .prepare("SELECT 1 FROM pragma_table_info('sync_state') WHERE name = 'id_tag'")?
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{column}'"
+            ))?
             .exists([])?;
-        if !has_id_tag {
+        if !present {
             self.connection.execute(
-                "ALTER TABLE sync_state ADD COLUMN id_tag INTEGER NOT NULL DEFAULT 0",
+                &format!("ALTER TABLE {table} ADD COLUMN {column} {declaration}"),
                 [],
             )?;
         }
@@ -868,7 +883,11 @@ impl Store {
         };
         let found = match kind {
             EntityKind::Script => return Ok(Load::NotStored),
-            EntityKind::PaperAccount => return Ok(Load::NotStored),
+            EntityKind::PaperAccount => {
+                let local = ids.to_local_string(sync_id);
+                self.paper_parts(&local)?
+                    .and_then(|parts| crate::sync::paper::project(ids, parts))
+            }
             EntityKind::Portfolio => {
                 let local = ids.to_local_string(sync_id);
                 pick("portfolio", &local, by_id("portfolio", &local)?)
@@ -1247,6 +1266,7 @@ impl Store {
                 local_id = excluded.local_id,
                 logical_revision = MAX(logical_revision, excluded.logical_revision),
                 synced_hash = excluded.synced_hash,
+                local_hash = excluded.synced_hash,
                 base_payload = excluded.base_payload,
                 system_fields = excluded.system_fields,
                 cloud_modified_ms = excluded.cloud_modified_ms,
@@ -1279,7 +1299,7 @@ impl Store {
                 (entity_type, sync_id, local_id, logical_revision, origin_device, deleted, deleted_ms)
              VALUES (?1, ?2, ?3, 1, '', 1, ?4)
              ON CONFLICT (entity_type, sync_id) DO UPDATE SET
-                synced_hash = NULL, system_fields = NULL, base_payload = NULL,
+                synced_hash = NULL, system_fields = NULL, base_payload = NULL, local_hash = NULL,
                 deleted = 1, deleted_ms = excluded.deleted_ms",
             params![kind.prefix(), sync_id, local_id, now_ms],
         )?;
@@ -1290,7 +1310,8 @@ impl Store {
     pub fn forget_synced(&self, kind: EntityKind, sync_id: &str) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE sync_entity SET synced_hash = NULL, system_fields = NULL, base_payload = NULL,
-                deleted = 0, deleted_ms = NULL WHERE entity_type = ?1 AND sync_id = ?2",
+                local_hash = NULL, deleted = 0, deleted_ms = NULL
+             WHERE entity_type = ?1 AND sync_id = ?2",
             params![kind.prefix(), sync_id],
         )?;
         Ok(())
@@ -1662,11 +1683,18 @@ impl Store {
             EntityKind::Alert,
             EntityKind::Portfolio,
             EntityKind::PortfolioTransaction,
+            EntityKind::PaperAccount,
             EntityKind::Setting,
         ] {
             by_kind.insert(kind, HashMap::new());
         }
         let ids = self.id_space();
+        for entity in self.stored_paper_entities()? {
+            by_kind
+                .entry(entity.kind)
+                .or_default()
+                .insert(entity.sync_id.clone(), entity);
+        }
         for table in crate::store::DOCUMENT_TABLES {
             if !matches!(table_policy(table), TablePolicy::Synced(_)) {
                 continue;
