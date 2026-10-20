@@ -9,7 +9,7 @@ use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
 use crate::model::{ChartAppearance, DataSource, InstrumentId};
 use serde_json::{Value, json};
 
-fn watchlist(id: u64, name: &str, markets: &[(u64, &str)], favorites: bool) -> Raw {
+pub(super) fn watchlist(id: u64, name: &str, markets: &[(u64, &str)], favorites: bool) -> Raw {
     let list = Watchlist {
         id,
         name: name.into(),
@@ -35,7 +35,7 @@ fn watchlist(id: u64, name: &str, markets: &[(u64, &str)], favorites: bool) -> R
     Raw(serde_json::to_value(list).unwrap())
 }
 
-fn put(mac: &Mac, rows: &[Raw]) {
+pub(super) fn put(mac: &Mac, rows: &[Raw]) {
     mac.store
         .lock()
         .unwrap()
@@ -43,11 +43,11 @@ fn put(mac: &Mac, rows: &[Raw]) {
         .unwrap();
 }
 
-fn rows(mac: &Mac, table: &str) -> Vec<Value> {
+pub(super) fn rows(mac: &Mac, table: &str) -> Vec<Value> {
     mac.store.lock().unwrap().raw_rows(table).unwrap()
 }
 
-fn symbols(row: &Value) -> Vec<String> {
+pub(super) fn symbols(row: &Value) -> Vec<String> {
     row["entries"]
         .as_array()
         .unwrap()
@@ -80,7 +80,7 @@ fn settle(a: &mut Mac, b: &mut Mac) {
     }
 }
 
-fn outbox_len(mac: &Mac) -> usize {
+pub(super) fn outbox_len(mac: &Mac) -> usize {
     mac.outbox().len()
 }
 
@@ -264,7 +264,7 @@ fn each_macs_favorites_list_merges_without_ping_pong() {
     assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
 }
 
-fn template(id: u64, name: &str) -> Raw {
+pub(super) fn template(id: u64, name: &str) -> Raw {
     let t = ChartAppearanceTemplate {
         id,
         name: name.into(),

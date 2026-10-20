@@ -42,6 +42,9 @@ pub enum Phase {
     CheckingAccount,
     /// An iCloud account is signed in but this database is not bound to it yet.
     NeedsSetup,
+    /// Bound, and iCloud's data has been read; waiting for the user to choose how to combine it
+    /// with this Mac's before anything is applied or uploaded.
+    AwaitingJoin,
     Ready,
     Syncing,
     UpToDate,
@@ -535,6 +538,28 @@ impl<T: SyncTransport> SyncCore<T> {
         if records.is_empty() && deletions.is_empty() {
             return;
         }
+        // Before the first-time merge nothing is applied: the records wait in the inbox, durably,
+        // until the user chooses how to combine iCloud's data with this Mac's.
+        if !self.state().is_some_and(|s| s.initial_sync_done) {
+            let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            for record in &records {
+                let _ = store.put_inbox(
+                    &InboxRecord {
+                        record_name: record.record.name.render(),
+                        entity_type: record.record.name.kind.prefix().to_string(),
+                        schema_version: record.record.schema_version,
+                        reason: "initial_pending".to_string(),
+                        payload: record.record.payload.clone(),
+                        system_fields: Some(record.system_fields.clone()),
+                        revision: record.record.revision,
+                        origin_device: record.record.origin_device.clone(),
+                        modified_ms: record.record.modified_ms,
+                    },
+                    now,
+                );
+            }
+            return;
+        }
         let id = self.next_batch;
         self.next_batch += 1;
         self.unapplied.insert(id);
@@ -862,6 +887,15 @@ impl<T: SyncTransport> SyncCore<T> {
             && !is_transient(*kind)
         {
             return Phase::Error(*kind);
+        }
+        if !state.initial_sync_done {
+            return if self.fetch_in_flight {
+                Phase::Syncing
+            } else if self.initial_fetch_done {
+                Phase::AwaitingJoin
+            } else {
+                Phase::Ready
+            };
         }
         if pending > 0
             || !self.inflight.is_empty()

@@ -34,6 +34,24 @@ pub struct ApplyCtx {
     pub date: String,
 }
 
+/// A record kept in the inbox, ready to be applied again.
+pub fn remote_from_inbox(entry: &InboxRecord) -> Option<RemoteRecord> {
+    let name = RecordName::parse(&entry.record_name)?;
+    let value = serde_json::from_slice::<Value>(&entry.payload).ok()?;
+    Some(RemoteRecord {
+        record: super::record::SyncRecord {
+            name,
+            schema_version: entry.schema_version,
+            revision: entry.revision,
+            origin_device: entry.origin_device.clone(),
+            modified_ms: entry.modified_ms,
+            payload: entry.payload.clone(),
+        },
+        value,
+        system_fields: entry.system_fields.clone().unwrap_or_default(),
+    })
+}
+
 /// What changed, so live owners (the watchlist store, the template stores) can reload.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ApplyReport {

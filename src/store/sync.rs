@@ -1153,6 +1153,42 @@ impl Store {
             .unwrap_or_default()
     }
 
+    /// Writes a consistent copy of the whole database to `path`. The copy opens as an ordinary
+    /// DegenView database, so a stashed dataset is always recoverable.
+    pub fn backup_to(&self, path: &std::path::Path) -> rusqlite::Result<()> {
+        let target = path.to_string_lossy().replace('\'', "''");
+        self.connection
+            .execute_batch(&format!("VACUUM INTO '{target}'"))
+    }
+
+    /// Forgets everything learned about the cloud: what is linked, queued, kept aside, and in
+    /// conflict. The user's data is untouched. Used when the iCloud account changes.
+    pub fn reset_sync_data(&self) -> rusqlite::Result<()> {
+        self.connection.execute_batch(
+            "DELETE FROM sync_entity;
+             DELETE FROM sync_outbox;
+             DELETE FROM sync_inbox;
+             DELETE FROM sync_conflict;
+             DELETE FROM sync_device;",
+        )
+    }
+
+    /// Empties the synced collections that the cloud's copy replaces when the user chooses to use
+    /// iCloud's data. Deliberately bypasses sync tracking: the cloud must never be told these
+    /// rows were deleted. Alerts and scripts are never cleared; they merge instead.
+    pub fn clear_replaceable_collections(&self) -> rusqlite::Result<()> {
+        for table in [
+            "watchlist",
+            "saved_view",
+            "chart_template",
+            "drawing_template",
+        ] {
+            self.connection
+                .execute(&format!("DELETE FROM {table}"), [])?;
+        }
+        Ok(())
+    }
+
     /// The friendly name of a Mac, if the cloud's device list has told us.
     pub fn device_name(&self, device_id: &str) -> rusqlite::Result<Option<String>> {
         self.connection
@@ -1400,9 +1436,19 @@ impl Store {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
+        // Alerts arrive through the command queue and only reach the table when the alert owner
+        // next runs. While commands are waiting, an absent alert may just not have landed yet.
+        let alerts_in_flight = kind == EntityKind::Alert
+            && self
+                .connection
+                .query_row("SELECT COUNT(*) FROM alert_command", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap_or(1)
+                > 0;
         let mut missing: Vec<_> = known
             .iter()
-            .filter(|(sync_id, _)| !current.contains_key(sync_id))
+            .filter(|(sync_id, _)| !alerts_in_flight && !current.contains_key(sync_id))
             .collect();
         missing.sort();
         // A layout's drawings follow the layout; only parents are judged for a mass delete.
