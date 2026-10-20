@@ -23,6 +23,12 @@ use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::PoisonError;
 
+/// A Mac that has not fetched for this long starts from scratch: its checkpoint is not trusted.
+const STALE_AFTER_MS: i64 = 60 * 24 * 60 * 60 * 1_000;
+/// Deletions found by catching up are applied unless they would remove this many items and over a
+/// quarter of what is synced: that looks like a problem, not a clean-up, so nothing is removed.
+const STALE_DELETE_LIMIT: usize = 20;
+
 /// Entries handed to the engine per stage command.
 const STAGE_BATCH: usize = 100;
 
@@ -131,6 +137,10 @@ pub struct SyncCore<T: SyncTransport> {
     scripts: Option<super::scripts::ScriptCache>,
     /// A requested deletion of all data in iCloud: asked for, then confirmed.
     cloud_delete: CloudDelete,
+    /// While catching up from scratch (an expired checkpoint, or a Mac that has been away for
+    /// months): the names iCloud still holds. iCloud does not replay deletions to a device that
+    /// old, so whatever it no longer lists was deleted while this Mac was away.
+    stale_seen: Option<HashSet<String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +171,7 @@ impl<T: SyncTransport> SyncCore<T> {
             effects: Vec::new(),
             scripts: None,
             cloud_delete: CloudDelete::Idle,
+            stale_seen: None,
         }
     }
 
@@ -199,13 +210,20 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         self.started = true;
-        // The checkpoint is only valid for the account it was saved under.
+        // The checkpoint is only valid for the account it was saved under, and only trusted if
+        // this Mac has fetched recently.
+        let away = state
+            .last_fetch_ms
+            .is_some_and(|last| self.now() - last > STALE_AFTER_MS);
         let engine_state = match (&state.engine_state, &state.engine_state_account_hash) {
-            (Some(bytes), Some(owner)) if state.account_hash.as_ref() == Some(owner) => {
+            (Some(bytes), Some(owner)) if state.account_hash.as_ref() == Some(owner) && !away => {
                 Some(bytes.clone())
             }
             _ => None,
         };
+        if away && state.initial_sync_done {
+            self.stale_seen = Some(HashSet::new());
+        }
         self.transport.send(TransportCommand::Start {
             zone: state.zone_name,
             engine_state,
@@ -448,6 +466,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 failed,
             } => self.on_sent(saved, deleted, failed),
             TransportEvent::Zone(event) => self.on_zone(event),
+            TransportEvent::FetchComplete => self.on_fetch_complete(),
             TransportEvent::ZoneDeleted => {
                 if self.cloud_delete == CloudDelete::Requested {
                     self.cloud_delete = CloudDelete::Confirmed;
@@ -545,6 +564,9 @@ impl<T: SyncTransport> SyncCore<T> {
         self.pending_state = None;
         self.initial_fetch_done = false;
         self.fetch_in_flight = false;
+        if self.state().is_some_and(|s| s.initial_sync_done) {
+            self.stale_seen = Some(HashSet::new());
+        }
         if let Some(state) = self.state() {
             self.transport.send(TransportCommand::Start {
                 zone: state.zone_name,
@@ -558,6 +580,9 @@ impl<T: SyncTransport> SyncCore<T> {
 
     fn on_fetched(&mut self, raw: Vec<RawRecord>, deletions: Vec<String>) {
         self.fetch_in_flight = false;
+        if let Some(seen) = self.stale_seen.as_mut() {
+            seen.extend(raw.iter().map(|record| record.name.clone()));
+        }
         let now = self.now();
         let mut records = Vec::new();
         for raw in raw {
@@ -665,6 +690,47 @@ impl<T: SyncTransport> SyncCore<T> {
                 })
             }
         }
+    }
+
+    /// A catch-up from scratch ran to the end. What iCloud no longer lists was deleted while this
+    /// Mac was away; remove it here too, unless it was edited since (then the edit wins and it is
+    /// uploaded again), or unless so much is missing that something is probably wrong.
+    fn on_fetch_complete(&mut self) {
+        let Some(seen) = self.stale_seen.take() else {
+            return;
+        };
+        let known = self
+            .store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .synced_entities()
+            .unwrap_or_default();
+        let missing: Vec<RecordName> = known
+            .iter()
+            .filter_map(|(kind, id)| RecordName::new(*kind, id.clone()))
+            .filter(|name| !seen.contains(&name.render()))
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        if missing.len() > STALE_DELETE_LIMIT && missing.len() * 4 > known.len() {
+            self.last_error = Some((
+                ErrorKind::Unknown,
+                format!(
+                    "iCloud no longer has {} items that are still on this Mac. They were kept.",
+                    missing.len()
+                ),
+            ));
+            return;
+        }
+        let id = self.next_batch;
+        self.next_batch += 1;
+        self.unapplied.insert(id);
+        self.effects.push(Effect::RemoteChanges(RemoteBatch {
+            id,
+            records: Vec::new(),
+            deletions: missing,
+        }));
     }
 
     fn on_state(&mut self, bytes: Vec<u8>) {

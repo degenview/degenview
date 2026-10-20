@@ -284,6 +284,7 @@ pub fn event_from_json(text_json: &str) -> Result<TransportEvent, String> {
             _ => ZoneEvent::Deleted,
         }),
         "zone_deleted" => TransportEvent::ZoneDeleted,
+        "fetch_complete" => TransportEvent::FetchComplete,
         "network" => TransportEvent::Network {
             available: value
                 .get("available")

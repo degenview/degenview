@@ -265,6 +265,8 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
             if !records.isEmpty || !deletions.isEmpty {
                 emitter.emit(["event": "fetched", "records": records, "deletions": deletions])
             }
+        case .didFetchChanges:
+            emitter.emit(["event": "fetch_complete"])
         case .sentRecordZoneChanges(let sent):
             sentRecordZoneChanges(sent, engine: syncEngine)
         case .sentDatabaseChanges(let sent):

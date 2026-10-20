@@ -163,6 +163,8 @@ pub enum TransportEvent {
         failed: Vec<SendFailure>,
     },
     Zone(ZoneEvent),
+    /// A fetch ran to the end: everything iCloud holds newer than the checkpoint has been delivered.
+    FetchComplete,
     /// The zone this Mac asked to delete is gone (confirmation of `DeleteZone`).
     ZoneDeleted,
     Network {

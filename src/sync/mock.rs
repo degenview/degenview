@@ -28,6 +28,8 @@ struct CloudRecord {
 enum Change {
     Saved(String, String),
     Deleted(String, String),
+    /// A deletion iCloud has since forgotten; keeps every checkpoint's position valid.
+    Forgotten,
 }
 
 #[derive(Default)]
@@ -57,6 +59,17 @@ impl MockCloud {
 
     pub fn inject(&self, fault: Fault) {
         self.inner.lock().unwrap().faults.push_back(fault);
+    }
+
+    /// Server-side compaction: forget deletions, as iCloud eventually does. A device whose
+    /// checkpoint predates this can no longer be told what was deleted.
+    pub fn compact_deletions(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        for change in &mut inner.log {
+            if matches!(change, Change::Deleted(..)) {
+                *change = Change::Forgotten;
+            }
+        }
     }
 
     pub fn delete_zone_contents(&self) {
@@ -301,6 +314,7 @@ impl MockTransport {
             let (name, writer, _deleted) = match change {
                 Change::Saved(name, writer) => (name, writer, false),
                 Change::Deleted(name, writer) => (name, writer, true),
+                Change::Forgotten => continue,
             };
             if writer == &self.device && !self.echo_own {
                 continue;
@@ -328,6 +342,7 @@ impl MockTransport {
         self.events.push_back(TransportEvent::State(
             (new_token as u64).to_le_bytes().to_vec(),
         ));
+        self.events.push_back(TransportEvent::FetchComplete);
     }
 }
 

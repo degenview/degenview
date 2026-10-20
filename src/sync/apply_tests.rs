@@ -1425,3 +1425,148 @@ fn categories_default_to_on_and_round_trip() {
     store.set_category_enabled(Category::Alerts, true).unwrap();
     assert_eq!(store.disabled_categories(), [Category::Scripts].into());
 }
+
+// MARK: Catching up after being away
+
+use super::transport::{ErrorKind, TransportEvent};
+
+fn names_on(mac: &Mac) -> Vec<String> {
+    let mut names: Vec<String> = rows(mac, "watchlist")
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_string())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_mac_whose_checkpoint_expired_learns_what_was_deleted_while_it_was_away() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(
+        &a,
+        &[
+            watchlist(1, "One", &[], false),
+            watchlist(2, "Two", &[], false),
+            watchlist(3, "Three", &[], false),
+        ],
+    );
+    settle(&mut a, &mut b);
+    assert_eq!(names_on(&b), ["One", "Three", "Two"]);
+
+    // A deletes two lists; iCloud later forgets the deletions, so B can never be told about them.
+    put(&a, &[watchlist(3, "Three", &[], false)]);
+    a.core.request_sync();
+    a.run();
+    cloud.compact_deletions();
+    // B changed one of them while away: that edit must win over the deletion.
+    put(
+        &b,
+        &[
+            watchlist(1, "One", &[], false),
+            watchlist(2, "Two, edited", &[], false),
+            watchlist(3, "Three", &[], false),
+        ],
+    );
+    b.deliver(TransportEvent::Error {
+        kind: ErrorKind::ChangeTokenExpired,
+        message: "expired".into(),
+    });
+    b.run();
+    settle(&mut a, &mut b);
+
+    assert_eq!(
+        names_on(&b),
+        ["Three", "Two, edited"],
+        "the untouched list is gone, the edited one stays"
+    );
+    assert_eq!(
+        names_on(&a),
+        ["Three", "Two, edited"],
+        "and the edit came back to A"
+    );
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn a_mac_that_has_been_away_for_months_does_not_trust_its_checkpoint() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(
+        &a,
+        &[
+            watchlist(1, "One", &[], false),
+            watchlist(2, "Two", &[], false),
+        ],
+    );
+    settle(&mut a, &mut b);
+    put(&a, &[watchlist(2, "Two", &[], false)]);
+    a.core.request_sync();
+    a.run();
+    cloud.compact_deletions();
+
+    // B is relaunched after 61 days.
+    b.advance(61 * 24 * 60 * 60 * 1_000);
+    let now = b.now.clone();
+    let mut core = super::core::SyncCore::new(
+        b.store.clone(),
+        super::mock::MockTransport::new(&cloud, "Mac B", "acct"),
+        Box::new(move || now.load(std::sync::atomic::Ordering::Relaxed)),
+    );
+    core.start();
+    let started_fresh = core.transport_mut().commands.iter().any(|c| {
+        matches!(
+            c,
+            super::transport::TransportCommand::Start {
+                engine_state: None,
+                ..
+            }
+        )
+    });
+    assert!(started_fresh, "the old checkpoint was not used");
+    b.core = core;
+    b.run();
+    assert_eq!(names_on(&b), ["Two"]);
+}
+
+#[test]
+fn a_normal_incremental_fetch_never_deletes_anything() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(&a, &[watchlist(1, "One", &[], false)]);
+    settle(&mut a, &mut b);
+    for _ in 0..3 {
+        b.core.request_sync();
+        b.run();
+    }
+    assert_eq!(names_on(&b), ["One"]);
+}
+
+#[test]
+fn a_catch_up_that_would_remove_most_of_the_library_removes_nothing() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let lists: Vec<_> = (1..=30u64)
+        .map(|id| watchlist(id, "x", &[], false))
+        .collect();
+    put(&a, &lists);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 30);
+    // iCloud suddenly has none of them (and no deletions to replay).
+    cloud.delete_zone_contents();
+    b.deliver(TransportEvent::Error {
+        kind: ErrorKind::ChangeTokenExpired,
+        message: "expired".into(),
+    });
+    b.run();
+    assert_eq!(
+        rows(&b, "watchlist").len(),
+        30,
+        "nothing removed on a suspicious catch-up"
+    );
+    assert!(b.core.status().last_error.unwrap().contains("were kept"));
+}

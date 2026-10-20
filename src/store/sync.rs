@@ -723,6 +723,23 @@ impl Store {
         Ok(found.map_or(Load::Gone, Load::Found))
     }
 
+    /// Entities the cloud is known to hold, as `(kind, sync_id)`: confirmed uploads and applied
+    /// remote records, excluding deletions.
+    pub fn synced_entities(&self) -> rusqlite::Result<Vec<(EntityKind, String)>> {
+        let mut statement = self.connection.prepare(
+            "SELECT entity_type, sync_id FROM sync_entity WHERE deleted = 0 AND synced_hash IS NOT NULL",
+        )?;
+        let rows = statement
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(kind, id)| Some((EntityKind::from_prefix(&kind)?, id)))
+            .collect())
+    }
+
     /// Sync metadata for one entity.
     pub fn entity_meta(
         &self,
