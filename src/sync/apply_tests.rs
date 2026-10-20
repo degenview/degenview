@@ -1307,3 +1307,121 @@ fn a_remote_alert_that_cannot_be_read_is_kept_not_applied() {
             .any(|r| r.record_name == "alert.4242" && r.reason == "invalid")
     );
 }
+
+// MARK: Category switches
+
+use super::policy::Category;
+
+#[test]
+fn a_category_switched_off_neither_uploads_nor_applies() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, false)
+        .unwrap();
+    b.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, false)
+        .unwrap();
+    put(&a, &[watchlist(10, "Private to A", &[], false)]);
+    a.store
+        .lock()
+        .unwrap()
+        .set_setting("appTheme", &"dark")
+        .unwrap();
+    settle(&mut a, &mut b);
+    assert_eq!(
+        cloud.names(),
+        ["setting.appTheme"],
+        "other categories still sync"
+    );
+    assert!(rows(&b, "watchlist").is_empty());
+    assert_eq!(
+        b.store.lock().unwrap().raw_setting("appTheme").unwrap(),
+        Some(json!("dark"))
+    );
+}
+
+#[test]
+fn incoming_records_of_a_category_that_is_off_wait_and_apply_when_it_returns() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    b.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, false)
+        .unwrap();
+    put(&a, &[watchlist(10, "Waits", &[(1, "AAA")], false)]);
+    settle(&mut a, &mut b);
+    assert!(rows(&b, "watchlist").is_empty());
+    let held = b.store.lock().unwrap().inbox().unwrap();
+    assert!(
+        held.iter()
+            .any(|r| r.record_name == "watchlist.10" && r.reason == "category_off")
+    );
+
+    b.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, true)
+        .unwrap();
+    let empty = super::core::RemoteBatch {
+        id: 901,
+        records: vec![],
+        deletions: vec![],
+    };
+    b.apply_to_store(&empty);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .all(|r| r.reason != "category_off")
+    );
+    assert_eq!(outbox_len(&b), 0);
+}
+
+#[test]
+fn switching_a_category_back_on_uploads_what_changed_meanwhile() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, false)
+        .unwrap();
+    put(&a, &[watchlist(10, "Made while off", &[], false)]);
+    settle(&mut a, &mut b);
+    assert!(cloud.names().is_empty());
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, true)
+        .unwrap();
+    a.store.lock().unwrap().reconcile_stored().unwrap();
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.names(), ["watchlist.10"]);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+}
+
+#[test]
+fn categories_default_to_on_and_round_trip() {
+    let (_cloud, a, _b) = pair();
+    let store = a.store.lock().unwrap();
+    assert!(store.disabled_categories().is_empty());
+    store
+        .set_category_enabled(Category::Scripts, false)
+        .unwrap();
+    store.set_category_enabled(Category::Alerts, false).unwrap();
+    store.set_category_enabled(Category::Alerts, true).unwrap();
+    assert_eq!(store.disabled_categories(), [Category::Scripts].into());
+}

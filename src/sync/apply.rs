@@ -94,6 +94,7 @@ pub fn apply_batch(
         for name in deletions {
             work.apply_deletion(name)?;
         }
+        work.retry_category_off()?;
         work.retry_orphans()?;
         work.retry_busy_scripts()?;
         work.flush()?;
@@ -119,6 +120,7 @@ struct Work<'a> {
     writable: HashMap<&'static str, bool>,
     dirty: BTreeSet<&'static str>,
     settings: BTreeMap<String, Option<Value>>,
+    disabled: std::collections::HashSet<super::policy::Category>,
     report: ApplyReport,
 }
 
@@ -143,6 +145,7 @@ impl<'a> Work<'a> {
             writable: HashMap::new(),
             dirty: BTreeSet::new(),
             settings: BTreeMap::new(),
+            disabled: store.disabled_categories(),
             report: ApplyReport::default(),
         }
     }
@@ -282,6 +285,10 @@ impl<'a> Work<'a> {
     // MARK: Records
 
     fn apply_record(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+        // A category the user switched off waits in the inbox, to be applied if it is switched on.
+        if self.disabled.contains(&record.record.name.kind.category()) {
+            return self.keep(record, "category_off");
+        }
         match record.record.name.kind {
             EntityKind::Watchlist
             | EntityKind::ChartTemplate
@@ -1245,6 +1252,27 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
+    /// Records held back because their category was off are applied once it is switched on.
+    fn retry_category_off(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|r| r.reason == "category_off")
+            .filter(|r| {
+                EntityKind::from_prefix(&r.entity_type)
+                    .is_some_and(|kind| !self.disabled.contains(&kind.category()))
+            })
+            .collect();
+        for entry in waiting {
+            if let Some(record) = remote_from_inbox(&entry) {
+                self.store.remove_inbox(&entry.record_name)?;
+                self.apply_record(&record)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Drawings that arrived before their layout are applied once it exists.
     fn retry_orphans(&mut self) -> rusqlite::Result<()> {
         let waiting: Vec<InboxRecord> = self
@@ -1288,6 +1316,10 @@ impl<'a> Work<'a> {
 
     fn apply_deletion(&mut self, name: &RecordName) -> rusqlite::Result<()> {
         let (kind, id) = (name.kind, name.id.as_str());
+        if self.disabled.contains(&kind.category()) {
+            // Not applied; if the category returns, a reconcile re-uploads anything still here.
+            return Ok(());
+        }
         match kind {
             EntityKind::Layout => return self.delete_layout(id),
             EntityKind::LayoutDrawing => return self.delete_drawing(name),

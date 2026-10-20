@@ -6,7 +6,9 @@
 #![allow(dead_code)]
 
 use super::Store;
-use crate::sync::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy};
+use crate::sync::policy::{
+    Category, EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy,
+};
 use crate::sync::project::{Projected, project_row, project_setting};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -156,6 +158,40 @@ impl Store {
                 origin TEXT NOT NULL DEFAULT 'local'
             );",
         )
+    }
+
+    /// The categories the user switched off. A missing entry is on.
+    pub fn disabled_categories(&self) -> HashSet<Category> {
+        let json: Option<String> = self
+            .connection
+            .query_row(
+                "SELECT categories FROM sync_state WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        let map: std::collections::HashMap<String, bool> = json
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default();
+        Category::ALL
+            .into_iter()
+            .filter(|category| map.get(category.key()) == Some(&false))
+            .collect()
+    }
+
+    /// Turns one category on or off. Turning one off stops its changes from being queued or
+    /// applied; turning it on is followed by a reconcile and a retry of what was held back.
+    pub fn set_category_enabled(&self, category: Category, enabled: bool) -> rusqlite::Result<()> {
+        let Some(mut state) = self.sync_state()? else {
+            return Ok(());
+        };
+        let mut map: std::collections::HashMap<String, bool> =
+            serde_json::from_str(&state.categories).unwrap_or_default();
+        map.insert(category.key().to_string(), enabled);
+        state.categories = serde_json::to_string(&map).unwrap_or_else(|_| "{}".into());
+        self.save_sync_state(&state)
     }
 
     /// Whether sync tracking is active. One indexed lookup; the write hooks call it on every save.
@@ -383,11 +419,13 @@ impl Store {
             return Ok(());
         };
         let device = state.device_id;
+        let off = self.disabled_categories();
 
         let mut changed: Vec<&Projected> = new
             .iter()
             .filter(|(key, entity)| old.get(*key).map(|before| &before.hash) != Some(&entity.hash))
             .map(|(_, entity)| entity)
+            .filter(|entity| !off.contains(&entity.kind.category()))
             .collect();
         changed.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
         for entity in changed {
@@ -406,6 +444,7 @@ impl Store {
             .iter()
             .filter(|(key, _)| !new.contains_key(*key))
             .map(|(_, entity)| entity)
+            .filter(|entity| !off.contains(&entity.kind.category()))
             .collect();
         vanished.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
         let held_layouts = self.mass_deleted_layouts(old, &vanished);
@@ -1403,6 +1442,9 @@ impl Store {
         let Some(state) = self.sync_state()? else {
             return Ok(Reconciled::default());
         };
+        if self.disabled_categories().contains(&kind.category()) {
+            return Ok(Reconciled::default());
+        }
         let device = state.device_id;
         let mut done = Reconciled::default();
 

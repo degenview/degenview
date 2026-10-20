@@ -13,6 +13,40 @@ pub enum Category {
     Preferences,
 }
 
+impl Category {
+    pub const ALL: [Category; 6] = [
+        Self::Watchlists,
+        Self::Layouts,
+        Self::Templates,
+        Self::Scripts,
+        Self::Alerts,
+        Self::Preferences,
+    ];
+
+    /// The stable name a switch is stored under.
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Watchlists => "watchlists",
+            Self::Layouts => "layouts",
+            Self::Templates => "templates",
+            Self::Scripts => "scripts",
+            Self::Alerts => "alerts",
+            Self::Preferences => "preferences",
+        }
+    }
+
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Watchlists => "Watchlists",
+            Self::Layouts => "Layouts and drawings",
+            Self::Templates => "Chart and drawing templates",
+            Self::Scripts => "Pine scripts",
+            Self::Alerts => "Price alerts",
+            Self::Preferences => "Preferences",
+        }
+    }
+}
+
 /// How concurrent edits to one entity are reconciled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Merge {
@@ -250,6 +284,17 @@ mod tests {
         assert_eq!(EntityKind::Script.merge(), Merge::KeepBoth);
         assert_eq!(EntityKind::Layout.merge(), Merge::KeepBoth);
         assert_eq!(EntityKind::Watchlist.merge(), Merge::ThreeWay);
+    }
+
+    #[test]
+    fn categories_have_unique_stable_keys_and_every_kind_belongs_to_one() {
+        let mut keys: Vec<_> = Category::ALL.iter().map(|c| c.key()).collect();
+        keys.sort_unstable();
+        keys.dedup();
+        assert_eq!(keys.len(), Category::ALL.len());
+        for kind in EntityKind::ALL {
+            assert!(Category::ALL.contains(&kind.category()));
+        }
     }
 
     #[test]
