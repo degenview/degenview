@@ -3,8 +3,8 @@
 //! itself is size- and time-limited, and the unpacked bundle must match the app's known layout.
 //!
 //! All of this is structural. It cannot prove the binaries are genuine; that comes from the signed
-//! tag, the immutable release and the SHA-256 checked before anything is unpacked (and from
-//! codesign/Team ID checks once releases are Apple-signed).
+//! tag, the immutable release and the SHA-256 checked before anything is unpacked, and from the
+//! Developer ID signature check in `code_signature`.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -19,7 +19,7 @@ const POLL: Duration = Duration::from_millis(100);
 const BUNDLE_ID: &str = "es.nico.degenview";
 const HELPER_ID: &str = "es.nico.degenview.alert-agent";
 const MAIN_EXECUTABLE: &str = "Contents/MacOS/DegenView";
-const HELPER_APP: &str = "Contents/Library/LoginItems/DegenViewAlertAgent.app";
+pub(crate) const HELPER_APP: &str = "Contents/Library/LoginItems/DegenViewAlertAgent.app";
 const HELPER_EXECUTABLE: &str = "Contents/MacOS/DegenViewAlertAgent";
 
 // MARK: Zip directory
