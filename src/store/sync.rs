@@ -188,6 +188,45 @@ impl Store {
         // Databases created by an earlier development build lack these columns.
         self.add_column("sync_state", "id_tag", "INTEGER NOT NULL DEFAULT 0")?;
         self.add_column("sync_entity", "local_hash", "TEXT")?;
+        self.assign_missing_id_tag()?;
+        Ok(())
+    }
+
+    /// A database that enabled sync before the tag existed has a sync identity with tag 0, and
+    /// every such Mac would then give its small ids the same shared id. `ensure_sync_state` only
+    /// runs when sync is switched on, so the tag is assigned here. Whatever was tracked under the
+    /// zero tag is forgotten: the local rows stay and are tracked again under the new tag.
+    fn assign_missing_id_tag(&self) -> rusqlite::Result<()> {
+        let untagged = self
+            .connection
+            .prepare("SELECT 1 FROM sync_state WHERE id = 1 AND id_tag = 0")?
+            .exists([])?;
+        if !untagged {
+            return Ok(());
+        }
+        let (low, high) = (
+            crate::sync::ids::GLOBAL_BASE as i64,
+            (crate::sync::ids::GLOBAL_BASE | (crate::sync::ids::LEGACY_LIMIT - 1)) as i64,
+        );
+        for table in ["sync_entity", "sync_outbox", "sync_inbox"] {
+            let key = if table == "sync_inbox" {
+                "substr(record_name, instr(record_name, '.') + 1)"
+            } else {
+                "sync_id"
+            };
+            self.connection.execute(
+                &format!(
+                    "DELETE FROM {table}
+                     WHERE entity_type IN ('portfolio', 'portfoliotx', 'paperaccount')
+                       AND CAST({key} AS INTEGER) BETWEEN ?1 AND ?2"
+                ),
+                params![low, high],
+            )?;
+        }
+        self.connection.execute(
+            "UPDATE sync_state SET id_tag = ?1 WHERE id = 1 AND id_tag = 0",
+            params![new_id_tag()],
+        )?;
         Ok(())
     }
 
@@ -1943,6 +1982,56 @@ mod tests {
         saved.last_error = Some("x".into());
         store.save_sync_state(&saved).unwrap();
         assert_eq!(store.sync_state().unwrap().unwrap().id_tag, first.id_tag);
+    }
+
+    #[test]
+    fn a_database_that_enabled_sync_before_the_tag_existed_gets_one_when_it_opens() {
+        let store = Store::open_in_memory().unwrap();
+        store.ensure_sync_state("Mac", "hw").unwrap();
+        let zero_tagged = crate::sync::ids::GLOBAL_BASE | 1;
+        let other_macs = crate::sync::ids::GLOBAL_BASE | (7 << 24) | 1;
+        for (kind, id) in [
+            ("paperaccount", zero_tagged),
+            ("paperaccount", other_macs),
+            ("watchlist", 1),
+        ] {
+            store
+                .connection
+                .execute(
+                    "INSERT INTO sync_entity (entity_type, sync_id, local_id) VALUES (?1, ?2, '1')",
+                    params![kind, id.to_string()],
+                )
+                .unwrap();
+        }
+        store
+            .connection
+            .execute("UPDATE sync_state SET id_tag = 0", [])
+            .unwrap();
+        store.create_sync_schema().unwrap();
+        assert!(store.sync_state().unwrap().unwrap().id_tag > 0);
+        let left: Vec<(String, String)> = store
+            .connection
+            .prepare("SELECT entity_type, sync_id FROM sync_entity ORDER BY sync_id")
+            .unwrap()
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            left,
+            vec![
+                ("watchlist".to_string(), "1".to_string()),
+                ("paperaccount".to_string(), other_macs.to_string()),
+            ],
+            "only what was tracked under the zero tag is forgotten"
+        );
+        let tag = store.sync_state().unwrap().unwrap().id_tag;
+        store.create_sync_schema().unwrap();
+        assert_eq!(
+            store.sync_state().unwrap().unwrap().id_tag,
+            tag,
+            "assigned once"
+        );
     }
 
     #[test]
