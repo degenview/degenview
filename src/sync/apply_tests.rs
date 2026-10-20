@@ -505,7 +505,9 @@ fn a_failed_apply_changes_nothing() {
         date: "2026-10-20".into(),
     };
     let store = b.store.lock().unwrap();
-    assert!(super::apply::apply_batch(&store, &batch, &ctx).is_err());
+    assert!(
+        super::apply::apply_batch(&store, &mut super::scripts::NoScripts, &batch, &ctx).is_err()
+    );
     let meta = store
         .entity_meta(EntityKind::Watchlist, "10")
         .unwrap()

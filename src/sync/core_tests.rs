@@ -30,6 +30,131 @@ pub(super) fn list(id: u64, name: &str) -> Raw {
     Raw(json!({"id": id, "name": name, "entries": [], "is_favorites": false}))
 }
 
+/// An in-memory script library standing in for the files `ScriptStore` manages.
+#[derive(Default)]
+pub(super) struct FakeLibrary {
+    pub(super) scripts: std::collections::BTreeMap<String, super::project::ScriptSnapshot>,
+    pub(super) unsaved: std::collections::HashSet<String>,
+    pub(super) pristine_demos: std::collections::HashSet<String>,
+    pub(super) fail_listing: bool,
+    seed: u128,
+    counter: u128,
+}
+
+impl FakeLibrary {
+    fn named(&self, name: &str, except: Option<&str>) -> bool {
+        self.scripts
+            .values()
+            .any(|s| s.name.eq_ignore_ascii_case(name) && Some(s.id.as_str()) != except)
+    }
+
+    fn unique(&self, name: &str, except: Option<&str>) -> String {
+        let mut candidate = name.to_string();
+        let mut n = 2;
+        while self.named(&candidate, except) {
+            candidate = format!("{name} {n}");
+            n += 1;
+        }
+        candidate
+    }
+
+    pub(super) fn add(&mut self, name: &str, source: &str) -> String {
+        let id = self.fresh_id_value();
+        let name = self.unique(name, None);
+        self.scripts.insert(
+            id.clone(),
+            super::project::ScriptSnapshot {
+                id: id.clone(),
+                name,
+                source: source.into(),
+                is_favorite: false,
+            },
+        );
+        id
+    }
+
+    pub(super) fn set_source(&mut self, id: &str, source: &str) {
+        self.scripts.get_mut(id).unwrap().source = source.into();
+    }
+
+    pub(super) fn source(&self, id: &str) -> String {
+        self.scripts[id].source.clone()
+    }
+
+    fn fresh_id_value(&mut self) -> String {
+        self.counter += 1;
+        format!("{:032x}", (self.seed << 64) | self.counter)
+    }
+
+    pub(super) fn sorted(&self) -> Vec<(String, String)> {
+        let mut all: Vec<_> = self
+            .scripts
+            .values()
+            .map(|s| (s.name.clone(), s.source.clone()))
+            .collect();
+        all.sort();
+        all
+    }
+}
+
+impl super::scripts::ScriptSink for FakeLibrary {
+    fn all(&mut self) -> Result<Vec<super::project::ScriptSnapshot>, String> {
+        if self.fail_listing {
+            return Err("disk unavailable".into());
+        }
+        Ok(self
+            .scripts
+            .values()
+            .filter(|s| !self.pristine_demos.contains(&s.id))
+            .cloned()
+            .collect())
+    }
+    fn get(&mut self, id: &str) -> Result<Option<super::project::ScriptSnapshot>, String> {
+        Ok(self.scripts.get(id).cloned())
+    }
+    fn find_by_name(&mut self, name: &str) -> Result<Option<super::scripts::NamedScript>, String> {
+        Ok(self
+            .scripts
+            .values()
+            .find(|s| s.name.eq_ignore_ascii_case(name))
+            .map(|s| super::scripts::NamedScript {
+                id: s.id.clone(),
+                pristine_demo: self.pristine_demos.contains(&s.id),
+            }))
+    }
+    fn has_unsaved_work(&mut self, id: &str) -> bool {
+        self.unsaved.contains(id)
+    }
+    fn adopt(&mut self, id: &str, name: &str, source: &str, favorite: bool) -> Result<(), String> {
+        let name = self.unique(name, None);
+        self.scripts.insert(
+            id.into(),
+            super::project::ScriptSnapshot {
+                id: id.into(),
+                name,
+                source: source.into(),
+                is_favorite: favorite,
+            },
+        );
+        Ok(())
+    }
+    fn update(&mut self, id: &str, name: &str, source: &str, favorite: bool) -> Result<(), String> {
+        let name = self.unique(name, Some(id));
+        let script = self.scripts.get_mut(id).ok_or("missing")?;
+        script.name = name;
+        script.source = source.into();
+        script.is_favorite = favorite;
+        Ok(())
+    }
+    fn delete(&mut self, id: &str) -> Result<(), String> {
+        self.scripts.remove(id);
+        Ok(())
+    }
+    fn fresh_id(&mut self) -> String {
+        self.fresh_id_value()
+    }
+}
+
 pub(super) struct Mac {
     pub(super) store: SharedStore,
     pub(super) core: SyncCore<MockTransport>,
@@ -41,6 +166,8 @@ pub(super) struct Mac {
     /// Apply fetched changes to the store for real, as the app does.
     pub(super) apply: bool,
     pub(super) reports: Vec<super::apply::ApplyReport>,
+    pub(super) library: FakeLibrary,
+    pub(super) script_cache: super::scripts::ScriptCache,
 }
 
 pub(super) fn mac(cloud: &MockCloud, name: &str, user: &str, bound: Option<&str>) -> Mac {
@@ -66,7 +193,12 @@ pub(super) fn mac_with(
         let now = now.clone();
         Box::new(move || now.load(Ordering::Relaxed))
     };
-    let core = SyncCore::new(store.clone(), MockTransport::new(cloud, name, user), clock);
+    let mut core = SyncCore::new(store.clone(), MockTransport::new(cloud, name, user), clock);
+    let script_cache = super::scripts::ScriptCache::default();
+    core.set_script_cache(script_cache.clone());
+    let seed = name.bytes().fold(7u128, |acc, b| {
+        acc.wrapping_mul(131).wrapping_add(b as u128)
+    }) & 0xffff_ffff;
     Mac {
         store,
         core,
@@ -77,6 +209,11 @@ pub(super) fn mac_with(
         unapplied: Vec::new(),
         apply: false,
         reports: Vec::new(),
+        library: FakeLibrary {
+            seed,
+            ..Default::default()
+        },
+        script_cache,
     }
 }
 
@@ -143,7 +280,13 @@ impl Mac {
             date: "2026-10-20".into(),
         };
         let store = self.store.lock().unwrap();
-        super::apply::apply_batch(&store, batch, &ctx).unwrap()
+        super::apply::apply_batch(&store, &mut self.library, batch, &ctx).unwrap()
+    }
+
+    /// Re-reads the script library and queues what changed, as the app does on a timer.
+    pub(super) fn scan_scripts(&mut self) {
+        let store = self.store.lock().unwrap();
+        super::scripts::scan_scripts(&store, &mut self.library, &self.script_cache).unwrap();
     }
 
     pub(super) fn apply_held(&mut self) {

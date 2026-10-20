@@ -11,6 +11,7 @@ pub mod outbox;
 pub mod policy;
 pub mod project;
 pub mod record;
+pub mod scripts;
 pub mod transport;
 pub mod validate;
 
@@ -21,3 +22,5 @@ pub mod mock;
 mod apply_tests;
 #[cfg(test)]
 mod core_tests;
+#[cfg(test)]
+mod script_tests;

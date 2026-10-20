@@ -123,6 +123,7 @@ pub struct SyncCore<T: SyncTransport> {
     next_batch: u64,
     reconcile_needed: bool,
     effects: Vec<Effect>,
+    scripts: Option<super::scripts::ScriptCache>,
 }
 
 impl<T: SyncTransport> SyncCore<T> {
@@ -144,7 +145,13 @@ impl<T: SyncTransport> SyncCore<T> {
             next_batch: 1,
             reconcile_needed: false,
             effects: Vec::new(),
+            scripts: None,
         }
+    }
+
+    /// Where uploads of script files read their content from; see `scripts::scan_scripts`.
+    pub fn set_script_cache(&mut self, cache: super::scripts::ScriptCache) {
+        self.scripts = Some(cache);
     }
 
     pub fn transport_mut(&mut self) -> &mut T {
@@ -343,45 +350,50 @@ impl<T: SyncTransport> SyncCore<T> {
                 },
                 None,
             )),
-            OutboxOp::Upsert => match load? {
-                Load::Found(entity) => {
-                    if entity.payload.len() > MAX_PAYLOAD_BYTES {
-                        self.block(row.seq, "too large to sync");
+            OutboxOp::Upsert => {
+                let entity = match load? {
+                    Load::Found(entity) => entity,
+                    Load::Gone => {
+                        // The row vanished without a delete being queued: an out-of-band change.
+                        let _ = self
+                            .store
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .remove_outbox(row.seq);
+                        self.reconcile_needed = true;
                         return None;
                     }
-                    let revision = meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64;
-                    let hash = entity.hash.clone();
-                    Some((
-                        StagedChange {
-                            outbox_seq: row.seq,
-                            name: name.clone(),
-                            op: StagedOp::Save {
-                                record: SyncRecord {
-                                    name,
-                                    schema_version: SCHEMA_VERSION,
-                                    revision,
-                                    origin_device: device.to_string(),
-                                    modified_ms: row.queued_ms,
-                                    payload: entity.payload,
-                                },
-                                system_fields,
+                    // Scripts are files: the app thread keeps their projections in a shared cache.
+                    Load::NotStored => self
+                        .scripts
+                        .as_ref()
+                        .and_then(|cache| cache.lock().ok()?.get(&row.sync_id).cloned())?,
+                };
+                if entity.payload.len() > MAX_PAYLOAD_BYTES {
+                    self.block(row.seq, "too large to sync");
+                    return None;
+                }
+                let revision = meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64;
+                let hash = entity.hash.clone();
+                Some((
+                    StagedChange {
+                        outbox_seq: row.seq,
+                        name: name.clone(),
+                        op: StagedOp::Save {
+                            record: SyncRecord {
+                                name,
+                                schema_version: SCHEMA_VERSION,
+                                revision,
+                                origin_device: device.to_string(),
+                                modified_ms: row.queued_ms,
+                                payload: entity.payload,
                             },
+                            system_fields,
                         },
-                        Some(hash),
-                    ))
-                }
-                Load::Gone => {
-                    // The row vanished without a delete being queued: an out-of-band change.
-                    let _ = self
-                        .store
-                        .lock()
-                        .unwrap_or_else(PoisonError::into_inner)
-                        .remove_outbox(row.seq);
-                    self.reconcile_needed = true;
-                    None
-                }
-                Load::NotStored => None,
-            },
+                    },
+                    Some(hash),
+                ))
+            }
         }
     }
 

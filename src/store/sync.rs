@@ -2278,10 +2278,7 @@ mod hook_tests {
             id: id.into(),
             name: format!("Script {id}"),
             source: source.into(),
-            script_type: "indicator".into(),
             is_favorite: false,
-            created_ms: 1,
-            modified_ms: 2,
         })
     }
 

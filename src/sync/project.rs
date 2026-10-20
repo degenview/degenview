@@ -203,21 +203,18 @@ pub struct ScriptSnapshot {
     pub id: String,
     pub name: String,
     pub source: String,
-    pub script_type: String,
     pub is_favorite: bool,
-    pub created_ms: i64,
-    pub modified_ms: i64,
 }
 
 pub fn project_script(script: &ScriptSnapshot) -> Projected {
+    // Only what makes the script the same script everywhere. Edit times and the declared type are
+    // deliberately left out: saving stamps a new time and recomputes the type, so including them
+    // would make every apply look like a local edit and bounce between Macs.
     let body = serde_json::json!({
         "id": script.id,
         "name": script.name,
         "source": script.source,
-        "script_type": script.script_type,
         "is_favorite": script.is_favorite,
-        "created_ms": script.created_ms,
-        "modified_ms": script.modified_ms,
         "sha256": sha256_hex(script.source.as_bytes()),
     });
     Projected::new(
@@ -482,10 +479,7 @@ mod tests {
             id: "0123456789abcdef0123456789abcdef".into(),
             name: "My Strategy".into(),
             source: "//@version=6\n".into(),
-            script_type: "indicator".into(),
             is_favorite: false,
-            created_ms: 1,
-            modified_ms: 2,
         };
         let a = project_script(&script);
         assert_eq!(a.kind, EntityKind::Script);
