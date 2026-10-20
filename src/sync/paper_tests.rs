@@ -179,6 +179,35 @@ fn placing_an_order_on_the_mirror_takes_the_account_over() {
 }
 
 #[test]
+fn account_changes_uploaded_before_either_mac_fetches_keep_both_versions() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+
+    on_a.process_quote(quote(110.0)).unwrap();
+    on_a.submit(limit_buy(id, 100.0)).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    let mut on_b = host(&b);
+    on_b.process_quote(quote(110.0)).unwrap();
+    on_b.submit(limit_buy(shared, 90.0)).unwrap();
+    // The account's upload is debounced; let it come due, then both upload before either fetches.
+    a.advance(10_000);
+    b.advance(10_000);
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+
+    for mac in [&a, &b] {
+        let accounts = snapshot(mac).accounts;
+        assert_eq!(accounts.len(), 2, "the account and a copy of the loser");
+        assert_eq!(snapshot(mac).orders.len(), 2, "each Mac's order survives");
+    }
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0);
+}
+
+#[test]
 fn concurrent_changes_to_one_account_keep_both_versions() {
     let (_cloud, mut a, mut b) = pair();
     let mut on_a = host(&a);

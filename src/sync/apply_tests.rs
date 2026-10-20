@@ -952,6 +952,44 @@ fn conflicting_layout_structures_keep_both_as_a_recoverable_copy() {
 }
 
 #[test]
+fn layouts_uploaded_before_either_mac_fetches_keep_both_versions() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[])])]);
+    settle(&mut a, &mut b);
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[]), (2, "ETH", &[])])],
+    );
+    put_layouts(
+        &b,
+        &[layout(10, "Main", &[(1, "BTC", &[]), (3, "SOL", &[])])],
+    );
+    // Both upload before either fetches: the second upload is refused by the cloud.
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    assert_eq!(ra.len(), 2, "the original and one conflict copy");
+    assert_eq!(ra, rb);
+    let mut symbols: Vec<String> = ra
+        .iter()
+        .flat_map(|l| {
+            l["charts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|c| c["symbol"].as_str().unwrap().to_string())
+        })
+        .collect();
+    symbols.sort();
+    symbols.dedup();
+    assert_eq!(symbols, ["BTC", "ETH", "SOL"], "neither edit was lost");
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
 fn a_layout_renamed_on_one_mac_is_not_a_conflict() {
     let (_cloud, mut a, mut b) = pair();
     a.core.start();

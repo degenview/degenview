@@ -964,6 +964,20 @@ impl<T: SyncTransport> SyncCore<T> {
                     )
             });
         let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+        // This exact cloud version was already merged in (an upload staged before the merge went
+        // out with the old change tag): merging it again would only repeat the work, and for a
+        // keep-both entity add a second conflict copy. Take its tag and send what is stored now.
+        if merge_first
+            && let Verdict::Accept(value) = validate(&record)
+            && meta.as_ref().is_some_and(|meta| {
+                meta.synced_hash.as_deref()
+                    == Some(sha256_hex(&super::project::canonical_json(&value)).as_str())
+            })
+        {
+            let _ = store.set_system_fields(row.kind, &row.sync_id, &fields);
+            let _ = store.retry_now(row.seq);
+            return;
+        }
         if local_wins {
             // Save over the cloud's version: take its change tag and go again.
             let _ = store.set_system_fields(row.kind, &row.sync_id, &fields);

@@ -178,6 +178,13 @@ notifies from one Mac; the Alerts window offers *Watch on This Mac* / *Stop Watc
 Switching it on re-baselines it so it cannot fire from a stale comparison. Webhook endpoints do
 not sync, so a synced alert's endpoint ids simply have no target on another Mac.
 
+When two Macs upload before either has fetched, the cloud refuses the second upload. For
+watchlists, settings, layouts, scripts and paper accounts that refusal is not resolved by saving the
+newer edit over the other: the cloud's version goes to the same merge as a fetched one, the edit
+stays queued, and the result uploads once it has been applied (five attempts at most, then the newer
+side is kept). Drawings, templates, alerts, portfolios and transactions are last-writer-wins, so for
+them saving the newer edit is the merge.
+
 ## First sync and accounts
 
 1. The user turns sync on; an Apple Account must be signed in. Nothing is read or sent until the
@@ -291,12 +298,6 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   fallback is fetching with manual CloudKit operations instead of `CKSyncEngine`.
 * Whether CloudKit pushes reach the app (winit owns the app delegate). The worker also looks for
   changes every five minutes and on **Sync Now**, so the feature degrades to polling.
-* Layouts, scripts and paper accounts keep both versions as conflict copies when the Macs *fetch*
-  each other's change first. When both upload before either fetches, the cloud refuses the second
-  upload and the newer side is saved over the other: only watchlists and settings are merged in
-  that case (found on real CloudKit, where two Macs adding to one watchlist lost an item). Making
-  the three keep-both kinds merge there too needs the apply layer to queue the winner after a
-  local-wins conflict; it is not done.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
 * Behaviour with all windows hidden: remote changes are applied on the app thread, which only runs
   frames while a window is visible; uploads are unaffected.

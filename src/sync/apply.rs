@@ -588,6 +588,9 @@ impl<'a> Work<'a> {
                                 local_wins,
                             ));
                             if local_wins {
+                                // This Mac's version stays and still has to go up: it is not the
+                                // cloud's, so the link below must not record it as synced.
+                                intended = local_value;
                                 write = None;
                             } else {
                                 intended = winner;

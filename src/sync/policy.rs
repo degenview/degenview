@@ -147,12 +147,15 @@ impl EntityKind {
 }
 
 impl EntityKind {
-    /// Whether the apply layer combines two Macs' concurrent edits (a watchlist entry by entry,
-    /// a setting key by key). A refused upload of such an entity is merged with the cloud's
-    /// version and the result uploaded; saving it over the cloud's version would drop the other
-    /// Mac's change.
+    /// Whether the apply layer settles two Macs' concurrent edits itself (a watchlist entry by
+    /// entry, a setting key by key, a layout, script or paper account into a winner and a
+    /// conflict copy). A refused upload of such an entity is merged with the cloud's version and
+    /// the result uploaded; saving it over the cloud's version would drop the other Mac's change.
     pub const fn combines_edits(self) -> bool {
-        matches!(self, Self::Watchlist | Self::Setting)
+        matches!(
+            self,
+            Self::Watchlist | Self::Setting | Self::Layout | Self::Script | Self::PaperAccount
+        )
     }
 }
 

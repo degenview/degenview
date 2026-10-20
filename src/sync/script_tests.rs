@@ -68,6 +68,26 @@ fn edits_renames_and_favorites_travel() {
 }
 
 #[test]
+fn scripts_uploaded_before_either_mac_fetches_keep_both_versions() {
+    let (_cloud, mut a, mut b) = pair();
+    let id = a.library.add("My Strategy", V1);
+    settle(&mut a, &mut b);
+    a.library.set_source(&id, V2);
+    b.library.set_source(&id, V3);
+    // Both upload before either fetches: the second upload is refused by the cloud.
+    a.scan_scripts();
+    a.run();
+    b.scan_scripts();
+    b.run();
+    settle(&mut a, &mut b);
+    let (on_a, on_b) = (a.library.sorted(), b.library.sorted());
+    assert_eq!(on_a, on_b, "both Macs end with the same scripts");
+    let sources: HashSet<&str> = on_a.iter().map(|(_, s)| s.as_str()).collect();
+    assert_eq!(sources, [V2, V3].into(), "neither edit was lost");
+    assert_eq!(outbox(&a) + outbox(&b), 0);
+}
+
+#[test]
 fn two_edits_to_the_same_script_never_lose_either_version() {
     let (_cloud, mut a, mut b) = pair();
     let id = a.library.add("My Strategy", V1);
