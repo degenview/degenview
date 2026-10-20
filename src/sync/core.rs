@@ -572,7 +572,16 @@ impl<T: SyncTransport> SyncCore<T> {
             Disposition::WaitForAccount => self.account = Account::Unavailable,
             Disposition::StaleToken => self.restart_from_scratch(),
             Disposition::EnsureZone => self.transport.send(TransportCommand::EnsureZone),
-            _ => self.last_error = Some((kind, message)),
+            _ => {
+                // The engine's own "failed to send changes" follows the record's real reason;
+                // keep the reason.
+                let has_reason = kind == ErrorKind::Unknown
+                    && self.failure_streak > 0
+                    && matches!(self.last_error, Some((ErrorKind::Unknown, _)));
+                if !has_reason {
+                    self.last_error = Some((kind, message));
+                }
+            }
         }
         self.fetch_in_flight = false;
     }

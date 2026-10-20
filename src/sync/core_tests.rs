@@ -684,6 +684,21 @@ fn a_run_of_unexplained_failures_is_shown_and_clears_when_an_upload_lands() {
 }
 
 #[test]
+fn the_engines_generic_send_error_does_not_hide_the_records_reason() {
+    let cloud = MockCloud::new();
+    cloud.inject(Fault::Send(ErrorKind::Unknown, None));
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    let reason = a.core.status().last_error.expect("the upload failed");
+    a.deliver(TransportEvent::Error {
+        kind: ErrorKind::Unknown,
+        message: "Failed to send changes".into(),
+    });
+    assert_eq!(a.core.status().last_error.as_deref(), Some(reason.as_str()));
+}
+
+#[test]
 fn a_missing_zone_is_created_and_the_upload_retried() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));
