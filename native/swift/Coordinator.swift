@@ -208,7 +208,13 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
     private func deleteZone() async {
         guard let engine = lockedEngine() else { return }
         engine.state.add(pendingDatabaseChanges: [.deleteZone(zoneID)])
-        do { try await engine.sendChanges() } catch { fail(Codec.kind(of: error), error.localizedDescription) }
+        do {
+            try await engine.sendChanges()
+        } catch {
+            // Withdraw the request so the engine cannot carry it out later, unannounced.
+            engine.state.remove(pendingDatabaseChanges: [.deleteZone(zoneID)])
+            fail(Codec.kind(of: error), error.localizedDescription)
+        }
     }
 
     private func stop() {

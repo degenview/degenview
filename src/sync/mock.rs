@@ -16,6 +16,8 @@ pub enum Fault {
     Send(ErrorKind, Option<u64>),
     /// Only these record names fail on the next send.
     Partial(Vec<String>, ErrorKind),
+    /// The next request to delete the zone fails.
+    DeleteZone(ErrorKind),
 }
 
 #[derive(Debug, Clone)]
@@ -219,6 +221,10 @@ impl MockTransport {
                 partial = names;
                 partial_kind = kind;
             }
+            Some(other @ Fault::DeleteZone(_)) => {
+                // Not for a send: leave it for the delete that follows.
+                self.cloud.inner.lock().unwrap().faults.push_front(other);
+            }
             None => {}
         }
         if !self.cloud.inner.lock().unwrap().zone_exists {
@@ -378,8 +384,22 @@ impl SyncTransport for MockTransport {
             TransportCommand::Send => self.send_staged(),
             TransportCommand::Fetch => self.fetch(),
             TransportCommand::DeleteZone => {
-                self.cloud.delete_zone_contents();
-                self.events.push_back(TransportEvent::ZoneDeleted);
+                let failing = {
+                    let mut inner = self.cloud.inner.lock().unwrap();
+                    match inner.faults.front() {
+                        Some(Fault::DeleteZone(_)) => inner.faults.pop_front(),
+                        _ => None,
+                    }
+                };
+                if let Some(Fault::DeleteZone(kind)) = failing {
+                    self.events.push_back(TransportEvent::Error {
+                        kind,
+                        message: String::new(),
+                    });
+                } else {
+                    self.cloud.delete_zone_contents();
+                    self.events.push_back(TransportEvent::ZoneDeleted);
+                }
             }
             TransportCommand::Stop => {}
         }

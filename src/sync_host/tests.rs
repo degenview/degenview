@@ -367,6 +367,30 @@ fn deleting_icloud_data_unbinds_after_icloud_confirms_and_keeps_local_data() {
         "forgotten, so turning sync on starts afresh"
     );
     assert!(!state.initial_sync_done);
+    // The page keeps saying so until it is dismissed.
+    assert_eq!(a.host.view().notice, Some(SyncNotice::CloudDeleted));
+    a.host.act(SyncAction::DismissNotice);
+    a.wait("dismissed", |v| v.notice.is_none());
+}
+
+#[test]
+fn a_failed_deletion_leaves_sync_on_and_reports_why() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.put_watchlist(10, "Mine");
+    a.set_up(JoinMode::Merge);
+    cloud.inject(crate::sync::mock::Fault::DeleteZone(
+        crate::sync::transport::ErrorKind::Network,
+    ));
+    a.host.act(SyncAction::DeleteCloudData);
+    a.wait("the failure", |v| v.delete_error.is_some() && !v.deleting);
+    let view = a.host.view();
+    assert!(view.enabled, "sync stays on when nothing was deleted");
+    assert_eq!(view.notice, None);
+    assert_eq!(cloud.names(), ["watchlist.10"]);
+    a.host.act(SyncAction::DeleteCloudData);
+    a.wait("sync off after the retry", |v| !v.enabled);
+    assert!(cloud.names().is_empty());
 }
 
 #[test]

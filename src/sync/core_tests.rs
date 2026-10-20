@@ -1252,6 +1252,43 @@ fn a_mac_that_did_not_ask_for_the_deletion_pauses_instead_of_deleting_anything()
     assert_eq!(b.lists_len(), 0);
 }
 
+#[test]
+fn a_failed_deletion_says_why_changes_nothing_and_can_be_retried() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    cloud.inject(Fault::DeleteZone(ErrorKind::Network));
+    a.core.delete_cloud_data();
+    assert!(a.core.status().cloud_deleting);
+    a.run();
+    let status = a.core.status();
+    assert!(!status.cloud_deleting && !status.cloud_deleted);
+    assert_eq!(
+        status.cloud_delete_error.as_deref(),
+        Some("DegenView couldn't reach iCloud.")
+    );
+    assert_eq!(cloud.names(), ["watchlist.1"], "nothing was deleted");
+    // Trying again clears the error and succeeds.
+    a.core.delete_cloud_data();
+    assert_eq!(a.core.status().cloud_delete_error, None);
+    a.run();
+    assert!(a.core.status().cloud_deleted);
+    assert!(cloud.names().is_empty());
+}
+
+#[test]
+fn stopping_forgets_a_finished_deletion_so_it_is_not_reported_twice() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.start();
+    a.core.delete_cloud_data();
+    a.run();
+    assert!(a.core.status().cloud_deleted);
+    a.core.stop();
+    assert!(!a.core.status().cloud_deleted);
+}
+
 impl Mac {
     pub(super) fn lists_len(&self) -> usize {
         self.store

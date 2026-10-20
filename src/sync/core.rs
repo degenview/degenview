@@ -101,6 +101,10 @@ pub struct Status {
     pub last_error: Option<String>,
     /// iCloud confirmed that this Mac's request to delete all DegenView data there is done.
     pub cloud_deleted: bool,
+    /// A deletion was requested and iCloud has not answered yet.
+    pub cloud_deleting: bool,
+    /// Why the requested deletion did not happen. Nothing was changed.
+    pub cloud_delete_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,6 +145,8 @@ pub struct SyncCore<T: SyncTransport> {
     /// months): the names iCloud still holds. iCloud does not replay deletions to a device that
     /// old, so whatever it no longer lists was deleted while this Mac was away.
     stale_seen: Option<HashSet<String>>,
+    /// Why the last requested deletion failed.
+    cloud_delete_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,6 +154,7 @@ enum CloudDelete {
     Idle,
     Requested,
     Confirmed,
+    Failed,
 }
 
 impl<T: SyncTransport> SyncCore<T> {
@@ -172,6 +179,7 @@ impl<T: SyncTransport> SyncCore<T> {
             scripts: None,
             cloud_delete: CloudDelete::Idle,
             stale_seen: None,
+            cloud_delete_error: None,
         }
     }
 
@@ -236,6 +244,8 @@ impl<T: SyncTransport> SyncCore<T> {
             self.transport.send(TransportCommand::Stop);
         }
         self.started = false;
+        self.cloud_delete = CloudDelete::Idle;
+        self.cloud_delete_error = None;
         self.account = Account::Unknown;
         self.inflight.clear();
         self.fetch_in_flight = false;
@@ -257,6 +267,7 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         self.cloud_delete = CloudDelete::Requested;
+        self.cloud_delete_error = None;
         self.transport.send(TransportCommand::DeleteZone);
     }
 
@@ -545,6 +556,11 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     fn on_error(&mut self, kind: ErrorKind, message: String) {
+        // A deletion that hits an error did not happen; say so instead of waiting forever.
+        if self.cloud_delete == CloudDelete::Requested {
+            self.cloud_delete = CloudDelete::Failed;
+            self.cloud_delete_error = Some(delete_failure_text(kind, &message));
+        }
         match classify(kind, 0, 0, None) {
             Disposition::WaitForAccount => self.account = Account::Unavailable,
             Disposition::StaleToken => self.restart_from_scratch(),
@@ -955,6 +971,8 @@ impl<T: SyncTransport> SyncCore<T> {
             last_fetch_ms: state.as_ref().and_then(|s| s.last_fetch_ms),
             last_error: self.last_error.as_ref().map(|(_, message)| message.clone()),
             cloud_deleted: self.cloud_delete == CloudDelete::Confirmed,
+            cloud_deleting: self.cloud_delete == CloudDelete::Requested,
+            cloud_delete_error: self.cloud_delete_error.clone(),
         }
     }
 
@@ -1016,5 +1034,16 @@ impl<T: SyncTransport> SyncCore<T> {
         } else {
             Phase::Ready
         }
+    }
+}
+
+/// What the user is told when iCloud could not delete their data.
+fn delete_failure_text(kind: ErrorKind, message: &str) -> String {
+    match kind {
+        ErrorKind::Network => "DegenView couldn't reach iCloud.".to_string(),
+        ErrorKind::AccountUnavailable => "iCloud isn't available right now.".to_string(),
+        ErrorKind::Permission => "DegenView isn't allowed to change this iCloud data.".to_string(),
+        _ if message.is_empty() => "iCloud didn't confirm the deletion.".to_string(),
+        _ => format!("iCloud didn't confirm the deletion ({message})."),
     }
 }

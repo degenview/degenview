@@ -63,6 +63,8 @@ pub enum SyncAction {
     DismissConflict(i64),
     /// Delete every DegenView record in iCloud for the account this Mac syncs with.
     DeleteCloudData,
+    /// Dismiss the note about something that finished (such as the deletion).
+    DismissNotice,
     /// Another Mac deleted the data in iCloud: upload this Mac's again, or stop.
     ResolveRemoteDeletion {
         reupload: bool,
@@ -101,10 +103,23 @@ pub struct SyncView {
     pub conflicts: Vec<ConflictSummary>,
     /// iCloud confirmed that all DegenView data there was deleted at this Mac's request.
     pub cloud_deleted: bool,
+    /// A deletion was asked for and iCloud has not answered yet.
+    pub deleting: bool,
+    /// Why the last deletion did not happen; nothing was changed.
+    pub delete_error: Option<String>,
+    /// Something that finished and is worth a line until dismissed.
+    pub notice: Option<SyncNotice>,
+}
+
+/// A note shown on the page after something finished.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncNotice {
+    /// All DegenView data in iCloud was deleted at this Mac's request.
+    CloudDeleted,
 }
 
 impl SyncView {
-    fn initial(unavailable: Option<String>) -> Self {
+    pub(crate) fn initial(unavailable: Option<String>) -> Self {
         Self {
             unavailable,
             enabled: false,
@@ -121,6 +136,9 @@ impl SyncView {
             categories: Category::ALL.iter().map(|c| (*c, true)).collect(),
             conflicts: Vec::new(),
             cloud_deleted: false,
+            deleting: false,
+            delete_error: None,
+            notice: None,
         }
     }
 }
@@ -335,6 +353,8 @@ impl SyncHost {
             self.tell(WorkerMsg::Stop);
             if let Some(view) = lock(&self.shared).view.as_mut() {
                 view.cloud_deleted = false;
+                view.deleting = false;
+                view.notice = Some(SyncNotice::CloudDeleted);
             }
         }
         self.scan_scripts_if_due();
@@ -472,7 +492,20 @@ impl SyncHost {
             SyncAction::DismissConflict(id) => {
                 let _ = lock(&self.store).dismiss_conflict(id, now_ms());
             }
-            SyncAction::DeleteCloudData => self.tell(WorkerMsg::DeleteCloudData),
+            SyncAction::DeleteCloudData => {
+                // Show progress at once rather than after the worker's next pass.
+                if let Some(view) = lock(&self.shared).view.as_mut() {
+                    view.deleting = true;
+                    view.delete_error = None;
+                    view.notice = None;
+                }
+                self.tell(WorkerMsg::DeleteCloudData);
+            }
+            SyncAction::DismissNotice => {
+                if let Some(view) = lock(&self.shared).view.as_mut() {
+                    view.notice = None;
+                }
+            }
             SyncAction::ResolveRemoteDeletion { reupload } => {
                 let _ = account::resolve_remote_deletion(&lock(&self.store), reupload);
                 if reupload {
@@ -649,6 +682,8 @@ fn run_worker<T: SyncTransport>(
                 view.phase = status.phase;
                 view.last_error = status.last_error.clone();
                 view.cloud_deleted = status.cloud_deleted;
+                view.deleting = status.cloud_deleting;
+                view.delete_error = status.cloud_delete_error.clone();
             }
             if had_effects {
                 drop(shared);
