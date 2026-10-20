@@ -33,4 +33,6 @@ mod initial_tests;
 #[cfg(test)]
 mod perf_tests;
 #[cfg(test)]
+mod portfolio_tests;
+#[cfg(test)]
 mod script_tests;

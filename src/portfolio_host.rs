@@ -113,6 +113,34 @@ impl PortfolioHost {
         self.ledger.snapshot()
     }
 
+    /// Re-reads the ledger after iCloud sync changed it underneath. A ledger that cannot be read
+    /// leaves the one in memory alone; a selection that no longer exists falls back to the first
+    /// portfolio.
+    pub fn reload(&mut self) {
+        let loaded = self
+            .store
+            .lock()
+            .map_err(|_| PortfolioHostError::StoreUnavailable)
+            .and_then(|store| {
+                store
+                    .portfolio_ledger()
+                    .map_err(|error| PortfolioHostError::Load(error.to_string()))
+            });
+        match loaded {
+            Ok(mut snapshot) => {
+                let selected_exists = snapshot
+                    .selected_portfolio_id
+                    .is_some_and(|id| snapshot.portfolios.iter().any(|p| p.id == id));
+                if !selected_exists {
+                    snapshot.selected_portfolio_id = snapshot.portfolios.first().map(|p| p.id);
+                }
+                self.ledger = PortfolioLedger::new(snapshot);
+                self.load_error = None;
+            }
+            Err(error) => self.last_error = Some(error),
+        }
+    }
+
     /// Keeps the daily value history of `scope` current: stores what finished rebuilding and
     /// starts a rebuild for any portfolio whose history is missing days. A result is dropped
     /// when the ledger changed under it (the next frame starts a fresh one).
@@ -1519,6 +1547,27 @@ mod tests {
             created_at: 1_000,
             updated_at: 1_000,
         }
+    }
+
+    #[test]
+    fn reload_picks_up_what_sync_wrote_and_repairs_a_vanished_selection() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        assert!(host.snapshot().portfolios.is_empty());
+        {
+            let guard = store.lock().unwrap();
+            let snapshot = PortfolioLedgerSnapshot {
+                portfolios: vec![Portfolio::new(7, "From iCloud", 1)],
+                transactions: vec![transaction(9, 7, 1.0)],
+                selected_portfolio_id: Some(99),
+                ..Default::default()
+            };
+            guard.save_portfolio_ledger(&snapshot).unwrap();
+        }
+        host.reload();
+        assert_eq!(host.snapshot().portfolios.len(), 1);
+        assert_eq!(host.snapshot().transactions.len(), 1);
+        assert_eq!(host.snapshot().selected_portfolio_id, Some(7));
     }
 
     #[test]

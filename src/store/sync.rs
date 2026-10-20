@@ -1210,6 +1210,9 @@ impl Store {
         if rows.iter().any(|row| !row_decodes(table, &row.to_string())) {
             return Err(unreadable("a new row cannot be decoded"));
         }
+        if table == "portfolio_transaction" {
+            return self.replace_raw_transactions(rows);
+        }
         let docs: Vec<RawDoc> = rows.iter().cloned().map(RawDoc).collect();
         self.replace_documents(table, &docs)
     }
@@ -1605,6 +1608,10 @@ pub fn row_decodes(table: &str, payload: &str) -> bool {
             serde_json::from_str::<model::drawing_template::DrawingTemplate>(payload).is_ok()
         }
         "price_alert" => serde_json::from_str::<model::alert::PriceAlert>(payload).is_ok(),
+        "portfolio" => serde_json::from_str::<model::portfolio::Portfolio>(payload).is_ok(),
+        "portfolio_transaction" => {
+            serde_json::from_str::<model::portfolio::PortfolioTransaction>(payload).is_ok()
+        }
         _ => false,
     }
 }

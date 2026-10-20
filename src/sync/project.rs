@@ -6,7 +6,7 @@
 //! Projections work on JSON values, not typed models: the store hook sees raw payload strings
 //! and must not depend on every model's Rust type.
 
-use super::ids::{Direction, IdSpace, map_fields};
+use super::ids::{Direction, IdSpace, map_card, map_fields};
 use super::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy};
 use super::record::{FAVORITES_ID, sha256_hex};
 use serde_json::{Map, Value};
@@ -74,10 +74,11 @@ pub fn project_row_in(ids: IdSpace, table: &str, id: &str, payload: &str) -> Vec
         return Vec::new();
     };
     match kind {
-        EntityKind::Layout => project_layout(id, row),
+        EntityKind::Layout => project_layout(ids, id, row),
         EntityKind::Watchlist => {
             let favorites = row.get("is_favorites").and_then(Value::as_bool) == Some(true);
             let mut row = row;
+            map_entry_cards(&mut row, ids, Direction::ToGlobal);
             let sync_id = if favorites {
                 // Every Mac has its own Favorites row id. Leaving it in the payload would make
                 // each Mac see the other's version as different and re-upload it forever.
@@ -184,10 +185,11 @@ fn project_alert(row: &Map<String, Value>) -> Value {
 
 /// A layout without its drawings, plus one entity per drawing, keyed by layout, chart and
 /// drawing id so two Macs editing different drawings both survive.
-fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
+fn project_layout(ids: IdSpace, id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
     for field in LAYOUT_LOCAL_FIELDS {
         row.remove(field);
     }
+    map_chart_cards(&mut row, ids, Direction::ToGlobal);
     let mut drawings = Vec::new();
     if let Some(Value::Array(charts)) = row.get_mut("charts") {
         for chart in charts {
@@ -231,6 +233,32 @@ fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
         ));
     }
     projected
+}
+
+/// A layout's portfolio cards point at portfolios by id, and carry it in their key too.
+pub(crate) fn map_chart_cards(row: &mut Map<String, Value>, ids: IdSpace, direction: Direction) {
+    if let Some(Value::Array(charts)) = row.get_mut("charts") {
+        for chart in charts {
+            map_card(chart, ids, direction);
+        }
+    }
+}
+
+/// The same for the rows of a watchlist.
+pub(crate) fn map_entry_cards(row: &mut Map<String, Value>, ids: IdSpace, direction: Direction) {
+    if let Some(Value::Array(entries)) = row.get_mut("entries") {
+        for entry in entries {
+            // A row is an enum, stored as `{"Instrument": {...}}`.
+            match entry.as_object_mut() {
+                Some(variant) if variant.len() == 1 => {
+                    if let Some(inner) = variant.values_mut().next() {
+                        map_card(inner, ids, direction);
+                    }
+                }
+                _ => map_card(entry, ids, direction),
+            }
+        }
+    }
 }
 
 /// A stored drawing is `{"<Variant>": {"id": n, ...}}`; an unreadable one keeps the same shape.

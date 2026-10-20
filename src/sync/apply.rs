@@ -10,19 +10,25 @@
 //! * Nothing is acknowledged to the core until the whole batch committed.
 
 use super::core::{RemoteBatch, RemoteRecord};
+use super::ids::{Direction, map_fields};
 use super::merge::{
     Outcome, Side, Stamp, conflict_copy_name, merge, next_drawing_id, renumber_drawing,
 };
 use super::policy::{EntityKind, Merge};
 use super::project::{
-    ScriptSnapshot, canonical_json, drawing_id, project_row_in, project_script, project_setting,
+    ScriptSnapshot, canonical_json, drawing_id, map_chart_cards, map_entry_cards, project_row_in,
+    project_script, project_setting, project_transaction,
 };
 use super::record::{FAVORITES_ID, RecordName, sha256_hex};
 use super::scripts::ScriptSink;
 use crate::store::Store;
-use crate::store::sync::{ConflictRecord, EntityLink, InboxRecord, OutboxOp, row_decodes};
+use crate::store::sync::{
+    ConflictRecord, EntityLink, EntityMeta, InboxRecord, OutboxOp, row_decodes,
+};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+mod portfolio;
 
 /// Who is applying, and when. Passed in so applying is deterministic under test.
 #[derive(Debug, Clone)]
@@ -90,14 +96,24 @@ pub fn apply_batch(
         }
         // Layouts go first: a layout's drawings follow it, and a kept layout keeps its drawings.
         let mut deletions: Vec<&RecordName> = batch.deletions.iter().collect();
-        deletions.sort_by_key(|name| name.kind != EntityKind::Layout);
+        // Portfolios too: a portfolio that is kept keeps its transactions.
+        deletions.sort_by_key(|name| {
+            (
+                name.kind != EntityKind::Layout,
+                name.kind != EntityKind::Portfolio,
+            )
+        });
         for name in deletions {
             work.apply_deletion(name)?;
         }
         work.retry_category_off()?;
         work.retry_orphans()?;
+        work.retry_orphan_transactions()?;
+        work.retry_held_ledgers()?;
         work.retry_busy_scripts()?;
+        work.finish_ledgers()?;
         work.flush()?;
+        work.flush_ledger_history()?;
         Ok(work.report)
     })
 }
@@ -123,6 +139,7 @@ struct Work<'a> {
     disabled: std::collections::HashSet<super::policy::Category>,
     report: ApplyReport,
     ids: super::ids::IdSpace,
+    ledger: portfolio::Ledger,
 }
 
 pub fn table_of(kind: EntityKind) -> Option<&'static str> {
@@ -133,10 +150,8 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
         EntityKind::Layout | EntityKind::LayoutDrawing => Some("saved_view"),
         EntityKind::Alert => Some("price_alert"),
         EntityKind::Portfolio => Some("portfolio"),
-        EntityKind::Setting
-        | EntityKind::Script
-        | EntityKind::PortfolioTransaction
-        | EntityKind::PaperAccount => None,
+        EntityKind::PortfolioTransaction => Some(portfolio::TRANSACTIONS),
+        EntityKind::Setting | EntityKind::Script | EntityKind::PaperAccount => None,
     }
 }
 
@@ -153,6 +168,7 @@ impl<'a> Work<'a> {
             disabled: store.disabled_categories(),
             report: ApplyReport::default(),
             ids: store.id_space(),
+            ledger: portfolio::Ledger::default(),
         }
     }
 
@@ -222,7 +238,10 @@ impl<'a> Work<'a> {
                 }
             } else if kind != EntityKind::LayoutDrawing {
                 // Only portfolios have counter ids that change on the way out.
-                let row_sync_id = if kind == EntityKind::Portfolio {
+                let row_sync_id = if matches!(
+                    kind,
+                    EntityKind::Portfolio | EntityKind::PortfolioTransaction
+                ) {
                     ids.to_global_string(&id)
                 } else {
                     id.clone()
@@ -231,7 +250,14 @@ impl<'a> Work<'a> {
                     continue;
                 }
             }
-            for entity in project_row_in(ids, table, &id, &row.to_string()) {
+            let entities = if kind == EntityKind::PortfolioTransaction {
+                project_transaction(ids, &id, &row.to_string())
+                    .into_iter()
+                    .collect()
+            } else {
+                project_row_in(ids, table, &id, &row.to_string())
+            };
+            for entity in entities {
                 if entity.kind == kind && entity.sync_id == sync_id {
                     return Ok(Some(Local {
                         index,
@@ -315,15 +341,15 @@ impl<'a> Work<'a> {
             EntityKind::Watchlist
             | EntityKind::ChartTemplate
             | EntityKind::DrawingTemplate
+            | EntityKind::Portfolio
             | EntityKind::Setting => self.apply_simple(record),
+            EntityKind::PortfolioTransaction => self.apply_transaction(record),
             EntityKind::Layout => self.apply_layout(record),
             EntityKind::LayoutDrawing => self.apply_drawing(record),
             EntityKind::Alert => self.apply_alert(record),
             EntityKind::Script => self.apply_script(record),
-            // Applied once their stages land; until then they wait, untouched, in the inbox.
-            EntityKind::Portfolio | EntityKind::PortfolioTransaction | EntityKind::PaperAccount => {
-                self.keep(record, "unsupported")
-            }
+            // Applied once its stage lands; until then it waits, untouched, in the inbox.
+            EntityKind::PaperAccount => self.keep(record, "unsupported"),
         }
     }
 
@@ -346,26 +372,83 @@ impl<'a> Work<'a> {
         let meta = self.store.entity_meta(kind, id)?;
         let local = self.find_local(kind, id)?;
 
-        let new_value = match &local {
+        let Some(mut new_value) =
+            self.merged_value(record, kind, id, meta.as_ref(), local.as_ref())?
+        else {
+            return Ok(());
+        };
+        if kind == EntityKind::Portfolio {
+            map_fields(&mut new_value, &["id"], self.ids, Direction::ToLocal);
+        }
+
+        // Compose the row this version stores, and refuse anything it could not read back.
+        let local_id;
+        if kind == EntityKind::Setting {
+            let value = compose_setting(id, &new_value, local.as_ref().map(|l| &l.row));
+            local_id = id.to_string();
+            self.settings.insert(id.to_string(), Some(value));
+            self.report.applied += 1;
+        } else {
+            let table = table_of(kind).expect("table kinds have a table");
+            let existing = local.as_ref().map(|l| &l.row);
+            let Some(mut row) = compose_row(kind, id, &new_value, existing) else {
+                return self.keep(record, "invalid");
+            };
+            if kind == EntityKind::Watchlist
+                && let Value::Object(map) = &mut row
+            {
+                map_entry_cards(map, self.ids, Direction::ToLocal);
+            }
+            if !row_decodes(table, &row.to_string()) {
+                return self.keep(record, "invalid");
+            }
+            local_id = Self::row_id(&row);
+            self.put_row(table, local.as_ref().map(|l| l.index), row)?;
+            self.report.applied += 1;
+        }
+
+        self.store.link_entity(&EntityLink {
+            kind,
+            sync_id: id.to_string(),
+            local_id,
+            synced_hash: remote_hash,
+            system_fields: record.system_fields.clone(),
+            base_payload: (kind.merge() == Merge::ThreeWay).then_some(remote_payload),
+            revision: record.record.revision as i64,
+            origin_device: record.record.origin_device.clone(),
+            now_ms: self.ctx.now_ms,
+        })?;
+        Ok(())
+    }
+
+    /// What an entity should become when the cloud's version meets this Mac's, in the shared
+    /// (not the local) form. `None` when this Mac already holds something newer.
+    fn merged_value(
+        &mut self,
+        record: &RemoteRecord,
+        kind: EntityKind,
+        id: &str,
+        meta: Option<&EntityMeta>,
+        local: Option<&Local>,
+    ) -> rusqlite::Result<Option<Value>> {
+        let remote_hash = sha256_hex(&canonical_json(&record.value));
+        let value = match local {
             None => record.value.clone(),
             Some(local) if local.hash == remote_hash => record.value.clone(),
             Some(local) => {
-                let unchanged = meta.as_ref().is_some_and(|m| {
+                let unchanged = meta.is_some_and(|m| {
                     !m.deleted && m.synced_hash.as_deref() == Some(local.hash.as_str())
                 });
                 if unchanged {
                     // We already hold something newer than this record: ignore the stale one.
-                    if meta
-                        .as_ref()
-                        .is_some_and(|m| m.revision as u64 > record.record.revision)
-                    {
+                    if meta.is_some_and(|m| m.revision as u64 > record.record.revision) {
                         self.report.kept_local += 1;
-                        return Ok(());
+                        return Ok(None);
                     }
                     record.value.clone()
                 } else {
                     let base: Option<Value> = (kind.merge() == Merge::ThreeWay)
-                        .then(|| meta.as_ref().and_then(|m| m.base_payload.as_deref()))
+                        .then(|| meta.and_then(|m| m.base_payload.as_deref()))
                         .flatten()
                         .and_then(|bytes| serde_json::from_slice(bytes).ok());
                     let modified = self
@@ -373,7 +456,7 @@ impl<'a> Work<'a> {
                         .outbox_entry(kind, id)?
                         .map_or(self.ctx.now_ms, |row| row.queued_ms);
                     let local_stamp = Stamp::new(
-                        meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64,
+                        meta.map_or(1, |m| m.revision.max(1)) as u64,
                         modified,
                         self.ctx.device_id.clone(),
                     );
@@ -399,40 +482,7 @@ impl<'a> Work<'a> {
                 }
             }
         };
-
-        // Compose the row this version stores, and refuse anything it could not read back.
-        let local_id;
-        if kind == EntityKind::Setting {
-            let value = compose_setting(id, &new_value, local.as_ref().map(|l| &l.row));
-            local_id = id.to_string();
-            self.settings.insert(id.to_string(), Some(value));
-            self.report.applied += 1;
-        } else {
-            let table = table_of(kind).expect("table kinds have a table");
-            let existing = local.as_ref().map(|l| &l.row);
-            let Some(row) = compose_row(kind, id, &new_value, existing) else {
-                return self.keep(record, "invalid");
-            };
-            if !row_decodes(table, &row.to_string()) {
-                return self.keep(record, "invalid");
-            }
-            local_id = Self::row_id(&row);
-            self.put_row(table, local.as_ref().map(|l| l.index), row)?;
-            self.report.applied += 1;
-        }
-
-        self.store.link_entity(&EntityLink {
-            kind,
-            sync_id: id.to_string(),
-            local_id,
-            synced_hash: remote_hash,
-            system_fields: record.system_fields.clone(),
-            base_payload: (kind.merge() == Merge::ThreeWay).then_some(remote_payload),
-            revision: record.record.revision as i64,
-            origin_device: record.record.origin_device.clone(),
-            now_ms: self.ctx.now_ms,
-        })?;
-        Ok(())
+        Ok(Some(value))
     }
 
     // MARK: Scripts
@@ -908,6 +958,15 @@ impl<'a> Work<'a> {
 
         let existing = local.as_ref().map(|l| &l.row);
         let mut copy: Option<(Value, bool)> = None;
+        let ids = self.ids;
+        // The cloud's portfolio cards name portfolios by their shared ids; this Mac stores its own.
+        let compose_layout = |value: &Value, existing: Option<&Value>| {
+            let mut row = compose_layout(value, existing)?;
+            if let Value::Object(map) = &mut row {
+                map_chart_cards(map, ids, Direction::ToLocal);
+            }
+            Some(row)
+        };
         let new_row = match outcome {
             Outcome::Resolved(value) => compose_layout(&value, existing),
             Outcome::Conflict { winner, loser } => {
@@ -1352,6 +1411,7 @@ impl<'a> Work<'a> {
             EntityKind::LayoutDrawing => return self.delete_drawing(name),
             EntityKind::Alert => return self.delete_alert(id),
             EntityKind::Script => return self.delete_script(id),
+            EntityKind::PortfolioTransaction => return self.delete_transaction(name),
             _ => {}
         }
         if let Some(table) = table_of(kind)
@@ -1375,6 +1435,9 @@ impl<'a> Work<'a> {
         let is_favorites = id == FAVORITES_ID;
         if edited_since || is_favorites {
             // An edit beats a delete: the record comes back from this Mac.
+            if kind == EntityKind::Portfolio {
+                self.keep_portfolio(&local);
+            }
             self.store.forget_synced(kind, id)?;
             self.store.queue_entity_upsert(kind, id, &local.local_id)?;
             self.report.kept_local += 1;
@@ -1388,6 +1451,9 @@ impl<'a> Work<'a> {
             None => {
                 self.settings.insert(id.to_string(), None);
             }
+        }
+        if kind == EntityKind::Portfolio {
+            self.cascade_portfolio_delete(&local)?;
         }
         self.report.applied += 1;
         Ok(())
@@ -1521,7 +1587,7 @@ fn compose_row(
                 row.insert("id".into(), sync_id.parse::<u64>().ok()?.into());
             }
         }
-        EntityKind::ChartTemplate | EntityKind::DrawingTemplate => {}
+        EntityKind::ChartTemplate | EntityKind::DrawingTemplate | EntityKind::Portfolio => {}
         _ => return None,
     }
     Some(Value::Object(row))

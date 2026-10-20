@@ -1812,6 +1812,12 @@ impl DegenViewApp {
             {
                 watchlist.reload();
             }
+            if (report.tables.contains("portfolio")
+                || report.tables.contains("portfolio_transaction"))
+                && let Ok(mut portfolio) = self.portfolio.lock()
+            {
+                portfolio.reload();
+            }
             if report.settings.contains(crate::ui::theme::THEME_KEY) {
                 let theme = self
                     .store

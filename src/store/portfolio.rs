@@ -40,31 +40,19 @@ impl Store {
         self.in_transaction(|| {
             self.replace_documents("portfolio", &snapshot.portfolios)?;
 
-            let old_transactions = self.tracked_old_transactions()?;
-            self.connection
-                .execute("DELETE FROM portfolio_transaction", [])?;
-            let mut new_transactions = Vec::new();
-            let mut transaction = self.connection.prepare(
-                "INSERT INTO portfolio_transaction (id, portfolio_id, timestamp, position, payload)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-            )?;
-            for (position, value) in snapshot.transactions.iter().enumerate() {
-                let payload = json(value)?;
-                transaction.execute(params![
-                    value.id.to_string(),
-                    value.portfolio_id.to_string(),
-                    value.timestamp,
-                    position as i64,
-                    payload,
-                ])?;
-                if old_transactions.is_some() {
-                    new_transactions.push((value.id.to_string(), payload));
-                }
-            }
-            drop(transaction);
-            if let Some(old) = &old_transactions {
-                self.track_transactions(old, &new_transactions)?;
-            }
+            let rows = snapshot
+                .transactions
+                .iter()
+                .map(|value| {
+                    Ok(TransactionRow {
+                        id: value.id.to_string(),
+                        portfolio_id: value.portfolio_id.to_string(),
+                        timestamp: value.timestamp,
+                        payload: json(value)?,
+                    })
+                })
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            self.replace_transaction_rows(&rows)?;
 
             self.connection
                 .execute("DELETE FROM portfolio_snapshot", [])?;
@@ -91,6 +79,127 @@ impl Store {
             Ok(())
         })
     }
+}
+
+/// One row of `portfolio_transaction`, ready to store.
+struct TransactionRow {
+    id: String,
+    portfolio_id: String,
+    timestamp: i64,
+    payload: String,
+}
+
+impl Store {
+    /// Replaces every transaction, queueing the differences for sync in the same transaction.
+    fn replace_transaction_rows(&self, rows: &[TransactionRow]) -> rusqlite::Result<()> {
+        let old = self.tracked_old_transactions()?;
+        self.connection
+            .execute("DELETE FROM portfolio_transaction", [])?;
+        let mut insert = self.connection.prepare(
+            "INSERT INTO portfolio_transaction (id, portfolio_id, timestamp, position, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )?;
+        for (position, row) in rows.iter().enumerate() {
+            insert.execute(params![
+                row.id,
+                row.portfolio_id,
+                row.timestamp,
+                position as i64,
+                row.payload,
+            ])?;
+        }
+        drop(insert);
+        if let Some(old) = old {
+            let new: Vec<(String, String)> = rows
+                .iter()
+                .map(|row| (row.id.clone(), row.payload.clone()))
+                .collect();
+            self.track_transactions(&old, &new)?;
+        }
+        Ok(())
+    }
+
+    /// Replaces the transactions with rows that were already checked against the model, exactly
+    /// as stored (a typed round trip could add fields an older Mac does not know).
+    pub(crate) fn replace_raw_transactions(
+        &self,
+        rows: &[serde_json::Value],
+    ) -> rusqlite::Result<()> {
+        let rows = rows
+            .iter()
+            .map(|row| {
+                let number = |key: &str| row.get(key).and_then(serde_json::Value::as_u64);
+                Ok(TransactionRow {
+                    id: number("id").map(|n| n.to_string()).ok_or_else(missing)?,
+                    portfolio_id: number("portfolio_id")
+                        .map(|n| n.to_string())
+                        .ok_or_else(missing)?,
+                    timestamp: row
+                        .get("timestamp")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or_default(),
+                    payload: row.to_string(),
+                })
+            })
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        self.in_savepoint("replace_transactions", || {
+            self.replace_transaction_rows(&rows)
+        })
+    }
+
+    /// Valuation history is derived from the ledger, so a change to the ledger invalidates it
+    /// from the earliest affected moment: later snapshots go, and the portfolio is marked stale.
+    pub(crate) fn invalidate_portfolio_history(
+        &self,
+        from: &std::collections::BTreeMap<u64, i64>,
+    ) -> rusqlite::Result<()> {
+        let mut stale: std::collections::HashMap<u64, i64> = self
+            .setting_strict(KEY_INVALIDATED_AFTER)?
+            .unwrap_or_default();
+        for (portfolio, moment) in from {
+            stale
+                .entry(*portfolio)
+                .and_modify(|current| *current = (*current).min(*moment))
+                .or_insert(*moment);
+            self.connection.execute(
+                "DELETE FROM portfolio_snapshot WHERE portfolio_id = ?1 AND timestamp >= ?2",
+                params![portfolio.to_string(), moment],
+            )?;
+        }
+        self.set_setting(KEY_INVALIDATED_AFTER, &stale)
+    }
+
+    /// A deleted portfolio's valuation history, and the selection if it pointed there.
+    pub(crate) fn forget_portfolio_history(
+        &self,
+        portfolios: &std::collections::BTreeSet<u64>,
+    ) -> rusqlite::Result<()> {
+        let mut stale: std::collections::HashMap<u64, i64> = self
+            .setting_strict(KEY_INVALIDATED_AFTER)?
+            .unwrap_or_default();
+        let selected: Option<u64> = self.setting_strict(KEY_SELECTED)?;
+        for portfolio in portfolios {
+            stale.remove(portfolio);
+            self.connection.execute(
+                "DELETE FROM portfolio_snapshot WHERE portfolio_id = ?1",
+                [portfolio.to_string()],
+            )?;
+            if selected == Some(*portfolio) {
+                self.remove_setting(KEY_SELECTED)?;
+            }
+        }
+        if stale.is_empty() {
+            self.remove_setting(KEY_INVALIDATED_AFTER)
+        } else {
+            self.set_setting(KEY_INVALIDATED_AFTER, &stale)
+        }
+    }
+}
+
+fn missing() -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+        "a transaction has no numeric id",
+    )))
 }
 
 fn json<T: Serialize>(value: &T) -> rusqlite::Result<String> {
