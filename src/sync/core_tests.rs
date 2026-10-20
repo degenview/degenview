@@ -837,35 +837,30 @@ fn an_upload_that_already_landed_counts_as_accepted() {
 }
 
 #[test]
-fn a_newer_cloud_version_wins_and_goes_to_the_apply_layer() {
-    let cloud = MockCloud::new();
-    let mut a = mac(&cloud, "A", "acct", Some("acct"));
-    a.start();
-    let theirs = json!({"id": 1, "name": "Theirs", "entries": [], "is_favorites": false});
-    cloud.put_from_elsewhere(raw("watchlist.1", &theirs, 9, i64::MAX, "zzz"), "B");
-    a.lists(&[(1, "Mine")]);
-    a.run();
-    assert!(a.outbox().is_empty());
-    assert_eq!(a.batches.len(), 1);
-    assert_eq!(a.batches[0].records[0].record.name.render(), "watchlist.1");
-    assert_eq!(
-        payload_name(&cloud, "watchlist.1").as_deref(),
-        Some("Theirs")
-    );
-}
-
-#[test]
-fn a_newer_local_edit_wins_a_conflict_and_overwrites() {
-    let cloud = MockCloud::new();
-    let mut a = mac(&cloud, "A", "acct", Some("acct"));
-    a.start();
-    let theirs = json!({"id": 1, "name": "Theirs", "entries": [], "is_favorites": false});
-    cloud.put_from_elsewhere(raw("watchlist.1", &theirs, 1, 0, "a-device"), "B");
-    a.lists(&[(1, "Mine")]);
-    a.run();
-    assert_eq!(payload_name(&cloud, "watchlist.1").as_deref(), Some("Mine"));
-    assert!(a.outbox().is_empty());
-    assert!(a.batches.is_empty());
+fn a_conflicting_upload_goes_to_the_apply_layer_and_the_edit_stays_queued() {
+    for cloud_is_newer in [true, false] {
+        let cloud = MockCloud::new();
+        let mut a = mac(&cloud, "A", "acct", Some("acct"));
+        a.hold_applies = true;
+        a.start();
+        let theirs = json!({"id": 1, "name": "Theirs", "entries": [], "is_favorites": false});
+        let (revision, modified) = if cloud_is_newer {
+            (9, i64::MAX)
+        } else {
+            (1, 0)
+        };
+        cloud.put_from_elsewhere(raw("watchlist.1", &theirs, revision, modified, "zzz"), "B");
+        a.lists(&[(1, "Mine")]);
+        a.run();
+        // Whichever Mac is newer, the cloud's record is merged with the edit, never saved over it.
+        assert_eq!(a.batches.len(), 1, "cloud_is_newer: {cloud_is_newer}");
+        assert_eq!(a.batches[0].records[0].record.name.render(), "watchlist.1");
+        assert_eq!(a.outbox().len(), 1, "the edit waits for the merge");
+        assert_eq!(
+            payload_name(&cloud, "watchlist.1").as_deref(),
+            Some("Theirs")
+        );
+    }
 }
 
 #[test]

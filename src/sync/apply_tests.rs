@@ -151,6 +151,35 @@ fn concurrent_additions_on_both_macs_are_both_kept() {
 }
 
 #[test]
+fn additions_uploaded_before_either_mac_fetches_are_both_kept() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(&a, &[watchlist(10, "Tech", &[(1, "AAA")], false)]);
+    settle(&mut a, &mut b);
+    // Both add a market and upload, neither having fetched the other's change: the second upload
+    // is refused by the cloud and has to be merged, not saved over the first.
+    put(
+        &a,
+        &[watchlist(10, "Tech", &[(1, "AAA"), (2, "XXX")], false)],
+    );
+    put(
+        &b,
+        &[watchlist(10, "Tech", &[(1, "AAA"), (3, "YYY")], false)],
+    );
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    for mac in [&a, &b] {
+        let mut kept = symbols(&rows(mac, "watchlist")[0]);
+        kept.sort();
+        assert_eq!(kept, ["AAA", "XXX", "YYY"]);
+    }
+    assert_eq!(rows(&a, "watchlist"), rows(&b, "watchlist"));
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
 fn the_same_market_added_on_both_macs_appears_once() {
     let (_cloud, mut a, mut b) = pair();
     a.core.start();

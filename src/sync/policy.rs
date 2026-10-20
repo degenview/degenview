@@ -146,6 +146,16 @@ impl EntityKind {
     }
 }
 
+impl EntityKind {
+    /// Whether the apply layer combines two Macs' concurrent edits (a watchlist entry by entry,
+    /// a setting key by key). A refused upload of such an entity is merged with the cloud's
+    /// version and the result uploaded; saving it over the cloud's version would drop the other
+    /// Mac's change.
+    pub const fn combines_edits(self) -> bool {
+        matches!(self, Self::Watchlist | Self::Setting)
+    }
+}
+
 /// The decision for one document table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TablePolicy {

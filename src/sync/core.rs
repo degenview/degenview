@@ -29,6 +29,13 @@ const STALE_AFTER_MS: i64 = 60 * 24 * 60 * 60 * 1_000;
 /// quarter of what is synced: that looks like a problem, not a clean-up, so nothing is removed.
 const STALE_DELETE_LIMIT: usize = 20;
 
+/// Merges tried for one edit before the newer side is simply kept. The apply layer normally
+/// settles it in one; this stops a record it cannot merge from bouncing forever.
+const MAX_MERGE_ATTEMPTS: i64 = 5;
+
+/// How long an edit waits for the apply layer to merge it with the cloud's newer version.
+const MERGE_RETRY_MS: i64 = 5_000;
+
 /// Failed uploads in a row, with no recognised cause, after which the page says so.
 const UNEXPLAINED_FAILURES: u32 = 3;
 
@@ -774,6 +781,11 @@ impl<T: SyncTransport> SyncCore<T> {
     /// The host applied a remote batch locally.
     pub fn remote_applied(&mut self, batch_id: u64) {
         self.unapplied.remove(&batch_id);
+        let _ = self
+            .store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .release_merged_edits();
         self.flush_state();
         self.pump();
     }
@@ -936,7 +948,13 @@ impl<T: SyncTransport> SyncCore<T> {
             .ok()
             .flatten();
         let device = self.state().map(|s| s.device_id).unwrap_or_default();
+        // Only an entity whose edits cannot be combined may be saved over the cloud's version. The
+        // others go to the apply layer with the cloud's record, which merges both Macs' changes.
+        let merge_first = row.op == OutboxOp::Upsert
+            && row.kind.combines_edits()
+            && row.attempts < MAX_MERGE_ATTEMPTS;
         let local_wins = row.op == OutboxOp::Upsert
+            && !merge_first
             && meta.as_ref().is_some_and(|meta| {
                 (meta.revision.max(1) as u64, row.queued_ms, device.as_str())
                     > (
@@ -952,8 +970,18 @@ impl<T: SyncTransport> SyncCore<T> {
             let _ = store.retry_now(row.seq);
             return;
         }
-        // The cloud's version wins (and an edit always beats a local delete).
-        let _ = store.remove_outbox(row.seq);
+        if merge_first {
+            // Keep the edit queued: the apply layer merges it with the cloud's record, and what
+            // that produces is uploaded over the cloud's version once its change tag is known.
+            let _ = store.fail_outbox(
+                row.seq,
+                now + MERGE_RETRY_MS,
+                crate::store::sync::OUTBOX_MERGING,
+            );
+        } else {
+            // The cloud's version wins (and an edit always beats a local delete).
+            let _ = store.remove_outbox(row.seq);
+        }
         drop(store);
         if let Verdict::Accept(value) = validate(&record) {
             let id = self.next_batch;

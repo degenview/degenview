@@ -54,6 +54,8 @@ pub struct SyncState {
 }
 
 pub const DEFAULT_ZONE: &str = "DegenViewZone";
+/// The outbox note on an edit that is waiting to be merged with the cloud's newer version.
+pub const OUTBOX_MERGING: &str = "merging with the cloud";
 
 /// Whether a `setting` key syncs at all.
 pub(super) fn tracks_setting(key: &str) -> bool {
@@ -1118,6 +1120,17 @@ impl Store {
     }
 
     /// Makes an entry due immediately without counting a failed attempt.
+    /// Edits that were refused because the cloud had a newer version wait for it to be merged
+    /// in; once it has been, they go out at once.
+    pub fn release_merged_edits(&self) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_outbox SET next_attempt_ms = NULL, last_error = NULL
+             WHERE last_error = ?1",
+            [OUTBOX_MERGING],
+        )?;
+        Ok(())
+    }
+
     pub fn retry_now(&self, seq: i64) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE sync_outbox SET next_attempt_ms = NULL WHERE seq = ?1",

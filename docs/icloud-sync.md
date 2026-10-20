@@ -291,6 +291,12 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   fallback is fetching with manual CloudKit operations instead of `CKSyncEngine`.
 * Whether CloudKit pushes reach the app (winit owns the app delegate). The worker also looks for
   changes every five minutes and on **Sync Now**, so the feature degrades to polling.
+* Layouts, scripts and paper accounts keep both versions as conflict copies when the Macs *fetch*
+  each other's change first. When both upload before either fetches, the cloud refuses the second
+  upload and the newer side is saved over the other: only watchlists and settings are merged in
+  that case (found on real CloudKit, where two Macs adding to one watchlist lost an item). Making
+  the three keep-both kinds merge there too needs the apply layer to queue the winner after a
+  local-wins conflict; it is not done.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
 * Behaviour with all windows hidden: remote changes are applied on the app thread, which only runs
   frames while a window is visible; uploads are unaffected.
