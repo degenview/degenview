@@ -36,6 +36,11 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `sync::policy` (a test fails otherwise); unclassified means local-only. Writes go through
   `replace_documents` / `set_setting`, which queue the upload in the same transaction when sync is
   on, so do not write those tables with raw SQL. See [iCloud Sync](../icloud-sync.md).
+- Portfolio and paper-trading ids are per-Mac counters that sync under a per-database tag
+  (`sync::ids`). Engines and ledgers must keep minting from ids below 2^24 only, writes go through
+  `save_portfolio_ledger` / `save_paper_trading` (or the hosts) so they are tracked, and a paper
+  account another Mac runs must never be filled here (`PaperHost` skips it until the user acts on
+  it).
 
 ## Build and test
 

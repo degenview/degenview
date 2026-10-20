@@ -118,7 +118,7 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
             Icon::Cycle,
             "Sync DegenView data with iCloud",
             Some(
-                "Keeps your watchlists, layouts, drawings, templates and scripts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac.",
+                "Keeps your watchlists, layouts, drawings, templates, scripts, portfolios and paper-trading accounts the same on every Mac signed in to your Apple Account. Everything also stays on this Mac.",
             ),
             |ui| {
                 let mut on = view.enabled;
@@ -390,7 +390,7 @@ fn delete_dialog(ctx: &egui::Context) -> Option<DialogOutcome> {
                         Icon::XmarkCircleFill,
                         kit::RED,
                         "Removed from iCloud",
-                        "Watchlists, layouts and drawings, templates, Pine scripts, alerts and preferences.",
+                        "Watchlists, layouts and drawings, templates, Pine scripts, alerts, portfolios, paper-trading accounts and preferences.",
                     );
                     consequence(
                         ui,
@@ -746,7 +746,7 @@ fn join_prompt(ui: &mut egui::Ui, sync: &SyncHost, summary: &JoinSummary) {
     ui.add_space(4.0);
     small(
         ui,
-        "Merge keeps everything from both. Using iCloud's data replaces this Mac's watchlists, layouts and templates after saving a copy you can restore; scripts and alerts are always merged.",
+        "Merge keeps everything from both. Using iCloud's data replaces this Mac's watchlists, layouts and templates after saving a copy you can restore; scripts, alerts, portfolios and paper accounts are always merged.",
     );
 }
 

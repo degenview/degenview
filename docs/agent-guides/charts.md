@@ -128,5 +128,8 @@ behavior.
 - Favorites use `WatchlistInstrument.card` and `PortfolioCard::instrument_id()`. The card field,
   not provider, controls display/open/export behavior. Opening focuses or adds the card; it never
   replaces a market in the focused chart.
+- A card's `portfolio_id` and the key derived from it are translated to shared ids when a layout or
+  watchlist syncs (`sync::ids::map_card`); a new place that stores a portfolio id must be added to
+  that translation.
 - Top Performers ranks each market's candles without FX and scales today's value by return,
   assuming unchanged quantity.

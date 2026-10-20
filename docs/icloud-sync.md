@@ -1,7 +1,8 @@
 # iCloud Sync
 
 Keeps watchlists, layouts (with their drawings), chart and drawing templates, Pine scripts, price
-alert definitions and a few preferences the same on every Mac signed in to one Apple Account.
+alert definitions, portfolios with their transactions, paper-trading accounts and a few
+preferences the same on every Mac signed in to one Apple Account.
 
 **Status.** The sync engine, merge rules, account protection, UI and Swift bridge are written and
 tested against an in-memory CloudKit stand-in. **It has not been run against real CloudKit.** Two
@@ -23,10 +24,12 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Chart / drawing templates | one each | built-in presets live in code |
 | Pine scripts | one per script, content inline | no drafts, no revisions; unmodified bundled examples are skipped |
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
+| Portfolios | one per portfolio, and one per transaction | valuation history is not synced; it is rebuilt on each Mac |
+| Paper trading | one record per account holding the account, its orders, fills, positions, events, closed trades and journal, and which Mac runs it | see [Portfolios and paper trading](#portfolios-and-paper-trading) |
 | Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `watchlist.flags`, `snapshot.prefs` (host, scale, include-trading only) | |
 
-Never synced: market and icon caches, paper-trading accounts, portfolios and ledgers, webhook
-endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
+Never synced: market and icon caches, portfolio valuation history, which paper account or
+portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
 snapshot consent and token. Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
@@ -67,7 +70,9 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 `sync_state` (singleton: device identity, account binding, engine checkpoint, category switches),
 `sync_entity` (per-entity revision, last-synced hash, CloudKit change tag, tombstone),
 `sync_outbox`, `sync_inbox`, `sync_conflict`, `sync_device`, `price_alert_local` (per-Mac
-"watch here" flag). All are created by one idempotent `create_sync_schema`; older builds ignore
+"watch here" flag), `paper_account_local` (which Mac runs each paper account; absent means this
+one). `sync_state.id_tag` and `sync_entity.local_hash` were added to older development databases
+by a guarded `ALTER`. All are created by one idempotent `create_sync_schema`; older builds ignore
 them, and `reconcile_stored` finds changes an older build made.
 
 ### Record schema
@@ -88,6 +93,45 @@ are per chart, so a drawing is keyed `layout.chart.drawing`. When two Macs give 
 drawings the same id, the local one is renumbered so both survive. Each Mac's Favorites list has
 a different local id, so it syncs as the singleton `watchlist.favorites` and keeps its own id.
 
+## Portfolios and paper trading
+
+**Ids.** Portfolios, transactions and everything in a paper account are numbered 1, 2, 3… by each
+Mac on its own, so every Mac has a "portfolio 1" and an "order 1". Nothing local is renumbered.
+At the sync boundary a counter id below 2^24 is tagged with a random 31-bit number stored once in
+`sync_state.id_tag` (`2^55 | tag << 24 | id`), and the tag is stripped again when this database's
+own record comes back (`src/sync/ids.rs`, a pure function with no table to lose). Ids at or above
+2^24 (nanosecond ids, other Macs' tagged ids) pass through. The engines mint counters from ids
+below 2^24 only, so a record that arrived from another Mac never moves the counter into the shared
+range. Portfolio cards in layouts and watchlists (`card.portfolio_id` and the `portfolio:<kind>:<id>`
+key) are translated the same way, so a card follows its portfolio and never points at a different
+one on another Mac.
+
+**Portfolios.** A portfolio and each transaction are their own record, merged by last writer, so
+adding or editing transactions on two Macs merges. A deleted portfolio takes its transactions with
+it unless the portfolio was edited here (edit beats delete, and it keeps its ledger). A
+transaction whose portfolio has not arrived waits in the inbox as `orphan`.
+
+A merged ledger can be impossible: a sale whose purchase has not arrived, or a purchase deleted
+elsewhere that a sale needs. Each batch is checked once per portfolio with the portfolio screen's
+own accounting (`portfolio_accounting::holdings`). A transaction that would break it is **held in
+the inbox** as `ledger_invalid` with a notice naming the portfolio, and tried again whenever more
+arrives; a delete that would break it is not applied and the transaction goes back to iCloud. The
+order records arrive in does not matter. Valuation history after any changed transaction is
+dropped and marked stale so it is rebuilt.
+
+**Paper accounts: one active Mac.** An account is a live state machine (working orders fill from
+quotes), so it is never merged field by field. The Mac that last placed or changed an order
+**owns** it (`owner` in the bundle) and is the only one that fills its working orders; the others
+show a mirror and `PaperHost` skips those accounts when quotes arrive. Acting on a mirrored
+account (placing, cancelling or modifying an order, changing settings, resetting, deleting) takes
+it over in the same save. A burst of fills uploads once, five seconds after the first change.
+If both Macs changed an account before seeing each other, the later edit keeps the account and the
+other version survives whole as a **paused copy** (`Name (conflict from <Mac> <date>)`) with ids
+of its own and no owner, so nothing runs it until the user acts on it.
+
+An account over ~900 KB does not sync in this version (the existing "too large" notice applies);
+multi-record accounts are future work. A mirror shows the account as of the owner's last upload.
+
 ## Merge rules
 
 Every rule is symmetric (merge(a, b) = merge(b, a)), so two Macs resolving the same conflict
@@ -99,6 +143,8 @@ converge. Randomized tests exercise this. Ordering ties break on `(revision, edi
 | Layout | revision-aware; if only cosmetic fields differ, last writer; if charts/columns differ, the loser is kept as a copy named `Name (conflict from <Mac> <date>)` |
 | Drawing | per record last writer; a delete never touches other drawings (stacking order is deliberately **not** synced: it would make one deletion look like an edit of every later drawing) |
 | Pine script | the loser always survives as a conflict-copy script; text being typed is never overwritten (the update waits until it is saved); a name taken here is suffixed and the suffix is not uploaded |
+| Portfolio, transaction | last writer; a change that would make the ledger impossible is held (see above) |
+| Paper account | the changed side wins; both changed: later edit keeps the account, the other becomes a paused copy |
 | Templates, alerts, scalar settings | last writer |
 | Object-valued settings | per key three-way |
 
@@ -139,7 +185,7 @@ not sync, so a synced alert's endpoint ids simply have no target on another Mac.
 2. The first fetch is **held in the inbox** and summarised ("iCloud has 12 watchlists… this Mac
    has…"). The user chooses **Merge** (everything from both), **Use iCloud's data** (this Mac's
    watchlists, layouts and templates are replaced after a recoverable database copy is saved in
-   `SyncBackups/`; scripts and alerts are always merged) or **Don't sync**. An empty iCloud never
+   `SyncBackups/`; scripts, alerts, portfolios and paper accounts are always merged) or **Don't sync**. An empty iCloud never
    deletes local data. The step is idempotent after an interruption.
 3. Uploads begin only after that step.
 
@@ -202,7 +248,7 @@ Without `--features icloud` the Settings page is hidden.
 * Automated, no Apple account needed: `cargo test` (outbox atomicity, echo-proofing, coalescing,
   mass-delete hold, merge convergence over randomized edits, core retry/backoff/state machine,
   two-Mac convergence through a mock cloud, first-sync and account-change flows, crash recovery at
-  six points, the wire format against a fake bridge, host end to end with real worker threads).
+  six points, portfolios and paper accounts across two Macs with colliding small ids, the wire format against a fake bridge, host end to end with real worker threads).
   `cargo build --features icloud` (macOS) additionally compiles and links the Swift bridge.
 * Manual, two Macs on one Apple Account and a second Apple Account, with a Development-signed
   build, then a notarized Developer ID build: **A** enable on Mac 1 then join from Mac 2 (merge and
@@ -229,6 +275,8 @@ timings are machine-specific). The write hook only projects rows whose text chan
 | Alert engine rewrites 100 alerts (every row's runtime fields differ) | 0.32 ms | 1.54 ms | 1.2 ms, about once a second while alerts run |
 | Apply 200 fetched records in one transaction | | 5 ms | |
 | Reconcile 30 layouts (600 drawings) + 20 watchlists | | 7 ms | |
+| Save a 5,000-transaction ledger, nothing changed | 7.8 ms | 14.6 ms | 6.9 ms |
+| Save a paper account with 2,000 fills, nothing changed | 3.0 ms | 16.5 ms | 13.5 ms (the bundle is rebuilt and hashed on every save; a quote only saves while a working order exists for it) |
 
 Nothing here runs on the render thread except the SQLite write hook itself, and no CloudKit call
 is ever made from it. Not measured: initial sync of a very large library over a real network,
@@ -259,5 +307,9 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   deletion that reached this Mac in an earlier batch than the layout deletion has already removed
   that drawing locally.
 * No device list in Settings yet (`sync_device` is ready for it).
-* Webhook endpoints, Pine alert subscriptions, paper trading and portfolios are excluded by
-  design; syncing the last two needs a separate design with immutable transaction ids.
+* Webhook endpoints and Pine alert subscriptions are excluded by design.
+* A paper account over ~900 KB does not sync yet. Two Macs acting on one account within a sync
+  interval produce a paused copy rather than a merge. A new Mac creates its own default paper
+  account, which then syncs as a second account. A card pointing at a portfolio that has not
+  arrived yet shows All Portfolios until it does. Paper trading and portfolios have not been run
+  against real CloudKit, like the rest.

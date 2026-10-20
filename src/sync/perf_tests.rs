@@ -173,3 +173,91 @@ fn what_sync_costs() {
         || big.reconcile_stored().unwrap(),
     );
 }
+
+#[test]
+#[ignore]
+fn what_portfolios_and_paper_accounts_cost() {
+    use crate::model::paper::{PaperAccount, PaperFill, PaperTradingSnapshot};
+    use crate::model::portfolio::{
+        Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioLedgerSnapshot, PortfolioSource,
+        PortfolioTransaction, PortfolioTransactionType,
+    };
+
+    println!("\n--- portfolio ledger save (sync off -> on) ---");
+    let transactions: Vec<PortfolioTransaction> = (0..5_000u64)
+        .map(|n| PortfolioTransaction {
+            id: 1_700_000_000_000_000_000 + n,
+            portfolio_id: 1,
+            asset: PortfolioAsset {
+                key: "binance:BTCUSDT".into(),
+                symbol: "BTC".into(),
+                name: "Bitcoin".into(),
+                source: crate::model::DataSource::Binance,
+                quote_currency: PortfolioCurrency::Usd,
+                metadata: Default::default(),
+            },
+            kind: PortfolioTransactionType::Buy,
+            quantity: 1.0,
+            price: Some(100.0),
+            price_currency: PortfolioCurrency::Usd,
+            fee: 0.0,
+            fee_currency: PortfolioCurrency::Usd,
+            timestamp: n as i64,
+            notes: String::new(),
+            source: PortfolioSource::Manual,
+            external_transaction_id: None,
+            created_at: 0,
+            updated_at: 0,
+        })
+        .collect();
+    let ledger = PortfolioLedgerSnapshot {
+        portfolios: vec![Portfolio::new(1, "Main", 1)],
+        transactions,
+        ..Default::default()
+    };
+    let off = store(false);
+    let on = store(true);
+    let l_off = timed("save a 5,000-transaction ledger, sync OFF", 20, || {
+        off.save_portfolio_ledger(&ledger).unwrap()
+    });
+    let l_on = timed("save the same ledger unchanged, sync ON", 20, || {
+        on.save_portfolio_ledger(&ledger).unwrap()
+    });
+    println!("{:<62} {:>9.3} ms", "added", l_on - l_off);
+
+    println!("\n--- paper account save (sync off -> on) ---");
+    let mut snapshot = PaperTradingSnapshot {
+        accounts: vec![PaperAccount::new(1, "Main", 1)],
+        ..Default::default()
+    };
+    let instrument = crate::model::paper::PaperInstrument::chart(
+        "BTCUSDT",
+        "BTCUSDT",
+        crate::model::DataSource::Binance,
+    );
+    for n in 0..2_000u64 {
+        snapshot.fills.push(PaperFill {
+            id: 10 + n,
+            order_id: 5,
+            account_id: 1,
+            instrument: instrument.clone(),
+            side: Default::default(),
+            quantity: 1.0,
+            price: 100.0,
+            commission: 0.0,
+            price_source: Default::default(),
+            timestamp: n as i64,
+        });
+    }
+    let p_off = store(false);
+    let p_on = store(true);
+    let off = timed("save an account with 2,000 fills, sync OFF", 20, || {
+        p_off.save_paper_trading(&snapshot).unwrap()
+    });
+    let on = timed(
+        "save it unchanged, sync ON (bundle rebuilt and hashed)",
+        20,
+        || p_on.save_paper_trading(&snapshot).unwrap(),
+    );
+    println!("{:<62} {:>9.3} ms", "added", on - off);
+}
