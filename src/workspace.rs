@@ -722,6 +722,9 @@ pub struct ChartWorkspace {
     next_id: u64,
     watchlist_visible: bool,
     baseline: Option<LayoutSnapshot>,
+    /// Bumped by every change to a chart's drawings; see `drawings_dirty`.
+    drawings_version: u64,
+    saved_drawings_version: u64,
     add_chart: AddChartSheet,
     add_to_watchlist: Option<EntryId>,
     unseen_alerts: usize,
@@ -892,7 +895,7 @@ impl ChartWorkspace {
                 store,
             );
             workspace.add_card(card);
-            workspace.baseline = Some(workspace.layout_snapshot());
+            workspace.set_baseline();
             return workspace;
         }
         let mut workspace = Self::new_with_source(
@@ -911,7 +914,7 @@ impl ChartWorkspace {
         if let Some(chart) = workspace.charts.first_mut() {
             chart.apply_watchlist_metadata(item);
         }
-        workspace.baseline = Some(workspace.layout_snapshot());
+        workspace.set_baseline();
         workspace
     }
 
@@ -933,7 +936,7 @@ impl ChartWorkspace {
             quote_coordinator,
             store,
         );
-        workspace.baseline = Some(workspace.layout_snapshot());
+        workspace.set_baseline();
         workspace
     }
 
@@ -1009,6 +1012,8 @@ impl ChartWorkspace {
             pending_open_id: None,
             layout_error: None,
             autosave: AutosaveState::default(),
+            drawings_version: 0,
+            saved_drawings_version: 0,
             grid_drag: ui::grid_drop::GridDrag::default(),
         }
     }
@@ -1040,7 +1045,7 @@ impl ChartWorkspace {
         let chart_ids = [chart_id];
         workspace.columns = ChartColumn::resolved(None, &chart_ids, &mut workspace.next_id);
         workspace.focused = Some(chart_id);
-        workspace.baseline = Some(workspace.layout_snapshot());
+        workspace.set_baseline();
         workspace
     }
 
@@ -1092,7 +1097,7 @@ impl ChartWorkspace {
         {
             workspace.focused = workspace.charts.first().map(|chart| chart.id);
         }
-        workspace.baseline = Some(workspace.layout_snapshot());
+        workspace.set_baseline();
         workspace
     }
 
@@ -1432,7 +1437,20 @@ impl ChartWorkspace {
     }
 
     pub fn mark_clean(&mut self) {
+        self.set_baseline();
+    }
+
+    /// Records the layout as saved: its fingerprint, and the drawings it holds.
+    fn set_baseline(&mut self) {
         self.baseline = Some(self.layout_snapshot());
+        self.saved_drawings_version = self.drawings_version;
+    }
+
+    /// Drawings changed since the layout was last saved. The layout's fingerprint leaves drawings
+    /// out (a drag must not mark a layout as edited), so an Autosave layout watches this too:
+    /// without it a drawing would only reach the saved layout, and other Macs, by accident.
+    fn drawings_dirty(&self) -> bool {
+        self.drawings_version != self.saved_drawings_version
     }
 
     /// Adds a Pine script to the focused chart, after the ones already there (the Script
@@ -1754,7 +1772,8 @@ impl ChartWorkspace {
     /// the layout is still dirty on disk.
     pub fn flush_autosave(&mut self) -> bool {
         self.autosave.due = None;
-        if !self.is_dirty() || !self.autosave_enabled() {
+        let enabled = self.autosave_enabled();
+        if !(self.is_dirty() || (enabled && self.drawings_dirty())) || !enabled {
             return true;
         }
         if self.save_active(true) {
@@ -1859,7 +1878,7 @@ impl ChartWorkspace {
         self.redo.clear();
         self.active_view_id = Some(view.id);
         self.active_view_name = Some(view.name.clone());
-        self.baseline = Some(self.layout_snapshot());
+        self.set_baseline();
         self.autosave = AutosaveState::default();
         let _ = self.update_active_view(|opened| opened.last_opened_at_ms = Some(now_ms()));
     }
@@ -2384,6 +2403,7 @@ impl ChartWorkspace {
         };
         // One batch is one undo step, and a batch that changes nothing (or only a ruler) none.
         if crate::model::drawings::apply_commands(&mut chart.drawings, commands) {
+            self.drawings_version += 1;
             // A restyle that follows another of the same drawing moments ago is part of it.
             if !merge {
                 self.undo.push(UndoEntry {
@@ -2409,6 +2429,7 @@ impl ChartWorkspace {
             .find(|chart| chart.id == entry.chart_id)
         {
             let after = entry.before.swap_into(chart);
+            self.drawings_version += 1;
             self.redo.push(UndoEntry {
                 chart_id: entry.chart_id,
                 before: after,
@@ -2427,6 +2448,7 @@ impl ChartWorkspace {
             .find(|chart| chart.id == entry.chart_id)
         {
             let after = entry.before.swap_into(chart);
+            self.drawings_version += 1;
             self.undo.push(UndoEntry {
                 chart_id: entry.chart_id,
                 before: after,
@@ -2676,7 +2698,13 @@ impl ChartWorkspace {
             .iter()
             .find(|view| Some(view.id) == active_view_id)
             .is_some_and(|view| view.autosave == Some(true));
-        self.tick_autosave(ctx, dirty, autosave_on);
+        // An Autosave layout also saves drawing-only edits; the toolbar's "unsaved" state does not
+        // count them, as before.
+        self.tick_autosave(
+            ctx,
+            dirty || (autosave_on && self.drawings_dirty()),
+            autosave_on,
+        );
         let input = workspace_toolbar::ToolbarInput {
             timeframe: self.timeframe,
             log_scale: focused
@@ -5584,6 +5612,68 @@ mod tests {
         // A chart that is not there changes nothing.
         workspace.apply_planned_drawings(404, vec![DrawingCommand::Remove(1)], 50);
         assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
+    }
+
+    #[test]
+    fn drawing_edits_mark_drawings_dirty_but_not_the_layout_fingerprint() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.mark_clean();
+        assert!(!workspace.drawings_dirty());
+
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(2, 500))]);
+        assert!(workspace.drawings_dirty());
+        assert!(
+            !workspace.is_dirty(),
+            "a drawing never marks the layout as edited"
+        );
+        workspace.mark_clean();
+        assert!(!workspace.drawings_dirty(), "saving takes them in");
+
+        workspace.undo();
+        assert!(workspace.drawings_dirty(), "undo changes drawings too");
+        workspace.mark_clean();
+        workspace.redo();
+        assert!(workspace.drawings_dirty());
+    }
+
+    #[test]
+    fn a_command_that_changes_nothing_leaves_drawings_clean() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.mark_clean();
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(999)]);
+        assert!(!workspace.drawings_dirty());
+        workspace.apply_drawing_commands(chart, Vec::new());
+        assert!(!workspace.drawings_dirty());
+    }
+
+    #[test]
+    fn an_autosave_layout_writes_a_drawing_only_edit_and_a_manual_one_does_not() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        assert!(workspace.save_named("Auto".to_owned(), Some(true)));
+        assert!(workspace.autosave_enabled());
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(1, 100))]);
+        assert!(workspace.drawings_dirty());
+
+        assert!(workspace.flush_autosave());
+        let saved = workspace.load_saved_views();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(
+            saved[0].charts[0].drawings.len(),
+            1,
+            "the drawing reached the saved layout"
+        );
+        assert!(!workspace.drawings_dirty());
+
+        // A layout with Autosave off keeps today's behaviour: a drawing alone writes nothing.
+        let mut manual = empty_workspace(9);
+        let chart = chart_with_drawings(&mut manual, "ETHUSDT", &[]);
+        assert!(manual.save_named("Manual".to_owned(), Some(false)));
+        manual.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(1, 100))]);
+        assert!(manual.flush_autosave());
+        assert!(manual.load_saved_views()[0].charts[0].drawings.is_empty());
     }
 
     #[test]
