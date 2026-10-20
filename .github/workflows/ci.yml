@@ -57,3 +57,12 @@ jobs:
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
         run: cargo test --locked
+
+      # The iCloud bridge is Swift and macOS-only; this proves it still compiles and links for the
+      # runner's architecture, and that the background alert agent still does not link Swift.
+      - name: Build with iCloud Sync
+        if: runner.os == 'macOS'
+        run: |
+          cargo build --locked --features icloud
+          ! otool -L target/debug/degenview-alert-agent | grep -q libswift
+          otool -L target/debug/degenview | grep -q libswiftCloudKit

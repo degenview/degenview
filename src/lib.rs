@@ -30,6 +30,7 @@ mod workspace;
 use app::DegenViewApp;
 use eframe::egui;
 
+pub use sync::native::{CloudKitFactory, NativeApi};
 pub use sync_host::{EventSink, TransportFactory};
 
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
