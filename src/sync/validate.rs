@@ -91,10 +91,6 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             if record.name.layout_drawing_parts().is_none() {
                 return Err("drawing record name is not layout.chart.drawing".into());
             }
-            object
-                .get("ord")
-                .and_then(Value::as_u64)
-                .ok_or("drawing has no order")?;
             bound_collections(object.get("drawing").ok_or("drawing is missing")?)
         }
         EntityKind::Watchlist => {
@@ -237,7 +233,9 @@ fn bound_collections(value: &Value) -> Result<(), String> {
 
 fn check_numbers(value: &Value) -> Result<(), String> {
     match value {
-        Value::Number(number) => match number.as_f64() {
+        // Integers are always fine (entity ids are nanosecond timestamps near 1.7e18); only
+        // floating-point prices and coordinates need a sanity bound.
+        Value::Number(number) if number.is_f64() => match number.as_f64() {
             Some(float) if float.is_finite() && float.abs() <= MAX_ABS_NUMBER => Ok(()),
             _ => Err("a number is out of range".into()),
         },
@@ -361,6 +359,23 @@ mod tests {
     }
 
     #[test]
+    fn nanosecond_entity_ids_are_valid() {
+        let id = 1_792_487_796_669_773_000_u64;
+        let r = record(
+            EntityKind::Watchlist,
+            &id.to_string(),
+            json!({"id": id, "name": "x", "entries": [{"Section": {"id": id, "title": "t"}}]}),
+        );
+        assert!(matches!(validate(&r), Verdict::Accept(_)));
+        let layout = record(
+            EntityKind::Layout,
+            &id.to_string(),
+            json!({"id": id, "name": "x", "charts": [{"id": 1, "created": id}]}),
+        );
+        assert!(matches!(validate(&layout), Verdict::Accept(_)));
+    }
+
+    #[test]
     fn numbers_outside_a_sane_range_are_rejected() {
         let huge = record(EntityKind::Setting, "x", json!({"price": 1e300}));
         assert!(rejected(&huge).contains("range"));
@@ -459,33 +474,29 @@ mod tests {
         let many = record(
             EntityKind::LayoutDrawing,
             "1.2.3",
-            json!({"ord": 0, "drawing": {"Brush": {"anchors": points}}}),
+            json!({"drawing": {"Brush": {"anchors": points}}}),
         );
         assert!(rejected(&many).contains("points"));
         let text = record(
             EntityKind::LayoutDrawing,
             "1.2.3",
-            json!({"ord": 0, "drawing": {"text": "a".repeat(MAX_DRAWING_STRING + 1)}}),
+            json!({"drawing": {"text": "a".repeat(MAX_DRAWING_STRING + 1)}}),
         );
         assert!(rejected(&text).contains("text"));
         let ok = record(
             EntityKind::LayoutDrawing,
             "1.2.3",
-            json!({"ord": 0, "drawing": {"Unreadable": {"future": true}}}),
+            json!({"drawing": {"Unreadable": {"future": true}}}),
         );
         assert!(matches!(validate(&ok), Verdict::Accept(_)));
     }
 
     #[test]
     fn a_drawing_record_needs_a_composite_name_and_an_order() {
-        let bad_name = record(
-            EntityKind::LayoutDrawing,
-            "1.2",
-            json!({"ord": 0, "drawing": {}}),
-        );
+        let bad_name = record(EntityKind::LayoutDrawing, "1.2", json!({"drawing": {}}));
         assert!(rejected(&bad_name).contains("layout.chart.drawing"));
-        let no_order = record(EntityKind::LayoutDrawing, "1.2.3", json!({"drawing": {}}));
-        assert!(rejected(&no_order).contains("order"));
+        let no_drawing = record(EntityKind::LayoutDrawing, "1.2.3", json!({}));
+        assert!(rejected(&no_drawing).contains("missing"));
     }
 
     #[test]

@@ -158,7 +158,7 @@ fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
                 continue;
             };
             let mut seen = std::collections::HashSet::new();
-            for (order, drawing) in list.into_iter().enumerate() {
+            for drawing in list {
                 let Some(drawing_id) = drawing_id(&drawing) else {
                     continue;
                 };
@@ -166,7 +166,7 @@ fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
                 if !seen.insert(drawing_id) {
                     continue;
                 }
-                drawings.push((chart_id, drawing_id, order, drawing));
+                drawings.push((chart_id, drawing_id, drawing));
             }
         }
     }
@@ -176,9 +176,11 @@ fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
         id.to_string(),
         &Value::Object(row),
     )];
-    for (chart_id, drawing_id, order, drawing) in drawings {
+    for (chart_id, drawing_id, drawing) in drawings {
         let sync_id = format!("{id}.{chart_id}.{drawing_id}");
-        let body = serde_json::json!({"ord": order, "drawing": drawing});
+        // Stacking order is deliberately not part of a drawing: one Mac deleting or inserting a
+        // drawing would otherwise shift every later drawing and look like an edit of each.
+        let body = serde_json::json!({ "drawing": drawing });
         projected.push(Projected::new(
             EntityKind::LayoutDrawing,
             sync_id.clone(),
@@ -190,7 +192,7 @@ fn project_layout(id: &str, mut row: Map<String, Value>) -> Vec<Projected> {
 }
 
 /// A stored drawing is `{"<Variant>": {"id": n, ...}}`; an unreadable one keeps the same shape.
-fn drawing_id(drawing: &Value) -> Option<u64> {
+pub(crate) fn drawing_id(drawing: &Value) -> Option<u64> {
     drawing.as_object()?.values().next()?.get("id")?.as_u64()
 }
 
@@ -401,7 +403,8 @@ mod tests {
         let layout_body: Value = serde_json::from_slice(&parts[0].payload).unwrap();
         assert!(layout_body["charts"][0].get("drawings").is_none());
         let drawing_body: Value = serde_json::from_slice(&parts[1].payload).unwrap();
-        assert_eq!(drawing_body["ord"], 0);
+        assert!(drawing_body.get("ord").is_none());
+        assert!(drawing_body["drawing"]["TrendLine"].is_object());
     }
 
     #[test]
@@ -409,6 +412,25 @@ mod tests {
         let a = project_row("saved_view", "10", &layout(1, false, vec![]));
         let b = project_row("saved_view", "10", &layout(999, true, vec![]));
         assert_eq!(a[0].hash, b[0].hash);
+    }
+
+    #[test]
+    fn inserting_or_removing_a_drawing_does_not_disturb_the_others() {
+        let three = project_row(
+            "saved_view",
+            "10",
+            &layout(1, false, vec![trend(1, 1.0), trend(2, 2.0), trend(3, 3.0)]),
+        );
+        let without_first = project_row(
+            "saved_view",
+            "10",
+            &layout(1, false, vec![trend(2, 2.0), trend(3, 3.0)]),
+        );
+        let by_id = |parts: &[Projected], id: &str| {
+            parts.iter().find(|p| p.sync_id == id).unwrap().hash.clone()
+        };
+        assert_eq!(by_id(&three, "10.2.2"), by_id(&without_first, "10.2.2"));
+        assert_eq!(by_id(&three, "10.2.3"), by_id(&without_first, "10.2.3"));
     }
 
     #[test]

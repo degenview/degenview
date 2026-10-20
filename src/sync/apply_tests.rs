@@ -517,3 +517,491 @@ fn a_failed_apply_changes_nothing() {
         "the link was rolled back with the failed write"
     );
 }
+
+// MARK: Layouts and drawings
+
+fn trend(id: u64, price: f64) -> Value {
+    json!({"TrendLine": {"id": id, "a": {"time_ms": 1, "price": price}, "b": {"time_ms": 2, "price": price}}})
+}
+
+/// A saved layout as stored. `charts` is `(chart id, symbol, drawings as (id, price))`.
+/// A chart in a test layout: its id, symbol, and drawings as `(id, price)`.
+type TestChart<'a> = (u64, &'a str, &'a [(u64, f64)]);
+
+fn layout(id: u64, name: &str, charts: &[TestChart]) -> Raw {
+    let indicators = serde_json::to_value(crate::model::IndicatorConfig::default()).unwrap();
+    let source = serde_json::to_value(DataSource::Binance).unwrap();
+    let charts: Vec<Value> = charts
+        .iter()
+        .map(|(chart, symbol, drawings)| {
+            json!({
+                "id": chart, "symbol": symbol, "source": source, "log_scale": false,
+                "y_zoom": 1.0, "indicators": indicators,
+                "drawings": drawings.iter().map(|(d, p)| trend(*d, *p)).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let value = json!({
+        "id": id, "name": name, "timeframe": "Day", "created_at_ms": 1, "charts": charts,
+        "candle_count": 0, "last_opened_at_ms": 5, "autosave": true,
+    });
+    assert!(
+        crate::store::sync::row_decodes("saved_view", &value.to_string()),
+        "test layout must decode"
+    );
+    Raw(value)
+}
+
+fn put_layouts(mac: &Mac, layouts: &[Raw]) {
+    mac.store
+        .lock()
+        .unwrap()
+        .replace_documents("saved_view", layouts)
+        .unwrap();
+}
+
+fn drawings_of(row: &Value, chart: u64) -> Vec<(u64, f64)> {
+    row["charts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"] == chart)
+        .unwrap()["drawings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            let body = d.as_object().unwrap().values().next().unwrap();
+            (
+                body["id"].as_u64().unwrap(),
+                body["a"]["price"].as_f64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+fn layout_named<'a>(layouts: &'a [Value], name: &str) -> &'a Value {
+    layouts
+        .iter()
+        .find(|l| l["name"] == name)
+        .unwrap_or_else(|| panic!("no layout {name}"))
+}
+
+#[test]
+fn a_layout_and_its_drawings_arrive_as_separate_records() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])])],
+    );
+    settle(&mut a, &mut b);
+    assert_eq!(
+        cloud.names(),
+        ["layout.10", "layoutdrawing.10.1.1", "layoutdrawing.10.1.2"]
+    );
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(drawings_of(&on_b[0], 1), [(1, 1.0), (2, 2.0)]);
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn per_device_layout_fields_stay_per_device() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[])])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert!(
+        on_b[0].get("last_opened_at_ms").is_none_or(Value::is_null),
+        "not A's open time"
+    );
+    assert!(
+        on_b[0].get("autosave").is_none_or(Value::is_null),
+        "not A's autosave choice"
+    );
+    // B turns autosave on and later receives a structural change from A: it keeps its choice.
+    let mut row = on_b[0].clone();
+    row["autosave"] = json!(true);
+    row["last_opened_at_ms"] = json!(777);
+    b.store
+        .lock()
+        .unwrap()
+        .replace_documents("saved_view", &[Raw(row)])
+        .unwrap();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[]), (2, "ETH", &[])])],
+    );
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(on_b[0]["charts"].as_array().unwrap().len(), 2);
+    assert_eq!(on_b[0]["autosave"], true);
+    assert_eq!(on_b[0]["last_opened_at_ms"], 777);
+}
+
+#[test]
+fn moving_one_drawing_uploads_only_that_drawing() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])])],
+    );
+    settle(&mut a, &mut b);
+    let before = cloud.save_attempts();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 9.5)])])],
+    );
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    assert_eq!(
+        drawings_of(&rows(&b, "saved_view")[0], 1),
+        [(1, 1.0), (2, 9.5)]
+    );
+}
+
+#[test]
+fn edits_to_different_drawings_on_two_macs_both_survive() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])])],
+    );
+    settle(&mut a, &mut b);
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 5.0), (2, 2.0)])])],
+    );
+    put_layouts(
+        &b,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 7.0)])])],
+    );
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    assert_eq!(drawings_of(&ra[0], 1), [(1, 5.0), (2, 7.0)]);
+    assert_eq!(ra, rb);
+}
+
+#[test]
+fn both_macs_editing_the_same_drawing_converge_on_one_version() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0)])])]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[(1, 3.0)])])]);
+    put_layouts(&b, &[layout(10, "Main", &[(1, "BTC", &[(1, 4.0)])])]);
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    assert_eq!(ra, rb);
+    assert_eq!(drawings_of(&ra[0], 1).len(), 1);
+}
+
+#[test]
+fn two_new_drawings_with_the_same_id_are_both_kept() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])])],
+    );
+    settle(&mut a, &mut b);
+    // Each Mac draws a new line; both numbered it 3.
+    put_layouts(
+        &a,
+        &[layout(
+            10,
+            "Main",
+            &[(1, "BTC", &[(1, 1.0), (2, 2.0), (3, 10.0)])],
+        )],
+    );
+    put_layouts(
+        &b,
+        &[layout(
+            10,
+            "Main",
+            &[(1, "BTC", &[(1, 1.0), (2, 2.0), (3, 99.0)])],
+        )],
+    );
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    let mut prices: Vec<f64> = drawings_of(&ra[0], 1).into_iter().map(|(_, p)| p).collect();
+    prices.sort_by(f64::total_cmp);
+    assert_eq!(
+        prices,
+        [1.0, 2.0, 10.0, 99.0],
+        "neither new drawing was lost"
+    );
+    let ids: std::collections::HashSet<_> = drawings_of(&ra[0], 1)
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids.len(), 4, "ids are unique again");
+    // Both Macs hold the same drawings; their stacking order is each Mac's own.
+    let sorted = |row: &Value| {
+        let mut drawings = drawings_of(row, 1);
+        drawings.sort_by_key(|x| x.0);
+        drawings
+    };
+    assert_eq!(sorted(&ra[0]), sorted(&rb[0]));
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn deleting_a_drawing_propagates() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])])],
+    );
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[(2, 2.0)])])]);
+    settle(&mut a, &mut b);
+    assert_eq!(drawings_of(&rows(&b, "saved_view")[0], 1), [(2, 2.0)]);
+    assert!(!cloud.names().contains(&"layoutdrawing.10.1.1".to_string()));
+}
+
+#[test]
+fn deleting_the_first_drawing_does_not_touch_the_others() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[layout(
+            10,
+            "Main",
+            &[(1, "BTC", &[(1, 1.0), (2, 2.0), (3, 3.0)])],
+        )],
+    );
+    settle(&mut a, &mut b);
+    let before = cloud.save_attempts();
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[(2, 2.0), (3, 3.0)])])],
+    );
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before, "only a delete is sent");
+    assert_eq!(cloud.delete_attempts(), 1);
+    assert_eq!(
+        drawings_of(&rows(&b, "saved_view")[0], 1),
+        [(2, 2.0), (3, 3.0)]
+    );
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn deleting_a_layout_removes_it_and_its_drawings_for_a_stale_mac() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[
+            layout(10, "Gone", &[(1, "BTC", &[(1, 1.0), (2, 2.0)])]),
+            layout(11, "Kept", &[(1, "ETH", &[])]),
+        ],
+    );
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout(11, "Kept", &[(1, "ETH", &[])])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(on_b[0]["name"], "Kept");
+    assert_eq!(cloud.names(), ["layout.11"]);
+    assert_eq!(outbox_len(&b), 0);
+}
+
+#[test]
+fn a_layout_edited_offline_survives_its_deletion_elsewhere_with_its_drawings() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(
+        &a,
+        &[
+            layout(10, "Doomed", &[(1, "BTC", &[(1, 1.0)])]),
+            layout(11, "Other", &[(1, "ETH", &[])]),
+        ],
+    );
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout(11, "Other", &[(1, "ETH", &[])])]);
+    a.core.request_sync();
+    a.run();
+    // B adds a second chart to the layout while offline.
+    put_layouts(
+        &b,
+        &[
+            layout(10, "Doomed", &[(1, "BTC", &[(1, 1.0)]), (2, "SOL", &[])]),
+            layout(11, "Other", &[(1, "ETH", &[])]),
+        ],
+    );
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    assert_eq!(ra.len(), 2);
+    let doomed = layout_named(&ra, "Doomed");
+    assert_eq!(doomed["charts"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        drawings_of(doomed, 1),
+        [(1, 1.0)],
+        "its drawings came back too"
+    );
+    assert_eq!(ra.len(), rb.len());
+    assert!(cloud.names().contains(&"layoutdrawing.10.1.1".to_string()));
+}
+
+#[test]
+fn conflicting_layout_structures_keep_both_as_a_recoverable_copy() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[])])]);
+    settle(&mut a, &mut b);
+    put_layouts(
+        &a,
+        &[layout(10, "Main", &[(1, "BTC", &[]), (2, "ETH", &[])])],
+    );
+    put_layouts(
+        &b,
+        &[layout(10, "Main", &[(1, "BTC", &[]), (3, "SOL", &[])])],
+    );
+    settle(&mut a, &mut b);
+    let (ra, rb) = (rows(&a, "saved_view"), rows(&b, "saved_view"));
+    assert_eq!(ra.len(), 2, "the original and one conflict copy");
+    let symbols_in = |layouts: &[Value]| -> Vec<String> {
+        let mut all: Vec<String> = layouts
+            .iter()
+            .flat_map(|l| {
+                l["charts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|c| c["symbol"].as_str().unwrap().to_string())
+            })
+            .collect();
+        all.sort();
+        all.dedup();
+        all
+    };
+    assert_eq!(symbols_in(&ra), ["BTC", "ETH", "SOL"], "no chart was lost");
+    assert!(
+        ra.iter()
+            .any(|l| l["name"].as_str().unwrap().contains("conflict from"))
+    );
+    let names = |layouts: &[Value]| -> Vec<String> {
+        let mut n: Vec<String> = layouts
+            .iter()
+            .map(|l| l["name"].as_str().unwrap().to_string())
+            .collect();
+        n.sort();
+        n
+    };
+    assert_eq!(
+        names(&ra),
+        names(&rb),
+        "both Macs end with the same layouts"
+    );
+    let conflicts = a.store.lock().unwrap().conflicts().unwrap().len()
+        + b.store.lock().unwrap().conflicts().unwrap().len();
+    assert!(conflicts >= 1);
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn a_layout_renamed_on_one_mac_is_not_a_conflict() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put_layouts(&a, &[layout(10, "Main", &[(1, "BTC", &[])])]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout(10, "Renamed", &[(1, "BTC", &[])])]);
+    put_layouts(&b, &[layout(10, "Main", &[(1, "BTC", &[])])]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&a, "saved_view").len(), 1);
+    assert_eq!(rows(&b, "saved_view").len(), 1);
+    assert_eq!(rows(&b, "saved_view")[0]["name"], "Renamed");
+}
+
+#[test]
+fn a_drawing_that_arrives_before_its_layout_waits_and_is_applied_later() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    a.run();
+    b.run();
+    // The drawing reaches B first.
+    let drawing = json!({"drawing": trend(1, 4.5)});
+    cloud.put_from_elsewhere(raw("layoutdrawing.10.1.1", &drawing, 1, 1, "Z"), "Z");
+    b.core.request_sync();
+    b.run();
+    let kept = b.store.lock().unwrap().inbox().unwrap();
+    assert!(
+        kept.iter()
+            .any(|r| r.record_name == "layoutdrawing.10.1.1" && r.reason == "orphan")
+    );
+    assert!(rows(&b, "saved_view").is_empty());
+
+    // Then its layout arrives.
+    let structure = serde_json::to_value(layout(10, "Main", &[(1, "BTC", &[])]).0).unwrap();
+    let mut structure = structure;
+    structure["charts"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("drawings");
+    structure
+        .as_object_mut()
+        .unwrap()
+        .remove("last_opened_at_ms");
+    structure.as_object_mut().unwrap().remove("autosave");
+    cloud.put_from_elsewhere(raw("layout.10", &structure, 1, 1, "Z"), "Z");
+    b.core.request_sync();
+    b.run();
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(drawings_of(&on_b[0], 1), [(1, 4.5)]);
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .all(|r| r.reason != "orphan")
+    );
+}
+
+#[test]
+fn an_unreadable_future_drawing_travels_untouched() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let mut row = layout(10, "Main", &[(1, "BTC", &[(1, 1.0)])]).0;
+    let future = json!({"HologramTool": {"id": 2, "anchors": [1, 2, 3], "newer": {"x": true}}});
+    row["charts"][0]["drawings"]
+        .as_array_mut()
+        .unwrap()
+        .push(future.clone());
+    a.store
+        .lock()
+        .unwrap()
+        .replace_documents("saved_view", &[Raw(row)])
+        .unwrap();
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    let drawings = on_b[0]["charts"][0]["drawings"].as_array().unwrap();
+    assert!(
+        drawings.contains(&future),
+        "the future drawing is preserved exactly"
+    );
+}

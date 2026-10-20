@@ -10,12 +10,14 @@
 //! * Nothing is acknowledged to the core until the whole batch committed.
 
 use super::core::{RemoteBatch, RemoteRecord};
-use super::merge::{Outcome, Side, Stamp, merge};
+use super::merge::{
+    Outcome, Side, Stamp, conflict_copy_name, merge, next_drawing_id, renumber_drawing,
+};
 use super::policy::{EntityKind, Merge};
-use super::project::{canonical_json, project_row, project_setting};
+use super::project::{canonical_json, drawing_id, project_row, project_setting};
 use super::record::{FAVORITES_ID, RecordName, sha256_hex};
 use crate::store::Store;
-use crate::store::sync::{EntityLink, InboxRecord, OutboxOp, row_decodes};
+use crate::store::sync::{ConflictRecord, EntityLink, InboxRecord, OutboxOp, row_decodes};
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -51,13 +53,24 @@ pub fn apply_batch(
     store.in_savepoint("apply_remote", || {
         let mut work = Work::new(store, ctx);
         let mut records: Vec<&RemoteRecord> = batch.records.iter().collect();
-        records.sort_by_key(|r| (r.record.name.kind.prefix(), r.record.name.id.clone()));
+        // Drawings in id order, so a fresh Mac stacks them in the order they were drawn.
+        records.sort_by_key(|r| {
+            (
+                r.record.name.kind.prefix(),
+                r.record.name.layout_drawing_parts().unwrap_or_default(),
+                r.record.name.id.clone(),
+            )
+        });
         for record in records {
             work.apply_record(record)?;
         }
-        for name in &batch.deletions {
+        // Layouts go first: a layout's drawings follow it, and a kept layout keeps its drawings.
+        let mut deletions: Vec<&RecordName> = batch.deletions.iter().collect();
+        deletions.sort_by_key(|name| name.kind != EntityKind::Layout);
+        for name in deletions {
             work.apply_deletion(name)?;
         }
+        work.retry_orphans()?;
         work.flush()?;
         Ok(work.report)
     })
@@ -162,6 +175,10 @@ impl<'a> Work<'a> {
         let rows = self.rows(table)?;
         for (index, row) in rows.iter().enumerate() {
             let id = Self::row_id(row);
+            // A layout's id is its row id, so only that row needs projecting.
+            if kind == EntityKind::Layout && id != sync_id {
+                continue;
+            }
             for entity in project_row(table, &id, &row.to_string()) {
                 if entity.kind == kind && entity.sync_id == sync_id {
                     return Ok(Some(Local {
@@ -225,6 +242,9 @@ impl<'a> Work<'a> {
                 reason: reason.to_string(),
                 payload: record.record.payload.clone(),
                 system_fields: Some(record.system_fields.clone()),
+                revision: record.record.revision,
+                origin_device: record.record.origin_device.clone(),
+                modified_ms: record.record.modified_ms,
             },
             self.ctx.now_ms,
         )?;
@@ -240,8 +260,10 @@ impl<'a> Work<'a> {
             | EntityKind::ChartTemplate
             | EntityKind::DrawingTemplate
             | EntityKind::Setting => self.apply_simple(record),
-            // Layouts, drawings, alerts and scripts have their own apply paths.
-            _ => self.keep(record, "deferred"),
+            EntityKind::Layout => self.apply_layout(record),
+            EntityKind::LayoutDrawing => self.apply_drawing(record),
+            // Alerts and scripts have their own apply paths.
+            EntityKind::Alert | EntityKind::Script => self.keep(record, "deferred"),
         }
     }
 
@@ -353,19 +375,486 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
+    // MARK: Layouts
+
+    fn apply_layout(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+        let id = record.record.name.id.clone();
+        if !self.table_writable("saved_view")? {
+            return self.keep(record, "local_unreadable");
+        }
+        let remote_payload = canonical_json(&record.value);
+        let remote_hash = sha256_hex(&remote_payload);
+        let meta = self.store.entity_meta(EntityKind::Layout, &id)?;
+        let local = self.find_local(EntityKind::Layout, &id)?;
+
+        let outcome = match &local {
+            None => Outcome::Resolved(record.value.clone()),
+            Some(local) if local.hash == remote_hash => Outcome::Resolved(record.value.clone()),
+            Some(local) => {
+                let unchanged = meta.as_ref().is_some_and(|m| {
+                    !m.deleted && m.synced_hash.as_deref() == Some(local.hash.as_str())
+                });
+                if unchanged {
+                    if meta
+                        .as_ref()
+                        .is_some_and(|m| m.revision as u64 > record.record.revision)
+                    {
+                        self.report.kept_local += 1;
+                        return Ok(());
+                    }
+                    Outcome::Resolved(record.value.clone())
+                } else {
+                    let modified = self
+                        .store
+                        .outbox_entry(EntityKind::Layout, &id)?
+                        .map_or(self.ctx.now_ms, |row| row.queued_ms);
+                    merge(
+                        EntityKind::Layout,
+                        None,
+                        Side {
+                            value: &local.projected_value,
+                            stamp: Stamp::new(
+                                meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64,
+                                modified,
+                                self.ctx.device_id.clone(),
+                            ),
+                        },
+                        Side {
+                            value: &record.value,
+                            stamp: Stamp::new(
+                                record.record.revision,
+                                record.record.modified_ms,
+                                record.record.origin_device.clone(),
+                            ),
+                        },
+                    )
+                }
+            }
+        };
+
+        let existing = local.as_ref().map(|l| &l.row);
+        let mut copy: Option<(Value, bool)> = None;
+        let new_row = match outcome {
+            Outcome::Resolved(value) => compose_layout(&value, existing),
+            Outcome::Conflict { winner, loser } => {
+                let local_wins = local.as_ref().is_some_and(|l| l.projected_value == winner);
+                self.report.conflicts += 1;
+                if local_wins {
+                    // Keep this Mac's version; the cloud's becomes a copy.
+                    copy = compose_layout(&loser, None).map(|row| (row, false));
+                    existing.cloned()
+                } else {
+                    // The cloud's version wins; this Mac's old version becomes a copy.
+                    copy = existing.cloned().map(|row| (row, true));
+                    compose_layout(&winner, existing)
+                }
+            }
+        };
+        let Some(new_row) = new_row else {
+            return self.keep(record, "invalid");
+        };
+        if !row_decodes("saved_view", &new_row.to_string()) {
+            return self.keep(record, "invalid");
+        }
+        let index = local.as_ref().map(|l| l.index);
+        self.put_row("saved_view", index, new_row)?;
+
+        if let Some((row, from_local)) = copy {
+            self.save_layout_copy(record, row, from_local)?;
+        }
+        self.report.applied += 1;
+        self.store.link_entity(&EntityLink {
+            kind: EntityKind::Layout,
+            sync_id: id.clone(),
+            local_id: id,
+            synced_hash: remote_hash,
+            system_fields: record.system_fields.clone(),
+            base_payload: None,
+            revision: record.record.revision as i64,
+            origin_device: record.record.origin_device.clone(),
+            now_ms: self.ctx.now_ms,
+        })?;
+        Ok(())
+    }
+
+    /// Saves the losing version of a layout as a new, separately named layout.
+    fn save_layout_copy(
+        &mut self,
+        record: &RemoteRecord,
+        mut row: Value,
+        from_local: bool,
+    ) -> rusqlite::Result<()> {
+        let Some(object) = row.as_object_mut() else {
+            return Ok(());
+        };
+        let new_id = crate::model::watchlist::new_id();
+        let device = if from_local {
+            self.ctx.device_name.clone()
+        } else {
+            self.store
+                .device_name(&record.record.origin_device)?
+                .unwrap_or_default()
+        };
+        let name = object
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("Layout");
+        let copy_name = conflict_copy_name(name, &device, &self.ctx.date);
+        object.insert("id".into(), new_id.into());
+        object.insert("name".into(), copy_name.into());
+        object.remove("last_opened_at_ms");
+        object.remove("autosave");
+        if !row_decodes("saved_view", &row.to_string()) {
+            return Ok(());
+        }
+        let local_payload = from_local.then(|| row.to_string().into_bytes());
+        self.put_row("saved_view", None, row)?;
+        self.store.record_conflict(
+            &ConflictRecord {
+                entity: EntityKind::Layout,
+                sync_id: record.record.name.id.clone(),
+                kind: "layout".into(),
+                local_payload,
+                remote_payload: Some(record.record.payload.clone()),
+                remote_device: Some(record.record.origin_device.clone()),
+                copy_entity: Some(EntityKind::Layout),
+                copy_sync_id: Some(new_id.to_string()),
+            },
+            self.ctx.now_ms,
+        )
+    }
+
+    fn delete_layout(&mut self, id: &str) -> rusqlite::Result<()> {
+        let kind = EntityKind::Layout;
+        if !self.table_writable("saved_view")? {
+            self.report.inboxed += 1;
+            return Ok(());
+        }
+        let meta = self.store.entity_meta(kind, id)?;
+        let Some(local) = self.find_local(kind, id)? else {
+            self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+            return Ok(());
+        };
+        let drawings: Vec<String> = project_row("saved_view", id, &local.row.to_string())
+            .into_iter()
+            .filter(|e| e.kind == EntityKind::LayoutDrawing)
+            .map(|e| e.sync_id)
+            .collect();
+        let edited_since = meta
+            .as_ref()
+            .is_none_or(|m| m.synced_hash.as_deref() != Some(local.hash.as_str()))
+            || self
+                .store
+                .outbox_entry(kind, id)?
+                .is_some_and(|row| row.op == OutboxOp::Upsert);
+        if edited_since {
+            // An edit beats a delete: the layout and its drawings come back from this Mac.
+            self.store.forget_synced(kind, id)?;
+            self.store.queue_entity_upsert(kind, id, id)?;
+            for drawing in &drawings {
+                self.store
+                    .forget_synced(EntityKind::LayoutDrawing, drawing)?;
+                self.store
+                    .queue_entity_upsert(EntityKind::LayoutDrawing, drawing, drawing)?;
+            }
+            self.report.kept_local += 1;
+            return Ok(());
+        }
+        for drawing in &drawings {
+            self.store.tombstone_entity(
+                EntityKind::LayoutDrawing,
+                drawing,
+                drawing,
+                self.ctx.now_ms,
+            )?;
+            self.store
+                .cancel_outbox(EntityKind::LayoutDrawing, drawing)?;
+        }
+        self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+        self.store.cancel_outbox(kind, id)?;
+        self.remove_row("saved_view", local.index)?;
+        self.report.applied += 1;
+        Ok(())
+    }
+
+    // MARK: Drawings
+
+    /// Where a drawing sits: the layout row, the chart within it, and its place in the chart.
+    fn locate_drawing(
+        &mut self,
+        layout: u64,
+        chart: u64,
+        drawing: u64,
+    ) -> rusqlite::Result<Option<DrawingSpot>> {
+        let id = layout.to_string();
+        let rows = self.rows("saved_view")?;
+        let Some(row_index) = rows.iter().position(|row| Self::row_id(row) == id) else {
+            return Ok(None);
+        };
+        let Some(chart_index) = rows[row_index]
+            .get("charts")
+            .and_then(Value::as_array)
+            .and_then(|charts| {
+                charts
+                    .iter()
+                    .position(|c| c.get("id").and_then(Value::as_u64) == Some(chart))
+            })
+        else {
+            return Ok(None);
+        };
+        let position = rows[row_index]["charts"][chart_index]
+            .get("drawings")
+            .and_then(Value::as_array)
+            .and_then(|list| list.iter().position(|d| drawing_id(d) == Some(drawing)));
+        Ok(Some(DrawingSpot {
+            row_index,
+            chart_index,
+            position,
+        }))
+    }
+
+    fn apply_drawing(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+        let name = &record.record.name;
+        let Some((layout, chart, drawing_id_number)) = name.layout_drawing_parts() else {
+            return self.keep(record, "invalid");
+        };
+        if !self.table_writable("saved_view")? {
+            return self.keep(record, "local_unreadable");
+        }
+        let Some(remote_drawing) = record.value.get("drawing").cloned() else {
+            return self.keep(record, "invalid");
+        };
+        if drawing_id(&remote_drawing) != Some(drawing_id_number) {
+            return self.keep(record, "invalid");
+        }
+        let Some(spot) = self.locate_drawing(layout, chart, drawing_id_number)? else {
+            // The layout or chart has not arrived yet; hold the drawing until it does.
+            return self.keep(record, "orphan");
+        };
+
+        let sync_id = name.id.clone();
+        let remote_payload = canonical_json(&record.value);
+        let remote_hash = sha256_hex(&remote_payload);
+        let meta = self
+            .store
+            .entity_meta(EntityKind::LayoutDrawing, &sync_id)?;
+
+        let mut insert = Some(remote_drawing);
+        // Where an updated drawing replaces the local one; `None` appends a new one on top.
+        let mut replace_at = spot.position;
+        match spot.position {
+            None => {
+                // Absent locally. If this Mac deleted it, the remote edit wins and the pending
+                // delete is dropped.
+                self.store
+                    .cancel_outbox(EntityKind::LayoutDrawing, &sync_id)?;
+            }
+            Some(position) => {
+                let local_value = self.rows("saved_view")?[spot.row_index]["charts"]
+                    [spot.chart_index]["drawings"][position]
+                    .clone();
+                let projected = serde_json::json!({ "drawing": local_value });
+                let local_hash = sha256_hex(&canonical_json(&projected));
+                if local_hash == remote_hash {
+                    insert = None;
+                    replace_at = None;
+                } else {
+                    let unchanged = meta.as_ref().is_some_and(|m| {
+                        !m.deleted && m.synced_hash.as_deref() == Some(local_hash.as_str())
+                    });
+                    let never_synced = meta
+                        .as_ref()
+                        .is_none_or(|m| m.synced_hash.is_none() && !m.deleted);
+                    if unchanged {
+                        if meta
+                            .as_ref()
+                            .is_some_and(|m| m.revision as u64 > record.record.revision)
+                        {
+                            self.report.kept_local += 1;
+                            return Ok(());
+                        }
+                    } else if never_synced {
+                        // Two Macs gave different drawings the same per-chart id. Keep both: the
+                        // local one moves to a fresh id and uploads as a new drawing.
+                        let row = self.rows("saved_view")?[spot.row_index].clone();
+                        let fresh = next_drawing_id(&row, chart, &[drawing_id_number]);
+                        let rows = self.rows("saved_view")?;
+                        renumber_drawing(
+                            &mut rows[spot.row_index],
+                            chart,
+                            drawing_id_number,
+                            fresh,
+                        );
+                        self.dirty.insert("saved_view");
+                        replace_at = None;
+                        self.report.conflicts += 1;
+                    } else {
+                        let modified = self
+                            .store
+                            .outbox_entry(EntityKind::LayoutDrawing, &sync_id)?
+                            .map_or(self.ctx.now_ms, |row| row.queued_ms);
+                        let outcome = merge(
+                            EntityKind::LayoutDrawing,
+                            None,
+                            Side {
+                                value: &projected,
+                                stamp: Stamp::new(
+                                    meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64,
+                                    modified,
+                                    self.ctx.device_id.clone(),
+                                ),
+                            },
+                            Side {
+                                value: &record.value,
+                                stamp: Stamp::new(
+                                    record.record.revision,
+                                    record.record.modified_ms,
+                                    record.record.origin_device.clone(),
+                                ),
+                            },
+                        );
+                        let (Outcome::Resolved(value) | Outcome::Conflict { winner: value, .. }) =
+                            outcome;
+                        insert = value.get("drawing").cloned();
+                    }
+                }
+            }
+        }
+
+        if let Some(drawing) = insert {
+            let rows = self.rows("saved_view")?;
+            let list = rows[spot.row_index]["charts"][spot.chart_index]
+                .as_object_mut()
+                .map(|chart| {
+                    chart
+                        .entry("drawings")
+                        .or_insert_with(|| Value::Array(Vec::new()))
+                });
+            if let Some(Value::Array(list)) = list {
+                match replace_at {
+                    Some(position) if position < list.len() => list[position] = drawing,
+                    _ => list.push(drawing),
+                }
+            }
+            self.dirty.insert("saved_view");
+            self.report.tables.insert("saved_view".into());
+            self.report.applied += 1;
+        }
+        self.store.link_entity(&EntityLink {
+            kind: EntityKind::LayoutDrawing,
+            sync_id: sync_id.clone(),
+            local_id: sync_id,
+            synced_hash: remote_hash,
+            system_fields: record.system_fields.clone(),
+            base_payload: None,
+            revision: record.record.revision as i64,
+            origin_device: record.record.origin_device.clone(),
+            now_ms: self.ctx.now_ms,
+        })?;
+        Ok(())
+    }
+
+    fn delete_drawing(&mut self, name: &RecordName) -> rusqlite::Result<()> {
+        let kind = EntityKind::LayoutDrawing;
+        let id = name.id.as_str();
+        let Some((layout, chart, drawing)) = name.layout_drawing_parts() else {
+            return Ok(());
+        };
+        if !self.table_writable("saved_view")? {
+            self.report.inboxed += 1;
+            return Ok(());
+        }
+        let spot = self.locate_drawing(layout, chart, drawing)?;
+        let Some((spot, position)) = spot.and_then(|s| s.position.map(|p| (s, p))) else {
+            self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+            return Ok(());
+        };
+        let meta = self.store.entity_meta(kind, id)?;
+        let local_value =
+            self.rows("saved_view")?[spot.row_index]["charts"][spot.chart_index]["drawings"]
+                [position]
+                .clone();
+        let local_hash = sha256_hex(&canonical_json(
+            &serde_json::json!({ "drawing": local_value }),
+        ));
+        let edited_since = meta
+            .as_ref()
+            .is_none_or(|m| m.synced_hash.as_deref() != Some(local_hash.as_str()))
+            || self
+                .store
+                .outbox_entry(kind, id)?
+                .is_some_and(|row| row.op == OutboxOp::Upsert);
+        if edited_since {
+            self.store.forget_synced(kind, id)?;
+            self.store.queue_entity_upsert(kind, id, id)?;
+            self.report.kept_local += 1;
+            return Ok(());
+        }
+        self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+        self.store.cancel_outbox(kind, id)?;
+        let rows = self.rows("saved_view")?;
+        if let Some(list) =
+            rows[spot.row_index]["charts"][spot.chart_index]["drawings"].as_array_mut()
+        {
+            list.remove(position);
+        }
+        self.dirty.insert("saved_view");
+        self.report.tables.insert("saved_view".into());
+        self.report.applied += 1;
+        Ok(())
+    }
+
+    /// Drawings that arrived before their layout are applied once it exists.
+    fn retry_orphans(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|r| r.reason == "orphan" && r.entity_type == EntityKind::LayoutDrawing.prefix())
+            .collect();
+        for entry in waiting {
+            let Some(name) = RecordName::parse(&entry.record_name) else {
+                continue;
+            };
+            let Some((layout, chart, drawing)) = name.layout_drawing_parts() else {
+                continue;
+            };
+            if self.locate_drawing(layout, chart, drawing)?.is_none() {
+                continue;
+            }
+            let Ok(value) = serde_json::from_slice::<Value>(&entry.payload) else {
+                continue;
+            };
+            self.store.remove_inbox(&entry.record_name)?;
+            let record = RemoteRecord {
+                record: super::record::SyncRecord {
+                    name,
+                    schema_version: entry.schema_version,
+                    revision: entry.revision,
+                    origin_device: entry.origin_device.clone(),
+                    modified_ms: entry.modified_ms,
+                    payload: entry.payload.clone(),
+                },
+                value,
+                system_fields: entry.system_fields.clone().unwrap_or_default(),
+            };
+            self.apply_drawing(&record)?;
+        }
+        Ok(())
+    }
+
     // MARK: Deletions
 
     fn apply_deletion(&mut self, name: &RecordName) -> rusqlite::Result<()> {
         let (kind, id) = (name.kind, name.id.as_str());
-        if !matches!(
-            kind,
-            EntityKind::Watchlist
-                | EntityKind::ChartTemplate
-                | EntityKind::DrawingTemplate
-                | EntityKind::Setting
-        ) {
-            self.report.inboxed += 1;
-            return Ok(());
+        match kind {
+            EntityKind::Layout => return self.delete_layout(id),
+            EntityKind::LayoutDrawing => return self.delete_drawing(name),
+            EntityKind::Alert | EntityKind::Script => {
+                self.report.inboxed += 1;
+                return Ok(());
+            }
+            _ => {}
         }
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
@@ -407,7 +896,50 @@ impl<'a> Work<'a> {
     }
 }
 
+/// A drawing's place inside the working copy of the layouts table.
+struct DrawingSpot {
+    row_index: usize,
+    chart_index: usize,
+    position: Option<usize>,
+}
+
 // MARK: Composition
+
+/// The row this Mac stores for a synced layout: the cloud's structure, with the drawings and
+/// per-Mac fields this Mac already has. Drawings arrive as their own records.
+fn compose_layout(value: &Value, existing: Option<&Value>) -> Option<Value> {
+    let mut row = value.as_object()?.clone();
+    let local_charts = existing
+        .and_then(|e| e.get("charts"))
+        .and_then(Value::as_array);
+    if let Some(Value::Array(charts)) = row.get_mut("charts") {
+        for chart in charts {
+            let id = chart.get("id").and_then(Value::as_u64);
+            let drawings = local_charts
+                .and_then(|list| {
+                    list.iter()
+                        .find(|c| c.get("id").and_then(Value::as_u64) == id)
+                })
+                .and_then(|c| c.get("drawings"))
+                .cloned()
+                .unwrap_or_else(|| Value::Array(Vec::new()));
+            if let Some(chart) = chart.as_object_mut() {
+                chart.insert("drawings".into(), drawings);
+            }
+        }
+    }
+    for field in ["last_opened_at_ms", "autosave"] {
+        match existing.and_then(|e| e.get(field)) {
+            Some(value) => {
+                row.insert(field.into(), value.clone());
+            }
+            None => {
+                row.remove(field);
+            }
+        }
+    }
+    Some(Value::Object(row))
+}
 
 /// The row this Mac stores for a synced value. `None` when the value cannot become a valid row.
 fn compose_row(

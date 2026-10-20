@@ -123,6 +123,9 @@ impl Store {
                 reason TEXT NOT NULL,
                 payload BLOB NOT NULL,
                 system_fields BLOB,
+                revision INTEGER NOT NULL DEFAULT 0,
+                origin_device TEXT NOT NULL DEFAULT '',
+                modified_ms INTEGER NOT NULL DEFAULT 0,
                 received_ms INTEGER NOT NULL
             );
             CREATE TABLE IF NOT EXISTS sync_conflict (
@@ -857,8 +860,9 @@ impl Store {
     pub fn put_inbox(&self, record: &InboxRecord, now_ms: i64) -> rusqlite::Result<()> {
         self.connection.execute(
             "INSERT OR REPLACE INTO sync_inbox
-                (record_name, entity_type, schema_version, reason, payload, system_fields, received_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                (record_name, entity_type, schema_version, reason, payload, system_fields, revision,
+                 origin_device, modified_ms, received_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 record.record_name,
                 record.entity_type,
@@ -866,6 +870,9 @@ impl Store {
                 record.reason,
                 record.payload,
                 record.system_fields,
+                record.revision as i64,
+                record.origin_device,
+                record.modified_ms,
                 now_ms
             ],
         )?;
@@ -874,7 +881,8 @@ impl Store {
 
     pub fn inbox(&self) -> rusqlite::Result<Vec<InboxRecord>> {
         let mut statement = self.connection.prepare(
-            "SELECT record_name, entity_type, schema_version, reason, payload, system_fields
+            "SELECT record_name, entity_type, schema_version, reason, payload, system_fields,
+                revision, origin_device, modified_ms
              FROM sync_inbox ORDER BY received_ms, record_name",
         )?;
         statement
@@ -886,6 +894,9 @@ impl Store {
                     reason: row.get(3)?,
                     payload: row.get(4)?,
                     system_fields: row.get(5)?,
+                    revision: row.get::<_, i64>(6)? as u64,
+                    origin_device: row.get(7)?,
+                    modified_ms: row.get(8)?,
                 })
             })?
             .collect()
@@ -1090,6 +1101,17 @@ impl Store {
         Ok(())
     }
 
+    /// The friendly name of a Mac, if the cloud's device list has told us.
+    pub fn device_name(&self, device_id: &str) -> rusqlite::Result<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT name FROM sync_device WHERE device_id = ?1",
+                [device_id],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
     pub fn conflicts(&self) -> rusqlite::Result<Vec<(String, String, String)>> {
         let mut statement = self.connection.prepare(
             "SELECT entity_type, sync_id, kind FROM sync_conflict WHERE resolved_ms IS NULL ORDER BY id",
@@ -1126,6 +1148,9 @@ pub struct InboxRecord {
     pub reason: String,
     pub payload: Vec<u8>,
     pub system_fields: Option<Vec<u8>>,
+    pub revision: u64,
+    pub origin_device: String,
+    pub modified_ms: i64,
 }
 
 /// What the cloud holds for an entity after a remote record was applied locally.

@@ -549,6 +549,9 @@ impl<T: SyncTransport> SyncCore<T> {
                         reason: reason.to_string(),
                         payload: raw.payload.clone(),
                         system_fields: Some(raw.system_fields.clone()),
+                        revision: raw.revision,
+                        origin_device: raw.origin_device.clone(),
+                        modified_ms: raw.modified_ms,
                     },
                     now,
                 );
