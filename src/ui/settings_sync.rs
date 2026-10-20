@@ -60,6 +60,8 @@ pub fn counts_text(counts: &Counts) -> String {
         (counts.templates, "template", "templates"),
         (counts.scripts, "script", "scripts"),
         (counts.alerts, "alert", "alerts"),
+        (counts.portfolios, "portfolio", "portfolios"),
+        (counts.paper_accounts, "paper account", "paper accounts"),
     ];
     let listed: Vec<String> = parts
         .iter()
@@ -84,7 +86,7 @@ pub fn conflict_text(kind: &str) -> String {
     )
 }
 
-const NOT_SYNCED: &str = "Never synced: market data caches, paper-trading accounts, portfolios, \
+const NOT_SYNCED: &str = "Never synced: market data caches, portfolio value history (rebuilt on each Mac), \
 webhook endpoints and their secrets, API keys, MCP access, and which windows and tabs are open. \
 Alerts you sync arrive switched off on your other Macs, so each one notifies from one Mac only.";
 
@@ -889,7 +891,7 @@ mod tests {
 
     #[test]
     fn the_page_states_what_never_syncs() {
-        for word in ["paper-trading", "secrets", "API keys", "MCP"] {
+        for word in ["value history", "secrets", "API keys", "MCP"] {
             assert!(NOT_SYNCED.contains(word), "{word}");
         }
         assert!(PRIVACY.contains("private iCloud storage"));

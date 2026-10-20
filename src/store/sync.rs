@@ -752,6 +752,10 @@ impl Store {
         };
         let found = match kind {
             EntityKind::Script => return Ok(Load::NotStored),
+            // Their loaders arrive with their projections.
+            EntityKind::Portfolio | EntityKind::PortfolioTransaction | EntityKind::PaperAccount => {
+                return Ok(Load::NotStored);
+            }
             EntityKind::Layout => pick("saved_view", sync_id, by_id("saved_view", sync_id)?),
             EntityKind::LayoutDrawing => {
                 let layout = sync_id.split('.').next().unwrap_or_default();

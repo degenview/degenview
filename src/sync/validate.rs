@@ -16,6 +16,9 @@ pub const MAX_DRAWING_STRING: usize = 10_000;
 pub const MAX_CHARTS_PER_LAYOUT: usize = 64;
 pub const MAX_WATCHLIST_ENTRIES: usize = 5_000;
 pub const MAX_NAME_CHARS: usize = 200;
+/// A paper account's history is bounded by the record's size, this only stops absurd shapes.
+pub const MAX_PAPER_ROWS: usize = 20_000;
+pub const MAX_DEVICE_ID_CHARS: usize = 64;
 pub const MAX_SETTING_BYTES: usize = 100_000;
 pub const MAX_JSON_DEPTH: usize = 64;
 /// Prices and timestamps in millisecond epochs stay far below this.
@@ -114,6 +117,43 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             let object = object(value)?;
             id_matches_number(object, id, kind)
         }
+        EntityKind::Portfolio => {
+            let object = object(value)?;
+            id_matches_number(object, id, kind)?;
+            name_ok(object, "name")
+        }
+        EntityKind::PortfolioTransaction => {
+            let object = object(value)?;
+            id_matches_number(object, id, kind)?;
+            object
+                .get("portfolio_id")
+                .and_then(Value::as_u64)
+                .ok_or("transaction has no portfolio")?;
+            Ok(())
+        }
+        EntityKind::PaperAccount => {
+            let object = object(value)?;
+            let account = self::object(object.get("account").ok_or("bundle has no account")?)?;
+            id_matches_number(account, id, kind)?;
+            name_ok(account, "name")?;
+            let owner = object
+                .get("owner")
+                .and_then(Value::as_str)
+                .ok_or("bundle has no owner")?;
+            if owner.is_empty() || owner.chars().count() > MAX_DEVICE_ID_CHARS {
+                return Err("bundle owner is not a device id".into());
+            }
+            for key in PAPER_COLLECTIONS {
+                let rows = array(object, key)?;
+                if rows.len() > MAX_PAPER_ROWS {
+                    return Err(format!("`{key}` has {} rows", rows.len()));
+                }
+                if rows.iter().any(|row| !row.is_object()) {
+                    return Err(format!("`{key}` has a row that is not an object"));
+                }
+            }
+            Ok(())
+        }
         EntityKind::Script => {
             let object = object(value)?;
             let stored = object
@@ -138,6 +178,16 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
         }
     }
 }
+
+/// The account-scoped collections a paper bundle carries next to the account itself.
+pub const PAPER_COLLECTIONS: [&str; 6] = [
+    "orders",
+    "fills",
+    "positions",
+    "order_events",
+    "closed_trades",
+    "journal",
+];
 
 fn object(value: &Value) -> Result<&serde_json::Map<String, Value>, String> {
     value
@@ -277,6 +327,39 @@ mod tests {
         }
     }
 
+    fn paper_bundle() -> Value {
+        json!({
+            "account": {"id": 36028797018963970u64, "name": "Paper"},
+            "owner": "device-a",
+            "orders": [], "fills": [], "positions": [],
+            "order_events": [], "closed_trades": [], "journal": [],
+        })
+    }
+
+    #[test]
+    fn malformed_portfolio_and_paper_records_are_rejected() {
+        let mismatch = record(EntityKind::Portfolio, "5", json!({"id": 6, "name": "x"}));
+        assert!(rejected(&mismatch).contains("does not match"));
+        let orphan = record(EntityKind::PortfolioTransaction, "5", json!({"id": 5}));
+        assert!(rejected(&orphan).contains("no portfolio"));
+        for (key, bad) in [
+            ("owner", json!("")),
+            ("owner", json!(7)),
+            ("orders", json!({})),
+            ("fills", json!([1])),
+            ("account", json!({"id": 9, "name": "other"})),
+        ] {
+            let mut bundle = paper_bundle();
+            bundle[key] = bad;
+            let case = record(EntityKind::PaperAccount, "36028797018963970", bundle);
+            assert!(matches!(validate(&case), Verdict::Reject(_)), "{key}");
+        }
+        let mut missing = paper_bundle();
+        missing.as_object_mut().unwrap().remove("journal");
+        let case = record(EntityKind::PaperAccount, "36028797018963970", missing);
+        assert!(matches!(validate(&case), Verdict::Reject(_)));
+    }
+
     const HEX: &str = "0123456789abcdef0123456789abcdef";
 
     #[test]
@@ -309,6 +392,21 @@ mod tests {
                 json!({"id": 3, "name": "Red"}),
             ),
             record(EntityKind::Alert, "8", json!({"id": 8})),
+            record(
+                EntityKind::Portfolio,
+                "36028797018963969",
+                json!({"id": 36028797018963969u64, "name": "Main"}),
+            ),
+            record(
+                EntityKind::PortfolioTransaction,
+                "1700000000000000000",
+                json!({"id": 1700000000000000000u64, "portfolio_id": 36028797018963969u64}),
+            ),
+            record(
+                EntityKind::PaperAccount,
+                "36028797018963970",
+                paper_bundle(),
+            ),
             record(
                 EntityKind::Script,
                 HEX,

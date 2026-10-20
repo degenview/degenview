@@ -10,16 +10,20 @@ pub enum Category {
     Templates,
     Scripts,
     Alerts,
+    Portfolios,
+    PaperTrading,
     Preferences,
 }
 
 impl Category {
-    pub const ALL: [Category; 6] = [
+    pub const ALL: [Category; 8] = [
         Self::Watchlists,
         Self::Layouts,
         Self::Templates,
         Self::Scripts,
         Self::Alerts,
+        Self::Portfolios,
+        Self::PaperTrading,
         Self::Preferences,
     ];
 
@@ -31,6 +35,8 @@ impl Category {
             Self::Templates => "templates",
             Self::Scripts => "scripts",
             Self::Alerts => "alerts",
+            Self::Portfolios => "portfolios",
+            Self::PaperTrading => "paper_trading",
             Self::Preferences => "preferences",
         }
     }
@@ -42,6 +48,8 @@ impl Category {
             Self::Templates => "Chart and drawing templates",
             Self::Scripts => "Pine scripts",
             Self::Alerts => "Price alerts",
+            Self::Portfolios => "Portfolios",
+            Self::PaperTrading => "Paper trading",
             Self::Preferences => "Preferences",
         }
     }
@@ -68,11 +76,15 @@ pub enum EntityKind {
     DrawingTemplate,
     Script,
     Alert,
+    Portfolio,
+    PortfolioTransaction,
+    /// One paper account with everything that belongs to it, as a single record.
+    PaperAccount,
     Setting,
 }
 
 impl EntityKind {
-    pub const ALL: [EntityKind; 8] = [
+    pub const ALL: [EntityKind; 11] = [
         Self::Layout,
         Self::LayoutDrawing,
         Self::Watchlist,
@@ -80,6 +92,9 @@ impl EntityKind {
         Self::DrawingTemplate,
         Self::Script,
         Self::Alert,
+        Self::Portfolio,
+        Self::PortfolioTransaction,
+        Self::PaperAccount,
         Self::Setting,
     ];
 
@@ -92,6 +107,9 @@ impl EntityKind {
             Self::DrawingTemplate => "drawing_template",
             Self::Script => "script",
             Self::Alert => "alert",
+            Self::Portfolio => "portfolio",
+            Self::PortfolioTransaction => "portfoliotx",
+            Self::PaperAccount => "paperaccount",
             Self::Setting => "setting",
         }
     }
@@ -107,6 +125,8 @@ impl EntityKind {
             Self::ChartTemplate | Self::DrawingTemplate => Category::Templates,
             Self::Script => Category::Scripts,
             Self::Alert => Category::Alerts,
+            Self::Portfolio | Self::PortfolioTransaction => Category::Portfolios,
+            Self::PaperAccount => Category::PaperTrading,
             Self::Setting => Category::Preferences,
         }
     }
@@ -114,11 +134,13 @@ impl EntityKind {
     pub const fn merge(self) -> Merge {
         match self {
             Self::Watchlist => Merge::ThreeWay,
-            Self::Layout | Self::Script => Merge::KeepBoth,
+            Self::Layout | Self::Script | Self::PaperAccount => Merge::KeepBoth,
             Self::LayoutDrawing
             | Self::ChartTemplate
             | Self::DrawingTemplate
             | Self::Alert
+            | Self::Portfolio
+            | Self::PortfolioTransaction
             | Self::Setting => Merge::LastWriterWins,
         }
     }
@@ -129,6 +151,10 @@ impl EntityKind {
 pub enum TablePolicy {
     /// Rows sync as this entity kind.
     Synced(EntityKind),
+    /// Rows are not entities of their own: a custom write path builds one record per owner out
+    /// of several tables (a paper account and everything it owns). The generic row hook ignores
+    /// the table.
+    Bundled(EntityKind),
     /// Never leaves this Mac, for the stated reason.
     Local(&'static str),
 }
@@ -145,8 +171,8 @@ pub fn table_policy(table: &str) -> TablePolicy {
             TablePolicy::Local("per-device session; tab and chart ids are sequential counters")
         }
         "drawing" => TablePolicy::Local("unused; drawings live inside layouts"),
-        "portfolio" => TablePolicy::Local("financial ledger; separate design needed"),
-        "paper_account" => TablePolicy::Local("transactional paper-trading state"),
+        "portfolio" => TablePolicy::Synced(EntityKind::Portfolio),
+        "paper_account" => TablePolicy::Bundled(EntityKind::PaperAccount),
         "webhook_endpoint" => TablePolicy::Local(
             "plaintext URL templates; secrets are Keychain-only and do not travel",
         ),
@@ -208,20 +234,30 @@ mod tests {
                 "chart_template",
                 "drawing_template",
                 "watchlist",
+                "portfolio",
                 "price_alert"
             ]
         );
     }
 
     #[test]
+    fn a_paper_account_syncs_as_one_bundle_not_row_by_row() {
+        assert_eq!(
+            table_policy("paper_account"),
+            TablePolicy::Bundled(EntityKind::PaperAccount)
+        );
+        assert_eq!(EntityKind::PaperAccount.merge(), Merge::KeepBoth);
+        assert_eq!(EntityKind::PaperAccount.category(), Category::PaperTrading);
+        assert_eq!(
+            EntityKind::PortfolioTransaction.category(),
+            Category::Portfolios
+        );
+        assert_eq!(EntityKind::Portfolio.merge(), Merge::LastWriterWins);
+    }
+
+    #[test]
     fn secrets_and_machine_state_never_sync() {
-        for table in [
-            "mcp_client",
-            "webhook_endpoint",
-            "tab",
-            "paper_account",
-            "portfolio",
-        ] {
+        for table in ["mcp_client", "webhook_endpoint", "tab"] {
             assert!(
                 matches!(table_policy(table), TablePolicy::Local(_)),
                 "{table}"

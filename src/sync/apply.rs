@@ -131,7 +131,11 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
         EntityKind::DrawingTemplate => Some("drawing_template"),
         EntityKind::Layout | EntityKind::LayoutDrawing => Some("saved_view"),
         EntityKind::Alert => Some("price_alert"),
-        EntityKind::Setting | EntityKind::Script => None,
+        EntityKind::Portfolio => Some("portfolio"),
+        EntityKind::Setting
+        | EntityKind::Script
+        | EntityKind::PortfolioTransaction
+        | EntityKind::PaperAccount => None,
     }
 }
 
@@ -305,6 +309,10 @@ impl<'a> Work<'a> {
             EntityKind::LayoutDrawing => self.apply_drawing(record),
             EntityKind::Alert => self.apply_alert(record),
             EntityKind::Script => self.apply_script(record),
+            // Applied once their stages land; until then they wait, untouched, in the inbox.
+            EntityKind::Portfolio | EntityKind::PortfolioTransaction | EntityKind::PaperAccount => {
+                self.keep(record, "unsupported")
+            }
         }
     }
 

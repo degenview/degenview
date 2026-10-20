@@ -103,10 +103,21 @@ pub fn merge(kind: EntityKind, base: Option<&Value>, local: Side, remote: Side) 
                 }
             }
         }
+        // A paper account is a live state machine, so two Macs that both moved it cannot be
+        // merged field by field; the later edit keeps the account and the other survives whole.
+        EntityKind::PaperAccount => {
+            let (winner, loser) = order(&local, &remote);
+            Outcome::Conflict {
+                winner: winner.clone(),
+                loser: loser.clone(),
+            }
+        }
         EntityKind::LayoutDrawing
         | EntityKind::ChartTemplate
         | EntityKind::DrawingTemplate
-        | EntityKind::Alert => Outcome::Resolved(lww(&local, &remote).clone()),
+        | EntityKind::Alert
+        | EntityKind::Portfolio
+        | EntityKind::PortfolioTransaction => Outcome::Resolved(lww(&local, &remote).clone()),
     }
 }
 

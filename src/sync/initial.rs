@@ -25,12 +25,21 @@ pub struct Counts {
     pub templates: usize,
     pub scripts: usize,
     pub alerts: usize,
+    pub portfolios: usize,
+    pub paper_accounts: usize,
     pub settings: usize,
 }
 
 impl Counts {
     pub fn total(&self) -> usize {
-        self.watchlists + self.layouts + self.templates + self.scripts + self.alerts + self.settings
+        self.watchlists
+            + self.layouts
+            + self.templates
+            + self.scripts
+            + self.alerts
+            + self.portfolios
+            + self.paper_accounts
+            + self.settings
     }
 
     fn add(&mut self, kind: EntityKind) {
@@ -40,8 +49,11 @@ impl Counts {
             EntityKind::ChartTemplate | EntityKind::DrawingTemplate => self.templates += 1,
             EntityKind::Script => self.scripts += 1,
             EntityKind::Alert => self.alerts += 1,
+            EntityKind::Portfolio => self.portfolios += 1,
+            EntityKind::PaperAccount => self.paper_accounts += 1,
             EntityKind::Setting => self.settings += 1,
-            EntityKind::LayoutDrawing => {}
+            // Counted with their portfolio and layout.
+            EntityKind::LayoutDrawing | EntityKind::PortfolioTransaction => {}
         }
     }
 }
@@ -94,6 +106,8 @@ pub fn summarize(store: &Store, local_scripts: usize) -> rusqlite::Result<JoinSu
         templates: rows("chart_template")? + rows("drawing_template")?,
         scripts: local_scripts,
         alerts: rows("price_alert")?,
+        portfolios: rows("portfolio")?,
+        paper_accounts: rows("paper_account")?,
         settings: 0,
     };
     Ok(JoinSummary {
