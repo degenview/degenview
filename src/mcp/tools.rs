@@ -26,14 +26,14 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{
-    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ListToolsResult,
-    PaginatedRequestParams, ResultType,
+    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, JsonObject,
+    ListToolsResult, PaginatedRequestParams, ResultType, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -1537,6 +1537,39 @@ async fn alpaca_configured() -> bool {
     .unwrap_or(false)
 }
 
+/// Drops the `uint`, `uint8` … `uint64` formats schemars puts on unsigned integers. They are not
+/// JSON Schema formats, so clients warn about each one (Claude Code prints `unknown format "uint"
+/// ignored in schema`); the `minimum: 0` schemars emits beside them already says the same thing.
+fn with_standard_formats(mut tool: Tool) -> Tool {
+    fn strip(value: &mut Value) {
+        match value {
+            Value::Object(map) => {
+                if map
+                    .get("format")
+                    .and_then(Value::as_str)
+                    .is_some_and(|format| format.starts_with("uint"))
+                {
+                    map.remove("format");
+                }
+                map.values_mut().for_each(strip);
+            }
+            Value::Array(items) => items.iter_mut().for_each(strip),
+            _ => {}
+        }
+    }
+    fn clean(schema: &Arc<JsonObject>) -> Arc<JsonObject> {
+        let mut value = Value::Object(schema.as_ref().clone());
+        strip(&mut value);
+        match value {
+            Value::Object(map) => Arc::new(map),
+            _ => unreachable!("an object stays an object"),
+        }
+    }
+    tool.input_schema = clean(&tool.input_schema);
+    tool.output_schema = tool.output_schema.as_ref().map(clean);
+    tool
+}
+
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
@@ -1585,6 +1618,7 @@ impl ServerHandler for DegenViewMcp {
                         .is_some_and(|permission| self.shared.allows(&client.id, permission))
                 })
             })
+            .map(with_standard_formats)
             .collect();
         Ok(ListToolsResult {
             result_type: Some(ResultType::COMPLETE),
