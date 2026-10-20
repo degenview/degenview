@@ -34,10 +34,12 @@ helper_executable="$helper/Contents/MacOS/DegenViewAlertAgent"
 
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-mkdir -p "$helper/Contents/MacOS"
+mkdir -p "$helper/Contents/MacOS" "$helper/Contents/Resources"
 cp target/release/degenview "$executable"
 cp target/release/degenview-alert-agent "$helper_executable"
 cp assets/brand/DegenView.icns "$app/Contents/Resources/DegenView.icns"
+# The helper shares the app icon: Login Items settings and its notifications show the bundle icon.
+cp assets/brand/DegenView.icns "$helper/Contents/Resources/DegenView.icns"
 
 cat > "$app/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -67,6 +69,7 @@ cat > "$helper/Contents/Info.plist" <<'PLIST'
   <key>CFBundleDisplayName</key><string>DegenView Alert Agent</string>
   <key>CFBundleIdentifier</key><string>es.nico.degenview.alert-agent</string>
   <key>CFBundleExecutable</key><string>DegenViewAlertAgent</string>
+  <key>CFBundleIconFile</key><string>DegenView.icns</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>__VERSION__</string>
   <key>CFBundleShortVersionString</key><string>__VERSION__</string>
