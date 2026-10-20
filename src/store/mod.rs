@@ -98,7 +98,7 @@ pub trait Document {
     fn document_id(&self) -> String;
 }
 
-const DOCUMENT_TABLES: [&str; 12] = [
+pub(crate) const DOCUMENT_TABLES: [&str; 12] = [
     "saved_view",
     "chart_template",
     "drawing_template",

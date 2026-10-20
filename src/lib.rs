@@ -19,6 +19,7 @@ mod script_manager;
 mod service;
 mod snapshot_host;
 mod store;
+mod sync;
 mod tab_window_host;
 mod ui;
 mod update_host;
