@@ -499,6 +499,80 @@ fn an_edit_beats_a_remote_portfolio_delete_and_keeps_its_transactions() {
 }
 
 #[test]
+fn a_transaction_added_here_keeps_a_portfolio_another_mac_deleted() {
+    let (source, portfolio, buy, sell) = source();
+    let receiver = syncing_store();
+    apply(
+        &receiver,
+        vec![
+            cloud_record(&source, EntityKind::Portfolio, &portfolio, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &buy, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &sell, 1),
+        ],
+        vec![],
+    );
+    // The receiver adds a purchase that has not reached iCloud yet; meanwhile another Mac, which
+    // never saw it, deleted the portfolio.
+    let mut ledger = receiver.portfolio_ledger().unwrap();
+    let local = ledger.portfolios[0].id;
+    ledger
+        .transactions
+        .push(tx(NANO + 2, local, BUY, 5.0, 3_000));
+    receiver.save_portfolio_ledger(&ledger).unwrap();
+    apply(
+        &receiver,
+        vec![],
+        vec![
+            RecordName::new(EntityKind::Portfolio, portfolio.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, buy.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, sell.clone()).unwrap(),
+        ],
+    );
+    let after = receiver.portfolio_ledger().unwrap();
+    assert_eq!(after.portfolios.len(), 1, "the portfolio stays");
+    assert_eq!(
+        after.transactions.len(),
+        3,
+        "with the purchase made here and the ledger it needs"
+    );
+    // It goes back to iCloud for the Mac that deleted it.
+    let queued: Vec<_> = receiver
+        .outbox()
+        .unwrap()
+        .into_iter()
+        .map(|row| row.kind)
+        .collect();
+    assert!(queued.contains(&EntityKind::Portfolio), "{queued:?}");
+}
+
+#[test]
+fn a_remote_portfolio_delete_still_takes_transactions_that_icloud_already_has() {
+    let (source, portfolio, buy, sell) = source();
+    let receiver = syncing_store();
+    apply(
+        &receiver,
+        vec![
+            cloud_record(&source, EntityKind::Portfolio, &portfolio, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &buy, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &sell, 1),
+        ],
+        vec![],
+    );
+    apply(
+        &receiver,
+        vec![],
+        vec![
+            RecordName::new(EntityKind::Portfolio, portfolio.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, buy.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, sell.clone()).unwrap(),
+        ],
+    );
+    let after = receiver.portfolio_ledger().unwrap();
+    assert!(after.portfolios.is_empty());
+    assert!(after.transactions.is_empty());
+}
+
+#[test]
 fn the_portfolios_switch_holds_records_until_it_is_back_on() {
     let (source, portfolio, buy, _) = source();
     let receiver = syncing_store();

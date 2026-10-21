@@ -1442,7 +1442,13 @@ impl<'a> Work<'a> {
                 .outbox_entry(kind, id)?
                 .is_some_and(|row| row.op == OutboxOp::Upsert);
         let is_favorites = id == FAVORITES_ID;
-        if edited_since || is_favorites {
+        // A transaction added here, not yet seen by the Mac that deleted the portfolio, is an edit.
+        let new_transactions = kind == EntityKind::Portfolio
+            && match local.row.get("id").and_then(Value::as_u64) {
+                Some(portfolio) => self.has_unconfirmed_transactions(portfolio)?,
+                None => false,
+            };
+        if edited_since || new_transactions || is_favorites {
             // An edit beats a delete: the record comes back from this Mac.
             if kind == EntityKind::Portfolio {
                 self.keep_portfolio(&local);

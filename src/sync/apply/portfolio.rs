@@ -13,6 +13,7 @@ use super::{
 };
 use crate::model::portfolio::PortfolioTransaction;
 use crate::model::portfolio_accounting::holdings;
+use crate::store::sync::OutboxOp;
 use crate::sync::ids::{Direction, map_fields};
 use crate::sync::project::canonical_json;
 use serde_json::Value;
@@ -205,6 +206,38 @@ impl Work<'_> {
         self.report.tables.insert(TRANSACTIONS.to_string());
         self.ledger.removed.insert(portfolio);
         Ok(())
+    }
+
+    /// Whether this Mac holds a transaction of the portfolio that iCloud has not confirmed: added or
+    /// changed here and still waiting to upload. The Mac that deleted the portfolio never saw it, so
+    /// the delete must not take it: adding to a portfolio counts as editing it.
+    pub(super) fn has_unconfirmed_transactions(
+        &mut self,
+        portfolio: u64,
+    ) -> rusqlite::Result<bool> {
+        let ids = self.ids;
+        let kind = EntityKind::PortfolioTransaction;
+        let local: Vec<String> = self
+            .rows(TRANSACTIONS)?
+            .iter()
+            .filter(|row| portfolio_of(row) == Some(portfolio))
+            .map(row_id)
+            .collect();
+        for id in local {
+            let sync_id = ids.to_global_string(&id);
+            let confirmed = self
+                .store
+                .entity_meta(kind, &sync_id)?
+                .is_some_and(|meta| !meta.deleted && meta.synced_hash.is_some());
+            let queued = self
+                .store
+                .outbox_entry(kind, &sync_id)?
+                .is_some_and(|row| row.op == OutboxOp::Upsert);
+            if !confirmed || queued {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// A portfolio whose delete lost to a local edit keeps its transactions too.
