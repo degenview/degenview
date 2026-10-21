@@ -2,6 +2,9 @@
 //! variable (`PINE4008`) or function (`PINE4007`) when the line runs, so `plot(nosuchvariable)`
 //! used to compile with no diagnostics. This pass reports the same mistakes without running.
 //!
+//! A report is an error: the script would fail the run at that name anyway, and showing it as a
+//! warning first made the Problems tab flip from yellow to red once the run failed.
+//!
 //! It is deliberately lenient, because a false report on a script that runs is worse than a
 //! missed typo: a name counts as defined when it is declared *anywhere* in the script (scope and
 //! declaration order are not checked), and a dotted name whose head is a builtin namespace is left
@@ -13,9 +16,9 @@ use std::collections::HashSet;
 use super::ast::{Expression, Statement};
 use super::traversal::{expressions, for_each_call, for_each_identifier, nested_blocks};
 use super::{
-    Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, alert_builtins,
-    array_builtins, builtins, compiler, drawings, map_builtins, math, matrix_builtins,
-    misc_builtins, strategy_builtins, strings, symbol_catalog, ta, ta_extra, visuals,
+    Diagnostic, DiagnosticCategory, SourceRange, alert_builtins, array_builtins, builtins,
+    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, strategy_builtins,
+    strings, symbol_catalog, ta, ta_extra, visuals,
 };
 
 pub const UNDEFINED_VARIABLE: &str = "PINE3050";
@@ -34,7 +37,7 @@ pub fn validate(
     let mut diagnostics = Vec::new();
     for_each_identifier(statements, &mut |name, range| {
         if !variable_is_defined(name, &declared) {
-            diagnostics.push(warning(
+            diagnostics.push(error(
                 UNDEFINED_VARIABLE,
                 format!("Undefined variable '{name}'."),
                 range,
@@ -43,7 +46,7 @@ pub fn validate(
     });
     for_each_call(statements, &mut |name, range| {
         if !function_is_defined(name, &declared) {
-            diagnostics.push(warning(
+            diagnostics.push(error(
                 UNDEFINED_FUNCTION,
                 format!("Undefined function '{name}'."),
                 range,
@@ -54,14 +57,8 @@ pub fn validate(
     diagnostics
 }
 
-fn warning(code: &str, message: String, range: SourceRange) -> Diagnostic {
-    Diagnostic {
-        code: code.to_owned(),
-        severity: DiagnosticSeverity::Warning,
-        category: DiagnosticCategory::Semantic,
-        message,
-        range,
-    }
+fn error(code: &str, message: String, range: SourceRange) -> Diagnostic {
+    Diagnostic::error(code, DiagnosticCategory::Semantic, message, range)
 }
 
 /// Every name the script itself introduces, at any depth: variables, tuple parts, loop counters,
@@ -169,6 +166,9 @@ fn variable_is_defined(name: &str, declared: &HashSet<String>) -> bool {
         || builtins::constant(name).is_some()
         || compiler::is_named_constant(name)
         || matches!(name, "true" | "false" | "na")
+        // Pine variables the runtime has no value for; a script reads them only in realtime or
+        // tick branches (`ta` library: `timeframe.isticks`), so a script that never gets there runs.
+        || matches!(name, "ask" | "bid")
 }
 
 fn function_is_defined(name: &str, declared: &HashSet<String>) -> bool {
@@ -293,6 +293,13 @@ plot(close, display = display.none, linewidth = 2)";
     }
 
     #[test]
+    fn pine_variables_without_a_runtime_value_are_defined() {
+        // The `ta` library reads these in a `timeframe.isticks` branch only.
+        let body = "if timeframe.isticks\n    plot(math.avg(ask, bid))";
+        assert_eq!(codes(body), Vec::<String>::new());
+    }
+
+    #[test]
     fn every_catalog_variable_is_defined() {
         let mut body = String::new();
         for name in symbol_catalog::VARIABLES {
@@ -322,7 +329,7 @@ plot(close, display = display.none, linewidth = 2)";
     }
 
     #[test]
-    fn the_report_is_a_warning_with_the_name_range() {
+    fn the_report_is_an_error_with_the_name_range() {
         let source = "//@version=6\nindicator(\"T\")\nplot(nosuchvariable)";
         let program = compile(source, Limits::default(), &NoLibraries);
         let found = program
@@ -330,11 +337,8 @@ plot(close, display = display.none, linewidth = 2)";
             .iter()
             .find(|d| d.code == UNDEFINED_VARIABLE)
             .expect("reported");
-        assert_eq!(found.severity, DiagnosticSeverity::Warning);
+        assert_eq!(found.severity, crate::pine::DiagnosticSeverity::Error);
         assert_eq!(found.range.start.line, 3);
-        assert!(
-            program.is_valid(),
-            "a warning does not make the script invalid"
-        );
+        assert!(!program.is_valid(), "the script is refused, not run");
     }
 }
