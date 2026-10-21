@@ -179,6 +179,65 @@ struct Shared {
     mismatched_account: Option<String>,
     scripts_changed_at: Option<Instant>,
     last_script_scan: Option<Instant>,
+    /// When the app thread last ran `tick`: it only runs while a window is drawing.
+    last_tick: Option<Instant>,
+}
+
+/// How long the interface may go without a frame before the worker applies fetched changes itself.
+/// A covered or hidden window draws nothing, and changes waiting for a frame would wait for the
+/// user to look.
+#[cfg(not(test))]
+const UI_IDLE: Duration = Duration::from_secs(3);
+#[cfg(test)]
+const UI_IDLE: Duration = Duration::from_millis(300);
+
+/// What applying fetched changes needs, shared by the app thread and the worker.
+#[derive(Clone)]
+struct Applier {
+    store: SharedStore,
+    shared: Arc<Mutex<Shared>>,
+    scripts: Arc<Mutex<Option<ScriptStore>>>,
+    repaint: Arc<dyn Fn() + Send + Sync>,
+}
+
+impl Applier {
+    fn apply_ctx(&self) -> Option<ApplyCtx> {
+        let state = lock(&self.store).sync_state().ok().flatten()?;
+        Some(ApplyCtx {
+            device_id: state.device_id,
+            device_name: state.device_name,
+            now_ms: now_ms(),
+            date: today(),
+        })
+    }
+
+    /// Runs `f` with the script library as a sink (or none, when there is no library).
+    fn with_scripts<R>(&self, f: impl FnOnce(&mut dyn ScriptSink) -> R) -> R {
+        let unsaved = lock(&self.shared).unsaved_scripts.clone();
+        let mut library = lock(&self.scripts);
+        match library.as_mut() {
+            Some(store) => f(&mut StoreScriptSink { store, unsaved }),
+            None => f(&mut NoScripts),
+        }
+    }
+
+    fn apply(&self, batch: &crate::sync::core::RemoteBatch) -> Option<ApplyReport> {
+        let ctx = self.apply_ctx()?;
+        let report = self.with_scripts(|sink| {
+            let store = lock(&self.store);
+            apply_batch(&store, sink, batch, &ctx)
+        });
+        match report {
+            Ok(report) => {
+                if !report.tables.is_empty() || !report.settings.is_empty() {
+                    (self.repaint)();
+                }
+                Some(report)
+            }
+            // Not acknowledged as failed: the checkpoint did not move, so it is fetched again.
+            Err(_) => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -188,7 +247,7 @@ pub struct SyncHost {
     shared: Arc<Mutex<Shared>>,
     worker: Arc<Mutex<Option<Worker>>>,
     script_cache: ScriptCache,
-    scripts: Arc<Mutex<Option<ScriptStore>>>,
+    applier: Applier,
     repaint: Arc<dyn Fn() + Send + Sync>,
     backups_dir: PathBuf,
 }
@@ -217,16 +276,23 @@ impl SyncHost {
             None => Some("iCloud Sync is not included in this build of DegenView.".to_string()),
             Some(factory) => factory.environment().err(),
         };
+        let shared = Arc::new(Mutex::new(Shared {
+            view: Some(SyncView::initial(unavailable.clone())),
+            ..Default::default()
+        }));
+        let scripts = Arc::new(Mutex::new(scripts));
         let host = Self {
+            applier: Applier {
+                store: store.clone(),
+                shared: shared.clone(),
+                scripts: scripts.clone(),
+                repaint: repaint.clone(),
+            },
             store,
             factory,
-            shared: Arc::new(Mutex::new(Shared {
-                view: Some(SyncView::initial(unavailable.clone())),
-                ..Default::default()
-            })),
+            shared,
             worker: Arc::new(Mutex::new(None)),
             script_cache: ScriptCache::default(),
-            scripts: Arc::new(Mutex::new(scripts)),
             repaint,
             backups_dir,
         };
@@ -303,9 +369,10 @@ impl SyncHost {
         let shared = self.shared.clone();
         let store = self.store.clone();
         let repaint = self.repaint.clone();
+        let applier = self.applier.clone();
         let handle = std::thread::Builder::new()
             .name("degenview-sync".into())
-            .spawn(move || run_worker(core, rx, shared, store, repaint))
+            .spawn(move || run_worker(core, rx, shared, store, repaint, applier))
             .ok();
         *guard = Some(Worker { tx, handle });
         drop(guard);
@@ -325,6 +392,7 @@ impl SyncHost {
     /// Carries out queued actions, applies fetched changes, and refreshes what the interface
     /// shows. Returns what was applied so the app can reload the stores it holds in memory.
     pub fn tick(&self) -> Vec<ApplyReport> {
+        lock(&self.shared).last_tick = Some(Instant::now());
         let actions = std::mem::take(&mut lock(&self.shared).actions);
         for action in actions {
             self.run(action);
@@ -334,7 +402,7 @@ impl SyncHost {
             match effect {
                 Effect::RemoteChanges(batch) => {
                     let id = batch.id;
-                    if let Some(report) = self.apply(&batch) {
+                    if let Some(report) = self.applier.apply(&batch) {
                         lock(&self.shared).reports.push(report);
                     }
                     self.tell(WorkerMsg::Applied(id));
@@ -364,44 +432,6 @@ impl SyncHost {
         self.scan_scripts_if_due();
         self.refresh_view();
         std::mem::take(&mut lock(&self.shared).reports)
-    }
-
-    fn apply_ctx(&self) -> Option<ApplyCtx> {
-        let state = lock(&self.store).sync_state().ok().flatten()?;
-        Some(ApplyCtx {
-            device_id: state.device_id,
-            device_name: state.device_name,
-            now_ms: now_ms(),
-            date: today(),
-        })
-    }
-
-    /// Runs `f` with the script library as a sink (or none, when there is no library).
-    fn with_scripts<R>(&self, f: impl FnOnce(&mut dyn ScriptSink) -> R) -> R {
-        let unsaved = lock(&self.shared).unsaved_scripts.clone();
-        let mut library = lock(&self.scripts);
-        match library.as_mut() {
-            Some(store) => f(&mut StoreScriptSink { store, unsaved }),
-            None => f(&mut NoScripts),
-        }
-    }
-
-    fn apply(&self, batch: &crate::sync::core::RemoteBatch) -> Option<ApplyReport> {
-        let ctx = self.apply_ctx()?;
-        let report = self.with_scripts(|sink| {
-            let store = lock(&self.store);
-            apply_batch(&store, sink, batch, &ctx)
-        });
-        match report {
-            Ok(report) => {
-                if !report.tables.is_empty() || !report.settings.is_empty() {
-                    (self.repaint)();
-                }
-                Some(report)
-            }
-            // Not acknowledged as failed: the checkpoint did not move, so it is fetched again.
-            Err(_) => None,
-        }
     }
 
     fn scan_scripts_if_due(&self) {
@@ -436,7 +466,7 @@ impl SyncHost {
         if !ready {
             return;
         }
-        let queued = self.with_scripts(|sink| {
+        let queued = self.applier.with_scripts(|sink| {
             let store = lock(&self.store);
             scan_scripts(&store, sink, &self.script_cache)
         });
@@ -479,7 +509,7 @@ impl SyncHost {
                         records: Vec::new(),
                         deletions: Vec::new(),
                     };
-                    if let Some(report) = self.apply(&empty) {
+                    if let Some(report) = self.applier.apply(&empty) {
                         lock(&self.shared).reports.push(report);
                     }
                     self.note_scripts_changed();
@@ -538,15 +568,16 @@ impl SyncHost {
     }
 
     fn join(&self, mode: JoinMode) {
-        let Some(ctx) = self.apply_ctx() else { return };
+        let Some(ctx) = self.applier.apply_ctx() else { return };
         let backups = self.backups_dir.clone();
         let cache = self.script_cache.clone();
-        let outcome = self.with_scripts(|sink| {
+        let outcome = self.applier.with_scripts(|sink| {
             let store = lock(&self.store);
             finish_join(&store, sink, &cache, mode, &backups, &ctx)
         });
-        if let Ok(outcome) = outcome {
-            lock(&self.shared).reports.push(outcome.report);
+        match outcome {
+            Ok(outcome) => lock(&self.shared).reports.push(outcome.report),
+            Err(error) => eprintln!("DegenView sync: combining data failed: {error}"),
         }
         if mode == JoinMode::KeepLocalOnly {
             self.tell(WorkerMsg::Stop);
@@ -631,7 +662,7 @@ impl SyncHost {
         } else if pending_account {
             Some(SyncPrompt::ConfirmAccount)
         } else if view.phase == Phase::AwaitingJoin {
-            let local_scripts = self.with_scripts(|sink| sink.all().map_or(0, |all| all.len()));
+            let local_scripts = self.applier.with_scripts(|sink| sink.all().map_or(0, |all| all.len()));
             let summary = summarize(&lock(&self.store), local_scripts).ok();
             summary.map(SyncPrompt::Join)
         } else {
@@ -647,11 +678,13 @@ fn run_worker<T: SyncTransport>(
     shared: Arc<Mutex<Shared>>,
     store: SharedStore,
     repaint: Arc<dyn Fn() + Send + Sync>,
+    applier: Applier,
 ) {
     // CloudKit pushes wake the engine, but a Developer ID app cannot rely on them alone: also look
     // for other Macs' changes every few minutes.
     let mut last_poll = Instant::now();
     let mut last_reconcile = Instant::now();
+    let mut shown_phase = None;
     loop {
         let message = rx.recv_timeout(Duration::from_secs(1));
         if last_reconcile.elapsed() >= RECONCILE_INTERVAL {
@@ -685,7 +718,11 @@ fn run_worker<T: SyncTransport>(
         let status = core.status();
         {
             let mut shared = lock(&shared);
-            let had_effects = !effects.is_empty();
+            // A change of status is something to draw: without a frame the page keeps showing the
+            // old one (a join prompt that has been answered, "Syncing…" long after it finished).
+            let phase_changed = shown_phase != Some(status.phase);
+            shown_phase = Some(status.phase);
+            let had_effects = !effects.is_empty() || phase_changed;
             shared.effects.extend(effects);
             if let Some(view) = shared.view.as_mut() {
                 view.phase = status.phase;
@@ -699,7 +736,49 @@ fn run_worker<T: SyncTransport>(
                 repaint();
             }
         }
+        apply_while_ui_is_idle(&mut core, &shared, &applier);
         let _ = &store;
+    }
+}
+
+/// With no window drawing, nothing on the app thread would apply what was fetched. The interface
+/// cannot write while it draws nothing, so the worker applies it; the app thread reloads what it
+/// holds in memory from the reports on its first frame back.
+fn apply_while_ui_is_idle<T: SyncTransport>(
+    core: &mut SyncCore<T>,
+    shared: &Mutex<Shared>,
+    applier: &Applier,
+) {
+    let batches: Vec<crate::sync::core::RemoteBatch> = {
+        let mut shared = lock(shared);
+        let idle = shared
+            .last_tick
+            .is_some_and(|tick| tick.elapsed() > UI_IDLE);
+        if !idle {
+            return;
+        }
+        let (remote, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut shared.effects)
+            .into_iter()
+            .partition(|effect| matches!(effect, Effect::RemoteChanges(_)));
+        shared.effects = rest;
+        remote
+            .into_iter()
+            .filter_map(|effect| match effect {
+                Effect::RemoteChanges(batch) => Some(batch),
+                _ => None,
+            })
+            .collect()
+    };
+    for batch in batches {
+        let id = batch.id;
+        if let Some(report) = applier.apply(&batch) {
+            lock(shared).reports.push(report);
+        }
+        core.remote_applied(id);
+    }
+    let more = core.take_effects();
+    if !more.is_empty() {
+        lock(shared).effects.extend(more);
     }
 }
 

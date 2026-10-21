@@ -269,6 +269,42 @@ fn applying_reports_what_changed_so_the_app_can_reload_what_it_holds() {
 }
 
 #[test]
+fn a_covered_window_still_receives_changes_and_reports_them_on_its_first_frame_back() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.set_up(JoinMode::Merge);
+    let b = rig(&cloud, "Mac B");
+    b.set_up(JoinMode::Merge);
+
+    // B's window is covered: its app thread stops ticking. A keeps working.
+    a.put_watchlist(40, "Made while B was covered");
+    a.host.act(SyncAction::SyncNow);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while b.rows("watchlist").is_empty() && Instant::now() < deadline {
+        a.host.tick();
+        b.host.act(SyncAction::SyncNow);
+        // Only A's thread ticks; B's pending action is run by B's next tick, so poll the worker
+        // through the host's own poll instead.
+        b.host.tell(WorkerMsg::SyncNow);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(
+        b.rows("watchlist").len(),
+        1,
+        "the database received it with no frame on B's app thread"
+    );
+
+    // The first frame back hands over what changed so the app reloads what it holds.
+    let tables: std::collections::BTreeSet<String> = b
+        .host
+        .tick()
+        .into_iter()
+        .flat_map(|report| report.tables)
+        .collect();
+    assert!(tables.contains("watchlist"), "{tables:?}");
+}
+
+#[test]
 fn turning_sync_off_keeps_local_data_and_stops_the_worker() {
     let cloud = MockCloud::new();
     let a = rig(&cloud, "Mac A");
