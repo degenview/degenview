@@ -623,6 +623,16 @@ impl SyncHost {
         let Some(mut view) = shared.view.take() else {
             return;
         };
+        let before = (
+            view.pending,
+            view.held,
+            view.blocked,
+            view.conflicts.len(),
+            view.last_send_ms,
+            view.last_fetch_ms,
+            view.enabled,
+            view.prompt.clone(),
+        );
         view.enabled = state.as_ref().is_some_and(|s| s.enabled);
         view.environment = state.as_ref().and_then(|s| s.environment.clone());
         view.device_name = state.as_ref().map(|s| s.device_name.clone());
@@ -672,7 +682,22 @@ impl SyncHost {
         } else {
             None
         };
+        let after = (
+            view.pending,
+            view.held,
+            view.blocked,
+            view.conflicts.len(),
+            view.last_send_ms,
+            view.last_fetch_ms,
+            view.enabled,
+            view.prompt.clone(),
+        );
         lock(&self.shared).view = Some(view);
+        // The worker sets the phase on its own while these are read here, so a frame can show a
+        // new phase beside an old count ("Up to date", "10 changes waiting"); one more frame fixes it.
+        if before != after {
+            (self.repaint)();
+        }
     }
 }
 
