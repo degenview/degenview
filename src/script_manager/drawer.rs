@@ -4,7 +4,6 @@
 
 use super::prefs::DrawerTab;
 use crate::model::pine_alert::frequency_name;
-use crate::pine::name_check;
 use crate::pine::program::VisualOutput;
 use crate::pine::state::AlertEvent;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
@@ -225,28 +224,6 @@ pub fn copy_text(diagnostics: &[Diagnostic]) -> String {
         .join("\n")
 }
 
-/// The Problems list: the editor's diagnostics, plus the chart's runtime failure once the text
-/// compiles. An undefined name is warned about at compile time and then fails the run at the same
-/// spot, so the warning gives way to the error instead of listing the mistake twice.
-pub fn with_runtime_error(
-    diagnostics: &[Diagnostic],
-    runtime_error: Option<&Diagnostic>,
-) -> Vec<Diagnostic> {
-    let mut list = diagnostics.to_vec();
-    if list.iter().any(|d| d.severity == DiagnosticSeverity::Error) {
-        return list;
-    }
-    if let Some(error) = runtime_error {
-        list.retain(|d| {
-            let is_name_warning = d.code == name_check::UNDEFINED_VARIABLE
-                || d.code == name_check::UNDEFINED_FUNCTION;
-            !(is_name_warning && d.range.start.offset == error.range.start.offset)
-        });
-        list.push(error.clone());
-    }
-    list
-}
-
 /// Errors first, then source order.
 pub fn sorted(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
     let mut list: Vec<&Diagnostic> = diagnostics.iter().collect();
@@ -415,36 +392,6 @@ mod tests {
         ];
         let order: Vec<&str> = sorted(&list).iter().map(|d| d.code.as_str()).collect();
         assert_eq!(order, ["E1", "E2", "W1"]);
-    }
-
-    #[test]
-    fn a_runtime_error_replaces_the_name_warning_at_the_same_spot() {
-        use DiagnosticSeverity::{Error, Warning};
-        let warning = diag(name_check::UNDEFINED_VARIABLE, Warning, 3, 30);
-        let other = diag("PINE7006", Warning, 1, 5);
-        let failure = diag("PINE4008", Error, 3, 30);
-        let list = with_runtime_error(&[warning.clone(), other.clone()], Some(&failure));
-        assert_eq!(list, [other.clone(), failure.clone()]);
-        // A name warning elsewhere in the script stays.
-        let elsewhere = diag(name_check::UNDEFINED_FUNCTION, Warning, 8, 80);
-        let list = with_runtime_error(std::slice::from_ref(&elsewhere), Some(&failure));
-        assert_eq!(list, [elsewhere, failure]);
-        // Without a run failure, the warning is all there is.
-        assert_eq!(
-            with_runtime_error(std::slice::from_ref(&warning), None),
-            [warning]
-        );
-    }
-
-    #[test]
-    fn a_compile_error_hides_the_runtime_error() {
-        use DiagnosticSeverity::Error;
-        let compile = diag("PINE2001", Error, 1, 5);
-        let failure = diag("PINE4008", Error, 3, 30);
-        assert_eq!(
-            with_runtime_error(std::slice::from_ref(&compile), Some(&failure)),
-            [compile]
-        );
     }
 
     #[test]
