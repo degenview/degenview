@@ -1007,7 +1007,7 @@ impl Store {
         self.connection
             .query_row(
                 "SELECT logical_revision, origin_device, synced_hash, system_fields, deleted, deleted_ms,
-                    base_payload
+                    base_payload, cloud_modified_ms
                  FROM sync_entity WHERE entity_type = ?1 AND sync_id = ?2",
                 params![kind.prefix(), sync_id],
                 |row| {
@@ -1019,6 +1019,7 @@ impl Store {
                         deleted: row.get(4)?,
                         deleted_ms: row.get(5)?,
                         base_payload: row.get(6)?,
+                        cloud_modified_ms: row.get(7)?,
                     })
                 },
             )
@@ -1712,6 +1713,8 @@ pub struct EntityMeta {
     pub deleted_ms: Option<i64>,
     /// The last payload both sides agreed on, kept for kinds that merge three ways.
     pub base_payload: Option<Vec<u8>>,
+    /// When iCloud last accepted or sent this record, as this Mac saw it.
+    pub cloud_modified_ms: Option<i64>,
 }
 
 /// What a reconcile pass queued.

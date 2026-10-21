@@ -317,11 +317,15 @@ fn cloud_record(store: &Store, kind: EntityKind, sync_id: &str, revision: u64) -
 }
 
 fn apply(store: &Store, records: Vec<RemoteRecord>, deletions: Vec<RecordName>) {
+    apply_at(store, 100, records, deletions);
+}
+
+fn apply_at(store: &Store, now_ms: i64, records: Vec<RemoteRecord>, deletions: Vec<RecordName>) {
     let state = store.sync_state().unwrap().unwrap();
     let ctx = super::apply::ApplyCtx {
         device_id: state.device_id,
         device_name: state.device_name,
-        now_ms: 100,
+        now_ms,
         date: "2026-10-20".into(),
     };
     let batch = RemoteBatch {
@@ -543,6 +547,62 @@ fn a_transaction_added_here_keeps_a_portfolio_another_mac_deleted() {
         .map(|row| row.kind)
         .collect();
     assert!(queued.contains(&EntityKind::Portfolio), "{queued:?}");
+}
+
+/// The receiver adds a purchase, iCloud accepts it at `uploaded_at`, and another Mac's delete of the
+/// portfolio is applied at `now`. Returns the receiver's portfolio and transaction counts.
+fn delete_after_upload(uploaded_at: i64, now: i64) -> (usize, usize) {
+    let (source, portfolio, buy, sell) = source();
+    let receiver = syncing_store();
+    apply(
+        &receiver,
+        vec![
+            cloud_record(&source, EntityKind::Portfolio, &portfolio, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &buy, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &sell, 1),
+        ],
+        vec![],
+    );
+    let mut ledger = receiver.portfolio_ledger().unwrap();
+    let local = ledger.portfolios[0].id;
+    ledger
+        .transactions
+        .push(tx(NANO + 2, local, BUY, 5.0, 3_000));
+    receiver.save_portfolio_ledger(&ledger).unwrap();
+    // iCloud accepts the new purchase before the delete is seen here.
+    let row = receiver
+        .outbox()
+        .unwrap()
+        .into_iter()
+        .find(|row| row.kind == EntityKind::PortfolioTransaction)
+        .expect("the purchase is queued");
+    receiver
+        .ack_saved(row.seq, row.kind, &row.sync_id, "sent", &[1], uploaded_at)
+        .unwrap();
+    apply_at(
+        &receiver,
+        now,
+        vec![],
+        vec![
+            RecordName::new(EntityKind::Portfolio, portfolio.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, buy.clone()).unwrap(),
+            RecordName::new(EntityKind::PortfolioTransaction, sell.clone()).unwrap(),
+        ],
+    );
+    let after = receiver.portfolio_ledger().unwrap();
+    (after.portfolios.len(), after.transactions.len())
+}
+
+#[test]
+fn a_purchase_uploaded_a_moment_ago_also_keeps_the_portfolio_another_mac_deleted() {
+    // Uploaded 10 s before the delete is applied: the other Mac cannot have seen it.
+    assert_eq!(delete_after_upload(90_000, 100_000), (1, 3));
+}
+
+#[test]
+fn a_purchase_uploaded_long_ago_does_not_keep_the_portfolio() {
+    // Uploaded two minutes earlier: the other Mac had time to see it and deleted anyway.
+    assert_eq!(delete_after_upload(1_000, 121_000), (0, 0));
 }
 
 #[test]

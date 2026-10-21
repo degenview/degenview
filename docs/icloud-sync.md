@@ -111,9 +111,9 @@ one on another Mac.
 **Portfolios.** A portfolio and each transaction are their own record, merged by last writer, so
 adding or editing transactions on two Macs merges. A deleted portfolio takes its transactions with
 it unless the portfolio was edited here, or a transaction was added or changed here that iCloud
-has not confirmed yet (edit beats delete, and it keeps its ledger). A transaction that had already
-reached iCloud when the delete arrived goes with the portfolio. A
-transaction whose portfolio has not arrived waits in the inbox as `orphan`.
+has not confirmed yet or that this Mac uploaded in the last 30 seconds (edit beats delete, and it
+keeps its ledger). Older transactions go with the portfolio. A transaction whose portfolio has not
+arrived waits in the inbox as `orphan`.
 
 A merged ledger can be impossible: a sale whose purchase has not arrived, or a purchase deleted
 elsewhere that a sale needs. Each batch is checked once per portfolio with the portfolio screen's

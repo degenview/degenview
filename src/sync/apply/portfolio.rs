@@ -21,6 +21,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub(super) const TRANSACTIONS: &str = "portfolio_transaction";
 const HELD: &str = "ledger_invalid";
+/// A transaction this Mac uploaded this recently was added at about the time another Mac deleted
+/// its portfolio: that delete was fetched within one poll, and a person cannot have seen the
+/// transaction, decided to delete the portfolio and uploaded it in that time.
+const RECENT_UPLOAD_MS: i64 = 30_000;
 
 #[derive(Default)]
 pub(super) struct Ledger {
@@ -208,15 +212,14 @@ impl Work<'_> {
         Ok(())
     }
 
-    /// Whether this Mac holds a transaction of the portfolio that iCloud has not confirmed: added or
-    /// changed here and still waiting to upload. The Mac that deleted the portfolio never saw it, so
-    /// the delete must not take it: adding to a portfolio counts as editing it.
-    pub(super) fn has_unconfirmed_transactions(
-        &mut self,
-        portfolio: u64,
-    ) -> rusqlite::Result<bool> {
+    /// Whether this Mac holds a transaction of the portfolio that the Mac which deleted it cannot
+    /// have seen: added or changed here and still waiting to upload, or uploaded from here a moment
+    /// ago. Adding to a portfolio counts as editing it, so the delete must not take it.
+    pub(super) fn has_unseen_transactions(&mut self, portfolio: u64) -> rusqlite::Result<bool> {
         let ids = self.ids;
         let kind = EntityKind::PortfolioTransaction;
+        let now = self.ctx.now_ms;
+        let this_mac = self.ctx.device_id.clone();
         let local: Vec<String> = self
             .rows(TRANSACTIONS)?
             .iter()
@@ -225,15 +228,21 @@ impl Work<'_> {
             .collect();
         for id in local {
             let sync_id = ids.to_global_string(&id);
-            let confirmed = self
-                .store
-                .entity_meta(kind, &sync_id)?
+            let meta = self.store.entity_meta(kind, &sync_id)?;
+            let confirmed = meta
+                .as_ref()
                 .is_some_and(|meta| !meta.deleted && meta.synced_hash.is_some());
             let queued = self
                 .store
                 .outbox_entry(kind, &sync_id)?
                 .is_some_and(|row| row.op == OutboxOp::Upsert);
-            if !confirmed || queued {
+            let just_uploaded = meta.as_ref().is_some_and(|meta| {
+                meta.origin_device == this_mac
+                    && meta
+                        .cloud_modified_ms
+                        .is_some_and(|at| now - at <= RECENT_UPLOAD_MS)
+            });
+            if !confirmed || queued || just_uploaded {
                 return Ok(true);
             }
         }

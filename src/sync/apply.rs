@@ -1442,10 +1442,10 @@ impl<'a> Work<'a> {
                 .outbox_entry(kind, id)?
                 .is_some_and(|row| row.op == OutboxOp::Upsert);
         let is_favorites = id == FAVORITES_ID;
-        // A transaction added here, not yet seen by the Mac that deleted the portfolio, is an edit.
+        // A transaction added here, which the Mac that deleted the portfolio cannot have seen, is an edit.
         let new_transactions = kind == EntityKind::Portfolio
             && match local.row.get("id").and_then(Value::as_u64) {
-                Some(portfolio) => self.has_unconfirmed_transactions(portfolio)?,
+                Some(portfolio) => self.has_unseen_transactions(portfolio)?,
                 None => false,
             };
         if edited_since || new_transactions || is_favorites {
