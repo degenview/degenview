@@ -3119,3 +3119,30 @@ fn one_bad_drawing_refuses_the_batch_and_a_locked_one_is_left_alone() {
     );
     assert_eq!(error_code(&elsewhere), "NOT_FOUND");
 }
+
+#[test]
+fn tool_schemas_use_only_standard_formats() {
+    let harness = Harness::start(&[("c1", "tok", ALL)]);
+    let reply = rpc(&harness.url(), Some("tok"), "tools/list", json!({}));
+    assert_eq!(reply.status, 200, "{}", reply.body);
+    fn formats(value: &Value, found: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                if let Some(format) = map.get("format").and_then(Value::as_str) {
+                    found.push(format.to_owned());
+                }
+                map.values().for_each(|v| formats(v, found));
+            }
+            Value::Array(items) => items.iter().for_each(|v| formats(v, found)),
+            _ => {}
+        }
+    }
+    let mut found = Vec::new();
+    formats(&reply.json()["result"]["tools"], &mut found);
+    assert!(
+        found.iter().all(|f| !f.starts_with("uint")),
+        "non-standard formats left: {found:?}"
+    );
+    // Unsigned integers still say they are non-negative.
+    assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
+}

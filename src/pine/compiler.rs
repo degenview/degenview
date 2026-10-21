@@ -64,7 +64,7 @@ fn compile_internal(
         .iter()
         .map(|d| d.alias.clone())
         .collect();
-    let mut parser = Parser::new(lexed.tokens, limits, import_aliases);
+    let mut parser = Parser::new(lexed.tokens, limits, import_aliases.clone());
     let (statements, parse_diagnostics) = parser.parse();
     diagnostics.extend(parse_diagnostics);
 
@@ -107,6 +107,11 @@ fn compile_internal(
     if !has_early_error {
         diagnostics.extend(super::type_checker::TypeChecker::check(&statements));
         diagnostics.extend(super::ignored_features::validate(&statements));
+        diagnostics.extend(super::name_check::validate(
+            &statements,
+            &import_aliases,
+            parser.method_names(),
+        ));
     }
 
     CompiledProgram {
@@ -1016,7 +1021,7 @@ struct LinkResult {
 }
 
 /// The namespaces whose members are builtin functions or variables.
-fn is_builtin_namespace(alias: &str) -> bool {
+pub(super) fn is_builtin_namespace(alias: &str) -> bool {
     matches!(
         alias,
         "ta" | "math"

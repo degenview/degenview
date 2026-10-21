@@ -451,6 +451,14 @@ impl ScriptManager {
             };
             self.with_store(|store| store.save_draft(&draft));
         }
+        // Compile once typing pauses, not on every keystroke.
+        if let Some(open) = self.open.as_ref() {
+            if open.editor.compile_due(Instant::now()) {
+                self.editor_changed();
+            } else if open.editor.compile_pending() {
+                ctx.request_repaint_after(editor::COMPILE_DELAY);
+            }
+        }
         self.preview.tick(ctx);
         if self.prefs != self.saved_prefs {
             self.prefs.save(&self.shared);
@@ -1082,6 +1090,7 @@ fn compile_into(editor: &mut EditorState) {
     let program = compiler::compile(&editor.source, Limits::default(), &LibraryRegistry);
     editor.status = CompileStatus::of(&program.diagnostics);
     editor.diagnostics = program.diagnostics;
+    editor.compiled();
 }
 
 #[cfg(test)]

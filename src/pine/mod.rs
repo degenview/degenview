@@ -30,6 +30,7 @@ pub mod market_values;
 pub mod math;
 pub mod matrix_builtins;
 pub mod misc_builtins;
+pub mod name_check;
 pub mod number_format;
 pub mod operators;
 pub mod outputs;
