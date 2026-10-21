@@ -296,6 +296,12 @@ impl<T: SyncTransport> SyncCore<T> {
         self.pump();
     }
 
+    /// Looks for other Macs' changes without scanning local rows. CloudKit pushes reach a
+    /// Developer ID app only now and then, so the host calls this often.
+    pub fn poll(&mut self) {
+        self.request_fetch();
+    }
+
     /// Periodic housekeeping: retry due entries and pick up local changes.
     pub fn tick(&mut self) {
         if self.reconcile_needed && self.can_sync() {

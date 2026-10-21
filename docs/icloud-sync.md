@@ -75,7 +75,7 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 one). `sync_state.id_tag` and `sync_entity.local_hash` were added to older development databases
 by a guarded `ALTER`. All are created by one idempotent `create_sync_schema`; older builds ignore
 them, and `reconcile_stored` finds changes an older build (or an older alert agent) made: when
-sync starts, on every five-minute poll and on **Sync Now**.
+sync starts, every five minutes and on **Sync Now**.
 
 ### Record schema
 
@@ -299,7 +299,8 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   throwaway signed and notarized build before relying on anything else here. If it fails, the
   fallback is fetching with manual CloudKit operations instead of `CKSyncEngine`.
 * Whether CloudKit pushes reach the app (winit owns the app delegate). The worker also looks for
-  changes every five minutes and on **Sync Now**, so the feature degrades to polling.
+  changes every 20 seconds (and for rows an older build wrote without queuing them every five
+  minutes) and on **Sync Now**, so the feature degrades to polling.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
 * Behaviour with all windows hidden: remote changes are applied on the app thread, which only runs
   frames while a window is visible; uploads are unaffected.

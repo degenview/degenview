@@ -38,8 +38,11 @@ impl SyncTransport for Box<dyn SyncTransport + Send> {
     }
 }
 
-/// How often another Mac's changes are looked for even without a push.
-const POLL_INTERVAL: Duration = Duration::from_secs(5 * 60);
+/// How often another Mac's changes are looked for even without a push. A fetch with nothing new
+/// is one small request, so this can be short; pushes alone arrive late or not at all.
+const POLL_INTERVAL: Duration = Duration::from_secs(20);
+/// How often rows an older build wrote without queuing them are looked for.
+const RECONCILE_INTERVAL: Duration = Duration::from_secs(5 * 60);
 /// How often changed script files are looked for.
 const SCRIPT_SCAN_INTERVAL: Duration = Duration::from_secs(60);
 /// After a script is saved, wait this long for more edits before scanning.
@@ -648,11 +651,16 @@ fn run_worker<T: SyncTransport>(
     // CloudKit pushes wake the engine, but a Developer ID app cannot rely on them alone: also look
     // for other Macs' changes every few minutes.
     let mut last_poll = Instant::now();
+    let mut last_reconcile = Instant::now();
     loop {
         let message = rx.recv_timeout(Duration::from_secs(1));
-        if last_poll.elapsed() >= POLL_INTERVAL {
-            last_poll = Instant::now();
+        if last_reconcile.elapsed() >= RECONCILE_INTERVAL {
+            last_reconcile = Instant::now();
+            last_poll = last_reconcile;
             core.request_sync();
+        } else if last_poll.elapsed() >= POLL_INTERVAL {
+            last_poll = Instant::now();
+            core.poll();
         }
         let mut effects = Vec::new();
         match message {

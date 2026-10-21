@@ -1222,6 +1222,22 @@ fn reconcile_runs_after_a_pause_is_cleared() {
 }
 
 #[test]
+fn a_poll_brings_in_another_macs_change_without_a_push() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    let mut b = mac(&cloud, "B", "acct", Some("acct"));
+    a.apply = true;
+    a.start();
+    b.start();
+    b.lists(&[(1, "from B")]);
+    b.run();
+    assert_eq!(a.lists_len(), 0, "no push reached A");
+    a.core.poll();
+    a.run();
+    assert_eq!(a.lists_len(), 1);
+}
+
+#[test]
 fn a_write_an_older_build_made_is_found_at_start_and_on_the_next_poll() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));
