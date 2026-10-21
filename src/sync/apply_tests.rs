@@ -1763,3 +1763,53 @@ fn flags_follow_the_watchlists_switch_not_preferences() {
     settle(&mut a, &mut b);
     assert_eq!(flags_of(&b), json!({"binance:BTCUSDT": "Red"}));
 }
+
+// MARK: Alerts through the real host
+
+/// One second of the app's alert tick as the GUI runs it: the long-lived host drains commands and
+/// saves its snapshot.
+fn host_tick(host: &mut crate::alert_host::AlertHost, mac: &Mac, now: i64) {
+    let store = mac.store.lock().unwrap();
+    host.drain_commands(&store, now);
+    host.save_if_dirty(&store);
+}
+
+#[test]
+fn an_alert_made_through_the_apps_host_reaches_the_other_macs_host() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let mut host_a = {
+        let store = a.store.lock().unwrap();
+        crate::alert_host::AlertHost::load(&store, T0)
+    };
+    let mut host_b = {
+        let store = b.store.lock().unwrap();
+        crate::alert_host::AlertHost::load(&store, T0)
+    };
+    let alert = PriceAlert::new(btc(), AlertCondition::CrossesAbove { target: 100.0 }, T0);
+    let id = alert.id;
+    send_command(
+        &a,
+        AlertRuntimeCommandPayload::Save {
+            alert: Box::new(alert),
+            baseline: Some(90.0),
+        },
+    );
+    host_tick(&mut host_a, &a, T0);
+    for round in 0..4 {
+        settle(&mut a, &mut b);
+        host_tick(&mut host_a, &a, T0 + round);
+        host_tick(&mut host_b, &b, T0 + round);
+    }
+    assert!(
+        cloud.names().iter().any(|n| n.starts_with("alert.")),
+        "uploaded: {:?}",
+        cloud.names()
+    );
+    assert!(
+        host_b.snapshot().alerts.iter().any(|alert| alert.id == id),
+        "B's host holds the alert"
+    );
+    assert_eq!(alerts_on(&b).len(), 1);
+}
