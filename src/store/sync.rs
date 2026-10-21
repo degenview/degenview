@@ -1551,6 +1551,23 @@ impl Store {
             .collect()
     }
 
+    /// A conflict that no longer needs anyone: what it was waiting for happened (a held record was
+    /// applied). It is closed like a dismissed one, so it leaves the page.
+    pub fn resolve_conflicts(
+        &self,
+        entity: EntityKind,
+        sync_id: &str,
+        kind: &str,
+        now_ms: i64,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_conflict SET resolved_ms = ?4, resolution = 'applied'
+             WHERE entity_type = ?1 AND sync_id = ?2 AND kind = ?3 AND resolved_ms IS NULL",
+            params![entity.prefix(), sync_id, kind, now_ms],
+        )?;
+        Ok(())
+    }
+
     /// The user has looked at conflicts (both versions were kept either way): those of one kind,
     /// or every open one when `kind` is `None`.
     pub fn dismiss_conflicts(&self, kind: Option<&str>, now_ms: i64) -> rusqlite::Result<()> {

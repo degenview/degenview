@@ -118,8 +118,9 @@ arrived waits in the inbox as `orphan`.
 A merged ledger can be impossible: a sale whose purchase has not arrived, or a purchase deleted
 elsewhere that a sale needs. Each batch is checked once per portfolio with the portfolio screen's
 own accounting (`portfolio_accounting::holdings`). A transaction that would break it is **held in
-the inbox** as `ledger_invalid` with a notice naming the portfolio, and tried again whenever more
-arrives; a delete that would break it is not applied and the transaction goes back to iCloud. The
+the inbox** as `ledger_invalid` with a notice, and tried again whenever more arrives (the notice
+closes by itself once the transaction applies, which is routine during a large import that arrives
+in several batches); a delete that would break it is not applied and the transaction goes back to iCloud. The
 order records arrive in does not matter. Valuation history after any changed transaction is
 dropped and marked stale so it is rebuilt.
 

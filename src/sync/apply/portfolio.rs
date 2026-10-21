@@ -401,6 +401,9 @@ impl Work<'_> {
                 .and_modify(|current| *current = (*current).min(from))
                 .or_insert(from);
         }
+        // A record that was held for the ledger is in now: its notice has nothing left to say.
+        self.store
+            .resolve_conflicts(kind, &change.sync_id, "ledger", self.ctx.now_ms)?;
         match change.change {
             Change::Upsert(record) => {
                 self.report.applied += 1;

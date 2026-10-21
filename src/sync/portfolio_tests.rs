@@ -503,6 +503,46 @@ fn an_edit_beats_a_remote_portfolio_delete_and_keeps_its_transactions() {
 }
 
 #[test]
+fn the_notice_for_a_held_sale_goes_away_once_its_purchase_arrives() {
+    let (source, portfolio, buy, sell) = source();
+    let receiver = syncing_store();
+    // The sale arrives in an earlier batch than the purchase it needs.
+    apply(
+        &receiver,
+        vec![
+            cloud_record(&source, EntityKind::Portfolio, &portfolio, 1),
+            cloud_record(&source, EntityKind::PortfolioTransaction, &sell, 1),
+        ],
+        vec![],
+    );
+    assert_eq!(
+        receiver.portfolio_ledger().unwrap().transactions.len(),
+        0,
+        "held, not applied"
+    );
+    assert_eq!(receiver.conflicts().unwrap().len(), 1, "with a notice");
+    apply(
+        &receiver,
+        vec![cloud_record(
+            &source,
+            EntityKind::PortfolioTransaction,
+            &buy,
+            1,
+        )],
+        vec![],
+    );
+    assert_eq!(
+        receiver.portfolio_ledger().unwrap().transactions.len(),
+        2,
+        "both are in once the purchase is here"
+    );
+    assert!(
+        receiver.conflicts().unwrap().is_empty(),
+        "nothing is waiting any more, so no notice"
+    );
+}
+
+#[test]
 fn a_transaction_added_here_keeps_a_portfolio_another_mac_deleted() {
     let (source, portfolio, buy, sell) = source();
     let receiver = syncing_store();
