@@ -116,7 +116,10 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
             stateSerialization: state,
             delegate: self
         )
-        configuration.automaticallySync = true
+        // The core decides when to send (the outbox) and when to fetch (pushes, Sync Now and a short
+        // poll). With automatic syncing the engine hands a background app's fetch to the system's
+        // scheduler, which may run it minutes later.
+        configuration.automaticallySync = false
         lock.withLock {
             self.container = container
             zoneID = CKRecordZone.ID(zoneName: zoneName, ownerName: CKCurrentUserDefaultName)
@@ -218,7 +221,14 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
 
     private func fetch() async {
         guard let engine = lockedEngine() else { return }
-        do { try await engine.fetchChanges() } catch { fail(Codec.kind(of: error), error.localizedDescription) }
+        // A user-initiated group: the engine's own scheduling treats a background app's fetches as
+        // discretionary and can skip the network for minutes.
+        let group = CKOperationGroup()
+        group.name = "DegenView fetch"
+        group.defaultConfiguration.qualityOfService = .userInitiated
+        do {
+            try await engine.fetchChanges(CKSyncEngine.FetchChangesOptions(scope: .all, operationGroup: group))
+        } catch { fail(Codec.kind(of: error), error.localizedDescription) }
     }
 
     private func deleteZone() async {

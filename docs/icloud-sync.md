@@ -298,12 +298,17 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   CloudKit environment such a build uses. Forum evidence is old and ambiguous. Prove this with a
   throwaway signed and notarized build before relying on anything else here. If it fails, the
   fallback is fetching with manual CloudKit operations instead of `CKSyncEngine`.
-* Whether CloudKit pushes reach the app (winit owns the app delegate). The worker also looks for
-  changes every 20 seconds (and for rows an older build wrote without queuing them every five
-  minutes) and on **Sync Now**, so the feature degrades to polling.
+* Whether CloudKit pushes reach the app (winit owns the app delegate). Measured on a Developer ID
+  build: rarely. The engine runs with `automaticallySync = false` because, with it on, a covered or
+  background app's `fetchChanges()` returns at once without a network call (the engine hands it to
+  the system's background scheduler). The worker asks for changes itself every 20 seconds (and
+  scans for rows an older build wrote without queuing them every five minutes) and on **Sync Now**,
+  so a change reaches a covered window in about 20 seconds. Pushes are not relied on at all.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
-* Behaviour with all windows hidden: remote changes are applied on the app thread, which only runs
-  frames while a window is visible; uploads are unaffected.
+* Behaviour with all windows hidden: remote changes are applied on the app thread while windows
+  draw. When it has not ticked for 3 seconds (a covered or hidden window draws nothing) the sync
+  worker applies them itself and the app reloads what it holds from the reports on its first frame
+  back. Measured with a covered instance: a change arrived within one 20-second poll.
 * Real-world performance numbers (initial sync of a large library, outbox cost) are unmeasured.
 
 ## Known limitations
