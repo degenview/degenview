@@ -232,6 +232,15 @@ Needed once, by the account holder, before a build can use iCloud:
    Development environment, check the fields in the CloudKit Dashboard, then **Deploy Schema
    Changes to Production**. Repeat after any schema change. Production data is not recoverable
    from a missed deploy, so do this before every release that touches the record.
+6. Check it: `tools/check-cloudkit-schema.sh` exports the Development and Production schemas with
+   `xcrun cktool`, fails if Production lacks `DegenViewSyncRecord` or one of the five plain fields the
+   bridge writes (`schemaVersion`, `entityType`, `revision`, `originDevice`, `payloadSize`; the
+   payload and `modifiedAtMs` are encrypted values with no schema entry), and fails if the two
+   schemas differ. It needs a CloudKit management token saved once with `xcrun cktool save-token`
+   (CloudKit Dashboard, Settings, Tokens & Keys). Run it before every release and after every deploy.
+   Without a token, a Production build that uploads a field that was never deployed has every upload
+   of that field refused, so also keep an eye on the "Something went wrong syncing" status after the
+   first release build is installed.
 
 ## Build and release
 
