@@ -348,7 +348,8 @@ impl PreviewState {
         let Some(at) = self.changed_at else {
             return;
         };
-        if at.elapsed() < APPLY_DELAY {
+        // The diagnostics below decide whether the source may run; wait until they describe it.
+        if at.elapsed() < APPLY_DELAY || input.compile_pending {
             return;
         }
         self.changed_at = None;
@@ -1368,7 +1369,36 @@ mod tests {
             } else {
                 Vec::new()
             },
+            compile_pending: false,
         }
+    }
+
+    #[test]
+    fn an_edit_waits_for_its_compile_before_it_applies() {
+        let mut preview = state();
+        preview.script_changed("s1");
+        let good = input("//@version=6\nindicator(\"x\")\nplot(close)\n", false);
+        preview.source_changed(&good);
+        preview.maybe_apply(&good);
+
+        let mut edited = input("//@version=6\nindicator(\"x\")\nplot(open)\n", false);
+        edited.compile_pending = true;
+        preview.source_changed(&edited);
+        preview.changed_at = Some(Instant::now() - APPLY_DELAY - Duration::from_millis(5));
+        preview.maybe_apply(&edited);
+        assert_eq!(
+            preview.applied_source.as_deref(),
+            Some(good.source.as_str()),
+            "the diagnostics still describe the old text"
+        );
+        assert!(preview.changed_at.is_some(), "the apply is kept for later");
+
+        edited.compile_pending = false;
+        preview.maybe_apply(&edited);
+        assert_eq!(
+            preview.applied_source.as_deref(),
+            Some(edited.source.as_str())
+        );
     }
 
     #[test]
