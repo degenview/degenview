@@ -11,14 +11,17 @@ use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
+use crate::mcp::chart_data;
+use crate::mcp::drawings::{DrawingEdit, NewDrawing};
 use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
-    AppliedPineInfo, AppliedPineList, ChartInfo, ChartsResult, IndicatorsInfo, PineAlertInfo,
-    PineAlertsResult, PineInstanceChangeResult, PineInstanceInfo, PineOpenTradeInfo,
-    PineReportContext, PineReportMetrics, PineReportResult, PineStrategySettingsInfo,
-    PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult, PineTradeInfo, WorkspaceInfo,
+    AppliedPineInfo, AppliedPineList, CandlesResult, ChartInfo, ChartsResult, DrawingsChangeResult,
+    DrawingsResult, IndicatorsInfo, PineAlertInfo, PineAlertsResult, PineInstanceChangeResult,
+    PineInstanceInfo, PineOpenTradeInfo, PineReportContext, PineReportMetrics, PineReportResult,
+    PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
+    PineTradeInfo, WorkspaceInfo,
 };
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
@@ -29,7 +32,7 @@ use crate::model::mcp::{
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{new_id, now_ms};
-use crate::model::{BuiltIn, DataSource, IndicatorConfig, InstrumentId};
+use crate::model::{BuiltIn, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
@@ -760,6 +763,144 @@ pub fn remove_pine_instance(
     guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
     workspace.remove_pine_instance_from(chart_id, instance_id);
     instance_change(workspace, chart_id, instance_id, "removed")
+}
+
+// MARK: Candles and drawings (run on the app thread)
+
+fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
+    McpError::NotFound(format!(
+        "No chart {chart_id} in workspace {}",
+        workspace.id()
+    ))
+}
+
+/// The newest `limit` real candles of a chart, or those before `before`.
+pub fn chart_candles(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    limit: usize,
+    before: Option<i64>,
+) -> Result<CandlesResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let meta = chart_data::CandleMeta {
+        workspace_id: workspace.id(),
+        chart_id,
+        older_supported: data
+            .instrument
+            .source
+            .supports_older_history(workspace.timeframe()),
+        instrument: data.instrument,
+        timeframe: workspace.timeframe().label().to_owned(),
+        chart_type: data.chart_type,
+        replay_ms: data.replay_ms,
+        now_ms: now_ms(),
+    };
+    Ok(chart_data::candles_result(
+        &meta,
+        data.candles,
+        limit,
+        before,
+    ))
+}
+
+pub fn chart_drawings(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+) -> Result<DrawingsResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    Ok(chart_data::drawings_result(
+        workspace.id(),
+        chart_id,
+        data.drawings,
+    ))
+}
+
+/// The result of a change: the drawings it touched as they are now.
+fn drawings_changed(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    status: &str,
+    ids: &[u64],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    Ok(DrawingsChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: status.to_owned(),
+        drawing_ids: ids.iter().map(u64::to_string).collect(),
+        drawings: data
+            .drawings
+            .iter()
+            .filter(|drawing| ids.contains(&drawing.id()))
+            .filter_map(chart_data::drawing_info)
+            .collect(),
+        total_drawings: chart_data::counted(data.drawings),
+    })
+}
+
+/// Adds the drawings as one undo step. All or none: a drawing that cannot be placed refuses the
+/// call before anything changes.
+pub fn add_drawings(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    specs: &[NewDrawing],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let first_id = chart_data::next_free_id(data.drawings, data.next_drawing_id);
+    let drawings = chart_data::plan_add(data.drawings, data.candles, first_id, specs)?;
+    let ids: Vec<u64> = drawings.iter().map(Drawing::id).collect();
+    let next_free = first_id + ids.len() as u64;
+    let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
+    workspace.apply_planned_drawings(chart_id, commands, next_free);
+    drawings_changed(workspace, chart_id, "added", &ids)
+}
+
+pub fn edit_drawing(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    edit: &DrawingEdit,
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let command = chart_data::plan_edit(data.drawings, data.candles, edit)?;
+    let status = if command.is_some() {
+        "updated"
+    } else {
+        "unchanged"
+    };
+    if let Some(command) = command {
+        workspace.apply_planned_drawings(chart_id, vec![command], 0);
+    }
+    drawings_changed(workspace, chart_id, status, &[edit.drawing_id])
+}
+
+pub fn remove_drawings(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    ids: &[u64],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let commands = chart_data::plan_remove(data.drawings, ids)?;
+    let removed: Vec<u64> = commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawingCommand::Remove(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    workspace.apply_planned_drawings(chart_id, commands, 0);
+    drawings_changed(workspace, chart_id, "removed", &removed)
 }
 
 fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPineDetail {

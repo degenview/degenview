@@ -137,6 +137,20 @@ pub struct ChartSummary {
     pub pine_instances: Vec<(u64, String)>,
 }
 
+/// What the MCP candle and drawing tools read off one market chart. Borrowed from the workspace,
+/// so nothing is cloned until a tool decides what it returns.
+pub struct ChartData<'a> {
+    pub instrument: InstrumentId,
+    pub chart_type: crate::model::ChartType,
+    /// The market's own candles, cut at the replay position as the chart shows them.
+    pub candles: &'a [Kline],
+    /// The replay position, when replay hides the bars after it.
+    pub replay_ms: Option<i64>,
+    pub drawings: &'a [Drawing],
+    /// The id the chart's next new drawing takes.
+    pub next_drawing_id: u64,
+}
+
 /// The result of [`ChartWorkspace::add_chart_for`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AddChartOutcome {
@@ -1136,6 +1150,48 @@ impl ChartWorkspace {
                     .collect(),
             })
             .collect()
+    }
+
+    /// A market chart's candles and drawings, for the MCP tools. `None` for an unknown chart or a
+    /// portfolio card.
+    pub fn chart_data(&self, chart_id: u64) -> Option<ChartData<'_>> {
+        let chart = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id && chart.is_market())?;
+        let replay_ms = if self.replay.is_active() {
+            self.replay.current_ms()
+        } else {
+            None
+        };
+        Some(ChartData {
+            instrument: InstrumentId::new(chart.source, &chart.symbol),
+            chart_type: chart.chart.effective_chart_type(chart.source),
+            candles: displayed_candles(&chart.candles, replay_ms),
+            replay_ms,
+            drawings: &chart.drawings,
+            next_drawing_id: chart.next_drawing_id,
+        })
+    }
+
+    /// Applies drawing commands an MCP tool planned from [`Self::chart_data`] through the same
+    /// path as the pointer, so they are one undo step and are saved like any other edit.
+    /// `next_free_id` is the first id the commands left unused; the chart's counter moves past it
+    /// (0 when the commands mint none).
+    pub fn apply_planned_drawings(
+        &mut self,
+        chart_id: u64,
+        commands: Vec<DrawingCommand>,
+        next_free_id: u64,
+    ) {
+        if let Some(chart) = self
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id && chart.is_market())
+        {
+            chart.next_drawing_id = chart.next_drawing_id.max(next_free_id);
+        }
+        self.apply_drawing_commands(chart_id, commands);
     }
 
     /// The Pine scripts applied to a chart (or just `only` instance), with each one's latest run.
@@ -5453,6 +5509,81 @@ mod tests {
             .iter()
             .map(Drawing::id)
             .collect()
+    }
+
+    #[test]
+    fn drawings_planned_for_mcp_are_one_undo_step_and_keep_their_style_on_save() {
+        use crate::mcp::drawings::{AnchorSpec, McpDrawingTool, NewDrawing, PriceField, PriceSpec};
+        use crate::model::chart_type::LineDash;
+        let mut workspace = empty_workspace(9);
+        assert!(workspace.chart_data(404).is_none());
+        let chart_id = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        let minute = 60_000;
+        workspace
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id)
+            .unwrap()
+            .candles = (0..20)
+            .map(|index| candle(1_000_000 + index * minute, 100.0 + index as f64))
+            .collect();
+        let data = workspace.chart_data(chart_id).expect("market chart");
+        assert_eq!(data.candles.len(), 20);
+        // The counter lags the stored drawing (the fixture bypassed it); minting still avoids it.
+        let first_id = crate::mcp::chart_data::next_free_id(data.drawings, data.next_drawing_id);
+        assert_eq!(first_id, 2);
+        let anchor = |index: i64, price: PriceSpec| AnchorSpec {
+            time_ms: 1_000_000 + index * minute + 5,
+            price,
+        };
+        let mut line = NewDrawing {
+            tool: McpDrawingTool::TrendLine,
+            a: anchor(2, PriceSpec::Field(PriceField::Low)),
+            b: anchor(15, PriceSpec::Field(PriceField::High)),
+            patch: Default::default(),
+        };
+        line.patch.dash = Some(LineDash::Dotted);
+        line.patch.extend_right = Some(true);
+        line.patch.color = Some([255, 193, 7, 255]);
+        let zone = NewDrawing {
+            tool: McpDrawingTool::Rectangle,
+            a: anchor(4, PriceSpec::Value(103.0)),
+            b: anchor(9, PriceSpec::Value(108.0)),
+            patch: Default::default(),
+        };
+        let planned =
+            crate::mcp::chart_data::plan_add(data.drawings, data.candles, first_id, &[line, zone])
+                .unwrap();
+        let commands: Vec<DrawingCommand> =
+            planned.iter().cloned().map(DrawingCommand::Add).collect();
+        workspace.apply_planned_drawings(chart_id, commands, first_id + 2);
+
+        assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
+        assert_eq!(workspace.chart_data(chart_id).unwrap().next_drawing_id, 4);
+        // Times snapped to the bars' opens, prices read from the bars.
+        let anchors = planned[0].anchors();
+        assert_eq!(anchors[0].time_ms, 1_000_000 + 2 * minute);
+        assert_eq!(anchors[1].price, 115.0);
+
+        // It is saved with the session, style and all, and reads back the same.
+        let saved = workspace.persisted();
+        let json = serde_json::to_string(&saved).unwrap();
+        let reread: PersistedWorkspace = serde_json::from_str(&json).unwrap();
+        let restored = reread.charts[0].drawings.clone();
+        assert_eq!(restored.len(), 3);
+        assert_eq!(restored[1], planned[0]);
+        assert_eq!(restored[1].style().unwrap().stroke.dash, LineDash::Dotted);
+        assert!(restored[1].style().unwrap().extend_right);
+
+        // One undo takes both away, one redo brings both back.
+        workspace.undo();
+        assert_eq!(drawing_ids(&workspace, chart_id), [1]);
+        workspace.redo();
+        assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
+
+        // A chart that is not there changes nothing.
+        workspace.apply_planned_drawings(404, vec![DrawingCommand::Remove(1)], 50);
+        assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
     }
 
     #[test]

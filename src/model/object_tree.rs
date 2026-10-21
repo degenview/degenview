@@ -186,6 +186,7 @@ mod tests {
             locked: false,
             hidden: false,
             visibility: Visibility::default(),
+            style: crate::model::drawing_style::DrawingStyle::trend_line(),
         }
     }
 

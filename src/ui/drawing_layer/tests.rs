@@ -96,6 +96,7 @@ fn trend_line(id: u64, locked: bool) -> Drawing {
         locked,
         hidden: false,
         visibility: Visibility::ALL,
+        style: crate::model::drawing_style::DrawingStyle::trend_line(),
     }
 }
 
@@ -1243,6 +1244,7 @@ fn locked_drawings_report_locked_hits() {
         locked: true,
         hidden: false,
         visibility: Visibility::ALL,
+        style: crate::model::drawing_style::DrawingStyle::trend_line(),
     };
     let y = scale.y(100.0);
     let frame = DrawingFrame::new(std::slice::from_ref(&line), Tool::Cursor, None, 1);
@@ -1257,6 +1259,73 @@ fn locked_drawings_report_locked_hits() {
             .hit_test(&empty, pos2(500.0, y), &proj, true)
             .is_none()
     );
+}
+
+#[test]
+fn an_extended_trend_line_is_hit_beyond_its_anchors_and_a_plain_one_is_not() {
+    let data = candles();
+    let scale = scale(false);
+    let proj = projection(&data, &scale);
+    let y = scale.y(100.0);
+    let at = |extend_right: bool| {
+        let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+        style.extend_right = extend_right;
+        Drawing::TrendLine {
+            id: 3,
+            a: anchor(0, 100.0),
+            b: anchor(180_000, 100.0),
+            locked: false,
+            hidden: false,
+            visibility: Visibility::ALL,
+            style,
+        }
+    };
+    let beyond = pos2(proj.plot.right() - 40.0, y + 1.0);
+    let mut layer = DrawingLayer::default();
+    for (extend, hit) in [(false, false), (true, true)] {
+        let line = at(extend);
+        let frame = DrawingFrame::new(std::slice::from_ref(&line), Tool::Cursor, None, 1);
+        assert_eq!(
+            layer.hit_test(&frame, beyond, &proj, true).is_some(),
+            hit,
+            "extend_right {extend}"
+        );
+    }
+}
+
+#[test]
+fn styled_trend_lines_paint_in_every_dash_and_extension() {
+    use crate::model::chart_type::LineDash;
+    let ctx = egui::Context::default();
+    let data = candles();
+    let scale = scale(false);
+    let proj = projection(&data, &scale);
+    for dash in LineDash::ALL {
+        for (left, right) in [(false, false), (true, false), (false, true), (true, true)] {
+            let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+            style.stroke.dash = dash;
+            style.stroke.color = [255, 193, 7, 200];
+            style.extend_left = left;
+            style.extend_right = right;
+            let line = Drawing::TrendLine {
+                id: 1,
+                a: anchor(60_000, 99.0),
+                b: anchor(240_000, 101.0),
+                locked: false,
+                hidden: false,
+                visibility: Visibility::ALL,
+                style,
+            };
+            let mut layer = DrawingLayer::default();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let painter = ui.painter().clone();
+                for emphasized in [false, true] {
+                    layer.paint_drawing(&painter, &proj, &line, emphasized, emphasized, false);
+                }
+            });
+            output.textures_delta.clear();
+        }
+    }
 }
 
 #[test]

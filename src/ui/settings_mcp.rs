@@ -1052,6 +1052,7 @@ mod tests {
             access_summary(&PermissionSet::read_only()),
             [
                 ("Charts · read".to_owned(), false),
+                ("Drawings · read".to_owned(), false),
                 ("Price Alerts · read".to_owned(), false),
                 ("Pine Scripts · read".to_owned(), false),
             ]

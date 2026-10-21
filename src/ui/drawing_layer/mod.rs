@@ -18,8 +18,8 @@ mod tests;
 use super::chart_card::PriceScale;
 use super::drawing_geometry as geo;
 use super::drawing_render::{
-    self, FIB_COLORS, FIB_RATIOS, FibLevelLine, HANDLE_RADIUS, HIT_TOLERANCE, LineStyle,
-    RulerCorner, RulerPart, RulerReadout, TimeIndex,
+    self, FIB_COLORS, FIB_RATIOS, FibLevelLine, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner,
+    RulerPart, RulerReadout, TimeIndex,
 };
 use crate::model::drawing_style::DrawingStyle;
 use crate::model::{
@@ -350,10 +350,12 @@ fn end_hit(pointer: Pos2, a: Pos2, b: Pos2) -> Option<Part> {
 /// The hit on the original line drawings, which paint themselves.
 fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Part> {
     match drawing {
-        Drawing::TrendLine { a, b, .. } => {
+        Drawing::TrendLine { a, b, style, .. } => {
             let (pa, pb) = (proj.point(*a), proj.point(*b));
+            let (from, to) =
+                geo::extend_to_rect(pa, pb, proj.plot, style.extend_left, style.extend_right);
             end_hit(pointer, pa, pb).or_else(|| {
-                (geo::distance_to_segment(pointer, pa, pb) <= HIT_TOLERANCE).then_some(Part::Body)
+                (geo::distance_to_segment(pointer, from, to) <= HIT_TOLERANCE).then_some(Part::Body)
             })
         }
         Drawing::Fib { a, b, .. } => {
@@ -1107,6 +1109,7 @@ impl DrawingLayer {
                         locked: false,
                         hidden: false,
                         visibility: Default::default(),
+                        style: frame.style_for(tool),
                     },
                     Tool::Fib => Drawing::Fib {
                         id: 0,
@@ -1158,12 +1161,13 @@ impl DrawingLayer {
         draft: bool,
     ) {
         match drawing {
-            Drawing::TrendLine { a, b, .. } => {
-                drawing_render::draw_trend_line(
+            Drawing::TrendLine { a, b, style, .. } => {
+                draw::draw_trend_line(
                     painter,
                     proj.point(*a),
                     proj.point(*b),
-                    &LineStyle::default(),
+                    proj.plot,
+                    style,
                     emphasized,
                 );
             }

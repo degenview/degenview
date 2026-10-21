@@ -382,6 +382,13 @@ pub enum Drawing {
         hidden: bool,
         #[serde(default)]
         visibility: Visibility,
+        /// Colour, width, dash and extension. A row without one is the blue segment it always
+        /// was, and a line still in that look is written without it, so nothing stored changes.
+        #[serde(
+            default = "DrawingStyle::trend_line",
+            skip_serializing_if = "is_plain_trend_line"
+        )]
+        style: DrawingStyle,
     },
     Fib {
         id: u64,
@@ -436,6 +443,10 @@ fn brush_style() -> DrawingStyle {
     Tool::Brush.default_style()
 }
 
+fn is_plain_trend_line(style: &DrawingStyle) -> bool {
+    *style == DrawingStyle::trend_line()
+}
+
 impl Drawing {
     pub fn id(&self) -> u64 {
         match self {
@@ -476,6 +487,7 @@ impl Drawing {
                 locked: false,
                 hidden: false,
                 visibility: Visibility::ALL,
+                style,
             },
             Tool::Fib => Self::Fib {
                 id,
@@ -602,10 +614,12 @@ impl Drawing {
         }
     }
 
-    /// The style, for the drawings that carry one (the brush and every shape).
+    /// The style, for the drawings that carry one (the trend line, the brush and every shape).
     pub fn style(&self) -> Option<&DrawingStyle> {
         match self {
-            Self::Brush { style, .. } | Self::Shape { style, .. } => Some(style),
+            Self::TrendLine { style, .. }
+            | Self::Brush { style, .. }
+            | Self::Shape { style, .. } => Some(style),
             _ => None,
         }
     }
@@ -618,7 +632,7 @@ impl Drawing {
                 *width = value.stroke.width;
                 *style = value;
             }
-            Self::Shape { style, .. } => *style = value,
+            Self::TrendLine { style, .. } | Self::Shape { style, .. } => *style = value,
             _ => {}
         }
     }
@@ -691,7 +705,7 @@ impl Drawing {
 
 /// A mutation the renderer requests. The workspace applies it against the undo
 /// stack; the renderer never mutates the model directly.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum DrawingCommand {
     Add(Drawing),
     Replace {
@@ -896,6 +910,74 @@ mod tests {
         assert_eq!(again["drawings"][2], original["drawings"][2]);
         let reread: Holder = serde_json::from_value(again).unwrap();
         assert_eq!(reread, holder);
+    }
+
+    #[test]
+    fn a_trend_line_without_a_style_is_the_line_it_always_was() {
+        use crate::model::chart_type::LineDash;
+        let old = r#"{"TrendLine":{"id":1,"a":{"time_ms":10,"price":1.5},"b":{"time_ms":20,"price":2.5},"locked":false}}"#;
+        let line: Drawing = serde_json::from_str(old).unwrap();
+        assert_eq!(line.style(), Some(&DrawingStyle::trend_line()));
+        assert_eq!(line.style().unwrap().stroke.dash, LineDash::Solid);
+        assert!(!line.style().unwrap().extend_right);
+        // Still in that look, it is written without a style: nothing stored changes.
+        let written = serde_json::to_value(&line).unwrap();
+        assert!(written["TrendLine"].get("style").is_none(), "{written}");
+        // The GUI's default for the tool builds the same line.
+        let built = Drawing::build(
+            Tool::TrendLine,
+            1,
+            &[anchor(10, 1.5), anchor(20, 2.5)],
+            Tool::TrendLine.default_style(),
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&built).unwrap()["TrendLine"]["a"],
+            written["TrendLine"]["a"]
+        );
+        assert!(
+            serde_json::to_value(&built).unwrap()["TrendLine"]
+                .get("style")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_styled_trend_line_keeps_its_style_through_json_and_is_sanitized() {
+        use crate::model::chart_type::LineDash;
+        let mut style = DrawingStyle::trend_line();
+        style.stroke.color = [255, 193, 7, 255];
+        style.stroke.dash = LineDash::Dashed;
+        style.extend_right = true;
+        let line = Drawing::build(
+            Tool::TrendLine,
+            4,
+            &[anchor(0, 1.0), anchor(60_000, 2.0)],
+            style,
+        )
+        .unwrap();
+        let json = serde_json::to_string(&line).unwrap();
+        assert!(json.contains("\"style\""), "{json}");
+        let back: Drawing = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, line);
+        assert_eq!(back.style().unwrap().stroke.color, [255, 193, 7, 255]);
+        assert!(back.style().unwrap().extend_right);
+        assert!(!back.style().unwrap().extend_left);
+
+        let mut restyled = line.clone();
+        let mut wild = style;
+        wild.stroke.width = f32::NAN;
+        restyled.set_style(wild);
+        assert!(restyled.style().unwrap().stroke.width.is_finite());
+        restyled.set_style(DrawingStyle::trend_line());
+        assert!(
+            serde_json::to_value(&restyled).unwrap()["TrendLine"]
+                .get("style")
+                .is_none()
+        );
+        // Moving the anchors and the lock still work on a styled line.
+        restyled.set_locked(true);
+        assert!(restyled.locked());
     }
 
     #[test]

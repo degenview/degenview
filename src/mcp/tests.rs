@@ -33,6 +33,71 @@ struct Stub {
     applied: Mutex<Vec<crate::mcp::pine::ScriptToApply>>,
     /// `(inputs, visible)` the app was asked to change on an applied script.
     instance_updates: Mutex<Vec<(Option<crate::mcp::pine::InputArgs>, Option<bool>)>>,
+    /// The one chart (workspace 1, chart 2) the candle and drawing tools run against.
+    chart: Mutex<StubChart>,
+    /// Candle and drawing commands that reached the app, by kind.
+    draw_calls: Mutex<Vec<String>>,
+}
+
+/// 2025-10-20T00:00:00Z.
+const T0: i64 = 1_760_918_400_000;
+const DAY: i64 = 86_400_000;
+
+/// Thirty daily bars, then whatever the tests draw on them.
+struct StubChart {
+    candles: Vec<crate::model::Kline>,
+    drawings: Vec<crate::model::Drawing>,
+    next_id: u64,
+}
+
+impl Default for StubChart {
+    fn default() -> Self {
+        Self {
+            candles: (0..30)
+                .map(|day| {
+                    // A zig-zag with a swing low every ten days (5, 15, 25) and shallower dips between.
+                    let wave = [0.0, 2.0, 4.0, 2.0, 1.0, -3.0, 1.0, 3.0, 5.0, 4.0];
+                    let base = 100.0 + wave[(day % 10) as usize] + day as f64 * 0.5;
+                    crate::model::Kline {
+                        open_time: T0 + day * DAY,
+                        close_time: T0 + (day + 1) * DAY - 1,
+                        open: base,
+                        high: base + 2.0,
+                        low: base - 2.0,
+                        close: base + 1.0,
+                        volume: 100.0 + day as f64,
+                    }
+                })
+                .collect(),
+            drawings: Vec::new(),
+            next_id: 1,
+        }
+    }
+}
+
+fn stub_drawings_changed(stub: &Stub, status: &str, ids: &[u64]) -> McpReply {
+    let chart = stub.chart.lock().unwrap();
+    McpReply::DrawingsChanged(Box::new(crate::mcp::types::DrawingsChangeResult {
+        workspace_id: "1".into(),
+        chart_id: "2".into(),
+        status: status.into(),
+        drawing_ids: ids.iter().map(u64::to_string).collect(),
+        drawings: chart
+            .drawings
+            .iter()
+            .filter(|drawing| ids.contains(&drawing.id()))
+            .filter_map(crate::mcp::chart_data::drawing_info)
+            .collect(),
+        total_drawings: crate::mcp::chart_data::counted(&chart.drawings),
+    }))
+}
+
+fn stub_chart_known(workspace_id: u64, chart_id: u64) -> Result<(), McpError> {
+    if workspace_id == 1 && chart_id == 2 {
+        Ok(())
+    } else {
+        Err(McpError::NotFound("No such chart".into()))
+    }
 }
 
 pub struct Harness {
@@ -372,6 +437,110 @@ fn stub_app(
         McpCommand::RemovePineInstance { instance_id, .. } => {
             stub.pine_calls.lock().unwrap().push("remove".into());
             Ok(instance_changed("removed", &instance_id.to_string()))
+        }
+        McpCommand::GetCandles {
+            workspace_id,
+            chart_id,
+            limit,
+            before,
+        } => {
+            stub.draw_calls.lock().unwrap().push("candles".into());
+            stub_chart_known(workspace_id, chart_id)?;
+            let chart = stub.chart.lock().unwrap();
+            let meta = crate::mcp::chart_data::CandleMeta {
+                workspace_id,
+                chart_id,
+                instrument: InstrumentId::new(crate::model::DataSource::Binance, "BTCUSDT"),
+                timeframe: "1D".into(),
+                chart_type: crate::model::ChartType::Candles,
+                older_supported: true,
+                replay_ms: None,
+                now_ms: T0 + 30 * DAY - 1_000,
+            };
+            Ok(McpReply::Candles(Box::new(
+                crate::mcp::chart_data::candles_result(&meta, &chart.candles, limit, before),
+            )))
+        }
+        McpCommand::ListDrawings {
+            workspace_id,
+            chart_id,
+        } => {
+            stub.draw_calls.lock().unwrap().push("list".into());
+            stub_chart_known(workspace_id, chart_id)?;
+            let chart = stub.chart.lock().unwrap();
+            Ok(McpReply::Drawings(Box::new(
+                crate::mcp::chart_data::drawings_result(workspace_id, chart_id, &chart.drawings),
+            )))
+        }
+        McpCommand::AddDrawings {
+            workspace_id,
+            chart_id,
+            drawings,
+        } => {
+            stub.draw_calls.lock().unwrap().push("add".into());
+            stub_chart_known(workspace_id, chart_id)?;
+            let ids = {
+                let mut chart = stub.chart.lock().unwrap();
+                let planned = crate::mcp::chart_data::plan_add(
+                    &chart.drawings,
+                    &chart.candles,
+                    chart.next_id,
+                    &drawings,
+                )?;
+                chart.next_id += planned.len() as u64;
+                let ids: Vec<u64> = planned.iter().map(crate::model::Drawing::id).collect();
+                chart.drawings.extend(planned);
+                ids
+            };
+            Ok(stub_drawings_changed(stub, "added", &ids))
+        }
+        McpCommand::EditDrawing {
+            workspace_id,
+            chart_id,
+            edit,
+        } => {
+            stub.draw_calls.lock().unwrap().push("edit".into());
+            stub_chart_known(workspace_id, chart_id)?;
+            let changed = {
+                let mut chart = stub.chart.lock().unwrap();
+                let command =
+                    crate::mcp::chart_data::plan_edit(&chart.drawings, &chart.candles, &edit)?;
+                if let Some(crate::model::DrawingCommand::Replace { id, drawing }) = command {
+                    if let Some(slot) = chart.drawings.iter_mut().find(|d| d.id() == id) {
+                        *slot = drawing;
+                    }
+                    true
+                } else {
+                    false
+                }
+            };
+            Ok(stub_drawings_changed(
+                stub,
+                if changed { "updated" } else { "unchanged" },
+                &[edit.drawing_id],
+            ))
+        }
+        McpCommand::RemoveDrawings {
+            workspace_id,
+            chart_id,
+            drawing_ids,
+        } => {
+            stub.draw_calls.lock().unwrap().push("remove".into());
+            stub_chart_known(workspace_id, chart_id)?;
+            let removed: Vec<u64> = {
+                let mut chart = stub.chart.lock().unwrap();
+                let commands = crate::mcp::chart_data::plan_remove(&chart.drawings, &drawing_ids)?;
+                let removed: Vec<u64> = commands
+                    .iter()
+                    .filter_map(|command| match command {
+                        crate::model::DrawingCommand::Remove(id) => Some(*id),
+                        _ => None,
+                    })
+                    .collect();
+                chart.drawings.retain(|d| !removed.contains(&d.id()));
+                removed
+            };
+            Ok(stub_drawings_changed(stub, "removed", &removed))
         }
         McpCommand::ListPineAlerts => {
             stub.pine_calls.lock().unwrap().push("alerts".into());
@@ -2474,4 +2643,479 @@ fn an_applied_script_can_be_changed_and_removed() {
         *harness.stub.pine_calls.lock().unwrap(),
         ["update", "remove"]
     );
+}
+
+// MARK: Candles and drawings
+
+const CANDLE_ONLY: &[Permission] = &[Permission::ChartsCandlesRead];
+const DRAW_ALL: &[Permission] = &[
+    Permission::ChartsCandlesRead,
+    Permission::DrawingsRead,
+    Permission::DrawingsWrite,
+    Permission::DrawingsDelete,
+];
+
+fn chart_args() -> Value {
+    json!({"workspace_id": "1", "chart_id": "2"})
+}
+
+fn with(mut base: Value, extra: Value) -> Value {
+    for (key, value) in extra.as_object().unwrap() {
+        base[key] = value.clone();
+    }
+    base
+}
+
+fn time_of_day(day: i64) -> String {
+    crate::mcp::chart_data::iso(T0 + day * DAY)
+}
+
+#[test]
+fn candles_and_drawings_have_their_own_permissions() {
+    let harness = Harness::start(&[
+        ("candles", "candles-tok", CANDLE_ONLY),
+        ("read", "read-tok", &[Permission::DrawingsRead]),
+        ("write", "write-tok", &[Permission::DrawingsWrite]),
+        ("delete", "delete-tok", &[Permission::DrawingsDelete]),
+        ("charts", "charts-tok", BOTH),
+    ]);
+    let url = harness.url();
+    let tools = [
+        ("degenview_get_candles", chart_args(), "candles-tok"),
+        ("degenview_list_drawings", chart_args(), "read-tok"),
+        (
+            "degenview_add_drawings",
+            with(
+                chart_args(),
+                json!({"drawings": [{
+                    "tool": "trend_line",
+                    "a": {"time": time_of_day(2), "price": 100.0},
+                    "b": {"time": time_of_day(9), "price": 105.0}
+                }]}),
+            ),
+            "write-tok",
+        ),
+        (
+            "degenview_delete_drawings",
+            with(chart_args(), json!({"drawing_ids": ["1"]})),
+            "delete-tok",
+        ),
+    ];
+    let tokens = [
+        "candles-tok",
+        "read-tok",
+        "write-tok",
+        "delete-tok",
+        "charts-tok",
+    ];
+    // Run them in order so the delete has something to delete.
+    for (tool, args, owner) in &tools {
+        for token in tokens {
+            let result = call(&url, token, tool, args.clone());
+            if token == *owner {
+                assert_eq!(result["isError"], json!(false), "{tool}: {result}");
+            } else {
+                assert_eq!(
+                    error_code(&result),
+                    "PERMISSION_DENIED",
+                    "{tool} as {token}"
+                );
+            }
+        }
+    }
+    assert_eq!(tool_names(&url, "candles-tok"), ["degenview_get_candles"]);
+    assert_eq!(tool_names(&url, "read-tok"), ["degenview_list_drawings"]);
+    assert_eq!(
+        tool_names(&url, "write-tok"),
+        ["degenview_add_drawings", "degenview_update_drawing"]
+    );
+    assert_eq!(
+        tool_names(&url, "delete-tok"),
+        ["degenview_delete_drawings"]
+    );
+    // Neither seeing the chart nor creating charts implies reading its candles or drawing on it.
+    assert!(
+        !tool_names(&url, "charts-tok")
+            .iter()
+            .any(|name| name.contains("candles") || name.contains("drawing"))
+    );
+    harness
+        .shared
+        .replace(harness.shared.clients(), PermissionSet::none());
+    let denied = call(&url, "candles-tok", "degenview_get_candles", chart_args());
+    assert_eq!(error_code(&denied), "PERMISSION_DENIED");
+}
+
+#[test]
+fn candles_arrive_as_named_columns_and_page_back_without_overlap() {
+    let harness = Harness::start(&[("c1", "tok", CANDLE_ONLY)]);
+    let url = harness.url();
+    let page = |extra: Value| {
+        let result = call(
+            &url,
+            "tok",
+            "degenview_get_candles",
+            with(chart_args(), extra),
+        );
+        assert_eq!(result["isError"], json!(false), "{result}");
+        result["structuredContent"].clone()
+    };
+    let newest = page(json!({"limit": 10}));
+    assert_eq!(
+        newest["columns"],
+        json!(["time", "open", "high", "low", "close", "volume"])
+    );
+    assert_eq!(newest["count"], json!(10));
+    assert_eq!(newest["loaded_bars"], json!(30));
+    assert_eq!(newest["instrument"], json!("BINANCE:BTCUSDT"));
+    assert_eq!(newest["timeframe"], json!("1D"));
+    assert_eq!(newest["bars"][9][0], json!(time_of_day(29)));
+    assert_eq!(newest["range"]["from"], json!(time_of_day(20)));
+    assert_eq!(newest["has_older_loaded"], json!(true));
+    assert_eq!(newest["last_bar_forming"], json!(true));
+    let high = newest["summary"]["high"].as_f64().unwrap();
+    let highest_row = newest["bars"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row[2].as_f64().unwrap())
+        .fold(f64::MIN, f64::max);
+    assert_eq!(high, highest_row);
+
+    // `before` takes the `from` of the last page, in the form it was written.
+    let older = page(json!({"limit": 10, "before": newest["range"]["from"]}));
+    assert_eq!(older["bars"][9][0], json!(time_of_day(19)));
+    assert_eq!(older["bars"][0][0], json!(time_of_day(10)));
+    assert_eq!(older["last_bar_forming"], json!(false));
+    let oldest = page(json!({"limit": 50, "before": older["range"]["from"]}));
+    assert_eq!(oldest["count"], json!(10));
+    assert_eq!(oldest["has_older_loaded"], json!(false));
+    // The default is a generous page, not everything.
+    assert_eq!(page(json!({}))["count"], json!(30));
+}
+
+#[test]
+fn bad_candle_and_drawing_arguments_never_reach_the_app() {
+    let harness = Harness::start(&[("c1", "tok", DRAW_ALL)]);
+    let url = harness.url();
+    let line = |extra: Value| {
+        with(
+            json!({
+                "tool": "trend_line",
+                "a": {"time": time_of_day(2), "price": 100.0},
+                "b": {"time": time_of_day(9), "price": 105.0}
+            }),
+            extra,
+        )
+    };
+    let add = |drawing: Value| with(chart_args(), json!({"drawings": [drawing]}));
+    let cases = [
+        (
+            "degenview_get_candles",
+            with(chart_args(), json!({"limit": 0})),
+        ),
+        (
+            "degenview_get_candles",
+            with(chart_args(), json!({"limit": 5000})),
+        ),
+        (
+            "degenview_get_candles",
+            with(chart_args(), json!({"before": "tomorrow"})),
+        ),
+        (
+            "degenview_get_candles",
+            with(chart_args(), json!({"extra": 1})),
+        ),
+        (
+            "degenview_get_candles",
+            json!({"workspace_id": "x", "chart_id": "2"}),
+        ),
+        ("degenview_list_drawings", json!({"workspace_id": "1"})),
+        (
+            "degenview_add_drawings",
+            with(chart_args(), json!({"drawings": []})),
+        ),
+        (
+            "degenview_add_drawings",
+            with(chart_args(), json!({"drawings": vec![line(json!({})); 26]})),
+        ),
+        ("degenview_add_drawings", add(line(json!({"color": "red"})))),
+        ("degenview_add_drawings", add(line(json!({"width": 0})))),
+        ("degenview_add_drawings", add(line(json!({"dash": "wavy"})))),
+        ("degenview_add_drawings", add(line(json!({"tool": "fib"})))),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"text": "label"}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"fill_color": "#112233"}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"stroke": "blue"}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"a": {"time": "soon", "price": 1.0}}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"a": {"time": time_of_day(2)}}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"a": {"time": time_of_day(2), "price": 0}}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(json!({"a": {"time": time_of_day(2), "price": -4}}))),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(
+                json!({"a": {"time": time_of_day(2), "price": 1, "price_from": "low"}}),
+            )),
+        ),
+        (
+            "degenview_add_drawings",
+            add(line(
+                json!({"a": {"time": time_of_day(2), "price_from": "mid"}}),
+            )),
+        ),
+        (
+            "degenview_update_drawing",
+            with(chart_args(), json!({"drawing_id": "1"})),
+        ),
+        (
+            "degenview_update_drawing",
+            with(chart_args(), json!({"drawing_id": "0", "hidden": true})),
+        ),
+        (
+            "degenview_update_drawing",
+            with(chart_args(), json!({"drawing_id": "x", "hidden": true})),
+        ),
+        (
+            "degenview_update_drawing",
+            with(chart_args(), json!({"drawing_id": "1", "color": "nope"})),
+        ),
+        (
+            "degenview_delete_drawings",
+            with(chart_args(), json!({"drawing_ids": []})),
+        ),
+        (
+            "degenview_delete_drawings",
+            with(chart_args(), json!({"drawing_ids": ["a"]})),
+        ),
+        (
+            "degenview_delete_drawings",
+            with(chart_args(), json!({"drawing_ids": vec!["1"; 51]})),
+        ),
+    ];
+    for (tool, arguments) in cases {
+        let reply = rpc(
+            &url,
+            Some("tok"),
+            "tools/call",
+            json!({"name": tool, "arguments": arguments}),
+        );
+        let json = reply.json();
+        let rejected = json.get("error").is_some() || json["result"]["isError"] == json!(true);
+        assert!(rejected, "accepted {tool} {arguments}: {}", reply.body);
+    }
+    assert!(harness.stub.draw_calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_agent_reads_the_candles_and_draws_a_support_line_through_the_lows() {
+    let harness = Harness::start(&[("c1", "tok", DRAW_ALL)]);
+    let url = harness.url();
+
+    // Read the bars and find the three swing lows, as an agent would.
+    let result = call(
+        &url,
+        "tok",
+        "degenview_get_candles",
+        with(chart_args(), json!({"limit": 100})),
+    );
+    let bars = result["structuredContent"]["bars"]
+        .as_array()
+        .unwrap()
+        .clone();
+    let lows: Vec<&Value> = bars
+        .iter()
+        .filter(|row| {
+            let index = bars.iter().position(|other| other[0] == row[0]).unwrap();
+            index > 0
+                && index + 1 < bars.len()
+                && row[3].as_f64() < bars[index - 1][3].as_f64()
+                && row[3].as_f64() < bars[index + 1][3].as_f64()
+        })
+        .collect();
+    assert_eq!(lows.len(), 5, "{lows:?}");
+    let (first, middle, last) = (lows[0], lows[2], lows[4]);
+
+    // Draw through the first and last, running on to the right; mark the middle one with a zone.
+    let drawn = call(
+        &url,
+        "tok",
+        "degenview_add_drawings",
+        with(
+            chart_args(),
+            json!({"drawings": [
+                {
+                    "tool": "trend_line",
+                    "a": {"time": first[0], "price_from": "low"},
+                    "b": {"time": last[0], "price_from": "low"},
+                    "color": "#FFC107", "dash": "dashed", "extend_right": true
+                },
+                {
+                    "tool": "rectangle",
+                    "a": {"time": middle[0], "price": 108.0},
+                    "b": {"time": time_of_day(40), "price": 104.0},
+                    "color": "#2962FF", "text": "Demand"
+                }
+            ]}),
+        ),
+    );
+    assert_eq!(drawn["isError"], json!(false), "{drawn}");
+    let added = &drawn["structuredContent"];
+    assert_eq!(added["status"], json!("added"));
+    assert_eq!(added["drawing_ids"], json!(["1", "2"]));
+    assert_eq!(added["total_drawings"], json!(2));
+    let line = &added["drawings"][0];
+    assert_eq!(line["tool"], json!("trend_line"));
+    assert_eq!(line["anchors"][0]["time"], first[0]);
+    // price_from read the bar's low, not a number the agent typed.
+    assert_eq!(line["anchors"][0]["price"], first[3]);
+    assert_eq!(line["anchors"][1]["price"], last[3]);
+    assert_eq!(line["style"]["color"], json!("#FFC107FF"));
+    assert_eq!(line["style"]["dash"], json!("dashed"));
+    assert_eq!(line["style"]["extend_right"], json!(true));
+    assert_eq!(added["drawings"][1]["text"], json!("Demand"));
+    // The zone's right edge is in the future; it is kept, not snapped.
+    assert_eq!(
+        added["drawings"][1]["anchors"][1]["time"],
+        json!(time_of_day(40))
+    );
+
+    // The listing agrees with what was returned.
+    let listed = call(&url, "tok", "degenview_list_drawings", chart_args());
+    assert_eq!(listed["structuredContent"]["total"], json!(2));
+    assert_eq!(
+        listed["structuredContent"]["drawings"][0],
+        added["drawings"][0]
+    );
+
+    // Nudge the line and recolour it; the zone is left alone.
+    let moved = call(
+        &url,
+        "tok",
+        "degenview_update_drawing",
+        with(
+            chart_args(),
+            json!({"drawing_id": "1", "color": "#00C853", "b": {"time": last[0], "price": 108.0}}),
+        ),
+    );
+    assert_eq!(moved["isError"], json!(false), "{moved}");
+    assert_eq!(moved["structuredContent"]["status"], json!("updated"));
+    assert_eq!(
+        moved["structuredContent"]["drawings"][0]["anchors"][1]["price"],
+        json!(108.0)
+    );
+    assert_eq!(
+        moved["structuredContent"]["drawings"][0]["style"]["color"],
+        json!("#00C853FF")
+    );
+    let again = call(
+        &url,
+        "tok",
+        "degenview_update_drawing",
+        with(chart_args(), json!({"drawing_id": "1", "color": "#00C853"})),
+    );
+    assert_eq!(again["structuredContent"]["status"], json!("unchanged"));
+
+    let gone = call(
+        &url,
+        "tok",
+        "degenview_delete_drawings",
+        with(chart_args(), json!({"drawing_ids": ["1", "2"]})),
+    );
+    assert_eq!(gone["structuredContent"]["status"], json!("removed"));
+    assert_eq!(gone["structuredContent"]["total_drawings"], json!(0));
+    assert!(harness.stub.chart.lock().unwrap().drawings.is_empty());
+}
+
+#[test]
+fn one_bad_drawing_refuses_the_batch_and_a_locked_one_is_left_alone() {
+    let harness = Harness::start(&[("c1", "tok", DRAW_ALL)]);
+    let url = harness.url();
+    let good = json!({
+        "tool": "trend_line",
+        "a": {"time": time_of_day(2), "price": 100.0},
+        "b": {"time": time_of_day(9), "price": 105.0}
+    });
+    let outside = json!({
+        "tool": "trend_line",
+        "a": {"time": time_of_day(-50), "price_from": "high"},
+        "b": {"time": time_of_day(9), "price": 105.0}
+    });
+    let refused = call(
+        &url,
+        "tok",
+        "degenview_add_drawings",
+        with(chart_args(), json!({"drawings": [good.clone(), outside]})),
+    );
+    let message = refused["structuredContent"]["message"].as_str().unwrap();
+    assert_eq!(error_code(&refused), "INVALID_ARGUMENT");
+    assert!(
+        message.contains("Drawing 2") && message.contains("loaded candles"),
+        "{message}"
+    );
+    assert!(harness.stub.chart.lock().unwrap().drawings.is_empty());
+
+    let made = call(
+        &url,
+        "tok",
+        "degenview_add_drawings",
+        with(chart_args(), json!({"drawings": [good.clone(), good]})),
+    );
+    assert_eq!(made["structuredContent"]["drawing_ids"], json!(["1", "2"]));
+    // The person locks one in the app.
+    harness.stub.chart.lock().unwrap().drawings[0].set_locked(true);
+    let listed = call(&url, "tok", "degenview_list_drawings", chart_args());
+    assert_eq!(
+        listed["structuredContent"]["drawings"][0]["editable"],
+        json!(false)
+    );
+    let edit = call(
+        &url,
+        "tok",
+        "degenview_update_drawing",
+        with(chart_args(), json!({"drawing_id": "1", "hidden": true})),
+    );
+    assert_eq!(error_code(&edit), "CONFLICT");
+    // Deleting both is refused as a whole: the unlocked one stays too.
+    let delete = call(
+        &url,
+        "tok",
+        "degenview_delete_drawings",
+        with(chart_args(), json!({"drawing_ids": ["2", "1"]})),
+    );
+    assert_eq!(error_code(&delete), "CONFLICT");
+    assert_eq!(harness.stub.chart.lock().unwrap().drawings.len(), 2);
+    let unknown = call(
+        &url,
+        "tok",
+        "degenview_update_drawing",
+        with(chart_args(), json!({"drawing_id": "77", "hidden": true})),
+    );
+    assert_eq!(error_code(&unknown), "NOT_FOUND");
+    let elsewhere = call(
+        &url,
+        "tok",
+        "degenview_list_drawings",
+        json!({"workspace_id": "1", "chart_id": "99"}),
+    );
+    assert_eq!(error_code(&elsewhere), "NOT_FOUND");
 }

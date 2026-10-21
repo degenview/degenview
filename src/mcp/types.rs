@@ -604,3 +604,121 @@ mod tests {
         }
     }
 }
+
+// MARK: Candles and drawings
+
+/// One candle: `[time, open, high, low, close, volume]`, in the order `columns` names. The volume
+/// is `null` for a market whose provider reports none.
+pub type CandleRow = (String, f64, f64, f64, f64, Option<f64>);
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct CandleRange {
+    /// Start of the oldest returned bar.
+    pub from: String,
+    /// Start of the newest returned bar.
+    pub to: String,
+}
+
+/// Plain figures over the returned bars, so an agent need not scan them for the extremes.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct CandleSummary {
+    /// The highest high.
+    pub high: f64,
+    /// The lowest low.
+    pub low: f64,
+    pub first_open: f64,
+    pub last_close: f64,
+    /// `last_close` against `first_open`, in percent; null when the first open is zero.
+    pub change_percent: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct CandlesResult {
+    pub workspace_id: String,
+    pub chart_id: String,
+    pub instrument: String,
+    /// The workspace timeframe, i.e. the length of each bar.
+    pub timeframe: String,
+    /// How the chart draws its bars. The candles below are always the market's own.
+    pub chart_type: String,
+    /// The meaning of each position in a `bars` row.
+    pub columns: Vec<String>,
+    /// Oldest first. Times are ISO-8601 UTC; pass them back as a drawing's `time`.
+    pub bars: Vec<CandleRow>,
+    pub count: usize,
+    /// How many bars the chart holds in all (up to the replay position).
+    pub loaded_bars: usize,
+    pub range: Option<CandleRange>,
+    pub summary: Option<CandleSummary>,
+    /// Whether the chart holds bars older than the first returned. Page back with `before`.
+    pub has_older_loaded: bool,
+    /// Whether the market can serve more history than the chart holds. DegenView loads it only
+    /// as someone scrolls the chart back, so asking again will not fetch it.
+    pub older_history_available: bool,
+    /// Whether the newest returned bar is still forming (its period has not ended).
+    pub last_bar_forming: bool,
+    /// Anything that changes how to read the bars.
+    pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DrawingAnchorInfo {
+    pub time: String,
+    pub price: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DrawingStyleInfo {
+    /// `#RRGGBBAA`.
+    pub color: String,
+    pub width: f64,
+    /// `solid`, `dashed` or `dotted`.
+    pub dash: String,
+    pub extend_left: bool,
+    pub extend_right: bool,
+    /// `#RRGGBBAA` when the drawing is filled.
+    pub fill_color: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DrawingInfo {
+    pub drawing_id: String,
+    /// `trend_line`, `rectangle`, `fib`, `brush`, … (the app's own tool names).
+    pub tool: String,
+    /// The first 20 points, in placement order.
+    pub anchors: Vec<DrawingAnchorInfo>,
+    pub anchor_count: usize,
+    /// Null for drawings that carry no style (a fib retracement).
+    pub style: Option<DrawingStyleInfo>,
+    pub text: Option<String>,
+    pub locked: bool,
+    pub hidden: bool,
+    /// Whether this server can change it: trend lines and rectangles that are not locked.
+    pub editable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DrawingsResult {
+    pub workspace_id: String,
+    pub chart_id: String,
+    /// In stacking order, topmost last.
+    pub drawings: Vec<DrawingInfo>,
+    pub total: usize,
+    pub truncated: bool,
+    /// Rows this version of DegenView cannot read; they are kept, not shown.
+    pub unreadable: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct DrawingsChangeResult {
+    pub workspace_id: String,
+    pub chart_id: String,
+    /// `added`, `updated`, `unchanged` or `removed`.
+    pub status: String,
+    /// The drawings added, changed or removed.
+    pub drawing_ids: Vec<String>,
+    /// The added or changed drawings as they are now (empty after a removal).
+    pub drawings: Vec<DrawingInfo>,
+    /// Drawings the chart holds afterwards.
+    pub total_drawings: usize,
+}

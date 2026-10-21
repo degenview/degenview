@@ -53,6 +53,36 @@ fn stroke_path(painter: &Painter, points: &[Pos2], closed: bool, stroke: Stroke,
     }
 }
 
+/// A trend line in its own style: colour, width and dash, prolonged to the plot edge where the
+/// style says so. Handles stay on the two anchors, and `emphasized` adds the halo and handles.
+pub(super) fn draw_trend_line(
+    painter: &Painter,
+    a: Pos2,
+    b: Pos2,
+    plot: Rect,
+    style: &DrawingStyle,
+    emphasized: bool,
+) {
+    let color = series_render::color(style.stroke.color);
+    let (from, to) = geo::extend_to_rect(a, b, plot, style.extend_left, style.extend_right);
+    if emphasized {
+        let halo = Stroke::new(style.stroke.width + 5.0, with_alpha(color, 40));
+        stroke_path(painter, &[from, to], false, halo, LineDash::Solid);
+    }
+    stroke_path(
+        painter,
+        &[from, to],
+        false,
+        Stroke::new(style.stroke.width, color),
+        style.stroke.dash,
+    );
+    if emphasized {
+        for at in [a, b] {
+            painter.circle(at, HANDLE_RADIUS, theme::surface(), Stroke::new(1.5, color));
+        }
+    }
+}
+
 /// The glyph of a handle: a filled disc with a coloured rim, or a hollow ring for a control.
 pub(super) fn draw_handle(painter: &Painter, spot: &HandleSpot, color: Color32) {
     let radius = HANDLE_RADIUS;

@@ -362,47 +362,6 @@ fn draw_handle(painter: &Painter, at: Pos2, color: Color32) {
     painter.circle(at, HANDLE_RADIUS, theme::surface(), Stroke::new(1.5, color));
 }
 
-pub struct LineStyle {
-    pub color: Color32,
-    pub width: f32,
-    pub opacity: f32,
-}
-
-impl LineStyle {
-    fn stroke(&self) -> Stroke {
-        Stroke::new(
-            self.width,
-            with_alpha(self.color, (self.opacity.clamp(0.0, 1.0) * 255.0) as u8),
-        )
-    }
-}
-
-impl Default for LineStyle {
-    fn default() -> Self {
-        Self {
-            color: TREND_COLOR,
-            width: 1.5,
-            opacity: 1.0,
-        }
-    }
-}
-
-/// A trend line between two screen points. `selected`/`hovered` show end handles
-/// and a halo.
-pub fn draw_trend_line(painter: &Painter, a: Pos2, b: Pos2, style: &LineStyle, emphasized: bool) {
-    if emphasized {
-        painter.line_segment(
-            [a, b],
-            Stroke::new(style.width + 5.0, with_alpha(style.color, 40)),
-        );
-    }
-    painter.line_segment([a, b], style.stroke());
-    if emphasized {
-        draw_handle(painter, a, style.color);
-        draw_handle(painter, b, style.color);
-    }
-}
-
 /// One level of a drawn retracement.
 pub struct FibLevelLine {
     pub ratio: f64,

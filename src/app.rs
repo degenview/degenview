@@ -1399,6 +1399,46 @@ impl DegenViewApp {
                     &store.pine_subscriptions(),
                 )))
             }
+            McpCommand::GetCandles {
+                workspace_id,
+                chart_id,
+                limit,
+                before,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::chart_candles(workspace, chart_id, limit, before)
+                    .map(|result| McpReply::Candles(Box::new(result)))
+            }),
+            McpCommand::ListDrawings {
+                workspace_id,
+                chart_id,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::chart_drawings(workspace, chart_id)
+                    .map(|result| McpReply::Drawings(Box::new(result)))
+            }),
+            McpCommand::AddDrawings {
+                workspace_id,
+                chart_id,
+                drawings,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::add_drawings(workspace, chart_id, &drawings)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
+            McpCommand::EditDrawing {
+                workspace_id,
+                chart_id,
+                edit,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::edit_drawing(workspace, chart_id, &edit)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
+            McpCommand::RemoveDrawings {
+                workspace_id,
+                chart_id,
+                drawing_ids,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::remove_drawings(workspace, chart_id, &drawing_ids)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
             McpCommand::AddPineInstance {
                 workspace_id,
                 chart_id,
