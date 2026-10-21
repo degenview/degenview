@@ -1639,3 +1639,127 @@ fn a_catch_up_that_would_remove_most_of_the_library_removes_nothing() {
     );
     assert!(b.core.status().last_error.unwrap().contains("were kept"));
 }
+
+// MARK: Watchlist flags
+
+fn set_flags(mac: &Mac, flags: Value) {
+    mac.store
+        .lock()
+        .unwrap()
+        .set_setting("watchlist.flags", &flags)
+        .unwrap();
+}
+
+fn flags_of(mac: &Mac) -> Value {
+    mac.store
+        .lock()
+        .unwrap()
+        .raw_setting("watchlist.flags")
+        .unwrap()
+        .unwrap_or(Value::Null)
+}
+
+#[test]
+fn a_flag_set_on_one_mac_appears_on_the_other() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    set_flags(&a, json!({"binance:BTCUSDT": "Red"}));
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.names(), ["setting.watchlist.flags"]);
+    assert_eq!(flags_of(&b), json!({"binance:BTCUSDT": "Red"}));
+    set_flags(&b, json!({"binance:BTCUSDT": "Green"}));
+    settle(&mut a, &mut b);
+    assert_eq!(flags_of(&a), json!({"binance:BTCUSDT": "Green"}));
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn flags_on_different_markets_from_two_macs_are_both_kept() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    set_flags(&a, json!({"binance:BTCUSDT": "Red"}));
+    settle(&mut a, &mut b);
+    set_flags(
+        &a,
+        json!({"binance:BTCUSDT": "Red", "binance:ETHUSDT": "Blue"}),
+    );
+    set_flags(
+        &b,
+        json!({"binance:BTCUSDT": "Red", "binance:SOLUSDT": "Green"}),
+    );
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    let expected = json!({
+        "binance:BTCUSDT": "Red",
+        "binance:ETHUSDT": "Blue",
+        "binance:SOLUSDT": "Green",
+    });
+    assert_eq!(flags_of(&a), expected);
+    assert_eq!(flags_of(&b), expected);
+}
+
+#[test]
+fn a_flag_removed_on_one_mac_is_not_resurrected_by_the_other() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    set_flags(
+        &a,
+        json!({"binance:BTCUSDT": "Red", "binance:ETHUSDT": "Blue"}),
+    );
+    settle(&mut a, &mut b);
+    // A clears ETH while B flags SOL, neither having fetched the other's change.
+    set_flags(&a, json!({"binance:BTCUSDT": "Red"}));
+    set_flags(
+        &b,
+        json!({
+            "binance:BTCUSDT": "Red",
+            "binance:ETHUSDT": "Blue",
+            "binance:SOLUSDT": "Green",
+        }),
+    );
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    let expected = json!({"binance:BTCUSDT": "Red", "binance:SOLUSDT": "Green"});
+    assert_eq!(flags_of(&a), expected);
+    assert_eq!(flags_of(&b), expected);
+}
+
+#[test]
+fn flags_follow_the_watchlists_switch_not_preferences() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Preferences, false)
+        .unwrap();
+    set_flags(&a, json!({"binance:BTCUSDT": "Red"}));
+    a.store
+        .lock()
+        .unwrap()
+        .set_setting("appTheme", &"dark")
+        .unwrap();
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.names(), ["setting.watchlist.flags"]);
+    assert_eq!(flags_of(&b), json!({"binance:BTCUSDT": "Red"}));
+
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Preferences, true)
+        .unwrap();
+    a.store
+        .lock()
+        .unwrap()
+        .set_category_enabled(Category::Watchlists, false)
+        .unwrap();
+    set_flags(&a, json!({"binance:BTCUSDT": "Blue"}));
+    settle(&mut a, &mut b);
+    assert_eq!(flags_of(&b), json!({"binance:BTCUSDT": "Red"}));
+}

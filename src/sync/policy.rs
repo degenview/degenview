@@ -199,6 +199,30 @@ pub fn table_policy(table: &str) -> TablePolicy {
     }
 }
 
+/// The switch an entity belongs to. A setting follows its key: flags are marks on the markets in
+/// the user's watchlists, so they travel with Watchlists rather than Preferences.
+pub fn category_of(kind: EntityKind, sync_id: &str) -> Category {
+    match kind {
+        EntityKind::Setting => setting_category(sync_id).unwrap_or(Category::Preferences),
+        _ => kind.category(),
+    }
+}
+
+/// How an entity's concurrent edits merge. A setting follows its key's policy.
+pub fn merge_of(kind: EntityKind, sync_id: &str) -> Merge {
+    match (kind, setting_policy(sync_id)) {
+        (EntityKind::Setting, SettingPolicy::Portable(merge)) => merge,
+        _ => kind.merge(),
+    }
+}
+
+fn setting_category(key: &str) -> Option<Category> {
+    match key {
+        "watchlist.flags" => Some(Category::Watchlists),
+        _ => None,
+    }
+}
+
 /// The decision for one `setting` key.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettingPolicy {
@@ -314,6 +338,20 @@ mod tests {
             setting_policy("watchlist.flags"),
             SettingPolicy::Portable(Merge::ThreeWay)
         );
+    }
+
+    #[test]
+    fn flags_sync_with_watchlists_and_merge_per_key() {
+        let flags = EntityKind::Setting;
+        assert_eq!(category_of(flags, "watchlist.flags"), Category::Watchlists);
+        assert_eq!(merge_of(flags, "watchlist.flags"), Merge::ThreeWay);
+        assert_eq!(category_of(flags, "appTheme"), Category::Preferences);
+        assert_eq!(merge_of(flags, "appTheme"), Merge::LastWriterWins);
+        assert_eq!(
+            category_of(EntityKind::Watchlist, "1"),
+            Category::Watchlists
+        );
+        assert_eq!(merge_of(EntityKind::Watchlist, "1"), Merge::ThreeWay);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use super::ids::{Direction, map_fields};
 use super::merge::{
     Outcome, Side, Stamp, conflict_copy_name, merge, next_drawing_id, renumber_drawing,
 };
-use super::policy::{EntityKind, Merge};
+use super::policy::{EntityKind, Merge, category_of, merge_of};
 use super::project::{
     ScriptSnapshot, canonical_json, drawing_id, map_chart_cards, map_entry_cards, project_row_in,
     project_script, project_setting, project_transaction,
@@ -335,7 +335,8 @@ impl<'a> Work<'a> {
 
     fn apply_record(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
         // A category the user switched off waits in the inbox, to be applied if it is switched on.
-        if self.disabled.contains(&record.record.name.kind.category()) {
+        let name = &record.record.name;
+        if self.disabled.contains(&category_of(name.kind, &name.id)) {
             return self.keep(record, "category_off");
         }
         match record.record.name.kind {
@@ -413,7 +414,7 @@ impl<'a> Work<'a> {
             local_id,
             synced_hash: remote_hash,
             system_fields: record.system_fields.clone(),
-            base_payload: (kind.merge() == Merge::ThreeWay).then_some(remote_payload),
+            base_payload: (merge_of(kind, id) == Merge::ThreeWay).then_some(remote_payload),
             revision: record.record.revision as i64,
             origin_device: record.record.origin_device.clone(),
             now_ms: self.ctx.now_ms,
@@ -447,7 +448,7 @@ impl<'a> Work<'a> {
                     }
                     record.value.clone()
                 } else {
-                    let base: Option<Value> = (kind.merge() == Merge::ThreeWay)
+                    let base: Option<Value> = (merge_of(kind, id) == Merge::ThreeWay)
                         .then(|| meta.and_then(|m| m.base_payload.as_deref()))
                         .flatten()
                         .and_then(|bytes| serde_json::from_slice(bytes).ok());
@@ -1349,8 +1350,12 @@ impl<'a> Work<'a> {
             .into_iter()
             .filter(|r| r.reason == "category_off")
             .filter(|r| {
-                EntityKind::from_prefix(&r.entity_type)
-                    .is_some_and(|kind| !self.disabled.contains(&kind.category()))
+                let id = RecordName::parse(&r.record_name).map(|name| name.id);
+                EntityKind::from_prefix(&r.entity_type).is_some_and(|kind| {
+                    !self
+                        .disabled
+                        .contains(&category_of(kind, id.as_deref().unwrap_or_default()))
+                })
             })
             .collect();
         for entry in waiting {
@@ -1405,7 +1410,7 @@ impl<'a> Work<'a> {
 
     fn apply_deletion(&mut self, name: &RecordName) -> rusqlite::Result<()> {
         let (kind, id) = (name.kind, name.id.as_str());
-        if self.disabled.contains(&kind.category()) {
+        if self.disabled.contains(&category_of(kind, id)) {
             // Not applied; if the category returns, a reconcile re-uploads anything still here.
             return Ok(());
         }

@@ -10,7 +10,7 @@ use super::Store;
 mod paper;
 use crate::sync::ids::IdSpace;
 use crate::sync::policy::{
-    Category, EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy,
+    Category, EntityKind, SettingPolicy, TablePolicy, category_of, setting_policy, table_policy,
 };
 #[cfg(test)]
 use crate::sync::project::project_row;
@@ -562,7 +562,7 @@ impl Store {
             .iter()
             .filter(|(key, entity)| old.get(*key).map(|before| &before.hash) != Some(&entity.hash))
             .map(|(_, entity)| entity)
-            .filter(|entity| !off.contains(&entity.kind.category()))
+            .filter(|entity| !off.contains(&category_of(entity.kind, &entity.sync_id)))
             .collect();
         changed.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
         for entity in changed {
@@ -581,7 +581,7 @@ impl Store {
             .iter()
             .filter(|(key, _)| !new.contains_key(*key))
             .map(|(_, entity)| entity)
-            .filter(|entity| !off.contains(&entity.kind.category()))
+            .filter(|entity| !off.contains(&category_of(entity.kind, &entity.sync_id)))
             .collect();
         vanished.sort_by(|a, b| (a.kind.prefix(), &a.sync_id).cmp(&(b.kind.prefix(), &b.sync_id)));
         let held_layouts = self.mass_deleted_layouts(totals, &vanished);
@@ -1821,9 +1821,12 @@ impl Store {
         let Some(state) = self.sync_state()? else {
             return Ok(Reconciled::default());
         };
-        if self.disabled_categories().contains(&kind.category()) {
+        // Settings sit in different categories by key, so they are judged one by one below.
+        let off = self.disabled_categories();
+        if kind != EntityKind::Setting && off.contains(&kind.category()) {
             return Ok(Reconciled::default());
         }
+        let enabled = |sync_id: &str| !off.contains(&category_of(kind, sync_id));
         let device = state.device_id;
         let mut done = Reconciled::default();
 
@@ -1833,7 +1836,7 @@ impl Store {
             .filter(|row| row.kind == kind && row.op == OutboxOp::Upsert)
             .map(|row| row.sync_id)
             .collect();
-        let mut ids: Vec<_> = current.keys().collect();
+        let mut ids: Vec<_> = current.keys().filter(|id| enabled(id)).collect();
         ids.sort();
         for id in ids {
             let entity = &current[id];
@@ -1869,7 +1872,9 @@ impl Store {
                 > 0;
         let mut missing: Vec<_> = known
             .iter()
-            .filter(|(sync_id, _)| !alerts_in_flight && !current.contains_key(sync_id))
+            .filter(|(sync_id, _)| {
+                !alerts_in_flight && enabled(sync_id) && !current.contains_key(sync_id)
+            })
             .collect();
         missing.sort();
         // A layout's drawings follow the layout; only parents are judged for a mass delete.

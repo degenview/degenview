@@ -63,8 +63,9 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
   that failed to decode. Favorites are the `isFavorites` list; Swift favorite rows import once.
 - Identity is `InstrumentId` (source plus provider id); chain is metadata and ticker text is not an
   identity. CoinMarketCap portfolio cards are not instruments.
-- Flags are global by market in `watchlist.flags`. Sorting/filtering is presentation-only and stays
-  within sections through `watchlist_layout`.
+- Flags are global by market in `watchlist.flags`. They sync with the Watchlists switch (not
+  Preferences) and merge per key; `sync::policy::category_of` / `merge_of` decide per setting key.
+  Sorting/filtering is presentation-only and stays within sections through `watchlist_layout`.
 - Quotes are transient. `WatchlistQuoteCoordinator` merges demand by `InstrumentId`, batches each
   source, shares Coinbase's socket, backs off per source, and fills `WatchlistQuoteBook`. It neither
   persists quotes nor uses the alert quote path.

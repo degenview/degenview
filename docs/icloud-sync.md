@@ -19,6 +19,7 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Syncs | Record | Notes |
 | --- | --- | --- |
 | Watchlists | one per list; Favorites is one shared record | entries merge individually |
+| Watchlist flags | one record, `watchlist.flags` | colour marks per market; follows the Watchlists switch and merges key by key |
 | Saved layouts | one per layout | without drawings, `last_opened`, `autosave` (per Mac) |
 | Drawings | one per drawing, keyed `layout.chart.drawing` | only inside saved layouts, never the tab session |
 | Chart / drawing templates | one each | built-in presets live in code |
@@ -26,7 +27,7 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
 | Portfolios | one per portfolio, and one per transaction | valuation history is not synced; it is rebuilt on each Mac |
 | Paper trading | one record per account holding the account, its orders, fills, positions, events, closed trades and journal, and which Mac runs it | see [Portfolios and paper trading](#portfolios-and-paper-trading) |
-| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `watchlist.flags`, `snapshot.prefs` (host, scale, include-trading only) | |
+| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (host, scale, include-trading only) | |
 
 Never synced: market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
