@@ -126,6 +126,69 @@ impl Store {
         Ok(())
     }
 
+    /// Drops this Mac's own default paper account when nothing was ever done in it and iCloud has
+    /// accounts of its own, so joining does not leave a second, empty "Paper Trading" on every Mac.
+    /// "Untouched": never uploaded, named like the default, balance unchanged, and no order, fill,
+    /// position, event, closed trade or journal entry. Anything else is kept. Returns whether one
+    /// was dropped. Nothing is uploaded or deleted in iCloud.
+    pub fn drop_untouched_default_paper_account(&self, now_ms: i64) -> rusqlite::Result<bool> {
+        let kind = EntityKind::PaperAccount;
+        let ids = self.id_space();
+        let accounts = self
+            .connection
+            .prepare("SELECT id FROM paper_account")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut candidate = None;
+        let mut cloud_has_accounts = false;
+        for id in accounts {
+            let sync_id = ids.to_global_string(&id);
+            let known_to_icloud = self
+                .entity_meta(kind, &sync_id)?
+                .is_some_and(|meta| !meta.deleted && meta.synced_hash.is_some());
+            if known_to_icloud {
+                cloud_has_accounts = true;
+                continue;
+            }
+            if self.paper_owner(&id)?.is_some() {
+                continue;
+            }
+            let Some(parts) = self.paper_parts(&id)? else {
+                continue;
+            };
+            let account = &parts.account;
+            let is_default = account.get("name").and_then(Value::as_str) == Some("Paper Trading");
+            // Creating an account writes one journal line; that is not something the user did.
+            let nothing_done = COLLECTIONS
+                .iter()
+                .zip(&parts.rows)
+                .all(|((name, _), rows)| {
+                    rows.iter().all(|row| {
+                        *name == "journal"
+                            && row
+                                .get("message")
+                                .and_then(Value::as_str)
+                                .is_some_and(|text| text.starts_with("PAPER account created"))
+                    })
+                });
+            let untouched =
+                account.get("cash_balance") == account.get("initial_balance") && nothing_done;
+            if is_default && untouched {
+                candidate = Some(id);
+            }
+        }
+        let (Some(id), true) = (candidate, cloud_has_accounts) else {
+            return Ok(false);
+        };
+        let sync_id = ids.to_global_string(&id);
+        self.in_savepoint("drop_default_paper", || {
+            self.delete_paper_account(&id)?;
+            self.cancel_outbox(kind, &sync_id)?;
+            self.tombstone_entity(kind, &sync_id, &id, now_ms)
+        })?;
+        Ok(true)
+    }
+
     /// The device id that stands for this Mac in a bundle's owner.
     fn paper_self(&self) -> rusqlite::Result<String> {
         Ok(self

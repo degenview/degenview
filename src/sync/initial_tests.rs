@@ -59,6 +59,22 @@ fn settle(a: &mut Mac, b: &mut Mac) {
     }
 }
 
+/// Both Macs exchange everything, past the paper upload debounce.
+fn settle_papers(a: &mut Mac, b: &mut Mac) {
+    a.advance(6_000);
+    b.advance(6_000);
+    settle(a, b);
+}
+
+/// Lets one Mac's changes reach iCloud, past the paper upload debounce.
+fn settle_pair(a: &mut Mac, _cloud: &MockCloud) {
+    a.advance(6_000);
+    for _ in 0..4 {
+        a.core.request_sync();
+        a.run();
+    }
+}
+
 /// A Mac that has used iCloud for a while and holds some data.
 fn established(cloud: &MockCloud, name: &str) -> Mac {
     let mut mac = new_mac(cloud, name);
@@ -174,6 +190,101 @@ fn a_second_mac_joins_existing_data_and_neither_side_loses_anything() {
     }
     assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
     assert_eq!(b.phase(), Phase::UpToDate);
+}
+
+/// Paper accounts a Mac holds, by name.
+fn paper_names(mac: &Mac) -> Vec<String> {
+    let mut names: Vec<String> = mac
+        .store
+        .lock()
+        .unwrap()
+        .paper_trading()
+        .unwrap()
+        .accounts
+        .into_iter()
+        .map(|account| account.name)
+        .collect();
+    names.sort();
+    names
+}
+
+fn paper_host(mac: &Mac) -> crate::paper_host::PaperHost {
+    crate::paper_host::PaperHost::load(mac.store.clone())
+}
+
+#[test]
+fn an_untouched_default_paper_account_gives_way_to_the_one_in_icloud_on_join() {
+    use crate::model::paper::{PaperAccountSettings, PaperCurrency};
+    let cloud = MockCloud::new();
+    let mut a = established(&cloud, "A");
+    paper_host(&a)
+        .create_account(
+            "Main",
+            PaperCurrency::Usd,
+            50_000.0,
+            PaperAccountSettings::default(),
+        )
+        .unwrap();
+    settle_pair(&mut a, &cloud);
+
+    // B opened the paper panel before joining, which made its default account.
+    let mut b = new_mac(&cloud, "B");
+    paper_host(&b).ensure_default_account().unwrap();
+    assert_eq!(paper_names(&b), ["Paper Trading"]);
+    b.core.start();
+    b.run();
+    join(&mut b, JoinMode::Merge, &backups("paper-default"));
+    settle_papers(&mut a, &mut b);
+
+    for mac in [&a, &b] {
+        assert_eq!(paper_names(mac), ["Main"], "no second \"Paper Trading\"");
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn a_paper_account_that_was_used_is_kept_on_join() {
+    use crate::model::paper::{PaperAccountSettings, PaperCurrency};
+    let cloud = MockCloud::new();
+    let mut a = established(&cloud, "A");
+    paper_host(&a)
+        .create_account(
+            "Main",
+            PaperCurrency::Usd,
+            50_000.0,
+            PaperAccountSettings::default(),
+        )
+        .unwrap();
+    settle_pair(&mut a, &cloud);
+
+    let mut b = new_mac(&cloud, "B");
+    let mut on_b = paper_host(&b);
+    let id = on_b.ensure_default_account().unwrap().expect("default");
+    // A resting order is something the user did.
+    on_b.submit(super::paper_tests::limit_buy(id, 1.0)).unwrap();
+    b.core.start();
+    b.run();
+    join(&mut b, JoinMode::Merge, &backups("paper-used"));
+    settle_papers(&mut a, &mut b);
+
+    for mac in [&a, &b] {
+        assert_eq!(paper_names(mac), ["Main", "Paper Trading"]);
+    }
+}
+
+#[test]
+fn the_default_paper_account_stays_when_icloud_has_no_paper_accounts() {
+    let cloud = MockCloud::new();
+    let mut a = established(&cloud, "A");
+    let mut b = new_mac(&cloud, "B");
+    paper_host(&b).ensure_default_account().unwrap();
+    b.core.start();
+    b.run();
+    join(&mut b, JoinMode::Merge, &backups("paper-none"));
+    settle_papers(&mut a, &mut b);
+    for mac in [&a, &b] {
+        assert_eq!(paper_names(mac), ["Paper Trading"]);
+    }
 }
 
 #[test]

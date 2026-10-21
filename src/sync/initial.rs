@@ -163,11 +163,16 @@ pub fn finish_join(
         records,
         deletions: Vec::new(),
     };
-    let report = apply_batch(store, scripts, &batch, ctx)?;
+    let mut report = apply_batch(store, scripts, &batch, ctx)?;
     // Whatever applied is done; anything that could not be applied was re-filed under its own
     // reason, so what still says "pending" has been dealt with.
     for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
         store.remove_inbox(&entry.record_name)?;
+    }
+
+    // An untouched default paper account would only duplicate the one iCloud brought.
+    if store.drop_untouched_default_paper_account(ctx.now_ms)? {
+        report.tables.insert("paper_account".to_string());
     }
 
     // Now that iCloud's data is linked, queue what is only here or differs from iCloud.

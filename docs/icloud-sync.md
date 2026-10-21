@@ -110,7 +110,9 @@ one on another Mac.
 
 **Portfolios.** A portfolio and each transaction are their own record, merged by last writer, so
 adding or editing transactions on two Macs merges. A deleted portfolio takes its transactions with
-it unless the portfolio was edited here (edit beats delete, and it keeps its ledger). A
+it unless the portfolio was edited here, or a transaction was added or changed here that iCloud
+has not confirmed yet (edit beats delete, and it keeps its ledger). A transaction that had already
+reached iCloud when the delete arrived goes with the portfolio. A
 transaction whose portfolio has not arrived waits in the inbox as `orphan`.
 
 A merged ledger can be impossible: a sale whose purchase has not arrived, or a purchase deleted
@@ -324,7 +326,7 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
 * No device list in Settings yet (`sync_device` is ready for it).
 * Webhook endpoints and Pine alert subscriptions are excluded by design.
 * A paper account over ~900 KB does not sync yet. Two Macs acting on one account within a sync
-  interval produce a paused copy rather than a merge. A new Mac creates its own default paper
-  account, which then syncs as a second account. A card pointing at a portfolio that has not
-  arrived yet shows All Portfolios until it does. Paper trading and portfolios have not been run
-  against real CloudKit, like the rest.
+  interval produce a paused copy rather than a merge. A Mac that made its own default paper account
+  and had *used* it (an order, a changed balance) before joining keeps it next to the synced ones;
+  an untouched default is dropped at the first-time merge when iCloud has paper accounts. A card
+  pointing at a portfolio that has not arrived yet shows All Portfolios until it does.

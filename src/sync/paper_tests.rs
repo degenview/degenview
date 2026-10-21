@@ -56,7 +56,7 @@ fn open(host: &mut PaperHost, name: &str) -> u64 {
     .expect("account")
 }
 
-fn limit_buy(account: u64, price: f64) -> PaperOrderRequest {
+pub(super) fn limit_buy(account: u64, price: f64) -> PaperOrderRequest {
     PaperOrderRequest {
         account_id: account,
         instrument: PaperInstrument::chart("BTCUSDT", "BTCUSDT", crate::model::DataSource::Binance),
