@@ -1504,7 +1504,11 @@ impl ChartWorkspace {
                 continue;
             };
             let remote = plain_drawings(&saved.drawings);
-            let base = self.saved_drawings.get(&chart.id).cloned().unwrap_or_default();
+            let base = self
+                .saved_drawings
+                .get(&chart.id)
+                .cloned()
+                .unwrap_or_default();
             if base == remote {
                 continue;
             }
@@ -1512,8 +1516,12 @@ impl ChartWorkspace {
             let merged = merge_remote_drawings(&base, &local, &remote);
             diverged |= merged != remote;
             if merged != local {
-                let rulers: Vec<Drawing> =
-                    chart.drawings.iter().filter(|d| is_ruler(d)).cloned().collect();
+                let rulers: Vec<Drawing> = chart
+                    .drawings
+                    .iter()
+                    .filter(|d| is_ruler(d))
+                    .cloned()
+                    .collect();
                 if let Some(highest) = merged.iter().map(Drawing::id).max() {
                     chart.next_drawing_id = chart.next_drawing_id.max(highest + 1);
                 }
@@ -5756,11 +5764,18 @@ mod tests {
         assert!(workspace.save_named("Nico".to_owned(), Some(true)));
         assert!(!workspace.drawings_dirty());
 
-        store_remote_drawings(&workspace, chart, vec![rectangle(1, 100), rectangle(7, 700)]);
+        store_remote_drawings(
+            &workspace,
+            chart,
+            vec![rectangle(1, 100), rectangle(7, 700)],
+        );
         workspace.adopt_remote_layout();
 
         assert_eq!(live_ids(&workspace, chart), [1, 7]);
-        assert!(!workspace.drawings_dirty(), "it is already stored: nothing to save");
+        assert!(
+            !workspace.drawings_dirty(),
+            "it is already stored: nothing to save"
+        );
         // The old behaviour: the next autosave wrote the tab's stale list over the other Mac's.
         assert!(workspace.flush_autosave());
         let saved = workspace.load_saved_views();
@@ -5778,11 +5793,18 @@ mod tests {
         assert!(workspace.drawings_dirty());
 
         // Meanwhile the other Mac deleted 2 and drew 7.
-        store_remote_drawings(&workspace, chart, vec![rectangle(1, 100), rectangle(7, 700)]);
+        store_remote_drawings(
+            &workspace,
+            chart,
+            vec![rectangle(1, 100), rectangle(7, 700)],
+        );
         workspace.adopt_remote_layout();
 
         assert_eq!(live_ids(&workspace, chart), [1, 3, 7]);
-        assert!(workspace.drawings_dirty(), "the drawing made here is still unsaved");
+        assert!(
+            workspace.drawings_dirty(),
+            "the drawing made here is still unsaved"
+        );
         assert!(workspace.flush_autosave());
         let ids: Vec<u64> = workspace.load_saved_views()[0].charts[0]
             .drawings
@@ -5799,7 +5821,11 @@ mod tests {
         assert!(workspace.save_named("Nico".to_owned(), Some(true)));
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(1)]);
         workspace.adopt_remote_layout();
-        assert_eq!(live_ids(&workspace, chart), [2], "an unsynced local edit stays");
+        assert_eq!(
+            live_ids(&workspace, chart),
+            [2],
+            "an unsynced local edit stays"
+        );
         assert!(workspace.drawings_dirty());
     }
 

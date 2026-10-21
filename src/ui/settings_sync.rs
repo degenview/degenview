@@ -4,11 +4,11 @@
 //! iCloud or the store itself. Anything that moves data between Apple Accounts or discards a
 //! copy of this Mac's data is a button the user presses, with the consequence written next to it.
 
+use crate::store::sync::ConflictSummary;
 use crate::sync::account::AccountChoice;
 use crate::sync::core::{PauseReason, Phase};
 use crate::sync::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
-use crate::store::sync::ConflictSummary;
 use crate::sync_host::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
 use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::Icon;

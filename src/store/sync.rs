@@ -1859,8 +1859,7 @@ impl Store {
                 queued_upserts.contains(id) && mark.as_ref().is_some_and(|m| !m.deleted);
             // A deletion that arrived from another Mac is applied to the table by the alert owner
             // through the command queue; until it runs, the row still there is not a new edit.
-            let delete_in_flight =
-                alerts_in_flight && mark.as_ref().is_some_and(|m| m.deleted);
+            let delete_in_flight = alerts_in_flight && mark.as_ref().is_some_and(|m| m.deleted);
             if !matches_cloud && !already_pending && !delete_in_flight {
                 self.queue_upsert(entity, &device)?;
                 done.upserts += 1;

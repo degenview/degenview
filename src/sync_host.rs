@@ -568,7 +568,9 @@ impl SyncHost {
     }
 
     fn join(&self, mode: JoinMode) {
-        let Some(ctx) = self.applier.apply_ctx() else { return };
+        let Some(ctx) = self.applier.apply_ctx() else {
+            return;
+        };
         let backups = self.backups_dir.clone();
         let cache = self.script_cache.clone();
         let outcome = self.applier.with_scripts(|sink| {
@@ -662,7 +664,9 @@ impl SyncHost {
         } else if pending_account {
             Some(SyncPrompt::ConfirmAccount)
         } else if view.phase == Phase::AwaitingJoin {
-            let local_scripts = self.applier.with_scripts(|sink| sink.all().map_or(0, |all| all.len()));
+            let local_scripts = self
+                .applier
+                .with_scripts(|sink| sink.all().map_or(0, |all| all.len()));
             let summary = summarize(&lock(&self.store), local_scripts).ok();
             summary.map(SyncPrompt::Join)
         } else {

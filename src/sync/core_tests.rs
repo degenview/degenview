@@ -1232,7 +1232,11 @@ fn an_empty_poll_does_not_stop_later_polls_or_leave_the_status_on_syncing() {
     b.start();
     a.core.poll();
     a.run();
-    assert_eq!(a.phase(), Phase::UpToDate, "an empty fetch is finished, not in flight");
+    assert_eq!(
+        a.phase(),
+        Phase::UpToDate,
+        "an empty fetch is finished, not in flight"
+    );
 
     b.lists(&[(1, "later")]);
     b.run();
@@ -1248,7 +1252,11 @@ fn a_background_poll_does_not_flicker_the_status_or_hide_the_join_prompt() {
     a.start();
     assert_eq!(a.phase(), Phase::UpToDate);
     a.core.poll();
-    assert_eq!(a.phase(), Phase::UpToDate, "not Syncing while a poll is out");
+    assert_eq!(
+        a.phase(),
+        Phase::UpToDate,
+        "not Syncing while a poll is out"
+    );
     a.run();
     a.core.request_sync();
     assert_eq!(a.phase(), Phase::Syncing, "Sync Now still shows it");
@@ -1297,7 +1305,11 @@ fn a_write_an_older_build_made_is_found_at_start_and_on_the_next_poll() {
     assert_eq!(cloud.names(), ["watchlist.1"], "nothing looks yet");
     a.core.request_sync();
     a.run();
-    assert_eq!(cloud.names(), ["watchlist.1", "watchlist.2"], "the poll finds it");
+    assert_eq!(
+        cloud.names(),
+        ["watchlist.1", "watchlist.2"],
+        "the poll finds it"
+    );
 }
 
 #[test]
