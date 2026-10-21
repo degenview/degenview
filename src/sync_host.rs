@@ -60,7 +60,8 @@ pub enum SyncAction {
     ConfirmHeldDeletes,
     /// Keep a large delete from reaching iCloud and the other Macs.
     KeepHeldDeletes,
-    DismissConflict(i64),
+    /// Dismiss the open conflicts of one kind, or all of them.
+    DismissConflicts(Option<String>),
     /// Delete every DegenView record in iCloud for the account this Mac syncs with.
     DeleteCloudData,
     /// Dismiss the note about something that finished (such as the deletion).
@@ -489,8 +490,8 @@ impl SyncHost {
             SyncAction::KeepHeldDeletes => {
                 let _ = lock(&self.store).drop_held();
             }
-            SyncAction::DismissConflict(id) => {
-                let _ = lock(&self.store).dismiss_conflict(id, now_ms());
+            SyncAction::DismissConflicts(kind) => {
+                let _ = lock(&self.store).dismiss_conflicts(kind.as_deref(), now_ms());
             }
             SyncAction::DeleteCloudData => {
                 // Show progress at once rather than after the worker's next pass.

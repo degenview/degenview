@@ -1550,12 +1550,13 @@ impl Store {
             .collect()
     }
 
-    /// The user has looked at a conflict (both versions were kept either way).
-    pub fn dismiss_conflict(&self, id: i64, now_ms: i64) -> rusqlite::Result<()> {
+    /// The user has looked at conflicts (both versions were kept either way): those of one kind,
+    /// or every open one when `kind` is `None`.
+    pub fn dismiss_conflicts(&self, kind: Option<&str>, now_ms: i64) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE sync_conflict SET resolved_ms = ?2, resolution = 'dismissed'
-             WHERE id = ?1 AND resolved_ms IS NULL",
-            params![id, now_ms],
+             WHERE resolved_ms IS NULL AND (?1 IS NULL OR kind = ?1)",
+            params![kind, now_ms],
         )?;
         Ok(())
     }
@@ -1938,6 +1939,35 @@ mod tests {
         ] {
             assert!(table_exists(&store, table), "{table}");
         }
+    }
+
+    #[test]
+    fn dismissing_conflicts_by_kind_or_all() {
+        let store = Store::open_in_memory().unwrap();
+        store.ensure_sync_state("Mac", "hw").unwrap();
+        for (id, kind) in [("1", "paper"), ("2", "paper"), ("3", "layout")] {
+            store
+                .record_conflict(
+                    &ConflictRecord {
+                        entity: EntityKind::PaperAccount,
+                        sync_id: id.into(),
+                        kind: kind.into(),
+                        local_payload: None,
+                        remote_payload: None,
+                        remote_device: None,
+                        copy_entity: None,
+                        copy_sync_id: None,
+                    },
+                    10,
+                )
+                .unwrap();
+        }
+        store.dismiss_conflicts(Some("paper"), 20).unwrap();
+        let open = store.open_conflicts().unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].kind, "layout");
+        store.dismiss_conflicts(None, 30).unwrap();
+        assert!(store.open_conflicts().unwrap().is_empty());
     }
 
     #[test]

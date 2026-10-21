@@ -8,6 +8,7 @@ use crate::sync::account::AccountChoice;
 use crate::sync::core::{PauseReason, Phase};
 use crate::sync::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
+use crate::store::sync::ConflictSummary;
 use crate::sync_host::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
 use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::Icon;
@@ -75,15 +76,66 @@ pub fn counts_text(counts: &Counts) -> String {
     }
 }
 
-pub fn conflict_text(kind: &str) -> String {
-    let what = match kind {
-        "layout" => "A layout",
-        "script" => "A Pine script",
-        _ => "An item",
+/// The open conflicts of one kind, so a Mac that collided many times shows one line, not many.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConflictGroup {
+    pub kind: String,
+    pub count: usize,
+    pub newest_ms: i64,
+}
+
+/// Groups by kind, the most recent first.
+pub fn conflict_groups(conflicts: &[ConflictSummary]) -> Vec<ConflictGroup> {
+    let mut groups: Vec<ConflictGroup> = Vec::new();
+    for conflict in conflicts {
+        match groups.iter_mut().find(|group| group.kind == conflict.kind) {
+            Some(group) => {
+                group.count += 1;
+                group.newest_ms = group.newest_ms.max(conflict.created_ms);
+            }
+            None => groups.push(ConflictGroup {
+                kind: conflict.kind.clone(),
+                count: 1,
+                newest_ms: conflict.created_ms,
+            }),
+        }
+    }
+    groups.sort_by_key(|group| std::cmp::Reverse(group.newest_ms));
+    groups
+}
+
+pub fn conflict_title(kind: &str, count: usize) -> String {
+    let (one, many) = match kind {
+        "paper" => ("paper trading account", "paper trading accounts"),
+        "layout" => ("layout", "layouts"),
+        "script" => ("Pine script", "Pine scripts"),
+        "ledger" => ("portfolio transaction", "portfolio transactions"),
+        _ => ("item", "items"),
     };
-    format!(
-        "{what} was changed on two Macs. Both versions were kept; look for \"conflict from\" in the name."
-    )
+    if count == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{count} {many}")
+    }
+}
+
+/// What happened to the data and what the user can do about it.
+pub fn conflict_detail(kind: &str) -> &'static str {
+    match kind {
+        "paper" => {
+            "Changed on two Macs at once. The other version is kept as a paused copy with \u{201c}conflict from\u{201d} in its name. Use the \u{2026} menu \u{25b8} Delete Account on the copy you don't need."
+        }
+        "layout" => {
+            "Changed on two Macs at once. The other version is kept as a layout with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need."
+        }
+        "script" => {
+            "Changed on two Macs at once. The other version is kept as a script with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need in the Script Manager."
+        }
+        "ledger" => {
+            "These would have left a portfolio with more sold than bought, so they wait until the missing transactions arrive."
+        }
+        _ => "Changed on two Macs at once. Both versions were kept.",
+    }
 }
 
 const NOT_SYNCED: &str = "Never synced: market data caches, portfolio value history (rebuilt on each Mac), \
@@ -142,6 +194,7 @@ fn show(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
     }
     status(ui, sync, view, now_ms);
     attention(ui, sync, view);
+    conflicts(ui, sync, view, now_ms);
     categories(ui, sync, view);
     ui.add_space(14.0);
     small(ui, NOT_SYNCED);
@@ -799,21 +852,74 @@ fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             None,
         );
     }
-    for conflict in &view.conflicts {
-        ui.add_space(10.0);
-        kit::notice_card(
-            ui,
-            Icon::Layers,
-            kit::ACCENT,
-            "Two Macs changed the same thing",
-            Some(&conflict_text(&conflict.kind)),
-            None,
-        );
-        ui.add_space(6.0);
-        if kit::push_button(ui, None, "OK", true).clicked() {
-            sync.act(SyncAction::DismissConflict(conflict.id));
-        }
+}
+
+fn conflicts(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
+    let groups = conflict_groups(&view.conflicts);
+    if groups.is_empty() {
+        return;
     }
+    section(
+        ui,
+        "Changed on two Macs",
+        Some(
+            "Nothing was lost: both versions were kept. Delete the copies you don't need, then dismiss these.",
+        ),
+        |ui| {
+            card(ui, |ui| {
+                for (index, group) in groups.iter().enumerate() {
+                    if index > 0 {
+                        divider(ui);
+                    }
+                    if conflict_row(ui, group, now_ms) {
+                        sync.act(SyncAction::DismissConflicts(Some(group.kind.clone())));
+                    }
+                }
+            });
+            if groups.len() > 1 || groups[0].count > 1 {
+                ui.add_space(10.0);
+                if kit::push_button(ui, None, "Dismiss All", true).clicked() {
+                    sync.act(SyncAction::DismissConflicts(None));
+                }
+            }
+        },
+    );
+}
+
+fn conflict_row(ui: &mut egui::Ui, group: &ConflictGroup, now_ms: i64) -> bool {
+    let mut dismissed = false;
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            dismissed = kit::push_button(ui, None, "Dismiss", true).clicked();
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(kit::text(
+                        conflict_title(&group.kind, group.count),
+                        kit::size::SUBHEADLINE + 1.0,
+                        kit::SEMIBOLD,
+                        theme::text_primary(),
+                    ));
+                    ui.add(
+                        egui::Label::new(kit::text(
+                            conflict_detail(&group.kind),
+                            kit::size::CAPTION + 0.5,
+                            kit::REGULAR,
+                            theme::text_secondary(),
+                        ))
+                        .wrap(),
+                    );
+                    ui.label(kit::text(
+                        format!("Latest {}", relative_time(now_ms, group.newest_ms)),
+                        kit::size::CAPTION,
+                        kit::REGULAR,
+                        theme::text_tertiary(),
+                    ));
+                });
+            });
+        });
+    });
+    dismissed
 }
 
 fn categories(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
@@ -891,10 +997,54 @@ mod tests {
         assert_eq!(counts_text(&counts), "3 watchlists, 1 layout, 2 scripts");
     }
 
+    fn conflict(id: i64, kind: &str, created_ms: i64) -> ConflictSummary {
+        ConflictSummary {
+            id,
+            entity_type: "paperaccount".into(),
+            sync_id: id.to_string(),
+            kind: kind.into(),
+            copy_sync_id: None,
+            created_ms,
+        }
+    }
+
     #[test]
-    fn conflicts_say_both_versions_were_kept() {
-        assert!(conflict_text("layout").contains("Both versions were kept"));
-        assert!(conflict_text("script").starts_with("A Pine script"));
+    fn many_conflicts_of_one_kind_become_one_line_newest_first() {
+        let groups = conflict_groups(&[
+            conflict(1, "layout", 100),
+            conflict(2, "paper", 200),
+            conflict(3, "paper", 500),
+            conflict(4, "paper", 300),
+        ]);
+        assert_eq!(
+            groups,
+            [
+                ConflictGroup {
+                    kind: "paper".into(),
+                    count: 3,
+                    newest_ms: 500
+                },
+                ConflictGroup {
+                    kind: "layout".into(),
+                    count: 1,
+                    newest_ms: 100
+                },
+            ]
+        );
+        assert!(conflict_groups(&[]).is_empty());
+    }
+
+    #[test]
+    fn conflict_lines_read_naturally_and_say_where_the_copy_is() {
+        assert_eq!(conflict_title("paper", 1), "1 paper trading account");
+        assert_eq!(conflict_title("paper", 7), "7 paper trading accounts");
+        assert_eq!(conflict_title("script", 2), "2 Pine scripts");
+        assert_eq!(conflict_title("something new", 3), "3 items");
+        for kind in ["paper", "layout", "script"] {
+            assert!(conflict_detail(kind).contains("conflict from"), "{kind}");
+        }
+        assert!(conflict_detail("paper").contains("Delete Account"));
+        assert!(conflict_detail("something new").contains("Both versions were kept"));
     }
 
     #[test]
