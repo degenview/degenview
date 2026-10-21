@@ -24,6 +24,8 @@ pub(crate) struct PreviewInput {
     pub script_type: super::model::ScriptType,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
+    /// The source changed after `diagnostics` were made; the preview waits for them to catch up.
+    pub compile_pending: bool,
 }
 
 impl ScriptManager {
@@ -150,6 +152,7 @@ impl ScriptManager {
             script_type: open.script_type,
             source: open.editor.source.clone(),
             diagnostics: open.editor.diagnostics.clone(),
+            compile_pending: open.editor.compile_pending(),
         });
         let Some(input) = input else {
             return;
@@ -177,8 +180,11 @@ impl ScriptManager {
             self.prefs.chart_height = state.length;
         }
         self.cmds.extend(cmds.into_inner());
-        if changed.get() {
-            self.editor_changed();
+        if changed.get()
+            && let Some(open) = self.open.as_mut()
+        {
+            // Compiled once typing pauses (`end_frame`), so a name still being typed isn't an error.
+            open.editor.request_compile();
         }
     }
 }
