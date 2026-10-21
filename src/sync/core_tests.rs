@@ -1222,6 +1222,26 @@ fn reconcile_runs_after_a_pause_is_cleared() {
 }
 
 #[test]
+fn an_empty_poll_does_not_stop_later_polls_or_leave_the_status_on_syncing() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    let mut b = mac(&cloud, "B", "acct", Some("acct"));
+    a.apply = true;
+    a.core.transport_mut().quiet_empty_fetch = true;
+    a.start();
+    b.start();
+    a.core.poll();
+    a.run();
+    assert_eq!(a.phase(), Phase::UpToDate, "an empty fetch is finished, not in flight");
+
+    b.lists(&[(1, "later")]);
+    b.run();
+    a.core.poll();
+    a.run();
+    assert_eq!(a.lists_len(), 1, "the poll after an empty one still runs");
+}
+
+#[test]
 fn a_poll_brings_in_another_macs_change_without_a_push() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));

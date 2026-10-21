@@ -139,6 +139,8 @@ pub struct MockTransport {
     token: usize,
     /// Whether this Mac is told about its own uploads when it fetches.
     pub echo_own: bool,
+    /// CloudKit sends no state update for a fetch that found nothing new; only "fetch complete".
+    pub quiet_empty_fetch: bool,
     pub commands: Vec<TransportCommand>,
 }
 
@@ -152,6 +154,7 @@ impl MockTransport {
             staged: Vec::new(),
             token: 0,
             echo_own: false,
+            quiet_empty_fetch: false,
             commands: Vec::new(),
         }
     }
@@ -341,13 +344,16 @@ impl MockTransport {
         drop(inner);
         self.cloud.inner.lock().unwrap().fetches += 1;
         self.token = new_token;
-        if !records.is_empty() || !deletions.is_empty() {
+        let found_nothing = records.is_empty() && deletions.is_empty();
+        if !found_nothing {
             self.events
                 .push_back(TransportEvent::Fetched { records, deletions });
         }
-        self.events.push_back(TransportEvent::State(
-            (new_token as u64).to_le_bytes().to_vec(),
-        ));
+        if !(self.quiet_empty_fetch && found_nothing) {
+            self.events.push_back(TransportEvent::State(
+                (new_token as u64).to_le_bytes().to_vec(),
+            ));
+        }
         self.events.push_back(TransportEvent::FetchComplete);
     }
 }

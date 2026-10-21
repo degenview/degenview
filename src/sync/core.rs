@@ -25,6 +25,8 @@ use std::sync::PoisonError;
 
 /// A Mac that has not fetched for this long starts from scratch: its checkpoint is not trusted.
 const STALE_AFTER_MS: i64 = 60 * 24 * 60 * 60 * 1_000;
+/// A fetch that has not reported back after this long is asked for again.
+const FETCH_STUCK_MS: i64 = 60_000;
 /// Deletions found by catching up are applied unless they would remove this many items and over a
 /// quarter of what is synced: that looks like a problem, not a clean-up, so nothing is removed.
 const STALE_DELETE_LIMIT: usize = 20;
@@ -140,6 +142,11 @@ pub struct SyncCore<T: SyncTransport> {
     network_up: bool,
     inflight: HashMap<i64, Inflight>,
     fetch_in_flight: bool,
+    /// When the fetch in flight was asked for, so one that never reports back cannot block every
+    /// later fetch.
+    fetch_started_ms: i64,
+    /// A fetch ran to the end since the checkpoint was last dropped.
+    fetch_completed: bool,
     initial_fetch_done: bool,
     last_error: Option<(ErrorKind, String)>,
     /// Uploads in a row that failed for no reason the engine recognises. A few are noise; a run of
@@ -181,6 +188,8 @@ impl<T: SyncTransport> SyncCore<T> {
             network_up: true,
             inflight: HashMap::new(),
             fetch_in_flight: false,
+            fetch_started_ms: 0,
+            fetch_completed: false,
             initial_fetch_done: false,
             last_error: None,
             failure_streak: 0,
@@ -343,8 +352,11 @@ impl<T: SyncTransport> SyncCore<T> {
     // MARK: Upload
 
     fn request_fetch(&mut self) {
-        if self.can_sync() && !self.fetch_in_flight {
+        let now = self.now();
+        let stuck = self.fetch_in_flight && now - self.fetch_started_ms > FETCH_STUCK_MS;
+        if self.can_sync() && (!self.fetch_in_flight || stuck) {
             self.fetch_in_flight = true;
+            self.fetch_started_ms = now;
             self.transport.send(TransportCommand::Fetch);
         }
     }
@@ -613,6 +625,7 @@ impl<T: SyncTransport> SyncCore<T> {
             .save_engine_state(None, None, self.now());
         self.pending_state = None;
         self.initial_fetch_done = false;
+        self.fetch_completed = false;
         self.fetch_in_flight = false;
         if self.state().is_some_and(|s| s.initial_sync_done) {
             self.stale_seen = Some(HashSet::new());
@@ -746,6 +759,10 @@ impl<T: SyncTransport> SyncCore<T> {
     /// Mac was away; remove it here too, unless it was edited since (then the edit wins and it is
     /// uploaded again), or unless so much is missing that something is probably wrong.
     fn on_fetch_complete(&mut self) {
+        // A fetch that found nothing new sends no state update, so this is the only sign it ended.
+        self.fetch_in_flight = false;
+        self.fetch_completed = true;
+        self.flush_state();
         let Some(seen) = self.stale_seen.take() else {
             return;
         };
@@ -805,6 +822,11 @@ impl<T: SyncTransport> SyncCore<T> {
     fn flush_state(&mut self) {
         if !self.unapplied.is_empty() {
             return;
+        }
+        // Caught up: a fetch finished and everything it brought has been applied, whether or not
+        // the engine had a new checkpoint to report.
+        if self.fetch_completed {
+            self.initial_fetch_done = true;
         }
         let Some(bytes) = self.pending_state.take() else {
             return;
