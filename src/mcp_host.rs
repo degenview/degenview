@@ -11,13 +11,17 @@ use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
+use crate::mcp::chart_data;
+use crate::mcp::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
-    AppliedPineInfo, AppliedPineList, ChartInfo, ChartsResult, IndicatorsInfo, PineAlertInfo,
-    PineAlertsResult, PineInstanceInfo, PineOpenTradeInfo, PineReportContext, PineReportMetrics,
-    PineReportResult, PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo,
-    PineStylesResult, PineTradeInfo, WorkspaceInfo,
+    AppliedPineInfo, AppliedPineList, CandlesResult, ChartInfo, ChartsResult, DrawingsChangeResult,
+    DrawingsResult, IndicatorsInfo, PineAlertInfo, PineAlertsResult, PineInstanceChangeResult,
+    PineInstanceInfo, PineOpenTradeInfo, PineReportContext, PineReportMetrics, PineReportResult,
+    PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
+    PineTradeInfo, WorkspaceInfo,
 };
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
@@ -26,8 +30,9 @@ use crate::model::mcp::{
     MAX_CLIENTS, McpAction, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
     is_valid_port,
 };
+use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{new_id, now_ms};
-use crate::model::{BuiltIn, DataSource, IndicatorConfig, InstrumentId};
+use crate::model::{BuiltIn, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
@@ -641,6 +646,261 @@ pub fn chart_pine_detail(
 ) -> Result<AppliedPineDetail, McpError> {
     let view = pine_views(workspace, chart_id, Some(instance_id), false)?.remove(0);
     Ok(detail_of(workspace.id(), &view))
+}
+
+fn instance_change(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    instance_id: u64,
+    status: &str,
+) -> Result<PineInstanceChangeResult, McpError> {
+    Ok(PineInstanceChangeResult {
+        status: status.to_owned(),
+        instance_id: instance_id.to_string(),
+        chart: list_chart_pine(workspace, chart_id)?,
+    })
+}
+
+/// Applies a checked script to a chart, after the scripts already there.
+pub fn add_pine_instance(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    script: &ScriptToApply,
+    visible: bool,
+) -> Result<PineInstanceChangeResult, McpError> {
+    let id = workspace
+        .add_pine_instance_to(
+            chart_id,
+            script.script_id.clone(),
+            &script.name,
+            &script.source,
+            &script.inputs,
+            visible,
+        )
+        .ok_or_else(|| {
+            McpError::NotFound(format!(
+                "No chart {chart_id} in workspace {}",
+                workspace.id()
+            ))
+        })?;
+    instance_change(workspace, chart_id, id, "added")
+}
+
+/// Refuses a change that would retarget or silence a live script alert. The alert host copies an
+/// instance's inputs into the alert it arms, and silences the alert when the instance goes, so
+/// changing either from a client that holds only the chart permission would alter alerts that
+/// have their own (deferred) permissions. The person can still do it in the app.
+fn guard_armed_alerts(
+    subscriptions: &[PineAlertSubscription],
+    chart_id: u64,
+    instance_id: u64,
+    what: &str,
+) -> Result<(), McpError> {
+    let armed: Vec<String> = subscriptions
+        .iter()
+        .filter(|alert| {
+            alert.is_active()
+                && alert.chart_id == chart_id
+                && alert.instance_id == Some(instance_id)
+        })
+        .map(|alert| alert.id.to_string())
+        .collect();
+    if armed.is_empty() {
+        return Ok(());
+    }
+    Err(McpError::Conflict(format!(
+        "Script alert {} is armed on this instance, and {what} would change or silence it. Change it in DegenView, or pause the alert there first",
+        armed.join(", ")
+    )))
+}
+
+/// Changes an applied script's inputs and/or visibility. Inputs are checked against the schema
+/// of the instance's own source, which it keeps from when it was applied. A change to the inputs
+/// is refused while a script alert is armed on the instance; visibility never affects alerts.
+pub fn update_pine_instance(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    instance_id: u64,
+    args: Option<&InputArgs>,
+    visible: Option<bool>,
+    subscriptions: &[PineAlertSubscription],
+) -> Result<PineInstanceChangeResult, McpError> {
+    let view = pine_views(workspace, chart_id, Some(instance_id), false)?.remove(0);
+    let inputs = args
+        .map(|args| {
+            crate::mcp::pine::instance_inputs(
+                &view.instance.source,
+                view.instance.input_values(),
+                args,
+            )
+        })
+        .transpose()?;
+    if inputs
+        .as_ref()
+        .is_some_and(|inputs| *inputs != view.instance.input_values())
+    {
+        guard_armed_alerts(subscriptions, chart_id, instance_id, "changing its inputs")?;
+    }
+    let changed = workspace
+        .change_pine_instance(chart_id, instance_id, inputs.as_ref(), visible)
+        .ok_or_else(|| {
+            McpError::NotFound(format!(
+                "No script instance {instance_id} on chart {chart_id}"
+            ))
+        })?;
+    let status = if changed { "updated" } else { "unchanged" };
+    instance_change(workspace, chart_id, instance_id, status)
+}
+
+/// Takes a script off a chart, unless a script alert is armed on it.
+pub fn remove_pine_instance(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    instance_id: u64,
+    subscriptions: &[PineAlertSubscription],
+) -> Result<PineInstanceChangeResult, McpError> {
+    pine_views(workspace, chart_id, Some(instance_id), false)?;
+    guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
+    workspace.remove_pine_instance_from(chart_id, instance_id);
+    instance_change(workspace, chart_id, instance_id, "removed")
+}
+
+// MARK: Candles and drawings (run on the app thread)
+
+fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
+    McpError::NotFound(format!(
+        "No chart {chart_id} in workspace {}",
+        workspace.id()
+    ))
+}
+
+/// The newest `limit` real candles of a chart, or those before `before`.
+pub fn chart_candles(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    limit: usize,
+    before: Option<i64>,
+) -> Result<CandlesResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let meta = chart_data::CandleMeta {
+        workspace_id: workspace.id(),
+        chart_id,
+        older_supported: data
+            .instrument
+            .source
+            .supports_older_history(workspace.timeframe()),
+        instrument: data.instrument,
+        timeframe: workspace.timeframe().label().to_owned(),
+        chart_type: data.chart_type,
+        replay_ms: data.replay_ms,
+        now_ms: now_ms(),
+    };
+    Ok(chart_data::candles_result(
+        &meta,
+        data.candles,
+        limit,
+        before,
+    ))
+}
+
+pub fn chart_drawings(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+) -> Result<DrawingsResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    Ok(chart_data::drawings_result(
+        workspace.id(),
+        chart_id,
+        data.drawings,
+    ))
+}
+
+/// The result of a change: the drawings it touched as they are now.
+fn drawings_changed(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    status: &str,
+    ids: &[u64],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    Ok(DrawingsChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: status.to_owned(),
+        drawing_ids: ids.iter().map(u64::to_string).collect(),
+        drawings: data
+            .drawings
+            .iter()
+            .filter(|drawing| ids.contains(&drawing.id()))
+            .filter_map(chart_data::drawing_info)
+            .collect(),
+        total_drawings: chart_data::counted(data.drawings),
+    })
+}
+
+/// Adds the drawings as one undo step. All or none: a drawing that cannot be placed refuses the
+/// call before anything changes.
+pub fn add_drawings(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    specs: &[NewDrawing],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let first_id = chart_data::next_free_id(data.drawings, data.next_drawing_id);
+    let drawings = chart_data::plan_add(data.drawings, data.candles, first_id, specs)?;
+    let ids: Vec<u64> = drawings.iter().map(Drawing::id).collect();
+    let next_free = first_id + ids.len() as u64;
+    let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
+    workspace.apply_planned_drawings(chart_id, commands, next_free);
+    drawings_changed(workspace, chart_id, "added", &ids)
+}
+
+pub fn edit_drawing(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    edit: &DrawingEdit,
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let command = chart_data::plan_edit(data.drawings, data.candles, edit)?;
+    let status = if command.is_some() {
+        "updated"
+    } else {
+        "unchanged"
+    };
+    if let Some(command) = command {
+        workspace.apply_planned_drawings(chart_id, vec![command], 0);
+    }
+    drawings_changed(workspace, chart_id, status, &[edit.drawing_id])
+}
+
+pub fn remove_drawings(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    ids: &[u64],
+) -> Result<DrawingsChangeResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let commands = chart_data::plan_remove(data.drawings, ids)?;
+    let removed: Vec<u64> = commands
+        .iter()
+        .filter_map(|command| match command {
+            DrawingCommand::Remove(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    workspace.apply_planned_drawings(chart_id, commands, 0);
+    drawings_changed(workspace, chart_id, "removed", &removed)
 }
 
 fn detail_of(workspace_id: u64, view: &PineInstanceView) -> AppliedPineDetail {
@@ -2244,6 +2504,69 @@ mod tests {
     }
 
     #[test]
+    fn applying_changing_and_removing_a_script_report_what_happened() {
+        const SOURCE: &str =
+            "//@version=6\nindicator(\"I\")\nlen = input.int(20, \"L\", minval=1)\nplot(close)\n";
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(3);
+        let chart_id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let script = ScriptToApply {
+            script_id: "s1".into(),
+            name: "I".into(),
+            source: SOURCE.into(),
+            inputs: Default::default(),
+        };
+        let args = |json: serde_json::Value| -> InputArgs { serde_json::from_value(json).unwrap() };
+
+        assert!(matches!(
+            add_pine_instance(&mut workspace, 99, &script, true),
+            Err(McpError::NotFound(_))
+        ));
+        let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
+        assert_eq!(added.status, "added");
+        assert_eq!(added.chart.instances.len(), 1);
+        assert_eq!(added.chart.instances[0].instance_id, added.instance_id);
+        assert_eq!(added.chart.instances[0].run_status, "not_run");
+        let id: u64 = added.instance_id.parse().unwrap();
+
+        let set = args(serde_json::json!({"len": 5}));
+        let changed =
+            update_pine_instance(&mut workspace, chart_id, id, Some(&set), None, &[]).unwrap();
+        assert_eq!(changed.status, "updated");
+        let again =
+            update_pine_instance(&mut workspace, chart_id, id, Some(&set), None, &[]).unwrap();
+        assert_eq!(again.status, "unchanged");
+        let hidden =
+            update_pine_instance(&mut workspace, chart_id, id, None, Some(false), &[]).unwrap();
+        assert!(!hidden.chart.instances[0].visible);
+        assert!(matches!(
+            update_pine_instance(
+                &mut workspace,
+                chart_id,
+                id,
+                Some(&args(serde_json::json!({"nope": 1}))),
+                None,
+                &[]
+            ),
+            Err(McpError::InvalidArgument(_))
+        ));
+        assert!(matches!(
+            update_pine_instance(&mut workspace, chart_id, id + 1, None, Some(true), &[]),
+            Err(McpError::NotFound(_))
+        ));
+
+        let removed = remove_pine_instance(&mut workspace, chart_id, id, &[]).unwrap();
+        assert_eq!(removed.status, "removed");
+        assert!(removed.chart.instances.is_empty());
+        assert!(matches!(
+            remove_pine_instance(&mut workspace, chart_id, id, &[]),
+            Err(McpError::NotFound(_))
+        ));
+    }
+
+    #[test]
     fn a_report_carries_the_charts_own_numbers_and_the_context_that_made_them() {
         let trades = vec![
             trade(0, 10.0),
@@ -2488,6 +2811,99 @@ mod tests {
             pine_report(&workspace, chart, 999, 0, 1, false),
             Err(McpError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn a_script_with_an_armed_alert_keeps_its_inputs_and_stays_on_the_chart() {
+        const SOURCE: &str =
+            "//@version=6\nindicator(\"I\")\nlen = input.int(20, \"L\", minval=1)\nplot(close)\n";
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(3);
+        let chart_id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let script = ScriptToApply {
+            script_id: "s1".into(),
+            name: "I".into(),
+            source: SOURCE.into(),
+            inputs: Default::default(),
+        };
+        let id: u64 = add_pine_instance(&mut workspace, chart_id, &script, true)
+            .unwrap()
+            .instance_id
+            .parse()
+            .unwrap();
+        let alert = |state, instance_id, chart_id| PineAlertSubscription {
+            id: 55,
+            chart_id,
+            instance_id: Some(instance_id),
+            script_id: Some("s1".into()),
+            script_name: "I".into(),
+            source: SOURCE.into(),
+            inputs: Default::default(),
+            symbol_key: "binance:BTCUSDT".into(),
+            timeframe: "1d".into(),
+            source_hash: "abc".into(),
+            note: String::new(),
+            state,
+            created_at_ms: NOW,
+            webhook_endpoint_ids: Vec::new(),
+        };
+        let armed = [alert(PineAlertState::Active, id, chart_id)];
+        let set: InputArgs = serde_json::from_value(serde_json::json!({"len": 5})).unwrap();
+
+        let refused = update_pine_instance(&mut workspace, chart_id, id, Some(&set), None, &armed);
+        assert!(
+            matches!(&refused, Err(McpError::Conflict(message)) if message.contains("55")),
+            "{refused:?}"
+        );
+        assert!(matches!(
+            remove_pine_instance(&mut workspace, chart_id, id, &armed),
+            Err(McpError::Conflict(_))
+        ));
+        // Nothing changed.
+        let listed = list_chart_pine(&workspace, chart_id).unwrap();
+        assert_eq!(listed.instances.len(), 1);
+        assert_eq!(
+            chart_pine_detail(&workspace, chart_id, id)
+                .unwrap()
+                .inputs
+                .len(),
+            0
+        );
+
+        // Hiding it, or setting an input to what it already is, leaves the alert alone.
+        assert!(
+            update_pine_instance(&mut workspace, chart_id, id, None, Some(false), &armed).is_ok()
+        );
+        let same: InputArgs = serde_json::from_value(serde_json::json!({"len": 20})).unwrap();
+        assert_eq!(
+            update_pine_instance(&mut workspace, chart_id, id, Some(&same), None, &armed)
+                .unwrap()
+                .status,
+            "unchanged"
+        );
+        // Another instance's alert, a paused or silenced one, or another chart's, does not block.
+        for other in [
+            alert(PineAlertState::Active, id + 1, chart_id),
+            alert(PineAlertState::Paused, id, chart_id),
+            alert(PineAlertState::ScriptChanged, id, chart_id),
+            alert(PineAlertState::Active, id, chart_id + 1),
+        ] {
+            assert!(
+                update_pine_instance(
+                    &mut workspace,
+                    chart_id,
+                    id,
+                    Some(&set),
+                    None,
+                    std::slice::from_ref(&other)
+                )
+                .is_ok(),
+                "{other:?}"
+            );
+        }
+        assert!(remove_pine_instance(&mut workspace, chart_id, id, &[]).is_ok());
     }
 
     #[test]

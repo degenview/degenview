@@ -148,6 +148,7 @@ mod tests {
                     locked: true,
                     hidden: false,
                     visibility: Default::default(),
+                    style: crate::model::drawing_style::DrawingStyle::trend_line(),
                 },
                 Drawing::Fib {
                     id: 91,

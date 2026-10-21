@@ -1399,6 +1399,86 @@ impl DegenViewApp {
                     &store.pine_subscriptions(),
                 )))
             }
+            McpCommand::GetCandles {
+                workspace_id,
+                chart_id,
+                limit,
+                before,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::chart_candles(workspace, chart_id, limit, before)
+                    .map(|result| McpReply::Candles(Box::new(result)))
+            }),
+            McpCommand::ListDrawings {
+                workspace_id,
+                chart_id,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::chart_drawings(workspace, chart_id)
+                    .map(|result| McpReply::Drawings(Box::new(result)))
+            }),
+            McpCommand::AddDrawings {
+                workspace_id,
+                chart_id,
+                drawings,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::add_drawings(workspace, chart_id, &drawings)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
+            McpCommand::EditDrawing {
+                workspace_id,
+                chart_id,
+                edit,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::edit_drawing(workspace, chart_id, &edit)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
+            McpCommand::RemoveDrawings {
+                workspace_id,
+                chart_id,
+                drawing_ids,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::remove_drawings(workspace, chart_id, &drawing_ids)
+                    .map(|result| McpReply::DrawingsChanged(Box::new(result)))
+            }),
+            McpCommand::AddPineInstance {
+                workspace_id,
+                chart_id,
+                script,
+                visible,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::add_pine_instance(workspace, chart_id, &script, visible)
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            }),
+            McpCommand::UpdatePineInstance {
+                workspace_id,
+                chart_id,
+                instance_id,
+                inputs,
+                visible,
+            } => {
+                let alerts = self.pine_subscriptions_for_mcp()?;
+                self.with_mcp_workspace(workspace_id, |workspace| {
+                    mcp_host::update_pine_instance(
+                        workspace,
+                        chart_id,
+                        instance_id,
+                        inputs.as_ref(),
+                        visible,
+                        &alerts,
+                    )
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+                })
+            }
+            McpCommand::RemovePineInstance {
+                workspace_id,
+                chart_id,
+                instance_id,
+            } => {
+                let alerts = self.pine_subscriptions_for_mcp()?;
+                self.with_mcp_workspace(workspace_id, |workspace| {
+                    mcp_host::remove_pine_instance(workspace, chart_id, instance_id, &alerts)
+                        .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+                })
+            }
             McpCommand::ApplyIndicator {
                 workspace_id,
                 chart_id,
@@ -1419,6 +1499,14 @@ impl DegenViewApp {
                 )))
             }),
         }
+    }
+
+    /// The stored script alert subscriptions, for checks that must not disturb a live alert.
+    fn pine_subscriptions_for_mcp(
+        &self,
+    ) -> Result<Vec<crate::model::pine_alert::PineAlertSubscription>, McpError> {
+        let store = self.store.lock().map_err(|_| alerts_unavailable())?;
+        Ok(store.pine_subscriptions())
     }
 
     /// The text of `id` in a Script Manager editor that has it open, if any: what the person sees.

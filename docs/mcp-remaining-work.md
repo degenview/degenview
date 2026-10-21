@@ -13,6 +13,8 @@ next. Nothing here is started.
 | 3 | Price alerts (`list`, `create`, `update`, `pause`, `resume`, `delete`) | `alerts.read/create/edit/pause/delete` |
 | 4 | Read-only Pine: scripts, source, diagnostics, inputs, applied instances, styles, strategy reports, script-alert subscriptions | `pine.scripts.list/read`, `pine.diagnostics.read`, `pine.inputs.read`, `pine.styles.read`, `pine.reports.read`, `pine.alerts.read` |
 | 5 | Pine source editing: draft update and explicit save, revision-checked against the open editor | `pine.scripts.write`, `pine.scripts.save` |
+| 6 | Pine on charts: apply a saved script (with input overrides), change an applied script's inputs and visibility, remove it | `charts.pine_instances.write` |
+| 7 | Candles and drawings: read a chart's candles, list drawings, add/move/restyle/delete trend lines and rectangles | `charts.candles.read`, `drawings.read`, `drawings.write`, `drawings.delete` |
 
 ## 1. Try it with real MCP clients
 
@@ -53,17 +55,41 @@ Today these are gated only by separate, off-by-default permissions.
   an MCP worker is never parked on user input; a timeout or dismissal means nothing ran.
 - Setting: "Require confirmation for destructive actions" (default on).
 
-## 4. Apply a Pine script to a chart
+## 4. Applying scripts to charts: what is left
 
-`degenview_add_pine_script_to_chart` with its own permission `charts.pine_instances.write`.
+Applying, changing inputs/visibility and removing are done (phase 6). They sit behind the
+permission alone: no confirmation step (item 3 would add one for all high-impact tools at once).
 
-- Resolve the script through `ScriptStore`, refuse libraries and scripts with compile errors, accept
-  input overrides validated against the compiled `InputSchema`, create the instance through
-  `ChartCard::add_pine_instance`, return the new instance id.
-- Same-script-twice stays allowed (instances are separate). Do not run a strategy live or touch alert
-  subscriptions; creating instances changes what a chart draws, so it likely belongs behind
-  confirmation (item 3).
-- Also decide whether to add instance edits (input overrides, style overrides, visibility, remove).
+- Not exposed: style overrides, visual order, pane collapse and reordering. Add them if an agent
+  needs them; `ChartCard::set_pine_instance_style` and `set_pine_visual_order` exist.
+- An instance keeps the source it was applied with, so a later `save_pine_script` does not change it.
+  `get_pine_instance` reports `script_status: changed`; the way to run the new version is remove and
+  apply again. A "refresh from saved script" call is possible if that proves clumsy.
+- Changing inputs or removing an instance is refused while a script alert is armed on it (the alert
+  host would retarget or silence the alert, and alert changes wait for item 3). Lift this once script
+  alerts can be managed over MCP.
+- Applying does not run a strategy live or touch alert subscriptions; the script runs when its chart
+  draws it, so a new instance reads `not_run` until then.
+- Layout autosave's dirty check ignores Pine changes (`LayoutSnapshot` has no script fields), so a
+  script applied over MCP reaches a saved layout at the next explicit or autosave write, as for a
+  script added in the GUI.
+
+## 4b. Candles and drawings: what is left
+
+Reading candles and drawing trend lines and rectangles are done (phase 7).
+
+- Only trend lines and rectangles can be created or edited. Fib, arrows, text, brushes, circles and
+  the rest are listed read-only (`editable: false`). There is no horizontal-line or ray tool in the
+  app; a horizontal level is a trend line with equal prices.
+- `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).
+  DegenView fetches older history only as the chart is scrolled back, so an agent cannot ask for
+  more; `has_older_loaded` and `older_history_available` say what is possible.
+- No indicator values (EMA, RSI, Bollinger) alongside the candles, and no swing/pivot helper: the
+  agent works those out from the bars.
+- The caller's drawing defaults (templates) are not used: new drawings take the tool's built-in
+  default, so a result does not depend on the person's settings.
+- Drawings reach saved layouts the way any drawing edit does; a manual layout is not marked
+  unsaved by an agent's drawing.
 
 ## 5. Script alert subscriptions and a log of what they fired
 

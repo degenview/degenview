@@ -202,7 +202,12 @@ impl Tool {
         let shape_line = Caps::LINE.with(Caps::FILL);
         match self {
             Self::Cursor => spec("Crosshair", Pointer, Single, Caps::NONE),
-            Self::TrendLine => spec("Trend line", Lines, Points(2), Caps::NONE),
+            Self::TrendLine => spec(
+                "Trend line",
+                Lines,
+                Points(2),
+                Caps::LINE.with(Caps::EXTEND),
+            ),
             Self::Fib => spec("Fib Retracement", Lines, Points(2), Caps::NONE),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
@@ -325,7 +330,8 @@ impl Tool {
             Self::Arc => tinted([233, 30, 99, 255], true),
             Self::Curve => tinted([41, 98, 255, 255], false),
             Self::DoubleCurve => tinted([103, 58, 183, 255], false),
-            Self::Cursor | Self::TrendLine | Self::Fib | Self::Ruler => DrawingStyle::default(),
+            Self::TrendLine => DrawingStyle::trend_line(),
+            Self::Cursor | Self::Fib | Self::Ruler => DrawingStyle::default(),
         };
         if matches!(self, Self::Rectangle) {
             style.middle_line.dash = LineDash::Dashed;

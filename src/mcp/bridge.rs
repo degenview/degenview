@@ -9,9 +9,10 @@
 use crate::mcp::state::McpShared;
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertsResult, AppliedPineDetail,
-    AppliedPineList, ChartsResult, CreateAlertResult, PineAlertsResult, PineReportResult,
-    PineStylesResult, UpdateAlertResult, WorkspaceInfo,
+    AppliedPineList, ChartsResult, CreateAlertResult, PineAlertsResult, PineInstanceChangeResult,
+    PineReportResult, PineStylesResult, UpdateAlertResult, WorkspaceInfo,
 };
+use crate::mcp::types::{CandlesResult, DrawingsChangeResult, DrawingsResult};
 use crate::model::alert::{AlertCurrency, AlertFrequency, AlertId};
 use crate::model::mcp::Permission;
 use crate::model::{BuiltIn, InstrumentId};
@@ -80,6 +81,52 @@ pub enum McpCommand {
         include_equity: bool,
     },
     ListPineAlerts,
+    /// Applies a script (its checked saved text and input overrides) to a chart.
+    AddPineInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        script: Box<crate::mcp::pine::ScriptToApply>,
+        visible: bool,
+    },
+    /// Changes an applied script's inputs (`None` clears that input) and/or visibility.
+    UpdatePineInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+        inputs: Option<crate::mcp::pine::InputArgs>,
+        visible: Option<bool>,
+    },
+    RemovePineInstance {
+        workspace_id: u64,
+        chart_id: u64,
+        instance_id: u64,
+    },
+    /// The newest `limit` candles of a chart, or those before `before` (epoch ms).
+    GetCandles {
+        workspace_id: u64,
+        chart_id: u64,
+        limit: usize,
+        before: Option<i64>,
+    },
+    ListDrawings {
+        workspace_id: u64,
+        chart_id: u64,
+    },
+    AddDrawings {
+        workspace_id: u64,
+        chart_id: u64,
+        drawings: Vec<crate::mcp::drawings::NewDrawing>,
+    },
+    EditDrawing {
+        workspace_id: u64,
+        chart_id: u64,
+        edit: Box<crate::mcp::drawings::DrawingEdit>,
+    },
+    RemoveDrawings {
+        workspace_id: u64,
+        chart_id: u64,
+        drawing_ids: Vec<u64>,
+    },
     /// Edit a script's text. `source: Some` writes it as the draft; `None` saves the current
     /// draft over the saved source. Either way `expected_revision` must match the working text.
     EditPineScript {
@@ -128,6 +175,10 @@ pub enum McpReply {
     PineStyles(PineStylesResult),
     PineReport(Box<PineReportResult>),
     PineAlerts(PineAlertsResult),
+    PineInstanceChanged(Box<PineInstanceChangeResult>),
+    Candles(Box<CandlesResult>),
+    Drawings(Box<DrawingsResult>),
+    DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
 }
 

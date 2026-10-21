@@ -905,7 +905,7 @@ impl ChartWorkspace {
     // MARK: Removing indicators
 
     /// Puts the chart's indicators and scripts on the undo stack before they change.
-    fn remember_indicators(&mut self, chart_id: u64) {
+    pub(super) fn remember_indicators(&mut self, chart_id: u64) {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };

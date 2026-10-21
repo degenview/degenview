@@ -8,14 +8,19 @@
 use crate::mcp::bridge::{
     AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert, REQUEST_TIMEOUT,
 };
-use crate::mcp::pine::{self, Target, Version};
+use crate::mcp::chart_data::{DEFAULT_CANDLES, MAX_CANDLES};
+use crate::mcp::drawings::{
+    AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
+    StylePatch, TimeArg, parse_drawing_id, parse_time,
+};
+use crate::mcp::pine::{self, InputArgs, Target, Version};
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
-    AppliedPineDetail, AppliedPineList, ChartsResult, CreateAlertResult, IndicatorsResult,
-    PineAlertsResult, PineCompileResult, PineEditResult, PineInputsResult, PineReportResult,
-    PineScriptSource, PineScriptsResult, PineStylesResult, UpdateAlertResult, WorkspacesResult,
-    indicator_catalog,
+    AppliedPineDetail, AppliedPineList, CandlesResult, ChartsResult, CreateAlertResult,
+    DrawingsChangeResult, DrawingsResult, IndicatorsResult, PineAlertsResult, PineCompileResult,
+    PineEditResult, PineInputsResult, PineInstanceChangeResult, PineReportResult, PineScriptSource,
+    PineScriptsResult, PineStylesResult, UpdateAlertResult, WorkspacesResult, indicator_catalog,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::Permission;
@@ -56,6 +61,14 @@ pub const GET_PINE_INSTANCE: &str = "degenview_get_pine_instance";
 pub const GET_PINE_STYLES: &str = "degenview_get_pine_styles";
 pub const GET_PINE_REPORT: &str = "degenview_get_pine_report";
 pub const LIST_PINE_ALERTS: &str = "degenview_list_pine_alerts";
+pub const ADD_PINE_TO_CHART: &str = "degenview_add_pine_script_to_chart";
+pub const UPDATE_PINE_INSTANCE: &str = "degenview_update_pine_instance";
+pub const REMOVE_PINE_INSTANCE: &str = "degenview_remove_pine_instance";
+pub const GET_CANDLES: &str = "degenview_get_candles";
+pub const LIST_DRAWINGS: &str = "degenview_list_drawings";
+pub const ADD_DRAWINGS: &str = "degenview_add_drawings";
+pub const UPDATE_DRAWING: &str = "degenview_update_drawing";
+pub const DELETE_DRAWINGS: &str = "degenview_delete_drawings";
 pub const PAUSE_ALERT: &str = "degenview_pause_price_alert";
 pub const RESUME_ALERT: &str = "degenview_resume_price_alert";
 pub const DELETE_ALERT: &str = "degenview_delete_price_alert";
@@ -66,6 +79,13 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         LIST_WORKSPACES | LIST_CHARTS | LIST_INDICATORS => Some(Permission::ChartsRead),
         ADD_CHART => Some(Permission::ChartsCreate),
         ADD_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
+        ADD_PINE_TO_CHART | UPDATE_PINE_INSTANCE | REMOVE_PINE_INSTANCE => {
+            Some(Permission::ChartsPineInstancesWrite)
+        }
+        GET_CANDLES => Some(Permission::ChartsCandlesRead),
+        LIST_DRAWINGS => Some(Permission::DrawingsRead),
+        ADD_DRAWINGS | UPDATE_DRAWING => Some(Permission::DrawingsWrite),
+        DELETE_DRAWINGS => Some(Permission::DrawingsDelete),
         LIST_ALERTS => Some(Permission::AlertsRead),
         CREATE_ALERT => Some(Permission::AlertsCreate),
         UPDATE_ALERT => Some(Permission::AlertsEdit),
@@ -428,6 +448,118 @@ pub struct PineReportParams {
     pub trades_limit: Option<u32>,
     /// Include the equity curve, thinned to at most 200 points. Default false.
     pub include_equity: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddPineToChartParams {
+    /// A `workspace_id` from `degenview_list_workspaces`.
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    /// A `chart_id` from `degenview_list_charts`.
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// A `script_id` from `degenview_list_pine_scripts`: an indicator or strategy. Its last
+    /// *saved* source is applied, never an unsaved draft.
+    #[schemars(length(min = 1, max = 64))]
+    pub script_id: String,
+    /// Input overrides by input id (see `degenview_get_pine_inputs`): numbers, booleans, or text
+    /// (an option's value, a source name such as `close`, a colour as `#RRGGBB` or `#RRGGBBAA`).
+    /// Inputs left out run at their defaults.
+    pub inputs: Option<InputArgs>,
+    /// Whether the script is shown. Default true.
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdatePineInstanceParams {
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// An `instance_id` from `degenview_list_chart_pine_instances`.
+    #[schemars(length(max = 20))]
+    pub instance_id: String,
+    /// Input overrides to change, by input id, as for `degenview_add_pine_script_to_chart`.
+    /// `null` puts an input back to its default; inputs not named keep their current value.
+    pub inputs: Option<InputArgs>,
+    /// Show or hide the script. A hidden script does not run.
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GetCandlesParams {
+    /// A `workspace_id` from `degenview_list_workspaces`.
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    /// A `chart_id` from `degenview_list_charts`.
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// How many of the newest bars to return, 1 to 1000. Default 200.
+    #[schemars(range(min = 1, max = 1000))]
+    pub limit: Option<u32>,
+    /// Return the bars that start before this time (ISO-8601 UTC or epoch milliseconds), to page
+    /// back through what the chart holds. Use the `range.from` of the previous page.
+    pub before: Option<TimeArg>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddDrawingsParams {
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// The drawings to add, up to 25. All are added as one undo step, or none are.
+    #[schemars(length(min = 1, max = 25))]
+    pub drawings: Vec<NewDrawingArg>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateDrawingParams {
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// A `drawing_id` from `degenview_list_drawings`.
+    #[schemars(length(max = 20))]
+    pub drawing_id: String,
+    /// Move the first point (a trend line's start, or one corner of a rectangle).
+    pub a: Option<AnchorArg>,
+    /// Move the second point.
+    pub b: Option<AnchorArg>,
+    /// Line colour as `#RRGGBB` or `#RRGGBBAA`.
+    #[schemars(length(max = 9))]
+    pub color: Option<String>,
+    /// Line width in pixels, 0.5 to 60.
+    #[schemars(range(min = 0.5, max = 60.0))]
+    pub width: Option<f64>,
+    pub dash: Option<McpDash>,
+    pub extend_left: Option<bool>,
+    pub extend_right: Option<bool>,
+    /// Rectangles only: the fill as `#RRGGBB` (translucent) or `#RRGGBBAA`.
+    #[schemars(length(max = 9))]
+    pub fill_color: Option<String>,
+    /// Rectangles only: the label; an empty string clears it.
+    #[schemars(length(max = 500))]
+    pub text: Option<String>,
+    /// Hide or show the drawing.
+    pub hidden: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteDrawingsParams {
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// `drawing_id`s from `degenview_list_drawings`, up to 50.
+    #[schemars(length(min = 1, max = 50))]
+    pub drawing_ids: Vec<String>,
 }
 
 fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
@@ -1399,6 +1531,401 @@ impl DegenViewMcp {
             .await
         {
             Ok(McpReply::ChartAdded(added)) => Ok(Json(added)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_add_pine_script_to_chart",
+        description = "Apply a saved Pine indicator or strategy to a chart, as the app's Add to Chart does, optionally with input overrides. Uses the script's last saved source (save a draft first with degenview_save_pine_script). Refuses libraries and scripts that do not compile. The same script can be applied more than once. The script runs once its chart draws it, so check degenview_list_chart_pine_instances for run_status. The user can undo it in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn add_pine_script_to_chart(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<AddPineToChartParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let id = clean_script_id(&params.script_id)?;
+        let args = params.inputs.unwrap_or_default();
+        let script = self
+            .pine_job(
+                &client,
+                Permission::ChartsPineInstancesWrite,
+                move |store| pine::script_to_apply(store, &id, &args),
+            )
+            .await?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::AddPineInstance {
+                    workspace_id,
+                    chart_id,
+                    script: Box::new(script),
+                    visible: params.visible.unwrap_or(true),
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_update_pine_instance",
+        description = "Change a script applied to a chart: set or reset input overrides (null resets an input) and/or show or hide it. Inputs are checked against the source the instance was applied with. Give inputs, visible, or both. Refused with CONFLICT while a script alert is armed on the instance and the inputs would change (the alert follows the instance's inputs); showing or hiding is always allowed. To run a newer saved version of the script, remove the instance and apply it again.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn update_pine_instance(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<UpdatePineInstanceParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let instance_id = parse_instance_id(&params.instance_id)?;
+        let inputs = params.inputs.filter(|inputs| !inputs.is_empty());
+        if inputs.is_none() && params.visible.is_none() {
+            return Err(invalid("give inputs (not empty), visible, or both"));
+        }
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::UpdatePineInstance {
+                    workspace_id,
+                    chart_id,
+                    instance_id,
+                    inputs,
+                    visible: params.visible,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_remove_pine_instance",
+        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn remove_pine_instance(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<PineInstanceParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let instance_id = parse_instance_id(&params.instance_id)?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::RemovePineInstance {
+                    workspace_id,
+                    chart_id,
+                    instance_id,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_get_candles",
+        description = "Read a chart's price candles: the market's own bars (never Renko/Heikin Ashi bricks), cut at the replay position, oldest first. Returns rows under named `columns` (time, open, high, low, close, volume), a summary of the highest high and lowest low, and whether the newest bar is still forming. Times are ISO-8601 UTC; pass them back as a drawing's `time`. Returns what the chart has loaded (about 500 to 1500 bars): page back with `before`, and `has_older_loaded` says whether there is more. Use it to find swing highs and lows before drawing trend lines with degenview_add_drawings.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn get_candles(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<GetCandlesParams>,
+    ) -> Result<Json<CandlesResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
+        if !(1..=MAX_CANDLES).contains(&limit) {
+            return Err(invalid(format!(
+                "limit must be between 1 and {MAX_CANDLES}"
+            )));
+        }
+        let before = params
+            .before
+            .as_ref()
+            .map(parse_time)
+            .transpose()
+            .map_err(|error| failure(&error))?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsCandlesRead,
+                McpCommand::GetCandles {
+                    workspace_id,
+                    chart_id,
+                    limit,
+                    before,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::Candles(candles)) => Ok(Json(*candles)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_list_drawings",
+        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (trend lines and rectangles that are not locked).",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn list_drawings(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<ChartPineParams>,
+    ) -> Result<Json<DrawingsResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::DrawingsRead,
+                McpCommand::ListDrawings {
+                    workspace_id,
+                    chart_id,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::Drawings(drawings)) => Ok(Json(*drawings)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_add_drawings",
+        description = "Draw trend lines and rectangles on a chart. Each point is a time and a price: copy the time from degenview_get_candles (it snaps to that bar), and give a price or `price_from` (open/high/low/close of the bar at that time, so a line can touch the wicks exactly). A time past the newest bar is allowed, so a line can run into the future; `extend_right` prolongs it to the chart edge. Up to 25 drawings per call, added as one undo step in the app, or none if any is invalid. Drawings are market-anchored: they stay put across timeframes. Returns the new ids and the drawings.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn add_drawings(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<AddDrawingsParams>,
+    ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        if params.drawings.is_empty() || params.drawings.len() > MAX_DRAWINGS_PER_CALL {
+            return Err(invalid(format!(
+                "give between 1 and {MAX_DRAWINGS_PER_CALL} drawings"
+            )));
+        }
+        let drawings = params
+            .drawings
+            .iter()
+            .enumerate()
+            .map(|(index, drawing)| {
+                drawing.check().map_err(|error| match error {
+                    McpError::InvalidArgument(message) => {
+                        McpError::InvalidArgument(format!("Drawing {}: {message}", index + 1))
+                    }
+                    other => other,
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error))?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::DrawingsWrite,
+                McpCommand::AddDrawings {
+                    workspace_id,
+                    chart_id,
+                    drawings,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::DrawingsChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_update_drawing",
+        description = "Change a trend line or rectangle: move its points (same time/price rules as degenview_add_drawings), restyle it, relabel a rectangle, or hide/show it. Only what you give changes. Locked drawings are refused (CONFLICT): unlock them in DegenView first. The change is one undo step in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn update_drawing(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<UpdateDrawingParams>,
+    ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let drawing_id = parse_drawing_id(&params.drawing_id).map_err(|error| failure(&error))?;
+        let patch = StylePatch::check(
+            params.color.as_deref(),
+            params.width,
+            params.dash,
+            (params.extend_left, params.extend_right),
+            params.fill_color.as_deref(),
+            params.text.as_deref(),
+        )
+        .map_err(|error| failure(&error))?;
+        let a = params
+            .a
+            .as_ref()
+            .map(|point| point.check("a"))
+            .transpose()
+            .map_err(|error| failure(&error))?;
+        let b = params
+            .b
+            .as_ref()
+            .map(|point| point.check("b"))
+            .transpose()
+            .map_err(|error| failure(&error))?;
+        if a.is_none() && b.is_none() && patch.is_empty() && params.hidden.is_none() {
+            return Err(invalid("give at least one thing to change"));
+        }
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::DrawingsWrite,
+                McpCommand::EditDrawing {
+                    workspace_id,
+                    chart_id,
+                    edit: Box::new(DrawingEdit {
+                        drawing_id,
+                        a,
+                        b,
+                        patch,
+                        hidden: params.hidden,
+                    }),
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::DrawingsChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_delete_drawings",
+        description = "Remove drawings from a chart (up to 50). All or none: if any id is unknown or locked, nothing is removed. The user can undo the removal in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn delete_drawings(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<DeleteDrawingsParams>,
+    ) -> Result<Json<DrawingsChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        if params.drawing_ids.is_empty() || params.drawing_ids.len() > MAX_DELETES_PER_CALL {
+            return Err(invalid(format!(
+                "give between 1 and {MAX_DELETES_PER_CALL} drawing ids"
+            )));
+        }
+        let drawing_ids = params
+            .drawing_ids
+            .iter()
+            .map(|id| parse_drawing_id(id))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error))?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::DrawingsDelete,
+                McpCommand::RemoveDrawings {
+                    workspace_id,
+                    chart_id,
+                    drawing_ids,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::DrawingsChanged(changed)) => Ok(Json(*changed)),
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }

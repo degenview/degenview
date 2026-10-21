@@ -17,6 +17,11 @@ pub const TEXT_SIZE_RANGE: (f32, f32) = (8.0, 72.0);
 /// The blue the generic style (and the trend line) is drawn in.
 pub const BLUE: Rgba = [41, 98, 255, 255];
 
+/// The blue a trend line has always been drawn in.
+pub const TREND_LINE_COLOR: Rgba = [10, 132, 255, 255];
+/// The width a trend line has always been drawn at.
+pub const TREND_LINE_WIDTH: f32 = 1.5;
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct StrokeStyle {
@@ -237,6 +242,15 @@ impl Default for DrawingStyle {
 }
 
 impl DrawingStyle {
+    /// How a trend line looked before it had a style: a solid blue 1.5 px segment. A row
+    /// without a style decodes to this, so no stored line changes.
+    pub fn trend_line() -> Self {
+        let mut style = Self::default();
+        style.stroke.color = TREND_LINE_COLOR;
+        style.stroke.width = TREND_LINE_WIDTH;
+        style
+    }
+
     /// A style with `color` for the stroke, the text and the middle line, and `color` at
     /// `fill_alpha` for the fill.
     pub fn colored(color: Rgba, fill_alpha: u8, fill_enabled: bool) -> Self {

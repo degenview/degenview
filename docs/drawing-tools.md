@@ -11,6 +11,15 @@ state is marked **doc** or **lib**; what they do not state, and was chosen here,
 **inferred**. Nothing was compared pixel for pixel against TradingView (no access), so the visual
 parity checklist at the end is a manual test matrix, not a result.
 
+## Trend line style
+
+The trend line carries a `DrawingStyle` like the shapes: colour, width, pattern, and extend left
+and right. A row saved before this had none and decodes to the blue 1.5 px segment it always was
+(`DrawingStyle::trend_line()`); a line still in that look is written without a style, so stored
+rows and saved layouts do not change. The painter prolongs it to the plot edge and the hit test
+follows the prolongation. The properties dialog edits it through the tool's capabilities.
+Drawings an MCP client makes use the same model (see `docs/architecture/mcp.md`).
+
 ## Tools
 
 | Tool | Anchors | Placement | Finish | Style offered | Doc / default |

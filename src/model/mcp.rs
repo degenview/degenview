@@ -17,6 +17,11 @@ pub enum Permission {
     ChartsRead,
     ChartsCreate,
     ChartsIndicatorsWrite,
+    ChartsPineInstancesWrite,
+    ChartsCandlesRead,
+    DrawingsRead,
+    DrawingsWrite,
+    DrawingsDelete,
     AlertsRead,
     AlertsCreate,
     AlertsEdit,
@@ -34,12 +39,17 @@ pub enum Permission {
 }
 
 impl Permission {
-    pub const GROUPS: [&'static str; 3] = ["Charts", "Price Alerts", "Pine Scripts"];
+    pub const GROUPS: [&'static str; 4] = ["Charts", "Drawings", "Price Alerts", "Pine Scripts"];
 
-    pub const ALL: [Permission; 17] = [
+    pub const ALL: [Permission; 22] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
+        Permission::ChartsPineInstancesWrite,
+        Permission::ChartsCandlesRead,
+        Permission::DrawingsRead,
+        Permission::DrawingsWrite,
+        Permission::DrawingsDelete,
         Permission::AlertsRead,
         Permission::AlertsCreate,
         Permission::AlertsEdit,
@@ -62,6 +72,11 @@ impl Permission {
             Self::ChartsRead => "charts.read",
             Self::ChartsCreate => "charts.create",
             Self::ChartsIndicatorsWrite => "charts.indicators.write",
+            Self::ChartsPineInstancesWrite => "charts.pine_instances.write",
+            Self::ChartsCandlesRead => "charts.candles.read",
+            Self::DrawingsRead => "drawings.read",
+            Self::DrawingsWrite => "drawings.write",
+            Self::DrawingsDelete => "drawings.delete",
             Self::AlertsRead => "alerts.read",
             Self::AlertsCreate => "alerts.create",
             Self::AlertsEdit => "alerts.edit",
@@ -90,6 +105,11 @@ impl Permission {
             Self::ChartsRead => "Read workspaces and charts",
             Self::ChartsCreate => "Add charts to a workspace",
             Self::ChartsIndicatorsWrite => "Add and configure indicators",
+            Self::ChartsPineInstancesWrite => "Apply and configure scripts on charts",
+            Self::ChartsCandlesRead => "Read chart candles",
+            Self::DrawingsRead => "Read chart drawings",
+            Self::DrawingsWrite => "Draw on charts and edit drawings",
+            Self::DrawingsDelete => "Delete chart drawings",
             Self::AlertsRead => "Read price alerts",
             Self::AlertsCreate => "Create price alerts",
             Self::AlertsEdit => "Edit price alerts",
@@ -115,6 +135,17 @@ impl Permission {
             Self::ChartsIndicatorsWrite => {
                 "Turn built-in indicators on a chart and set their period."
             }
+            Self::ChartsPineInstancesWrite => {
+                "Apply a saved script to a chart, change its inputs or visibility, and remove it."
+            }
+            Self::ChartsCandlesRead => {
+                "Read the price candles a chart has loaded: open, high, low, close and volume."
+            }
+            Self::DrawingsRead => "List the trend lines, rectangles and other drawings on a chart.",
+            Self::DrawingsWrite => {
+                "Add trend lines and rectangles, and move, restyle or hide the ones that are not locked."
+            }
+            Self::DrawingsDelete => "Permanently remove drawings that are not locked.",
             Self::AlertsRead => "List price alerts.",
             Self::AlertsCreate => "Create price alerts.",
             Self::AlertsEdit => "Change an alert's price, direction, currency, frequency or note.",
@@ -135,7 +166,12 @@ impl Permission {
     /// The Settings heading it is listed under; `GROUPS` gives the order.
     pub fn group(self) -> &'static str {
         match self {
-            Self::ChartsRead | Self::ChartsCreate | Self::ChartsIndicatorsWrite => "Charts",
+            Self::ChartsRead
+            | Self::ChartsCreate
+            | Self::ChartsIndicatorsWrite
+            | Self::ChartsPineInstancesWrite
+            | Self::ChartsCandlesRead => "Charts",
+            Self::DrawingsRead | Self::DrawingsWrite | Self::DrawingsDelete => "Drawings",
             Self::AlertsRead
             | Self::AlertsCreate
             | Self::AlertsEdit
@@ -157,6 +193,8 @@ impl Permission {
     pub fn is_mutating(self) -> bool {
         match self {
             Self::ChartsRead
+            | Self::ChartsCandlesRead
+            | Self::DrawingsRead
             | Self::AlertsRead
             | Self::PineScriptsList
             | Self::PineScriptsRead
@@ -167,6 +205,9 @@ impl Permission {
             | Self::PineAlertsRead => false,
             Self::ChartsCreate
             | Self::ChartsIndicatorsWrite
+            | Self::ChartsPineInstancesWrite
+            | Self::DrawingsWrite
+            | Self::DrawingsDelete
             | Self::AlertsCreate
             | Self::AlertsEdit
             | Self::AlertsPause
