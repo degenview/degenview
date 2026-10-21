@@ -268,23 +268,28 @@ fn access_tag(ui: &mut Ui, permission: Permission) {
     capsule(ui, text, tint, Some(ACCESS_TAG_WIDTH)).on_hover_text(meaning);
 }
 
-fn pills(ui: &mut Ui, set: &PermissionSet) {
+/// The groups a set reaches as wrapping capsules, as many lines as they need. Returns the area
+/// they fill, which never reaches past the width the caller leaves.
+fn pills(ui: &mut Ui, set: &PermissionSet) -> Rect {
     let summary = access_summary(set);
     if summary.is_empty() {
-        ui.label(kit::text(
-            "No access",
-            kit::size::CAPTION + 0.5,
-            kit::REGULAR,
-            theme::text_tertiary(),
-        ));
-        return;
+        return ui
+            .label(kit::text(
+                "No access",
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                theme::text_tertiary(),
+            ))
+            .rect;
     }
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
         for (label, write) in summary {
             pill(ui, &label, write);
         }
-    });
+    })
+    .response
+    .rect
 }
 
 /// A card that opens something when clicked; a chevron on the right says so. Returns the click.
@@ -496,32 +501,54 @@ fn security_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettin
             divider(ui);
             row(ui, "Browser pages", |ui| secondary(ui, "Always refused"));
             divider(ui);
-            ui.horizontal(|ui| {
-                ui.set_min_height(CONTROL_HEIGHT + 14.0);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 5.0;
-                    ui.label(kit::text(
-                        "Maximum permissions",
-                        kit::size::SUBHEADLINE + 1.0,
-                        kit::REGULAR,
-                        theme::text_primary(),
-                    ));
-                    pills(ui, input.global);
-                });
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if kit::sheet_button(ui, "Edit…", false, true)
-                        .on_hover_text(
-                            "The most any credential can do. Each one can only narrow this.",
-                        )
-                        .clicked()
-                    {
-                        state.sheet = Some(Editing::Maximum);
-                        state.confirm_revoke = false;
-                    }
-                });
-            });
+            maximum_row(ui, state, input);
         });
     });
+}
+
+/// Where the parts of the "Maximum permissions" row landed (read by the layout test).
+#[cfg_attr(not(test), allow(dead_code))]
+struct MaximumRow {
+    title: Rect,
+    edit: Rect,
+    pills: Rect,
+}
+
+/// The title and its Edit button share one line of fixed height, and the pills take as many lines
+/// as they need beneath it. The button therefore stays at the top right however many groups the
+/// maximum holds, instead of drifting to the middle of a growing block of capsules.
+fn maximum_row(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) -> MaximumRow {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 8.0;
+        let (mut title, mut edit) = (Rect::NOTHING, Rect::NOTHING);
+        ui.allocate_ui_with_layout(
+            vec2(ui.available_width(), CONTROL_HEIGHT),
+            Layout::right_to_left(Align::Center),
+            |ui| {
+                let button = kit::sheet_button(ui, "Edit…", false, true).on_hover_text(
+                    "The most any credential can do. Each one can only narrow this.",
+                );
+                edit = button.rect;
+                if button.clicked() {
+                    state.sheet = Some(Editing::Maximum);
+                    state.confirm_revoke = false;
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                    title = ui
+                        .label(kit::text(
+                            "Maximum permissions",
+                            kit::size::SUBHEADLINE + 1.0,
+                            kit::REGULAR,
+                            theme::text_primary(),
+                        ))
+                        .rect;
+                });
+            },
+        );
+        let pills = pills(ui, input.global);
+        MaximumRow { title, edit, pills }
+    })
+    .inner
 }
 
 fn credentials_section(
@@ -1197,6 +1224,137 @@ mod tests {
             assert!(
                 height < 130.0,
                 "a card at {width}pt wide is {height}pt tall: it must not stretch to the page"
+            );
+        }
+    }
+
+    /// Runs `add` in a headless frame `width` wide and returns what it returned with the right
+    /// edge the frame offered.
+    fn laid_out<R>(width: f32, add: impl FnOnce(&mut Ui) -> R) -> (R, f32) {
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width, 1600.0))),
+            ..Default::default()
+        };
+        let (mut out, mut right) = (None, 0.0);
+        let mut add = Some(add);
+        let mut output = ctx.run_ui(raw, |ui| {
+            right = ui.max_rect().right();
+            if let Some(add) = add.take() {
+                out = Some(add(ui));
+            }
+        });
+        output.textures_delta.clear();
+        (out.expect("ran"), right)
+    }
+
+    #[test]
+    fn the_edit_button_stays_on_the_title_line_however_many_groups_the_maximum_holds() {
+        let status = McpStatus::Running { port: 8765 };
+        let settings = McpSettings::default();
+        let sets = [
+            PermissionSet::none(),
+            PermissionSet::of([Permission::ChartsRead]),
+            PermissionSet::read_only(),
+            PermissionSet::everything(),
+        ];
+        for width in [300.0, 420.0, 560.0, 900.0] {
+            let mut button_tops = Vec::new();
+            for set in &sets {
+                let input = sample(&status, &settings, &[], set);
+                let mut state = McpSettingsState::default();
+                let (row, right) = laid_out(width, |ui| maximum_row(ui, &mut state, &input));
+                let what = format!("{} groups at {width}pt", access_summary(set).len());
+                assert!(
+                    (row.edit.center().y - row.title.center().y).abs() < 1.0,
+                    "Edit is not level with the title, {what}: {:?} vs {:?}",
+                    row.edit,
+                    row.title
+                );
+                assert!(
+                    row.pills.top() >= row.edit.bottom() - 0.5,
+                    "the capsules start above the button's line, {what}"
+                );
+                assert!(
+                    row.edit.right() > right - 2.0 && row.edit.right() <= right + 0.5,
+                    "Edit is not flush right, {what}: {} of {right}",
+                    row.edit.right()
+                );
+                assert!(
+                    row.title.right() <= row.edit.left(),
+                    "title runs under Edit, {what}"
+                );
+                assert!(
+                    row.pills.right() <= right + 0.5,
+                    "the capsules overflow the row, {what}: {} of {right}",
+                    row.pills.right()
+                );
+                assert!(
+                    !row.pills.intersects(row.edit),
+                    "capsules cover Edit, {what}"
+                );
+                button_tops.push(row.edit.top());
+            }
+            assert!(
+                button_tops
+                    .windows(2)
+                    .all(|pair| (pair[0] - pair[1]).abs() < 0.5),
+                "the button moves with the number of groups at {width}pt: {button_tops:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_wrapped_list_of_groups_is_taller_but_never_wider_than_its_line() {
+        let status = McpStatus::Disabled;
+        let settings = McpSettings::default();
+        let narrow = |set: &PermissionSet| {
+            let input = sample(&status, &settings, &[], set);
+            let mut state = McpSettingsState::default();
+            laid_out(300.0, |ui| maximum_row(ui, &mut state, &input))
+                .0
+                .pills
+        };
+        let few = narrow(&PermissionSet::of([Permission::ChartsRead]));
+        let many = narrow(&PermissionSet::everything());
+        assert!(many.height() > few.height(), "{few:?} vs {many:?}");
+        assert!(many.width() <= 300.0);
+    }
+
+    #[test]
+    fn a_client_with_every_group_keeps_its_capsules_clear_of_the_chevron() {
+        let status = McpStatus::Running { port: 8765 };
+        let settings = McpSettings::default();
+        let everything = PermissionSet::everything();
+        let clients = [
+            client("a", "Claude Desktop", PermissionSet::everything()),
+            client("b", "Read only", PermissionSet::read_only()),
+            client("c", "Nothing", PermissionSet::none()),
+        ];
+        let input = sample(&status, &settings, &clients, &everything);
+        for width in [300.0, 420.0, 560.0, 900.0] {
+            let (rects, right) = laid_out(width, |ui| {
+                clients
+                    .iter()
+                    .map(|c| ui.scope(|ui| client_row(ui, c, &input)).response.rect)
+                    .collect::<Vec<_>>()
+            });
+            for (rect, c) in rects.iter().zip(&clients) {
+                assert!(
+                    rect.right() <= right + 0.5,
+                    "{} overflows at {width}pt",
+                    c.name
+                );
+                assert!(
+                    rect.height() < 220.0,
+                    "{} is {}pt tall at {width}pt",
+                    c.name,
+                    rect.height()
+                );
+            }
+            assert!(
+                rects[0].height() >= rects[2].height(),
+                "more groups should not make a card shorter"
             );
         }
     }
