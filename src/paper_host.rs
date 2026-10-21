@@ -403,6 +403,8 @@ pub struct PaperPanel {
     footer: PaperFooterState,
     positions: PositionsState,
     account_sheet: Option<PaperAccountSheetState>,
+    /// The account whose deletion is waiting for confirmation.
+    pending_delete: Option<u64>,
     ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
 }
@@ -414,6 +416,7 @@ impl Default for PaperPanel {
             footer: PaperFooterState::default(),
             positions: PositionsState::default(),
             account_sheet: None,
+            pending_delete: None,
             ticket: None,
             show_trading_on_charts: true,
         }
@@ -595,6 +598,7 @@ impl PaperPanel {
         self.apply_table_actions(table_actions, host);
         self.apply_footer_actions(footer_actions, host, account_id, &mut panel_actions);
         self.show_account_sheet(ui.ctx(), host, account_id);
+        self.show_delete_confirm(ui.ctx(), host);
         self.show_ticket(ui.ctx(), host, currency);
         panel_actions
     }
@@ -619,6 +623,9 @@ impl PaperPanel {
                     if let Some(account) = account {
                         self.account_sheet = Some(PaperAccountSheetState::reset(account));
                     }
+                }
+                PaperHeaderAction::DeleteAccount => {
+                    self.pending_delete = account.map(|account| account.id);
                 }
                 PaperHeaderAction::ToggleShowOnCharts => {
                     self.show_trading_on_charts = !self.show_trading_on_charts;
@@ -703,6 +710,30 @@ impl PaperPanel {
                 self.account_sheet = None;
             }
             Some(AccountSheetOutcome::Cancel) => self.account_sheet = None,
+            None => {}
+        }
+    }
+
+    fn show_delete_confirm(&mut self, context: &egui::Context, host: &mut PaperHost) {
+        let Some(id) = self.pending_delete else {
+            return;
+        };
+        let Some(name) = host
+            .snapshot()
+            .accounts
+            .iter()
+            .find(|account| account.id == id)
+            .map(|account| account.name.clone())
+        else {
+            self.pending_delete = None;
+            return;
+        };
+        match crate::ui::paper_header::delete_confirm(context, &name) {
+            Some(crate::ui::kit::ConfirmOutcome::Confirmed) => {
+                let _ = host.delete_account(id);
+                self.pending_delete = None;
+            }
+            Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.pending_delete = None,
             None => {}
         }
     }

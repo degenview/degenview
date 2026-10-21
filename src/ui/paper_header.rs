@@ -43,8 +43,34 @@ pub enum PaperHeaderAction {
     NewAccount,
     ExportData,
     ResetAccount,
+    DeleteAccount,
     ToggleShowOnCharts,
     Close,
+}
+
+/// Deleting needs another account to fall back to: an empty list is refilled with a default.
+pub fn can_delete_account(input: &PaperHeaderInput) -> bool {
+    input.selected.is_some() && input.accounts.len() > 1
+}
+
+pub fn delete_title(name: &str) -> String {
+    format!("Delete \u{201c}{name}\u{201d}?")
+}
+
+pub const DELETE_MESSAGE: &str = "Every position, order, fill, history and journal entry in this account is removed. This can't be undone.";
+
+/// The confirmation for deleting an account; `None` while it is still open.
+pub fn delete_confirm(ctx: &egui::Context, name: &str) -> Option<ConfirmOutcome> {
+    kit::confirm(
+        ctx,
+        Id::new("paper-delete-account"),
+        &Confirm {
+            icon: Icon::Trash,
+            title: &delete_title(name),
+            message: DELETE_MESSAGE,
+            destructive: "Delete Account",
+        },
+    )
 }
 
 /// The count shown beside a tab; only the live sections carry one.
@@ -333,6 +359,12 @@ fn buttons(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperH
                 actions.push(PaperHeaderAction::ResetAccount);
                 ui.close();
             }
+            if can_delete_account(input)
+                && kit::menu_item(ui, Icon::Trash, "Delete Account…", true, true)
+            {
+                actions.push(PaperHeaderAction::DeleteAccount);
+                ui.close();
+            }
         });
     let showing = input.show_trading_on_charts;
     let icon = if showing { Icon::Eye } else { Icon::EyeSlash };
@@ -592,5 +624,29 @@ mod tests {
             bulk_enabled(PaperTab::History, &facts),
             "export is always on"
         );
+    }
+
+    #[test]
+    fn an_account_can_be_deleted_only_when_another_remains() {
+        let two = [
+            AccountChoice {
+                id: 1,
+                name: "A".into(),
+            },
+            AccountChoice {
+                id: 2,
+                name: "B".into(),
+            },
+        ];
+        assert!(can_delete_account(&input(&two, Some(1))));
+        assert!(!can_delete_account(&input(&two, None)));
+        assert!(!can_delete_account(&input(&two[..1], Some(1))));
+        assert!(!can_delete_account(&input(&[], None)));
+    }
+
+    #[test]
+    fn the_delete_confirmation_names_the_account() {
+        assert_eq!(delete_title("Swing"), "Delete \u{201c}Swing\u{201d}?");
+        assert!(DELETE_MESSAGE.contains("can't be undone"));
     }
 }
