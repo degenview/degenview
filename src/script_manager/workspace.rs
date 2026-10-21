@@ -235,16 +235,7 @@ fn preview_pane(
     let tab = prefs.drawer_tab;
     // The Problems tab lists the editor's diagnostics, plus the chart's runtime failure once
     // the text compiles.
-    let problems = {
-        let mut list = input.diagnostics.clone();
-        let compile_errors = list
-            .iter()
-            .any(|d| d.severity == crate::pine::token::DiagnosticSeverity::Error);
-        if !compile_errors && let Some(error) = preview.borrow().runtime_error() {
-            list.push(error.clone());
-        }
-        list
-    };
+    let problems = drawer::with_runtime_error(&input.diagnostics, preview.borrow().runtime_error());
     split::show(
         &mut middle_ui,
         Id::new("script-preview-drawer"),
