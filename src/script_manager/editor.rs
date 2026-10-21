@@ -48,6 +48,9 @@ const FONT_SIZE: f32 = 13.0;
 const LINE_NUMBER_SIZE: f32 = 11.0;
 /// A draft is written this long after the last keystroke.
 pub const DRAFT_DELAY: Duration = Duration::from_secs(1);
+/// The text is compiled this long after the last keystroke, so a name still being typed is not
+/// reported as undefined. Shorter than the preview's own apply delay, which waits for the compile.
+pub const COMPILE_DELAY: Duration = Duration::from_millis(500);
 const FLASH: Duration = Duration::from_millis(700);
 
 pub struct EditorState {
@@ -68,6 +71,8 @@ pub struct EditorState {
     jump_to: Option<usize>,
     flash: Option<(usize, Instant)>,
     last_edit: Option<Instant>,
+    /// When the text last changed without being compiled; `diagnostics` is that much out of date.
+    compile_requested: Option<Instant>,
     pub(super) find: FindState,
     completion: Option<CompletionView>,
     /// Typing (or an explicit request) asked for suggestions; moving the caret withdraws it.
@@ -116,6 +121,7 @@ impl EditorState {
             jump_to: None,
             flash: None,
             last_edit: None,
+            compile_requested: None,
             find: FindState::default(),
             completion: None,
             completion_wanted: false,
@@ -188,6 +194,27 @@ impl EditorState {
 
     pub fn has_pending_draft(&self) -> bool {
         self.last_edit.is_some()
+    }
+
+    /// Notes that the text changed and `diagnostics` no longer match it.
+    pub fn request_compile(&mut self) {
+        self.compile_requested = Some(Instant::now());
+    }
+
+    /// Whether the text has changed since it was last compiled.
+    pub fn compile_pending(&self) -> bool {
+        self.compile_requested.is_some()
+    }
+
+    /// Whether typing has paused for `COMPILE_DELAY` since the text last changed.
+    pub fn compile_due(&self, now: Instant) -> bool {
+        self.compile_requested
+            .is_some_and(|at| now.duration_since(at) >= COMPILE_DELAY)
+    }
+
+    /// Records that `diagnostics` and `status` now describe `source`.
+    pub fn compiled(&mut self) {
+        self.compile_requested = None;
     }
 
     /// Moves the caret to a diagnostic's start and flashes it, next frame.
@@ -1567,6 +1594,24 @@ mod tests {
     fn blank_lines_keep_only_shared_guides() {
         let levels = indent_levels("a\n    b\n        c\n\n    d\n\n");
         assert_eq!(levels, [0, 1, 2, 1, 1, 0, 0]);
+    }
+
+    #[test]
+    fn a_compile_waits_for_typing_to_pause() {
+        let mut state = EditorState::new("s", "plot(close)", "plot(close)");
+        assert!(!state.compile_pending());
+        state.request_compile();
+        let start = state.compile_requested.unwrap();
+        assert!(state.compile_pending());
+        assert!(!state.compile_due(start + Duration::from_millis(100)));
+        assert!(state.compile_due(start + COMPILE_DELAY));
+        // Another keystroke starts the wait again.
+        state.request_compile();
+        let again = state.compile_requested.unwrap();
+        assert!(!state.compile_due(again + COMPILE_DELAY - Duration::from_millis(1)));
+        state.compiled();
+        assert!(!state.compile_pending());
+        assert!(!state.compile_due(again + COMPILE_DELAY));
     }
 
     #[test]
