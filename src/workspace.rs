@@ -648,6 +648,39 @@ fn is_ruler(drawing: &Drawing) -> bool {
     drawing.is_ruler()
 }
 
+/// The drawings that are saved: rulers are never part of a layout.
+fn plain_drawings(drawings: &[Drawing]) -> Vec<Drawing> {
+    drawings.iter().filter(|d| !is_ruler(d)).cloned().collect()
+}
+
+/// Three-way merge of one chart's drawings by id. `base` is what this tab last saved or opened,
+/// `local` what it shows now and `remote` what the layout holds after another Mac's edit. A change
+/// on one side wins over no change on the other; when both changed the same drawing, this tab's
+/// version wins and is saved over the other (last writer). Local order is kept, new drawings
+/// from the other Mac follow in their order.
+fn merge_remote_drawings(base: &[Drawing], local: &[Drawing], remote: &[Drawing]) -> Vec<Drawing> {
+    let find = |list: &[Drawing], id: u64| list.iter().find(|d| d.id() == id).cloned();
+    let mut merged = Vec::new();
+    for drawing in local {
+        let id = drawing.id();
+        let (old, theirs) = (find(base, id), find(remote, id));
+        let local_unchanged = old.as_ref() == Some(drawing);
+        match theirs {
+            Some(theirs) if local_unchanged => merged.push(theirs),
+            // Removed on the other Mac and untouched here.
+            None if local_unchanged => {}
+            _ => merged.push(drawing.clone()),
+        }
+    }
+    for drawing in remote {
+        let id = drawing.id();
+        if find(local, id).is_none() && find(base, id).is_none() {
+            merged.push(drawing.clone());
+        }
+    }
+    merged
+}
+
 /// How long after a restyle another of the same drawing still counts as the same edit.
 const RESTYLE_WINDOW: Duration = Duration::from_millis(800);
 
@@ -725,6 +758,9 @@ pub struct ChartWorkspace {
     /// Bumped by every change to a chart's drawings; see `drawings_dirty`.
     drawings_version: u64,
     saved_drawings_version: u64,
+    /// Each chart's drawings as of the last save or open: the common ancestor when another Mac's
+    /// edit to the open layout arrives (`adopt_remote_layout`).
+    saved_drawings: HashMap<u64, Vec<Drawing>>,
     add_chart: AddChartSheet,
     add_to_watchlist: Option<EntryId>,
     unseen_alerts: usize,
@@ -1014,6 +1050,7 @@ impl ChartWorkspace {
             autosave: AutosaveState::default(),
             drawings_version: 0,
             saved_drawings_version: 0,
+            saved_drawings: HashMap::new(),
             grid_drag: ui::grid_drop::GridDrag::default(),
         }
     }
@@ -1444,6 +1481,62 @@ impl ChartWorkspace {
     fn set_baseline(&mut self) {
         self.baseline = Some(self.layout_snapshot());
         self.saved_drawings_version = self.drawings_version;
+        self.saved_drawings = self
+            .charts
+            .iter()
+            .map(|chart| (chart.id, plain_drawings(&chart.drawings)))
+            .collect();
+    }
+
+    /// Another Mac changed the layout this tab has open and iCloud Sync stored the merged result.
+    /// Brings its drawings into the live charts without losing what was drawn here since the last
+    /// save, and without writing anything back: without this the tab keeps showing (and with
+    /// Autosave later saves) the old drawings, which would delete the other Mac's from iCloud.
+    pub fn adopt_remote_layout(&mut self) {
+        let Some(view) = self.active_view() else {
+            return;
+        };
+        let was_dirty = self.drawings_dirty();
+        let mut changed = false;
+        let mut diverged = false;
+        for saved in &view.charts {
+            let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == saved.id) else {
+                continue;
+            };
+            let remote = plain_drawings(&saved.drawings);
+            let base = self.saved_drawings.get(&chart.id).cloned().unwrap_or_default();
+            if base == remote {
+                continue;
+            }
+            let local = plain_drawings(&chart.drawings);
+            let merged = merge_remote_drawings(&base, &local, &remote);
+            diverged |= merged != remote;
+            if merged != local {
+                let rulers: Vec<Drawing> =
+                    chart.drawings.iter().filter(|d| is_ruler(d)).cloned().collect();
+                if let Some(highest) = merged.iter().map(Drawing::id).max() {
+                    chart.next_drawing_id = chart.next_drawing_id.max(highest + 1);
+                }
+                chart.drawings = merged;
+                chart.drawings.extend(rulers);
+                // An undo step would put back drawings that were since added or removed elsewhere.
+                let id = chart.id;
+                let drawn = |entry: &UndoEntry| {
+                    entry.chart_id == id && matches!(entry.before, Snapshot::Drawings(_))
+                };
+                self.undo.retain(|entry| !drawn(entry));
+                self.redo.retain(|entry| !drawn(entry));
+                changed = true;
+            }
+            self.saved_drawings.insert(chart.id, remote);
+        }
+        if changed {
+            self.drawings_version += 1;
+            // Nothing here beyond what is already stored: no save is due.
+            if !was_dirty && !diverged {
+                self.saved_drawings_version = self.drawings_version;
+            }
+        }
     }
 
     /// Drawings changed since the layout was last saved. The layout's fingerprint leaves drawings
@@ -5612,6 +5705,102 @@ mod tests {
         // A chart that is not there changes nothing.
         workspace.apply_planned_drawings(404, vec![DrawingCommand::Remove(1)], 50);
         assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
+    }
+
+    /// What another Mac's edit looks like once iCloud Sync has stored it: the saved layout's
+    /// drawings for one chart replaced.
+    fn store_remote_drawings(workspace: &ChartWorkspace, chart: u64, drawings: Vec<Drawing>) {
+        let mut views = workspace.load_saved_views();
+        for view in &mut views {
+            for saved in view.charts.iter_mut().filter(|saved| saved.id == chart) {
+                saved.drawings = drawings.clone();
+            }
+        }
+        workspace
+            .store
+            .lock()
+            .unwrap()
+            .replace_saved_views(&views)
+            .unwrap();
+    }
+
+    fn live_ids(workspace: &ChartWorkspace, chart: u64) -> Vec<u64> {
+        drawing_ids(workspace, chart)
+    }
+
+    #[test]
+    fn merging_remote_drawings_keeps_each_sides_changes_and_local_wins_a_tie() {
+        let d = |id: u64, at: i64| rectangle(id, at);
+        let base = [d(1, 100), d(2, 200), d(3, 300)];
+        // Local moved 1 and added 4. Remote deleted 2, moved 3 and added 5.
+        let local = [d(1, 111), d(2, 200), d(3, 300), d(4, 400)];
+        let remote = [d(1, 100), d(3, 333), d(5, 500)];
+        let merged = merge_remote_drawings(&base, &local, &remote);
+        assert_eq!(
+            merged,
+            [d(1, 111), d(3, 333), d(4, 400), d(5, 500)],
+            "local move kept, remote delete and move taken, both additions kept"
+        );
+        // Both changed the same drawing: this tab's version wins.
+        let merged = merge_remote_drawings(&[d(1, 100)], &[d(1, 111)], &[d(1, 122)]);
+        assert_eq!(merged, [d(1, 111)]);
+        // A drawing deleted here stays deleted even if the other Mac moved it.
+        let merged = merge_remote_drawings(&[d(1, 100)], &[], &[d(1, 122)]);
+        assert!(merged.is_empty());
+    }
+
+    #[test]
+    fn a_drawing_another_mac_made_appears_in_the_open_autosave_layout_without_a_write_back() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        assert!(!workspace.drawings_dirty());
+
+        store_remote_drawings(&workspace, chart, vec![rectangle(1, 100), rectangle(7, 700)]);
+        workspace.adopt_remote_layout();
+
+        assert_eq!(live_ids(&workspace, chart), [1, 7]);
+        assert!(!workspace.drawings_dirty(), "it is already stored: nothing to save");
+        // The old behaviour: the next autosave wrote the tab's stale list over the other Mac's.
+        assert!(workspace.flush_autosave());
+        let saved = workspace.load_saved_views();
+        assert_eq!(saved[0].charts[0].drawings.len(), 2);
+        // The counter moved past the arrived drawing.
+        assert!(workspace.chart_data(chart).unwrap().next_drawing_id > 7);
+    }
+
+    #[test]
+    fn unsaved_local_drawings_survive_an_incoming_layout_and_still_get_saved() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1, 2]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(3, 300))]);
+        assert!(workspace.drawings_dirty());
+
+        // Meanwhile the other Mac deleted 2 and drew 7.
+        store_remote_drawings(&workspace, chart, vec![rectangle(1, 100), rectangle(7, 700)]);
+        workspace.adopt_remote_layout();
+
+        assert_eq!(live_ids(&workspace, chart), [1, 3, 7]);
+        assert!(workspace.drawings_dirty(), "the drawing made here is still unsaved");
+        assert!(workspace.flush_autosave());
+        let ids: Vec<u64> = workspace.load_saved_views()[0].charts[0]
+            .drawings
+            .iter()
+            .map(Drawing::id)
+            .collect();
+        assert_eq!(ids, [1, 3, 7]);
+    }
+
+    #[test]
+    fn a_layout_nobody_changed_is_left_alone() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1, 2]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(1)]);
+        workspace.adopt_remote_layout();
+        assert_eq!(live_ids(&workspace, chart), [2], "an unsynced local edit stays");
+        assert!(workspace.drawings_dirty());
     }
 
     #[test]

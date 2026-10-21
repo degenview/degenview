@@ -1812,6 +1812,15 @@ impl DegenViewApp {
             {
                 watchlist.reload();
             }
+            if report.tables.contains("saved_view") {
+                for slot in &self.tabs {
+                    if let Ok(mut content) = slot.content.lock()
+                        && let TabContent::Chart(workspace) = &mut *content
+                    {
+                        workspace.adopt_remote_layout();
+                    }
+                }
+            }
             if report.tables.contains("paper_account")
                 && let Ok(mut paper) = self.paper.lock()
             {
