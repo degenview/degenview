@@ -8,14 +8,14 @@
 use crate::mcp::bridge::{
     AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert, REQUEST_TIMEOUT,
 };
-use crate::mcp::pine::{self, Target, Version};
+use crate::mcp::pine::{self, InputArgs, Target, Version};
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
     AppliedPineDetail, AppliedPineList, ChartsResult, CreateAlertResult, IndicatorsResult,
-    PineAlertsResult, PineCompileResult, PineEditResult, PineInputsResult, PineReportResult,
-    PineScriptSource, PineScriptsResult, PineStylesResult, UpdateAlertResult, WorkspacesResult,
-    indicator_catalog,
+    PineAlertsResult, PineCompileResult, PineEditResult, PineInputsResult,
+    PineInstanceChangeResult, PineReportResult, PineScriptSource, PineScriptsResult,
+    PineStylesResult, UpdateAlertResult, WorkspacesResult, indicator_catalog,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::Permission;
@@ -56,6 +56,9 @@ pub const GET_PINE_INSTANCE: &str = "degenview_get_pine_instance";
 pub const GET_PINE_STYLES: &str = "degenview_get_pine_styles";
 pub const GET_PINE_REPORT: &str = "degenview_get_pine_report";
 pub const LIST_PINE_ALERTS: &str = "degenview_list_pine_alerts";
+pub const ADD_PINE_TO_CHART: &str = "degenview_add_pine_script_to_chart";
+pub const UPDATE_PINE_INSTANCE: &str = "degenview_update_pine_instance";
+pub const REMOVE_PINE_INSTANCE: &str = "degenview_remove_pine_instance";
 pub const PAUSE_ALERT: &str = "degenview_pause_price_alert";
 pub const RESUME_ALERT: &str = "degenview_resume_price_alert";
 pub const DELETE_ALERT: &str = "degenview_delete_price_alert";
@@ -66,6 +69,9 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         LIST_WORKSPACES | LIST_CHARTS | LIST_INDICATORS => Some(Permission::ChartsRead),
         ADD_CHART => Some(Permission::ChartsCreate),
         ADD_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
+        ADD_PINE_TO_CHART | UPDATE_PINE_INSTANCE | REMOVE_PINE_INSTANCE => {
+            Some(Permission::ChartsPineInstancesWrite)
+        }
         LIST_ALERTS => Some(Permission::AlertsRead),
         CREATE_ALERT => Some(Permission::AlertsCreate),
         UPDATE_ALERT => Some(Permission::AlertsEdit),
@@ -428,6 +434,44 @@ pub struct PineReportParams {
     pub trades_limit: Option<u32>,
     /// Include the equity curve, thinned to at most 200 points. Default false.
     pub include_equity: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddPineToChartParams {
+    /// A `workspace_id` from `degenview_list_workspaces`.
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    /// A `chart_id` from `degenview_list_charts`.
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// A `script_id` from `degenview_list_pine_scripts`: an indicator or strategy. Its last
+    /// *saved* source is applied, never an unsaved draft.
+    #[schemars(length(min = 1, max = 64))]
+    pub script_id: String,
+    /// Input overrides by input id (see `degenview_get_pine_inputs`): numbers, booleans, or text
+    /// (an option's value, a source name such as `close`, a colour as `#RRGGBB` or `#RRGGBBAA`).
+    /// Inputs left out run at their defaults.
+    pub inputs: Option<InputArgs>,
+    /// Whether the script is shown. Default true.
+    pub visible: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdatePineInstanceParams {
+    #[schemars(length(max = 20))]
+    pub workspace_id: String,
+    #[schemars(length(max = 20))]
+    pub chart_id: String,
+    /// An `instance_id` from `degenview_list_chart_pine_instances`.
+    #[schemars(length(max = 20))]
+    pub instance_id: String,
+    /// Input overrides to change, by input id, as for `degenview_add_pine_script_to_chart`.
+    /// `null` puts an input back to its default; inputs not named keep their current value.
+    pub inputs: Option<InputArgs>,
+    /// Show or hide the script. A hidden script does not run.
+    pub visible: Option<bool>,
 }
 
 fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
@@ -1399,6 +1443,138 @@ impl DegenViewMcp {
             .await
         {
             Ok(McpReply::ChartAdded(added)) => Ok(Json(added)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_add_pine_script_to_chart",
+        description = "Apply a saved Pine indicator or strategy to a chart, as the app's Add to Chart does, optionally with input overrides. Uses the script's last saved source (save a draft first with degenview_save_pine_script). Refuses libraries and scripts that do not compile. The same script can be applied more than once. The script runs once its chart draws it, so check degenview_list_chart_pine_instances for run_status. The user can undo it in the app.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn add_pine_script_to_chart(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<AddPineToChartParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let id = clean_script_id(&params.script_id)?;
+        let args = params.inputs.unwrap_or_default();
+        let script = self
+            .pine_job(
+                &client,
+                Permission::ChartsPineInstancesWrite,
+                move |store| pine::script_to_apply(store, &id, &args),
+            )
+            .await?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::AddPineInstance {
+                    workspace_id,
+                    chart_id,
+                    script: Box::new(script),
+                    visible: params.visible.unwrap_or(true),
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_update_pine_instance",
+        description = "Change a script applied to a chart: set or reset input overrides (null resets an input) and/or show or hide it. Inputs are checked against the source the instance was applied with. Give inputs, visible, or both. Refused with CONFLICT while a script alert is armed on the instance and the inputs would change (the alert follows the instance's inputs); showing or hiding is always allowed. To run a newer saved version of the script, remove the instance and apply it again.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn update_pine_instance(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<UpdatePineInstanceParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let instance_id = parse_instance_id(&params.instance_id)?;
+        let inputs = params.inputs.filter(|inputs| !inputs.is_empty());
+        if inputs.is_none() && params.visible.is_none() {
+            return Err(invalid("give inputs (not empty), visible, or both"));
+        }
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::UpdatePineInstance {
+                    workspace_id,
+                    chart_id,
+                    instance_id,
+                    inputs,
+                    visible: params.visible,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
+            Ok(_) => Err(unexpected()),
+            Err(error) => Err(failure(&error)),
+        }
+    }
+
+    #[tool(
+        name = "degenview_remove_pine_instance",
+        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn remove_pine_instance(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<PineInstanceParams>,
+    ) -> Result<Json<PineInstanceChangeResult>, CallToolResult> {
+        let client = client_of(&parts)?;
+        let workspace_id = parse_id(&params.workspace_id, "workspace_id")?;
+        let chart_id = parse_chart_id(&params.chart_id)?;
+        let instance_id = parse_instance_id(&params.instance_id)?;
+        match self
+            .bridge
+            .call(
+                &client.id,
+                Permission::ChartsPineInstancesWrite,
+                McpCommand::RemovePineInstance {
+                    workspace_id,
+                    chart_id,
+                    instance_id,
+                },
+                REQUEST_TIMEOUT,
+            )
+            .await
+        {
+            Ok(McpReply::PineInstanceChanged(changed)) => Ok(Json(*changed)),
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }

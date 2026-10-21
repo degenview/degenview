@@ -13,6 +13,9 @@
 - Read-only script tools use `mcp/pine.rs` with `ScriptStore` and compiler on a worker. Chart-private
   Pine state goes through `ChartWorkspace::pine_instance_views` on the app thread. Do not invent
   reports or alert history.
+- Applying/changing/removing a script on a chart goes through `ChartWorkspace::{add_pine_instance_to,
+  change_pine_instance,remove_pine_instance_from}`, which take the undo step; validate scripts and
+  inputs with `mcp::pine` before queuing, and apply only the saved text, never the draft.
 - Pine edits use revision-checked `mcp::pine::{update_draft,save_script}` on the app thread, followed
   by `ScriptManager::adopt_external_text`. Never bypass the live editor revision or write script
   files from a worker.

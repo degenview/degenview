@@ -322,6 +322,16 @@ pub struct AppliedPineList {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct PineInstanceChangeResult {
+    /// `added`, `updated`, `unchanged` or `removed`.
+    pub status: String,
+    pub instance_id: String,
+    /// The scripts on the chart afterwards. A script runs once its chart draws it, so a new or
+    /// changed one reads `not_run` until then.
+    pub chart: AppliedPineList,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct AppliedPineDetail {
     pub workspace_id: String,
     pub chart_id: String,

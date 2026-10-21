@@ -1389,6 +1389,83 @@ impl ChartWorkspace {
         }
     }
 
+    /// Applies a saved script to a market chart for an agent, as the chart's Scripts tab does,
+    /// with the inputs it was given. Undo takes it off again. `None` when the chart is not a
+    /// market chart in this workspace.
+    pub fn add_pine_instance_to(
+        &mut self,
+        chart_id: u64,
+        script_id: String,
+        name: &str,
+        source: &str,
+        inputs: &HashMap<String, crate::pine::program::InputValue>,
+        visible: bool,
+    ) -> Option<u64> {
+        if !self
+            .charts
+            .iter()
+            .any(|chart| chart.id == chart_id && chart.is_market())
+        {
+            return None;
+        }
+        self.remember_indicators(chart_id);
+        let chart = self.charts.iter_mut().find(|chart| chart.id == chart_id)?;
+        let id = chart.chart.add_pine_instance(Some(script_id), name, source);
+        chart.chart.set_pine_instance_inputs(id, inputs);
+        chart.chart.set_pine_visible(id, visible);
+        Some(id)
+    }
+
+    /// Changes an applied script's inputs and/or visibility. Returns whether anything differed;
+    /// only then does it take an undo step.
+    pub fn change_pine_instance(
+        &mut self,
+        chart_id: u64,
+        instance_id: u64,
+        inputs: Option<&HashMap<String, crate::pine::program::InputValue>>,
+        visible: Option<bool>,
+    ) -> Option<bool> {
+        let chart = self.charts.iter().find(|chart| chart.id == chart_id)?;
+        let instance = chart
+            .chart
+            .pine_instances()
+            .iter()
+            .find(|instance| instance.id == instance_id)?;
+        let changed = inputs.is_some_and(|inputs| *inputs != instance.input_values())
+            || visible.is_some_and(|visible| visible != instance.visible);
+        if changed {
+            self.remember_indicators(chart_id);
+            let chart = self.charts.iter_mut().find(|chart| chart.id == chart_id)?;
+            if let Some(inputs) = inputs {
+                chart.chart.set_pine_instance_inputs(instance_id, inputs);
+            }
+            if let Some(visible) = visible {
+                chart.chart.set_pine_visible(instance_id, visible);
+            }
+        }
+        Some(changed)
+    }
+
+    /// Takes an applied script off a chart (its saved source and alerts are left alone). Undo
+    /// brings it back. Returns whether the instance existed.
+    pub fn remove_pine_instance_from(&mut self, chart_id: u64, instance_id: u64) -> bool {
+        let exists = self.charts.iter().any(|chart| {
+            chart.id == chart_id
+                && chart
+                    .chart
+                    .pine_instances()
+                    .iter()
+                    .any(|instance| instance.id == instance_id)
+        });
+        if exists {
+            self.remember_indicators(chart_id);
+            if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+                chart.chart.remove_pine_instance(instance_id);
+            }
+        }
+        exists
+    }
+
     /// The focused chart's identity for the Pine integration (alert subscription creation).
     pub fn focused_pine_target(&self) -> Option<PineChartTarget> {
         let id = self.resolved_focused_id()?;
@@ -4502,6 +4579,67 @@ mod tests {
         );
         assert!(workspace.title().starts_with("Will it rain tomorrow?"));
         assert!(!workspace.is_dirty());
+    }
+
+    #[test]
+    fn agent_script_changes_are_undoable_and_only_real_changes_take_a_step() {
+        use crate::pine::program::InputValue;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(7);
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let chart_id = workspace.add_chart_for(&btc, &ctx).chart_id;
+        let base = workspace.undo.len();
+
+        let inputs = HashMap::from([("len".to_owned(), InputValue::Int(50))]);
+        assert_eq!(
+            workspace.add_pine_instance_to(999, "s1".into(), "SMA", "src", &inputs, true),
+            None
+        );
+        let id = workspace
+            .add_pine_instance_to(chart_id, "s1".into(), "SMA", "src", &inputs, false)
+            .expect("market chart");
+        let instance = |workspace: &ChartWorkspace| {
+            workspace
+                .pine_instance_views(chart_id, None, false)
+                .unwrap()
+                .into_iter()
+                .map(|view| view.instance)
+                .collect::<Vec<_>>()
+        };
+        let applied = instance(&workspace);
+        assert_eq!(applied.len(), 1);
+        assert_eq!(applied[0].script_id.as_deref(), Some("s1"));
+        assert!(!applied[0].visible);
+        assert_eq!(applied[0].input_values(), inputs);
+
+        // Saying what is already true is not a change, so it is not an undo step.
+        assert_eq!(
+            workspace.change_pine_instance(chart_id, id, Some(&inputs), Some(false)),
+            Some(false)
+        );
+        assert_eq!(workspace.undo.len(), base + 1);
+        assert_eq!(
+            workspace.change_pine_instance(chart_id, 99, None, Some(true)),
+            None
+        );
+        assert_eq!(
+            workspace.change_pine_instance(chart_id, id, Some(&HashMap::new()), Some(true)),
+            Some(true)
+        );
+        assert!(instance(&workspace)[0].visible);
+        assert!(instance(&workspace)[0].inputs.is_empty());
+
+        assert!(workspace.remove_pine_instance_from(chart_id, id));
+        assert!(!workspace.remove_pine_instance_from(chart_id, id));
+        assert!(instance(&workspace).is_empty());
+
+        workspace.undo();
+        assert_eq!(instance(&workspace).len(), 1);
+        workspace.undo();
+        assert!(!instance(&workspace)[0].visible);
+        assert_eq!(instance(&workspace)[0].input_values(), inputs);
+        workspace.undo();
+        assert!(instance(&workspace).is_empty());
     }
 
     #[test]

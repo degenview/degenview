@@ -13,12 +13,15 @@ use crate::mcp::types::{
 };
 use crate::pine::compiler;
 use crate::pine::program::{
-    CompiledProgram, InputDefinition, InputValue, ScriptType as DeclaredType,
+    CompiledProgram, InputDefinition, InputSchema, InputValue, ScriptType as DeclaredType,
 };
 use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
 use crate::script_manager::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::script_manager::registry::LibraryRegistry;
 use crate::script_manager::store::{COMPILER_VERSION, ScriptStore, hash_source};
+use schemars::JsonSchema;
+use serde::Deserialize;
+use std::collections::{BTreeMap, HashMap};
 
 /// Source returned or compiled is bounded: past this the script is not served.
 pub const MAX_SOURCE_CHARS: usize = 1_000_000;
@@ -537,6 +540,242 @@ pub fn script_inputs(
     })
 }
 
+// MARK: Applying scripts to charts
+
+/// A value for a script input as a client sends it. What it may be depends on the input.
+#[derive(Debug, Clone, PartialEq, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum InputArg {
+    Bool(bool),
+    Number(serde_json::Number),
+    /// Text, an option's value, a source name, or a colour as `#RRGGBB` / `#RRGGBBAA`.
+    Text(String),
+}
+
+/// Input overrides by input id; `null` puts that input back to its default.
+pub type InputArgs = BTreeMap<String, Option<InputArg>>;
+
+const MAX_INPUT_ARGS: usize = 100;
+const MAX_INPUT_TEXT_CHARS: usize = 500;
+/// The sources an `input.source` offers, as the Inputs card lists them.
+const SOURCE_NAMES: [&str; 5] = ["open", "high", "low", "close", "volume"];
+
+/// `#RRGGBB` (opaque) or `#RRGGBBAA`, the form `degenview_get_pine_inputs` returns.
+fn parse_color(text: &str) -> Option<u32> {
+    let hex = text.trim().strip_prefix('#').unwrap_or(text.trim());
+    if !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    match hex.len() {
+        6 => u32::from_str_radix(hex, 16).ok().map(|rgb| rgb << 8 | 0xFF),
+        8 => u32::from_str_radix(hex, 16).ok(),
+        _ => None,
+    }
+}
+
+fn input_value(definition: &InputDefinition, arg: &InputArg) -> Result<InputValue, String> {
+    let wrong_type = || format!("expects a {} value", value_type(&definition.default_value));
+    let value = match (&definition.default_value, arg) {
+        (InputValue::Int(_), InputArg::Number(number)) => {
+            let whole = number.as_i64().or_else(|| {
+                number
+                    .as_f64()
+                    .filter(|f| f.fract() == 0.0 && f.abs() < 9e15)
+                    .map(|f| f as i64)
+            });
+            InputValue::Int(whole.ok_or("expects a whole number")?)
+        }
+        (InputValue::Float(_), InputArg::Number(number)) => {
+            InputValue::Float(number.as_f64().ok_or_else(wrong_type)?)
+        }
+        (InputValue::Bool(_), InputArg::Bool(flag)) => InputValue::Bool(*flag),
+        (InputValue::String(_), InputArg::Text(text)) => {
+            if text.chars().count() > MAX_INPUT_TEXT_CHARS {
+                return Err(format!("is limited to {MAX_INPUT_TEXT_CHARS} characters"));
+            }
+            InputValue::String(text.clone())
+        }
+        (InputValue::Color(_), InputArg::Text(text)) => InputValue::Color(
+            parse_color(text).ok_or("expects a colour like #RRGGBB or #RRGGBBAA")?,
+        ),
+        (InputValue::Source(_), InputArg::Text(text)) => {
+            let name = text.trim().to_ascii_lowercase();
+            if !SOURCE_NAMES.contains(&name.as_str()) {
+                return Err(format!("expects one of {SOURCE_NAMES:?}"));
+            }
+            InputValue::Source(name)
+        }
+        _ => return Err(wrong_type()),
+    };
+    let number = match &value {
+        InputValue::Int(v) => Some(*v as f64),
+        InputValue::Float(v) => Some(*v),
+        _ => None,
+    };
+    if let Some(number) = number {
+        if definition.min_value.is_some_and(|min| number < min) {
+            return Err(format!(
+                "must be at least {}",
+                definition.min_value.unwrap_or_default()
+            ));
+        }
+        if definition.max_value.is_some_and(|max| number > max) {
+            return Err(format!(
+                "must be at most {}",
+                definition.max_value.unwrap_or_default()
+            ));
+        }
+    }
+    if let Some(options) = &definition.options
+        && !options.contains(&value)
+    {
+        let choices: Vec<String> = options.iter().map(|o| value_json(o).to_string()).collect();
+        return Err(format!("must be one of {}", choices.join(", ")));
+    }
+    Ok(value)
+}
+
+/// Checks `args` against the script's declared inputs: each must exist and hold a value of the
+/// right kind inside the input's range and options. `None` clears an override.
+pub fn parse_input_args(
+    schema: &InputSchema,
+    args: &InputArgs,
+) -> Result<Vec<(String, Option<InputValue>)>, McpError> {
+    if args.len() > MAX_INPUT_ARGS {
+        return Err(McpError::InvalidArgument(format!(
+            "At most {MAX_INPUT_ARGS} inputs can be set at once"
+        )));
+    }
+    args.iter()
+        .map(|(id, arg)| {
+            let Some(definition) = schema.inputs.iter().find(|input| input.id == *id) else {
+                let known: Vec<&str> = schema
+                    .inputs
+                    .iter()
+                    .take(20)
+                    .map(|i| i.id.as_str())
+                    .collect();
+                return Err(McpError::InvalidArgument(format!(
+                    "This script has no input '{id}' (inputs: {})",
+                    if known.is_empty() {
+                        "none".to_owned()
+                    } else {
+                        known.join(", ")
+                    }
+                )));
+            };
+            let value = arg
+                .as_ref()
+                .map(|arg| input_value(definition, arg))
+                .transpose()
+                .map_err(|reason| McpError::InvalidArgument(format!("Input '{id}' {reason}")))?;
+            Ok((id.clone(), value))
+        })
+        .collect()
+}
+
+/// Applies checked changes to the overrides in `current`. As in the Inputs card, a value equal
+/// to the input's default is no override at all.
+pub fn merge_input_changes(
+    schema: &InputSchema,
+    current: &mut HashMap<String, InputValue>,
+    changes: Vec<(String, Option<InputValue>)>,
+) {
+    for (id, value) in changes {
+        let default = schema
+            .inputs
+            .iter()
+            .find(|input| input.id == id)
+            .map(|input| &input.default_value);
+        match value {
+            Some(value) if default != Some(&value) => {
+                current.insert(id, value);
+            }
+            _ => {
+                current.remove(&id);
+            }
+        }
+    }
+}
+
+fn compile_failure(program: &CompiledProgram, what: &str) -> McpError {
+    let errors = count(&program.diagnostics, DiagnosticSeverity::Error);
+    let first = program
+        .diagnostics
+        .iter()
+        .find(|d| d.severity == DiagnosticSeverity::Error)
+        .map(|d| format!("{} at line {}: {}", d.code, d.range.start.line, d.message))
+        .unwrap_or_default();
+    McpError::CompilationFailed(format!(
+        "{what} has {errors} error(s) (first: {first}). Compile it for the full list"
+    ))
+}
+
+/// A saved script ready to be applied to a chart, with its checked input overrides.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScriptToApply {
+    pub script_id: String,
+    pub name: String,
+    pub source: String,
+    pub inputs: HashMap<String, InputValue>,
+}
+
+/// Resolves the script to apply: the saved text (never the draft, as "Add to Chart" does) of an
+/// indicator or strategy that compiles, with `args` checked against its declared inputs.
+pub fn script_to_apply(
+    store: &mut ScriptStore,
+    id: &str,
+    args: &InputArgs,
+) -> Result<ScriptToApply, McpError> {
+    let script = find_script(store, id)?;
+    let not_applicable = || {
+        McpError::Unsupported(format!(
+            "'{}' is a library: libraries are imported by other scripts, not applied to a chart",
+            script.name
+        ))
+    };
+    if script.script_type == ScriptType::Library {
+        return Err(not_applicable());
+    }
+    if script.source.chars().count() > MAX_SOURCE_CHARS {
+        return Err(McpError::ResourceLimit(format!(
+            "The source is over {MAX_SOURCE_CHARS} characters"
+        )));
+    }
+    let program = compile_source(&script.source);
+    if !program.is_valid() {
+        return Err(compile_failure(&program, &format!("'{}'", script.name)));
+    }
+    if program.declaration.script_type == DeclaredType::Library {
+        return Err(not_applicable());
+    }
+    let changes = parse_input_args(&program.input_schema, args)?;
+    let mut inputs = HashMap::new();
+    merge_input_changes(&program.input_schema, &mut inputs, changes);
+    Ok(ScriptToApply {
+        script_id: script.id,
+        name: script.name,
+        source: script.source,
+        inputs,
+    })
+}
+
+/// An applied instance's overrides after `args`, checked against the schema of its own source
+/// (an instance keeps the text it was applied with).
+pub fn instance_inputs(
+    source: &str,
+    mut current: HashMap<String, InputValue>,
+    args: &InputArgs,
+) -> Result<HashMap<String, InputValue>, McpError> {
+    let program = compile_source(source);
+    if !program.is_valid() {
+        return Err(compile_failure(&program, "This applied script"));
+    }
+    let changes = parse_input_args(&program.input_schema, args)?;
+    merge_input_changes(&program.input_schema, &mut current, changes);
+    Ok(current)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -547,6 +786,148 @@ mod tests {
         let root = std::env::temp_dir().join(format!("degenview-mcp-pine-{tag}-{}", new_id()));
         let store = ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"));
         (store, root)
+    }
+
+    const SHAPED_INPUTS: &str = "//@version=6\nindicator(\"Shaped\", overlay=true)\n\
+len = input.int(20, \"Length\", minval=1, maxval=500)\n\
+mult = input.float(2.5, \"Multiplier\")\n\
+show = input.bool(true, \"Show\")\n\
+col = input.color(color.red, \"Colour\")\n\
+src = input.source(close, \"Source\")\n\
+mode = input.string(\"fast\", \"Mode\", options=[\"fast\", \"slow\"])\n\
+plot(ta.sma(src, len) * mult)\n";
+
+    fn args(json: serde_json::Value) -> InputArgs {
+        serde_json::from_value(json).unwrap()
+    }
+
+    fn parsed(json: serde_json::Value) -> Result<HashMap<String, InputValue>, McpError> {
+        let program = compile_source(SHAPED_INPUTS);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        let changes = parse_input_args(&program.input_schema, &args(json))?;
+        let mut inputs = HashMap::new();
+        merge_input_changes(&program.input_schema, &mut inputs, changes);
+        Ok(inputs)
+    }
+
+    #[test]
+    fn input_arguments_are_checked_against_what_the_script_declares() {
+        let ok = parsed(serde_json::json!({
+            "len": 50, "mult": 3, "show": false, "col": "#00FF00",
+            "src": "High", "mode": "slow"
+        }))
+        .unwrap();
+        assert_eq!(ok["len"], InputValue::Int(50));
+        assert_eq!(ok["mult"], InputValue::Float(3.0));
+        assert_eq!(ok["show"], InputValue::Bool(false));
+        assert_eq!(ok["col"], InputValue::Color(0x00FF_00FF));
+        assert_eq!(ok["src"], InputValue::Source("high".into()));
+        assert_eq!(ok["mode"], InputValue::String("slow".into()));
+        assert_eq!(
+            parsed(serde_json::json!({"col": "#11223344"})).unwrap()["col"],
+            InputValue::Color(0x1122_3344)
+        );
+
+        for bad in [
+            serde_json::json!({"nope": 1}),
+            serde_json::json!({"len": 0}),
+            serde_json::json!({"len": 501}),
+            serde_json::json!({"len": 1.5}),
+            serde_json::json!({"len": "20"}),
+            serde_json::json!({"show": 1}),
+            serde_json::json!({"col": "red"}),
+            serde_json::json!({"col": "#12345"}),
+            serde_json::json!({"src": "vwap"}),
+            serde_json::json!({"mode": "medium"}),
+            serde_json::json!({"mode": 1}),
+        ] {
+            assert!(
+                matches!(parsed(bad.clone()), Err(McpError::InvalidArgument(_))),
+                "{bad}"
+            );
+        }
+        let unknown = parsed(serde_json::json!({"nope": 1})).unwrap_err();
+        assert!(unknown.message().contains("len"), "{}", unknown.message());
+    }
+
+    #[test]
+    fn a_default_or_null_is_no_override() {
+        let program = compile_source(SHAPED_INPUTS);
+        let mut current = HashMap::from([
+            ("len".to_owned(), InputValue::Int(50)),
+            ("show".to_owned(), InputValue::Bool(false)),
+        ]);
+        let changes = parse_input_args(
+            &program.input_schema,
+            &args(serde_json::json!({"len": 20, "show": null, "mult": 4.5})),
+        )
+        .unwrap();
+        merge_input_changes(&program.input_schema, &mut current, changes);
+        assert_eq!(
+            current,
+            HashMap::from([("mult".to_owned(), InputValue::Float(4.5))])
+        );
+    }
+
+    #[test]
+    fn only_a_compiling_indicator_or_strategy_can_be_applied() {
+        let (mut store, root) = temp_store("apply");
+        let good = create(&mut store, "Good", ScriptType::Indicator, SHAPED_INPUTS);
+        let strategy = create(
+            &mut store,
+            "Strat",
+            ScriptType::Strategy,
+            "//@version=6\nstrategy(\"S\")\n",
+        );
+        let broken = create(
+            &mut store,
+            "Broken",
+            ScriptType::Indicator,
+            "//@version=6\nindicator(\"B\")\nplot(close\n",
+        );
+        let library = create(
+            &mut store,
+            "Lib",
+            ScriptType::Library,
+            "//@version=6\nlibrary(\"Lib\")\n",
+        );
+        let none = InputArgs::new();
+
+        let applied =
+            script_to_apply(&mut store, &good.id, &args(serde_json::json!({"len": 9}))).unwrap();
+        assert_eq!(applied.source, SHAPED_INPUTS);
+        assert_eq!(applied.inputs["len"], InputValue::Int(9));
+        assert!(script_to_apply(&mut store, &strategy.id, &none).is_ok());
+        assert!(matches!(
+            script_to_apply(&mut store, &broken.id, &none),
+            Err(McpError::CompilationFailed(_))
+        ));
+        assert!(matches!(
+            script_to_apply(&mut store, &library.id, &none),
+            Err(McpError::Unsupported(_))
+        ));
+        assert!(matches!(
+            script_to_apply(&mut store, "missing", &none),
+            Err(McpError::NotFound(_))
+        ));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_instance_is_checked_against_the_source_it_was_applied_with() {
+        let current = HashMap::from([("len".to_owned(), InputValue::Int(50))]);
+        let updated = instance_inputs(
+            SHAPED_INPUTS,
+            current.clone(),
+            &args(serde_json::json!({"mult": 4.0})),
+        )
+        .unwrap();
+        assert_eq!(updated["len"], InputValue::Int(50));
+        assert_eq!(updated["mult"], InputValue::Float(4.0));
+        assert!(matches!(
+            instance_inputs("plot(", current, &args(serde_json::json!({"len": 3}))),
+            Err(McpError::CompilationFailed(_))
+        ));
     }
 
     const WITH_INPUTS: &str = "//@version=6\nindicator(\"Inputs\", overlay=true)\n\

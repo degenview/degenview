@@ -29,6 +29,10 @@ struct Stub {
     alert_calls: Mutex<Vec<String>>,
     /// Pine commands that reached the app, by kind.
     pine_calls: Mutex<Vec<String>>,
+    /// Scripts the app was asked to apply to a chart.
+    applied: Mutex<Vec<crate::mcp::pine::ScriptToApply>>,
+    /// `(inputs, visible)` the app was asked to change on an applied script.
+    instance_updates: Mutex<Vec<(Option<crate::mcp::pine::InputArgs>, Option<bool>)>>,
 }
 
 pub struct Harness {
@@ -145,6 +149,20 @@ impl Drop for Harness {
             let _ = app.join();
         }
     }
+}
+
+fn instance_changed(status: &str, instance_id: &str) -> McpReply {
+    McpReply::PineInstanceChanged(Box::new(crate::mcp::types::PineInstanceChangeResult {
+        status: status.into(),
+        instance_id: instance_id.into(),
+        chart: AppliedPineList {
+            workspace_id: "1".into(),
+            chart_id: "2".into(),
+            instrument: "BINANCE:BTCUSDT".into(),
+            timeframe: "1D".into(),
+            instances: Vec::new(),
+        },
+    }))
 }
 
 fn stub_app(
@@ -332,6 +350,28 @@ fn stub_app(
                 }
             }?;
             Ok(McpReply::PineEdit(Box::new(result)))
+        }
+        McpCommand::AddPineInstance { script, .. } => {
+            stub.pine_calls.lock().unwrap().push("add".into());
+            stub.applied.lock().unwrap().push(*script);
+            Ok(instance_changed("added", "7"))
+        }
+        McpCommand::UpdatePineInstance {
+            instance_id,
+            inputs,
+            visible,
+            ..
+        } => {
+            stub.pine_calls.lock().unwrap().push("update".into());
+            stub.instance_updates
+                .lock()
+                .unwrap()
+                .push((inputs, visible));
+            Ok(instance_changed("updated", &instance_id.to_string()))
+        }
+        McpCommand::RemovePineInstance { instance_id, .. } => {
+            stub.pine_calls.lock().unwrap().push("remove".into());
+            Ok(instance_changed("removed", &instance_id.to_string()))
         }
         McpCommand::ListPineAlerts => {
             stub.pine_calls.lock().unwrap().push("alerts".into());
@@ -2218,4 +2258,220 @@ fn bad_edit_arguments_never_reach_the_app() {
         assert!(rejected, "accepted {tool} {arguments}: {}", reply.body);
     }
     assert!(harness.stub.pine_calls.lock().unwrap().is_empty());
+}
+
+// MARK: Applying scripts to charts
+
+const APPLY_ONLY: &[Permission] = &[Permission::ChartsPineInstancesWrite];
+
+fn apply_args(script_id: &str) -> Value {
+    json!({"workspace_id": "1", "chart_id": "2", "script_id": script_id})
+}
+
+#[test]
+fn applying_scripts_has_its_own_permission() {
+    let harness = Harness::start(&[
+        ("apply", "apply-tok", APPLY_ONLY),
+        (
+            "indicators",
+            "ind-tok",
+            &[Permission::ChartsIndicatorsWrite],
+        ),
+        (
+            "scripts",
+            "scripts-tok",
+            &[
+                Permission::PineScriptsWrite,
+                Permission::PineScriptsSave,
+                Permission::PineScriptsList,
+            ],
+        ),
+    ]);
+    let url = harness.url();
+    let id = seed_script(&harness, "Good", GOOD_SCRIPT);
+    let tools = [
+        ("degenview_add_pine_script_to_chart", apply_args(&id)),
+        (
+            "degenview_update_pine_instance",
+            json!({"workspace_id": "1", "chart_id": "2", "instance_id": "1", "visible": false}),
+        ),
+        ("degenview_remove_pine_instance", instance_args()),
+    ];
+    for (tool, args) in &tools {
+        let allowed = call(&url, "apply-tok", tool, args.clone());
+        assert_eq!(allowed["isError"], json!(false), "{tool}: {allowed}");
+        for token in ["ind-tok", "scripts-tok"] {
+            let denied = call(&url, token, tool, args.clone());
+            assert_eq!(
+                error_code(&denied),
+                "PERMISSION_DENIED",
+                "{tool} as {token}"
+            );
+        }
+    }
+    assert_eq!(
+        tool_names(&url, "apply-tok"),
+        [
+            "degenview_add_pine_script_to_chart",
+            "degenview_remove_pine_instance",
+            "degenview_update_pine_instance",
+        ]
+    );
+    assert!(
+        !tool_names(&url, "ind-tok").contains(&"degenview_add_pine_script_to_chart".to_owned())
+    );
+
+    harness
+        .shared
+        .replace(harness.shared.clients(), PermissionSet::none());
+    let denied = call(&url, "apply-tok", tools[0].0, tools[0].1.clone());
+    assert_eq!(error_code(&denied), "PERMISSION_DENIED");
+}
+
+#[test]
+fn a_saved_script_reaches_the_app_with_checked_inputs() {
+    use crate::pine::program::InputValue;
+    let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
+    let url = harness.url();
+    let id = seed_script(&harness, "Good", GOOD_SCRIPT);
+
+    let mut args = apply_args(&id);
+    args["inputs"] = json!({"len": 50});
+    args["visible"] = json!(false);
+    let result = call(&url, "tok", "degenview_add_pine_script_to_chart", args);
+    assert_eq!(result["isError"], json!(false), "{result}");
+    assert_eq!(result["structuredContent"]["status"], json!("added"));
+    assert_eq!(result["structuredContent"]["instance_id"], json!("7"));
+
+    // A value equal to the input's default is no override, as in the Inputs card.
+    let mut at_default = apply_args(&id);
+    at_default["inputs"] = json!({"len": 20.0});
+    let result = call(
+        &url,
+        "tok",
+        "degenview_add_pine_script_to_chart",
+        at_default,
+    );
+    assert_eq!(result["isError"], json!(false), "{result}");
+
+    let applied = harness.stub.applied.lock().unwrap();
+    assert_eq!(applied.len(), 2);
+    assert_eq!(applied[0].script_id, id);
+    assert_eq!(applied[0].name, "Good");
+    assert_eq!(applied[0].source, GOOD_SCRIPT);
+    assert_eq!(applied[0].inputs.get("len"), Some(&InputValue::Int(50)));
+    assert!(applied[1].inputs.is_empty());
+}
+
+#[test]
+fn an_unusable_script_or_input_never_reaches_the_app() {
+    use crate::script_manager::model::ScriptType;
+    let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
+    let url = harness.url();
+    let good = seed_script(&harness, "Good", GOOD_SCRIPT);
+    let broken = seed_script(
+        &harness,
+        "Broken",
+        "//@version=6\nindicator(\"B\")\nplot(close\n",
+    );
+    let library = {
+        let mut store = script_store_at(&harness.scripts_root);
+        store
+            .create("Lib", ScriptType::Library, None, true)
+            .unwrap()
+            .id
+    };
+    let with_inputs = |inputs: Value| {
+        let mut args = apply_args(&good);
+        args["inputs"] = inputs;
+        args
+    };
+    let cases = [
+        ("unknown script", apply_args("nope")),
+        ("not an id", apply_args("../x")),
+        ("library", apply_args(&library)),
+        ("does not compile", apply_args(&broken)),
+        ("unknown input", with_inputs(json!({"width": 3}))),
+        ("wrong type", with_inputs(json!({"len": "ten"}))),
+        ("below minimum", with_inputs(json!({"len": 0}))),
+        ("fraction for int", with_inputs(json!({"len": 2.5}))),
+        ("flag for number", with_inputs(json!({"len": true}))),
+        (
+            "null chart",
+            json!({"workspace_id": "1", "chart_id": "x", "script_id": good}),
+        ),
+        ("extra field", {
+            let mut args = apply_args(&good);
+            args["color"] = json!("red");
+            args
+        }),
+        ("visible not a flag", {
+            let mut args = apply_args(&good);
+            args["visible"] = json!("yes");
+            args
+        }),
+    ];
+    for (why, arguments) in cases {
+        let reply = rpc(
+            &url,
+            Some("tok"),
+            "tools/call",
+            json!({"name": "degenview_add_pine_script_to_chart", "arguments": arguments}),
+        );
+        let json = reply.json();
+        let rejected = json.get("error").is_some() || json["result"]["isError"] == json!(true);
+        assert!(rejected, "accepted ({why}) {arguments}: {}", reply.body);
+    }
+    // Updates need something to change, and ids that are ids.
+    for arguments in [
+        json!({"workspace_id": "1", "chart_id": "2", "instance_id": "1"}),
+        json!({"workspace_id": "1", "chart_id": "2", "instance_id": "1", "inputs": {}}),
+        json!({"workspace_id": "1", "chart_id": "2", "instance_id": "x", "visible": true}),
+    ] {
+        let result = call(
+            &url,
+            "tok",
+            "degenview_update_pine_instance",
+            arguments.clone(),
+        );
+        assert_eq!(error_code(&result), "INVALID_ARGUMENT", "{arguments}");
+    }
+    assert!(harness.stub.pine_calls.lock().unwrap().is_empty());
+    assert!(harness.stub.applied.lock().unwrap().is_empty());
+}
+
+#[test]
+fn an_applied_script_can_be_changed_and_removed() {
+    let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
+    let url = harness.url();
+    let result = call(
+        &url,
+        "tok",
+        "degenview_update_pine_instance",
+        json!({
+            "workspace_id": "1", "chart_id": "2", "instance_id": "1",
+            "inputs": {"len": 30, "unset": null}, "visible": false
+        }),
+    );
+    assert_eq!(result["isError"], json!(false), "{result}");
+    let result = call(
+        &url,
+        "tok",
+        "degenview_remove_pine_instance",
+        instance_args(),
+    );
+    assert_eq!(result["structuredContent"]["status"], json!("removed"));
+
+    let updates = harness.stub.instance_updates.lock().unwrap();
+    assert_eq!(updates.len(), 1);
+    let (inputs, visible) = &updates[0];
+    assert_eq!(*visible, Some(false));
+    let inputs = inputs.as_ref().unwrap();
+    assert_eq!(inputs.len(), 2);
+    assert_eq!(inputs["unset"], None);
+    assert!(inputs["len"].is_some());
+    assert_eq!(
+        *harness.stub.pine_calls.lock().unwrap(),
+        ["update", "remove"]
+    );
 }

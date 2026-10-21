@@ -1399,6 +1399,46 @@ impl DegenViewApp {
                     &store.pine_subscriptions(),
                 )))
             }
+            McpCommand::AddPineInstance {
+                workspace_id,
+                chart_id,
+                script,
+                visible,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::add_pine_instance(workspace, chart_id, &script, visible)
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+            }),
+            McpCommand::UpdatePineInstance {
+                workspace_id,
+                chart_id,
+                instance_id,
+                inputs,
+                visible,
+            } => {
+                let alerts = self.pine_subscriptions_for_mcp()?;
+                self.with_mcp_workspace(workspace_id, |workspace| {
+                    mcp_host::update_pine_instance(
+                        workspace,
+                        chart_id,
+                        instance_id,
+                        inputs.as_ref(),
+                        visible,
+                        &alerts,
+                    )
+                    .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+                })
+            }
+            McpCommand::RemovePineInstance {
+                workspace_id,
+                chart_id,
+                instance_id,
+            } => {
+                let alerts = self.pine_subscriptions_for_mcp()?;
+                self.with_mcp_workspace(workspace_id, |workspace| {
+                    mcp_host::remove_pine_instance(workspace, chart_id, instance_id, &alerts)
+                        .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
+                })
+            }
             McpCommand::ApplyIndicator {
                 workspace_id,
                 chart_id,
@@ -1419,6 +1459,14 @@ impl DegenViewApp {
                 )))
             }),
         }
+    }
+
+    /// The stored script alert subscriptions, for checks that must not disturb a live alert.
+    fn pine_subscriptions_for_mcp(
+        &self,
+    ) -> Result<Vec<crate::model::pine_alert::PineAlertSubscription>, McpError> {
+        let store = self.store.lock().map_err(|_| alerts_unavailable())?;
+        Ok(store.pine_subscriptions())
     }
 
     /// The text of `id` in a Script Manager editor that has it open, if any: what the person sees.

@@ -17,6 +17,7 @@ pub enum Permission {
     ChartsRead,
     ChartsCreate,
     ChartsIndicatorsWrite,
+    ChartsPineInstancesWrite,
     AlertsRead,
     AlertsCreate,
     AlertsEdit,
@@ -36,10 +37,11 @@ pub enum Permission {
 impl Permission {
     pub const GROUPS: [&'static str; 3] = ["Charts", "Price Alerts", "Pine Scripts"];
 
-    pub const ALL: [Permission; 17] = [
+    pub const ALL: [Permission; 18] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
+        Permission::ChartsPineInstancesWrite,
         Permission::AlertsRead,
         Permission::AlertsCreate,
         Permission::AlertsEdit,
@@ -62,6 +64,7 @@ impl Permission {
             Self::ChartsRead => "charts.read",
             Self::ChartsCreate => "charts.create",
             Self::ChartsIndicatorsWrite => "charts.indicators.write",
+            Self::ChartsPineInstancesWrite => "charts.pine_instances.write",
             Self::AlertsRead => "alerts.read",
             Self::AlertsCreate => "alerts.create",
             Self::AlertsEdit => "alerts.edit",
@@ -90,6 +93,7 @@ impl Permission {
             Self::ChartsRead => "Read workspaces and charts",
             Self::ChartsCreate => "Add charts to a workspace",
             Self::ChartsIndicatorsWrite => "Add and configure indicators",
+            Self::ChartsPineInstancesWrite => "Apply and configure scripts on charts",
             Self::AlertsRead => "Read price alerts",
             Self::AlertsCreate => "Create price alerts",
             Self::AlertsEdit => "Edit price alerts",
@@ -115,6 +119,9 @@ impl Permission {
             Self::ChartsIndicatorsWrite => {
                 "Turn built-in indicators on a chart and set their period."
             }
+            Self::ChartsPineInstancesWrite => {
+                "Apply a saved script to a chart, change its inputs or visibility, and remove it."
+            }
             Self::AlertsRead => "List price alerts.",
             Self::AlertsCreate => "Create price alerts.",
             Self::AlertsEdit => "Change an alert's price, direction, currency, frequency or note.",
@@ -135,7 +142,10 @@ impl Permission {
     /// The Settings heading it is listed under; `GROUPS` gives the order.
     pub fn group(self) -> &'static str {
         match self {
-            Self::ChartsRead | Self::ChartsCreate | Self::ChartsIndicatorsWrite => "Charts",
+            Self::ChartsRead
+            | Self::ChartsCreate
+            | Self::ChartsIndicatorsWrite
+            | Self::ChartsPineInstancesWrite => "Charts",
             Self::AlertsRead
             | Self::AlertsCreate
             | Self::AlertsEdit
@@ -167,6 +177,7 @@ impl Permission {
             | Self::PineAlertsRead => false,
             Self::ChartsCreate
             | Self::ChartsIndicatorsWrite
+            | Self::ChartsPineInstancesWrite
             | Self::AlertsCreate
             | Self::AlertsEdit
             | Self::AlertsPause
