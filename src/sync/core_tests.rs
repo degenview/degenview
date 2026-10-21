@@ -1222,6 +1222,34 @@ fn reconcile_runs_after_a_pause_is_cleared() {
 }
 
 #[test]
+fn a_write_an_older_build_made_is_found_at_start_and_on_the_next_poll() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "old build")]);
+    for row in a.outbox() {
+        a.store.lock().unwrap().remove_outbox(row.seq).ok();
+    }
+    a.start();
+    a.run(); // the worker ticks every second; the account check lands after the first tick
+    assert_eq!(cloud.names(), ["watchlist.1"], "found when sync starts");
+
+    // Written while sync runs, by a program that does not queue it.
+    a.store
+        .lock()
+        .unwrap()
+        .replace_documents("watchlist", &[list(1, "old build"), list(2, "later")])
+        .unwrap();
+    for row in a.outbox() {
+        a.store.lock().unwrap().remove_outbox(row.seq).ok();
+    }
+    a.run();
+    assert_eq!(cloud.names(), ["watchlist.1"], "nothing looks yet");
+    a.core.request_sync();
+    a.run();
+    assert_eq!(cloud.names(), ["watchlist.1", "watchlist.2"], "the poll finds it");
+}
+
+#[test]
 fn an_upsert_whose_row_vanished_is_dropped_and_reconciled() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));

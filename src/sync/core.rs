@@ -232,6 +232,8 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         self.started = true;
+        // An older build running beside this one (or before it) writes rows without queuing them.
+        self.reconcile_needed = true;
         // The checkpoint is only valid for the account it was saved under, and only trusted if
         // this Mac has fetched recently.
         let away = state
@@ -287,6 +289,9 @@ impl<T: SyncTransport> SyncCore<T> {
 
     /// "Sync Now": fetch and upload, without discarding or resetting anything.
     pub fn request_sync(&mut self) {
+        // The worker also calls this on its five-minute poll, so rows an older build wrote without
+        // queuing them are found within one interval.
+        self.reconcile_needed = true;
         self.request_fetch();
         self.pump();
     }

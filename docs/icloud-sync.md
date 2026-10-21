@@ -74,7 +74,8 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 "watch here" flag), `paper_account_local` (which Mac runs each paper account; absent means this
 one). `sync_state.id_tag` and `sync_entity.local_hash` were added to older development databases
 by a guarded `ALTER`. All are created by one idempotent `create_sync_schema`; older builds ignore
-them, and `reconcile_stored` finds changes an older build made.
+them, and `reconcile_stored` finds changes an older build (or an older alert agent) made: when
+sync starts, on every five-minute poll and on **Sync Now**.
 
 ### Record schema
 

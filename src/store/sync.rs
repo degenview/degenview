@@ -1836,6 +1836,16 @@ impl Store {
             .filter(|row| row.kind == kind && row.op == OutboxOp::Upsert)
             .map(|row| row.sync_id)
             .collect();
+        // Alerts arrive through the command queue and only reach the table when the alert owner
+        // next runs. While commands are waiting, an absent alert may just not have landed yet.
+        let alerts_in_flight = kind == EntityKind::Alert
+            && self
+                .connection
+                .query_row("SELECT COUNT(*) FROM alert_command", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .unwrap_or(1)
+                > 0;
         let mut ids: Vec<_> = current.keys().filter(|id| enabled(id)).collect();
         ids.sort();
         for id in ids {
@@ -1846,7 +1856,11 @@ impl Store {
             });
             let already_pending =
                 queued_upserts.contains(id) && mark.as_ref().is_some_and(|m| !m.deleted);
-            if !matches_cloud && !already_pending {
+            // A deletion that arrived from another Mac is applied to the table by the alert owner
+            // through the command queue; until it runs, the row still there is not a new edit.
+            let delete_in_flight =
+                alerts_in_flight && mark.as_ref().is_some_and(|m| m.deleted);
+            if !matches_cloud && !already_pending && !delete_in_flight {
                 self.queue_upsert(entity, &device)?;
                 done.upserts += 1;
             }
@@ -1860,16 +1874,6 @@ impl Store {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
-        // Alerts arrive through the command queue and only reach the table when the alert owner
-        // next runs. While commands are waiting, an absent alert may just not have landed yet.
-        let alerts_in_flight = kind == EntityKind::Alert
-            && self
-                .connection
-                .query_row("SELECT COUNT(*) FROM alert_command", [], |row| {
-                    row.get::<_, i64>(0)
-                })
-                .unwrap_or(1)
-                > 0;
         let mut missing: Vec<_> = known
             .iter()
             .filter(|(sync_id, _)| {
