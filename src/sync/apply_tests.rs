@@ -151,6 +151,43 @@ fn concurrent_additions_on_both_macs_are_both_kept() {
 }
 
 #[test]
+fn a_market_removed_and_added_again_while_both_macs_are_offline_is_not_lost() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(
+        &a,
+        &[watchlist(10, "Tech", &[(1, "AAA"), (2, "BBB")], false)],
+    );
+    settle(&mut a, &mut b);
+    // B removes BBB and uploads it; A takes the removal in.
+    put(&b, &[watchlist(10, "Tech", &[(1, "AAA")], false)]);
+    settle(&mut a, &mut b);
+    assert_eq!(symbols(&rows(&a, "watchlist")[0]), ["AAA"]);
+    // Offline on both: A adds BBB back, B adds CCC.
+    put(
+        &a,
+        &[watchlist(10, "Tech", &[(1, "AAA"), (3, "BBB")], false)],
+    );
+    put(
+        &b,
+        &[watchlist(10, "Tech", &[(1, "AAA"), (4, "CCC")], false)],
+    );
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    for mac in [&a, &b] {
+        let mut kept = symbols(&rows(mac, "watchlist")[0]);
+        kept.sort();
+        assert_eq!(
+            kept,
+            ["AAA", "BBB", "CCC"],
+            "the market added again is kept"
+        );
+    }
+}
+
+#[test]
 fn additions_uploaded_before_either_mac_fetches_are_both_kept() {
     let (_cloud, mut a, mut b) = pair();
     a.core.start();
@@ -1699,6 +1736,43 @@ fn flags_on_different_markets_from_two_macs_are_both_kept() {
     });
     assert_eq!(flags_of(&a), expected);
     assert_eq!(flags_of(&b), expected);
+}
+
+#[test]
+fn a_flag_removed_and_set_again_while_both_macs_are_offline_is_not_lost() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    set_flags(
+        &a,
+        json!({"binance:ETHUSDT": "Blue", "binance:BTCUSDT": "Red"}),
+    );
+    settle(&mut a, &mut b);
+    // B removes a flag; A takes the removal in.
+    set_flags(&b, json!({"binance:ETHUSDT": "Blue"}));
+    settle(&mut a, &mut b);
+    assert_eq!(flags_of(&a), json!({"binance:ETHUSDT": "Blue"}));
+    // Both are now offline. A sets the removed flag again and recolours another; B recolours that
+    // one differently and adds a third.
+    set_flags(
+        &a,
+        json!({"binance:ETHUSDT": "Red", "binance:BTCUSDT": "Red"}),
+    );
+    set_flags(
+        &b,
+        json!({"binance:ETHUSDT": "Green", "binance:SOLUSDT": "Green"}),
+    );
+    a.run();
+    b.run();
+    settle(&mut a, &mut b);
+    let merged = flags_of(&a);
+    assert_eq!(merged, flags_of(&b), "both Macs agree");
+    assert_eq!(
+        merged["binance:BTCUSDT"], "Red",
+        "the flag set again is kept: {merged}"
+    );
+    assert_eq!(merged["binance:SOLUSDT"], "Green", "{merged}");
+    assert!(merged.get("binance:ETHUSDT").is_some(), "{merged}");
 }
 
 #[test]

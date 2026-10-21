@@ -1026,6 +1026,20 @@ impl Store {
             .optional()
     }
 
+    /// Records the payload both sides last agreed on, for kinds that merge three ways.
+    pub fn set_base_payload(
+        &self,
+        kind: EntityKind,
+        sync_id: &str,
+        payload: &[u8],
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_entity SET base_payload = ?3 WHERE entity_type = ?1 AND sync_id = ?2",
+            params![kind.prefix(), sync_id, payload],
+        )?;
+        Ok(())
+    }
+
     /// The cloud accepted an upload. Records what the cloud now holds, then removes the outbox
     /// entry only if it is still the one that was sent: a newer local edit keeps its place.
     pub fn ack_saved(

@@ -10,7 +10,7 @@
 //! * The status is never `UpToDate` while anything is waiting to upload.
 
 use super::outbox::{Disposition, classify, is_transient};
-use super::policy::EntityKind;
+use super::policy::{EntityKind, Merge, merge_of};
 use super::record::{MAX_PAYLOAD_BYTES, RecordName, SCHEMA_VERSION, SyncRecord, sha256_hex};
 use super::transport::{
     AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, StagedChange, StagedOp,
@@ -126,11 +126,16 @@ enum Account {
     Available(String),
 }
 
+/// A staged change with the hash and payload of what it sends.
+type Built = (StagedChange, Option<String>, Option<Vec<u8>>);
+
 #[derive(Debug, Clone)]
 struct Inflight {
     kind: EntityKind,
     sync_id: String,
     hash: Option<String>,
+    /// What was sent, to become the common ancestor of the next three-way merge once accepted.
+    payload: Option<Vec<u8>>,
 }
 
 pub struct SyncCore<T: SyncTransport> {
@@ -410,13 +415,14 @@ impl<T: SyncTransport> SyncCore<T> {
             if staged.len() >= STAGE_BATCH {
                 break;
             }
-            if let Some((change, hash)) = self.build(&row, &device) {
+            if let Some((change, hash, payload)) = self.build(&row, &device) {
                 self.inflight.insert(
                     row.seq,
                     Inflight {
                         kind: row.kind,
                         sync_id: row.sync_id.clone(),
                         hash,
+                        payload,
                     },
                 );
                 staged.push(change);
@@ -437,7 +443,7 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     /// Projects the live entity for an outbox row. `None` when nothing should be sent now.
-    fn build(&mut self, row: &OutboxRow, device: &str) -> Option<(StagedChange, Option<String>)> {
+    fn build(&mut self, row: &OutboxRow, device: &str) -> Option<Built> {
         let Some(name) = RecordName::new(row.kind, row.sync_id.clone()) else {
             self.block(row.seq, "illegal record name");
             return None;
@@ -457,6 +463,7 @@ impl<T: SyncTransport> SyncCore<T> {
                     name,
                     op: StagedOp::Delete,
                 },
+                None,
                 None,
             )),
             OutboxOp::Upsert => {
@@ -484,6 +491,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 }
                 let revision = meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64;
                 let hash = entity.hash.clone();
+                let sent = entity.payload.clone();
                 Some((
                     StagedChange {
                         outbox_seq: row.seq,
@@ -501,6 +509,7 @@ impl<T: SyncTransport> SyncCore<T> {
                         },
                     },
                     Some(hash),
+                    Some(sent),
                 ))
             }
         }
@@ -873,7 +882,8 @@ impl<T: SyncTransport> SyncCore<T> {
                 continue;
             };
             let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-            match entry.and_then(|entry| entry.hash) {
+            let (hash, sent) = entry.map_or((None, None), |entry| (entry.hash, entry.payload));
+            match hash {
                 Some(hash) => {
                     let _ = store.ack_saved(
                         done.outbox_seq,
@@ -883,6 +893,14 @@ impl<T: SyncTransport> SyncCore<T> {
                         &done.system_fields,
                         now,
                     );
+                    // What this Mac sent is now what both sides agree on. Left as it was, a later
+                    // merge reads anything this Mac removed before that upload as still present
+                    // here, and drops it when another Mac sets it again.
+                    if merge_of(name.kind, &name.id) == Merge::ThreeWay
+                        && let Some(sent) = sent
+                    {
+                        let _ = store.set_base_payload(name.kind, &name.id, &sent);
+                    }
                 }
                 // Unknown what was sent (the entry was forgotten across an account change): keep
                 // the new change tag and let the entity upload again; that is harmless.
