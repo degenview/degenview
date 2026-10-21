@@ -55,6 +55,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// Opens a System Settings pane by its extension id, as `x-apple.systempreferences:` links do.
+/// The Settings window's viewport (the same id `sync_settings_viewport` opens it under).
+fn settings_viewport_id() -> egui::ViewportId {
+    egui::ViewportId::from_hash_of("degenview-settings")
+}
+
 fn open_system_settings(pane: &str) {
     let _ = std::process::Command::new("/usr/bin/open")
         .arg(format!("x-apple.systempreferences:{pane}"))
@@ -711,7 +716,12 @@ impl DegenViewApp {
                 sync_factory,
                 crate::script_manager::store::ScriptStore::default_location(),
                 backups,
-                Arc::new(move || ctx.request_repaint()),
+                // The sync page lives in the Settings window, a viewport of its own: waking only the
+                // root one leaves that page showing stale state until the mouse moves.
+                Arc::new(move || {
+                    ctx.request_repaint();
+                    ctx.request_repaint_of(settings_viewport_id());
+                }),
             )
         };
         let actions = Arc::new(Mutex::new(Vec::new()));
