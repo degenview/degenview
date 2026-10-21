@@ -145,6 +145,8 @@ pub struct SyncCore<T: SyncTransport> {
     /// When the fetch in flight was asked for, so one that never reports back cannot block every
     /// later fetch.
     fetch_started_ms: i64,
+    /// The fetch in flight is a background poll: the status does not flicker to \"Syncing…\" for it.
+    quiet_fetch: bool,
     /// A fetch ran to the end since the checkpoint was last dropped.
     fetch_completed: bool,
     initial_fetch_done: bool,
@@ -189,6 +191,7 @@ impl<T: SyncTransport> SyncCore<T> {
             inflight: HashMap::new(),
             fetch_in_flight: false,
             fetch_started_ms: 0,
+            quiet_fetch: false,
             fetch_completed: false,
             initial_fetch_done: false,
             last_error: None,
@@ -308,7 +311,7 @@ impl<T: SyncTransport> SyncCore<T> {
     /// Looks for other Macs' changes without scanning local rows. CloudKit pushes reach a
     /// Developer ID app only now and then, so the host calls this often.
     pub fn poll(&mut self) {
-        self.request_fetch();
+        self.start_fetch(true);
     }
 
     /// Periodic housekeeping: retry due entries and pick up local changes.
@@ -352,13 +355,25 @@ impl<T: SyncTransport> SyncCore<T> {
     // MARK: Upload
 
     fn request_fetch(&mut self) {
+        self.start_fetch(false);
+    }
+
+    fn start_fetch(&mut self, quiet: bool) {
         let now = self.now();
+        // Someone is waiting on this one: a fetch already running is no longer a quiet one.
+        self.quiet_fetch = self.quiet_fetch && quiet;
         let stuck = self.fetch_in_flight && now - self.fetch_started_ms > FETCH_STUCK_MS;
         if self.can_sync() && (!self.fetch_in_flight || stuck) {
             self.fetch_in_flight = true;
+            self.quiet_fetch = quiet;
             self.fetch_started_ms = now;
             self.transport.send(TransportCommand::Fetch);
         }
+    }
+
+    /// Whether a fetch the user would notice is running.
+    fn fetching_visibly(&self) -> bool {
+        self.fetch_in_flight && !self.quiet_fetch
     }
 
     /// Stages every due outbox entry that is not already on its way, and sends.
@@ -1110,17 +1125,18 @@ impl<T: SyncTransport> SyncCore<T> {
             return Phase::Syncing;
         }
         if !state.initial_sync_done {
-            return if self.fetch_in_flight {
-                Phase::Syncing
-            } else if self.initial_fetch_done {
+            // The join prompt stays up while a background poll runs behind it.
+            return if self.initial_fetch_done {
                 Phase::AwaitingJoin
+            } else if self.fetching_visibly() {
+                Phase::Syncing
             } else {
                 Phase::Ready
             };
         }
         if pending > 0
             || !self.inflight.is_empty()
-            || self.fetch_in_flight
+            || self.fetching_visibly()
             || !self.unapplied.is_empty()
         {
             return Phase::Syncing;

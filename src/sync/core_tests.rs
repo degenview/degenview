@@ -1242,6 +1242,21 @@ fn an_empty_poll_does_not_stop_later_polls_or_leave_the_status_on_syncing() {
 }
 
 #[test]
+fn a_background_poll_does_not_flicker_the_status_or_hide_the_join_prompt() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.start();
+    assert_eq!(a.phase(), Phase::UpToDate);
+    a.core.poll();
+    assert_eq!(a.phase(), Phase::UpToDate, "not Syncing while a poll is out");
+    a.run();
+    a.core.request_sync();
+    assert_eq!(a.phase(), Phase::Syncing, "Sync Now still shows it");
+    a.run();
+    assert_eq!(a.phase(), Phase::UpToDate);
+}
+
+#[test]
 fn a_poll_brings_in_another_macs_change_without_a_push() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));
