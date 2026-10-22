@@ -321,13 +321,12 @@ pub const TOOL_CROSSLINE: Shortcut =
 
 /// The shortcut that arms `tool`, for the tools that have one.
 pub fn tool(tool: crate::model::Tool) -> Option<Shortcut> {
-    use crate::model::Tool;
-    match tool {
-        Tool::TrendLine => Some(TOOL_TREND_LINE),
-        Tool::HorizontalLine => Some(TOOL_HORIZONTAL_LINE),
-        Tool::HorizontalRay => Some(TOOL_HORIZONTAL_RAY),
-        Tool::VerticalLine => Some(TOOL_VERTICAL_LINE),
-        Tool::Crossline => Some(TOOL_CROSSLINE),
+    match tool.hotkey()? {
+        'T' => Some(TOOL_TREND_LINE),
+        'H' => Some(TOOL_HORIZONTAL_LINE),
+        'J' => Some(TOOL_HORIZONTAL_RAY),
+        'V' => Some(TOOL_VERTICAL_LINE),
+        'C' => Some(TOOL_CROSSLINE),
         _ => None,
     }
 }

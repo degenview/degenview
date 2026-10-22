@@ -83,7 +83,7 @@ impl Tab {
 pub enum Outcome {
     Open,
     /// OK: replace the drawing with this one.
-    Apply(Drawing),
+    Apply(Box<Drawing>),
     Cancel,
 }
 
@@ -291,7 +291,7 @@ impl DrawingProperties {
             if ctx.input(|input| input.key_pressed(Key::Escape)) {
                 outcome = Outcome::Cancel;
             } else if !typing && ctx.input(|input| input.key_pressed(Key::Enter)) {
-                outcome = Outcome::Apply(self.draft.clone());
+                outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
         }
         outcome
@@ -369,7 +369,7 @@ impl DrawingProperties {
         let mut outcome = Outcome::Open;
         sheet::footer(ui, |ui| {
             if kit::sheet_button(ui, "OK", true, true).clicked() {
-                outcome = Outcome::Apply(self.draft.clone());
+                outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
             if kit::sheet_button(ui, "Cancel", false, true).clicked() {
                 outcome = Outcome::Cancel;

@@ -139,18 +139,6 @@ pub enum TextOrientation {
     Vertical,
 }
 
-impl TextOrientation {
-    pub const ALL: [Self; 3] = [Self::Along, Self::Horizontal, Self::Vertical];
-
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Along => "Along the line",
-            Self::Horizontal => "Horizontal",
-            Self::Vertical => "Vertical",
-        }
-    }
-}
-
 fn is_default_orientation(value: &TextOrientation) -> bool {
     *value == TextOrientation::Along
 }

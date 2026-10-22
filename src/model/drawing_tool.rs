@@ -562,6 +562,7 @@ impl Tool {
     }
 
     /// The tools of the Lines tile's menu, in order.
+    #[cfg(test)]
     pub fn line_tools() -> impl Iterator<Item = Self> {
         Self::GROUPED
             .into_iter()

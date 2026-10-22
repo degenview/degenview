@@ -2296,7 +2296,7 @@ impl ChartWorkspace {
                     chart_id,
                     vec![DrawingCommand::Replace {
                         id: drawing_id,
-                        drawing,
+                        drawing: *drawing,
                     }],
                 );
             }

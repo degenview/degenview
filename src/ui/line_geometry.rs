@@ -150,7 +150,8 @@ fn cross_y(a: Pos2, b: Pos2, y: f32) -> Pos2 {
 /// for a line with no direction.
 pub fn text_angle(from: Pos2, to: Pos2) -> Option<f32> {
     let delta = to - from;
-    if !(delta.length() > 1e-3) {
+    let length = delta.length();
+    if !length.is_finite() || length <= 1e-3 {
         return None;
     }
     let mut angle = delta.y.atan2(delta.x);
