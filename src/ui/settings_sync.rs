@@ -625,7 +625,7 @@ fn status(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView, now_ms: i64) {
                 divider(ui);
                 row(ui, "Waiting to upload", |ui| {
                     ui.label(kit::text(
-                        format!("{} changes", view.pending),
+                        changes_text(view.pending),
                         kit::size::BODY,
                         kit::REGULAR,
                         theme::text_secondary(),
@@ -820,6 +820,35 @@ fn join_prompt(ui: &mut egui::Ui, sync: &SyncHost, summary: &JoinSummary) {
     );
 }
 
+fn changes_text(count: usize) -> String {
+    match count {
+        1 => "1 change".to_owned(),
+        count => format!("{count} changes"),
+    }
+}
+
+fn held_title(count: usize) -> String {
+    match count {
+        1 => "1 item was deleted at once".to_owned(),
+        count => format!("{count} items were deleted at once"),
+    }
+}
+
+fn too_large_title(count: usize) -> String {
+    match count {
+        1 => "1 item is too large to sync".to_owned(),
+        count => format!("{count} items are too large to sync"),
+    }
+}
+
+fn too_large_detail(count: usize) -> &'static str {
+    if count == 1 {
+        "It stays on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+    } else {
+        "They stay on this Mac. Shortening a very long Pine script or a long trading history usually fixes it."
+    }
+}
+
 fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
     if view.held > 0 {
         ui.add_space(10.0);
@@ -827,7 +856,7 @@ fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             ui,
             Icon::TriangleFill,
             kit::ORANGE,
-            &format!("{} items were deleted at once", view.held),
+            &held_title(view.held),
             Some("Delete them from iCloud and your other Macs too?"),
             None,
         );
@@ -847,10 +876,8 @@ fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             ui,
             Icon::TriangleFill,
             kit::ORANGE,
-            &format!("{} items are too large to sync", view.blocked),
-            Some(
-                "They stay on this Mac. Shortening a very long Pine script or a long trading history usually fixes it.",
-            ),
+            &too_large_title(view.blocked),
+            Some(too_large_detail(view.blocked)),
             None,
         );
     }
@@ -1047,6 +1074,18 @@ mod tests {
         }
         assert!(conflict_detail("paper").contains("Delete Account"));
         assert!(conflict_detail("something new").contains("Both versions were kept"));
+    }
+
+    #[test]
+    fn counts_in_the_status_read_in_the_singular_for_one() {
+        assert_eq!(changes_text(1), "1 change");
+        assert_eq!(changes_text(5572), "5572 changes");
+        assert_eq!(held_title(1), "1 item was deleted at once");
+        assert_eq!(held_title(6), "6 items were deleted at once");
+        assert_eq!(too_large_title(1), "1 item is too large to sync");
+        assert_eq!(too_large_title(3), "3 items are too large to sync");
+        assert!(too_large_detail(1).starts_with("It stays"));
+        assert!(too_large_detail(2).starts_with("They stay"));
     }
 
     #[test]
