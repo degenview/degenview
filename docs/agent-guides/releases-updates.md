@@ -3,13 +3,42 @@
 ## Release procedure
 
 `Cargo.toml` is the only app-version source; About, update checks, and `tools/bundle.sh` read it.
-Never edit the version or create a release tag by hand.
+Never edit the version or create a release tag by hand. Pick the version with
+[Choosing the release type](../../AGENTS.md#choosing-the-release-type).
+
+## Versions and channels
+
+SemVer 2.0: `MAJOR.MINOR.PATCH` or `MAJOR.MINOR.PATCH-rc.N` (`tools/release.sh` also accepts
+`-alpha.N` and `-beta.N`, but no channel offers those yet). Pre-1.0, MINOR is a feature or format
+change and PATCH is a fix. Always the dotted `rc.N`, never `rc1`: SemVer compares numeric parts as
+numbers (`rc.10` after `rc.2`). The final `0.6.0` is a new tag rebuilt from the last commit, never
+a promoted RC binary.
+
+```
+0.5.1  <  0.6.0-rc.1  <  0.6.0-rc.2  <  0.6.0-rc.10  <  0.6.0
+```
+
+- Two update channels, chosen in Settings ▸ About and saved per Mac in the local-only
+  `update.channel` setting (never in `sync::policy`). **Stable** offers tags with no prerelease
+  part. **Release Candidate** offers those plus `rc` tags, so it moves on to `0.6.0` once it ships.
+  With nothing saved, a build starts on its own channel (an RC keeps getting RCs).
+- `update_check::check` reads `releases?per_page=30` (the list includes prereleases;
+  `/releases/latest` does not), skips drafts and tags no channel accepts or it cannot parse, and
+  takes the highest version. It never offers anything not newer than the running build, so
+  switching channel cannot downgrade. Every trust rule below applies to RCs unchanged.
+- Add a channel by adding a `Channel` variant, its `accepts` rule and a label; the version
+  classification (`Kind`) already knows `rc`, everything else is "other" and offered nowhere.
+- Every build carries a build id: the short commit hash, `-dirty` for a build with uncommitted
+  changes, `unknown` without git (`DEGENVIEW_BUILD_ID` overrides it). `build.rs` sets it; Settings ▸
+  About shows it and puts it in the copied build info. It is informational: nothing reads it back
+  and it is never sent anywhere. A release is built from its tag's commit, so each has its own.
 
 1. Land on `main`; require a clean tree plus test, clippy, and fmt checks.
 2. Preview with `tools/release.sh <version> --dry-run`.
 3. Run `tools/release.sh <version>` (`--yes` skips confirmation). It creates
    `release/v<version>`, bumps Cargo files, opens a PR, merge-commits it, then creates and pushes a
-   signed tag on merged `main`. Hyphenated versions are prereleases and ignored by updates.
+   signed tag on merged `main`. Hyphenated versions are published as GitHub prereleases and only
+   the Release Candidate channel offers `-rc.N` ones.
 4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64,
    Windows, and Linux, then publishes. Watch with `gh run watch` and confirm all four assets.
 

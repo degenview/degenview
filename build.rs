@@ -1,4 +1,5 @@
 fn main() {
+    build_id();
     // Embed the app icon in the Windows executable (Explorer, taskbar, shortcuts).
     #[cfg(windows)]
     {
@@ -9,6 +10,48 @@ fn main() {
             .expect("embed Windows icon");
     }
     swift_bridge();
+}
+
+/// Exposes `DEGENVIEW_BUILD_ID` to the crate: the short commit hash the build was made from, with
+/// `-dirty` when the tree had uncommitted changes so a local build never claims to be a clean
+/// commit. A release is built from its tag's commit, so every release gets its own id.
+/// `DEGENVIEW_BUILD_ID` in the environment overrides it; with no git (a source tarball) it is
+/// `unknown`. Informational only: Settings > About shows it.
+fn build_id() {
+    use std::process::Command;
+
+    println!("cargo:rerun-if-env-changed=DEGENVIEW_BUILD_ID");
+    let git = |args: &[&str]| {
+        Command::new("git")
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    };
+    // Rebuild when the checked-out commit changes. `--git-path` finds the right files in a linked
+    // worktree, where `.git` is a file.
+    if let Some(head) = git(&["rev-parse", "--git-path", "HEAD"]) {
+        println!("cargo:rerun-if-changed={head}");
+    }
+    if let Some(reference) = git(&["symbolic-ref", "-q", "HEAD"])
+        && let Some(path) = git(&["rev-parse", "--git-path", &reference])
+    {
+        println!("cargo:rerun-if-changed={path}");
+    }
+    let id = std::env::var("DEGENVIEW_BUILD_ID")
+        .ok()
+        .map(|id| id.trim().to_owned())
+        .filter(|id| !id.is_empty() && !id.contains(char::is_whitespace))
+        .or_else(|| {
+            let hash = git(&["rev-parse", "--short=9", "HEAD"]).filter(|hash| !hash.is_empty())?;
+            // Untracked files (docs scratch, build output) do not change what was compiled.
+            let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
+                .is_some_and(|status| !status.is_empty());
+            Some(if dirty { format!("{hash}-dirty") } else { hash })
+        })
+        .unwrap_or_else(|| "unknown".to_owned());
+    println!("cargo:rustc-env=DEGENVIEW_BUILD_ID={id}");
 }
 
 /// Compiles the CloudKit bridge (`native/swift`) into a static library and links it into the

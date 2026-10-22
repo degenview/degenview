@@ -134,6 +134,8 @@ pub enum SettingsAction {
     Mcp(McpAction),
     /// An update was swapped in and a helper will reopen the app: quit now.
     QuitForUpdate,
+    /// The About page chose which releases updates offer.
+    SetUpdateChannel(crate::service::update_check::Channel),
 }
 
 pub struct SettingsInput<'a> {
@@ -490,8 +492,12 @@ pub fn show(
             actions.extend(snapshot_actions.into_iter().map(SettingsAction::Snapshots));
         }
         SettingsSection::About => {
-            if crate::ui::settings_about::show(&mut page, input.updates) {
+            let about = crate::ui::settings_about::show(&mut page, input.updates);
+            if about.quit {
                 actions.push(SettingsAction::QuitForUpdate);
+            }
+            if let Some(channel) = about.channel {
+                actions.push(SettingsAction::SetUpdateChannel(channel));
             }
         }
         SettingsSection::Sync => {

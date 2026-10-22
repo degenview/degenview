@@ -4,10 +4,12 @@
 use super::icons::{self, Icon};
 use super::{kit, theme};
 use crate::update_host::{Phase, UpdateView};
-use eframe::egui::{self, Color32, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Color32, Galley, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 
 const HEIGHT: f32 = 22.0;
+/// Square-ish like the tab strip's other small controls, not a capsule.
+const RADIUS: f32 = 6.0;
 const PADDING: f32 = 9.0;
 const ICON: f32 = 11.0;
 const ICON_GAP: f32 = 5.0;
@@ -163,14 +165,13 @@ pub fn show(ui: &mut Ui, layout: &Layout, right: f32, top: f32, height: f32) -> 
         });
     let hovered = response.hovered() && look.clickable;
     let painter = ui.painter();
-    let radius = HEIGHT / 2.0;
     let text_color = if look.filled {
         Color32::WHITE
     } else {
         look.tint
     };
     if let Some(fraction) = look.progress {
-        paint_progress(painter, rect, fraction, look.tint);
+        paint_progress(painter, rect, fraction, look.tint, RADIUS);
     } else if look.filled {
         let fill = if response.is_pointer_button_down_on() {
             look.tint.gamma_multiply(0.8)
@@ -179,7 +180,7 @@ pub fn show(ui: &mut Ui, layout: &Layout, right: f32, top: f32, height: f32) -> 
         } else {
             look.tint
         };
-        painter.rect_filled(rect, radius, fill);
+        painter.rect_filled(rect, RADIUS, fill);
     } else {
         let alpha = if response.is_pointer_button_down_on() {
             0.28
@@ -188,8 +189,14 @@ pub fn show(ui: &mut Ui, layout: &Layout, right: f32, top: f32, height: f32) -> 
         } else {
             0.14
         };
-        painter.rect_filled(rect, radius, theme::with_alpha(look.tint, alpha));
+        painter.rect_filled(rect, RADIUS, theme::with_alpha(look.tint, alpha));
     }
+    painter.rect_stroke(
+        rect,
+        RADIUS,
+        Stroke::new(1.0, border(look)),
+        StrokeKind::Inside,
+    );
     let mut x = rect.left() + PADDING;
     if look.progress.is_some() {
         x = rect.center().x - layout.label.size().x / 2.0;
@@ -215,15 +222,33 @@ pub fn show(ui: &mut Ui, layout: &Layout, right: f32, top: f32, height: f32) -> 
     response.clicked()
 }
 
-/// A rounded bar: a faint track in `tint` with the done part filled. Settings ▸ About draws its
-/// install progress with this too.
-pub fn paint_progress(painter: &egui::Painter, rect: Rect, fraction: f32, tint: Color32) {
-    let radius = rect.height() / 2.0;
+/// The hairline around the mark: the tint itself, a little darker on the filled call to action so
+/// it still reads against its fill.
+fn border(look: &Look) -> Color32 {
+    if look.filled {
+        look.tint.gamma_multiply(0.75)
+    } else {
+        theme::with_alpha(look.tint, 0.55)
+    }
+}
+
+/// A bar with corners of `radius`: a faint track in `tint` with the done part filled. Settings ▸
+/// About draws its install progress with this too, as a capsule (`rect.height() / 2.0`).
+pub fn paint_progress(
+    painter: &egui::Painter,
+    rect: Rect,
+    fraction: f32,
+    tint: Color32,
+    radius: f32,
+) {
     painter.rect_filled(rect, radius, theme::with_alpha(tint, 0.16));
     let done = rect.width() * fraction.clamp(0.0, 1.0);
     if done > 0.5 {
-        // Never narrower than the corner radius allows, so a bar just begun is still a capsule.
-        let fill = Rect::from_min_size(rect.min, vec2(done.max(rect.height()), rect.height()));
+        // Never narrower than the corner radius allows, so a bar just begun keeps its corners.
+        let fill = Rect::from_min_size(
+            rect.min,
+            vec2(done.max(radius * 2.0).min(rect.width()), rect.height()),
+        );
         painter.rect_filled(fill, radius, theme::with_alpha(tint, 0.42));
     }
 }

@@ -435,8 +435,8 @@ mod tests {
     #[ignore = "downloads the latest release"]
     #[cfg(target_os = "macos")]
     fn the_latest_release_downloads_and_unpacks() {
-        use crate::service::update_check::{UpdateOutcome, check};
-        let UpdateOutcome::Available(release) = check("0.0.1") else {
+        use crate::service::update_check::{Channel, UpdateOutcome, check};
+        let UpdateOutcome::Available(release) = check("0.0.1", Channel::Stable) else {
             panic!("no release found");
         };
         if let Some(reason) = release.manual_only {
