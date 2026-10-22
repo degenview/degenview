@@ -174,8 +174,18 @@ jobs:
             echo "::error::Notarization finished with status ${status}"
             exit 1
           fi
-          xcrun stapler staple target/DegenView.app
-          xcrun stapler validate target/DegenView.app
+          # Stapling and validating fetch the ticket from Apple's CloudKit, which now and then drops
+          # the connection ("network connection was lost", exit 68) even though the build was
+          # Accepted; retry before failing the release.
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple target/DegenView.app \
+                && xcrun stapler validate target/DegenView.app; then
+              break
+            fi
+            [ "$attempt" -lt 5 ] || { echo "::error::stapler failed 5 times"; exit 1; }
+            echo "Attempt ${attempt} failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
           spctl --assess --type execute --verbose=2 target/DegenView.app
           if [ -n "${{ vars.DEGENVIEW_ICLOUD }}" ]; then
             ./tools/verify-icloud.sh target/DegenView.app Production
