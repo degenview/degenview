@@ -8,10 +8,13 @@ use crate::model::Timeframe;
 use crate::model::chart_template::TemplateId;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{
-    DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, VerticalAlign,
+    DrawingStyle, HorizontalAlign, Level, LineEnd, MiddleLine, StatsPosition, TextOrientation,
+    VerticalAlign,
 };
 use crate::model::drawing_template::style_for;
-use crate::model::{Anchor, Caps, Drawing, MAX_TEXT_CHARS, Tool, Visibility};
+use crate::model::{
+    Anchor, Caps, Drawing, Geometry, MAX_TEXT_CHARS, PitchforkVariant, Tool, Visibility,
+};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
 use crate::ui::icons::Icon;
@@ -42,6 +45,10 @@ const MAX_LISTED: usize = 40;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
     Style,
+    /// The regression trend's source, deviations and lines.
+    Inputs,
+    /// The extra lines of a channel or a pitchfork.
+    Levels,
     Text,
     Coordinates,
     Visibility,
@@ -51,6 +58,8 @@ impl Tab {
     fn title(self) -> &'static str {
         match self {
             Self::Style => "Style",
+            Self::Inputs => "Inputs",
+            Self::Levels => "Levels",
             Self::Text => "Text",
             Self::Coordinates => "Coordinates",
             Self::Visibility => "Visibility",
@@ -60,6 +69,8 @@ impl Tab {
     fn icon(self) -> Icon {
         match self {
             Self::Style => Icon::Palette,
+            Self::Inputs => Icon::ChartLine,
+            Self::Levels => Icon::Layers,
             Self::Text => Icon::TextFormat,
             Self::Coordinates => Icon::Hash,
             Self::Visibility => Icon::Eye,
@@ -121,15 +132,22 @@ fn has_style_page(caps: Caps) -> bool {
         Caps::ENDS,
         Caps::STATS,
         Caps::PRICE_LABELS,
+        Caps::TIME_LABEL,
         Caps::MIDDLE_POINT,
     ]
     .into_iter()
     .any(|cap| caps.has(cap))
 }
 
-/// Whether a tool's text sits inside its shape, so its vertical alignment means something.
-fn text_is_boxed(tool: Tool) -> bool {
+/// Whether a tool's text has a vertical alignment that means something: inside a shape (top,
+/// middle or bottom of it), or on a line or channel (above it, on it or below it).
+fn text_has_position(tool: Tool) -> bool {
+    use crate::model::ToolGroup;
     matches!(tool, Tool::Rectangle | Tool::Circle | Tool::Ellipse)
+        || matches!(
+            tool.spec().group,
+            ToolGroup::TrendLines | ToolGroup::Channels
+        )
 }
 
 /// The label of anchor `index` of a drawing by `tool`.
@@ -140,7 +158,22 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::Arrow
         | Tool::ArrowMarker
         | Tool::TrendLine
+        | Tool::Ray
+        | Tool::InfoLine
+        | Tool::ExtendedLine
+        | Tool::TrendAngle
         | Tool::Fib => &["Point 1", "Point 2"],
+        Tool::HorizontalLine => &["Price level"],
+        Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
+        Tool::VerticalLine => &["Time"],
+        Tool::ParallelChannel => &["Point 1", "Point 2", "Offset point"],
+        Tool::FlatChannel => &["Point 1", "Point 2", "Level"],
+        Tool::DisjointChannel => &["Point 1", "Point 2", "Point 3", "End of second edge"],
+        Tool::RegressionTrend => &["Start bar", "End bar"],
+        Tool::Pitchfork
+        | Tool::SchiffPitchfork
+        | Tool::ModifiedSchiffPitchfork
+        | Tool::InsidePitchfork => &["Point 1", "Point 2", "Point 3"],
         Tool::RotatedRectangle => &["Point 1", "Point 2", "Width point"],
         Tool::Circle => &["Center", "Radius point"],
         Tool::Arc => &["Start", "End", "Curvature point"],
@@ -192,6 +225,12 @@ impl DrawingProperties {
         let mut tabs = Vec::new();
         if has_style_page(caps) {
             tabs.push(Tab::Style);
+        }
+        if caps.has(Caps::REGRESSION) {
+            tabs.push(Tab::Inputs);
+        }
+        if caps.has(Caps::LEVELS) {
+            tabs.push(Tab::Levels);
         }
         if caps.has(Caps::TEXT) {
             tabs.push(Tab::Text);
@@ -312,6 +351,8 @@ impl DrawingProperties {
                         ui.spacing_mut().item_spacing.y = CARD_SPACING;
                         match self.tab {
                             Tab::Style => self.style_page(ui),
+                            Tab::Inputs => self.inputs_page(ui),
+                            Tab::Levels => self.levels_page(ui),
                             Tab::Text => self.text_page(ui),
                             Tab::Coordinates => self.coordinates_page(ui),
                             Tab::Visibility => self.visibility_page(ui),
@@ -583,8 +624,15 @@ impl DrawingProperties {
         let before = style;
         let line = caps.has(Caps::COLOR) || caps.has(Caps::WIDTH) || caps.has(Caps::DASH);
         let shape = caps.has(Caps::FILL) || caps.has(Caps::MIDDLE_LINE);
-        let details = caps.has(Caps::MIDDLE_POINT) || caps.has(Caps::PRICE_LABELS);
+        let details = caps.has(Caps::MIDDLE_POINT)
+            || caps.has(Caps::PRICE_LABELS)
+            || caps.has(Caps::TIME_LABEL);
+        let variant = match self.draft.geometry() {
+            Some(Geometry::Pitchfork { variant, .. }) => Some(*variant),
+            _ => None,
+        };
         let groups = [
+            variant.is_some(),
             line,
             caps.has(Caps::ENDS),
             shape,
@@ -595,11 +643,34 @@ impl DrawingProperties {
         // A page of one group needs no heading to say what it is.
         let mut page = Page::new(groups.into_iter().filter(|present| *present).count() > 1);
 
+        // The four pitchforks are one drawing in four constructions: switching keeps the three
+        // pivots, so a fork can be tried every way without redrawing it.
+        if let Some(current) = variant {
+            page.section(ui, "Pitchfork", None);
+            let options: Vec<(PitchforkVariant, &str)> = PitchforkVariant::ALL
+                .iter()
+                .map(|option| (*option, option.label()))
+                .collect();
+            let mut chosen = current;
+            picker_row(
+                ui,
+                Icon::ForkAndrews,
+                "Style",
+                Some("Where the median starts and ends."),
+                &options,
+                &mut chosen,
+            );
+            if chosen != current {
+                self.switch_variant(chosen);
+            }
+        }
         if line {
-            page.section(ui, "Line", None);
+            page.section(ui, if variant.is_some() { "Median" } else { "Line" }, None);
         }
         if caps.has(Caps::COLOR) {
-            let title = if caps.has(Caps::WIDTH) {
+            let title = if variant.is_some() {
+                "Median color"
+            } else if caps.has(Caps::WIDTH) {
                 "Line color"
             } else {
                 "Color"
@@ -653,7 +724,13 @@ impl DrawingProperties {
             page.section(ui, "Shape", None);
         }
         if caps.has(Caps::FILL) {
-            settings_card::card(ui, Icon::RectFill, "Fill", None, |ui| {
+            // A channel or a fork fills the space between its lines: a background.
+            let title = if self.tool.spec().group == crate::model::ToolGroup::Shapes {
+                "Fill"
+            } else {
+                "Background"
+            };
+            settings_card::card(ui, Icon::RectFill, title, None, |ui| {
                 color_well(ui, "Fill color", &mut style.fill.color);
                 settings_card::switch(ui, &mut style.fill.enabled);
             });
@@ -692,17 +769,39 @@ impl DrawingProperties {
                 ui,
                 Icon::Circle,
                 "Middle point",
-                "A dot halfway along the arrow.",
+                "A dot halfway along the line.",
                 &mut style.middle_point,
             );
         }
         if caps.has(Caps::PRICE_LABELS) {
+            // A line at a price is tagged on the price axis; the others print their end prices.
+            let on_axis = matches!(
+                self.tool,
+                Tool::HorizontalLine | Tool::HorizontalRay | Tool::Crossline
+            );
             toggle_row(
                 ui,
                 Icon::Tag,
-                "Price labels",
-                "The price at each end.",
+                if on_axis {
+                    "Price label"
+                } else {
+                    "Price labels"
+                },
+                if on_axis {
+                    "A tag with the price on the price axis."
+                } else {
+                    "The price at each end."
+                },
                 &mut style.price_labels,
+            );
+        }
+        if caps.has(Caps::TIME_LABEL) {
+            toggle_row(
+                ui,
+                Icon::Clock,
+                "Time label",
+                "A tag with the time on the time axis.",
+                &mut style.time_label,
             );
         }
         if caps.has(Caps::STATS) {
@@ -715,10 +814,15 @@ impl DrawingProperties {
 
     fn stats_section(&self, ui: &mut Ui, page: &mut Page, style: &mut DrawingStyle) {
         // Always titled: its subtitle says what the switches below it print.
+        let noun = if self.tool == Tool::Arrow {
+            "arrow"
+        } else {
+            "line"
+        };
         page.titled_section(
             ui,
             "Statistics",
-            Some("Measurements printed beside the arrow."),
+            Some(&format!("Measurements printed beside the {noun}.")),
         );
         let stats = &mut style.stats;
         toggle_row(
@@ -784,6 +888,110 @@ impl DrawingProperties {
         );
     }
 
+    /// Draws the pitchfork as another variant: the same three pivots, another construction.
+    fn switch_variant(&mut self, variant: PitchforkVariant) {
+        if let Some(Geometry::Pitchfork {
+            variant: current, ..
+        }) = self.draft.geometry_mut()
+        {
+            *current = variant;
+            self.tool = variant.tool();
+        }
+    }
+
+    // MARK: Levels and inputs
+
+    /// The extra lines of a pitchfork (each on both sides of the median) or of a parallel channel.
+    fn levels_page(&mut self, ui: &mut Ui) {
+        let mut style = self.style();
+        let before = style;
+        let fork = matches!(self.draft.geometry(), Some(Geometry::Pitchfork { .. }));
+        let mut page = Page::new(true);
+        if fork {
+            page.titled_section(
+                ui,
+                "Colors",
+                Some("Each level is drawn on both sides of the median."),
+            );
+            toggle_row(
+                ui,
+                Icon::Palette,
+                "Use one color",
+                "Draw every line in the median's color.",
+                &mut style.use_one_color,
+            );
+            for (index, level) in style.pitchfork_levels.iter_mut().enumerate() {
+                level_cards(ui, &mut page, ("fork", index), level);
+            }
+        } else {
+            for (index, level) in style.channel_levels.iter_mut().enumerate() {
+                level_cards(ui, &mut page, ("channel", index), level);
+            }
+        }
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
+    /// The regression trend's source, the deviations its bands sit at, and its three lines.
+    fn inputs_page(&mut self, ui: &mut Ui) {
+        use crate::model::chart_type::PriceSource;
+        let mut style = self.style();
+        let before = style;
+        let mut page = Page::new(true);
+        page.section(ui, "Inputs", None);
+        let options: Vec<(PriceSource, &str)> = PriceSource::ALL
+            .iter()
+            .map(|source| (*source, source.label()))
+            .collect();
+        picker_row(
+            ui,
+            Icon::ChartLine,
+            "Source",
+            Some("The price the line is fitted to."),
+            &options,
+            &mut style.regression.source,
+        );
+        let max = f64::from(crate::model::drawing_style::MAX_DEVIATION);
+        let regression = &mut style.regression;
+        for (title, hint, id, value) in [
+            (
+                "Upper deviation",
+                "Standard deviations above the line.",
+                "regression-upper",
+                &mut regression.upper_dev,
+            ),
+            (
+                "Lower deviation",
+                "Standard deviations from the line, negative for below.",
+                "regression-lower",
+                &mut regression.lower_dev,
+            ),
+        ] {
+            if let Some(picked) = settings_card::card(ui, Icon::Hash, title, Some(hint), |ui| {
+                number_field(ui, Id::new(id), f64::from(*value), 0.1, -max..=max, 2)
+            }) {
+                *value = picked as f32;
+            }
+        }
+        toggle_row(
+            ui,
+            Icon::Percent,
+            "Pearson's R",
+            "Print how closely the price follows the line (-1 to 1).",
+            &mut regression.pearson,
+        );
+        page.titled_section(ui, "Base line", None);
+        line_cards(ui, "regression-base", &mut regression.base);
+        page.titled_section(ui, "Upper line", None);
+        line_cards(ui, "regression-upper-line", &mut regression.upper);
+        page.titled_section(ui, "Lower line", None);
+        line_cards(ui, "regression-lower-line", &mut regression.lower);
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
     // MARK: Text
 
     fn text_page(&mut self, ui: &mut Ui) {
@@ -839,7 +1047,7 @@ impl DrawingProperties {
             &horizontal,
             &mut style.text.align,
         );
-        if text_is_boxed(self.tool) {
+        if text_has_position(self.tool) {
             let vertical: Vec<(VerticalAlign, &str)> = VerticalAlign::ALL
                 .iter()
                 .map(|align| (*align, align.label()))
@@ -853,6 +1061,36 @@ impl DrawingProperties {
                 &mut style.text.valign,
             );
         }
+        if self.tool.caps().has(Caps::ORIENTATION) {
+            // A vertical line's text reads up the line or across it.
+            let options = [
+                (TextOrientation::Vertical, "Vertical"),
+                (TextOrientation::Horizontal, "Horizontal"),
+            ];
+            let mut shown = if style.text.orientation == TextOrientation::Horizontal {
+                TextOrientation::Horizontal
+            } else {
+                TextOrientation::Vertical
+            };
+            picker_row(
+                ui,
+                Icon::TextFormat,
+                "Orientation",
+                None,
+                &options,
+                &mut shown,
+            );
+            style.text.orientation = shown;
+        }
+        let mut visible = !style.hide_text;
+        toggle_row(
+            ui,
+            Icon::Eye,
+            "Show text",
+            "Off keeps the text but does not draw it.",
+            &mut visible,
+        );
+        style.hide_text = !visible;
         if style != before {
             self.set_style(style);
         }
@@ -867,29 +1105,39 @@ impl DrawingProperties {
         for (index, &anchor) in anchors.iter().enumerate().take(shown) {
             page.section(ui, &anchor_label(self.tool, index), None);
             let mut edited = anchor;
+            // Some anchors are read for one of their two numbers only (a level has no time, a
+            // regression no price): the other is where a handle was left and is not offered.
+            let (reads_time, reads_price) = self
+                .draft
+                .geometry()
+                .map_or((true, true), |geometry| geometry.reads(index));
             let decimals = price_decimals(anchor.price);
             let step = 10f64.powi(-(decimals as i32));
             let price_id = Id::new(("drawing-price", self.draft.id(), index));
-            if let Some(price) = settings_card::card(ui, Icon::Tag, "Price", None, |ui| {
-                number_field_sized(
-                    ui,
-                    price_id,
-                    anchor.price,
-                    step,
-                    -1e12..=1e12,
-                    decimals,
-                    PRICE_FIELD_WIDTH,
-                )
-            }) {
+            if reads_price
+                && let Some(price) = settings_card::card(ui, Icon::Tag, "Price", None, |ui| {
+                    number_field_sized(
+                        ui,
+                        price_id,
+                        anchor.price,
+                        step,
+                        -1e12..=1e12,
+                        decimals,
+                        PRICE_FIELD_WIDTH,
+                    )
+                })
+            {
                 edited.price = price;
             }
             let state = &mut self.coordinates[index];
-            if let Some(time) = time_row(
-                ui,
-                Id::new(("drawing-time", self.draft.id(), index)),
-                state,
-                anchor.time_ms,
-            ) {
+            if reads_time
+                && let Some(time) = time_row(
+                    ui,
+                    Id::new(("drawing-time", self.draft.id(), index)),
+                    state,
+                    anchor.time_ms,
+                )
+            {
                 edited.time_ms = time;
             }
             if edited.time_ms != anchor.time_ms || edited.price != anchor.price {
@@ -987,6 +1235,64 @@ impl Page {
         settings_card::section_title(ui, title, subtitle);
         ui.spacing_mut().item_spacing.y = CARD_SPACING;
     }
+}
+
+/// A ratio as a short number: `0.382`, `1`, `-0.25`.
+fn ratio_text(ratio: f32) -> String {
+    let text = format!("{ratio:.3}");
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// The cards of one level: whether and in what colour it is drawn, and, once it is, where it
+/// sits and how it looks.
+fn level_cards(ui: &mut Ui, page: &mut Page, id: (&'static str, usize), level: &mut Level) {
+    page.titled_section(ui, &format!("Level {}", ratio_text(level.ratio)), None);
+    line_cards_with_ratio(ui, id, level);
+}
+
+fn line_cards_with_ratio(ui: &mut Ui, id: (&'static str, usize), level: &mut Level) {
+    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+        color_well(ui, "Level color", &mut level.line.color);
+        settings_card::switch(ui, &mut level.line.enabled);
+    });
+    if !level.line.enabled {
+        return;
+    }
+    let max = f64::from(crate::model::drawing_style::MAX_LEVEL_RATIO);
+    if let Some(ratio) = settings_card::card(ui, Icon::Hash, "Ratio", None, |ui| {
+        number_field(
+            ui,
+            Id::new(("drawing-level-ratio", id)),
+            f64::from(level.ratio),
+            0.05,
+            -max..=max,
+            3,
+        )
+    }) {
+        level.ratio = ratio as f32;
+    }
+    thickness_and_style(ui, Id::new(("drawing-level-width", id)), &mut level.line);
+}
+
+/// The cards of a line with its own look: shown or not with its colour, then thickness and style.
+fn line_cards(ui: &mut Ui, id: &'static str, line: &mut MiddleLine) {
+    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+        color_well(ui, "Line color", &mut line.color);
+        settings_card::switch(ui, &mut line.enabled);
+    });
+    if line.enabled {
+        thickness_and_style(ui, Id::new(("drawing-line-width", id)), line);
+    }
+}
+
+fn thickness_and_style(ui: &mut Ui, id: Id, line: &mut MiddleLine) {
+    let max = f64::from(crate::model::drawing_style::MAX_STROKE_WIDTH);
+    if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
+        number_field(ui, id, f64::from(line.width), 1.0, 1.0..=max, 0)
+    }) {
+        line.width = width as f32;
+    }
+    dash_card(ui, "Line style", &mut line.dash);
 }
 
 /// A card with a switch; an empty `hint` is no hint at all, so the title centres on its badge.
@@ -1246,6 +1552,16 @@ mod tests {
                 "{tool:?} text"
             );
             assert_eq!(
+                tabs.contains(&Tab::Levels),
+                caps.has(Caps::LEVELS),
+                "{tool:?} levels"
+            );
+            assert_eq!(
+                tabs.contains(&Tab::Inputs),
+                caps.has(Caps::REGRESSION),
+                "{tool:?} inputs"
+            );
+            assert_eq!(
                 tabs.contains(&Tab::Coordinates),
                 !matches!(tool, Tool::Brush | Tool::Highlighter),
                 "{tool:?} coordinates"
@@ -1291,6 +1607,8 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = CARD_SPACING;
                     match tab {
                         Tab::Style => dialog.style_page(ui),
+                        Tab::Inputs => dialog.inputs_page(ui),
+                        Tab::Levels => dialog.levels_page(ui),
                         Tab::Text => dialog.text_page(ui),
                         Tab::Coordinates => dialog.coordinates_page(ui),
                         Tab::Visibility => dialog.visibility_page(ui),
@@ -1342,6 +1660,99 @@ mod tests {
         };
         assert_eq!(applied.text(), "edited");
         assert_eq!(applied.id(), 1);
+    }
+
+    #[test]
+    fn the_pitchfork_style_switches_the_construction_and_keeps_the_pivots_and_the_look() {
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::Pitchfork)).expect("dialog");
+        let pivots = dialog.draft().anchors();
+        let mut style = dialog.style();
+        style.pitchfork_levels[0].line.enabled = true;
+        style.stroke.color = [1, 2, 3, 255];
+        dialog.set_style(style);
+        for variant in PitchforkVariant::ALL {
+            dialog.switch_variant(variant);
+            assert_eq!(dialog.tool, variant.tool(), "the dialog follows the tool");
+            assert_eq!(dialog.draft().tool(), Some(variant.tool()));
+            assert_eq!(dialog.draft().anchors(), pivots);
+            assert_eq!(dialog.style(), style, "every level and colour is kept");
+        }
+        // The dialog still draws every page after the switch.
+        let ctx = egui::Context::default();
+        let mut store = templates();
+        for tab in dialog.tabs() {
+            dialog.tab = tab;
+            frame(&ctx, &mut dialog, &mut store, Vec::new());
+        }
+    }
+
+    #[test]
+    fn the_levels_and_inputs_pages_edit_the_style_the_drawing_keeps() {
+        let mut fork = DrawingProperties::new(1, &drawing(Tool::Pitchfork)).expect("dialog");
+        let mut style = fork.style();
+        style.pitchfork_levels[1].line.enabled = true;
+        style.pitchfork_levels[1].ratio = 0.7;
+        style.use_one_color = true;
+        fork.set_style(style);
+        let json = serde_json::to_string(fork.draft()).unwrap();
+        let back: Drawing = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.style().unwrap().pitchfork_levels[1].ratio, 0.7);
+        assert!(back.style().unwrap().use_one_color);
+        // Absurd ratios and deviations are brought into range, never stored.
+        let mut regression =
+            DrawingProperties::new(1, &drawing(Tool::RegressionTrend)).expect("dialog");
+        let mut style = regression.style();
+        style.regression.upper_dev = f32::NAN;
+        style.regression.lower_dev = -1.0e9;
+        style.pitchfork_levels[0].ratio = f32::INFINITY;
+        regression.set_style(style);
+        let kept = regression.style();
+        assert_eq!(kept.regression.upper_dev, 2.0);
+        assert_eq!(
+            kept.regression.lower_dev,
+            -crate::model::drawing_style::MAX_DEVIATION
+        );
+        assert!(kept.pitchfork_levels[0].ratio.is_finite());
+    }
+
+    #[test]
+    fn the_coordinates_tab_leaves_out_what_an_anchor_does_not_read() {
+        let ctx = egui::Context::default();
+        let mut store = templates();
+        // A horizontal line has a price and no time; a vertical line the opposite.
+        for (tool, price, time) in [
+            (Tool::HorizontalLine, true, false),
+            (Tool::VerticalLine, false, true),
+            (Tool::HorizontalRay, true, true),
+            (Tool::RegressionTrend, false, true),
+        ] {
+            let dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
+            let geometry = dialog.draft().geometry().expect("a geometry");
+            assert_eq!(geometry.reads(0), (time, price), "{tool:?}");
+            let mut dialog = dialog;
+            dialog.tab = Tab::Coordinates;
+            assert_eq!(
+                frame(&ctx, &mut dialog, &mut store, Vec::new()),
+                Outcome::Open
+            );
+        }
+        assert_eq!(anchor_label(Tool::HorizontalLine, 0), "Price level");
+        assert_eq!(anchor_label(Tool::DisjointChannel, 3), "End of second edge");
+        assert_eq!(anchor_label(Tool::ParallelChannel, 2), "Offset point");
+        assert_eq!(anchor_label(Tool::SchiffPitchfork, 2), "Point 3");
+    }
+
+    #[test]
+    fn typing_text_on_a_trend_line_moves_it_to_the_form_that_keeps_the_text_and_back() {
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::TrendLine)).expect("dialog");
+        assert!(matches!(dialog.draft(), Drawing::TrendLine { .. }));
+        dialog.draft.set_text("support");
+        assert_eq!(dialog.draft().text(), "support");
+        assert!(matches!(dialog.draft(), Drawing::Shape { .. }));
+        assert_eq!(dialog.draft().tool(), Some(Tool::TrendLine));
+        assert_eq!(dialog.tool, Tool::TrendLine);
+        dialog.draft.set_text("");
+        assert!(matches!(dialog.draft(), Drawing::TrendLine { .. }));
     }
 
     #[test]
