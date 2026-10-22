@@ -1241,6 +1241,68 @@ mod tests {
         assert!(!Drawing::Unreadable(serde_json::Value::Null).is_visible(Timeframe::Day));
     }
 
+    /// One drawing per pre-existing tool, built the way the app builds it: the fixture captured
+    /// from the build before the lines, channels and pitchforks existed.
+    fn legacy_drawings() -> Vec<(String, Drawing)> {
+        let anchors: Vec<Anchor> = (0..4)
+            .map(|i| anchor(i * 60_000, 100.0 + i as f64 * 7.5))
+            .collect();
+        let mut tools = vec![Tool::TrendLine, Tool::Fib];
+        tools.extend(LEGACY_TOOLS);
+        tools
+            .into_iter()
+            .map(|tool| {
+                let count = match tool.spec().placement {
+                    super::super::drawing_tool::Placement::Points(count) => count as usize,
+                    super::super::drawing_tool::Placement::Single => 1,
+                    _ => 3,
+                };
+                let drawing = Drawing::build(tool, 7, &anchors[..count], tool.default_style())
+                    .unwrap_or_else(|| panic!("{tool:?} did not build"));
+                (format!("{tool:?}"), drawing)
+            })
+            .collect()
+    }
+
+    const LEGACY_TOOLS: [Tool; 16] = [
+        Tool::Brush,
+        Tool::Highlighter,
+        Tool::ArrowMarker,
+        Tool::Arrow,
+        Tool::ArrowMarkUp,
+        Tool::ArrowMarkDown,
+        Tool::Rectangle,
+        Tool::RotatedRectangle,
+        Tool::Path,
+        Tool::Circle,
+        Tool::Ellipse,
+        Tool::Polyline,
+        Tool::Triangle,
+        Tool::Arc,
+        Tool::Curve,
+        Tool::DoubleCurve,
+    ];
+
+    /// New style fields must not reach a drawing that does not use them: a stored drawing that is
+    /// rewritten with extra keys changes its sync hash, uploads again, and is stripped and
+    /// bounced back by any Mac still on an older build.
+    #[test]
+    fn a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did() {
+        let golden: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(include_str!("testdata/legacy_drawings.json")).unwrap();
+        let built = legacy_drawings();
+        assert_eq!(built.len(), golden.len());
+        for (name, drawing) in built {
+            assert_eq!(
+                serde_json::to_value(&drawing).unwrap(),
+                golden[&name],
+                "{name} no longer serializes as it did"
+            );
+            let back: Drawing = serde_json::from_value(golden[&name].clone()).unwrap();
+            assert_eq!(back, drawing, "{name} no longer decodes to what it was");
+        }
+    }
+
     #[test]
     fn text_is_capped_and_a_brush_width_follows_its_style() {
         let mut drawing = Drawing::build(

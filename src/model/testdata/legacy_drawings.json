@@ -1,0 +1,1423 @@
+{
+  "Arc": {
+    "Shape": {
+      "geometry": {
+        "arc": {
+          "end": {
+            "price": 107.5,
+            "time_ms": 60000
+          },
+          "start": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "through": {
+            "price": 115.0,
+            "time_ms": 120000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            233,
+            30,
+            99,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            233,
+            30,
+            99,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            233,
+            30,
+            99,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            233,
+            30,
+            99,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Arrow": {
+    "Shape": {
+      "geometry": {
+        "arrow": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            41,
+            98,
+            255,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "arrow",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "ArrowMarkDown": {
+    "Shape": {
+      "geometry": {
+        "arrow_mark": {
+          "at": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "direction": "down"
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            204,
+            47,
+            60,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            204,
+            47,
+            60,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            204,
+            47,
+            60,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            204,
+            47,
+            60,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "ArrowMarkUp": {
+    "Shape": {
+      "geometry": {
+        "arrow_mark": {
+          "at": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "direction": "up"
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            8,
+            153,
+            129,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "ArrowMarker": {
+    "Shape": {
+      "geometry": {
+        "arrow_marker": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            30,
+            83,
+            229,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            30,
+            83,
+            229,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            30,
+            83,
+            229,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": true,
+          "color": [
+            30,
+            83,
+            229,
+            255
+          ],
+          "italic": false,
+          "size": 16.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Brush": {
+    "Brush": {
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "points": [
+        {
+          "price": 100.0,
+          "time_ms": 0
+        },
+        {
+          "price": 107.5,
+          "time_ms": 60000
+        },
+        {
+          "price": 115.0,
+          "time_ms": 120000
+        }
+      ],
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            255,
+            159,
+            10,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            255,
+            159,
+            10,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            255,
+            159,
+            10,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            255,
+            159,
+            10,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "visibility": {
+        "mask": 63
+      },
+      "width": 2.0
+    }
+  },
+  "Circle": {
+    "Shape": {
+      "geometry": {
+        "circle": {
+          "center": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "edge": {
+            "price": 107.5,
+            "time_ms": 60000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            255,
+            152,
+            0,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            255,
+            152,
+            0,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            255,
+            152,
+            0,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            255,
+            152,
+            0,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Curve": {
+    "Shape": {
+      "geometry": {
+        "curve": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          },
+          "control": {
+            "price": 115.0,
+            "time_ms": 120000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            41,
+            98,
+            255,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "DoubleCurve": {
+    "Shape": {
+      "geometry": {
+        "double_curve": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          },
+          "c1": {
+            "price": 115.0,
+            "time_ms": 120000
+          },
+          "c2": {
+            "price": 122.5,
+            "time_ms": 180000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            103,
+            58,
+            183,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            103,
+            58,
+            183,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            103,
+            58,
+            183,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            103,
+            58,
+            183,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Ellipse": {
+    "Shape": {
+      "geometry": {
+        "ellipse": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            242,
+            54,
+            69,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            242,
+            54,
+            69,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            242,
+            54,
+            69,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            242,
+            54,
+            69,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Fib": {
+    "Fib": {
+      "a": {
+        "price": 100.0,
+        "time_ms": 0
+      },
+      "b": {
+        "price": 107.5,
+        "time_ms": 60000
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Highlighter": {
+    "Shape": {
+      "geometry": {
+        "highlighter": {
+          "points": [
+            {
+              "price": 100.0,
+              "time_ms": 0
+            },
+            {
+              "price": 107.5,
+              "time_ms": 60000
+            },
+            {
+              "price": 115.0,
+              "time_ms": 120000
+            }
+          ]
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            242,
+            54,
+            69,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            242,
+            54,
+            69,
+            51
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            242,
+            54,
+            69,
+            51
+          ],
+          "dash": "solid",
+          "width": 20.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            242,
+            54,
+            69,
+            51
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Path": {
+    "Shape": {
+      "geometry": {
+        "path": {
+          "points": [
+            {
+              "price": 100.0,
+              "time_ms": 0
+            },
+            {
+              "price": 107.5,
+              "time_ms": 60000
+            },
+            {
+              "price": 115.0,
+              "time_ms": 120000
+            }
+          ]
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            41,
+            98,
+            255,
+            51
+          ],
+          "enabled": false
+        },
+        "head_end": "arrow",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            41,
+            98,
+            255,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Polyline": {
+    "Shape": {
+      "geometry": {
+        "polyline": {
+          "closed": false,
+          "points": [
+            {
+              "price": 100.0,
+              "time_ms": 0
+            },
+            {
+              "price": 107.5,
+              "time_ms": 60000
+            },
+            {
+              "price": 115.0,
+              "time_ms": 120000
+            }
+          ]
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            0,
+            188,
+            212,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            0,
+            188,
+            212,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            0,
+            188,
+            212,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            0,
+            188,
+            212,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Rectangle": {
+    "Shape": {
+      "geometry": {
+        "rectangle": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            156,
+            39,
+            176,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            156,
+            39,
+            176,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            156,
+            39,
+            176,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            156,
+            39,
+            176,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "RotatedRectangle": {
+    "Shape": {
+      "geometry": {
+        "rotated_rectangle": {
+          "a": {
+            "price": 100.0,
+            "time_ms": 0
+          },
+          "b": {
+            "price": 107.5,
+            "time_ms": 60000
+          },
+          "width": {
+            "price": 115.0,
+            "time_ms": 120000
+          }
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            76,
+            175,
+            80,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            76,
+            175,
+            80,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            76,
+            175,
+            80,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            76,
+            175,
+            80,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "TrendLine": {
+    "TrendLine": {
+      "a": {
+        "price": 100.0,
+        "time_ms": 0
+      },
+      "b": {
+        "price": 107.5,
+        "time_ms": 60000
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "visibility": {
+        "mask": 63
+      }
+    }
+  },
+  "Triangle": {
+    "Shape": {
+      "geometry": {
+        "triangle": {
+          "points": [
+            {
+              "price": 100.0,
+              "time_ms": 0
+            },
+            {
+              "price": 107.5,
+              "time_ms": 60000
+            },
+            {
+              "price": 115.0,
+              "time_ms": 120000
+            }
+          ]
+        }
+      },
+      "hidden": false,
+      "id": 7,
+      "locked": false,
+      "style": {
+        "extend_left": false,
+        "extend_right": false,
+        "fill": {
+          "color": [
+            8,
+            153,
+            129,
+            51
+          ],
+          "enabled": true
+        },
+        "head_end": "plain",
+        "head_start": "plain",
+        "middle_line": {
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "dash": "dashed",
+          "enabled": false,
+          "width": 1.0
+        },
+        "middle_point": false,
+        "price_labels": false,
+        "stats": {
+          "always_show": false,
+          "angle": false,
+          "bars": false,
+          "distance": false,
+          "percent": false,
+          "position": "center",
+          "price_range": false,
+          "time": false
+        },
+        "stroke": {
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "dash": "solid",
+          "width": 2.0
+        },
+        "text": {
+          "align": "center",
+          "bold": false,
+          "color": [
+            8,
+            153,
+            129,
+            255
+          ],
+          "italic": false,
+          "size": 14.0,
+          "valign": "middle"
+        }
+      },
+      "text": "",
+      "visibility": {
+        "mask": 63
+      }
+    }
+  }
+}

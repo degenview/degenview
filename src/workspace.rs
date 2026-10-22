@@ -658,12 +658,19 @@ fn plain_drawings(drawings: &[Drawing]) -> Vec<Drawing> {
 /// on one side wins over no change on the other; when both changed the same drawing, this tab's
 /// version wins and is saved over the other (last writer). Local order is kept, new drawings
 /// from the other Mac follow in their order.
+///
+/// A drawing this version cannot read (a tool from a newer build) is matched by the id it was
+/// stored with, since `Drawing::id` is 0 for all of them; one with no readable id is matched by
+/// its content.
 fn merge_remote_drawings(base: &[Drawing], local: &[Drawing], remote: &[Drawing]) -> Vec<Drawing> {
-    let find = |list: &[Drawing], id: u64| list.iter().find(|d| d.id() == id).cloned();
+    let same = |a: &Drawing, b: &Drawing| match (a.stored_id(), b.stored_id()) {
+        (0, 0) => a == b,
+        (left, right) => left == right,
+    };
+    let find = |list: &[Drawing], like: &Drawing| list.iter().find(|d| same(d, like)).cloned();
     let mut merged = Vec::new();
     for drawing in local {
-        let id = drawing.id();
-        let (old, theirs) = (find(base, id), find(remote, id));
+        let (old, theirs) = (find(base, drawing), find(remote, drawing));
         let local_unchanged = old.as_ref() == Some(drawing);
         match theirs {
             Some(theirs) if local_unchanged => merged.push(theirs),
@@ -673,8 +680,7 @@ fn merge_remote_drawings(base: &[Drawing], local: &[Drawing], remote: &[Drawing]
         }
     }
     for drawing in remote {
-        let id = drawing.id();
-        if find(local, id).is_none() && find(base, id).is_none() {
+        if find(local, drawing).is_none() && find(base, drawing).is_none() {
             merged.push(drawing.clone());
         }
     }
@@ -1522,7 +1528,7 @@ impl ChartWorkspace {
                     .filter(|d| is_ruler(d))
                     .cloned()
                     .collect();
-                if let Some(highest) = merged.iter().map(Drawing::id).max() {
+                if let Some(highest) = merged.iter().map(Drawing::stored_id).max() {
                     chart.next_drawing_id = chart.next_drawing_id.max(highest + 1);
                 }
                 chart.drawings = merged;
@@ -5755,6 +5761,82 @@ mod tests {
         // A drawing deleted here stays deleted even if the other Mac moved it.
         let merged = merge_remote_drawings(&[d(1, 100)], &[], &[d(1, 122)]);
         assert!(merged.is_empty());
+    }
+
+    /// A drawing this version cannot read, as an older build holds a newer build's tool.
+    fn unreadable(id: u64) -> Drawing {
+        Drawing::Unreadable(serde_json::json!({
+            "Shape": {"id": id, "geometry": {"hologram": {"at": id}}}
+        }))
+    }
+
+    #[test]
+    fn unreadable_drawings_merge_by_their_stored_id_not_as_one_drawing() {
+        let d = |id: u64, at: i64| rectangle(id, at);
+        // The other Mac drew a tool this build cannot read, next to one already held.
+        let merged = merge_remote_drawings(
+            &[d(1, 100), unreadable(50)],
+            &[d(1, 100), unreadable(50)],
+            &[d(1, 100), unreadable(50), unreadable(51)],
+        );
+        assert_eq!(merged, [d(1, 100), unreadable(50), unreadable(51)]);
+        // The other Mac deleted one of two: the other must not be duplicated or lost.
+        let merged = merge_remote_drawings(
+            &[unreadable(50), unreadable(51)],
+            &[unreadable(50), unreadable(51)],
+            &[unreadable(51)],
+        );
+        assert_eq!(merged, [unreadable(51)]);
+        // Edited here, untouched there: this tab's version stays.
+        let merged = merge_remote_drawings(
+            &[d(1, 100), unreadable(50)],
+            &[d(1, 111), unreadable(50)],
+            &[d(1, 100), unreadable(50)],
+        );
+        assert_eq!(merged, [d(1, 111), unreadable(50)]);
+    }
+
+    #[test]
+    fn unreadable_drawings_arriving_in_an_open_layout_survive_the_next_autosave() {
+        let mut workspace = empty_workspace(8);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        assert!(workspace.save_named("Nico".to_owned(), Some(true)));
+        store_remote_drawings(
+            &workspace,
+            chart,
+            vec![rectangle(1, 100), unreadable(50), unreadable(51)],
+        );
+        workspace.adopt_remote_layout();
+        store_remote_drawings(
+            &workspace,
+            chart,
+            vec![
+                rectangle(1, 100),
+                unreadable(50),
+                unreadable(51),
+                unreadable(52),
+            ],
+        );
+        workspace.adopt_remote_layout();
+
+        let stored_ids = |drawings: &[Drawing]| -> Vec<u64> {
+            drawings.iter().map(Drawing::stored_id).collect()
+        };
+        let live = &workspace
+            .charts
+            .iter()
+            .find(|c| c.id == chart)
+            .unwrap()
+            .drawings;
+        assert_eq!(stored_ids(live), [1, 50, 51, 52]);
+        // Whatever the next write is, nothing the other Mac drew is dropped.
+        workspace.flush_autosave();
+        let saved = workspace.load_saved_views();
+        assert_eq!(stored_ids(&saved[0].charts[0].drawings), [1, 50, 51, 52]);
+        assert!(
+            workspace.chart_data(chart).unwrap().next_drawing_id > 52,
+            "new drawings never reuse an id a newer build stored"
+        );
     }
 
     #[test]
