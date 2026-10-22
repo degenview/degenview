@@ -584,23 +584,41 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
         .map(|(name, tools)| (name.to_owned(), tools))
         .chain(forks)
         .collect();
-    for (name, tools) in all {
-        let mut harness = Harness::new(ChartCanvas::default());
-        harness.drawings = tools
-            .iter()
-            .enumerate()
-            .map(|(index, (tool, text))| make(*tool, index as u64 + 1, text))
-            .collect();
-        settled(&mut harness);
-        let size = harness.card.snapshot_size();
-        let dimensions =
-            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
-        let scene = harness
-            .card
-            .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
-            .expect("a scene");
-        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
-        std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
+    use crate::ui::theme::{self, AppTheme};
+    // Dark first, then a few again in the light theme (the faint invitation and the white-on-colour
+    // tags are what a light chart puts at risk).
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, tools) in &all {
+            if light && !["lines-2", "channels", "fork-Pitchfork"].contains(&name.as_str()) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = tools
+                .iter()
+                .enumerate()
+                .map(|(index, (tool, text))| make(*tool, index as u64 + 1, text))
+                .collect();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
     }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
