@@ -63,21 +63,25 @@ pub struct RawRecord {
 }
 
 impl RawRecord {
-    /// `None` when the name is not one this version understands.
+    /// `Err` when the name is not one this version understands, or the payload is a damaged
+    /// deflated one. A deflated payload is unpacked here, so nothing after this sees the difference.
     pub fn into_record(self) -> Result<(SyncRecord, Vec<u8>), RawRecord> {
-        match RecordName::parse(&self.name) {
-            Some(name) => Ok((
+        match (
+            RecordName::parse(&self.name),
+            super::record::from_wire(self.payload.clone()),
+        ) {
+            (Some(name), Some(payload)) => Ok((
                 SyncRecord {
                     name,
                     schema_version: self.schema_version,
                     revision: self.revision,
                     origin_device: self.origin_device,
                     modified_ms: self.modified_ms,
-                    payload: self.payload,
+                    payload,
                 },
                 self.system_fields,
             )),
-            None => Err(self),
+            _ => Err(self),
         }
     }
 }

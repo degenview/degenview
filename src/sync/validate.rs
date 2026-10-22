@@ -4,7 +4,7 @@
 //! repair (broken chart references, duplicate ids) belongs to the merge and apply layers.
 
 use super::policy::EntityKind;
-use super::record::{FAVORITES_ID, MAX_PAYLOAD_BYTES, SCHEMA_VERSION, SyncRecord};
+use super::record::{FAVORITES_ID, MAX_RAW_PAYLOAD_BYTES, SCHEMA_VERSION, SyncRecord};
 use serde_json::Value;
 
 /// Same bound the Pine lexer enforces on a source (`Limits::source_characters`).
@@ -41,7 +41,7 @@ pub fn validate(record: &SyncRecord) -> Verdict {
     if record.schema_version > SCHEMA_VERSION {
         return Verdict::NewerSchema;
     }
-    if record.payload.len() > MAX_PAYLOAD_BYTES {
+    if record.payload.len() > MAX_RAW_PAYLOAD_BYTES {
         return reject(format!("payload is {} bytes", record.payload.len()));
     }
     let Ok(value) = serde_json::from_slice::<Value>(&record.payload) else {
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn oversize_and_unparseable_payloads_are_rejected() {
         let mut big = record(EntityKind::Setting, "x", json!(1));
-        big.payload = vec![b' '; MAX_PAYLOAD_BYTES + 1];
+        big.payload = vec![b' '; MAX_RAW_PAYLOAD_BYTES + 1];
         assert!(rejected(&big).contains("bytes"));
         let mut junk = record(EntityKind::Setting, "x", json!(1));
         junk.payload = b"{not json".to_vec();

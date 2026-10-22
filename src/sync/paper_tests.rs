@@ -284,27 +284,43 @@ fn deleting_an_account_removes_it_on_the_other_mac() {
     assert_eq!(a.outbox().len() + b.outbox().len(), 0);
 }
 
+/// A journal of `entries` lines of `width` characters. `varied` makes every line different (and so
+/// hard to deflate); otherwise they are all alike, like a long history of similar trades.
+fn grow_journal(mac: &Mac, account: u64, entries: u64, width: usize, varied: bool) {
+    let store = mac.store.lock().unwrap();
+    let mut snapshot = store.paper_trading().unwrap();
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    for entry in 0..entries {
+        let message = if varied {
+            let mut line = String::new();
+            while line.len() < width {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                line.push_str(&format!("{state:016x}"));
+            }
+            line
+        } else {
+            "x".repeat(width)
+        };
+        snapshot
+            .journal
+            .push(crate::model::paper::PaperJournalEntry {
+                id: 100 + entry,
+                account_id: account,
+                timestamp: entry as i64,
+                message,
+            });
+    }
+    store.save_paper_trading(&snapshot).unwrap();
+}
+
 #[test]
-fn an_account_over_the_record_limit_is_blocked_and_kept_locally() {
+fn an_account_that_does_not_fit_one_record_even_deflated_is_blocked_and_kept_locally() {
     let (cloud, mut a, mut b) = pair();
     let mut on_a = host(&a);
     let id = open(&mut on_a, "Huge");
-    // A journal big enough to exceed one record.
-    {
-        let store = a.store.lock().unwrap();
-        let mut snapshot = store.paper_trading().unwrap();
-        for entry in 0..2_000 {
-            snapshot
-                .journal
-                .push(crate::model::paper::PaperJournalEntry {
-                    id: 100 + entry,
-                    account_id: id,
-                    timestamp: entry as i64,
-                    message: "x".repeat(600),
-                });
-        }
-        store.save_paper_trading(&snapshot).unwrap();
-    }
+    grow_journal(&a, id, 2_000, 1_500, true);
     settle(&mut a, &mut b);
     let rows = a.outbox();
     assert_eq!(rows.len(), 1);
@@ -315,6 +331,34 @@ fn an_account_over_the_record_limit_is_blocked_and_kept_locally() {
         "nothing is lost locally"
     );
     assert!(snapshot(&b).accounts.is_empty());
+}
+
+#[test]
+fn a_long_history_over_one_record_as_written_is_deflated_and_reaches_the_other_mac() {
+    let (cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Long history");
+    // About 1.3 MB as written: over one record, far under it once deflated.
+    grow_journal(&a, id, 2_000, 600, false);
+    settle(&mut a, &mut b);
+    assert!(
+        a.outbox().is_empty(),
+        "uploaded, not blocked: {:?}",
+        a.outbox()
+    );
+    assert_eq!(cloud.names().len(), 1);
+    let sent = cloud.record(&cloud.names()[0]).unwrap().payload.len();
+    assert!(
+        sent < super::record::MAX_PAYLOAD_BYTES,
+        "{sent} bytes on the wire"
+    );
+    let on_b = snapshot(&b);
+    assert_eq!(on_b.accounts.len(), 1);
+    assert_eq!(on_b.accounts[0].name, "Long history");
+    assert_eq!(on_b.journal.len(), snapshot(&a).journal.len());
+    assert_eq!(a.outbox().len() + b.outbox().len(), 0, "no echo");
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+    assert!(host(&b).owned_elsewhere(shared).is_some(), "shown as A's");
 }
 
 #[test]

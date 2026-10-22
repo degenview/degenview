@@ -11,7 +11,7 @@
 
 use super::outbox::{Disposition, classify, is_transient};
 use super::policy::{EntityKind, Merge, merge_of};
-use super::record::{MAX_PAYLOAD_BYTES, RecordName, SCHEMA_VERSION, SyncRecord, sha256_hex};
+use super::record::{RecordName, SCHEMA_VERSION, SyncRecord, sha256_hex, to_wire};
 use super::transport::{
     AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, StagedChange, StagedOp,
     SyncTransport, TransportCommand, TransportEvent, ZoneEvent,
@@ -485,10 +485,11 @@ impl<T: SyncTransport> SyncCore<T> {
                         .as_ref()
                         .and_then(|cache| cache.lock().ok()?.get(&row.sync_id).cloned())?,
                 };
-                if entity.payload.len() > MAX_PAYLOAD_BYTES {
+                // Over one record as written is deflated; over it even then is blocked.
+                let Some(wire) = to_wire(&entity.payload) else {
                     self.block(row.seq, "too large to sync");
                     return None;
-                }
+                };
                 let revision = meta.as_ref().map_or(1, |m| m.revision.max(1)) as u64;
                 let hash = entity.hash.clone();
                 let sent = entity.payload.clone();
@@ -503,7 +504,7 @@ impl<T: SyncTransport> SyncCore<T> {
                                 revision,
                                 origin_device: device.to_string(),
                                 modified_ms: row.queued_ms,
-                                payload: entity.payload,
+                                payload: wire,
                             },
                             system_fields,
                         },

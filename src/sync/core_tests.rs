@@ -737,15 +737,35 @@ fn quota_errors_are_shown_and_retried_slowly() {
 }
 
 #[test]
-fn a_record_too_large_to_sync_is_blocked_and_needs_attention() {
+fn a_record_too_large_to_sync_even_deflated_is_blocked_and_needs_attention() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));
-    let huge = "x".repeat(1_000_000);
+    // Varied text does not deflate: this stays over one record.
+    let mut state = 0x9E37_79B9_7F4A_7C15u64;
+    let mut huge = String::new();
+    while huge.len() < 4_000_000 {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        huge.push_str(&format!("{state:016x}"));
+    }
     a.lists(&[(1, &huge)]);
     a.start();
     assert!(cloud.names().is_empty());
     assert_eq!(a.outbox()[0].state, OutboxState::Blocked);
     assert_eq!(a.phase(), Phase::NeedsAttention);
+}
+
+#[test]
+fn a_record_over_the_limit_as_written_but_repetitive_is_deflated_and_synced() {
+    let cloud = MockCloud::new();
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    let big = "x".repeat(1_000_000);
+    a.lists(&[(1, &big)]);
+    a.start();
+    assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert!(a.outbox().is_empty());
+    assert_eq!(a.phase(), Phase::UpToDate);
 }
 
 #[test]

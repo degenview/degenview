@@ -921,6 +921,7 @@ dependencies = [
  "block2 0.6.2",
  "eframe",
  "egui_extras",
+ "flate2",
  "getrandom 0.4.3",
  "http",
  "image",

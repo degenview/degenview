@@ -848,7 +848,9 @@ fn attention(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
             Icon::TriangleFill,
             kit::ORANGE,
             &format!("{} items are too large to sync", view.blocked),
-            Some("They stay on this Mac. Shortening a very long Pine script usually fixes it."),
+            Some(
+                "They stay on this Mac. Shortening a very long Pine script or a long trading history usually fixes it.",
+            ),
             None,
         );
     }

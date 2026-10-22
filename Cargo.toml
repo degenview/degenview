@@ -21,6 +21,9 @@ egui_extras = { version = "0.36.2", features = ["all_loaders"] }
 # egui_extras builds `image` without JPEG; CoinGecko serves many coin icons as .jpg. PNG is how
 # chart snapshots are saved and uploaded.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Oversize sync payloads (a long paper-trading history) are deflated to fit one CloudKit record.
+# Already in the tree through the image crates.
+flate2 = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
