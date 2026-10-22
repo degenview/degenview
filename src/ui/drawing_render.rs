@@ -278,6 +278,11 @@ impl<'a> TimeIndex<'a> {
         self.candles.get(index)
     }
 
+    /// Every bar the chart draws (constructed, and cut at the replay cursor).
+    pub fn bars(&self) -> &'a [Kline] {
+        self.candles
+    }
+
     /// Fractional candle index of `time_ms` (candle `i` sits at integer `i`).
     pub fn index_of(&self, time_ms: i64) -> f64 {
         let (Some(first), Some(last)) = (self.candles.first(), self.candles.last()) else {

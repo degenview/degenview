@@ -4,11 +4,13 @@
 
 use super::Projection;
 use super::edit::{BoxHandle, Part};
-use crate::model::drawing_style::{DrawingStyle, LineEnd};
+use super::line_shapes;
+use crate::model::chart_type::{LineDash, Rgba};
+use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
 use crate::model::{ArrowDirection, Drawing, Geometry};
 use crate::ui::drawing_geometry as geo;
 use crate::ui::series_render;
-use eframe::egui::{self, Mesh, Pos2, Rect, pos2};
+use eframe::egui::{self, Mesh, Pos2, Rect, Vec2, pos2};
 use std::sync::{Arc, OnceLock};
 
 /// A grab point on a shape.
@@ -27,11 +29,88 @@ pub(super) enum TextPlace {
     Inside(Rect),
     /// Centred on a point, above or below it.
     At { point: Pos2, above: bool },
+    /// Along the visible piece of a line from `from` to `to`: the text's horizontal alignment
+    /// says where along it, its vertical alignment on which side, and it is turned to follow the
+    /// line unless its orientation says otherwise.
+    Line { from: Pos2, to: Pos2 },
+    /// Beside a vertical line at `x` that runs from `top` to `bottom`: the horizontal alignment
+    /// says which side of the line, the vertical alignment where along it.
+    Column { x: f32, top: f32, bottom: f32 },
+}
+
+/// A line with a look of its own: a level of a channel or a pitchfork, a regression band.
+#[derive(Clone, Debug)]
+pub(super) struct Styled {
+    pub path: Vec<Pos2>,
+    pub color: Rgba,
+    pub width: f32,
+    pub dash: LineDash,
+}
+
+impl Styled {
+    pub(super) fn new(path: Vec<Pos2>, line: &MiddleLine) -> Self {
+        Self {
+            path,
+            color: line.color,
+            width: line.width,
+            dash: line.dash,
+        }
+    }
+}
+
+/// A filled region with its own colour (one band of a pitchfork or a regression), already cut
+/// to the plot.
+#[derive(Clone, Debug)]
+pub(super) struct Band {
+    pub polygon: Vec<Pos2>,
+    pub color: Rgba,
+}
+
+/// A tag the chart puts on an axis for a line: the price of a horizontal line, the time of a
+/// vertical one. The drawing painter is clipped to the plot, so these are painted by the frame's
+/// label pass instead.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum Tag {
+    Price { y: f32, price: f64, color: Rgba },
+    Time { x: f32, time_ms: i64, color: Rgba },
+}
+
+/// A price printed beside the end of a line, pushed away from it along `outward`.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct EndLabel {
+    pub at: Pos2,
+    pub price: f64,
+    pub outward: Vec2,
+}
+
+/// The angle a trend angle shows: from the horizontal at `origin` to the line towards `toward`.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct AngleMark {
+    pub origin: Pos2,
+    pub toward: Pos2,
+}
+
+/// A line of text a shape prints at a point (Pearson's R).
+#[derive(Clone, Debug)]
+pub(super) struct Readout {
+    pub at: Pos2,
+    pub text: String,
 }
 
 pub(super) struct Screen {
     /// Open polylines to stroke.
     pub lines: Vec<Vec<Pos2>>,
+    /// Lines with a look of their own, drawn under the main ones.
+    pub styled: Vec<Styled>,
+    /// Filled regions with their own colour.
+    pub bands: Vec<Band>,
+    /// The bands as meshes, made when the shape is built.
+    pub band_meshes: Vec<Arc<Mesh>>,
+    /// Axis tags (see [`Tag`]).
+    pub tags: Vec<Tag>,
+    pub end_labels: Vec<EndLabel>,
+    pub angle: Option<AngleMark>,
+    pub readout: Option<Readout>,
     /// Closed outlines to stroke.
     pub outlines: Vec<Vec<Pos2>>,
     /// The region to fill (even-odd); empty for none.
@@ -60,9 +139,16 @@ pub(super) struct Screen {
 }
 
 impl Screen {
-    fn empty() -> Self {
+    pub(super) fn empty() -> Self {
         Self {
             lines: Vec::new(),
+            styled: Vec::new(),
+            bands: Vec::new(),
+            band_meshes: Vec::new(),
+            tags: Vec::new(),
+            end_labels: Vec::new(),
+            angle: None,
+            readout: None,
             outlines: Vec::new(),
             fill: Vec::new(),
             solids: Vec::new(),
@@ -81,10 +167,16 @@ impl Screen {
     }
 
     /// Computes the bounds from everything the shape touches, grown by `margin`.
-    fn finish(mut self, margin: f32) -> Option<Self> {
+    pub(super) fn finish(mut self, margin: f32) -> Option<Self> {
         let mut all: Vec<Pos2> = Vec::new();
         for path in self.lines.iter().chain(&self.outlines).chain(&self.solids) {
             all.extend(path);
+        }
+        for styled in &self.styled {
+            all.extend(&styled.path);
+        }
+        for band in &self.bands {
+            all.extend(&band.polygon);
         }
         for guide in &self.guides {
             all.extend(guide);
@@ -109,6 +201,12 @@ impl Screen {
             geo::distance_to_polyline(point, path, closed) <= tolerance
         };
         self.lines.iter().any(|path| near(path, false))
+            || self.styled.iter().any(|styled| near(&styled.path, false))
+            || (filled
+                && self
+                    .bands
+                    .iter()
+                    .any(|band| geo::polygon_contains(&band.polygon, point)))
             || self.outlines.iter().any(|path| near(path, true))
             || self
                 .middle
@@ -139,7 +237,7 @@ fn head_size(width: f32) -> (f32, f32) {
 
 /// `points` with arrowheads at the chosen ends: the line is pulled back so it does not poke
 /// through a head, and each head is a solid triangle.
-fn with_heads(
+pub(super) fn with_heads(
     mut points: Vec<Pos2>,
     left: LineEnd,
     right: LineEnd,
@@ -204,16 +302,36 @@ pub(super) fn build(drawing: &Drawing, proj: &Projection) -> Option<Screen> {
         } => freehand(points, style, proj),
         Drawing::Shape {
             geometry, style, ..
-        } => {
-            let mut screen = shape(geometry, style, proj)?;
-            if style.fill.enabled && !screen.fill.is_empty() {
-                let mesh = geo::fill_mesh(&screen.fill, series_render::color(style.fill.color));
-                screen.fill_mesh = Some(Arc::new(mesh));
-            }
-            Some(screen)
-        }
+        } => finished(shape(geometry, style, proj)?, style),
+        // The original trend line is drawn like every other line.
+        Drawing::TrendLine { a, b, style, .. } => finished(
+            shape(&Geometry::TrendLine { a: *a, b: *b }, style, proj)?,
+            style,
+        ),
         _ => None,
     }
+}
+
+/// `screen` with the meshes of its fill and its bands made.
+fn finished(mut screen: Screen, style: &DrawingStyle) -> Option<Screen> {
+    if style.fill.enabled && !screen.fill.is_empty() {
+        let mesh = geo::fill_mesh(&screen.fill, series_render::color(style.fill.color));
+        screen.fill_mesh = Some(Arc::new(mesh));
+    }
+    if style.fill.enabled {
+        screen.band_meshes = screen
+            .bands
+            .iter()
+            .filter(|band| band.polygon.len() >= 3)
+            .map(|band| {
+                Arc::new(geo::fill_mesh(
+                    &band.polygon,
+                    series_render::color(band.color),
+                ))
+            })
+            .collect();
+    }
+    Some(screen)
 }
 
 fn freehand(
@@ -480,8 +598,7 @@ fn shape(geometry: &Geometry, style: &DrawingStyle, proj: &Projection) -> Option
             screen.guides = vec![[a, c1], [b, c2]];
             screen.handles = curve_handles(&anchors);
         }
-        // Projected by the next commit.
-        _ => return None,
+        _ => return line_shapes::project(geometry, style, proj, anchors),
     }
     screen.finish(width / 2.0 + 8.0)
 }

@@ -545,6 +545,7 @@ fn body_point(screen: &Screen, avoid: Option<Rect>) -> Pos2 {
     if let Some(point) = screen
         .lines
         .iter()
+        .chain(screen.styled.iter().map(|styled| &styled.path))
         .filter(|path| path.len() >= 2)
         .find_map(along)
     {
@@ -767,8 +768,9 @@ fn every_placed_tool_can_be_selected_moved_and_deleted() {
             vec![id],
             "{tool:?} is not selectable at {at:?}"
         );
-        // Clicking empty space clears the selection.
-        rig.click(pos2(900.0, 380.0));
+        // Clicking empty space clears the selection (the top right corner: a pitchfork's bands
+        // run on to the bottom right).
+        rig.click(pos2(940.0, 30.0));
         assert!(rig.selected.is_empty(), "{tool:?}");
         rig.click(at);
         // Selecting floats the toolbar over the shape: grab it where the toolbar is not.
@@ -826,6 +828,11 @@ fn every_handle_of_every_tool_reshapes_it() {
                 .map(|spot| (spot.part, spot.pos))
                 .nth(index)
                 .unwrap();
+            // A handle that sits off the plot (a channel's second edge, with this test's wide
+            // third click) cannot be pressed.
+            if !PLOT.contains(pos) {
+                continue;
+            }
             let before = rig.last().clone();
             let steps = rig.undo_steps;
             // Away from the other handles, inside the plot.

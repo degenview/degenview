@@ -4,18 +4,22 @@
 
 use super::Projection;
 use super::shape::{HandleSpot, Screen, TextPlace};
+use crate::model::Drawing;
 use crate::model::chart_type::LineDash;
-use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, TextStyle, VerticalAlign};
-use crate::model::{Drawing, Geometry};
+use crate::model::drawing_style::{
+    DrawingStyle, HorizontalAlign, TextOrientation, TextStyle, VerticalAlign,
+};
 use crate::ui::canvas_render::dash_pattern;
 use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::{ArrowReadout, HANDLE_RADIUS};
+use crate::ui::line_geometry as lines;
 use crate::ui::{series_render, theme};
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, TextFormat,
-    text::LayoutJob, vec2,
+    epaint::TextShape, pos2, text::LayoutJob, vec2,
 };
+use std::f32::consts::FRAC_PI_2;
 
 /// How a drawing is emphasized this frame.
 #[derive(Clone, Copy, Debug, Default)]
@@ -49,36 +53,6 @@ fn stroke_path(painter: &Painter, points: &[Pos2], closed: bool, stroke: Stroke,
                 path.push(points[0]);
             }
             painter.extend(Shape::dashed_line(&path, stroke, dash, gap));
-        }
-    }
-}
-
-/// A trend line in its own style: colour, width and dash, prolonged to the plot edge where the
-/// style says so. Handles stay on the two anchors, and `emphasized` adds the halo and handles.
-pub(super) fn draw_trend_line(
-    painter: &Painter,
-    a: Pos2,
-    b: Pos2,
-    plot: Rect,
-    style: &DrawingStyle,
-    emphasized: bool,
-) {
-    let color = series_render::color(style.stroke.color);
-    let (from, to) = geo::extend_to_rect(a, b, plot, style.extend_left, style.extend_right);
-    if emphasized {
-        let halo = Stroke::new(style.stroke.width + 5.0, with_alpha(color, 40));
-        stroke_path(painter, &[from, to], false, halo, LineDash::Solid);
-    }
-    stroke_path(
-        painter,
-        &[from, to],
-        false,
-        Stroke::new(style.stroke.width, color),
-        style.stroke.dash,
-    );
-    if emphasized {
-        for at in [a, b] {
-            painter.circle(at, HANDLE_RADIUS, theme::surface(), Stroke::new(1.5, color));
         }
     }
 }
@@ -125,6 +99,62 @@ fn text_galley(
     painter.layout_job(job)
 }
 
+/// Where a drawing's text was last laid out: its unrotated size, its centre and the angle it is
+/// turned by. The layer keeps it so a click can find the text, which only the painter can size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct TextBox {
+    pub center: Pos2,
+    pub size: egui::Vec2,
+    /// Radians clockwise.
+    pub angle: f32,
+}
+
+impl TextBox {
+    /// Whether `point` is within `slack` of the text's (turned) box.
+    pub(super) fn contains(&self, point: Pos2, slack: f32) -> bool {
+        let (sin, cos) = self.angle.sin_cos();
+        let from_center = point - self.center;
+        // Into the box's own frame: undo the turn.
+        let local = vec2(
+            from_center.x * cos + from_center.y * sin,
+            -from_center.x * sin + from_center.y * cos,
+        );
+        local.x.abs() <= self.size.x / 2.0 + slack && local.y.abs() <= self.size.y / 2.0 + slack
+    }
+}
+
+/// Space (px) between text and the line or edge it sits against.
+const TEXT_GAP: f32 = 4.0;
+/// Space (px) kept between text and the end of the line it sits on.
+const TEXT_PAD: f32 = 5.0;
+
+/// Paints `galley` centred on `center` and turned by `angle` (radians, clockwise), pixel-snapped
+/// at the pivot so a level label stays as sharp as any other text.
+fn paint_turned(
+    painter: &Painter,
+    galley: std::sync::Arc<egui::Galley>,
+    center: Pos2,
+    angle: f32,
+    color: Color32,
+) -> TextBox {
+    let size = galley.size();
+    let ppp = painter.ctx().pixels_per_point();
+    let snap = |value: f32| (value * ppp).round() / ppp;
+    let center = if angle == 0.0 {
+        pos2(snap(center.x), snap(center.y))
+    } else {
+        center
+    };
+    let shape = TextShape::new(center - size / 2.0, galley, color)
+        .with_angle_and_anchor(angle, Align2::CENTER_CENTER);
+    painter.add(shape);
+    TextBox {
+        center,
+        size,
+        angle,
+    }
+}
+
 /// A drawing's own text, placed where its shape says.
 /// `clear_middle` lifts centred text off a middle line drawn through the same spot.
 fn draw_text(
@@ -133,27 +163,33 @@ fn draw_text(
     text: &str,
     style: &TextStyle,
     clear_middle: bool,
-) {
+) -> Option<TextBox> {
     if text.trim().is_empty() {
-        return;
+        return None;
     }
-    const PAD: f32 = 5.0;
+    let color = series_render::color(style.color);
     match place {
         TextPlace::Inside(rect) => {
-            let galley = text_galley(painter, text, style, rect.width() - PAD * 2.0);
+            let galley = text_galley(painter, text, style, rect.width() - TEXT_PAD * 2.0);
             let size = galley.size();
             let x = match style.align {
-                HorizontalAlign::Left => rect.left() + PAD,
+                HorizontalAlign::Left => rect.left() + TEXT_PAD,
                 HorizontalAlign::Center => rect.center().x - size.x / 2.0,
-                HorizontalAlign::Right => rect.right() - PAD - size.x,
+                HorizontalAlign::Right => rect.right() - TEXT_PAD - size.x,
             };
             let y = match style.valign {
-                VerticalAlign::Top => rect.top() + PAD,
+                VerticalAlign::Top => rect.top() + TEXT_PAD,
                 VerticalAlign::Middle if clear_middle => rect.center().y - size.y - 2.0,
                 VerticalAlign::Middle => rect.center().y - size.y / 2.0,
-                VerticalAlign::Bottom => rect.bottom() - PAD - size.y,
+                VerticalAlign::Bottom => rect.bottom() - TEXT_PAD - size.y,
             };
-            painter.galley(Pos2::new(x, y), galley, series_render::color(style.color));
+            let at = Pos2::new(x, y);
+            painter.galley(at, galley, color);
+            Some(TextBox {
+                center: at + size / 2.0,
+                size,
+                angle: 0.0,
+            })
         }
         TextPlace::At { point, above } => {
             let galley = text_galley(painter, text, style, 320.0);
@@ -163,11 +199,81 @@ fn draw_text(
             } else {
                 point.y + 6.0
             };
-            painter.galley(
-                Pos2::new(point.x - size.x / 2.0, y),
+            let at = Pos2::new(point.x - size.x / 2.0, y);
+            painter.galley(at, galley, color);
+            Some(TextBox {
+                center: at + size / 2.0,
+                size,
+                angle: 0.0,
+            })
+        }
+        TextPlace::Line { from, to } => {
+            let galley = text_galley(painter, text, style, 320.0);
+            let size = galley.size();
+            // Read from the left end; a vertical line from the bottom.
+            let (left, right) = if from.x < to.x || (from.x == to.x && from.y > to.y) {
+                (from, to)
+            } else {
+                (to, from)
+            };
+            let length = (right - left).length();
+            let direction = if length > 1e-3 {
+                (right - left) / length
+            } else {
+                vec2(1.0, 0.0)
+            };
+            let angle = match style.orientation {
+                TextOrientation::Along => lines::text_angle(left, right).unwrap_or(0.0),
+                TextOrientation::Horizontal => 0.0,
+                TextOrientation::Vertical => -FRAC_PI_2,
+            };
+            let normal = vec2(-angle.sin(), angle.cos());
+            let along = if length < size.x + TEXT_PAD * 2.0 {
+                length / 2.0
+            } else {
+                match style.align {
+                    HorizontalAlign::Left => TEXT_PAD + size.x / 2.0,
+                    HorizontalAlign::Center => length / 2.0,
+                    HorizontalAlign::Right => length - TEXT_PAD - size.x / 2.0,
+                }
+            };
+            let on_line = left + direction * along;
+            let lift = size.y / 2.0 + TEXT_GAP;
+            let center = match style.valign {
+                VerticalAlign::Top => on_line - normal * lift,
+                VerticalAlign::Middle => on_line,
+                VerticalAlign::Bottom => on_line + normal * lift,
+            };
+            Some(paint_turned(painter, galley, center, angle, color))
+        }
+        TextPlace::Column { x, top, bottom } => {
+            let galley = text_galley(painter, text, style, 320.0);
+            let size = galley.size();
+            let turned = style.orientation != TextOrientation::Horizontal;
+            // The text's extent down the line and across it.
+            let (down, across) = if turned {
+                (size.x, size.y)
+            } else {
+                (size.y, size.x)
+            };
+            let y = match style.valign {
+                VerticalAlign::Top => top + TEXT_PAD + down / 2.0,
+                VerticalAlign::Middle => (top + bottom) / 2.0,
+                VerticalAlign::Bottom => bottom - TEXT_PAD - down / 2.0,
+            };
+            let center_x = match style.align {
+                HorizontalAlign::Left => x - TEXT_GAP - across / 2.0,
+                HorizontalAlign::Center => x,
+                HorizontalAlign::Right => x + TEXT_GAP + across / 2.0,
+            };
+            let angle = if turned { -FRAC_PI_2 } else { 0.0 };
+            Some(paint_turned(
+                painter,
                 galley,
-                series_render::color(style.color),
-            );
+                pos2(center_x, y),
+                angle,
+                color,
+            ))
         }
     }
 }
@@ -279,10 +385,8 @@ pub(super) fn paint(
     drawing: &Drawing,
     proj: &Projection,
     emphasis: Emphasis,
-) {
-    let Some(style) = drawing.style() else {
-        return;
-    };
+) -> Option<TextBox> {
+    let style = drawing.style()?;
     let color = series_render::color(style.stroke.color);
     let width = style.stroke.width;
 
@@ -310,7 +414,7 @@ pub(super) fn paint(
             Color32::WHITE,
         );
         paint_stroke_frame(painter, screen.bounds, color, emphasis);
-        return;
+        return None;
     }
     if let Some(mesh) = &screen.stroke {
         if emphasis.halo
@@ -321,11 +425,23 @@ pub(super) fn paint(
         }
         painter.add(Shape::mesh(mesh.clone()));
         paint_stroke_frame(painter, screen.bounds, color, emphasis);
-        return;
+        return None;
     }
 
+    for mesh in &screen.band_meshes {
+        painter.add(Shape::mesh(mesh.clone()));
+    }
     if let Some(mesh) = &screen.fill_mesh {
         painter.add(Shape::mesh(mesh.clone()));
+    }
+    for styled in &screen.styled {
+        stroke_path(
+            painter,
+            &styled.path,
+            false,
+            Stroke::new(styled.width, series_render::color(styled.color)),
+            styled.dash,
+        );
     }
     if let Some(line) = screen.middle {
         let middle = &style.middle_line;
@@ -390,24 +506,94 @@ pub(super) fn paint(
         }
     }
 
-    if let Some(place) = screen.text {
+    let accent = series_render::color(style.stroke.color);
+    if let Some(mark) = screen.angle {
+        draw_angle(painter, mark, accent, style.text.size);
+    }
+    for label in &screen.end_labels {
+        let at = label.at + label.outward * 8.0;
+        let align = if label.outward.x.abs() < label.outward.y.abs() {
+            if label.outward.y < 0.0 {
+                Align2::CENTER_BOTTOM
+            } else {
+                Align2::CENTER_TOP
+            }
+        } else if label.outward.x >= 0.0 {
+            Align2::LEFT_CENTER
+        } else {
+            Align2::RIGHT_CENTER
+        };
+        label_card(
+            painter,
+            at,
+            align,
+            &[proj.format.format(label.price)],
+            accent,
+        );
+    }
+    if let Some(readout) = &screen.readout {
+        painter.text(
+            readout.at + vec2(-4.0, 6.0),
+            Align2::RIGHT_TOP,
+            &readout.text,
+            FontId::proportional(11.0),
+            accent,
+        );
+    }
+    if screen.arrow.is_some() {
+        draw_arrow_extras(painter, screen, drawing, style, proj, emphasis.selected);
+    }
+    if style.hide_text {
+        return None;
+    }
+    screen.text.and_then(|place| {
         draw_text(
             painter,
             place,
             drawing.text(),
             &style.text,
             style.middle_line.enabled,
-        );
+        )
+    })
+}
+
+/// The trend angle's mark: a level reference line from the left end, an arc up (or down) to the
+/// line, and the angle in degrees beside it.
+fn draw_angle(painter: &Painter, mark: super::shape::AngleMark, color: Color32, size: f32) {
+    let delta = mark.toward - mark.origin;
+    let length = delta.length();
+    if length < 12.0 {
+        return;
     }
-    if matches!(
-        drawing,
-        Drawing::Shape {
-            geometry: Geometry::Arrow { .. },
-            ..
-        }
-    ) {
-        draw_arrow_extras(painter, screen, drawing, style, proj, emphasis.selected);
-    }
+    let faint = with_alpha(color, 150);
+    // Up on screen is positive, as a rising line reads.
+    let degrees = (-delta.y).atan2(delta.x).to_degrees();
+    let reference = (length * 0.9).min(160.0).max(length.min(40.0));
+    stroke_path(
+        painter,
+        &[mark.origin, mark.origin + vec2(reference, 0.0)],
+        false,
+        Stroke::new(1.0, faint),
+        LineDash::Dashed,
+    );
+    let radius = (length * 0.45).clamp(14.0, 42.0);
+    let sweep = delta.y.atan2(delta.x);
+    let steps = 24;
+    let arc: Vec<Pos2> = (0..=steps)
+        .map(|step| {
+            let t = sweep * step as f32 / steps as f32;
+            mark.origin + vec2(t.cos(), t.sin()) * radius
+        })
+        .collect();
+    painter.add(Shape::line(arc, Stroke::new(1.0, faint)));
+    let middle = sweep / 2.0;
+    painter.text(
+        mark.origin + vec2(middle.cos(), middle.sin()) * (radius + 6.0),
+        Align2::LEFT_CENTER,
+        format!("{degrees:.1}°"),
+        FontId::proportional(size.min(13.0)),
+        color,
+    );
 }
 
 /// What marks a selected or hovered freehand stroke: it has no handles, so its bounds are

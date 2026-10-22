@@ -92,10 +92,10 @@ impl DrawingLayer {
     /// The screen bounds of a drawing, for placing the toolbar.
     fn bounds_of(&mut self, drawing: &Drawing, proj: &Projection) -> Option<Rect> {
         match drawing {
-            Drawing::Brush { .. } | Drawing::Shape { .. } => {
+            Drawing::Brush { .. } | Drawing::Shape { .. } | Drawing::TrendLine { .. } => {
                 self.screen(drawing, proj).map(|screen| screen.bounds)
             }
-            Drawing::TrendLine { a, b, .. } | Drawing::Fib { a, b, .. } => {
+            Drawing::Fib { a, b, .. } => {
                 geo::bounds(&[proj.point(*a), proj.point(*b)]).map(|rect| rect.expand(10.0))
             }
             Drawing::Ruler { .. } | Drawing::Unreadable(_) => None,

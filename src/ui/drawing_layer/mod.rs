@@ -9,6 +9,9 @@
 
 mod draw;
 mod edit;
+mod line_shapes;
+#[cfg(test)]
+mod line_tests;
 mod menu;
 mod shape;
 mod snap;
@@ -200,12 +203,26 @@ struct ProjectionKey {
     lead: f32,
     price: (f64, f64, f32, f32, bool),
     data: (usize, i64, i64),
+    /// The newest bar's open, high, low and close: a regression is fitted to prices, and the
+    /// live bar changes them without changing the bars' count or times.
+    newest: [u64; 4],
 }
 
 impl Projection<'_> {
     pub(super) fn x(&self, time_ms: i64) -> f32 {
-        let index = self.times.index_of(time_ms) - self.start as f64;
+        self.x_at_index(self.times.index_of(time_ms))
+    }
+
+    /// Where the bar at (fractional) `index` of the bars the chart draws sits on screen.
+    pub(super) fn x_at_index(&self, index: f64) -> f32 {
+        let index = index - self.start as f64;
         self.plot.left() + self.slot_width * (index as f32 + 0.5) + self.slot_width * self.lead
+    }
+
+    /// The (fractional) bar index at screen position `x`.
+    pub(super) fn index_at(&self, x: f32) -> f64 {
+        let slots = (x - self.plot.left()) / self.slot_width - 0.5 - self.lead;
+        f64::from(slots) + self.start as f64
     }
 
     pub(super) fn time(&self, x: f32) -> i64 {
@@ -248,6 +265,12 @@ impl Projection<'_> {
                 time_at((len > 0).then_some(0)),
                 time_at(len.checked_sub(1)),
             ),
+            newest: len
+                .checked_sub(1)
+                .and_then(|index| self.times.bar(index))
+                .map_or([0; 4], |bar| {
+                    [bar.open, bar.high, bar.low, bar.close].map(f64::to_bits)
+                }),
         }
     }
 
@@ -307,6 +330,8 @@ pub(super) struct DrawingLayer {
     /// Escape cancelled a gesture mid-drag; keep the plot from panning until release.
     cancelled_drag: bool,
     cache: HashMap<u64, CacheEntry>,
+    /// Where each drawing's text was laid out last frame, for finding it with a click.
+    text_boxes: HashMap<u64, draw::TextBox>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -347,17 +372,9 @@ fn end_hit(pointer: Pos2, a: Pos2, b: Pos2) -> Option<Part> {
     }
 }
 
-/// The hit on the original line drawings, which paint themselves.
+/// The hit on the Fibonacci and the ruler, which paint themselves.
 fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Part> {
     match drawing {
-        Drawing::TrendLine { a, b, style, .. } => {
-            let (pa, pb) = (proj.point(*a), proj.point(*b));
-            let (from, to) =
-                geo::extend_to_rect(pa, pb, proj.plot, style.extend_left, style.extend_right);
-            end_hit(pointer, pa, pb).or_else(|| {
-                (geo::distance_to_segment(pointer, from, to) <= HIT_TOLERANCE).then_some(Part::Body)
-            })
-        }
         Drawing::Fib { a, b, .. } => {
             let (pa, pb) = (proj.point(*a), proj.point(*b));
             end_hit(pointer, pa, pb).or_else(|| {
@@ -384,7 +401,13 @@ fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> P
     };
     match tool {
         Tool::Rectangle | Tool::Ellipse => geo::constrained_corner(first, pointer, true),
-        Tool::TrendLine | Tool::Arrow | Tool::ArrowMarker => geo::snap_angle(first, pointer),
+        Tool::TrendLine
+        | Tool::Ray
+        | Tool::InfoLine
+        | Tool::ExtendedLine
+        | Tool::TrendAngle
+        | Tool::Arrow
+        | Tool::ArrowMarker => geo::snap_angle(first, pointer),
         _ => pointer,
     }
 }
@@ -454,7 +477,7 @@ impl DrawingLayer {
                 continue;
             }
             let part = match drawing {
-                Drawing::Brush { .. } | Drawing::Shape { .. } => {
+                Drawing::Brush { .. } | Drawing::Shape { .. } | Drawing::TrendLine { .. } => {
                     let Some(screen) = self.screen(drawing, proj) else {
                         continue;
                     };
@@ -1078,6 +1101,7 @@ impl DrawingLayer {
             );
         }
         self.cache.retain(|id, _| live.contains(id));
+        self.text_boxes.retain(|id, _| live.contains(id));
 
         if let Some(Gesture::Draft(draft)) = &gesture {
             self.paint_draft(&clipped, proj, frame, draft);
@@ -1161,16 +1185,6 @@ impl DrawingLayer {
         draft: bool,
     ) {
         match drawing {
-            Drawing::TrendLine { a, b, style, .. } => {
-                draw::draw_trend_line(
-                    painter,
-                    proj.point(*a),
-                    proj.point(*b),
-                    proj.plot,
-                    style,
-                    emphasized,
-                );
-            }
             Drawing::Fib { a, b, .. } => {
                 drawing_render::draw_fibonacci(
                     painter,
@@ -1198,7 +1212,7 @@ impl DrawingLayer {
                     draft,
                 );
             }
-            Drawing::Brush { .. } | Drawing::Shape { .. } => {
+            Drawing::Brush { .. } | Drawing::Shape { .. } | Drawing::TrendLine { .. } => {
                 // A draft is rebuilt every frame as it grows; a placed drawing is cached.
                 let screen = if draft {
                     shape::build(drawing, proj).map(Arc::new)
@@ -1211,7 +1225,7 @@ impl DrawingLayer {
                 if !screen.bounds.intersects(proj.plot) {
                     return;
                 }
-                draw::paint(
+                let text_box = draw::paint(
                     painter,
                     &screen,
                     drawing,
@@ -1221,6 +1235,16 @@ impl DrawingLayer {
                         selected: with_handles,
                     },
                 );
+                if !draft {
+                    match text_box {
+                        Some(found) => {
+                            self.text_boxes.insert(drawing.id(), found);
+                        }
+                        None => {
+                            self.text_boxes.remove(&drawing.id());
+                        }
+                    }
+                }
                 if with_handles && !drawing.locked() {
                     let color = drawing
                         .style()

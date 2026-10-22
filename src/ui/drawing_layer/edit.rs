@@ -5,6 +5,7 @@
 use super::Projection;
 use crate::model::{Anchor, Drawing, Geometry};
 use crate::ui::drawing_render::{self, RulerCorner};
+use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Vec2};
 
 /// How far a duplicate is offset from the original, in px (right and down).
@@ -143,7 +144,51 @@ pub(super) fn edited(
             }
         }
     }
+    keep_channel_width(original, &mut result, part, press, now, proj);
+    if let (Some(edited), Some(before)) = (result.geometry_mut(), original.geometry()) {
+        edited.constrain(before);
+    }
     result
+}
+
+/// A parallel channel keeps the price distance between its edges when an end of the first edge
+/// is dragged, and the handle on the second edge moves that distance by the pointer's vertical
+/// travel alone. Both are worked in screen space, where the distance is a vertical offset, so
+/// they are right on a log scale too.
+fn keep_channel_width(
+    original: &Drawing,
+    result: &mut Drawing,
+    part: Part,
+    press: Pos2,
+    now: Pos2,
+    proj: &Projection,
+) {
+    let (
+        Some(Geometry::ParallelChannel { a, b, c }),
+        Some(Geometry::ParallelChannel {
+            a: new_a,
+            b: new_b,
+            c: new_c,
+        }),
+    ) = (original.geometry(), result.geometry_mut())
+    else {
+        return;
+    };
+    let (pa, pb, pc) = (proj.point(*a), proj.point(*b), proj.point(*c));
+    if (pb.x - pa.x).abs() < 1e-3 {
+        // A vertical first edge has no price distance; the generic edit stands.
+        return;
+    }
+    let offset = lines::channel_offset(pa, pb, pc).y;
+    let (edge_a, edge_b) = (proj.point(*new_a), proj.point(*new_b));
+    let offset = match part {
+        Part::Anchor(2) => offset + (now.y - press.y),
+        Part::Anchor(0 | 1) => offset,
+        _ => return,
+    };
+    if let Some(y) = lines::y_at(edge_a, edge_b, pc.x) {
+        *new_c = proj.anchor(Pos2::new(pc.x, y + offset));
+    }
 }
 
 /// The vertices of an editable polyline-like shape.
