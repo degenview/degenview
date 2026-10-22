@@ -141,6 +141,22 @@ pub enum Icon {
     ShapeArc,
     ShapeCurve,
     ShapeDoubleCurve,
+    LineRay,
+    LineInfo,
+    LineExtended,
+    LineAngle,
+    LineHorizontal,
+    LineHorizontalRay,
+    LineVertical,
+    LineCross,
+    ChannelParallel,
+    ChannelRegression,
+    ChannelFlat,
+    ChannelDisjoint,
+    ForkAndrews,
+    ForkSchiff,
+    ForkModifiedSchiff,
+    ForkInside,
     Magnet,
     KeepDrawing,
     LockOpen,
@@ -1048,6 +1064,125 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 .collect();
             line(&points);
         }
+        Icon::LineRay => {
+            line(&[p(3.4, 12.6), p(13.6, 2.4)]);
+            line(&[p(9.4, 2.4), p(13.6, 2.4), p(13.6, 6.6)]);
+            circle(p(2.8, 13.2), 1.5, true);
+        }
+        Icon::LineInfo => {
+            line(&[p(2.4, 13.6), p(9.6, 6.4)]);
+            circle(p(2.4, 13.6), 1.3, true);
+            circle(p(9.6, 6.4), 1.3, true);
+            painter.rect_stroke(
+                rect_of(p(7.4, 1.8), p(14.6, 6.6)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(9.0, 3.4), p(13.0, 3.4)]);
+            line(&[p(9.0, 5.0), p(12.0, 5.0)]);
+        }
+        Icon::LineExtended => {
+            line(&[p(1.6, 14.4), p(14.4, 1.6)]);
+            line(&[p(1.6, 10.4), p(1.6, 14.4), p(5.6, 14.4)]);
+            line(&[p(10.4, 1.6), p(14.4, 1.6), p(14.4, 5.6)]);
+            circle(p(6.0, 10.0), 1.3, true);
+            circle(p(10.0, 6.0), 1.3, true);
+        }
+        Icon::LineAngle => {
+            line(&[p(2.6, 13.4), p(13.4, 4.6)]);
+            line(&[p(2.6, 13.4), p(13.6, 13.4)]);
+            line(&arc(2.6, 13.4, 6.4, -39.0, 0.0));
+            circle(p(2.6, 13.4), 1.3, true);
+        }
+        Icon::LineHorizontal => {
+            line(&[p(1.4, 8.0), p(14.6, 8.0)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::LineHorizontalRay => {
+            line(&[p(3.0, 8.0), p(14.6, 8.0)]);
+            line(&[p(11.4, 5.4), p(14.6, 8.0), p(11.4, 10.6)]);
+            circle(p(2.8, 8.0), 1.6, true);
+        }
+        Icon::LineVertical => {
+            line(&[p(8.0, 1.4), p(8.0, 14.6)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::LineCross => {
+            line(&[p(1.4, 8.0), p(14.6, 8.0)]);
+            line(&[p(8.0, 1.4), p(8.0, 14.6)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::ChannelParallel => {
+            line(&[p(1.8, 9.2), p(14.2, 3.0)]);
+            line(&[p(1.8, 14.0), p(14.2, 7.8)]);
+            circle(p(1.8, 9.2), 1.2, true);
+            circle(p(14.2, 7.8), 1.2, true);
+        }
+        Icon::ChannelRegression => {
+            line(&[p(1.8, 11.4), p(14.2, 4.6)]);
+            line(&[p(1.8, 7.8), p(14.2, 1.4)]);
+            line(&[p(1.8, 14.8), p(14.2, 8.2)]);
+            for (x, y) in [(4.6, 11.6), (7.8, 6.6), (11.2, 6.4)] {
+                circle(p(x, y), 0.9, true);
+            }
+        }
+        Icon::ChannelFlat => {
+            line(&[p(1.8, 3.4), p(14.2, 3.4)]);
+            line(&[p(1.8, 13.4), p(14.2, 6.0)]);
+            circle(p(1.8, 13.4), 1.2, true);
+            circle(p(14.2, 3.4), 1.2, true);
+        }
+        Icon::ChannelDisjoint => {
+            line(&[p(1.4, 8.6), p(9.4, 3.8)]);
+            line(&[p(6.6, 13.8), p(14.6, 9.0)]);
+            circle(p(1.4, 8.6), 1.2, true);
+            circle(p(14.6, 9.0), 1.2, true);
+        }
+        Icon::ForkAndrews => {
+            // Three prongs from a base, the median starting at the first pivot.
+            line(&[p(2.0, 8.0), p(14.4, 8.0)]);
+            line(&[p(7.0, 2.6), p(14.4, 2.6)]);
+            line(&[p(7.0, 13.4), p(14.4, 13.4)]);
+            line(&[p(7.0, 2.6), p(7.0, 13.4)]);
+            circle(p(2.0, 8.0), 1.4, true);
+        }
+        Icon::ForkSchiff => {
+            // The median starts level with the first pivot's time, halfway down to the second.
+            line(&[p(2.0, 9.4), p(14.4, 9.4)]);
+            line(&[p(7.0, 4.0), p(14.4, 4.0)]);
+            line(&[p(7.0, 14.8), p(14.4, 14.8)]);
+            line(&[p(7.0, 4.0), p(7.0, 14.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(2.0, 9.4), p(2.0, 2.8)],
+                stroke,
+                1.6 * scale,
+                1.4 * scale,
+            ));
+            circle(p(2.0, 2.8), 1.4, false);
+        }
+        Icon::ForkModifiedSchiff => {
+            // The median starts halfway between the first two pivots in time as well.
+            line(&[p(4.6, 9.4), p(14.4, 9.4)]);
+            line(&[p(7.6, 4.0), p(14.4, 4.0)]);
+            line(&[p(7.6, 14.8), p(14.4, 14.8)]);
+            line(&[p(7.6, 4.0), p(7.6, 14.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(4.6, 9.4), p(2.0, 2.8)],
+                stroke,
+                1.6 * scale,
+                1.4 * scale,
+            ));
+            circle(p(2.0, 2.8), 1.4, false);
+        }
+        Icon::ForkInside => {
+            // The prongs start on the base and the median runs on to the third pivot.
+            line(&[p(2.0, 2.6), p(13.0, 2.6)]);
+            line(&[p(2.0, 13.4), p(13.0, 13.4)]);
+            line(&[p(2.0, 2.6), p(2.0, 13.4)]);
+            line(&[p(2.0, 8.0), p(12.0, 8.0)]);
+            circle(p(12.0, 8.0), 1.6, true);
+        }
         Icon::Magnet => {
             line(&arc(8.0, 7.2, 5.4, 180.0, 360.0));
             line(&[p(2.6, 7.2), p(2.6, 13.6)]);
@@ -1428,6 +1563,22 @@ mod tests {
             ShapeArc,
             ShapeCurve,
             ShapeDoubleCurve,
+            LineRay,
+            LineInfo,
+            LineExtended,
+            LineAngle,
+            LineHorizontal,
+            LineHorizontalRay,
+            LineVertical,
+            LineCross,
+            ChannelParallel,
+            ChannelRegression,
+            ChannelFlat,
+            ChannelDisjoint,
+            ForkAndrews,
+            ForkSchiff,
+            ForkModifiedSchiff,
+            ForkInside,
             Magnet,
             KeepDrawing,
             LockOpen,

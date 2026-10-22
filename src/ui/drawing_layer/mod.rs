@@ -332,6 +332,8 @@ pub(super) struct DrawingLayer {
     cache: HashMap<u64, CacheEntry>,
     /// Where each drawing's text was laid out last frame, for finding it with a click.
     text_boxes: HashMap<u64, draw::TextBox>,
+    /// The axis tags of the drawings painted this frame, for the frame's label pass.
+    tags: Vec<shape::Tag>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -1078,6 +1080,7 @@ impl DrawingLayer {
         let hovered = self.hover.map(|hit| hit.id);
         let single = frame.selected.len() == 1;
         let mut live = HashSet::new();
+        self.tags.clear();
         for stored in frame.drawings {
             live.insert(stored.id());
             if !frame.shows(stored) {
@@ -1108,6 +1111,20 @@ impl DrawingLayer {
         }
         drop(editing);
         self.gesture = gesture;
+    }
+
+    /// Paints the tags the drawings painted this frame asked for on the price and time axes.
+    pub(super) fn paint_tags(
+        &self,
+        painter: &Painter,
+        rect: Rect,
+        plot: Rect,
+        proj: &Projection,
+        style: &super::canvas_render::CanvasStyle,
+    ) {
+        for tag in &self.tags {
+            draw::paint_tag(painter, *tag, rect, plot, proj, style);
+        }
     }
 
     fn paint_draft(
@@ -1224,6 +1241,9 @@ impl DrawingLayer {
                 };
                 if !screen.bounds.intersects(proj.plot) {
                     return;
+                }
+                if !draft {
+                    self.tags.extend(screen.tags.iter().copied());
                 }
                 let text_box = draw::paint(
                     painter,

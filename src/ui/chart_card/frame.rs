@@ -459,6 +459,9 @@ impl ChartCard {
             style,
         );
         self.draw_time_axis(painter, rect, shown, &ticks, &x_for, style);
+        // The tags of the lines at a price or a time sit on the axes, which the drawings'
+        // clipped painter cannot reach.
+        layer.paint_tags(&main_painter, rect, plot, &projection, style);
         for (index, (pane_rect, (id, pine))) in layout
             .pane_rects
             .iter()

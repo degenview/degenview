@@ -798,6 +798,7 @@ pub struct ChartWorkspace {
     selected_drawing: Option<(u64, Vec<u64>)>,
     /// The tool the strip's grouped brushes, arrows and shapes tile shows: the last one used.
     group_tool: Tool,
+    line_tool: Tool,
     /// How drawings snap to the bars' prices (the strip's magnet).
     magnet: MagnetMode,
     /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
@@ -1020,6 +1021,7 @@ impl ChartWorkspace {
             active_tool: Tool::Cursor,
             selected_drawing: None,
             group_tool: Tool::Brush,
+            line_tool: Tool::TrendLine,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all_drawings: false,
@@ -2177,6 +2179,7 @@ impl ChartWorkspace {
             self.magnet = prefs.magnet;
             self.keep_drawing = prefs.keep_drawing;
             self.group_tool = prefs.group_tool;
+            self.line_tool = prefs.line_tool;
             self.saved_prefs = prefs;
             self.drawing_templates = Some(templates);
         }
@@ -2191,6 +2194,7 @@ impl ChartWorkspace {
             magnet: self.magnet,
             keep_drawing: self.keep_drawing,
             group_tool: self.group_tool,
+            line_tool: self.line_tool,
         };
         if prefs != self.saved_prefs {
             self.saved_prefs = prefs;
@@ -2587,6 +2591,18 @@ impl ChartWorkspace {
         if !typing && ui.input_mut(|input| shortcut::HIDE_DRAWINGS.consume(input)) {
             self.hide_all_drawings = !self.hide_all_drawings;
         }
+        // Alt (Option) and a letter arm a line tool, like the strip's tile does. Option+letter
+        // types a character on a Mac, so a text field keeps it.
+        if !typing {
+            for tool in Tool::GROUPED {
+                let pressed = shortcut::tool(tool)
+                    .is_some_and(|shortcut| ui.input_mut(|input| shortcut.consume(input)));
+                if pressed {
+                    self.toggle_tool(tool);
+                    self.save_drawing_prefs();
+                }
+            }
+        }
         // The snapshot shortcuts act on the focused chart, the one whose frame is lit. Option+S
         // types a letter on a Mac, so they leave a text field alone.
         if !typing && let Some(chart_id) = self.resolved_focused_id() {
@@ -2969,6 +2985,7 @@ impl ChartWorkspace {
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.active_tool,
             group_tool: self.group_tool,
+            line_tool: self.line_tool,
             magnet: self.magnet,
             keep_drawing: self.keep_drawing,
             hide_all: self.hide_all_drawings,
@@ -2985,15 +3002,7 @@ impl ChartWorkspace {
         let mut actions = Vec::new();
         for action in tool_sidebar::show(ui, &input) {
             match action {
-                ToolSidebarAction::Select(tool) => {
-                    self.active_tool = if self.active_tool == tool || tool == Tool::Cursor {
-                        Tool::Cursor
-                    } else {
-                        tool
-                    };
-                    self.remember_group_tool(tool);
-                    self.drop_rulers();
-                }
+                ToolSidebarAction::Select(tool) => self.toggle_tool(tool),
                 ToolSidebarAction::Arm(tool) => {
                     self.active_tool = tool;
                     self.remember_group_tool(tool);
@@ -3019,10 +3028,25 @@ impl ChartWorkspace {
         actions
     }
 
-    /// Remembers `tool` as the one the grouped tile shows, when it belongs to that group.
+    /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
+    fn toggle_tool(&mut self, tool: Tool) {
+        self.active_tool = if self.active_tool == tool || tool == Tool::Cursor {
+            Tool::Cursor
+        } else {
+            tool
+        };
+        self.remember_group_tool(tool);
+        self.drop_rulers();
+    }
+
+    /// Remembers `tool` as the one the tile of its menu shows, when it belongs to one.
     fn remember_group_tool(&mut self, tool: Tool) {
-        if crate::model::ToolGroup::MENU.contains(&tool.spec().group) {
+        use crate::model::ToolGroup;
+        let group = tool.spec().group;
+        if ToolGroup::MENU.contains(&group) {
             self.group_tool = tool;
+        } else if ToolGroup::LINE_MENU.contains(&group) {
+            self.line_tool = tool;
         }
     }
 

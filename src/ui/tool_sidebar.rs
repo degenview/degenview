@@ -3,7 +3,7 @@
 
 use crate::model::{MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
-use crate::ui::{kit, theme};
+use crate::ui::{kit, shortcut, theme};
 use eframe::egui::{
     self, Color32, Id, Pos2, Rect, RectAlign, Sense, SetOpenCommand, Stroke, StrokeKind, Ui, Vec2,
     pos2, vec2,
@@ -21,6 +21,8 @@ pub struct ToolSidebarInput {
     pub active_tool: Tool,
     /// The tool the grouped brushes, arrows and shapes tile shows and arms: the last one used.
     pub group_tool: Tool,
+    /// The tool the Lines tile shows and arms: the last one used from its menu.
+    pub line_tool: Tool,
     pub magnet: MagnetMode,
     pub keep_drawing: bool,
     pub hide_all: bool,
@@ -76,20 +78,86 @@ struct Tile<'a> {
     mark: Option<&'a str>,
 }
 
-/// A tile at the top of the strip: one tool, or the grouped brushes, arrows and shapes.
+/// A tile at the top of the strip: one tool, or a tile that opens a menu of them.
 #[derive(Clone, Copy)]
 enum Slot {
     Tool(Tool, Icon, &'static str),
-    Group,
+    Menu(Menu),
+}
+
+/// The two menus a tile opens: the lines, channels and pitchforks, and the brushes, arrows and
+/// shapes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Menu {
+    Lines,
+    Shapes,
+}
+
+impl Menu {
+    fn groups(self) -> &'static [ToolGroup] {
+        match self {
+            Self::Lines => &ToolGroup::LINE_MENU,
+            Self::Shapes => &ToolGroup::MENU,
+        }
+    }
+
+    fn contains(self, tool: Tool) -> bool {
+        self.groups().contains(&tool.spec().group)
+    }
+
+    /// The tool the tile shows and arms.
+    fn tool(self, input: &ToolSidebarInput) -> Tool {
+        match self {
+            Self::Lines => input.line_tool,
+            Self::Shapes => input.group_tool,
+        }
+    }
+
+    fn width(self) -> f32 {
+        match self {
+            Self::Lines => 268.0,
+            Self::Shapes => 224.0,
+        }
+    }
+
+    /// The height of the whole list: a heading for each group and a row for each tool.
+    fn height(self) -> f32 {
+        let groups = self.groups();
+        let rows: usize = groups
+            .iter()
+            .map(|group| Tool::in_group(*group).count())
+            .sum();
+        rows as f32 * ROW_HEIGHT
+            + groups.len() as f32 * 20.0
+            + (groups.len() - 1) as f32 * 6.0
+            + 4.0
+    }
+
+    fn key(self) -> &'static str {
+        match self {
+            Self::Lines => "lines",
+            Self::Shapes => "group",
+        }
+    }
+
+    fn corner_label(self) -> &'static str {
+        match self {
+            Self::Lines => "More lines, channels and pitchforks",
+            Self::Shapes => "More brushes, arrows and shapes",
+        }
+    }
 }
 
 const SLOTS: [Slot; 5] = [
     Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
-    Slot::Tool(Tool::TrendLine, Icon::LineDiagonal, "Trend line"),
+    Slot::Menu(Menu::Lines),
     Slot::Tool(Tool::Fib, Icon::FibPoints, "Fib Retracement"),
-    Slot::Group,
+    Slot::Menu(Menu::Shapes),
     Slot::Tool(Tool::Ruler, Icon::Ruler, "Ruler"),
 ];
+
+/// The height of one row of a menu.
+const ROW_HEIGHT: f32 = 30.0;
 
 /// The glyph a tool has on the strip and in the grouped menu.
 pub fn tool_icon(tool: Tool) -> Icon {
@@ -114,14 +182,23 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::Arc => Icon::ShapeArc,
         Tool::Curve => Icon::ShapeCurve,
         Tool::DoubleCurve => Icon::ShapeDoubleCurve,
-        // Drawn properly with the menus.
-        _ => Icon::LineDiagonal,
+        Tool::Ray => Icon::LineRay,
+        Tool::InfoLine => Icon::LineInfo,
+        Tool::ExtendedLine => Icon::LineExtended,
+        Tool::TrendAngle => Icon::LineAngle,
+        Tool::HorizontalLine => Icon::LineHorizontal,
+        Tool::HorizontalRay => Icon::LineHorizontalRay,
+        Tool::VerticalLine => Icon::LineVertical,
+        Tool::Crossline => Icon::LineCross,
+        Tool::ParallelChannel => Icon::ChannelParallel,
+        Tool::RegressionTrend => Icon::ChannelRegression,
+        Tool::FlatChannel => Icon::ChannelFlat,
+        Tool::DisjointChannel => Icon::ChannelDisjoint,
+        Tool::Pitchfork => Icon::ForkAndrews,
+        Tool::SchiffPitchfork => Icon::ForkSchiff,
+        Tool::ModifiedSchiffPitchfork => Icon::ForkModifiedSchiff,
+        Tool::InsidePitchfork => Icon::ForkInside,
     }
-}
-
-/// Whether `tool` lives in the grouped menu.
-fn in_group_menu(tool: Tool) -> bool {
-    ToolGroup::MENU.contains(&tool.spec().group)
 }
 
 /// The tooltip a tile shows, separate from its accessibility label where Swift's differs.
@@ -169,7 +246,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                     actions.push(ToolSidebarAction::Select(tool));
                 }
             }
-            Slot::Group => group_tile(ui, rect, input, strip.right(), &mut actions),
+            Slot::Menu(menu) => menu_tile(ui, rect, input, strip.right(), &mut actions, menu),
         }
         y += BUTTON + SPACING;
     }
@@ -395,22 +472,23 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
     actions
 }
 
-/// The tile for the brushes, arrows and shapes: it shows the last tool used from them, arms it
-/// on a click, and opens the grouped menu from its corner, a right-click or the keyboard.
-fn group_tile(
+/// A tile that opens a menu of tools: it shows the last tool used from the menu, arms it on a
+/// click, and opens the menu from its corner, a right-click or the keyboard.
+fn menu_tile(
     ui: &mut Ui,
     rect: Rect,
     input: &ToolSidebarInput,
     strip_right: f32,
     actions: &mut Vec<ToolSidebarAction>,
+    menu: Menu,
 ) {
-    let tool = input.group_tool;
+    let tool = menu.tool(input);
     let label = tool.label();
     let tile = Tile {
         icon: tool_icon(tool),
         label,
         tooltip: label,
-        active: if in_group_menu(input.active_tool) {
+        active: if menu.contains(input.active_tool) {
             Active::Filled
         } else {
             Active::Off
@@ -418,7 +496,7 @@ fn group_tile(
         tint: kit::ACCENT,
         enabled: true,
         badge: 0,
-        key: "group",
+        key: menu.key(),
         notch: true,
         mark: None,
     };
@@ -428,9 +506,12 @@ fn group_tile(
     }
     // The corner opens the menu instead of arming the tool.
     let corner = Rect::from_min_size(rect.right_bottom() - vec2(16.0, 16.0), vec2(16.0, 16.0));
-    let corner_response = ui.interact(corner, Id::new("tool-sidebar-group-menu"), Sense::click());
-    let corner_response =
-        crate::ui::accessibility::label(corner_response, "More brushes, arrows and shapes");
+    let corner_response = ui.interact(
+        corner,
+        Id::new(("tool-sidebar-menu", menu.key())),
+        Sense::click(),
+    );
+    let corner_response = crate::ui::accessibility::label(corner_response, menu.corner_label());
     let wants_open = corner_response.clicked()
         || response.secondary_clicked()
         || (response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::ArrowRight)));
@@ -440,30 +521,32 @@ fn group_tile(
         .align_alternatives(&[RectAlign::RIGHT_END])
         .gap(10.0)
         .frame(kit::menu_frame())
-        .width(MENU_WIDTH);
-    popup.show(|ui| group_menu(ui, input, actions));
+        .width(menu.width());
+    popup.show(|ui| tool_menu(ui, input, actions, menu));
 }
 
-const MENU_WIDTH: f32 = 224.0;
-/// The height of the whole list: three headings and sixteen rows.
-const MENU_HEIGHT: f32 = 556.0;
-
-/// The grouped menu: BRUSHES, ARROWS and SHAPES, one row per tool. Rows are focusable, so the
+/// A menu of tools: a heading for each group and one row per tool. Rows are focusable, so the
 /// arrow keys move through them and Return picks one.
-fn group_menu(ui: &mut Ui, input: &ToolSidebarInput, actions: &mut Vec<ToolSidebarAction>) {
+fn tool_menu(
+    ui: &mut Ui,
+    input: &ToolSidebarInput,
+    actions: &mut Vec<ToolSidebarAction>,
+    menu: Menu,
+) {
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
     // Room from where the menu starts down to the window's foot.
     let room = (ui.ctx().content_rect().bottom() - ui.next_widget_position().y - 16.0).max(160.0);
-    let max_height = room.min(MENU_HEIGHT);
+    let max_height = room.min(menu.height());
     // A popup's area starts out short; the menu says how tall it wants to be.
     ui.set_max_height(max_height);
     ui.set_min_height(max_height);
     let mut first = true;
+    let seen = Id::new(("tool-sidebar-menu-focused", menu.key()));
     egui::ScrollArea::vertical()
         .max_height(max_height)
         .auto_shrink([false, true])
         .show(ui, |ui| {
-            for group in ToolGroup::MENU {
+            for group in menu.groups() {
                 if !first {
                     ui.add_space(6.0);
                 }
@@ -477,15 +560,14 @@ fn group_menu(ui: &mut Ui, input: &ToolSidebarInput, actions: &mut Vec<ToolSideb
                     theme::text_tertiary(),
                 ));
                 ui.add_space(3.0);
-                for tool in Tool::in_group(group) {
+                for tool in Tool::in_group(*group) {
                     let selected = input.active_tool == tool;
                     let response = menu_row(ui, tool, selected);
                     // Land the keyboard on the armed tool (or the first row) when it opens.
-                    let seen = Id::new("tool-sidebar-menu-focused");
                     let landed = ui.data(|data| data.get_temp::<bool>(seen).unwrap_or(false));
                     if !landed
                         && (selected
-                            || (input.active_tool == Tool::Cursor && tool == input.group_tool))
+                            || (input.active_tool == Tool::Cursor && tool == menu.tool(input)))
                     {
                         response.request_focus();
                         ui.data_mut(|data| data.insert_temp(seen, true));
@@ -500,14 +582,15 @@ fn group_menu(ui: &mut Ui, input: &ToolSidebarInput, actions: &mut Vec<ToolSideb
         });
     if !ui.ctx().memory(|memory| memory.focused().is_some()) {
         // Nothing took the focus: allow the next opening to place it again.
-        ui.data_mut(|data| data.remove::<bool>(Id::new("tool-sidebar-menu-focused")));
+        ui.data_mut(|data| data.remove::<bool>(seen));
     }
 }
 
-/// One row of the grouped menu: glyph, name and a check on the armed tool.
+/// One row of a menu: glyph, name, the shortcut that arms the tool (if it has one) and a check on
+/// the armed tool.
 fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
     let width = ui.available_width();
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 30.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
     let response = crate::ui::accessibility::label(response, tool.label());
     let highlighted = response.hovered() || response.has_focus();
     let painter = ui.painter();
@@ -525,19 +608,45 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
         tool_icon(tool),
         color,
     );
+    // The shortcut sits between the name and the check.
+    let hint = shortcut::tool(tool).map(|shortcut| shortcut.label());
+    let hint_width = if hint.is_some() { 56.0 } else { 0.0 };
     let galley = kit::galley(
         ui,
         tool.label(),
         kit::size::BODY,
         kit::REGULAR,
         color,
-        width - 72.0,
+        width - 72.0 - hint_width,
     );
     ui.painter().galley(
         pos2(rect.left() + 38.0, rect.center().y - galley.size().y / 2.0),
         galley,
         color,
     );
+    if let Some(hint) = hint {
+        let tint = if highlighted {
+            Color32::WHITE.gamma_multiply(0.8)
+        } else {
+            theme::text_tertiary()
+        };
+        let galley = kit::galley(
+            ui,
+            &hint,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            tint,
+            hint_width,
+        );
+        ui.painter().galley(
+            pos2(
+                rect.right() - 32.0 - galley.size().x,
+                rect.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            tint,
+        );
+    }
     if selected {
         icons::paint(
             ui.painter(),
@@ -799,6 +908,7 @@ mod tests {
             let state = ToolSidebarInput {
                 active_tool: tool,
                 group_tool: Tool::Brush,
+                line_tool: Tool::TrendLine,
                 magnet: MagnetMode::Weak,
                 keep_drawing: true,
                 hide_all: false,
@@ -820,6 +930,7 @@ mod tests {
         ToolSidebarInput {
             active_tool: Tool::Cursor,
             group_tool: Tool::Brush,
+            line_tool: Tool::TrendLine,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all: false,
@@ -943,21 +1054,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn picking_a_row_arms_that_tool_and_closes_the_menu() {
+    /// The Lines tile's corner, where its menu opens from.
+    const LINES_CORNER: Pos2 = pos2(31.0, 76.0);
+
+    /// Opens the menu from `corner` on a tall window and returns the tools its rows arm, top to
+    /// bottom, each by clicking it in a fresh strip.
+    fn tools_armed_by_the_menu(corner: Pos2) -> (Rect, Vec<Tool>) {
         let ctx = egui::Context::default();
-        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let (mut time, size) = (0.0, vec2(900.0, 1100.0));
         let input = state();
         for _ in 0..3 {
             frame(&ctx, &mut time, size, Vec::new(), &input);
         }
-        click(&ctx, &mut time, size, CORNER, &input);
+        click(&ctx, &mut time, size, corner, &input);
         let mut menu = None;
         for _ in 0..3 {
             menu = frame(&ctx, &mut time, size, Vec::new(), &input).1;
         }
         let menu = menu.expect("open");
-        // Every row of the menu, top to bottom, names a different tool.
         let mut armed = Vec::new();
         let mut y = menu.top() + 40.0;
         while y < menu.bottom() - 10.0 {
@@ -966,7 +1080,7 @@ mod tests {
             for _ in 0..3 {
                 frame(&ctx, &mut time, size, Vec::new(), &input);
             }
-            click(&ctx, &mut time, size, CORNER, &input);
+            click(&ctx, &mut time, size, corner, &input);
             for _ in 0..3 {
                 frame(&ctx, &mut time, size, Vec::new(), &input);
             }
@@ -982,6 +1096,66 @@ mod tests {
             }
             y += 10.0;
         }
-        assert_eq!(armed.len(), Tool::GROUPED.len(), "{armed:?}");
+        (menu, armed)
+    }
+
+    #[test]
+    fn picking_a_row_arms_that_tool_and_closes_the_menu() {
+        let (_, armed) = tools_armed_by_the_menu(CORNER);
+        let expected: Vec<Tool> = ToolGroup::MENU
+            .iter()
+            .flat_map(|group| Tool::in_group(*group))
+            .collect();
+        assert_eq!(armed, expected, "every row, in order");
+        assert_eq!(armed.len(), 16);
+    }
+
+    #[test]
+    fn the_lines_menu_lists_lines_channels_and_pitchforks_in_order() {
+        let (menu, armed) = tools_armed_by_the_menu(LINES_CORNER);
+        let expected: Vec<Tool> = ToolGroup::LINE_MENU
+            .iter()
+            .flat_map(|group| Tool::in_group(*group))
+            .collect();
+        assert_eq!(armed, expected, "every row, in order");
+        assert_eq!(armed.len(), 17);
+        assert_eq!(armed[0], Tool::TrendLine);
+        assert_eq!(armed[9], Tool::ParallelChannel);
+        assert_eq!(armed[13], Tool::Pitchfork);
+        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Lines.width() - 1.0);
+    }
+
+    #[test]
+    fn the_lines_tile_shows_its_last_tool_and_a_click_arms_it() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let mut input = state();
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 60.0), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::TrendLine)]);
+        input.line_tool = Tool::SchiffPitchfork;
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 60.0), &input);
+        assert_eq!(
+            actions,
+            vec![ToolSidebarAction::Select(Tool::SchiffPitchfork)]
+        );
+        // Fibonacci keeps its own tile, and arming it lights neither menu's tile.
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 100.0), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::Fib)]);
+        assert!(!Menu::Lines.contains(Tool::Fib) && !Menu::Shapes.contains(Tool::Fib));
+        assert!(Menu::Lines.contains(Tool::Pitchfork) && !Menu::Shapes.contains(Tool::Pitchfork));
+        assert!(Menu::Shapes.contains(Tool::Arc) && !Menu::Lines.contains(Tool::Arc));
+    }
+
+    #[test]
+    fn a_row_prints_the_shortcut_of_the_tool_it_arms() {
+        for tool in Tool::GROUPED {
+            let hint = shortcut::tool(tool).map(|shortcut| shortcut.label());
+            assert_eq!(hint.is_some(), tool.hotkey().is_some(), "{tool:?}");
+        }
+        // The tallest menu fits its rows exactly.
+        assert!(Menu::Lines.height() > Menu::Shapes.height());
     }
 }

@@ -37,6 +37,8 @@ pub struct DrawingPrefs {
     pub keep_drawing: bool,
     /// The tool the grouped brushes, arrows and shapes tile shows.
     pub group_tool: Tool,
+    /// The tool the Lines tile shows. A row saved before the tile existed has none.
+    pub line_tool: Tool,
 }
 
 impl Default for DrawingPrefs {
@@ -45,7 +47,24 @@ impl Default for DrawingPrefs {
             magnet: crate::model::MagnetMode::Off,
             keep_drawing: true,
             group_tool: Tool::Brush,
+            line_tool: Tool::TrendLine,
         }
+    }
+}
+
+impl DrawingPrefs {
+    /// The prefs with each tile's tool brought back to one its menu holds, so a stored value
+    /// that names something else (a hand-edited row) cannot leave a tile with the wrong glyph.
+    pub fn sanitized(mut self) -> Self {
+        use crate::model::ToolGroup;
+        let defaults = Self::default();
+        if !ToolGroup::MENU.contains(&self.group_tool.spec().group) {
+            self.group_tool = defaults.group_tool;
+        }
+        if !ToolGroup::LINE_MENU.contains(&self.line_tool.spec().group) {
+            self.line_tool = defaults.line_tool;
+        }
+        self
     }
 }
 
@@ -227,8 +246,9 @@ impl DrawingTemplateStore {
         self.store
             .lock()
             .expect("store lock poisoned")
-            .setting(PREFS_KEY)
+            .setting::<DrawingPrefs>(PREFS_KEY)
             .unwrap_or_default()
+            .sanitized()
     }
 
     pub fn set_prefs(&self, prefs: &DrawingPrefs) {
@@ -367,8 +387,37 @@ mod tests {
             magnet: MagnetMode::Strong,
             keep_drawing: false,
             group_tool: Tool::Curve,
+            line_tool: Tool::SchiffPitchfork,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
+    }
+
+    #[test]
+    fn prefs_saved_before_the_lines_tile_open_on_the_trend_line_and_odd_tools_are_replaced() {
+        let store = shared();
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({"magnet": "weak", "keep_drawing": false, "group_tool": "Arc"}),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store.clone()).prefs();
+        assert_eq!(prefs.line_tool, Tool::TrendLine);
+        assert_eq!(prefs.group_tool, Tool::Arc);
+        // A tile can only show a tool its own menu holds.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({"group_tool": "Ray", "line_tool": "Brush"}),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store).prefs();
+        assert_eq!(prefs.group_tool, Tool::Brush);
+        assert_eq!(prefs.line_tool, Tool::TrendLine);
     }
 }

@@ -3,16 +3,18 @@
 //! neutral plates behind labels and the handle faces.
 
 use super::Projection;
-use super::shape::{HandleSpot, Screen, TextPlace};
+use super::shape::{HandleSpot, Screen, Tag, TextPlace};
 use crate::model::Drawing;
 use crate::model::chart_type::LineDash;
 use crate::model::drawing_style::{
     DrawingStyle, HorizontalAlign, TextOrientation, TextStyle, VerticalAlign,
 };
+use crate::ui::canvas_render::CanvasStyle;
 use crate::ui::canvas_render::dash_pattern;
 use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::{ArrowReadout, HANDLE_RADIUS};
 use crate::ui::line_geometry as lines;
+use crate::ui::price_text;
 use crate::ui::{series_render, theme};
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{
@@ -594,6 +596,54 @@ fn draw_angle(painter: &Painter, mark: super::shape::AngleMark, color: Color32, 
         FontId::proportional(size.min(13.0)),
         color,
     );
+}
+
+/// Paints a line's tag on the axis it belongs to: its price on the price axis, its time on the
+/// time axis. `rect` is the chart with its axes, `plot` the part inside them.
+pub(super) fn paint_tag(
+    painter: &Painter,
+    tag: Tag,
+    rect: Rect,
+    plot: Rect,
+    proj: &Projection,
+    style: &CanvasStyle,
+) {
+    match tag {
+        Tag::Price { y, price, color } => {
+            let half = style.tag_half_height();
+            let area = Rect::from_min_max(
+                Pos2::new(plot.right() + 3.0, y - half),
+                Pos2::new(rect.right() - 3.0, y + half),
+            );
+            painter.rect_filled(area, 3.0, series_render::color(color).to_opaque());
+            price_text::paint(
+                painter,
+                area.center(),
+                Align2::CENTER_CENTER,
+                &proj.format.format(price),
+                style.price_font(),
+                Color32::WHITE,
+            );
+        }
+        Tag::Time { x, time_ms, color } => {
+            let width = 116.0 * style.time_size / 9.0;
+            let height = style.time_axis_height() - 6.0;
+            // Kept on the chart, so a line at its edge still shows a whole tag.
+            let x = x.clamp(plot.left() + width / 2.0, plot.right() - width / 2.0);
+            let area = Rect::from_center_size(
+                Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
+                vec2(width, height),
+            );
+            painter.rect_filled(area, 3.0, series_render::color(color).to_opaque());
+            painter.text(
+                area.center(),
+                Align2::CENTER_CENTER,
+                crate::format::timestamp(time_ms),
+                style.time_font(),
+                Color32::WHITE,
+            );
+        }
+    }
 }
 
 /// What marks a selected or hovered freehand stroke: it has no handles, so its bounds are

@@ -154,6 +154,20 @@ fn gained(without: &[ClippedShape], with: &[ClippedShape]) -> Vec<Rect> {
         .collect()
 }
 
+/// What a tool paints beyond the plot-clipped drawing layer. Only the tags of the lines at a
+/// price or a time do: they sit on the axes, by design. Everything else a tool paints is held to
+/// the plot.
+fn plot_gains(tool: Tool, gains: Vec<Rect>) -> Vec<Rect> {
+    let tags = matches!(
+        tool,
+        Tool::HorizontalLine | Tool::HorizontalRay | Tool::VerticalLine | Tool::Crossline
+    );
+    gains
+        .into_iter()
+        .filter(|clip| !(tags && clip.right() > SIZE.x - 40.0))
+        .collect()
+}
+
 #[test]
 fn every_tool_paints_inside_the_plot_and_nowhere_else() {
     for tool in Tool::GROUPED {
@@ -161,7 +175,7 @@ fn every_tool_paints_inside_the_plot_and_nowhere_else() {
         let bare = chart.draw(&[]);
         let drawings = [drawing(tool, 1)];
         let with = chart.draw(&drawings);
-        let gains = gained(&bare, &with);
+        let gains = plot_gains(tool, gained(&bare, &with));
         assert!(!gains.is_empty(), "{tool:?} painted nothing");
         for clip in gains {
             // Over the candles, clear of the price axis on the right and the time axis below.
@@ -225,7 +239,7 @@ fn a_renko_chart_draws_every_tool_without_panicking_or_misplacing_it() {
     let bare = chart.draw(&[]);
     for tool in Tool::GROUPED {
         let with = chart.draw(&[drawing(tool, 1)]);
-        for clip in gained(&bare, &with) {
+        for clip in plot_gains(tool, gained(&bare, &with)) {
             assert!(
                 clip.right() <= SIZE.x - 40.0 && clip.bottom() <= SIZE.y - 14.0,
                 "{tool:?}"
