@@ -96,7 +96,7 @@ cat > "$helper/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-# Info.plist versions are numeric: a pre-release tag (0.2.0-rc1) ships as 0.2.0.
+# Info.plist versions are numeric: a pre-release tag (0.2.0-rc.1) ships as 0.2.0.
 sed -i '' "s/__VERSION__/${version%%-*}/" "$app/Contents/Info.plist" "$helper/Contents/Info.plist"
 
 if [ -n "$identity" ]; then

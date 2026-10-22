@@ -6,8 +6,9 @@
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
 use crate::service::self_update::{self, Prepared, Progress, Stage};
-use crate::service::update_check::{self, Release, UpdateOutcome};
+use crate::service::update_check::{self, Channel, Release, UpdateOutcome};
 use crate::service::work_queue;
+use crate::store::{SharedStore, Store};
 use eframe::egui;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -15,6 +16,11 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The commit this build came from (`-dirty` when it had uncommitted changes), set by `build.rs`.
+/// Shown in Settings ▸ About for bug reports; nothing reads it.
+pub const BUILD_ID: &str = env!("DEGENVIEW_BUILD_ID");
+/// The `setting` key holding the chosen update channel. Local to this Mac: not in `sync::policy`.
+pub const CHANNEL_KEY: &str = "update.channel";
 
 /// How long after launch the first check waits, so it never competes with startup.
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(15);
@@ -33,6 +39,8 @@ enum Install {
 }
 
 struct State {
+    /// Which releases checks offer.
+    channel: Channel,
     /// The newest answer GitHub gave, and when it came back.
     last: Option<(UpdateOutcome, Instant)>,
     checking: bool,
@@ -97,13 +105,31 @@ impl Default for UpdateHost {
 }
 
 impl UpdateHost {
+    /// Starts on the running version's own channel (a release candidate keeps getting release
+    /// candidates until the user picks one).
     pub fn new() -> Self {
-        Self::with_target(self_update::install_target())
+        Self::with_target(self_update::install_target(), Channel::of_version(VERSION))
     }
 
-    fn with_target(target: Result<PathBuf, String>) -> Self {
+    /// `new`, with the channel the user saved. A value this version cannot read is ignored.
+    pub fn load(store: &SharedStore) -> Self {
+        let host = Self::new();
+        let saved = store
+            .lock()
+            .ok()
+            .and_then(|store| store.setting_strict::<String>(CHANNEL_KEY).ok())
+            .flatten()
+            .and_then(|key| Channel::from_key(&key));
+        if let Some(channel) = saved {
+            host.lock().channel = channel;
+        }
+        host
+    }
+
+    fn with_target(target: Result<PathBuf, String>, channel: Channel) -> Self {
         Self {
             shared: Arc::new(Mutex::new(State {
+                channel,
                 last: None,
                 checking: false,
                 last_started: None,
@@ -119,7 +145,10 @@ impl UpdateHost {
     /// A host standing at `phase`, for drawing tests of the UIs that read it.
     #[cfg(test)]
     pub(crate) fn at_phase(phase: &Phase) -> Self {
-        let host = Self::with_target(Ok(PathBuf::from("/Applications/DegenView.app")));
+        let host = Self::with_target(
+            Ok(PathBuf::from("/Applications/DegenView.app")),
+            Channel::Stable,
+        );
         let release = |installable: bool| Release {
             tag: "v9.9.9".to_owned(),
             version: "9.9.9".to_owned(),
@@ -194,6 +223,31 @@ impl UpdateHost {
         }
     }
 
+    pub fn channel(&self) -> Channel {
+        self.lock().channel
+    }
+
+    /// Switches channel, saves the choice and looks again. `store` is the one the caller already
+    /// holds (Settings draws under its lock). An update only the old channel offers is dropped; the
+    /// new check brings back whatever the new one offers. Never downgrades: a release older than
+    /// the running build is not an update on any channel.
+    pub fn set_channel(&self, store: &Store, ctx: &egui::Context, channel: Channel) {
+        {
+            let mut state = self.lock();
+            if state.channel == channel {
+                return;
+            }
+            state.channel = channel;
+            let stale = matches!(&state.last, Some((UpdateOutcome::Available(_), _)));
+            if stale && !matches!(state.install, Install::Working(_) | Install::Ready { .. }) {
+                state.last = None;
+                state.install = Install::Idle;
+            }
+        }
+        let _ = store.set_setting(CHANNEL_KEY, &channel.key());
+        self.check_now(ctx);
+    }
+
     /// Called every frame: starts the launch check and the periodic ones.
     pub fn tick(&self, ctx: &egui::Context) {
         let due = {
@@ -207,7 +261,7 @@ impl UpdateHost {
 
     /// Asks GitHub for the latest release on a worker thread; the UIs repaint when it answers.
     pub fn check_now(&self, ctx: &egui::Context) {
-        {
+        let channel = {
             let mut state = self.lock();
             if state.checking || matches!(state.install, Install::Working(_)) {
                 return;
@@ -217,21 +271,28 @@ impl UpdateHost {
             if matches!(state.install, Install::Failed(_)) {
                 state.install = Install::Idle;
             }
-        }
+            state.channel
+        };
         if cfg!(test) {
             return;
         }
         let host = self.clone();
         let ctx = ctx.clone();
         work_queue::UPDATES.submit(move || {
-            host.finish_check(update_check::check(VERSION));
+            host.finish_check(update_check::check(VERSION, channel), channel);
             host.repaint(&ctx);
         });
     }
 
-    fn finish_check(&self, outcome: UpdateOutcome) {
+    /// Takes a check's answer. One asked of a channel the user has since left is dropped and the
+    /// next tick asks again, so a switch never shows the old channel's update.
+    fn finish_check(&self, outcome: UpdateOutcome, channel: Channel) {
         let mut state = self.lock();
         state.checking = false;
+        if channel != state.channel {
+            state.last_started = None;
+            return;
+        }
         // A check that could not reach GitHub must not take a known update away.
         let keeps_known_update = matches!(outcome, UpdateOutcome::Failed(_))
             && matches!(&state.last, Some((UpdateOutcome::Available(_), _)));
@@ -414,7 +475,10 @@ mod tests {
     }
 
     fn host() -> UpdateHost {
-        UpdateHost::with_target(Ok(PathBuf::from("/Applications/DegenView.app")))
+        UpdateHost::with_target(
+            Ok(PathBuf::from("/Applications/DegenView.app")),
+            Channel::Stable,
+        )
     }
 
     fn ctx() -> egui::Context {
@@ -435,14 +499,17 @@ mod tests {
         assert_eq!(host.view().phase, Phase::Checking);
         assert!(host.view().checking);
 
-        host.finish_check(UpdateOutcome::UpToDate);
+        host.finish_check(UpdateOutcome::UpToDate, Channel::Stable);
         assert_eq!(host.view().phase, Phase::UpToDate);
         assert!(!host.view().checking);
 
-        host.finish_check(UpdateOutcome::Failed("offline".to_owned()));
+        host.finish_check(UpdateOutcome::Failed("offline".to_owned()), Channel::Stable);
         assert_eq!(host.view().phase, Phase::CheckFailed("offline".to_owned()));
 
-        host.finish_check(UpdateOutcome::Available(release(None, true)));
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
         let view = host.view();
         assert_eq!(
             view.phase,
@@ -458,24 +525,27 @@ mod tests {
     #[test]
     fn a_failed_recheck_keeps_a_known_update() {
         let host = host();
-        host.finish_check(UpdateOutcome::Available(release(None, true)));
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
         host.check_now(&ctx());
         // While rechecking, the earlier answer still shows.
         assert!(matches!(host.view().phase, Phase::Available { .. }));
         assert!(host.view().checking);
-        host.finish_check(UpdateOutcome::Failed("offline".to_owned()));
+        host.finish_check(UpdateOutcome::Failed("offline".to_owned()), Channel::Stable);
         assert!(matches!(host.view().phase, Phase::Available { .. }));
-        host.finish_check(UpdateOutcome::UpToDate);
+        host.finish_check(UpdateOutcome::UpToDate, Channel::Stable);
         assert_eq!(host.view().phase, Phase::UpToDate);
     }
 
     #[test]
     fn a_release_that_cannot_be_installed_says_why() {
         let host = host();
-        host.finish_check(UpdateOutcome::Available(release(
-            Some("Download it from the release page."),
-            false,
-        )));
+        host.finish_check(
+            UpdateOutcome::Available(release(Some("Download it from the release page."), false)),
+            Channel::Stable,
+        );
         let Phase::Available {
             installable, note, ..
         } = host.view().phase
@@ -485,8 +555,14 @@ mod tests {
         assert!(!installable);
         assert_eq!(note.as_deref(), Some("Download it from the release page."));
 
-        let blocked = UpdateHost::with_target(Err("Move DegenView to Applications.".to_owned()));
-        blocked.finish_check(UpdateOutcome::Available(release(None, true)));
+        let blocked = UpdateHost::with_target(
+            Err("Move DegenView to Applications.".to_owned()),
+            Channel::Stable,
+        );
+        blocked.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
         let Phase::Available {
             installable, note, ..
         } = blocked.view().phase
@@ -503,7 +579,10 @@ mod tests {
     #[test]
     fn installing_goes_through_working_to_ready_and_asks_to_restart() {
         let host = host();
-        host.finish_check(UpdateOutcome::Available(release(None, true)));
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
         host.install(&ctx());
         assert_eq!(
             host.view().phase,
@@ -528,7 +607,10 @@ mod tests {
     #[test]
     fn a_ready_update_prompts_once_until_asked_again() {
         let host = host();
-        host.finish_check(UpdateOutcome::Available(release(None, true)));
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
         let prepared = Prepared::for_test();
         host.finish_install("9.9.9".to_owned(), Ok(prepared));
         assert_eq!(
@@ -588,5 +670,80 @@ mod tests {
         let host = host();
         host.tick(&ctx());
         assert_eq!(host.view().phase, Phase::Unchecked);
+    }
+
+    fn store() -> SharedStore {
+        Arc::new(Mutex::new(Store::open_in_memory().unwrap()))
+    }
+
+    #[test]
+    fn the_channel_defaults_to_the_running_builds_and_saves_the_choice() {
+        let shared = store();
+        // Nothing saved: the running build's own channel.
+        assert_eq!(
+            UpdateHost::load(&shared).channel(),
+            Channel::of_version(VERSION)
+        );
+        // A value this version cannot read is ignored.
+        shared
+            .lock()
+            .unwrap()
+            .set_setting(CHANNEL_KEY, &"nightly")
+            .unwrap();
+        assert_eq!(
+            UpdateHost::load(&shared).channel(),
+            Channel::of_version(VERSION)
+        );
+
+        let host = UpdateHost::load(&shared);
+        let other = if host.channel() == Channel::Stable {
+            Channel::ReleaseCandidate
+        } else {
+            Channel::Stable
+        };
+        host.set_channel(&shared.lock().unwrap(), &ctx(), other);
+        assert_eq!(host.channel(), other);
+        assert_eq!(UpdateHost::load(&shared).channel(), other);
+    }
+
+    #[test]
+    fn switching_channel_drops_the_old_updates_and_checks_again() {
+        let shared = store();
+        let host = host();
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        host.set_channel(&shared.lock().unwrap(), &ctx(), Channel::ReleaseCandidate);
+        // The stable answer is gone; the new channel is being asked.
+        assert!(host.view().checking);
+        assert_eq!(host.view().phase, Phase::Checking);
+        // Choosing the same channel again does nothing.
+        host.finish_check(UpdateOutcome::UpToDate, Channel::ReleaseCandidate);
+        host.set_channel(&shared.lock().unwrap(), &ctx(), Channel::ReleaseCandidate);
+        assert!(!host.view().checking);
+        assert_eq!(host.view().phase, Phase::UpToDate);
+    }
+
+    #[test]
+    fn an_answer_for_a_channel_the_user_left_is_dropped() {
+        let shared = store();
+        let host = host();
+        host.check_now(&ctx());
+        host.set_channel(&shared.lock().unwrap(), &ctx(), Channel::ReleaseCandidate);
+        // The stable check lands after the switch.
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        assert!(!host.view().checking);
+        assert_eq!(host.view().phase, Phase::Unchecked);
+        assert!(host.lock().last_started.is_none());
+    }
+
+    #[test]
+    fn the_build_id_is_one_word() {
+        assert!(!BUILD_ID.is_empty());
+        assert!(!BUILD_ID.contains(char::is_whitespace));
     }
 }

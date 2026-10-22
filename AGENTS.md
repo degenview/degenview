@@ -21,6 +21,28 @@ scenario matches the work:
 For cross-cutting work, load all matching guides. These files contain implementation constraints,
 not general background; do not skip a guide because the code looks self-explanatory.
 
+## Choosing the release type
+
+When a task ends with "should we release this?", or the user asks what to release, look at what
+changed since the last tag (`git tag --sort=-v:refname | head -3`, then `git log v<last>..HEAD`) and
+suggest one row below, with the resulting version. Never run `tools/release.sh` unless the user has
+picked the version. Procedure, channels and scheme:
+[Releases and updates](docs/agent-guides/releases-updates.md).
+
+| Changes since the last release | Suggest |
+| --- | --- |
+| Only bug fixes, copy or UI polish, docs, or performance with no behaviour change | PATCH, stable: `0.5.1` → `0.5.2` |
+| A new feature or visible behaviour change, low risk | MINOR, stable: `0.6.0` |
+| A new feature that touches the updater, signing or entitlements, iCloud/CloudKit records, the store schema, Pine runtime semantics, or anything that can lose user data | MINOR as a release candidate first: `0.6.0-rc.1`, then `0.6.0` after a clean RC |
+| A breaking change to saved data or to the MCP or Pine public surface | MINOR (MAJOR from 1.0), release candidate first |
+| A fix to a release candidate | The next candidate: `0.6.0-rc.2` |
+| A fix needed on stable while a candidate is open | PATCH off stable (`0.5.2`), but `tools/release.sh` only cuts from `main`, which already holds the candidate's changes: tell the user, who needs a hotfix branch |
+| Only docs, tests or tooling that no user build contains | No release |
+
+Say which rows matched and why, and prefer the safer row when two match. Tags are `v` plus the
+version, prereleases are `-rc.N` (dotted, numbered from 1), and a release candidate is never
+promoted: the final version is a fresh tag.
+
 ## Running tests
 
 The Pine corpus test (`src/pine/corpus_tests.rs`) runs ~295 community scripts and accounts for most

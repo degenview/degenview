@@ -314,6 +314,8 @@ mod tests {
             "addTicker.recentMarkets",
             "paper.selectedAccountID",
             "portfolio.privacyMode",
+            // A channel is chosen per Mac: syncing it would move every other Mac onto it.
+            "update.channel",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }

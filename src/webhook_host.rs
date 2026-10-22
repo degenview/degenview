@@ -165,6 +165,9 @@ impl WebhookHost {
                 }
                 SettingsAction::Mcp(action) => out.push(WebhookHostAction::Mcp(action)),
                 SettingsAction::QuitForUpdate => out.push(WebhookHostAction::QuitForUpdate),
+                SettingsAction::SetUpdateChannel(channel) => {
+                    updates.set_channel(store, ui.ctx(), channel);
+                }
             }
         }
         out

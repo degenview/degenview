@@ -1,7 +1,7 @@
 name: Release
 
 # Push a tag like `v0.1.0` to build every platform and publish a GitHub release.
-# Tags containing a hyphen (v0.2.0-rc1) are published as pre-releases.
+# Tags containing a hyphen (v0.2.0-rc.1) are published as pre-releases.
 on:
   push:
     tags:

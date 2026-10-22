@@ -1,10 +1,11 @@
-//! Settings ▸ About (Swift `AboutSettingsView`): the app icon, name and version, the license and
-//! a copyable build summary, the project links, and the copyright line.
+//! Settings ▸ About (Swift `AboutSettingsView`): the app icon, name and version, the license, the
+//! update channel and a copyable build summary, the project links, and the copyright line.
 
 use crate::format::civil_from_days;
+use crate::service::update_check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme, update_indicator};
-use crate::update_host::{Phase, UpdateHost, UpdateView};
+use crate::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -57,28 +58,36 @@ pub fn header_subtitle(build_ms: Option<i64>) -> String {
     }
 }
 
-/// One line for bug reports: "DegenView 0.1.0 · built 11 Oct 2026 at 02:14".
+/// One line for bug reports: "DegenView 0.1.0 (59d2aa59f) · built 11 Oct 2026 at 02:14".
 pub fn clipboard_summary(build_ms: Option<i64>) -> String {
     match build_ms {
         Some(ms) => {
             let local = ms + crate::service::timezone::local_utc_offset_secs(ms) * 1_000;
             let seconds = local.div_euclid(1_000).rem_euclid(86_400);
             format!(
-                "{NAME} {VERSION} · built {} at {:02}:{:02}",
+                "{NAME} {VERSION} ({BUILD_ID}) · built {} at {:02}:{:02}",
                 date_label(ms),
                 seconds / 3_600,
                 seconds % 3_600 / 60
             )
         }
-        None => format!("{NAME} {VERSION}"),
+        None => format!("{NAME} {VERSION} ({BUILD_ID})"),
     }
 }
 
-/// True when an installed update asks the app to quit so it can reopen as the new version.
-pub fn show(ui: &mut Ui, updates: &UpdateHost) -> bool {
+/// What the page asks of its caller.
+#[derive(Debug, Default, PartialEq)]
+pub struct Outcome {
+    /// An installed update asks the app to quit so it can reopen as the new version.
+    pub quit: bool,
+    /// The user picked another update channel.
+    pub channel: Option<Channel>,
+}
+
+pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
     let build = build_time_ms();
     let area = ui.max_rect();
-    let mut quit = false;
+    let mut outcome = Outcome::default();
     egui::ScrollArea::vertical()
         .id_salt("settings-about")
         .auto_shrink([false, false])
@@ -94,7 +103,11 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> bool {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         header(ui, build);
                         ui.add_space(20.0);
-                        quit = update_status_card(ui, updates);
+                        outcome.quit = update_status_card(ui, updates, &mut outcome.channel);
+                        if updates.channel() == Channel::ReleaseCandidate {
+                            ui.add_space(10.0);
+                            channel_warning(ui);
+                        }
                         ui.add_space(24.0);
                         group(ui, |ui| {
                             row(
@@ -119,6 +132,16 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> bool {
                                 "Build Info",
                                 |ui| {
                                     copy_button(ui, build);
+                                    ui.add_space(6.0);
+                                    ui.label(
+                                        kit::text(
+                                            BUILD_ID,
+                                            kit::size::CAPTION + 1.0,
+                                            kit::REGULAR,
+                                            theme::text_tertiary(),
+                                        )
+                                        .monospace(),
+                                    );
                                 },
                             );
                         });
@@ -163,7 +186,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> bool {
             });
             ui.add_space(28.0);
         });
-    quit
+    outcome
 }
 
 /// What the card says and how it is tinted for an update phase.
@@ -306,7 +329,7 @@ fn footer_status(view: &UpdateView) -> Option<String> {
 /// The update card: one tinted block with the state, at most one button, and a quiet footer for
 /// the rest. True when an installed update asks the app to quit so it can reopen as the new
 /// version.
-fn update_status_card(ui: &mut Ui, host: &UpdateHost) -> bool {
+fn update_status_card(ui: &mut Ui, host: &UpdateHost, channel: &mut Option<Channel>) -> bool {
     let view = host.view_for(ui.ctx());
     if view.phase == Phase::Unchecked && !view.checking {
         // The first visit before the launch check ran.
@@ -321,7 +344,9 @@ fn update_status_card(ui: &mut Ui, host: &UpdateHost) -> bool {
     let mut quit = false;
 
     let status = footer_status(&view);
-    let has_footer = status.is_some() || release_link(&view).is_some();
+    // The channel can change until an install starts; after that a switch would only confuse.
+    let pick_channel = !matches!(view.phase, Phase::Installing(_) | Phase::Ready { .. });
+    let has_footer = status.is_some() || release_link(&view).is_some() || pick_channel;
     egui::Frame::new()
         .fill(card.tint.gamma_multiply(0.10))
         .stroke(Stroke::new(1.0, card.tint.gamma_multiply(0.28)))
@@ -376,7 +401,14 @@ fn update_status_card(ui: &mut Ui, host: &UpdateHost) -> bool {
                 install_progress(ui, progress.fraction, card.tint);
             }
             if has_footer {
-                footer(ui, host, &view, &card, status.as_deref());
+                footer(
+                    ui,
+                    host,
+                    &view,
+                    &card,
+                    status.as_deref(),
+                    pick_channel.then_some(channel),
+                );
             }
         });
     quit
@@ -416,7 +448,7 @@ fn badge_glyph(ui: &mut Ui, card: &Card) {
 fn install_progress(ui: &mut Ui, fraction: f32, tint: Color32) {
     ui.add_space(14.0);
     let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
-    update_indicator::paint_progress(ui.painter(), bar, fraction, tint);
+    update_indicator::paint_progress(ui.painter(), bar, fraction, tint, bar.height() / 2.0);
     ui.add_space(6.0);
     let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 14.0), Sense::hover());
     let percent = kit::galley(
@@ -434,8 +466,16 @@ fn install_progress(ui: &mut Ui, fraction: f32, tint: Color32) {
     );
 }
 
-/// A hairline, then "Release Notes" on the left and the check status on the right.
-fn footer(ui: &mut Ui, host: &UpdateHost, view: &UpdateView, card: &Card, status: Option<&str>) {
+/// A hairline, then the channel picker and "Release Notes" on the left and the check status on the
+/// right. `channel` is where a pick is reported; `None` leaves the picker out.
+fn footer(
+    ui: &mut Ui,
+    host: &UpdateHost,
+    view: &UpdateView,
+    card: &Card,
+    status: Option<&str>,
+    channel: Option<&mut Option<Channel>>,
+) {
     ui.add_space(8.0);
     let (rule, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter().hline(
@@ -445,11 +485,24 @@ fn footer(ui: &mut Ui, host: &UpdateHost, view: &UpdateView, card: &Card, status
     );
     ui.add_space(4.0);
     // A fixed height: a right-to-left layout would otherwise take whatever is left of the page.
-    let row = vec2(ui.available_width(), 22.0);
+    let row = vec2(ui.available_width(), 24.0);
     ui.allocate_ui_with_layout(
         row,
         egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
+            if let Some(picked) = channel {
+                let mut choice = host.channel();
+                kit::segmented(
+                    ui,
+                    egui::Id::new("about-update-channel"),
+                    &Channel::ALL.map(|channel| (channel, channel.label())),
+                    &mut choice,
+                );
+                if choice != host.channel() {
+                    *picked = Some(choice);
+                }
+                ui.add_space(14.0);
+            }
             if let Some(url) = release_link(view)
                 && text_link(ui, "Release Notes", "Open the release page on GitHub").clicked()
             {
@@ -476,6 +529,47 @@ fn footer(ui: &mut Ui, host: &UpdateHost, view: &UpdateView, card: &Card, status
             });
         },
     );
+}
+
+/// The caution under the update card while the Release Candidate channel is on: an amber panel
+/// with a triangle, a short title and the plain-language reason.
+fn channel_warning(ui: &mut Ui) {
+    egui::Frame::new()
+        .fill(kit::ORANGE.gamma_multiply(0.10))
+        .stroke(Stroke::new(1.0, kit::ORANGE.gamma_multiply(0.34)))
+        .corner_radius(10.0)
+        .inner_margin(egui::Margin::symmetric(14, 12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                let (glyph, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(glyph.center(), Vec2::splat(16.0)),
+                    Icon::Triangle,
+                    kit::ORANGE,
+                );
+                ui.add_space(10.0);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(kit::text(
+                        "Pre-release channel",
+                        kit::size::SUBHEADLINE + 1.0,
+                        kit::SEMIBOLD,
+                        theme::text_primary(),
+                    ));
+                    ui.add(
+                        egui::Label::new(kit::text(
+                            "Release candidates preview the next version and may be less stable.",
+                            kit::size::SUBHEADLINE + 1.0,
+                            kit::REGULAR,
+                            theme::text_secondary(),
+                        ))
+                        .wrap(),
+                    );
+                });
+            });
+        });
 }
 
 /// The footer's "check again": a small refresh icon, accent coloured on hover. `busy` dims it and
@@ -799,8 +893,12 @@ mod tests {
         );
         assert_eq!(header_subtitle(None), format!("Version {VERSION}"));
         assert_eq!(
+            clipboard_summary(None),
+            format!("DegenView {VERSION} ({BUILD_ID})")
+        );
+        assert_eq!(
             clipboard_summary(Some(ms)),
-            format!("DegenView {VERSION} · built 11 Oct 2026 at 02:14")
+            format!("DegenView {VERSION} ({BUILD_ID}) · built 11 Oct 2026 at 02:14")
         );
     }
 
@@ -809,7 +907,7 @@ mod tests {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert!(!show(ui, &UpdateHost::default()));
+            assert_eq!(show(ui, &UpdateHost::default()), Outcome::default());
         });
         output.textures_delta.clear();
     }
@@ -879,6 +977,13 @@ mod tests {
     }
 
     #[test]
+    fn the_channel_warning_draws_headlessly() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), channel_warning);
+        output.textures_delta.clear();
+    }
+
+    #[test]
     fn the_card_says_what_happened() {
         let failed = card(&view(Phase::InstallFailed {
             version: "9.9.9".to_owned(),
@@ -940,7 +1045,9 @@ mod tests {
         ] {
             let host = UpdateHost::at_phase(&phase);
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                assert!(!update_status_card(ui, &host), "{phase:?}");
+                let mut channel = None;
+                assert!(!update_status_card(ui, &host, &mut channel), "{phase:?}");
+                assert_eq!(channel, None);
             });
             output.textures_delta.clear();
         }

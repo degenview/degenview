@@ -4,6 +4,7 @@
 #   tools/release.sh 0.1.3            ask before doing anything
 #   tools/release.sh 0.1.3 --yes      no prompt
 #   tools/release.sh 0.1.3 --dry-run  print what would happen, change nothing
+#   tools/release.sh 0.2.0-rc.1       a release candidate: only the Release Candidate channel gets it
 #
 # Cargo.toml is the single source of the app's version (Settings > About, the update check, the
 # app bundle's Info.plist). Pushing the tag starts the Release workflow, which refuses a tag that
@@ -13,7 +14,7 @@ set -eu
 cd "$(dirname "$0")/.."
 
 usage() {
-    echo "usage: tools/release.sh <X.Y.Z[-prerelease]> [--yes] [--dry-run]" >&2
+    echo "usage: tools/release.sh <X.Y.Z[-(alpha|beta|rc).N]> [--yes] [--dry-run]" >&2
     exit 2
 }
 
@@ -31,8 +32,10 @@ done
 [ -n "$version" ] || usage
 
 version="${version#v}"
-if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$'; then
-    echo "error: '$version' is not X.Y.Z or X.Y.Z-prerelease" >&2
+# SemVer, with dotted numbered prereleases so they order numerically (rc.10 after rc.2): the app's
+# update channels read the name (rc) and compare the number.
+if ! printf '%s\n' "$version" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|beta|rc)\.[1-9][0-9]*)?$'; then
+    echo "error: '$version' is not X.Y.Z or X.Y.Z-(alpha|beta|rc).N (N from 1, no leading zeros)" >&2
     exit 1
 fi
 tag="v$version"
@@ -48,9 +51,21 @@ fi
 core() { printf '%s\n' "${1%%-*}"; }
 newest=$(printf '%s\n%s\n' "$(core "$current")" "$(core "$version")" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
 if [ "$(core "$version")" = "$(core "$current")" ]; then
-    # Only a pre-release can be followed by its own release (0.2.0-rc1 -> 0.2.0).
+    # Only a pre-release can be followed by its own release (0.2.0-rc.1 -> 0.2.0), or by a later
+    # one (rc.1 -> rc.2, rc.9 -> rc.10, alpha -> beta -> rc).
     case "$current" in
-        *-*) [ "$version" != "$current" ] || { echo "error: already at $current" >&2; exit 1; } ;;
+        *-*)
+            [ "$version" != "$current" ] || { echo "error: already at $current" >&2; exit 1; }
+            case "$version" in
+                *-*)
+                    # name.number: names order alphabetically (alpha < beta < rc), numbers numerically.
+                    cur_name="${current#*-}"; cur_name="${cur_name%%.*}"; cur_num="${current##*.}"
+                    new_name="${version#*-}"; new_name="${new_name%%.*}"; new_num="${version##*.}"
+                    if [ "$new_name" \< "$cur_name" ] || { [ "$new_name" = "$cur_name" ] && [ "$new_num" -le "$cur_num" ]; }; then
+                        echo "error: $version is not newer than the current version $current" >&2
+                        exit 1
+                    fi ;;
+            esac ;;
         *) echo "error: $version is not newer than the current version $current" >&2; exit 1 ;;
     esac
 elif [ "$newest" != "$(core "$version")" ]; then
@@ -89,7 +104,12 @@ if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
     exit 1
 fi
 
-echo "Release $tag"
+case "$version" in
+    *-rc.*) channel="Release Candidate channel only" ;;
+    *-*) channel="no channel (the app's updater ignores alpha/beta tags)" ;;
+    *) channel="Stable and Release Candidate channels" ;;
+esac
+echo "Release $tag ($channel)"
 echo "  1. Cargo.toml / Cargo.lock: $current -> $version"
 echo "  2. commit 'Release $tag' on branch release/$tag, open a PR, merge it with a merge commit"
 echo "  3. signed tag $tag on the merged main (verified locally), then git push origin $tag"

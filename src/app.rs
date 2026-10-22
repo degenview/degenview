@@ -690,6 +690,7 @@ impl DegenViewApp {
         let portfolio = Arc::new(Mutex::new(PortfolioHost::load(store.clone())));
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         let snapshots = SnapshotHost::load(store.clone());
+        let updates = UpdateHost::load(&store);
         let webhook_host = Arc::new(Mutex::new(WebhookHost::new(snapshots.clone())));
         let mcp_host = {
             let ctx = creation.egui_ctx.clone();
@@ -844,7 +845,7 @@ impl DegenViewApp {
             chart_datasets: Arc::new(Mutex::new(std::collections::HashMap::new())),
             script_webhooks: Arc::new(Mutex::new(None)),
             alerts_open,
-            updates: UpdateHost::new(),
+            updates,
             sync,
             script_signature: 0,
             alert_editor,
