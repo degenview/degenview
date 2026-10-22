@@ -277,6 +277,41 @@ mod tests {
     }
 
     #[test]
+    fn every_tools_template_and_default_keep_its_levels_and_settings() {
+        let store = shared();
+        let mut templates = DrawingTemplateStore::new(store.clone());
+        for tool in Tool::GROUPED {
+            let mut custom = tool.default_style();
+            custom.pitchfork_levels[2].ratio = 0.45;
+            custom.pitchfork_levels[2].line.enabled = true;
+            custom.channel_levels[1].line.enabled = true;
+            custom.regression.upper_dev = 1.25;
+            custom.regression.pearson = false;
+            custom.use_one_color = true;
+            custom.text.size = 20.0;
+            templates
+                .save("Mine", tool, &custom)
+                .unwrap_or_else(|error| panic!("{tool:?}: {error}"));
+            templates.set_default(tool, &custom).unwrap();
+        }
+        // A new session reads every one back, for the tool it was saved for.
+        let mut again = DrawingTemplateStore::new(store);
+        again.refresh(Instant::now() + REFRESH_AFTER);
+        for tool in Tool::GROUPED {
+            let saved = again.book().for_tool(tool);
+            assert_eq!(saved.len(), 1, "{tool:?}");
+            let style = saved[0].style;
+            assert_eq!(style.pitchfork_levels[2].ratio, 0.45, "{tool:?}");
+            assert!(style.channel_levels[1].line.enabled && style.use_one_color);
+            assert_eq!(style.regression.upper_dev, 1.25);
+            assert!(!style.regression.pearson);
+            assert_eq!(again.defaults()[&tool], style, "{tool:?}");
+        }
+        // And a new Ray starts from what its default says, not the built-in look.
+        assert_eq!(again.defaults()[&Tool::Ray].text.size, 20.0);
+    }
+
+    #[test]
     fn templates_persist_and_a_new_session_reads_them_back() {
         let store = shared();
         let mut templates = DrawingTemplateStore::new(store.clone());

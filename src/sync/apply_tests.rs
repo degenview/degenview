@@ -1114,6 +1114,186 @@ fn an_unreadable_future_drawing_travels_untouched() {
     );
 }
 
+/// A layout holding one chart whose drawings are `drawings`, as stored.
+fn layout_of(id: u64, name: &str, drawings: &[crate::model::Drawing]) -> Raw {
+    let mut row = layout(id, name, &[(1, "BTC", &[])]).0;
+    row["charts"][0]["drawings"] = Value::Array(
+        drawings
+            .iter()
+            .map(|drawing| serde_json::to_value(drawing).unwrap())
+            .collect(),
+    );
+    assert!(
+        crate::store::sync::row_decodes("saved_view", &row.to_string()),
+        "the layout decodes"
+    );
+    Raw(row)
+}
+
+/// One drawing of every line, channel and pitchfork tool, with a style that uses every new
+/// setting and text where the tool takes it.
+fn every_line_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..4)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + index as f64 * 7.5,
+        })
+        .collect();
+    Tool::line_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.pitchfork_levels[3].line.enabled = true;
+            style.pitchfork_levels[3].ratio = 0.7;
+            style.channel_levels[0].line.enabled = true;
+            style.regression.upper_dev = 1.5;
+            style.use_one_color = true;
+            style.time_label = true;
+            style.text.orientation = crate::model::drawing_style::TextOrientation::Vertical;
+            let mut drawing =
+                Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap();
+            drawing.set_text("a note\non two lines");
+            drawing
+        })
+        .collect()
+}
+
+#[test]
+fn every_line_channel_and_pitchfork_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_line_tool();
+    assert_eq!(drawings.len(), 17);
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: nothing about the new tools needed a record of its own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 17);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        // And it still reads as the drawing it was.
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+    // Changing one level of one fork uploads that drawing and nothing else.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let fork = edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::Pitchfork))
+        .unwrap();
+    let mut style = *fork.style().unwrap();
+    style.pitchfork_levels[3].ratio = 0.9;
+    fork.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Lines", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let pitchfork = on_b[0]["charts"][0]["drawings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|drawing| drawing["Shape"]["geometry"]["pitchfork"]["variant"] == "standard")
+        .unwrap();
+    assert_eq!(
+        pitchfork["Shape"]["style"]["pitchfork_levels"][3]["ratio"],
+        json!(0.9f32 as f64)
+    );
+}
+
+#[test]
+fn a_trend_line_gaining_text_syncs_as_the_form_that_keeps_it_and_losing_it_restores_the_original() {
+    use crate::model::{Anchor, Drawing, Tool};
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let mut line = Drawing::build(
+        Tool::TrendLine,
+        1,
+        &[
+            Anchor {
+                time_ms: 1,
+                price: 1.0,
+            },
+            Anchor {
+                time_ms: 2,
+                price: 2.0,
+            },
+        ],
+        Tool::TrendLine.default_style(),
+    )
+    .unwrap();
+    let plain = serde_json::to_value(&line).unwrap();
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
+        plain,
+        "a plain line crosses as the original form, byte for byte"
+    );
+    let before = cloud.save_attempts();
+    line.set_text("support");
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let received = &on_b[0]["charts"][0]["drawings"][0];
+    assert_eq!(received["Shape"]["text"], "support");
+    assert_eq!(
+        serde_json::from_value::<Drawing>(received.clone()).unwrap(),
+        line
+    );
+    line.set_text("");
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
+        plain,
+        "clearing the text returns the stored row to what it was"
+    );
+}
+
+#[test]
+fn deleting_a_line_tool_drawing_propagates_and_an_unrelated_one_stays() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_line_tool();
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings)]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings[1..])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        16
+    );
+    // The drawings agree; the rows differ only in what stays per Mac (autosave, last opened).
+    assert_eq!(
+        rows(&a, "saved_view")[0]["charts"][0]["drawings"],
+        on_b[0]["charts"][0]["drawings"]
+    );
+}
+
 // MARK: Alerts
 
 use crate::model::alert::{
