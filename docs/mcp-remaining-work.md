@@ -79,8 +79,10 @@ permission alone: no confirmation step (item 3 would add one for all high-impact
 Reading candles and drawing trend lines and rectangles are done (phase 7).
 
 - Only trend lines and rectangles can be created or edited. Fib, arrows, text, brushes, circles and
-  the rest are listed read-only (`editable: false`). There is no horizontal-line or ray tool in the
-  app; a horizontal level is a trend line with equal prices.
+  the rest are listed read-only (`editable: false`), including the app's horizontal and vertical
+  lines, rays, channels, regression trend and pitchforks (they can be deleted over MCP). Creating
+  them needs an argument shape with one to four anchors and per-tool settings; until then a
+  horizontal level made over MCP is a trend line with equal prices.
 - `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).
   DegenView fetches older history only as the chart is scrolled back, so an agent cannot ask for
   more; `has_older_loaded` and `older_history_available` say what is possible.
