@@ -79,22 +79,6 @@ impl SettingsSection {
         }
     }
 
-    /// The sidebar badge colour, as in the system Settings app.
-    pub fn tint(self) -> Color32 {
-        match self {
-            Self::Appearance => Color32::from_rgb(94, 92, 230),
-            Self::Alpaca => Color32::from_rgb(255, 159, 10),
-            Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
-            Self::Notifications => Color32::from_rgb(255, 69, 58),
-            Self::Webhooks => Color32::from_rgb(48, 176, 199),
-            Self::Snapshots => Color32::from_rgb(255, 55, 95),
-            Self::Storage => Color32::from_rgb(52, 199, 89),
-            Self::Mcp => Color32::from_rgb(191, 90, 242),
-            Self::Sync => Color32::from_rgb(64, 156, 255),
-            Self::About => Color32::from_rgb(142, 142, 147),
-        }
-    }
-
     /// The stable name the selection is remembered under.
     pub fn key(self) -> &'static str {
         match self {
@@ -309,18 +293,23 @@ const FOOTER_HEIGHT: f32 = 56.0;
 const INSET: f32 = 24.0;
 
 impl SettingsSection {
-    fn icon(self) -> Icon {
+    /// The glossy artwork shown in the sidebar and at the top of the page.
+    fn image(self) -> egui::ImageSource<'static> {
         match self {
-            Self::Appearance => Icon::Paintbrush,
-            Self::Alpaca => Icon::ChartLine,
-            Self::CoinMarketCap => Icon::Gauge,
-            Self::Notifications => Icon::BellBadge,
-            Self::Webhooks => Icon::ArrowUpRightSquare,
-            Self::Snapshots => Icon::Camera,
-            Self::Storage => Icon::Layers,
-            Self::Mcp => Icon::LockFill,
-            Self::Sync => Icon::Cycle,
-            Self::About => Icon::InfoCircle,
+            Self::Appearance => egui::include_image!("../../assets/settings_icons/appearance.png"),
+            Self::Alpaca => egui::include_image!("../../assets/settings_icons/alpaca.png"),
+            Self::CoinMarketCap => {
+                egui::include_image!("../../assets/settings_icons/coinmarketcap.png")
+            }
+            Self::Notifications => {
+                egui::include_image!("../../assets/settings_icons/notifications.png")
+            }
+            Self::Webhooks => egui::include_image!("../../assets/settings_icons/webhooks.png"),
+            Self::Snapshots => egui::include_image!("../../assets/settings_icons/snapshots.png"),
+            Self::Storage => egui::include_image!("../../assets/settings_icons/storage.png"),
+            Self::Mcp => egui::include_image!("../../assets/settings_icons/mcp.png"),
+            Self::Sync => egui::include_image!("../../assets/settings_icons/sync.png"),
+            Self::About => egui::include_image!("../../assets/settings_icons/about.png"),
         }
     }
 }
@@ -559,24 +548,7 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
             Pos2::new(rect.left() + 8.0 + 12.0, rect.center().y),
             Vec2::splat(24.0),
         );
-        // The tint as a soft top-to-bottom gradient, like `.gradient`.
-        painter.rect_filled(badge, 6.0, section.tint());
-        painter.rect_filled(
-            Rect::from_min_max(badge.min, Pos2::new(badge.max.x, badge.center().y)),
-            egui::CornerRadius {
-                nw: 6,
-                ne: 6,
-                sw: 0,
-                se: 0,
-            },
-            Color32::from_white_alpha(28),
-        );
-        icons::paint(
-            painter,
-            Rect::from_center_size(badge.center(), Vec2::splat(13.0)),
-            section.icon(),
-            Color32::WHITE,
-        );
+        egui::Image::new(section.image()).paint_at(ui, badge);
         let title = kit::galley(
             ui,
             section.title(),
@@ -625,7 +597,7 @@ fn page_shell(
                 .show(ui, |ui| {
                     ui.set_width(body_rect.width() - INSET * 2.0 - 8.0);
                     ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
-                    page_header(ui, section.icon(), section.title(), subtitle);
+                    page_header(ui, section.image(), section.title(), subtitle);
                     ui.add_space(18.0);
                     body(ui);
                 });
@@ -647,18 +619,16 @@ fn page_shell(
     })
 }
 
-/// `SheetHeader`: an accent badge, the page title and a one-line description.
-pub(super) fn page_header(ui: &mut egui::Ui, icon: Icon, title: &str, subtitle: &str) {
+/// `SheetHeader`: the section's artwork, the page title and a one-line description.
+pub(super) fn page_header(
+    ui: &mut egui::Ui,
+    image: egui::ImageSource<'static>,
+    title: &str,
+    subtitle: &str,
+) {
     let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::hover());
     let badge = Rect::from_min_size(row.min, Vec2::splat(46.0));
-    ui.painter()
-        .rect_filled(badge, 12.0, theme::with_alpha(kit::ACCENT, 0.14));
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(badge.center(), Vec2::splat(20.0)),
-        icon,
-        kit::ACCENT,
-    );
+    egui::Image::new(image).paint_at(ui, badge);
     let left = badge.right() + 14.0;
     let width = row.right() - left;
     let title = kit::galley(
@@ -907,19 +877,6 @@ mod tests {
         assert_eq!(
             SettingsSection::ALL[SettingsSection::ALL.len() - 1],
             SettingsSection::About
-        );
-        let tints: std::collections::HashSet<_> = SettingsSection::ALL
-            .iter()
-            .map(|section| section.tint())
-            .collect();
-        assert_eq!(
-            tints.len(),
-            SettingsSection::ALL.len(),
-            "each badge is distinct"
-        );
-        assert_ne!(
-            SettingsSection::Notifications.tint(),
-            SettingsSection::Webhooks.tint()
         );
     }
 
