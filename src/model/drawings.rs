@@ -1015,13 +1015,18 @@ impl Drawing {
         };
     }
 
-    /// Whether the drawing can carry text.
-    pub fn takes_text(&self) -> bool {
-        match self {
-            Self::Shape { geometry, .. } => geometry.tool().caps().has(super::Caps::TEXT),
-            Self::TrendLine { .. } => true,
-            _ => false,
-        }
+    /// Whether the drawing's text rides on a line or a channel (the trend line, the tools of its
+    /// menu, and the channels). That text is edited in place on the chart; the text of a shape or
+    /// an arrow is edited in the dialog, as it always was.
+    pub fn text_on_line(&self) -> bool {
+        use super::drawing_tool::ToolGroup;
+        self.tool().is_some_and(|tool| {
+            tool.caps().has(super::Caps::TEXT)
+                && matches!(
+                    tool.spec().group,
+                    ToolGroup::TrendLines | ToolGroup::Channels
+                )
+        })
     }
 
     /// Every anchor in placement order.
@@ -1526,7 +1531,7 @@ mod tests {
         }
         assert_eq!(texted.text(), "keep");
         assert!(texted.locked());
-        assert!(texted.takes_text());
+        assert!(texted.text_on_line());
     }
 
     #[test]

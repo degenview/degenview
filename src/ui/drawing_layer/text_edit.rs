@@ -15,8 +15,10 @@ use eframe::egui::{
     self, Align2, Event, FontId, Id, Key, Margin, Order, Pos2, Stroke, TextEdit, Ui,
 };
 
-/// How close (px) a click must be to the text's box to be on it.
-const TEXT_SLACK: f32 = 4.0;
+/// How close (px) a click must be to the text's box to be on it. Almost none: the text sits a few
+/// pixels from its line, and a click on the line itself is the line's (a double-click there opens
+/// its properties).
+const TEXT_SLACK: f32 = 1.0;
 /// The width (px) the editor starts at; longer text wraps within it.
 const EDITOR_WIDTH: f32 = 200.0;
 
@@ -44,7 +46,7 @@ impl DrawingLayer {
             .drawings
             .iter()
             .find(|drawing| drawing.id() == id)
-            .filter(|drawing| !drawing.locked() && drawing.takes_text() && frame.shows(drawing))
+            .filter(|drawing| !drawing.locked() && drawing.text_on_line() && frame.shows(drawing))
         else {
             return false;
         };
@@ -78,7 +80,9 @@ impl DrawingLayer {
             .drawings
             .iter()
             .find(|drawing| drawing.id() == id)
-            .filter(|drawing| !drawing.locked() && drawing.takes_text() && frame.shows(drawing))?;
+            .filter(|drawing| {
+                !drawing.locked() && drawing.text_on_line() && frame.shows(drawing)
+            })?;
         self.text_boxes
             .get(&id)?
             .contains(point, TEXT_SLACK)

@@ -492,9 +492,16 @@ impl DrawingLayer {
                     };
                     let style = drawing.style().copied().unwrap_or_default();
                     let tolerance = HIT_TOLERANCE + style.stroke.width / 2.0;
-                    screen
-                        .hits_body(pointer, tolerance, style.fill.enabled)
-                        .then_some(Part::Body)
+                    // A trend line's ends can be grabbed without selecting it first, as they
+                    // always could, whether or not it has text.
+                    let end = (drawing.tool() == Some(Tool::TrendLine))
+                        .then(|| screen.handle_at(pointer, HANDLE_REACH))
+                        .flatten();
+                    end.or_else(|| {
+                        screen
+                            .hits_body(pointer, tolerance, style.fill.enabled)
+                            .then_some(Part::Body)
+                    })
                 }
                 _ => hit_legacy(drawing, pointer, proj),
             };
@@ -1102,6 +1109,7 @@ impl DrawingLayer {
         for stored in frame.drawings {
             live.insert(stored.id());
             if !frame.shows(stored) {
+                self.text_boxes.remove(&stored.id());
                 continue;
             }
             let drawing = match (editing.get(&stored.id()), frame.preview) {
@@ -1254,12 +1262,14 @@ impl DrawingLayer {
                 } else {
                     self.screen(drawing, proj)
                 };
-                let Some(screen) = screen else {
+                // Nothing showing means nothing to click: forget where the text was.
+                let Some(screen) = screen.filter(|screen| screen.bounds.intersects(proj.plot))
+                else {
+                    if !draft {
+                        self.text_boxes.remove(&drawing.id());
+                    }
                     return;
                 };
-                if !screen.bounds.intersects(proj.plot) {
-                    return;
-                }
                 if !draft {
                     self.tags.extend(screen.tags.iter().copied());
                 }
@@ -1269,7 +1279,7 @@ impl DrawingLayer {
                     .is_some_and(|editing| editing.id == drawing.id())
                 {
                     draw::TextMode::Editing
-                } else if with_handles && !draft && !drawing.locked() && drawing.takes_text() {
+                } else if with_handles && !draft && !drawing.locked() && drawing.text_on_line() {
                     draw::TextMode::Invite
                 } else {
                     draw::TextMode::Text
@@ -1295,7 +1305,12 @@ impl DrawingLayer {
                         }
                     }
                 }
-                if with_handles && !drawing.locked() {
+                // A trend line shows its ends while hovered as well, as it always did.
+                let hover_handles = emphasized
+                    && !draft
+                    && !drawing.locked()
+                    && drawing.tool() == Some(Tool::TrendLine);
+                if (with_handles || hover_handles) && !drawing.locked() {
                     let color = drawing
                         .style()
                         .map_or(Color32::WHITE, |style| {

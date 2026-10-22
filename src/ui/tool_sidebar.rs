@@ -1170,7 +1170,7 @@ mod tests {
         for (name, corner) in [("menu-lines", LINES_CORNER), ("menu-shapes", CORNER)] {
             let mut screen = Screen::new(vec2(420.0, 700.0));
             let input = state();
-            let mut run = |screen: &mut Screen, events: Vec<egui::Event>| {
+            let run = |screen: &mut Screen, events: Vec<egui::Event>| {
                 screen.run(events, |ui| {
                     ui.scope_builder(
                         egui::UiBuilder::new()

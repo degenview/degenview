@@ -1720,6 +1720,87 @@ fn placing_a_drawing_while_everything_is_hidden_shows_everything_again() {
 }
 
 #[test]
+fn an_end_of_an_unselected_trend_line_reshapes_it_without_selecting_it_first() {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    rig.click(POINTS[0]);
+    rig.click(POINTS[1]);
+    rig.tool = Tool::Cursor;
+    rig.selected.clear();
+    rig.settle();
+    let before = rig.last().anchors();
+    rig.drag(POINTS[1], POINTS[1] + vec2(60.0, 40.0));
+    let after = rig.last().anchors();
+    assert_eq!(after[0], before[0], "the other end stays");
+    assert_ne!(after[1], before[1], "the end under the pointer moved");
+    // A line with text behaves the same: it is one tool in two stored forms.
+    let mut texted = rig.last().clone();
+    texted.set_text("note");
+    rig.drawings[0] = texted;
+    rig.selected.clear();
+    rig.settle();
+    let end = rig.px(rig.last().anchors()[1]);
+    let before = rig.last().anchors();
+    rig.drag(end, end + vec2(-50.0, 30.0));
+    assert_eq!(rig.last().anchors()[0], before[0]);
+    assert_ne!(rig.last().anchors()[1], before[1]);
+    assert_eq!(rig.last().text(), "note");
+}
+
+#[test]
+fn the_text_of_a_shape_is_still_edited_in_the_dialog_not_in_place() {
+    for tool in [
+        Tool::Rectangle,
+        Tool::Circle,
+        Tool::Arrow,
+        Tool::ArrowMarkUp,
+    ] {
+        let mut rig = Rig::new();
+        rig.place(tool);
+        rig.tool = Tool::Cursor;
+        rig.selected = vec![rig.last().id()];
+        rig.settle();
+        assert!(!rig.last().text_on_line(), "{tool:?}");
+        assert!(
+            rig.layer.text_boxes.is_empty(),
+            "{tool:?} offers no invitation"
+        );
+        let id = rig.last().id();
+        let middle = rig
+            .px(rig.last().anchors()[0])
+            .lerp(rig.px(*rig.last().anchors().last().unwrap()), 0.5);
+        rig.click(middle);
+        assert!(!rig.layer.is_editing_text(), "{tool:?}");
+        assert_eq!(rig.selected, vec![id]);
+    }
+}
+
+#[test]
+fn a_double_click_on_a_selected_line_still_opens_its_properties() {
+    let (mut rig, id) = line_awaiting_text();
+    let middle = POINTS[0].lerp(POINTS[1], 0.5);
+    rig.opened = None;
+    rig.double_click(middle);
+    assert_eq!(rig.opened, Some(id));
+    assert!(
+        !rig.layer.is_editing_text(),
+        "the text sits beside the line"
+    );
+}
+
+#[test]
+fn text_that_scrolled_out_of_the_plot_is_not_clickable_where_it_was() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    // Scroll the price axis so the line is far above the plot.
+    rig.scale.minimum += 400.0;
+    rig.scale.maximum += 400.0;
+    rig.settle();
+    assert!(!rig.layer.text_boxes.contains_key(&id));
+    rig.click(place);
+    assert!(!rig.layer.is_editing_text());
+}
+
+#[test]
 fn a_line_at_one_price_offers_an_alert_there_and_a_sloped_line_none() {
     for tool in [Tool::HorizontalLine, Tool::HorizontalRay, Tool::Crossline] {
         let mut rig = Rig::with_tool(tool);
@@ -1925,7 +2006,7 @@ fn a_locked_line_offers_no_text_and_a_drawing_that_cannot_hold_text_none() {
     rig.selected = vec![rig.last().id()];
     rig.settle();
     assert!(rig.layer.text_boxes.is_empty());
-    assert!(!rig.last().takes_text());
+    assert!(!rig.last().text_on_line());
 }
 
 #[test]

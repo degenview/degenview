@@ -183,7 +183,7 @@ impl DrawingLayer {
                                 if drawing.tool().is_some_and(|tool| !tool.caps().is_empty()) {
                                     divider(ui);
                                 }
-                                if drawing.takes_text()
+                                if drawing.text_on_line()
                                     && icons::button(
                                         ui,
                                         Icon::TextFormat,
@@ -392,7 +392,7 @@ impl DrawingLayer {
                     Action::Alert,
                 );
             }
-            if let Some(drawing) = first.filter(|d| single && d.takes_text()) {
+            if let Some(drawing) = first.filter(|d| single && d.text_on_line()) {
                 item(
                     ui,
                     Icon::TextFormat,
@@ -775,8 +775,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         next.fill.enabled = true;
     }
     // A drawing with text has its colour at hand; the rest of the text's look is in Settings.
-    if caps.has(Caps::TEXT)
-        && caps.has(Caps::WIDTH)
+    if drawing.text_on_line()
         && !drawing.text().is_empty()
         && let Some(picked) = kit::color_well(
             ui,

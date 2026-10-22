@@ -78,16 +78,3 @@ impl Drop for Screen {
         self.textures.clear();
     }
 }
-
-/// Runs `body` for a few frames on a fresh `size` screen and writes the last as `name`.png.
-pub(crate) fn render(name: &str, size: Vec2, mut body: impl FnMut(&mut egui::Ui)) {
-    if gallery_dir().is_none() {
-        return;
-    }
-    let mut screen = Screen::new(size);
-    let mut last = None;
-    for _ in 0..4 {
-        last = Some(screen.run(Vec::new(), &mut body));
-    }
-    screen.save(name, last.expect("a frame"));
-}
