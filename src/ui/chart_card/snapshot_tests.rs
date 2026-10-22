@@ -502,3 +502,105 @@ fn snapshot_cost() {
         );
     }
 }
+
+// MARK: A look at the new tools
+
+/// The lines, channels and pitchforks on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_lines_channels_and_pitchforks() {
+    use crate::model::{Anchor, Placement};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    // Anchors in the last stretch of `series(300)`: bars 215..290, prices around 200..270.
+    let anchors = [
+        at(236, 230.0),
+        at(262, 262.0),
+        at(250, 218.0),
+        at(285, 240.0),
+    ];
+    let make = |tool: Tool, id: u64, text: &str| {
+        let count = match tool.spec().placement {
+            Placement::Points(count) => usize::from(count),
+            _ => 1,
+        };
+        let mut drawing =
+            Drawing::build(tool, id, &anchors[..count], tool.default_style()).expect("builds");
+        drawing.set_text(text);
+        drawing
+    };
+    let sets: [(&str, Vec<(Tool, &str)>); 5] = [
+        (
+            "lines-1",
+            vec![
+                (Tool::TrendLine, "support"),
+                (Tool::Ray, ""),
+                (Tool::InfoLine, ""),
+            ],
+        ),
+        (
+            "lines-2",
+            vec![
+                (Tool::ExtendedLine, "extended"),
+                (Tool::TrendAngle, ""),
+                (Tool::HorizontalLine, "level"),
+                (Tool::VerticalLine, "event"),
+            ],
+        ),
+        (
+            "lines-3",
+            vec![(Tool::HorizontalRay, "ray"), (Tool::Crossline, "")],
+        ),
+        (
+            "channels",
+            vec![
+                (Tool::ParallelChannel, "channel"),
+                (Tool::RegressionTrend, ""),
+            ],
+        ),
+        (
+            "channels-2",
+            vec![(Tool::FlatChannel, "flat"), (Tool::DisjointChannel, "")],
+        ),
+    ];
+    let forks: Vec<(String, Vec<(Tool, &str)>)> = [
+        Tool::Pitchfork,
+        Tool::SchiffPitchfork,
+        Tool::ModifiedSchiffPitchfork,
+        Tool::InsidePitchfork,
+    ]
+    .into_iter()
+    .map(|tool| (format!("fork-{tool:?}"), vec![(tool, "")]))
+    .collect();
+    let all: Vec<(String, Vec<(Tool, &str)>)> = sets
+        .into_iter()
+        .map(|(name, tools)| (name.to_owned(), tools))
+        .chain(forks)
+        .collect();
+    for (name, tools) in all {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = tools
+            .iter()
+            .enumerate()
+            .map(|(index, (tool, text))| make(*tool, index as u64 + 1, text))
+            .collect();
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let scene = harness
+            .card
+            .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
+    }
+}

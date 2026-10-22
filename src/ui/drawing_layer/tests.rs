@@ -1718,3 +1718,190 @@ fn placing_a_drawing_while_everything_is_hidden_shows_everything_again() {
     shown.click(POINTS[1]);
     assert!(!shown.reveal_all);
 }
+
+// MARK: Text on a line
+
+/// A trend line, placed and selected, with the crosshair back and its text place painted.
+fn line_awaiting_text() -> (Rig, u64) {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    rig.click(POINTS[0]);
+    rig.click(POINTS[1]);
+    rig.tool = Tool::Cursor;
+    let id = rig.last().id();
+    rig.selected = vec![id];
+    rig.settle();
+    (rig, id)
+}
+
+/// Where the text place of drawing `id` is, as the painter last laid it out.
+fn text_place(rig: &Rig, id: u64) -> Pos2 {
+    rig.layer.text_boxes.get(&id).expect("a text place").center
+}
+
+/// Types `text` into the editor that is open and presses Return.
+fn type_and_keep(rig: &mut Rig, text: &str) {
+    rig.settle();
+    rig.frame(vec![Event::Text(text.to_owned())]);
+    rig.settle();
+    rig.key(Key::Enter);
+    rig.settle();
+}
+
+#[test]
+fn a_selected_line_invites_text_and_a_click_on_the_invitation_opens_the_editor() {
+    let (mut rig, id) = line_awaiting_text();
+    assert!(!rig.layer.is_editing_text());
+    let place = text_place(&rig, id);
+    rig.click(place);
+    assert!(rig.layer.is_editing_text());
+    assert_eq!(
+        rig.selected,
+        vec![id],
+        "the line stays selected while it is typed on"
+    );
+    assert_eq!(rig.drawings.len(), 1);
+}
+
+#[test]
+fn typed_text_is_kept_by_return_as_one_undo_step_and_the_line_keeps_its_form_in_the_row() {
+    let (mut rig, id) = line_awaiting_text();
+    let steps = rig.undo_steps;
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("sup".to_owned())]);
+    rig.frame(vec![Event::Text("port".to_owned())]);
+    assert_eq!(rig.undo_steps, steps, "nothing is written while typing");
+    assert_eq!(rig.last().text(), "");
+    rig.key(Key::Enter);
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+    assert_eq!(rig.last().text(), "support");
+    assert_eq!(rig.undo_steps, steps + 1, "one edit, one step");
+    assert_eq!(rig.last().id(), id);
+    assert_eq!(rig.last().tool(), Some(Tool::TrendLine));
+    // The text now shows where it was invited, and a click on it edits it again.
+    let place = text_place(&rig, id);
+    rig.click(place);
+    assert!(rig.layer.is_editing_text());
+}
+
+#[test]
+fn escape_drops_the_edit_and_is_spent_on_it() {
+    let (mut rig, id) = line_awaiting_text();
+    let steps = rig.undo_steps;
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("never".to_owned())]);
+    rig.escape_consumed = false;
+    rig.key(Key::Escape);
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+    assert_eq!(rig.last().text(), "");
+    assert_eq!(rig.undo_steps, steps);
+    assert!(rig.escape_consumed, "so it does not also deselect the line");
+    assert_eq!(rig.selected, vec![id]);
+}
+
+#[test]
+fn keys_typed_into_the_editor_do_not_reach_the_chart() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("x".to_owned())]);
+    rig.key(Key::Backspace);
+    rig.key(Key::Delete);
+    assert_eq!(
+        rig.drawings.len(),
+        1,
+        "Delete and Backspace edit the text, not the chart"
+    );
+    assert!(rig.layer.is_editing_text());
+    // Return with the line selected and no editor open opens the properties; with it open it
+    // keeps the text instead.
+    rig.opened = None;
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.opened, None);
+}
+
+#[test]
+fn shift_return_adds_a_line_and_return_keeps_both() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("one".to_owned())]);
+    rig.modifiers = Modifiers::SHIFT;
+    rig.key(Key::Enter);
+    rig.modifiers = Modifiers::NONE;
+    rig.settle();
+    assert!(
+        rig.layer.is_editing_text(),
+        "Shift+Return does not end the edit"
+    );
+    rig.frame(vec![Event::Text("two".to_owned())]);
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.last().text(), "one\ntwo");
+}
+
+#[test]
+fn clearing_the_text_returns_the_line_to_its_original_stored_form() {
+    let (mut rig, id) = line_awaiting_text();
+    let plain = serde_json::to_value(rig.last()).unwrap();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    type_and_keep(&mut rig, "hi");
+    assert!(
+        serde_json::to_value(rig.last())
+            .unwrap()
+            .get("Shape")
+            .is_some()
+    );
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    for _ in 0..2 {
+        rig.key(Key::Backspace);
+    }
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.last().text(), "");
+    assert_eq!(serde_json::to_value(rig.last()).unwrap(), plain);
+}
+
+#[test]
+fn a_locked_line_offers_no_text_and_a_drawing_that_cannot_hold_text_none() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    let mut locked = rig.last().clone();
+    locked.set_locked(true);
+    rig.drawings[0] = locked;
+    rig.settle();
+    rig.click(place);
+    assert!(!rig.layer.is_editing_text());
+    // A triangle has no text.
+    let mut rig = Rig::with_tool(Tool::Triangle);
+    for point in &POINTS[..3] {
+        rig.click(*point);
+    }
+    rig.tool = Tool::Cursor;
+    rig.selected = vec![rig.last().id()];
+    rig.settle();
+    assert!(rig.layer.text_boxes.is_empty());
+    assert!(!rig.last().takes_text());
+}
+
+#[test]
+fn the_edit_ends_when_the_line_is_deleted_under_it() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.drawings.clear();
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+}

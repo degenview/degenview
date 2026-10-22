@@ -17,6 +17,7 @@ mod shape;
 mod snap;
 #[cfg(test)]
 mod tests;
+mod text_edit;
 
 use super::chart_card::PriceScale;
 use super::drawing_geometry as geo;
@@ -334,6 +335,8 @@ pub(super) struct DrawingLayer {
     text_boxes: HashMap<u64, draw::TextBox>,
     /// The axis tags of the drawings painted this frame, for the frame's label pass.
     tags: Vec<shape::Tag>,
+    /// The text being edited in place.
+    text_edit: Option<text_edit::TextEditing>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -911,6 +914,14 @@ impl DrawingLayer {
         }
         match frame.tool {
             Tool::Cursor => {
+                // A click on the text place of the one selected drawing edits its text, ahead of
+                // whatever line the text sits on.
+                if !modifiers.shift
+                    && let Some(id) = self.text_at(frame, point)
+                    && self.begin_text_edit(id, frame, proj)
+                {
+                    return;
+                }
                 // Shift is for building a selection: a handle under the pointer is no target.
                 let hit = self.hit_test(frame, point, proj, !modifiers.shift);
                 frame.select = Some(match (hit, modifiers.shift) {
@@ -1042,6 +1053,9 @@ impl DrawingLayer {
             Some(Gesture::Draft(_)) => Some(CursorIcon::Crosshair),
             None if !over_plot => None,
             None if frame.tool != Tool::Cursor => Some(CursorIcon::Crosshair),
+            None if pointer.is_some_and(|point| self.text_at(frame, point).is_some()) => {
+                Some(CursorIcon::Text)
+            }
             None => self.hover.map(|hit| match hit.part {
                 Part::Body => CursorIcon::Move,
                 Part::Anchor(_) => CursorIcon::Grab,
@@ -1245,6 +1259,17 @@ impl DrawingLayer {
                 if !draft {
                     self.tags.extend(screen.tags.iter().copied());
                 }
+                let text = if self
+                    .text_edit
+                    .as_ref()
+                    .is_some_and(|editing| editing.id == drawing.id())
+                {
+                    draw::TextMode::Editing
+                } else if with_handles && !draft && !drawing.locked() && drawing.takes_text() {
+                    draw::TextMode::Invite
+                } else {
+                    draw::TextMode::Text
+                };
                 let text_box = draw::paint(
                     painter,
                     &screen,
@@ -1253,6 +1278,7 @@ impl DrawingLayer {
                     draw::Emphasis {
                         halo: emphasized && !draft,
                         selected: with_handles,
+                        text,
                     },
                 );
                 if !draft {

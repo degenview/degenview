@@ -36,6 +36,7 @@ struct Target {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Action {
     Settings,
+    EditText,
     Copy,
     Duplicate,
     CopyStyle,
@@ -83,6 +84,7 @@ impl DrawingLayer {
 
     /// Draws what floats over the chart: the toolbar and the open menu.
     pub(in crate::ui) fn overlay(&mut self, ui: &Ui, proj: &Projection, frame: &mut DrawingFrame) {
+        self.show_text_editor(ui, proj, frame);
         self.toolbar(ui, proj, frame);
         self.show_menu(ui, proj, frame);
     }
@@ -107,6 +109,7 @@ impl DrawingLayer {
             || frame.preview.is_some()
             || frame.selected.is_empty()
             || self.menu.is_some()
+            || self.is_editing_text()
         {
             return;
         }
@@ -177,6 +180,22 @@ impl DrawingLayer {
                                 restyled = style_controls(ui, drawing);
                                 if drawing.tool().is_some_and(|tool| !tool.caps().is_empty()) {
                                     divider(ui);
+                                }
+                                if drawing.takes_text()
+                                    && icons::button(
+                                        ui,
+                                        Icon::TextFormat,
+                                        26.0,
+                                        theme::text_primary(),
+                                        if drawing.text().is_empty() {
+                                            "Add text"
+                                        } else {
+                                            "Edit text"
+                                        },
+                                    )
+                                    .clicked()
+                                {
+                                    action = Some(Action::EditText);
                                 }
                                 if icons::button(
                                     ui,
@@ -348,6 +367,21 @@ impl DrawingLayer {
                 false,
                 Action::Settings,
             );
+            if let Some(drawing) = first.filter(|d| single && d.takes_text()) {
+                item(
+                    ui,
+                    Icon::TextFormat,
+                    if drawing.text().is_empty() {
+                        "Add text"
+                    } else {
+                        "Edit text"
+                    },
+                    None,
+                    !drawing.locked(),
+                    false,
+                    Action::EditText,
+                );
+            }
             item(
                 ui,
                 Icon::CopyDoc,
@@ -507,6 +541,11 @@ impl DrawingLayer {
             Action::Settings => {
                 if let [drawing] = &targets[..] {
                     frame.open_properties = Some(drawing.id());
+                }
+            }
+            Action::EditText => {
+                if let [drawing] = &targets[..] {
+                    self.begin_text_edit(drawing.id(), frame, proj);
                 }
             }
             Action::Copy => {

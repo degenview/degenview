@@ -30,6 +30,21 @@ pub(super) struct Emphasis {
     pub halo: bool,
     /// Selected: handles and construction lines.
     pub selected: bool,
+    /// What the drawing's text place shows.
+    pub text: TextMode,
+}
+
+/// What a drawing's text place shows this frame.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) enum TextMode {
+    /// The drawing's text, if it has any.
+    #[default]
+    Text,
+    /// The text, or a faint "Add text" where there is none: the drawing is selected and can
+    /// take text, so the place to click is shown.
+    Invite,
+    /// Nothing: the text is being edited in place.
+    Editing,
 }
 
 fn with_alpha(color: Color32, alpha: u8) -> Color32 {
@@ -545,19 +560,31 @@ pub(super) fn paint(
     if screen.arrow.is_some() {
         draw_arrow_extras(painter, screen, drawing, style, proj, emphasis.selected);
     }
-    if style.hide_text {
+    if style.hide_text && emphasis.text != TextMode::Invite {
         return None;
     }
-    screen.text.and_then(|place| {
-        draw_text(
+    let place = screen.text?;
+    match emphasis.text {
+        TextMode::Editing => None,
+        TextMode::Invite if drawing.text().trim().is_empty() => {
+            // The same place and look as the text will have, faint, so the click lands on it.
+            let mut faint = style.text;
+            faint.color[3] = (u16::from(faint.color[3]) * 45 / 100) as u8;
+            faint.italic = true;
+            draw_text(painter, place, INVITATION, &faint, false)
+        }
+        _ => draw_text(
             painter,
             place,
             drawing.text(),
             &style.text,
             style.middle_line.enabled,
-        )
-    })
+        ),
+    }
 }
+
+/// What the empty text place of a selected drawing says.
+const INVITATION: &str = "Add text";
 
 /// The trend angle's mark: a level reference line from the left end, an arc up (or down) to the
 /// line, and the angle in degrees beside it.
