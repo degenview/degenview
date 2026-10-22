@@ -6,7 +6,7 @@
 //! canvas), and every struct decodes from an older or partial row through `#[serde(default)]`.
 
 use super::Timeframe;
-use super::chart_type::{LineDash, Rgba};
+use super::chart_type::{LineDash, PriceSource, Rgba};
 use serde::{Deserialize, Serialize};
 
 /// The thickest stroke a drawing may carry, in logical pixels.
@@ -107,6 +107,10 @@ pub struct TextStyle {
     pub italic: bool,
     pub align: HorizontalAlign,
     pub valign: VerticalAlign,
+    /// How the text is turned on a line. Only lines read it, and it stays out of every stored
+    /// row that keeps the default.
+    #[serde(skip_serializing_if = "is_default_orientation")]
+    pub orientation: TextOrientation,
 }
 
 impl Default for TextStyle {
@@ -118,8 +122,37 @@ impl Default for TextStyle {
             italic: false,
             align: HorizontalAlign::Center,
             valign: VerticalAlign::Middle,
+            orientation: TextOrientation::Along,
         }
     }
+}
+
+/// How the text on a line is turned.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextOrientation {
+    /// Turned to follow the line, never upside down.
+    #[default]
+    Along,
+    Horizontal,
+    /// Read from the bottom up.
+    Vertical,
+}
+
+impl TextOrientation {
+    pub const ALL: [Self; 3] = [Self::Along, Self::Horizontal, Self::Vertical];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Along => "Along the line",
+            Self::Horizontal => "Horizontal",
+            Self::Vertical => "Vertical",
+        }
+    }
+}
+
+fn is_default_orientation(value: &TextOrientation) -> bool {
+    *value == TextOrientation::Along
 }
 
 /// What one end of a line looks like.
@@ -205,6 +238,137 @@ impl ArrowStats {
     }
 }
 
+/// How many extra lines a pitchfork can carry besides its median.
+pub const PITCHFORK_LEVELS: usize = 9;
+/// How many extra lines a parallel channel can carry besides its two edges and its middle line.
+pub const CHANNEL_LEVELS: usize = 4;
+/// The most a level may sit from the median or the base, as a ratio.
+pub const MAX_LEVEL_RATIO: f32 = 100.0;
+/// The most standard deviations a regression band may sit from its base line.
+pub const MAX_DEVIATION: f32 = 50.0;
+
+/// One extra line of a channel or a pitchfork: where it sits, as a ratio of the construction's
+/// width, and how it is drawn. A pitchfork draws it on both sides of the median.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct Level {
+    pub ratio: f32,
+    pub line: MiddleLine,
+}
+
+impl Default for Level {
+    fn default() -> Self {
+        Self {
+            ratio: 1.0,
+            line: MiddleLine::default(),
+        }
+    }
+}
+
+fn level(ratio: f32, color: Rgba, enabled: bool) -> Level {
+    Level {
+        ratio,
+        line: MiddleLine {
+            enabled,
+            color,
+            width: 2.0,
+            dash: LineDash::Solid,
+        },
+    }
+}
+
+/// The pitchfork's levels as the Charting Library draws a new one: 0.5 and 1 on, the rest
+/// off until the user asks for them.
+pub fn default_pitchfork_levels() -> [Level; PITCHFORK_LEVELS] {
+    [
+        level(0.25, [255, 183, 77, 255], false),
+        level(0.382, [129, 199, 132, 255], false),
+        level(0.5, [8, 153, 129, 255], true),
+        level(0.618, [8, 153, 129, 255], false),
+        level(0.75, [0, 188, 212, 255], false),
+        level(1.0, [41, 98, 255, 255], true),
+        level(1.5, [156, 39, 176, 255], false),
+        level(1.75, [233, 30, 99, 255], false),
+        level(2.0, [247, 124, 128, 255], false),
+    ]
+}
+
+/// The parallel channel's extra lines: off until asked for (its middle line is `middle_line`).
+pub fn default_channel_levels() -> [Level; CHANNEL_LEVELS] {
+    let line = |ratio: f32| Level {
+        ratio,
+        line: MiddleLine {
+            enabled: false,
+            color: BLUE,
+            width: 1.0,
+            dash: LineDash::Dashed,
+        },
+    };
+    [line(0.25), line(0.75), line(-0.25), line(1.25)]
+}
+
+/// The regression trend's inputs and its three lines.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct RegressionOptions {
+    pub source: PriceSource,
+    /// Standard deviations above the base line; the band is drawn at `upper_dev * sigma`.
+    pub upper_dev: f32,
+    /// Standard deviations from the base line, written with the sign it is drawn at (-2 is two
+    /// below).
+    pub lower_dev: f32,
+    /// The least-squares line itself (`enabled` shows it).
+    pub base: MiddleLine,
+    pub upper: MiddleLine,
+    pub lower: MiddleLine,
+    /// Print Pearson's R, the correlation of the price with the bar number.
+    pub pearson: bool,
+}
+
+impl Default for RegressionOptions {
+    fn default() -> Self {
+        let band = MiddleLine {
+            enabled: true,
+            color: [41, 98, 255, 77],
+            width: 2.0,
+            dash: LineDash::Solid,
+        };
+        Self {
+            source: PriceSource::Close,
+            upper_dev: 2.0,
+            lower_dev: -2.0,
+            base: MiddleLine {
+                enabled: true,
+                color: [242, 54, 69, 77],
+                width: 1.0,
+                dash: LineDash::Dashed,
+            },
+            upper: band,
+            lower: band,
+            pearson: true,
+        }
+    }
+}
+
+fn is_default_pitchfork_levels(levels: &[Level; PITCHFORK_LEVELS]) -> bool {
+    *levels == default_pitchfork_levels()
+}
+
+fn is_default_channel_levels(levels: &[Level; CHANNEL_LEVELS]) -> bool {
+    *levels == default_channel_levels()
+}
+
+fn is_default_regression(options: &RegressionOptions) -> bool {
+    *options == RegressionOptions::default()
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+/// How a drawing looks. Every field after `stats` belongs to a newer tool and is left out of a
+/// stored drawing while it holds its default, so a drawing that does not use it is written
+/// exactly as it always was (same bytes, same sync hash, readable by older builds).
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DrawingStyle {
@@ -218,9 +382,26 @@ pub struct DrawingStyle {
     pub head_end: LineEnd,
     /// A dot at the middle of a line.
     pub middle_point: bool,
-    /// The two end prices printed beside an arrow.
+    /// The two end prices printed beside an arrow; a horizontal line's price tag on the axis.
     pub price_labels: bool,
     pub stats: ArrowStats,
+    /// The pitchfork's extra lines, each drawn on both sides of the median.
+    #[serde(skip_serializing_if = "is_default_pitchfork_levels")]
+    pub pitchfork_levels: [Level; PITCHFORK_LEVELS],
+    /// The parallel channel's extra lines, as ratios of the width from its first edge.
+    #[serde(skip_serializing_if = "is_default_channel_levels")]
+    pub channel_levels: [Level; CHANNEL_LEVELS],
+    #[serde(skip_serializing_if = "is_default_regression")]
+    pub regression: RegressionOptions,
+    /// Draw every line of a pitchfork in the median's colour.
+    #[serde(skip_serializing_if = "is_false")]
+    pub use_one_color: bool,
+    /// The time tag a vertical line or a crossline puts on the time axis.
+    #[serde(skip_serializing_if = "is_false")]
+    pub time_label: bool,
+    /// Keep the text but do not draw it.
+    #[serde(skip_serializing_if = "is_false")]
+    pub hide_text: bool,
 }
 
 impl Default for DrawingStyle {
@@ -237,6 +418,12 @@ impl Default for DrawingStyle {
             middle_point: false,
             price_labels: false,
             stats: ArrowStats::default(),
+            pitchfork_levels: default_pitchfork_levels(),
+            channel_levels: default_channel_levels(),
+            regression: RegressionOptions::default(),
+            use_one_color: false,
+            time_label: false,
+            hide_text: false,
         }
     }
 }
@@ -277,6 +464,38 @@ impl DrawingStyle {
         };
         self.stroke.width = width(self.stroke.width, 2.0);
         self.middle_line.width = width(self.middle_line.width, 1.0);
+        let ratio = |value: f32, fallback: f32| {
+            if value.is_finite() {
+                value.clamp(-MAX_LEVEL_RATIO, MAX_LEVEL_RATIO)
+            } else {
+                fallback
+            }
+        };
+        for (index, level) in self.pitchfork_levels.iter_mut().enumerate() {
+            level.ratio = ratio(level.ratio, default_pitchfork_levels()[index].ratio);
+            level.line.width = width(level.line.width, 2.0);
+        }
+        for (index, level) in self.channel_levels.iter_mut().enumerate() {
+            level.ratio = ratio(level.ratio, default_channel_levels()[index].ratio);
+            level.line.width = width(level.line.width, 1.0);
+        }
+        let deviation = |value: f32, fallback: f32| {
+            if value.is_finite() {
+                value.clamp(-MAX_DEVIATION, MAX_DEVIATION)
+            } else {
+                fallback
+            }
+        };
+        let regression = &mut self.regression;
+        regression.upper_dev = deviation(regression.upper_dev, 2.0);
+        regression.lower_dev = deviation(regression.lower_dev, -2.0);
+        for line in [
+            &mut regression.base,
+            &mut regression.upper,
+            &mut regression.lower,
+        ] {
+            line.width = width(line.width, 1.0);
+        }
         self.text.size = if self.text.size.is_finite() {
             self.text.size.clamp(TEXT_SIZE_RANGE.0, TEXT_SIZE_RANGE.1)
         } else {

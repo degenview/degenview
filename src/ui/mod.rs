@@ -30,6 +30,7 @@ pub mod header_controls;
 pub mod icons;
 pub mod kit;
 pub mod layout_prompts;
+pub mod line_geometry;
 pub mod link_charts;
 pub mod object_tree;
 pub mod paper_account_sheet;

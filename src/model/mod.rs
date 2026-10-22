@@ -42,6 +42,7 @@ pub mod portfolio_history;
 pub mod portfolio_ledger;
 pub mod portfolio_statistics;
 pub mod price_format;
+pub mod regression;
 mod replay;
 mod saved_view;
 pub mod snapshot;
@@ -65,6 +66,7 @@ pub use drawing_style::{DrawingStyle, Visibility};
 pub use drawing_tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
     Anchor, ArrowDirection, Drawing, DrawingCommand, Geometry, MAX_POINTS, MAX_TEXT_CHARS,
+    PitchforkVariant,
 };
 pub use indicators::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, BollingerSeries, BuiltIn, EMA_DEFAULT_PERIOD,

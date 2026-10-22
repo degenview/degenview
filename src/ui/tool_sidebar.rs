@@ -114,6 +114,8 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::Arc => Icon::ShapeArc,
         Tool::Curve => Icon::ShapeCurve,
         Tool::DoubleCurve => Icon::ShapeDoubleCurve,
+        // Drawn properly with the menus.
+        _ => Icon::LineDiagonal,
     }
 }
 

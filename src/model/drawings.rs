@@ -113,12 +113,168 @@ pub enum Geometry {
         c1: Anchor,
         c2: Anchor,
     },
+    /// A trend line that carries text. A plain one is the original `Drawing::TrendLine`, so a
+    /// row an older build wrote keeps its form; one with text is written as this, which an
+    /// older build keeps untouched rather than dropping the text.
+    TrendLine {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// From `a`, through `b` and on beyond it.
+    Ray {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// A trend line with a statistics box.
+    InfoLine {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// Through `a` and `b`, without end in either direction.
+    ExtendedLine {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// A trend line with its angle to the horizontal.
+    TrendAngle {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// A line across the whole plot at one price; its time is where the handle was left.
+    HorizontalLine {
+        at: Anchor,
+    },
+    /// From `at` to the right edge of the plot, at its price.
+    HorizontalRay {
+        at: Anchor,
+    },
+    /// A line from the top to the bottom of the plot at one time; its price is where the
+    /// handle was left.
+    VerticalLine {
+        at: Anchor,
+    },
+    /// A horizontal and a vertical line through one point.
+    Crossline {
+        at: Anchor,
+    },
+    /// `a`→`b` is the first edge; the second runs through `c` parallel to it.
+    ParallelChannel {
+        a: Anchor,
+        b: Anchor,
+        c: Anchor,
+    },
+    /// Least squares through the bars from `a` to `b`. Only the times are read: the prices
+    /// are where the handles were left, and the line is fitted to the bars.
+    Regression {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// `a`→`b` is a sloped edge; the other is level at `c`'s price and spans the same times.
+    /// `c`'s time is kept at the middle of `a` and `b`.
+    FlatChannel {
+        a: Anchor,
+        b: Anchor,
+        c: Anchor,
+    },
+    /// Two parallel edges that need not share their times: `a`→`b`, and one through `c`
+    /// ending at `d`'s time. `d`'s price is not read; the edge ends where it meets that time.
+    DisjointChannel {
+        a: Anchor,
+        b: Anchor,
+        c: Anchor,
+        d: Anchor,
+    },
+    /// Three pivots; the variant says where the median starts and ends.
+    Pitchfork {
+        variant: PitchforkVariant,
+        p1: Anchor,
+        p2: Anchor,
+        p3: Anchor,
+    },
+}
+
+/// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PitchforkVariant {
+    /// The median runs from P1 through the middle of P2 and P3.
+    #[default]
+    Standard,
+    /// As Standard, but from P1's time at the price halfway between P1 and P2.
+    Schiff,
+    /// As Standard, but from the middle of P1 and P2 in both time and price.
+    ModifiedSchiff,
+    /// From the middle of P1 and P2 to P3, with the levels measured across P1 and P2.
+    Inside,
+}
+
+impl PitchforkVariant {
+    pub const ALL: [Self; 4] = [
+        Self::Standard,
+        Self::Schiff,
+        Self::ModifiedSchiff,
+        Self::Inside,
+    ];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "Original",
+            Self::Schiff => "Schiff",
+            Self::ModifiedSchiff => "Modified Schiff",
+            Self::Inside => "Inside",
+        }
+    }
+
+    pub const fn tool(self) -> Tool {
+        match self {
+            Self::Standard => Tool::Pitchfork,
+            Self::Schiff => Tool::SchiffPitchfork,
+            Self::ModifiedSchiff => Tool::ModifiedSchiffPitchfork,
+            Self::Inside => Tool::InsidePitchfork,
+        }
+    }
+
+    /// The variant `tool` draws, for the four pitchfork tools.
+    pub const fn of_tool(tool: Tool) -> Option<Self> {
+        match tool {
+            Tool::Pitchfork => Some(Self::Standard),
+            Tool::SchiffPitchfork => Some(Self::Schiff),
+            Tool::ModifiedSchiffPitchfork => Some(Self::ModifiedSchiff),
+            Tool::InsidePitchfork => Some(Self::Inside),
+            _ => None,
+        }
+    }
+}
+
+/// The anchor `d` of a disjoint channel built from three clicks: its second edge as long as its
+/// first, ending at the matching time. The price is not read.
+fn disjoint_end(a: Anchor, b: Anchor, c: Anchor) -> Anchor {
+    Anchor {
+        time_ms: c
+            .time_ms
+            .saturating_add(b.time_ms.saturating_sub(a.time_ms)),
+        price: c.price + (b.price - a.price),
+    }
 }
 
 impl Geometry {
     /// The tool that draws this geometry.
     pub fn tool(&self) -> Tool {
         match self {
+            Self::TrendLine { .. } => Tool::TrendLine,
+            Self::Ray { .. } => Tool::Ray,
+            Self::InfoLine { .. } => Tool::InfoLine,
+            Self::ExtendedLine { .. } => Tool::ExtendedLine,
+            Self::TrendAngle { .. } => Tool::TrendAngle,
+            Self::HorizontalLine { .. } => Tool::HorizontalLine,
+            Self::HorizontalRay { .. } => Tool::HorizontalRay,
+            Self::VerticalLine { .. } => Tool::VerticalLine,
+            Self::Crossline { .. } => Tool::Crossline,
+            Self::ParallelChannel { .. } => Tool::ParallelChannel,
+            Self::Regression { .. } => Tool::RegressionTrend,
+            Self::FlatChannel { .. } => Tool::FlatChannel,
+            Self::DisjointChannel { .. } => Tool::DisjointChannel,
+            Self::Pitchfork { variant, .. } => variant.tool(),
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -164,6 +320,21 @@ impl Geometry {
             } => vec![*start, *end, *through],
             Self::Curve { a, b, control } => vec![*a, *b, *control],
             Self::DoubleCurve { a, b, c1, c2 } => vec![*a, *b, *c1, *c2],
+            Self::TrendLine { a, b }
+            | Self::Ray { a, b }
+            | Self::InfoLine { a, b }
+            | Self::ExtendedLine { a, b }
+            | Self::TrendAngle { a, b }
+            | Self::Regression { a, b } => vec![*a, *b],
+            Self::HorizontalLine { at }
+            | Self::HorizontalRay { at }
+            | Self::VerticalLine { at }
+            | Self::Crossline { at } => vec![*at],
+            Self::ParallelChannel { a, b, c } | Self::FlatChannel { a, b, c } => {
+                vec![*a, *b, *c]
+            }
+            Self::DisjointChannel { a, b, c, d } => vec![*a, *b, *c, *d],
+            Self::Pitchfork { p1, p2, p3, .. } => vec![*p1, *p2, *p3],
         }
     }
 
@@ -188,6 +359,49 @@ impl Geometry {
             } => vec![start, end, through],
             Self::Curve { a, b, control } => vec![a, b, control],
             Self::DoubleCurve { a, b, c1, c2 } => vec![a, b, c1, c2],
+            Self::TrendLine { a, b }
+            | Self::Ray { a, b }
+            | Self::InfoLine { a, b }
+            | Self::ExtendedLine { a, b }
+            | Self::TrendAngle { a, b }
+            | Self::Regression { a, b } => vec![a, b],
+            Self::HorizontalLine { at }
+            | Self::HorizontalRay { at }
+            | Self::VerticalLine { at }
+            | Self::Crossline { at } => vec![at],
+            Self::ParallelChannel { a, b, c } | Self::FlatChannel { a, b, c } => vec![a, b, c],
+            Self::DisjointChannel { a, b, c, d } => vec![a, b, c, d],
+            Self::Pitchfork { p1, p2, p3, .. } => vec![p1, p2, p3],
+        }
+    }
+
+    /// Which parts of anchor `index` mean something, as `(time, price)`. The others are where
+    /// a handle was left and are never read, so the Coordinates tab does not offer them.
+    pub fn reads(&self, index: usize) -> (bool, bool) {
+        match (self, index) {
+            (Self::HorizontalLine { .. }, _) | (Self::FlatChannel { .. }, 2) => (false, true),
+            (Self::VerticalLine { .. }, _)
+            | (Self::Regression { .. }, _)
+            | (Self::DisjointChannel { .. }, 3) => (true, false),
+            _ => (true, true),
+        }
+    }
+
+    /// `self`, just edited from `original`, brought back to what its tool can be: a horizontal
+    /// line keeps its time and a vertical one its price (the handle slid along the line), and a
+    /// flat channel's level edge keeps its time at the middle of the sloped one.
+    pub fn constrain(&mut self, original: &Self) {
+        match (&mut *self, original) {
+            (Self::HorizontalLine { at }, Self::HorizontalLine { at: before }) => {
+                at.time_ms = before.time_ms;
+            }
+            (Self::VerticalLine { at }, Self::VerticalLine { at: before }) => {
+                at.price = before.price;
+            }
+            (Self::FlatChannel { a, b, c }, _) => {
+                c.time_ms = a.time_ms / 2 + b.time_ms / 2 + (a.time_ms % 2 + b.time_ms % 2) / 2;
+            }
+            _ => {}
         }
     }
 
@@ -300,6 +514,52 @@ impl Geometry {
                     c2: last,
                 },
             },
+            Tool::Ray => Self::Ray { a: first, b: last },
+            Tool::InfoLine => Self::InfoLine { a: first, b: last },
+            Tool::ExtendedLine => Self::ExtendedLine { a: first, b: last },
+            Tool::TrendAngle => Self::TrendAngle { a: first, b: last },
+            Tool::HorizontalLine => Self::HorizontalLine { at: last },
+            Tool::HorizontalRay => Self::HorizontalRay { at: last },
+            Tool::VerticalLine => Self::VerticalLine { at: last },
+            Tool::Crossline => Self::Crossline { at: last },
+            // The first edge follows the pointer until it is placed; then the pointer pulls the
+            // second edge out beside it.
+            Tool::ParallelChannel => Self::ParallelChannel {
+                a: first,
+                b: at(1),
+                c: last,
+            },
+            Tool::FlatChannel => {
+                let (a, b) = (first, at(1));
+                Self::FlatChannel {
+                    a,
+                    b,
+                    c: Anchor {
+                        time_ms: mid(a, b).time_ms,
+                        price: last.price,
+                    },
+                }
+            }
+            Tool::DisjointChannel => {
+                let (a, b) = (first, at(1));
+                let c = if anchors.len() >= 3 { last } else { a };
+                Self::DisjointChannel {
+                    a,
+                    b,
+                    c,
+                    d: disjoint_end(a, b, c),
+                }
+            }
+            Tool::RegressionTrend => Self::Regression { a: first, b: last },
+            Tool::Pitchfork
+            | Tool::SchiffPitchfork
+            | Tool::ModifiedSchiffPitchfork
+            | Tool::InsidePitchfork => Self::Pitchfork {
+                variant: PitchforkVariant::of_tool(tool)?,
+                p1: first,
+                p2: at(1),
+                p3: last,
+            },
             Tool::Cursor | Tool::TrendLine | Tool::Fib | Tool::Brush | Tool::Ruler => return None,
         })
     }
@@ -361,6 +621,46 @@ impl Geometry {
                 c1: *c1,
                 c2: *c2,
             },
+            (Tool::TrendLine, [a, b]) if a != b => Self::TrendLine { a: *a, b: *b },
+            (Tool::Ray, [a, b]) if a != b => Self::Ray { a: *a, b: *b },
+            (Tool::InfoLine, [a, b]) if a != b => Self::InfoLine { a: *a, b: *b },
+            (Tool::ExtendedLine, [a, b]) if a != b => Self::ExtendedLine { a: *a, b: *b },
+            (Tool::TrendAngle, [a, b]) if a != b => Self::TrendAngle { a: *a, b: *b },
+            (Tool::HorizontalLine, [at]) => Self::HorizontalLine { at: *at },
+            (Tool::HorizontalRay, [at]) => Self::HorizontalRay { at: *at },
+            (Tool::VerticalLine, [at]) => Self::VerticalLine { at: *at },
+            (Tool::Crossline, [at]) => Self::Crossline { at: *at },
+            (Tool::ParallelChannel, [a, b, c]) if a != b => Self::ParallelChannel {
+                a: *a,
+                b: *b,
+                c: *c,
+            },
+            // A regression needs two different bars to fit a line through.
+            (Tool::RegressionTrend, [a, b]) if a.time_ms != b.time_ms => {
+                Self::Regression { a: *a, b: *b }
+            }
+            (Tool::FlatChannel, [a, b, c]) if a != b => Self::FlatChannel {
+                a: *a,
+                b: *b,
+                c: Anchor {
+                    time_ms: a.time_ms / 2 + b.time_ms / 2 + (a.time_ms % 2 + b.time_ms % 2) / 2,
+                    price: c.price,
+                },
+            },
+            (Tool::DisjointChannel, [a, b, c]) if a != b => Self::DisjointChannel {
+                a: *a,
+                b: *b,
+                c: *c,
+                d: disjoint_end(*a, *b, *c),
+            },
+            (tool, [p1, p2, p3]) if p1 != p2 && PitchforkVariant::of_tool(tool).is_some() => {
+                Self::Pitchfork {
+                    variant: PitchforkVariant::of_tool(tool)?,
+                    p1: *p1,
+                    p2: *p2,
+                    p3: *p3,
+                }
+            }
             _ => return None,
         };
         Some(geometry)
@@ -644,9 +944,83 @@ impl Drawing {
         }
     }
 
+    /// Sets the text of a drawing that has any. A trend line gets its text by changing form (see
+    /// [`Geometry::TrendLine`]) and returns to the original form when its text is cleared, so a
+    /// line without text is always stored exactly as it was before lines could carry any.
     pub fn set_text(&mut self, value: &str) {
-        if let Self::Shape { text, .. } = self {
-            *text = value.chars().take(MAX_TEXT_CHARS).collect();
+        let value: String = value.chars().take(MAX_TEXT_CHARS).collect();
+        let taken = std::mem::replace(self, Self::Unreadable(serde_json::Value::Null));
+        *self = match taken {
+            Self::Shape {
+                id,
+                geometry,
+                style,
+                locked,
+                hidden,
+                visibility,
+                ..
+            } => Self::Shape {
+                id,
+                geometry,
+                style,
+                text: value,
+                locked,
+                hidden,
+                visibility,
+            },
+            Self::TrendLine {
+                id,
+                a,
+                b,
+                locked,
+                hidden,
+                visibility,
+                style,
+            } if !value.is_empty() => Self::Shape {
+                id,
+                geometry: Geometry::TrendLine { a, b },
+                style,
+                text: value,
+                locked,
+                hidden,
+                visibility,
+            },
+            other => other,
+        };
+        self.normalize_trend_line();
+    }
+
+    /// A trend line with no text goes back to its original stored form.
+    fn normalize_trend_line(&mut self) {
+        let taken = std::mem::replace(self, Self::Unreadable(serde_json::Value::Null));
+        *self = match taken {
+            Self::Shape {
+                id,
+                geometry: Geometry::TrendLine { a, b },
+                style,
+                text,
+                locked,
+                hidden,
+                visibility,
+            } if text.is_empty() => Self::TrendLine {
+                id,
+                a,
+                b,
+                locked,
+                hidden,
+                visibility,
+                style,
+            },
+            other => other,
+        };
+    }
+
+    /// Whether the drawing can carry text.
+    pub fn takes_text(&self) -> bool {
+        match self {
+            Self::Shape { geometry, .. } => geometry.tool().caps().has(super::Caps::TEXT),
+            Self::TrendLine { .. } => true,
+            _ => false,
         }
     }
 
@@ -1025,9 +1399,277 @@ mod tests {
             let drawing = Drawing::build(tool, 5, &anchors[..count], tool.default_style())
                 .unwrap_or_else(|| panic!("{tool:?} did not build"));
             assert_eq!(drawing.tool(), Some(tool));
-            assert_eq!(drawing.anchors().len(), count.max(1), "{tool:?}");
+            // A disjoint channel is placed with three clicks and keeps a fourth anchor, the end
+            // of its second edge.
+            let kept = if tool == Tool::DisjointChannel {
+                4
+            } else {
+                count
+            };
+            assert_eq!(drawing.anchors().len(), kept.max(1), "{tool:?}");
             assert_eq!(drawing.id(), 5);
         }
+    }
+
+    fn rich_style() -> DrawingStyle {
+        let mut style = DrawingStyle::default();
+        style.pitchfork_levels[3].line.enabled = true;
+        style.pitchfork_levels[3].ratio = 0.7;
+        style.channel_levels[1].line.enabled = true;
+        style.regression.upper_dev = 1.5;
+        style.regression.source = crate::model::chart_type::PriceSource::Hl2;
+        style.use_one_color = true;
+        style.time_label = true;
+        style.hide_text = true;
+        style.text.orientation = crate::model::drawing_style::TextOrientation::Vertical;
+        style
+    }
+
+    #[test]
+    fn every_new_geometry_round_trips_with_a_customised_style() {
+        let anchors: Vec<Anchor> = (0..4)
+            .map(|i| anchor(i * 60_000, 100.0 + i as f64 * 7.5))
+            .collect();
+        for tool in Tool::GROUPED {
+            let count = match tool.spec().placement {
+                super::super::drawing_tool::Placement::Points(count) => count as usize,
+                super::super::drawing_tool::Placement::Single => 1,
+                _ => continue,
+            };
+            let mut drawing = Drawing::build(tool, 3, &anchors[..count], rich_style()).unwrap();
+            drawing.set_text("on the line");
+            let json = serde_json::to_string(&drawing).unwrap();
+            let back: Drawing = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, drawing, "{tool:?}: {json}");
+            assert_eq!(back.tool(), Some(tool));
+            assert_eq!(back.text(), drawing.text());
+        }
+    }
+
+    #[test]
+    fn a_style_that_uses_none_of_the_new_features_is_written_without_them() {
+        let style = serde_json::to_value(DrawingStyle::default()).unwrap();
+        let keys: Vec<&str> = style
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        for new in [
+            "pitchfork_levels",
+            "channel_levels",
+            "regression",
+            "use_one_color",
+            "time_label",
+            "hide_text",
+        ] {
+            assert!(!keys.contains(&new), "{new} would rewrite stored drawings");
+        }
+        assert!(
+            style["text"].get("orientation").is_none(),
+            "the default text orientation is not stored"
+        );
+        // Used, they are written, and a row without them reads back as the default.
+        let used = serde_json::to_value(rich_style()).unwrap();
+        assert!(used.get("pitchfork_levels").is_some() && used.get("time_label").is_some());
+        let partial: DrawingStyle =
+            serde_json::from_str(r#"{"stroke":{"width":3.0},"pitchfork_levels":[]}"#)
+                .unwrap_or_default();
+        assert_eq!(
+            partial,
+            DrawingStyle::default(),
+            "a wrong-sized array is no style"
+        );
+        let bare: DrawingStyle = serde_json::from_str(r#"{"stroke":{"width":3.0}}"#).unwrap();
+        assert_eq!(
+            bare.pitchfork_levels,
+            DrawingStyle::default().pitchfork_levels
+        );
+        assert_eq!(bare.regression, DrawingStyle::default().regression);
+    }
+
+    #[test]
+    fn a_trend_line_keeps_its_stored_form_until_it_has_text() {
+        let build = || {
+            Drawing::build(
+                Tool::TrendLine,
+                1,
+                &[anchor(10, 1.5), anchor(20, 2.5)],
+                Tool::TrendLine.default_style(),
+            )
+            .unwrap()
+        };
+        let mut line = build();
+        let plain = serde_json::to_value(&line).unwrap();
+        assert!(plain.get("TrendLine").is_some());
+        line.set_text("support");
+        assert_eq!(line.text(), "support");
+        assert_eq!(line.tool(), Some(Tool::TrendLine));
+        assert_eq!(line.id(), 1);
+        let texted = serde_json::to_value(&line).unwrap();
+        // A new form an older build cannot read, so it keeps the row instead of dropping the text.
+        assert!(texted.get("Shape").is_some(), "{texted}");
+        assert_eq!(texted["Shape"]["text"], "support");
+        assert!(texted["Shape"]["geometry"].get("trend_line").is_some());
+        let back: Drawing = serde_json::from_value(texted).unwrap();
+        assert_eq!(back, line);
+        // Cleared, it goes back to the original form, byte for byte.
+        line.set_text("");
+        assert_eq!(line, build());
+        assert_eq!(serde_json::to_value(&line).unwrap(), plain);
+        // Moving, locking and restyling a texted line keep its text.
+        let mut texted = build();
+        texted.set_text("keep");
+        texted.set_locked(true);
+        for anchor in texted.anchors_mut() {
+            anchor.price += 1.0;
+        }
+        assert_eq!(texted.text(), "keep");
+        assert!(texted.locked());
+        assert!(texted.takes_text());
+    }
+
+    #[test]
+    fn a_line_with_text_is_an_unreadable_row_to_a_build_without_the_variant() {
+        // What an older build sees: a geometry it does not know keeps the whole row.
+        let json = r#"{"drawings":[{"Shape":{"id":4,"geometry":{"trend_line_from_the_future":{"a":{"time_ms":0,"price":1.0},"b":{"time_ms":1,"price":2.0}}},"text":"hi"}}]}"#;
+        let holder: Holder = serde_json::from_str(json).unwrap();
+        assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
+        assert_eq!(holder.drawings[0].stored_id(), 4);
+        let again = serde_json::to_value(&holder).unwrap();
+        let original: serde_json::Value = serde_json::from_str(json).unwrap();
+        assert_eq!(again, original);
+    }
+
+    #[test]
+    fn degenerate_placements_make_no_new_shape() {
+        let (a, b, c) = (anchor(0, 1.0), anchor(60_000, 2.0), anchor(30_000, 3.0));
+        let style = DrawingStyle::default();
+        for tool in [
+            Tool::Ray,
+            Tool::InfoLine,
+            Tool::ExtendedLine,
+            Tool::TrendAngle,
+            Tool::ParallelChannel,
+            Tool::FlatChannel,
+            Tool::DisjointChannel,
+            Tool::Pitchfork,
+            Tool::SchiffPitchfork,
+            Tool::ModifiedSchiffPitchfork,
+            Tool::InsidePitchfork,
+        ] {
+            let count = match tool.spec().placement {
+                super::super::drawing_tool::Placement::Points(count) => count as usize,
+                _ => unreachable!(),
+            };
+            let same = vec![a; count];
+            assert!(Drawing::build(tool, 1, &same, style).is_none(), "{tool:?}");
+            let anchors = [a, b, c];
+            assert!(Drawing::build(tool, 1, &anchors[..count], style).is_some());
+            assert!(Drawing::build(tool, 1, &anchors[..count - 1], style).is_none());
+        }
+        // A regression through one bar has nothing to fit.
+        assert!(Drawing::build(Tool::RegressionTrend, 1, &[a, anchor(0, 9.0)], style).is_none());
+        assert!(Drawing::build(Tool::RegressionTrend, 1, &[a, b], style).is_some());
+        // A level or a cross needs just its point.
+        for tool in [
+            Tool::HorizontalLine,
+            Tool::HorizontalRay,
+            Tool::VerticalLine,
+            Tool::Crossline,
+        ] {
+            assert!(Drawing::build(tool, 1, &[a], style).is_some(), "{tool:?}");
+            assert!(
+                Drawing::build(tool, 1, &[a, b], style).is_none(),
+                "{tool:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_disjoint_channel_starts_as_long_as_its_first_edge() {
+        let (a, b, c) = (anchor(0, 10.0), anchor(60_000, 14.0), anchor(90_000, 20.0));
+        let Some(Geometry::DisjointChannel { d, .. }) =
+            Geometry::from_anchors(Tool::DisjointChannel, &[a, b, c])
+        else {
+            panic!("disjoint");
+        };
+        assert_eq!(d.time_ms, 150_000, "ends one edge-length after it starts");
+        // The preview of the same three clicks is the same shape.
+        assert_eq!(
+            Geometry::preview(Tool::DisjointChannel, &[a, b, c]),
+            Geometry::from_anchors(Tool::DisjointChannel, &[a, b, c])
+        );
+    }
+
+    #[test]
+    fn pitchfork_tools_map_to_their_variants_and_back() {
+        for variant in PitchforkVariant::ALL {
+            assert_eq!(PitchforkVariant::of_tool(variant.tool()), Some(variant));
+        }
+        assert_eq!(PitchforkVariant::of_tool(Tool::Rectangle), None);
+        let anchors = [anchor(0, 1.0), anchor(10, 5.0), anchor(20, 2.0)];
+        for variant in PitchforkVariant::ALL {
+            let drawing =
+                Drawing::build(variant.tool(), 1, &anchors, DrawingStyle::default()).unwrap();
+            assert_eq!(drawing.tool(), Some(variant.tool()));
+            let Some(Geometry::Pitchfork { variant: made, .. }) = drawing.geometry() else {
+                panic!("pitchfork");
+            };
+            assert_eq!(*made, variant);
+        }
+    }
+
+    #[test]
+    fn editing_keeps_each_tool_what_it_is() {
+        let at = anchor(5_000, 10.0);
+        let moved = anchor(9_000, 12.0);
+        let mut horizontal = Geometry::HorizontalLine { at: moved };
+        horizontal.constrain(&Geometry::HorizontalLine { at });
+        assert_eq!(
+            horizontal,
+            Geometry::HorizontalLine {
+                at: anchor(5_000, 12.0)
+            },
+            "a level line slides along its price only"
+        );
+        let mut vertical = Geometry::VerticalLine { at: moved };
+        vertical.constrain(&Geometry::VerticalLine { at });
+        assert_eq!(
+            vertical,
+            Geometry::VerticalLine {
+                at: anchor(9_000, 10.0)
+            }
+        );
+        // A horizontal ray's origin moves freely, and a crossline's point too.
+        let mut ray = Geometry::HorizontalRay { at: moved };
+        ray.constrain(&Geometry::HorizontalRay { at });
+        assert_eq!(ray, Geometry::HorizontalRay { at: moved });
+        // A flat channel keeps its level edge in the middle of its sloped one.
+        let mut flat = Geometry::FlatChannel {
+            a: anchor(0, 1.0),
+            b: anchor(100, 3.0),
+            c: anchor(7, 2.0),
+        };
+        flat.constrain(&flat.clone());
+        assert_eq!(
+            flat.anchors()[2],
+            anchor(50, 2.0),
+            "only the price of the level edge is its own"
+        );
+        // What each anchor reads.
+        assert_eq!(horizontal.reads(0), (false, true));
+        assert_eq!(vertical.reads(0), (true, false));
+        assert_eq!(flat.reads(2), (false, true));
+        assert_eq!(flat.reads(0), (true, true));
+        let regression = Geometry::Regression {
+            a: anchor(0, 1.0),
+            b: anchor(9, 1.0),
+        };
+        assert_eq!(
+            (regression.reads(0), regression.reads(1)),
+            ((true, false), (true, false))
+        );
     }
 
     #[test]
@@ -1035,9 +1677,10 @@ mod tests {
         let a = anchor(0, 1.0);
         let b = anchor(30, 4.0);
         // One anchor placed plus the pointer: every tool previews, even degenerate.
+        // The trend line is previewed as the original drawing, not as a geometry.
         for tool in Tool::GROUPED
             .into_iter()
-            .filter(|tool| *tool != Tool::Brush)
+            .filter(|tool| !matches!(tool, Tool::Brush | Tool::TrendLine))
         {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");

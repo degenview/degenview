@@ -480,6 +480,8 @@ fn shape(geometry: &Geometry, style: &DrawingStyle, proj: &Projection) -> Option
             screen.guides = vec![[a, c1], [b, c2]];
             screen.handles = curve_handles(&anchors);
         }
+        // Projected by the next commit.
+        _ => return None,
     }
     screen.finish(width / 2.0 + 8.0)
 }
