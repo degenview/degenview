@@ -304,8 +304,24 @@ timings are machine-specific). The write hook only projects rows whose text chan
 | Save a paper account with 2,000 fills, nothing changed | 3.0 ms | 16.5 ms | 13.5 ms (the bundle is rebuilt and hashed on every save; a quote only saves while a working order exists for it) |
 
 Nothing here runs on the render thread except the SQLite write hook itself, and no CloudKit call
-is ever made from it. Not measured: initial sync of a very large library over a real network,
-memory use, CPU use of the worker while idle, and CloudKit operation counts.
+is ever made from it.
+
+A large library over real CloudKit (Development environment, a Development-signed release build on one Mac Studio): 5,632 records (26 watchlists, 12 layouts with 300 drawings, 80 templates, 60 scripts,
+150 alerts, 3 portfolios with 5,000 transactions, one paper account whose journal is 1.6 MB as written).
+
+| Step | Time | CPU (peak / idle) | Memory (peak / idle) |
+| --- | --- | --- | --- |
+| First upload from the Mac that has the data | 155 s (about 36 records a second) | 64% / 2% | 198 MB / 144 MB |
+| Download on a second, empty Mac | 48 s | 40% | 218 MB |
+| Apply them (*Use iCloud's data*) | 6 s | 82% | 349 MB peak, 130 MB after |
+
+The paper account uploaded deflated and arrived complete: 2,500 journal rows, the same text. The
+upload is limited by CloudKit (batches of about 200 records), not by this app. Not measured: CloudKit operation counts, and a slow or interrupted network.
+
+One slowness this run found is **not** sync's: every frame of the main window reads and parses all saved
+layouts (`Workspace::show_toolbar` calls `load_saved_views`). With 8 MB of layouts that takes 60 ms a
+frame, and the app sat at 90% CPU with sync off; the author's own layouts (46 KB) cost about 0.3 ms.
+It is on `main` too.
 
 ## What is not verified
 
@@ -325,7 +341,6 @@ memory use, CPU use of the worker while idle, and CloudKit operation counts.
   draw. When it has not ticked for 3 seconds (a covered or hidden window draws nothing) the sync
   worker applies them itself and the app reloads what it holds from the reports on its first frame
   back. Measured with a covered instance: a change arrived within one 20-second poll.
-* Real-world performance numbers (initial sync of a large library, outbox cost) are unmeasured.
 
 ## Known limitations
 

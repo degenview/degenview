@@ -1386,6 +1386,24 @@ fn only_the_account_this_database_is_bound_to_can_be_deleted() {
 }
 
 #[test]
+fn a_mac_that_has_not_joined_creates_the_zone_instead_of_pausing_on_its_old_deletion() {
+    let cloud = MockCloud::new();
+    let mut a = mac_with(&cloud, "A", "acct", Some("acct"), false);
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    a.core.transport_mut().commands.clear();
+    a.core.transport_mut().zone_event(ZoneEvent::Deleted);
+    a.run();
+    assert_ne!(a.phase(), Phase::Paused(PauseReason::RemoteDataDeleted));
+    assert!(
+        a.core
+            .transport_mut()
+            .commands
+            .contains(&TransportCommand::EnsureZone)
+    );
+}
+
+#[test]
 fn a_mac_that_did_not_ask_for_the_deletion_pauses_instead_of_deleting_anything() {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "A", "acct", Some("acct"));

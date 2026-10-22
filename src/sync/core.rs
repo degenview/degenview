@@ -604,6 +604,14 @@ impl<T: SyncTransport> SyncCore<T> {
             ZoneEvent::Deleted | ZoneEvent::Purged if self.cloud_delete != CloudDelete::Idle => {
                 self.cloud_delete = CloudDelete::Confirmed;
             }
+            // A Mac that has not joined yet has nothing in iCloud to lose, and the zone's old
+            // deletion is reported to every fresh fetch until the zone exists again. Pausing on it
+            // would stop the zone from ever being created again; create it instead.
+            ZoneEvent::Deleted | ZoneEvent::Purged
+                if !self.state().is_some_and(|s| s.initial_sync_done) =>
+            {
+                self.transport.send(TransportCommand::EnsureZone);
+            }
             ZoneEvent::Deleted | ZoneEvent::Purged => {
                 self.pause = Some(PauseReason::RemoteDataDeleted);
             }
