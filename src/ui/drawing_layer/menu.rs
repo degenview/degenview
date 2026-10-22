@@ -37,6 +37,8 @@ struct Target {
 pub(super) enum Action {
     Settings,
     EditText,
+    /// A price alert at a horizontal line's price.
+    Alert,
     Copy,
     Duplicate,
     CopyStyle,
@@ -196,6 +198,18 @@ impl DrawingLayer {
                                     .clicked()
                                 {
                                     action = Some(Action::EditText);
+                                }
+                                if is_price_line(drawing)
+                                    && icons::button(
+                                        ui,
+                                        Icon::Bell,
+                                        26.0,
+                                        theme::text_primary(),
+                                        "Add alert at this price",
+                                    )
+                                    .clicked()
+                                {
+                                    action = Some(Action::Alert);
                                 }
                                 if icons::button(
                                     ui,
@@ -367,6 +381,17 @@ impl DrawingLayer {
                 false,
                 Action::Settings,
             );
+            if let Some(drawing) = first.filter(|d| single && is_price_line(d)) {
+                item(
+                    ui,
+                    Icon::Bell,
+                    "Add alert at this price",
+                    None,
+                    !drawing.locked(),
+                    false,
+                    Action::Alert,
+                );
+            }
             if let Some(drawing) = first.filter(|d| single && d.takes_text()) {
                 item(
                     ui,
@@ -548,6 +573,11 @@ impl DrawingLayer {
                     self.begin_text_edit(drawing.id(), frame, proj);
                 }
             }
+            Action::Alert => {
+                if let [drawing] = &targets[..] {
+                    frame.alert_price = drawing.anchors().first().map(|anchor| anchor.price);
+                }
+            }
             Action::Copy => {
                 // The workspace owns the clipboard: it copies the selection it holds.
                 frame.copy_requested = true;
@@ -667,6 +697,15 @@ impl DrawingLayer {
 }
 
 /// The vertex limits of a path or polyline: its minimum and its current count.
+/// Whether the drawing marks one price: a horizontal line or ray, or a crossline. An alert needs
+/// a price that does not change with time, so a sloped line offers none.
+pub(super) fn is_price_line(drawing: &Drawing) -> bool {
+    matches!(
+        drawing.tool(),
+        Some(Tool::HorizontalLine | Tool::HorizontalRay | Tool::Crossline)
+    )
+}
+
 fn vertex_kind(drawing: &Drawing) -> Option<(usize, usize)> {
     match drawing.geometry()? {
         Geometry::Path { points } => Some((2, points.len())),

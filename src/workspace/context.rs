@@ -540,7 +540,13 @@ impl ChartWorkspace {
     /// Starts a price alert at the clicked price. The editor opens for the user to review; it
     /// saves nothing by itself.
     fn start_alert(&mut self, context: &ChartContext, _host: &PaperHost) {
-        let Some(index) = self.chart_index(context.chart_id) else {
+        self.start_alert_at(context.chart_id, context.price());
+    }
+
+    /// Starts a price alert on `chart_id` at `price`: the click's price, or a horizontal line's.
+    /// The editor opens for the user to review; it saves nothing by itself.
+    pub(crate) fn start_alert_at(&mut self, chart_id: u64, price: Option<f64>) {
+        let Some(index) = self.chart_index(chart_id) else {
             return;
         };
         let chart = &self.charts[index];
@@ -552,7 +558,7 @@ impl ChartWorkspace {
             self.say("Alerts are not available during replay.", true);
             return;
         }
-        let Some(price) = context.price() else {
+        let Some(price) = price.filter(|price| price.is_finite()) else {
             self.say("There is no price at that point.", true);
             return;
         };

@@ -1719,6 +1719,39 @@ fn placing_a_drawing_while_everything_is_hidden_shows_everything_again() {
     assert!(!shown.reveal_all);
 }
 
+#[test]
+fn a_line_at_one_price_offers_an_alert_there_and_a_sloped_line_none() {
+    for tool in [Tool::HorizontalLine, Tool::HorizontalRay, Tool::Crossline] {
+        let mut rig = Rig::with_tool(tool);
+        rig.click(POINTS[0]);
+        let drawing = rig.last().clone();
+        assert!(menu::is_price_line(&drawing), "{tool:?}");
+        let mut frame = DrawingFrame::new(&rig.drawings, Tool::Cursor, None, 10);
+        let proj = projection(&rig.data, &rig.scale);
+        rig.layer
+            .run(Action::Alert, &[drawing.id()], None, &mut frame, &proj);
+        assert_eq!(
+            frame.alert_price,
+            Some(drawing.anchors()[0].price),
+            "{tool:?}"
+        );
+        assert!(
+            frame.commands.is_empty(),
+            "asking for an alert edits nothing"
+        );
+    }
+    for tool in [
+        Tool::TrendLine,
+        Tool::Ray,
+        Tool::VerticalLine,
+        Tool::Pitchfork,
+    ] {
+        let mut rig = Rig::new();
+        rig.place(tool);
+        assert!(!menu::is_price_line(rig.last()), "{tool:?}");
+    }
+}
+
 // MARK: Text on a line
 
 /// A trend line, placed and selected, with the crosshair back and its text place painted.

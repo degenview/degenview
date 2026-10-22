@@ -3842,6 +3842,7 @@ impl ChartWorkspace {
             || self.add_chart.is_open();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
+        let mut drawing_alert: Option<(u64, f64)> = None;
         let drawing_defaults = self.drawing_templates().defaults().clone();
         let drawing_preview: Option<(u64, Drawing)> = self
             .drawing_props
@@ -4106,6 +4107,9 @@ impl ChartWorkspace {
                                             drawing_disarm |= frame.disarm;
                                             drawing_reveal |= frame.reveal_all;
                                             drawing_copy |= frame.copy_requested;
+                                            if let Some(price) = frame.alert_price {
+                                                drawing_alert = Some((chart_id, price));
+                                            }
                                             if frame.style_copied.is_some() {
                                                 drawing_style_copied = frame.style_copied;
                                             }
@@ -4346,6 +4350,9 @@ impl ChartWorkspace {
         }
         if drawing_copy {
             self.copy_selection(&ctx);
+        }
+        if let Some((chart_id, price)) = drawing_alert {
+            self.start_alert_at(chart_id, Some(price));
         }
         if drawing_style_copied.is_some() {
             self.style_clipboard = drawing_style_copied;

@@ -94,6 +94,9 @@ pub struct DrawingFrame<'a> {
     pub background_click: Option<Pos2>,
     /// A drawing was placed while every drawing was hidden: show them again, or it would vanish.
     pub reveal_all: bool,
+    /// The user asked for a price alert at this price (a horizontal line's); the workspace opens
+    /// the alert editor for them to review.
+    pub alert_price: Option<f64>,
 }
 
 impl<'a> DrawingFrame<'a> {
@@ -120,6 +123,7 @@ impl<'a> DrawingFrame<'a> {
             copy_requested: false,
             background_click: None,
             reveal_all: false,
+            alert_price: None,
         }
     }
 
