@@ -86,9 +86,9 @@ entity's identity, so repeated uploads and downloads hit the same record. Plain 
 (`encryptedValues`): `payload` (JSON), `modifiedAtMs`. A record from a newer schema is kept
 untouched in the inbox and applied after an update. A payload over ~900 KB as written (in practice a long paper-trading
 history) is deflated behind a `DVZ1` marker (`record::to_wire` / `from_wire`, applied in the core's
-`build` and `RawRecord::into_record`, so nothing else sees the difference); repetitive JSON shrinks
-roughly tenfold. A payload that is still over ~900 KB deflated is blocked and reported (asset
-upload is not implemented). A deflated record cannot unpack past 24 MB.
+`build` and `RawRecord::into_record`, so nothing else sees the difference); a paper account
+built by the real engine shrinks about 30 times. A payload that is still over ~900 KB deflated is blocked and
+reported (asset upload is not implemented). A deflated record cannot unpack past 24 MB.
 
 ### Identity
 
@@ -137,8 +137,11 @@ If both Macs changed an account before seeing each other, the later edit keeps t
 other version survives whole as a **paused copy** (`Name (conflict from <Mac> <date>)`) with ids
 of its own and no owner, so nothing runs it until the user acts on it.
 
-An account whose bundle is over ~900 KB as written is deflated to fit one record, which covers
-several thousand trades; one that is still too large deflated is blocked (the "too large" notice
+An account whose bundle is over ~900 KB as written is deflated to fit one record. Measured with
+round trips made by the engine (a limit buy and a limit sell, both filled), one round trip is about
+9.2 KB as written and 0.3 KB deflated, growing linearly (checked to 400 round trips, 800 fills). The
+24 MB unpack limit therefore binds first, at about 2,600 round trips (some 5,000 fills); the 900 KB
+wire limit would come at about 7,600. One that is still too large is blocked (the "too large" notice
 applies) and stays on its Mac, and multi-record accounts are future work. A mirror shows the account as of the owner's last upload.
 
 ## Merge rules
@@ -354,7 +357,7 @@ It is on `main` too.
   that drawing locally.
 * No device list in Settings yet (`sync_device` is ready for it).
 * Webhook endpoints and Pine alert subscriptions are excluded by design.
-* A paper account that is still over ~900 KB deflated does not sync yet. Two Macs acting on one account within a sync
+* A paper account over the limit above (about 5,000 fills) does not sync yet. Two Macs acting on one account within a sync
   interval produce a paused copy rather than a merge. A Mac that made its own default paper account
   and had *used* it (an order, a changed balance) before joining keeps it next to the synced ones;
   an untouched default is dropped at the first-time merge when iCloud has paper accounts. A card
