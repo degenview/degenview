@@ -566,12 +566,18 @@ pub(super) fn paint(
     let place = screen.text?;
     match emphasis.text {
         TextMode::Editing => None,
-        TextMode::Invite if drawing.text().trim().is_empty() => {
-            // The same place and look as the text will have, faint, so the click lands on it.
+        // The same place and look as the text will have, faint, so the click lands on it: the
+        // invitation where there is no text, and the text itself where it is hidden.
+        TextMode::Invite if drawing.text().trim().is_empty() || style.hide_text => {
             let mut faint = style.text;
             faint.color[3] = (u16::from(faint.color[3]) * 45 / 100) as u8;
             faint.italic = true;
-            draw_text(painter, place, INVITATION, &faint, false)
+            let words = if drawing.text().trim().is_empty() {
+                INVITATION
+            } else {
+                drawing.text()
+            };
+            draw_text(painter, place, words, &faint, false)
         }
         _ => draw_text(
             painter,

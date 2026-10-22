@@ -774,6 +774,20 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         next.fill.color = picked.to_srgba_unmultiplied();
         next.fill.enabled = true;
     }
+    // A drawing with text has its colour at hand; the rest of the text's look is in Settings.
+    if caps.has(Caps::TEXT)
+        && caps.has(Caps::WIDTH)
+        && !drawing.text().is_empty()
+        && let Some(picked) = kit::color_well(
+            ui,
+            vec2(24.0, 20.0),
+            "Text color",
+            series_render::color(style.text.color),
+            Alpha::OnlyBlend,
+        )
+    {
+        next.text.color = picked.to_srgba_unmultiplied();
+    }
     if caps.has(Caps::WIDTH) {
         let labels: Vec<String> = WIDTHS
             .iter()
