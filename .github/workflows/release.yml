@@ -237,7 +237,13 @@ jobs:
 
       - name: Generate release notes
         run: |
-          prev=$(git describe --tags --abbrev=0 --match 'v*' "${RELEASE_TAG}^" 2>/dev/null || true)
+          # A stable release lists everything since the previous stable one, so the changes a
+          # release candidate already carried are not lost from its notes. A prerelease lists
+          # only what is new since the previous tag of any kind.
+          case "$RELEASE_TAG" in
+            *-*) prev=$(git describe --tags --abbrev=0 --match 'v*' "${RELEASE_TAG}^" 2>/dev/null || true) ;;
+            *) prev=$(git tag --merged "${RELEASE_TAG}^" --list 'v*' --sort=-v:refname | grep -v -e '-' | head -1 || true) ;;
+          esac
           if [ -n "$prev" ]; then
             range="${prev}..${RELEASE_TAG}"
             heading="Changes since ${prev}"
