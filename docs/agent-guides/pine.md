@@ -43,3 +43,12 @@
 
 `src/pine/corpus_tests.rs` uses the optional cached community corpus in `tools/pine-corpus/`. Reduce
 failures with original code; never copy corpus scripts into the repository.
+
+## iCloud Sync
+
+User scripts sync as files through `sync::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
+Drafts and revisions never sync, unmodified bundled examples are neither uploaded nor kept over an
+incoming script of the same name, and text being typed is never overwritten (the incoming version
+waits in the sync inbox). Two edits to one script keep both: the loser becomes a conflict-copy
+script. Never write script files from sync code except through the sink. See
+[iCloud Sync](../icloud-sync.md).

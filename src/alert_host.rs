@@ -4,7 +4,7 @@
 
 use crate::model::alert::{
     AlertCurrency, AlertNotificationSettings, AlertPersistenceSnapshot, AlertRuntimeHealth,
-    AlertState, AlertTriggerEvent, MarketQuote,
+    AlertTriggerEvent, MarketQuote,
 };
 use crate::model::alert_engine::AlertEngine;
 use crate::model::alert_feed::UnseenAlerts;
@@ -129,6 +129,7 @@ impl AlertHost {
             .cloned()
             .collect();
         self.engine = AlertEngine::new(Some(loaded));
+        self.engine.set_muted(store.muted_alerts());
         self.load_error = None;
         self.receive_events(&events, store, now_ms);
         events
@@ -165,6 +166,10 @@ impl AlertHost {
     pub fn drain_commands(&mut self, store: &Store, now_ms: i64) {
         if self.load_error.is_some() {
             return;
+        }
+        // Synced alerts that this Mac has not switched on are defined here but never evaluated.
+        if self.engine.set_muted(store.muted_alerts()) {
+            self.dirty = true;
         }
         for command in store.pending_alert_commands() {
             if self.pending_ack_ids.contains(&command.id) {
@@ -274,7 +279,7 @@ impl AlertHost {
                 .snapshot()
                 .alerts
                 .iter()
-                .filter(|alert| alert.asset.key() == key && alert.state == AlertState::Active)
+                .filter(|alert| alert.asset.key() == key && self.engine.evaluates(alert))
                 .map(|alert| alert.currency)
                 .collect::<HashSet<_>>()
                 .into_iter()

@@ -23,6 +23,8 @@ impl PortfolioLedger {
             .iter()
             .map(|portfolio| portfolio.id)
             .chain(snapshot.transactions.iter().map(|tx| tx.id))
+            // Ids at or above the legacy limit belong to records that arrived from another Mac.
+            .filter(|id| *id < crate::sync::ids::LEGACY_LIMIT)
             .max()
             .map_or(1, |max| max + 1);
         Self { snapshot, next_id }
@@ -365,6 +367,21 @@ mod tests {
         PortfolioSource, PortfolioTransaction, PortfolioTransactionType,
     };
     use std::collections::HashMap;
+
+    #[test]
+    fn counter_ignores_ids_that_arrived_from_another_mac() {
+        let mut ledger = PortfolioLedger::new(PortfolioLedgerSnapshot::default());
+        ledger
+            .create_portfolio("Mine", PortfolioCurrency::Usd)
+            .unwrap();
+        let mut snapshot = ledger.into_snapshot();
+        snapshot.portfolios[0].id = crate::sync::ids::GLOBAL_BASE | (9 << 24) | 1;
+        let mut ledger = PortfolioLedger::new(snapshot);
+        let local = ledger
+            .create_portfolio("Local", PortfolioCurrency::Usd)
+            .unwrap();
+        assert!(local < crate::sync::ids::LEGACY_LIMIT, "minted {local}");
+    }
 
     fn asset(key: &str) -> PortfolioAsset {
         PortfolioAsset {

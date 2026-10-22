@@ -32,7 +32,15 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `id/position/payload` JSON rows; `setting` and `window_group` are keyed values.
 - `Store::create_schema` is one idempotent schema; there are no versioned migrations or legacy
   readers. Never replace a collection with empty data when any row is undecodable.
-- The one-way Swift import is `store::import::run_once`, gated per table on an empty Rust table.
+- Every document table and `setting` key must be classified for iCloud Sync in
+  `sync::policy` (a test fails otherwise); unclassified means local-only. Writes go through
+  `replace_documents` / `set_setting`, which queue the upload in the same transaction when sync is
+  on, so do not write those tables with raw SQL. See [iCloud Sync](../icloud-sync.md).
+- Portfolio and paper-trading ids are per-Mac counters that sync under a per-database tag
+  (`sync::ids`). Engines and ledgers must keep minting from ids below 2^24 only, writes go through
+  `save_portfolio_ledger` / `save_paper_trading` (or the hosts) so they are tracked, and a paper
+  account another Mac runs must never be filled here (`PaperHost` skips it until the user acts on
+  it).
 
 ## Build and test
 

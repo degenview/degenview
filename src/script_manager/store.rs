@@ -195,6 +195,79 @@ impl ScriptStore {
         Ok(script)
     }
 
+    /// Adds a script that already has an identity because it came from another Mac. A taken
+    /// name becomes "name 2". The source is saved through the normal path, so it is compiled and
+    /// gets a revision like any other save.
+    pub fn adopt(
+        &mut self,
+        id: &str,
+        requested: &str,
+        source: &str,
+        favorite: bool,
+    ) -> Result<LocalScript> {
+        self.load_if_needed()?;
+        if self.metadata.contains_key(id) {
+            return Err(ScriptStoreError::NameConflict);
+        }
+        let base = name::validate(requested)?;
+        let name = disambiguated(&base, &self.taken_names(None));
+        let now = now_ms();
+        let script = LocalScript {
+            id: id.to_owned(),
+            name,
+            script_type: declared_type(source),
+            source: with_trailing_newline(source),
+            latest_revision_id: None,
+            created_at_ms: now,
+            modified_at_ms: now,
+            is_favorite: favorite,
+            compile_record: None,
+        };
+        self.write_file(id, &script.name, &script.source)?;
+        self.write_record(&Record::of(&script))?;
+        self.metadata.insert(id.to_owned(), script);
+        self.save_index()?;
+        self.save(id, source)
+    }
+
+    /// Brings an existing script in line with another Mac's version: name, source, favorite.
+    /// A name that is taken here by a different script becomes "name 2" rather than failing.
+    pub fn update_from_remote(
+        &mut self,
+        id: &str,
+        requested: &str,
+        source: &str,
+        favorite: bool,
+    ) -> Result<()> {
+        self.load_if_needed()?;
+        let current = self
+            .metadata
+            .get(id)
+            .cloned()
+            .ok_or(ScriptStoreError::MissingScript)?;
+        let clean = name::validate(requested)?;
+        let target = if self.is_name_taken(&clean, Some(id)) {
+            disambiguated(&clean, &self.taken_names(Some(id)))
+        } else {
+            clean
+        };
+        if target != current.name {
+            self.rename(id, &target)?;
+        }
+        if with_trailing_newline(source) != current.source {
+            self.save(id, source)?;
+        }
+        if favorite != current.is_favorite {
+            self.set_favorite(id, favorite)?;
+        }
+        Ok(())
+    }
+
+    /// A fresh script id, for a conflict copy made while applying another Mac's version.
+    pub fn fresh_id() -> ScriptId {
+        new_id()
+    }
+
     /// Saves a copy as "<name> copy" (disambiguated on conflict): a plain script, not a
     /// favorite, no history.
     pub fn duplicate(&mut self, id: &str) -> Result<LocalScript> {

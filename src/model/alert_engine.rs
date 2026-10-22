@@ -27,6 +27,9 @@ pub struct AlertEngine {
     snapshot: AlertPersistenceSnapshot,
     /// Active alerts by asset key.
     index: HashMap<String, BTreeSet<AlertId>>,
+    /// Alerts that stay defined here but are not evaluated on this Mac (synced from another Mac
+    /// and not switched on here), so one alert never notifies from two Macs.
+    muted: HashSet<AlertId>,
 }
 
 impl AlertEngine {
@@ -34,6 +37,7 @@ impl AlertEngine {
         let mut engine = Self {
             snapshot: snapshot.unwrap_or_default(),
             index: HashMap::new(),
+            muted: HashSet::new(),
         };
         engine.rebuild_index();
         engine
@@ -48,10 +52,34 @@ impl AlertEngine {
         self.snapshot.revision = self.snapshot.revision.wrapping_add(1);
     }
 
+    /// Whether this Mac judges the alert against quotes.
+    pub fn evaluates(&self, alert: &PriceAlert) -> bool {
+        alert.state == AlertState::Active && !self.muted.contains(&alert.id)
+    }
+
+    /// Sets the alerts this Mac must not evaluate. An alert that was muted and no longer is
+    /// starts afresh: its next quote only says which side the price is on, so switching an alert
+    /// on can never fire from a stale comparison. Returns whether anything changed.
+    pub fn set_muted(&mut self, muted: HashSet<AlertId>) -> bool {
+        if muted == self.muted {
+            return false;
+        }
+        for alert in &mut self.snapshot.alerts {
+            if self.muted.contains(&alert.id) && !muted.contains(&alert.id) {
+                alert.previous_value = None;
+                alert.last_fingerprint = None;
+            }
+        }
+        self.muted = muted;
+        self.rebuild_index();
+        self.touch();
+        true
+    }
+
     fn rebuild_index(&mut self) {
         self.index.clear();
         for alert in &self.snapshot.alerts {
-            if alert.state == AlertState::Active {
+            if alert.state == AlertState::Active && !self.muted.contains(&alert.id) {
                 self.index
                     .entry(alert.asset.key())
                     .or_default()
@@ -115,7 +143,7 @@ impl AlertEngine {
         self.snapshot
             .alerts
             .iter()
-            .filter(|alert| alert.state == AlertState::Active)
+            .filter(|alert| self.evaluates(alert))
             .filter(|alert| seen.insert(alert.asset.key()))
             .map(|alert| alert.asset.clone())
             .collect()
@@ -225,7 +253,7 @@ impl AlertEngine {
                 .snapshot
                 .alerts
                 .iter()
-                .position(|alert| alert.id == id && alert.state == AlertState::Active)
+                .position(|alert| alert.id == id && self.evaluates(alert))
             else {
                 continue;
             };
@@ -761,5 +789,70 @@ mod tests {
         assert_eq!(resumed.active_assets().len(), 1);
         let events = resumed.process(&quote("BTCUSDT", 101.0, T0 + 9_000, "r"), None, None);
         assert_eq!(events.len(), 1, "previous_value survived the restart");
+    }
+
+    // MARK: Muted on this Mac
+
+    #[test]
+    fn a_muted_alert_is_defined_but_never_evaluated_or_polled() {
+        let (mut engine, id) = engine_with(
+            AlertCondition::CrossesAbove { target: 100.0 },
+            AlertFrequency::Once,
+        );
+        assert!(engine.set_muted([id].into()));
+        assert_eq!(
+            feed(&mut engine, &[90.0, 101.0, 90.0, 101.0]),
+            Vec::<usize>::new()
+        );
+        assert!(
+            engine.active_assets().is_empty(),
+            "a muted alert is not polled"
+        );
+        assert_eq!(engine.snapshot().alerts.len(), 1, "it is still defined");
+        assert_eq!(engine.snapshot().alerts[0].state, AlertState::Active);
+        assert!(engine.snapshot().history.is_empty());
+    }
+
+    #[test]
+    fn switching_a_muted_alert_on_starts_afresh_and_cannot_fire_from_a_stale_comparison() {
+        let (mut engine, id) = engine_with(
+            AlertCondition::CrossesAbove { target: 100.0 },
+            AlertFrequency::Once,
+        );
+        // It saw 90 before being muted, then the market moved far while muted.
+        assert_eq!(feed(&mut engine, &[90.0]), Vec::<usize>::new());
+        engine.set_muted([id].into());
+        assert!(engine.set_muted(HashSet::new()));
+        assert_eq!(engine.snapshot().alerts[0].previous_value, None);
+        // The first quote after switching on is already above the target: not a crossing.
+        let events = engine.process(&quote("BTCUSDT", 150.0, T0 + 9_000, "fresh-1"), None, None);
+        assert!(events.is_empty());
+        assert_eq!(engine.active_assets().len(), 1);
+    }
+
+    #[test]
+    fn muting_other_alerts_leaves_this_one_running() {
+        let (mut engine, id) = engine_with(
+            AlertCondition::CrossesAbove { target: 100.0 },
+            AlertFrequency::Once,
+        );
+        assert!(
+            !engine.set_muted(HashSet::new()),
+            "no change reports no change"
+        );
+        engine.set_muted([id + 1].into());
+        assert_eq!(feed(&mut engine, &[90.0, 101.0]), vec![1]);
+    }
+
+    #[test]
+    fn setting_the_same_mute_set_does_not_touch_the_revision() {
+        let (mut engine, id) = engine_with(
+            AlertCondition::CrossesAbove { target: 100.0 },
+            AlertFrequency::Once,
+        );
+        engine.set_muted([id].into());
+        let revision = engine.snapshot().revision;
+        assert!(!engine.set_muted([id].into()));
+        assert_eq!(engine.snapshot().revision, revision);
     }
 }

@@ -11,6 +11,7 @@ mod coinbase;
 mod coingecko;
 mod dexscreener;
 pub mod disk_cache;
+pub mod entitlements;
 pub mod file_dialog;
 pub mod fx_rates;
 mod geckoterminal;

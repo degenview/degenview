@@ -9,6 +9,21 @@ access_group="${DEGENVIEW_KEYCHAIN_ACCESS_GROUP:-}"
 # a provisioning profile that grants it is embedded in each bundle.
 app_profile="${DEGENVIEW_APP_PROFILE:-}"
 helper_profile="${DEGENVIEW_HELPER_PROFILE:-}"
+# iCloud Sync is opt-in: set DEGENVIEW_ICLOUD=1 to compile the CloudKit bridge and sign the app with
+# the iCloud entitlements. The app profile must then grant them (see docs/icloud-sync.md); without
+# the profile macOS kills the signed app at launch. The helper never gets iCloud entitlements.
+icloud="${DEGENVIEW_ICLOUD:-}"
+icloud_environment="${DEGENVIEW_ICLOUD_ENVIRONMENT:-Production}"
+aps_environment=production
+# A development build (DEGENVIEW_DEV_BUILD=1, signed with an Apple Development identity and a Mac
+# Development profile) talks to CloudKit's Development environment, where record types can be
+# created. Debug assertions make the app expect that environment; a release never has them.
+if [ -n "${DEGENVIEW_DEV_BUILD:-}" ]; then
+    icloud=1
+    icloud_environment=Development
+    aps_environment=development
+    export CARGO_PROFILE_RELEASE_DEBUG_ASSERTIONS=true
+fi
 # Cargo.toml is the one place the version lives; tools/release.sh bumps it before tagging.
 version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
 if [ -z "$version" ]; then
@@ -25,7 +40,9 @@ if [ "$signing_vars" -ne 0 ] && [ "$signing_vars" -ne 4 ]; then
     exit 1
 fi
 
-"$CARGO_BIN" build --release --bin degenview --bin degenview-alert-agent
+features=""
+[ -n "$icloud" ] && features="--features icloud"
+"$CARGO_BIN" build --release $features --bin degenview --bin degenview-alert-agent
 
 app="target/DegenView.app"
 helper="$app/Contents/Library/LoginItems/DegenViewAlertAgent.app"
@@ -91,18 +108,31 @@ if [ -n "$identity" ]; then
     sign_bundle() {
         bundle="$1"
         bundle_id="$2"
+        template="tools/entitlements.plist"
+        # Only the app carries iCloud; the login item has no CloudKit and its profile cannot grant it.
+        if [ -n "$icloud" ] && [ "$bundle_id" = "es.nico.degenview" ]; then
+            template="tools/entitlements-app.plist"
+        fi
         entitlements="target/$bundle_id.entitlements"
         sed -e "s|__KEYCHAIN_ACCESS_GROUP__|$access_group|g" \
             -e "s|__TEAM_ID__|$team_id|g" \
+            -e "s|__ICLOUD_ENVIRONMENT__|$icloud_environment|g" \
+            -e "s|__APS_ENVIRONMENT__|$aps_environment|g" \
             -e "s|__APPLICATION_IDENTIFIER__|$team_id.$bundle_id|g" \
-            tools/entitlements.plist > "$entitlements"
+            "$template" > "$entitlements"
         codesign --force --options runtime --timestamp --entitlements "$entitlements" \
             --sign "$identity" "$bundle"
     }
     sign_bundle "$helper" es.nico.degenview.alert-agent
     sign_bundle "$app" es.nico.degenview
     codesign --verify --deep --strict --verbose=2 "$app"
+    if [ -n "$icloud" ]; then
+        ./tools/verify-icloud.sh "$app" "$icloud_environment"
+    fi
     echo "Built and signed $app (background agent available)"
 else
+    if [ -n "$icloud" ]; then
+        echo "Built with the iCloud bridge but unsigned: iCloud Sync will report that it is unavailable" >&2
+    fi
     echo "Built $app unsigned; background alerts use the foreground fallback"
 fi

@@ -136,6 +136,10 @@ jobs:
           DEGENVIEW_KEYCHAIN_ACCESS_GROUP: ${{ secrets.MACOS_KEYCHAIN_ACCESS_GROUP }}
           MACOS_PROFILE_APP: ${{ secrets.MACOS_PROFILE_APP }}
           MACOS_PROFILE_HELPER: ${{ secrets.MACOS_PROFILE_HELPER }}
+          # Set the repository variable DEGENVIEW_ICLOUD to 1 once the app profile grants iCloud
+          # (docs/icloud-sync.md). A release always uses the Production environment.
+          DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
+          DEGENVIEW_ICLOUD_ENVIRONMENT: Production
         run: |
           echo "$MACOS_PROFILE_APP" | base64 --decode > "$RUNNER_TEMP/app.provisionprofile"
           echo "$MACOS_PROFILE_HELPER" | base64 --decode > "$RUNNER_TEMP/helper.provisionprofile"
@@ -173,6 +177,9 @@ jobs:
           xcrun stapler staple target/DegenView.app
           xcrun stapler validate target/DegenView.app
           spctl --assess --type execute --verbose=2 target/DegenView.app
+          if [ -n "${{ vars.DEGENVIEW_ICLOUD }}" ]; then
+            ./tools/verify-icloud.sh target/DegenView.app Production
+          fi
 
       - name: Package macOS app
         if: runner.os == 'macOS'

@@ -47,6 +47,16 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   `HOME`, `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, and `DEGENVIEW_NO_NOTIFICATIONS`. Never
   forward credentials; helper argv is visible to other users.
 
+## iCloud entitlements
+
+`DEGENVIEW_ICLOUD=1` (release workflow: repository variable `DEGENVIEW_ICLOUD`) builds with
+`--features icloud` and signs only the app with `tools/entitlements-app.plist`; the login item never
+gets iCloud entitlements. The app profile must grant them or macOS kills the app at launch, so ship
+the first iCloud build as a hyphenated prerelease and run `tools/verify-icloud.sh`. The Swift bridge
+is linked into the `degenview` binary; do not add a library or framework to the bundle (the
+updater's bundle check only accepts the two known executables). Production's CloudKit schema must
+be deployed before a release that changes records. Details: [iCloud Sync](../icloud-sync.md).
+
 ## In-app update state
 
 - `UpdateHost` is the sole check/install/restart state. The app owns it and exposes a cloned

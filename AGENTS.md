@@ -16,6 +16,7 @@ scenario matches the work:
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
+| iCloud Sync, the sync outbox, CloudKit, or anything that persists user data | [iCloud Sync](docs/icloud-sync.md) |
 
 For cross-cutting work, load all matching guides. These files contain implementation constraints,
 not general background; do not skip a guide because the code looks self-explanatory.
@@ -31,6 +32,7 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map and data flow.
+- [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.

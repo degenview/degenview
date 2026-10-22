@@ -3,6 +3,8 @@
 //! `PaperTradingSnapshot`. Ported from `PaperTradingEngine.swift`. Quotes arrive
 //! via `process`; the engine itself never touches the network.
 
+use std::collections::HashSet;
+
 use super::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade,
     PaperCommissionConfiguration, PaperCurrency, PaperFill, PaperFillPriceSource, PaperInstrument,
@@ -29,6 +31,8 @@ impl PaperTradingEngine {
             .chain(snapshot.order_events.iter().map(|event| event.id))
             .chain(snapshot.closed_trades.iter().map(|trade| trade.id))
             .chain(snapshot.journal.iter().map(|entry| entry.id))
+            // Ids at or above the legacy limit belong to records that arrived from another Mac.
+            .filter(|id| *id < crate::sync::ids::LEGACY_LIMIT)
             .max()
             .map_or(1, |max| max + 1);
         Self {
@@ -350,6 +354,16 @@ impl PaperTradingEngine {
 
     /// Feed a live quote. Only quotes that could have moved an order are persisted.
     pub fn process(&mut self, quote: PaperQuote) -> Result<(), PaperTradingError> {
+        self.process_except(quote, &HashSet::new())
+    }
+
+    /// Like `process`, but never fills the orders of the accounts in `skip`: an account that
+    /// another Mac runs is only shown here, so a working order is not filled twice.
+    pub fn process_except(
+        &mut self,
+        quote: PaperQuote,
+        skip: &HashSet<u64>,
+    ) -> Result<(), PaperTradingError> {
         if let Some(previous) = self.snapshot.quotes.get(&quote.instrument_key)
             && quote.timestamp < previous.timestamp
         {
@@ -362,7 +376,11 @@ impl PaperTradingEngine {
                 .snapshot
                 .orders
                 .iter()
-                .filter(|order| order.instrument.key == key && order.status.is_working())
+                .filter(|order| {
+                    order.instrument.key == key
+                        && order.status.is_working()
+                        && !skip.contains(&order.account_id)
+                })
                 .collect();
             working.sort_by_key(|order| order.created_at);
             working.iter().map(|order| order.id).collect()
@@ -1185,6 +1203,23 @@ mod tests {
             )
             .unwrap();
         (engine, id)
+    }
+
+    #[test]
+    fn counter_ignores_ids_that_arrived_from_another_mac() {
+        let (engine, _) = engine_with_account();
+        let mut snapshot = engine.snapshot().clone();
+        snapshot.accounts[0].id = crate::sync::ids::GLOBAL_BASE | (7 << 24) | 3;
+        let mut engine = PaperTradingEngine::new(snapshot);
+        let local = engine
+            .create_account(
+                "Local",
+                PaperCurrency::Usd,
+                1_000.0,
+                PaperAccountSettings::default(),
+            )
+            .unwrap();
+        assert!(local < crate::sync::ids::LEGACY_LIMIT, "minted {local}");
     }
 
     #[test]
