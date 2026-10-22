@@ -65,13 +65,27 @@ behavior.
 - A drawing is pinned to time+price. The four original tools keep their serialized form; every
   newer tool is `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`.
   New fields need `#[serde(default)]`. Nothing stores a pixel or a derived corner.
+- **A style field a drawing does not use must not reach its stored row.** `DrawingStyle` is
+  written whole, so a new field needs `skip_serializing_if` its default, or every stored drawing
+  is rewritten, changes its sync hash and uploads again (and an older build strips the field and
+  bounces it back). `a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did` fails if
+  one does not.
 - A tool is one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`. Add a
-  tool there, a `Geometry` variant, its `shape::shape` projection and an icon; the controller,
-  toolbar, dialog and tests (`every_tool_…` loop over `Tool::GROUPED`) pick it up. Do not add
-  `match tool` to pointer handling.
-- Geometry lives in `ui/drawing_geometry.rs` as pure functions on `Pos2` with their own tests.
-  Polygons fill by the even-odd rule; translucent freehand strokes are painted from a coverage map
-  (`rasterize_stroke`), never overlapping triangles.
+  tool there, a `Geometry` variant, its projection (`shape::shape`, or `line_shapes::project` for
+  the lines, channels and pitchforks) and an icon; the controller, toolbar, dialog and tests
+  (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
+  handling. The two flyouts are `ToolGroup::MENU` and `ToolGroup::LINE_MENU`; Fibonacci is in
+  neither.
+- A tool whose anchor means only part of itself (a level's time, a regression's price) says so in
+  `Geometry::reads` and restores what an edit may not change in `Geometry::constrain`.
+- Geometry lives in `ui/drawing_geometry.rs` and `ui/line_geometry.rs` as pure functions on `Pos2`
+  with their own tests. Polygons fill by the even-odd rule; translucent freehand strokes are
+  painted from a coverage map (`rasterize_stroke`), never overlapping triangles. A line with no end
+  is cut to the plot with `line_in_rect`; never draw from an enormous coordinate.
+- A drawing's text is part of it: `Drawing::set_text` (a trend line changes stored form with
+  text and back), the inline editor in `drawing_layer/text_edit.rs`, and `TextPlace` for where the
+  painter puts it. Axis tags are painted by `paint_frame`'s label pass, never by the drawing
+  painter (it is clipped to the plot).
 - The layer never mutates drawings: it returns `DrawingCommand`s in the `DrawingFrame`, and
   `drawings::apply_commands` applies them. One batch is one undo step; use `Style` for restyles
   (merged in bursts), never one command per pointer move. Previews and cancelled drafts are not

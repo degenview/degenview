@@ -25,8 +25,10 @@ changes through `set_chart_type`.
 `Drawing` holds the original trend line, Fibonacci, brush and ruler plus one `Shape` variant that
 carries a typed `Geometry` for every newer tool, all with time+price anchors. The interactive layer
 (`ui::drawing_layer`) is one controller driven by each tool's `Placement`; it reports
-`DrawingCommand`s and never mutates drawings. See [drawing tools](../drawing-tools.md).
-Rulers and crosshairs are transient.
+`DrawingCommand`s and never mutates drawings. Lines, channels and pitchforks are projected by
+`drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::regression`, and a
+line's text is edited in place by `drawing_layer/text_edit.rs`. See
+[drawing tools](../drawing-tools.md). Rulers and crosshairs are transient.
 
 `ChartWorkspace` keeps session-only per-workspace undo/redo entries containing one chart id and a
 `Snapshot`: its complete pre-command drawing list, or its built-in indicators and scripts before a

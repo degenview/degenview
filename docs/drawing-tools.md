@@ -1,7 +1,8 @@
 # Drawing tools
 
-Sixteen drawing tools beyond the trend line, Fibonacci retracement and ruler: brushes, arrows and
-shapes, with the lifecycle TradingView users expect (place, preview, select, move, reshape,
+Thirty-three drawing tools beyond Fibonacci retracement and the ruler, in two flyout menus off the
+strip: lines, channels and pitchforks (the trend line and sixteen more), and brushes, arrows and
+shapes. They have the lifecycle TradingView users expect (place, preview, select, move, reshape,
 restyle, label, edit coordinates, hide by timeframe, lock, undo, save). One interaction layer,
 one style model and one geometry module serve all of them; a tool is a row in a table
 (`Tool::spec`), not a code path.
@@ -11,13 +12,112 @@ state is marked **doc** or **lib**; what they do not state, and was chosen here,
 **inferred**. Nothing was compared pixel for pixel against TradingView (no access), so the visual
 parity checklist at the end is a manual test matrix, not a result.
 
+## Lines, channels and pitchforks
+
+The Lines tile (second on the strip) shows the last tool used from its menu and opens
+LINES / CHANNELS / PITCHFORKS from its corner, a right-click or the Right arrow. Fibonacci keeps
+its own tile and is in neither menu. Alt (Option on a Mac) with **T**, **H**, **V** and **C** arms
+the trend line, horizontal line, vertical line and crossline (**doc**, community posts); **J** arms
+the horizontal ray (TradingView's default, which no help page states: **inferred**). Hotkeys leave
+a focused text field alone.
+
+| Tool | Anchors / placement | What is drawn | Default (lib unless noted) |
+|---|---|---|---|
+| Trend line | 2 | segment, extend left/right (past the first / second anchor) | DegenView's own `#0A84FF` 1.5 px; stored form unchanged |
+| Ray | 2 | from the first anchor through the second, on to the plot's edge | `#2962FF` 2 px, extend right on |
+| Info line | 2 | trend line and a statistics box (price range, %, bars, time, distance, angle) | stats on and always shown |
+| Extended line | 2 | through both anchors, no end | extend both on |
+| Trend angle | 2 | trend line, a level reference, an arc and the angle in degrees | angle **inferred**: the line's rise to the right on screen, positive up |
+| Horizontal line | 1 | across the plot at a price; price tag on the axis | price tag on, text above |
+| Horizontal ray | 1 | from the origin to the right edge; price tag | price tag on |
+| Vertical line | 1 | across the plot at a time; time tag on the axis | time tag on, text vertical |
+| Crossline | 1 | both of the above through one point | both tags on |
+| Parallel channel | 3: first edge (2), then a point on the second | second edge parallel at a price offset, middle line, 4 optional levels, fill | `#2962FF`, middle line dashed, fill 20 % |
+| Regression trend | 2 (the bar range) | least squares of a price over the bars, bands at deviations, Pearson's R | source close, +2 / -2, base `rgba(242,54,69,.3)` dashed |
+| Flat top/bottom | 3: sloped edge (2), then the level | sloped edge and a level one at the third click's price over the same times, fill | `#FF9800`, fill 20 % |
+| Disjoint channel | 3: first edge (2), then the start of the second | two parallel edges with their own start and end times, fill | `#089981`, fill 20 % |
+| Pitchfork | 3 | median from P1 through the middle of P2-P3; levels parallel to it | median `#F23645`; levels 0.5 and 1 on of nine, fill 20 % |
+| Schiff | 3 | as above, from P1's time at the price halfway to P2 | (as Pitchfork) |
+| Modified Schiff | 3 | as above, from the middle of P1-P2 in time and price | (as Pitchfork) |
+| Inside | 3 | median from the middle of P1-P2 to P3; levels measured across P1-P2 | (as Pitchfork) |
+
+What is **doc**: the anchor counts and click orders, the median constructions (TradingView's Auto
+Pitchfork page), the inputs of the regression trend, the settings each tool lists. What is
+**inferred**: how far an unextended pitchfork runs (`FORK_LENGTH`, two handle lengths), that the
+Inside fork's levels are measured across P1-P2, that a disjoint channel's edges stay parallel, that
+a flat channel's level edge spans the sloped edge's times, the population divisor of the
+regression's deviation, fitting in logs on a logarithmic scale, and the angle's sign.
+
+### Geometry
+
+All of it is worked in screen space from the projected anchors (`ui::line_geometry`, pure, with
+hand-worked fixtures). Lines are straight on every price scale, and midpoints, parallels and
+ratios survive the chart's zoom and offset, so a fork or a channel keeps its shape when the chart
+moves. Nothing derived is stored: a drawing holds its anchors and its style.
+
+- **Lines with no end** are clipped to the plot exactly (Liang-Barsky on the line's parameter in
+  `f64`, the range left open on an unbounded side), never drawn from a far-away coordinate; one
+  that misses the plot is not built, so it cannot be picked. A zero-length line has no direction
+  and draws nothing but its handles.
+- **Parallel channel**: the second edge keeps the first edge's times and moves by a vertical price
+  offset (a perpendicular one for a vertical first edge). Dragging an end of the first edge keeps
+  the offset; the second edge's handle changes only the offset.
+- **Flat channel**: the third anchor's time is kept at the middle of the first two, so only its
+  price is its own. **Disjoint channel**: four anchors, the fourth read only for its time.
+- **Pitchforks** (`line_geometry::fork`): the four constructions differ only in where the median
+  starts and ends; level `r` is the median shifted by `r` half-bases on both sides, so level 1
+  passes through P2 and P3 (P1 and P2 for Inside). The variant is part of the geometry, so the
+  dialog switches it without redrawing and the pivots are kept.
+- **Regression** (`model::regression`): ordinary least squares of the chosen source over the bars
+  the two anchor times fall on, both ends included, with the bar position as x (so gaps follow
+  what the chart shows). It reads the bars the chart draws, so a constructed chart type and a
+  replay cut work and nothing after the replay cursor is read. The fit is cached in the cached
+  screen shape; the cache key now includes the newest bar's open/high/low/close, so a live tick
+  refits. Anchor prices are never read.
+- **Text** along a line is turned to follow it (never upside down) by `TextShape`; its
+  horizontal alignment places it along the visible stretch and its vertical alignment above, on or
+  below. A vertical line's text reads up the line or across it (`TextOrientation`).
+
+### Text on lines, edited in place
+
+A selected, unlocked line or channel that can carry text shows a faint "Add text" at the place the
+text goes. A click on it, or on text it has, opens an editor there (an egui text field, so
+selection, the clipboard and input methods are egui's). Return or leaving the field keeps the
+text, Shift+Return adds a line, Escape drops the edit and is spent on it. The edit is one
+`Replace` when it ends: one undo step, nothing written while typing, and the app's shortcuts
+(Delete, undo, the tool hotkeys) leave the keys alone while the field has the keyboard. The
+toolbar's Text button and the right-click menu open it too, and the dialog's Text tab edits the
+same text.
+
+### Compatibility and sync
+
+- A plain trend line is still `{"TrendLine": ...}`, byte for byte. A trend line with **text** is
+  written as a `Shape` with the new `trend_line` geometry, so a build without it keeps the row as
+  an unreadable drawing and writes it back untouched instead of dropping the text; clearing the
+  text returns it to the original form (`Drawing::set_text`).
+- Every style field the new tools added is left out of a stored drawing while it holds its default
+  (`skip_serializing_if`), so a drawing that does not use a feature is written exactly as before
+  (same bytes, same sync hash). `a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did`
+  pins that against a fixture captured from the build before the tools existed.
+- Drawings sync as part of saved layouts, one record each, as JSON: the new tools needed no change
+  to the sync engine. Tests run all seventeen through two Macs on `MockCloud`, edit and delete
+  them, and round-trip a trend line gaining and losing text. Real CloudKit and two real Macs were
+  not exercised.
+- A build that predates the tools sees them as unreadable drawings and keeps them. Templates and
+  defaults are keyed by `Tool`, so such a build cannot read the template rows and defaults that name
+  the new tools (it refuses to overwrite them). `merge_remote_drawings` used to treat every
+  unreadable drawing as one drawing (their `id()` is 0); it now matches them by the id they were
+  stored with, and builds already out there keep the old behaviour, so update every Mac together.
+
 ## Trend line style
 
 The trend line carries a `DrawingStyle` like the shapes: colour, width, pattern, and extend left
 and right. A row saved before this had none and decodes to the blue 1.5 px segment it always was
 (`DrawingStyle::trend_line()`); a line still in that look is written without a style, so stored
-rows and saved layouts do not change. The painter prolongs it to the plot edge and the hit test
-follows the prolongation. The properties dialog edits it through the tool's capabilities.
+rows and saved layouts do not change. It is projected by the same code as the other lines
+(`ui/drawing_layer/line_shapes.rs`), so it also takes text, statistics, price labels and arrow
+ends; a line saved without them draws as it did. The painter prolongs it to the plot edge and the
+hit test follows the prolongation. The properties dialog edits it through the tool's capabilities.
 Drawings an MCP client makes use the same model (see `docs/architecture/mcp.md`).
 
 ## Tools
@@ -160,7 +260,8 @@ step; a batch that changes nothing, or only the transient ruler, is none. Restyl
 a burst (dragging a colour picker) merge into one step (800 ms, same drawing). The properties
 dialog edits a copy shown live and commits once.
 
-Drawings do not dirty a saved layout (they never did); the session saves them every 10 s.
+A drawing edit does not mark a saved layout as unsaved, but an Autosave layout writes it
+(`ChartWorkspace::drawings_dirty`); the session saves drawings every 10 s.
 
 ## Replay, synthetic charts, panes
 
@@ -175,9 +276,27 @@ reinterpreted as a pane value.
 
 ## Not done, approximate or unverified
 
-- **Drawing alerts.** A horizontal level could reuse the price-alert conditions, but a sloped line
-  needs a time-dependent condition in the alert engine (which also runs in a separate agent
-  process) and was left out rather than offering a button that does nothing.
+- **Drawing alerts.** A horizontal line, horizontal ray or crossline offers "Add alert at this
+  price" (toolbar and menu), which opens the alert editor on that price for the user to review; it
+  saves nothing itself. A sloped line needs a time-dependent condition in the alert engine (which
+  also runs in a separate agent process) and was left out rather than offering a button that does
+  nothing.
+- **The new tools against TradingView.** The geometry follows the documentation and the
+  Charting Library defaults listed above; nothing was compared pixel for pixel. Alt+J, the
+  unextended fork length, the Inside fork's levels, the disjoint channel's parallelism, the flat
+  channel's time span, the regression's divisor and its logarithmic fit, and the trend angle's sign
+  are inferred.
+- **Trend angle** has no numeric Angle field (TradingView's Coordinates tab has one): setting it
+  needs the live projection, which the dialog does not have. The angle is shown and follows the
+  anchors.
+- **Info line and trend angle** statistics reuse the arrow's (distance in periods, the on-screen
+  angle); pips are not offered.
+- **MCP** lists and deletes the new tools but cannot create or update them: its argument shape is
+  two anchors, a colour and a width (`docs/mcp-remaining-work.md`).
+- **Rotated text** is laid out by egui like any text and may look a little softer than level text
+  on a low-density display.
+- **Unreadable drawings** (a tool from a newer build) are never drawn, picked or counted, and are
+  written back byte for byte.
 - **Pips**, as above.
 - **Bar-index coordinate field.** The Coordinates tab edits price and UTC date-time; a bar number
   is not offered.
@@ -217,3 +336,14 @@ placement, selected (handles, halo, toolbar), hovered, locked, with text, and un
 | Floating toolbar placement above, below and for a shape larger than the plot | big circle |
 | Properties dialog pages and the template menu | every tool |
 | Properties dialog: equal gaps after every heading, inputs aligned on the right edge, one hairline above the footer, no resize when switching tabs | trend line, Fib, Arrow, Rectangle, arrow mark, Brush |
+| Lines menu: width, row alignment, shortcut column, scrolling in a short window, keyboard | Lines tile corner |
+| Text along a line: sharpness at 1x and 2x, readable at every slope, above/on/below, a very short line | trend line, extended line, channel |
+| "Add text" place and the editor: IME, clipboard, Return/Shift+Return/Escape, no shortcut firing | selected trend line |
+| Option+T/H/J/V/C while typing in the editor and in a text field | macOS |
+| Axis tags of a horizontal line and a vertical line, in a snapshot too | horizontal line, vertical line, crossline |
+| Regression over a live bar, in replay, on a log scale and on a Renko chart | regression trend |
+| Pitchfork levels, fills and the four variants on the same three pivots | all four forks |
+
+The hand-run galleries (`DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`) write
+the new tools, the menus, the dialog pages and the editor as PNGs from the app's own renderer, which
+is a way to look at them without a window; they are not a comparison with TradingView.
