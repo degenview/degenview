@@ -1834,4 +1834,46 @@ mod tests {
             Tool::Rectangle.default_style().stroke.width
         );
     }
+
+    /// The new tools' pages as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_new_pages() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, tool, tab) in [
+            ("dialog-pitchfork-style", Tool::SchiffPitchfork, Tab::Style),
+            ("dialog-pitchfork-levels", Tool::Pitchfork, Tab::Levels),
+            (
+                "dialog-regression-inputs",
+                Tool::RegressionTrend,
+                Tab::Inputs,
+            ),
+            ("dialog-regression-style", Tool::RegressionTrend, Tab::Style),
+            ("dialog-channel-style", Tool::ParallelChannel, Tab::Style),
+            ("dialog-trend-line-text", Tool::TrendLine, Tab::Text),
+            ("dialog-vertical-text", Tool::VerticalLine, Tab::Text),
+            ("dialog-horizontal-style", Tool::HorizontalLine, Tab::Style),
+            ("dialog-info-style", Tool::InfoLine, Tab::Style),
+            (
+                "dialog-flat-coordinates",
+                Tool::FlatChannel,
+                Tab::Coordinates,
+            ),
+        ] {
+            let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
+            dialog.tab = tab;
+            let mut store = templates();
+            let mut screen = Screen::new(vec2(520.0, 760.0));
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    dialog.show(ui.ctx(), &mut store);
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
+    }
 }

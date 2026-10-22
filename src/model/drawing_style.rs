@@ -423,6 +423,10 @@ impl DrawingStyle {
         let mut style = Self::default();
         style.stroke.color = TREND_LINE_COLOR;
         style.stroke.width = TREND_LINE_WIDTH;
+        // Text on a line: in the line's colour, below it, as TradingView's default. A line
+        // saved before it could carry text has none, so this changes nothing already drawn.
+        style.text.color = TREND_LINE_COLOR;
+        style.text.valign = VerticalAlign::Bottom;
         style
     }
 

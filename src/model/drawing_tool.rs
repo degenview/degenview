@@ -437,6 +437,8 @@ impl Tool {
         // The Charting Library's line: its blue, 2 px, nothing extended, no tags.
         let line_style = |change: fn(&mut DrawingStyle)| {
             let mut style = tinted([41, 98, 255, 255], false);
+            // Text below the line, as the Charting Library has it.
+            style.text.valign = VerticalAlign::Bottom;
             change(&mut style);
             style
         };
@@ -524,8 +526,17 @@ impl Tool {
                 style.text.valign = VerticalAlign::Bottom;
                 style
             }
-            Self::FlatChannel => tinted([255, 152, 0, 255], true),
-            Self::DisjointChannel => tinted([8, 153, 129, 255], true),
+            Self::FlatChannel | Self::DisjointChannel => {
+                let color = if self == Self::FlatChannel {
+                    [255, 152, 0, 255]
+                } else {
+                    [8, 153, 129, 255]
+                };
+                let mut style = tinted(color, true);
+                style.text.align = HorizontalAlign::Left;
+                style.text.valign = VerticalAlign::Bottom;
+                style
+            }
             Self::RegressionTrend => {
                 let mut style = tinted([41, 98, 255, 255], true);
                 // The bands are filled at the Charting Library's 70 % transparency.

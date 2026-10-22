@@ -61,6 +61,8 @@ pub mod portfolio_table;
 pub mod portfolio_transaction_editor;
 pub mod portfolio_transactions;
 mod price_text;
+#[cfg(test)]
+pub(crate) mod render_tests;
 pub mod replay_bar;
 pub mod replay_date_sheet;
 mod replay_overlay;

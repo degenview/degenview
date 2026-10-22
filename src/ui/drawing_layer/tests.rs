@@ -1938,3 +1938,64 @@ fn the_edit_ends_when_the_line_is_deleted_under_it() {
     rig.settle();
     assert!(!rig.layer.is_editing_text());
 }
+
+/// The selected line with its toolbar and invitation, the same with its text being edited, and
+/// a selected pitchfork, as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_selection_and_the_editor() {
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    if gallery_dir().is_none() {
+        return;
+    }
+    let size = vec2(1000.0, 400.0);
+    let shoot = |rig: &mut Rig, name: &str, events: Vec<Vec<Event>>| {
+        let mut screen = Screen::new(size);
+        let mut last = None;
+        let mut script = events.into_iter();
+        for _ in 0..6 {
+            let events = script.next().unwrap_or_default();
+            last = Some(screen.run(events, |ui| {
+                let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
+                let proj = projection(&rig.data, &rig.scale);
+                let mut frame = DrawingFrame::new(&rig.drawings, Tool::Cursor, None, 99)
+                    .with_selection(rig.selected.clone())
+                    .with_view(Timeframe::Day, false);
+                rig.layer.update(ui, &response, &proj, &mut frame);
+                rig.layer.paint(&ui.painter().clone(), &proj, &frame);
+                rig.layer.overlay(ui, &proj, &mut frame);
+                if let Some(select) = frame.select.take() {
+                    rig.selected = select;
+                }
+            }));
+        }
+        screen.save(name, last.expect("a frame"));
+    };
+    let (mut rig, id) = line_awaiting_text();
+    shoot(&mut rig, "selected-line-invites-text", Vec::new());
+    let place = text_place(&rig, id);
+    let button = |pressed| Event::PointerButton {
+        pos: place,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    shoot(
+        &mut rig,
+        "text-editor-open",
+        vec![
+            vec![Event::PointerMoved(place)],
+            vec![button(true)],
+            vec![button(false)],
+            Vec::new(),
+            vec![Event::Text("support".to_owned())],
+        ],
+    );
+    let mut fork = Rig::with_tool(Tool::Pitchfork);
+    for point in &POINTS[..3] {
+        fork.click(*point);
+    }
+    fork.tool = Tool::Cursor;
+    fork.selected = vec![fork.last().id()];
+    shoot(&mut fork, "selected-pitchfork", Vec::new());
+}

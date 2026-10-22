@@ -1158,4 +1158,46 @@ mod tests {
         // The tallest menu fits its rows exactly.
         assert!(Menu::Lines.height() > Menu::Shapes.height());
     }
+
+    /// Both menus as a picture. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_menus() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, corner) in [("menu-lines", LINES_CORNER), ("menu-shapes", CORNER)] {
+            let mut screen = Screen::new(vec2(420.0, 700.0));
+            let input = state();
+            let mut run = |screen: &mut Screen, events: Vec<egui::Event>| {
+                screen.run(events, |ui| {
+                    ui.scope_builder(
+                        egui::UiBuilder::new()
+                            .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, 700.0))),
+                        |ui| {
+                            show(ui, &input);
+                        },
+                    );
+                })
+            };
+            let button = |pressed| egui::Event::PointerButton {
+                pos: corner,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            for _ in 0..3 {
+                run(&mut screen, Vec::new());
+            }
+            run(&mut screen, vec![egui::Event::PointerMoved(corner)]);
+            run(&mut screen, vec![button(true)]);
+            run(&mut screen, vec![button(false)]);
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(run(&mut screen, Vec::new()));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
+    }
 }
