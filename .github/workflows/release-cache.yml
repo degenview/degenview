@@ -1,0 +1,84 @@
+name: Release cache
+
+# Release builds run on a tag, and a tag run can only restore caches saved from `main`. This builds
+# what release.yml builds (same runners, profile and features, no signing) so a release starts from
+# a warm cache instead of compiling every dependency. Keep the two builds identical.
+on:
+  push:
+    branches: [main]
+    paths:
+      - Cargo.lock
+      - Cargo.toml
+      - .github/workflows/release-cache.yml
+  schedule:
+    # A cache is evicted after seven days without a hit.
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Cache ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - name: windows-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.target }}
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libssl-dev pkg-config
+
+      # The same cargo command tools/bundle.sh runs for the release (iCloud only when the
+      # repository variable is set, as in release.yml).
+      - name: Build macOS release binaries
+        if: runner.os == 'macOS'
+        env:
+          DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
+          DEGENVIEW_ICLOUD_ENVIRONMENT: Production
+        run: |
+          features=""
+          [ -n "$DEGENVIEW_ICLOUD" ] && features="--features icloud"
+          cargo build --release $features --bin degenview --bin degenview-alert-agent
+
+      - name: Build release binary
+        if: runner.os != 'macOS'
+        shell: bash
+        run: cargo build --release

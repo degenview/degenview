@@ -96,9 +96,12 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # A tag run can only restore caches saved from `main`, so release-cache.yml builds the same
+      # thing there under this key. Only a run on `main` saves one; a tag run's would never be read.
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          shared-key: release-${{ matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'

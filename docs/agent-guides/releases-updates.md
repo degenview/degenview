@@ -47,6 +47,11 @@ release lists everything since the previous stable tag, so `0.6.0` repeats what 
 a release candidate lists only what is new since the previous tag. The workflow file runs from the
 tag's own commit, so a change to the notes step must be on `main` before the tag is cut.
 
+A tag run can only restore caches saved from `main`, so `release-cache.yml` builds the release
+profile there (on a `Cargo.lock`/`Cargo.toml` change and weekly) under the shared key
+`release-<target>`, and `release.yml` saves no cache itself on a tag. Keep the two builds identical
+(runners, features, `--release`); if you change one, change the other.
+
 Never squash/rebase the release PR or reuse/move a published tag. Fix a bad release with a new
 version. Re-run a failed tagged build through the Release workflow dispatch.
 
