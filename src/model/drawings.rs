@@ -1528,6 +1528,7 @@ impl Drawing {
             Geometry::Table(table) => Some(table.summary()),
             Geometry::Image(image) => Some(image.name.clone()).filter(|name| !name.is_empty()),
             Geometry::Card { card, .. } => Some(card.summary()),
+            Geometry::Bars(pattern) => Some(format!("{} bars", pattern.bars.len())),
             _ => None,
         }
     }

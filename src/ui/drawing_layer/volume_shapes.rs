@@ -58,6 +58,12 @@ fn faded(color: Rgba, factor: f32) -> Rgba {
     ]
 }
 
+/// Whether a time is before the first bar the chart has loaded: older bars page in as the chart is
+/// scrolled back, so what is drawn then covers only the bars there are.
+fn before_the_loaded_bars(proj: &Projection, time_ms: i64) -> bool {
+    proj.times.index_of(time_ms) < -0.5
+}
+
 /// A grey note on a plate, for what cannot be shown.
 fn note(at: Pos2, text: &str) -> PivotLabel {
     PivotLabel {
@@ -151,6 +157,8 @@ fn vwap(
     screen.handles = vertex_handles(&[at]);
     if series.is_empty() && first < bars.len() {
         screen.labels.push(note(at, "No volume data"));
+    } else if before_the_loaded_bars(proj, anchor.time_ms) {
+        screen.labels.push(note(at, "From the loaded bars only"));
     }
     Some(screen)
 }
@@ -214,6 +222,16 @@ fn profile(
     };
 
     histogram(&mut screen, &built, options, proj, left, right);
+    let starts = match range {
+        Range::Fixed(a, b) => a.time_ms.min(b.time_ms),
+        Range::Anchored(at) => at.time_ms,
+    };
+    if before_the_loaded_bars(proj, starts) {
+        screen.labels.push(note(
+            pos2(left.max(proj.plot.left()), proj.plot.top() + 20.0),
+            "From the loaded bars only",
+        ));
+    }
     // The point of control and the edges of the value area, across the range.
     let line = |price: f64, to: f32, color: Rgba, width: f32, dash: LineDash| Styled {
         path: vec![

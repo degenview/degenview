@@ -926,6 +926,44 @@ fn a_profile_with_no_volume_says_so() {
 }
 
 #[test]
+fn a_range_that_starts_before_the_loaded_bars_says_it_covers_only_those() {
+    // The chart's first bar is bar 0; an anchor three bars before it is not loaded.
+    let early = Anchor {
+        time_ms: -3 * 60_000,
+        price: 100.0,
+    };
+    let profile = built_on(
+        Tool::FixedRangeVolumeProfile,
+        &[early, at(5, 100.0)],
+        profile_style(4),
+        &flat(),
+        false,
+    );
+    assert!(
+        texts(&profile).contains(&"From the loaded bars only"),
+        "{:?}",
+        texts(&profile)
+    );
+    let vwap = built_on(
+        Tool::AnchoredVwap,
+        &[early],
+        Tool::AnchoredVwap.default_style(),
+        &rising(),
+        false,
+    );
+    assert!(texts(&vwap).contains(&"From the loaded bars only"));
+    // One that starts on a loaded bar says nothing of the kind.
+    let loaded = built_on(
+        Tool::FixedRangeVolumeProfile,
+        &[at(0, 100.0), at(5, 100.0)],
+        profile_style(4),
+        &flat(),
+        false,
+    );
+    assert!(texts(&loaded).is_empty());
+}
+
+#[test]
 fn a_profile_can_be_picked_by_a_bar_and_not_by_the_gap_beside_it() {
     let screen = built_on(
         Tool::FixedRangeVolumeProfile,

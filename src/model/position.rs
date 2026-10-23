@@ -577,6 +577,26 @@ mod tests {
     }
 
     #[test]
+    fn nothing_that_trades_or_alerts_reads_the_drawings() {
+        // A position is a drawing, never an order: the engines that place orders, fill them and
+        // watch prices read no drawing, so a drawing (and its stop and target) cannot reach them.
+        let sources = [
+            ("paper_engine", include_str!("paper_engine.rs")),
+            ("paper", include_str!("paper.rs")),
+            ("alert_engine", include_str!("alert_engine.rs")),
+            ("alert", include_str!("alert.rs")),
+            ("paper_host", include_str!("../host/paper_host.rs")),
+            ("alert_host", include_str!("../host/alert_host.rs")),
+            ("alert_runtime", include_str!("../host/alert_runtime.rs")),
+        ];
+        for (name, source) in sources {
+            for word in ["Geometry", "DrawingCommand", "Drawing::", "model::position"] {
+                assert!(!source.contains(word), "{name} mentions {word}");
+            }
+        }
+    }
+
+    #[test]
     fn a_forecast_succeeds_when_a_bar_reaches_the_target_and_fails_when_time_runs_out() {
         let bars = [
             bar(99.0, 101.0, 100.0),
