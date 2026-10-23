@@ -15,6 +15,7 @@ use crate::model::drawing_template::style_for;
 use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool, Visibility};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
+use crate::ui::date_picker;
 use crate::ui::icons::Icon;
 use crate::ui::tool_sidebar::tool_icon;
 use crate::ui::{kit, series_render, settings_card, sheet, theme};
@@ -32,9 +33,8 @@ const CARD_SPACING: f32 = 8.0;
 const SECTION_GAP: f32 = 10.0;
 /// The outer width of a menu picker, which the other right-hand inputs match.
 const CONTROL_WIDTH: f32 = 130.0;
-/// A framed text area's inner width so its outer width is `CONTROL_WIDTH`: the 1 pt border and
-/// 8 pt margin on each side are 18 pt.
-const TIME_FIELD_WIDTH: f32 = CONTROL_WIDTH - 18.0;
+/// The time picker's width: room for "Oct 9, 2026 14:03" and the calendar glyph.
+const TIME_FIELD_WIDTH: f32 = 150.0;
 /// The price field has the stepper beside it, and the card's 14 pt gap, so it is narrower.
 const PRICE_FIELD_WIDTH: f32 = CONTROL_WIDTH - 18.0 - 16.0 - 14.0;
 /// How many anchors the Coordinates tab lists; a long path keeps the rest on the chart.
@@ -93,11 +93,11 @@ pub enum Outcome {
     Cancel,
 }
 
-/// The text a coordinate field is being edited as.
+/// The text a coordinate field is being edited as: the time as the date picker reads and
+/// writes it, UTC `YYYY-MM-DD HH:MM`.
 #[derive(Clone, Default)]
 struct CoordinateText {
     time: String,
-    time_invalid: bool,
 }
 
 /// A name being asked for: a new template's, or a template's new name.
@@ -120,6 +120,8 @@ pub struct DrawingProperties {
     tool: Tool,
     tab: Tab,
     coordinates: Vec<CoordinateText>,
+    /// No frame has been drawn yet, so a calendar an earlier dialog left open is still to close.
+    fresh: bool,
     prompt: Option<Prompt>,
     notice: Option<Notice>,
     /// The tallest page content seen, so switching tabs does not resize the dialog.
@@ -219,6 +221,7 @@ impl DrawingProperties {
             tool,
             tab: Tab::Style,
             coordinates: Vec::new(),
+            fresh: true,
             prompt: None,
             notice: None,
             page_height: 0.0,
@@ -287,7 +290,6 @@ impl DrawingProperties {
             .iter()
             .map(|anchor| CoordinateText {
                 time: format::timestamp(anchor.time_ms),
-                time_invalid: false,
             })
             .collect();
     }
@@ -297,6 +299,12 @@ impl DrawingProperties {
         let mut outcome = Outcome::Open;
         let content = ctx.content_rect();
         let typing = ctx.egui_wants_keyboard_input();
+        if self.fresh {
+            self.close_calendars(ctx);
+            self.fresh = false;
+        }
+        // Escape and Return belong to an open calendar before they reach the dialog.
+        let calendar_open = self.calendar_open(ctx);
         let window = egui::Window::new("Drawing properties")
             .id(Id::new(("drawing-properties", self.draft.id())))
             .title_bar(false)
@@ -325,14 +333,32 @@ impl DrawingProperties {
             ui.spacing_mut().item_spacing.y = 0.0;
             outcome = self.body(ui, templates);
         });
-        if matches!(outcome, Outcome::Open) {
+        if matches!(outcome, Outcome::Open) && !calendar_open {
             if ctx.input(|input| input.key_pressed(Key::Escape)) {
                 outcome = Outcome::Cancel;
             } else if !typing && ctx.input(|input| input.key_pressed(Key::Enter)) {
                 outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
         }
+        if !matches!(outcome, Outcome::Open) {
+            self.close_calendars(ctx);
+        }
         outcome
+    }
+
+    fn time_id(&self, index: usize) -> Id {
+        Id::new(("drawing-time", self.draft.id(), index))
+    }
+
+    fn calendar_open(&self, ctx: &Context) -> bool {
+        (0..self.coordinates.len().min(MAX_LISTED))
+            .any(|index| date_picker::is_open(ctx, self.time_id(index)))
+    }
+
+    fn close_calendars(&self, ctx: &Context) {
+        for index in 0..self.coordinates.len().min(MAX_LISTED) {
+            date_picker::close(ctx, self.time_id(index));
+        }
     }
 
     fn body(&mut self, ui: &mut Ui, templates: &mut DrawingTemplateStore) -> Outcome {
@@ -1309,15 +1335,9 @@ impl DrawingProperties {
             {
                 edited.price = price;
             }
+            let time_id = self.time_id(index);
             let state = &mut self.coordinates[index];
-            if reads_time
-                && let Some(time) = time_row(
-                    ui,
-                    Id::new(("drawing-time", self.draft.id(), index)),
-                    state,
-                    anchor.time_ms,
-                )
-            {
+            if reads_time && let Some(time) = time_row(ui, time_id, state) {
                 edited.time_ms = time;
             }
             if edited.time_ms != anchor.time_ms || edited.price != anchor.price {
@@ -1345,7 +1365,6 @@ impl DrawingProperties {
         self.draft = candidate;
         if let Some(text) = self.coordinates.get_mut(index) {
             text.time = format::timestamp(anchor.time_ms);
-            text.time_invalid = false;
         }
     }
 
@@ -1772,60 +1791,29 @@ fn price_decimals(price: f64) -> usize {
     }
 }
 
-/// The time field of one anchor: UTC `YYYY-MM-DD HH:MM`, committed on Return or when it loses
-/// focus, and marked invalid (and not applied) when it does not parse.
-fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText, original_ms: i64) -> Option<i64> {
-    let mut result = None;
-    settings_card::card(ui, Icon::Clock, "Time (UTC)", None, |ui| {
-        let focused = ui.memory(|memory| memory.has_focus(id));
-        let stroke = if state.time_invalid {
-            Stroke::new(1.5, kit::RED)
-        } else {
-            kit::field_frame(focused).stroke
-        };
-        let response = kit::field_frame(focused)
-            .stroke(stroke)
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(8, 0))
-            .show(ui, |ui| {
-                ui.allocate_ui_with_layout(
-                    vec2(TIME_FIELD_WIDTH, 22.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        kit::plain_field(
-                            ui,
-                            id,
-                            &mut state.time,
-                            "YYYY-MM-DD HH:MM",
-                            12.0,
-                            kit::REGULAR,
-                            TIME_FIELD_WIDTH,
-                        )
-                    },
-                )
-                .inner
-            })
-            .inner;
-        // The field shows the time to the minute, so only text the user changed is a new time.
-        if response.lost_focus() && state.time.trim() != format::timestamp(original_ms) {
-            match format::parse_timestamp(&state.time) {
-                Some(time) => {
-                    state.time_invalid = false;
-                    result = Some(time);
-                }
-                None => state.time_invalid = true,
-            }
-        }
-    });
-    if state.time_invalid {
-        ui.label(kit::text(
-            "Use a date and time like 2025-03-14 09:30.",
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            kit::RED,
-        ));
-    }
-    result
+/// The time of one anchor, UTC: a field that opens a calendar and a time stepper. The text only
+/// changes when the user picks, so an anchor nobody touched keeps its exact time.
+fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText) -> Option<i64> {
+    settings_card::card_reserving(
+        ui,
+        Icon::Clock,
+        "Time (UTC)",
+        None,
+        TIME_FIELD_WIDTH,
+        |ui| {
+            date_picker::show(
+                ui,
+                id,
+                &mut state.time,
+                0,
+                TIME_FIELD_WIDTH,
+                date_picker::Look::Compact,
+                false,
+            )
+            .then(|| format::parse_timestamp(&state.time))
+            .flatten()
+        },
+    )
 }
 
 #[cfg(test)]
@@ -2168,7 +2156,14 @@ mod tests {
         assert_eq!(after[1], moved, "negative prices are allowed");
         assert_eq!(after[2], before[2]);
         assert_eq!(dialog.coordinates[1].time, format::timestamp(moved.time_ms));
-        assert!(!dialog.coordinates[1].time_invalid);
+    }
+
+    #[test]
+    fn a_picked_time_reads_back_as_the_same_utc_minute() {
+        use crate::model::portfolio_editor::date_text;
+        // The picker writes `date_text(.., 0)`; the dialog reads it with `parse_timestamp`.
+        let picked = 1_800_000_060_000;
+        assert_eq!(format::parse_timestamp(&date_text(picked, 0)), Some(picked));
     }
 
     #[test]

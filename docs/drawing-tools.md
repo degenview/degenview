@@ -299,8 +299,9 @@ reinterpreted as a pane value.
   in the Object tree as "From a newer version" (only Delete works), and are written back byte for byte.
   See [iCloud Sync](icloud-sync.md#newer-versions) for how newer data reaches an older build.
 - **Pips**, as above.
-- **Bar-index coordinate field.** The Coordinates tab edits price and UTC date-time; a bar number
-  is not offered.
+- **Bar-index coordinate field.** The Coordinates tab edits price and a UTC date-time, the latter
+  with the calendar pop-over and hour/minute stepper of `ui/date_picker.rs` (pure egui, so the
+  same on every platform; no typed entry). A bar number is not offered.
 - **Groups and an object tree**; a multi-selection is moved, locked, hidden and deleted together
   but not grouped.
 - **Unverified against TradingView**: the Arc's three-point construction, the Curve control
