@@ -8,8 +8,8 @@ use crate::model::Timeframe;
 use crate::model::chart_template::TemplateId;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{
-    DrawingStyle, HorizontalAlign, Level, LineEnd, MiddleLine, StatsPosition, TextOrientation,
-    VerticalAlign,
+    DrawingStyle, Emoji, HorizontalAlign, Level, LineEnd, MiddleLine, StatsPosition,
+    TextOrientation, VerticalAlign,
 };
 use crate::model::drawing_template::style_for;
 use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool, Visibility};
@@ -133,6 +133,7 @@ fn has_style_page(caps: Caps) -> bool {
         Caps::TIME_LABEL,
         Caps::MIDDLE_POINT,
         Caps::BOX,
+        Caps::EMOJI,
     ]
     .into_iter()
     .any(|cap| caps.has(cap))
@@ -180,6 +181,8 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         Tool::DoubleCurve => &["Start", "End", "Control point 1", "Control point 2"],
         Tool::ArrowMarkUp | Tool::ArrowMarkDown => &["Anchor"],
         Tool::Text => &["Top-left corner"],
+        Tool::Note | Tool::PriceNote | Tool::Callout => &["Anchor", "Label position"],
+        Tool::Signpost => &["Anchor", "Label height"],
         Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &["Anchor"],
         _ => &[],
     };
@@ -736,6 +739,8 @@ impl DrawingProperties {
             // A channel or a fork fills the space between its lines: a background.
             let title = if self.tool.spec().group == crate::model::ToolGroup::Shapes {
                 "Fill"
+            } else if self.tool == Tool::Signpost {
+                "Plate"
             } else {
                 "Background"
             };
@@ -766,6 +771,35 @@ impl DrawingProperties {
                     style.border.width = width as f32;
                 }
                 dash_card(ui, "Border style", &mut style.border.dash);
+            }
+        }
+        if caps.has(Caps::EMOJI) {
+            page.section(ui, "Emoji pin", None);
+            toggle_row(
+                ui,
+                Icon::SignpostTool,
+                "Emoji pin",
+                "Show an emoji on the marker at the anchor.",
+                &mut style.emoji_shown,
+            );
+            if style.emoji_shown {
+                let names: Vec<String> = Emoji::ALL
+                    .iter()
+                    .map(|emoji| format!("{}  {}", emoji.glyph(), emoji.label()))
+                    .collect();
+                let options: Vec<(Emoji, &str)> = Emoji::ALL
+                    .iter()
+                    .zip(&names)
+                    .map(|(emoji, name)| (*emoji, name.as_str()))
+                    .collect();
+                picker_row(ui, Icon::Sliders, "Emoji", None, &options, &mut style.emoji);
+                color_card(
+                    ui,
+                    Icon::Palette,
+                    "Emoji background",
+                    None,
+                    &mut style.emoji_fill,
+                );
             }
         }
         if caps.has(Caps::MIDDLE_LINE) {

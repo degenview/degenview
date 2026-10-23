@@ -130,6 +130,11 @@ pub(super) struct Screen {
     pub hit: Vec<Rect>,
     /// Discs painted white on the shape (the hole of a pin).
     pub studs: Vec<(Pos2, f32)>,
+    /// Solid discs in a colour of their own: the dot where a note's leader meets its anchor, the
+    /// round marker of a signpost.
+    pub discs: Vec<(Pos2, f32, Rgba)>,
+    /// An emoji painted at a point, at a size.
+    pub glyph: Option<(Pos2, &'static str, f32)>,
     /// Text the tool writes itself (a price), shown above the drawing's own.
     pub heading: Option<String>,
     /// A note shown only while it is open.
@@ -176,6 +181,8 @@ impl Screen {
             frames: Vec::new(),
             hit: Vec::new(),
             studs: Vec::new(),
+            discs: Vec::new(),
+            glyph: None,
             heading: None,
             popup: None,
             popup_mesh: None,
@@ -658,7 +665,7 @@ fn shape(
             screen.guides = vec![[a, c1], [b, c2]];
             screen.handles = curve_handles(&anchors);
         }
-        Geometry::Annotation { .. } => {
+        Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }
         _ => return line_shapes::project(geometry, style, proj, anchors),

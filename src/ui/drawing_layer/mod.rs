@@ -412,6 +412,12 @@ fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Par
 /// `anchor`, kept from constructing a degenerate shape: the pointer for the second anchor of a
 /// box under Shift is held square, and a line under Shift to a multiple of 45 degrees.
 fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> Pos2 {
+    // A signpost's plate is straight above or below its anchor, whatever the modifiers.
+    if tool == Tool::Signpost
+        && let Some(first) = first
+    {
+        return Pos2::new(first.x, pointer.y);
+    }
     let Some(first) = first.filter(|_| shift) else {
         return pointer;
     };
@@ -1153,7 +1159,7 @@ impl DrawingLayer {
             }
             None => self.hover.map(|hit| match hit.part {
                 Part::Body => CursorIcon::Move,
-                Part::Anchor(_) => CursorIcon::Grab,
+                Part::Anchor(_) | Part::Label => CursorIcon::Grab,
                 Part::Width => CursorIcon::ResizeHorizontal,
                 Part::Box(handle) => match handle {
                     BoxHandle::TopLeft | BoxHandle::BottomRight => CursorIcon::ResizeNwSe,

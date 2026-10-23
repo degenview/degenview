@@ -72,6 +72,14 @@ impl TextMeasure {
         Self::new(ctx)
     }
 
+    /// Whether the fonts of the painting context can draw every character of `text`.
+    #[cfg(test)]
+    pub(super) fn can_draw(&self, text: &str) -> bool {
+        let font = FontId::proportional(14.0);
+        self.ctx
+            .fonts_mut(|fonts| text.chars().all(|c| fonts.has_glyph(&font, c)))
+    }
+
     /// The size `text` takes in `style` when wrapped at `wrap`.
     pub(super) fn size(&self, text: &str, style: &TextStyle, wrap: f32) -> Vec2 {
         let job = layout_job(text, style, wrap);

@@ -254,6 +254,136 @@ impl Default for BorderStyle {
     }
 }
 
+/// The pins a signpost can carry on its marker, the way TradingView offers an emoji there. The
+/// app's text renderer cannot draw colour emoji (the colour fonts are bitmaps), so these are
+/// monochrome symbols its fonts do carry, a test checks each, painted white on the marker's
+/// disc. A fixed list, named rather than stored as characters, so a stored row says what it
+/// means and cannot hold anything else.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Emoji {
+    #[default]
+    Star,
+    Heart,
+    Diamond,
+    Spade,
+    Club,
+    Flag,
+    Warning,
+    Arrow,
+    Up,
+    Down,
+    Dot,
+    Check,
+    Cross,
+    Skull,
+    Radiation,
+    Scales,
+    Crown,
+    Bitcoin,
+    Dollar,
+    Euro,
+    Swords,
+    Infinity,
+    Comet,
+    Moon,
+    Gear,
+    Plane,
+}
+
+impl Emoji {
+    pub const ALL: [Self; 26] = [
+        Self::Star,
+        Self::Heart,
+        Self::Diamond,
+        Self::Spade,
+        Self::Club,
+        Self::Flag,
+        Self::Warning,
+        Self::Arrow,
+        Self::Up,
+        Self::Down,
+        Self::Dot,
+        Self::Check,
+        Self::Cross,
+        Self::Skull,
+        Self::Radiation,
+        Self::Scales,
+        Self::Crown,
+        Self::Bitcoin,
+        Self::Dollar,
+        Self::Euro,
+        Self::Swords,
+        Self::Infinity,
+        Self::Comet,
+        Self::Moon,
+        Self::Gear,
+        Self::Plane,
+    ];
+
+    pub const fn glyph(self) -> &'static str {
+        match self {
+            Self::Star => "\u{2605}",
+            Self::Heart => "\u{2665}",
+            Self::Diamond => "\u{2666}",
+            Self::Spade => "\u{2660}",
+            Self::Club => "\u{2663}",
+            Self::Flag => "\u{2691}",
+            Self::Warning => "\u{26A0}",
+            Self::Arrow => "\u{27A4}",
+            Self::Up => "\u{25B2}",
+            Self::Down => "\u{25BC}",
+            Self::Dot => "\u{25CF}",
+            Self::Check => "\u{2713}",
+            Self::Cross => "\u{2717}",
+            Self::Skull => "\u{2620}",
+            Self::Radiation => "\u{2622}",
+            Self::Scales => "\u{2696}",
+            Self::Crown => "\u{265B}",
+            Self::Bitcoin => "\u{20BF}",
+            Self::Dollar => "\u{0024}",
+            Self::Euro => "\u{20AC}",
+            Self::Swords => "\u{2694}",
+            Self::Infinity => "\u{221E}",
+            Self::Comet => "\u{2604}",
+            Self::Moon => "\u{263E}",
+            Self::Gear => "\u{2699}",
+            Self::Plane => "\u{2708}",
+        }
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Star => "Star",
+            Self::Heart => "Heart",
+            Self::Diamond => "Diamond",
+            Self::Spade => "Spade",
+            Self::Club => "Club",
+            Self::Flag => "Flag",
+            Self::Warning => "Warning",
+            Self::Arrow => "Arrow",
+            Self::Up => "Triangle up",
+            Self::Down => "Triangle down",
+            Self::Dot => "Dot",
+            Self::Check => "Check",
+            Self::Cross => "Cross",
+            Self::Skull => "Skull",
+            Self::Radiation => "Radiation",
+            Self::Scales => "Scales",
+            Self::Crown => "Crown",
+            Self::Bitcoin => "Bitcoin",
+            Self::Dollar => "Dollar",
+            Self::Euro => "Euro",
+            Self::Swords => "Swords",
+            Self::Infinity => "Infinity",
+            Self::Comet => "Comet",
+            Self::Moon => "Moon",
+            Self::Gear => "Gear",
+            Self::Plane => "Plane",
+        }
+    }
+}
+
 /// How many extra lines a pitchfork can carry besides its median.
 pub const PITCHFORK_LEVELS: usize = 9;
 /// How many extra lines a parallel channel can carry besides its two edges and its middle line.
@@ -390,6 +520,21 @@ fn is_zero(value: &f32) -> bool {
     *value == 0.0
 }
 
+/// The signpost's plate colour, and so the colour its emoji sits on until it is changed.
+const SIGNPOST_BLUE: Rgba = [41, 98, 255, 255];
+
+fn default_emoji_fill() -> Rgba {
+    SIGNPOST_BLUE
+}
+
+fn is_default_emoji_fill(value: &Rgba) -> bool {
+    *value == SIGNPOST_BLUE
+}
+
+fn is_default_emoji(value: &Emoji) -> bool {
+    *value == Emoji::default()
+}
+
 /// How a drawing looks. Every field after `stats` belongs to the lines, channels and pitchforks
 /// and is left out of a stored drawing while it holds its default, so a rectangle does not carry
 /// nine pitchfork levels around in every saved layout and every synced record.
@@ -429,6 +574,16 @@ pub struct DrawingStyle {
     /// The border of a text box. Only the tools with [`Caps::BOX`](super::Caps::BOX) read it.
     #[serde(skip_serializing_if = "is_default_border")]
     pub border: BorderStyle,
+    /// A signpost's emoji at its anchor, whether it is shown, and what it sits on.
+    #[serde(skip_serializing_if = "is_default_emoji")]
+    pub emoji: Emoji,
+    #[serde(skip_serializing_if = "is_false")]
+    pub emoji_shown: bool,
+    #[serde(
+        default = "default_emoji_fill",
+        skip_serializing_if = "is_default_emoji_fill"
+    )]
+    pub emoji_fill: Rgba,
     /// Wrap a text box's text at `box_width`.
     #[serde(skip_serializing_if = "is_false")]
     pub wrap: bool,
@@ -458,6 +613,9 @@ impl Default for DrawingStyle {
             time_label: false,
             hide_text: false,
             border: BorderStyle::default(),
+            emoji: Emoji::default(),
+            emoji_shown: false,
+            emoji_fill: SIGNPOST_BLUE,
             wrap: false,
             box_width: 0.0,
         }

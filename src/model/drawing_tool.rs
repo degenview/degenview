@@ -57,6 +57,10 @@ pub enum Tool {
     PriceLabel,
     FlagMark,
     Pin,
+    Note,
+    PriceNote,
+    Callout,
+    Signpost,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -152,6 +156,8 @@ impl Caps {
     pub const AUTO_TEXT: Self = Self(1 << 18);
     /// A note that is shown only once its marker is clicked (a pin's).
     pub const COLLAPSIBLE: Self = Self(1 << 19);
+    /// An emoji at the anchor, shown or not, and what it sits on.
+    pub const EMOJI: Self = Self(1 << 20);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -240,7 +246,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 38] = [
+    pub const GROUPED: [Self; 42] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -259,9 +265,13 @@ impl Tool {
         Self::ModifiedSchiffPitchfork,
         Self::InsidePitchfork,
         Self::Text,
+        Self::Note,
+        Self::PriceNote,
         Self::Pin,
+        Self::Callout,
         Self::Comment,
         Self::PriceLabel,
+        Self::Signpost,
         Self::FlagMark,
         Self::Brush,
         Self::Highlighter,
@@ -399,6 +409,26 @@ impl Tool {
                 Single,
                 note.with(Caps::COLOR).with(Caps::COLLAPSIBLE),
             ),
+            Self::Note => spec(
+                "Note",
+                TextNotes,
+                Points(2),
+                note.with(Caps::STROKE)
+                    .with(Caps::DASH)
+                    .with(Caps::TEXT_FIRST),
+            ),
+            Self::PriceNote => spec("Price note", TextNotes, Points(2), note.with(Caps::COLOR)),
+            Self::Callout => spec("Callout", TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
+            Self::Signpost => spec(
+                "Signpost",
+                TextNotes,
+                Points(2),
+                Caps::FILL
+                    .with(Caps::TEXT)
+                    .with(Caps::INLINE_TEXT)
+                    .with(Caps::TEXT_FIRST)
+                    .with(Caps::EMOJI),
+            ),
             Self::Fib => spec("Fib Retracement", Lines, Points(2), Caps::NONE),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
@@ -479,7 +509,7 @@ impl Tool {
     /// The most characters of text a drawing by this tool may carry.
     pub const fn max_text(self) -> usize {
         match self {
-            Self::Pin => LONG_TEXT_CHARS,
+            Self::Pin | Self::Note | Self::Callout => LONG_TEXT_CHARS,
             _ => MAX_TEXT_CHARS,
         }
     }
@@ -641,6 +671,35 @@ impl Tool {
                 style
             }
             Self::FlagMark => tinted([41, 98, 255, 255], false),
+            Self::Note => {
+                // The Charting Library's: a blue card, its marker and leader the same blue.
+                let mut style = text_box([41, 98, 255, 179], [41, 98, 255, 255], true);
+                style.stroke.color = [41, 98, 255, 255];
+                style.stroke.width = 1.5;
+                style
+            }
+            Self::PriceNote => {
+                // Not in the Charting Library: the price tag's look on a leader.
+                let mut style = text_box([41, 98, 255, 255], [41, 98, 255, 255], true);
+                style.stroke.color = [41, 98, 255, 255];
+                style.stroke.width = 1.5;
+                style.text.bold = true;
+                style
+            }
+            Self::Callout => {
+                let mut style = text_box([0, 151, 167, 179], [0, 151, 167, 255], true);
+                style.border.width = 2.0;
+                style.box_width = 200.0;
+                style
+            }
+            Self::Signpost => {
+                // The plate colour is the fill; the stem and the dot at the anchor follow it.
+                let mut style = text_box([41, 98, 255, 255], [41, 98, 255, 255], false);
+                style.stroke.color = [41, 98, 255, 255];
+                style.stroke.width = 1.5;
+                style.text.size = 12.0;
+                style
+            }
             Self::Pin => {
                 // Not in the Charting Library: the note's look is a blue card like its Note.
                 let mut style = text_box([41, 98, 255, 179], [41, 98, 255, 255], false);
@@ -685,7 +744,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 38);
+        assert_eq!(Tool::GROUPED.len(), 42);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -708,7 +767,7 @@ mod tests {
         };
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
-        assert_eq!(counts(&ToolGroup::NOTE_MENU), [5]);
+        assert_eq!(counts(&ToolGroup::NOTE_MENU), [9]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

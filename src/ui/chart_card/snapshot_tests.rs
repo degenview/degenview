@@ -718,3 +718,125 @@ fn gallery_of_the_text_and_note_tools() {
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
+
+/// The notes with a leader or a tail, and the signposts, on a chart.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_two_point_notes() {
+    use crate::model::drawing_style::Emoji;
+    use crate::model::{Anchor, DrawingStyle};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let make =
+        |tool: Tool, id: u64, anchors: [Anchor; 2], text: &str, tweak: fn(&mut DrawingStyle)| {
+            let mut style = tool.default_style();
+            tweak(&mut style);
+            let mut drawing = Drawing::build(tool, id, &anchors, style).expect("builds");
+            drawing.set_text(text);
+            drawing
+        };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let sets: Vec<(&str, Vec<Drawing>)> = vec![
+        (
+            "notes-3",
+            vec![
+                make(
+                    Tool::Note,
+                    1,
+                    [at(236, 226.0), at(250, 258.0)],
+                    "Note on a level",
+                    plain,
+                ),
+                make(
+                    Tool::PriceNote,
+                    2,
+                    [at(262, 244.0), at(272, 210.0)],
+                    "",
+                    plain,
+                ),
+                make(
+                    Tool::PriceNote,
+                    3,
+                    [at(226, 204.0), at(240, 192.0)],
+                    "support",
+                    plain,
+                ),
+                make(
+                    Tool::Callout,
+                    4,
+                    [at(280, 238.0), at(268, 262.0)],
+                    "Callout",
+                    plain,
+                ),
+            ],
+        ),
+        (
+            "notes-4",
+            vec![
+                make(
+                    Tool::Signpost,
+                    1,
+                    [at(240, 222.0), at(240, 252.0)],
+                    "Earnings",
+                    plain,
+                ),
+                make(
+                    Tool::Signpost,
+                    2,
+                    [at(262, 250.0), at(262, 214.0)],
+                    "FOMC",
+                    |style| {
+                        style.emoji_shown = true;
+                        style.emoji = Emoji::Crown;
+                    },
+                ),
+                make(
+                    Tool::Signpost,
+                    3,
+                    [at(280, 240.0), at(280, 266.0)],
+                    "Halving",
+                    |style| {
+                        style.emoji_shown = true;
+                        style.emoji = Emoji::Skull;
+                        style.emoji_fill = [242, 54, 69, 255];
+                        style.fill.color = [242, 54, 69, 255];
+                    },
+                ),
+            ],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}

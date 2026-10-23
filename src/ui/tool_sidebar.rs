@@ -212,6 +212,10 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::PriceLabel => Icon::PriceLabelTool,
         Tool::FlagMark => Icon::FlagTool,
         Tool::Pin => Icon::PinTool,
+        Tool::Note => Icon::NoteTool,
+        Tool::PriceNote => Icon::PriceNoteTool,
+        Tool::Callout => Icon::CalloutTool,
+        Tool::Signpost => Icon::SignpostTool,
     }
 }
 

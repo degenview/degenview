@@ -1,7 +1,7 @@
 //! The text and note tools: Text, Comment, Price label, Flag mark and Pin.
 
 use super::*;
-use crate::model::{AnnotationKind, Caps};
+use crate::model::{AnnotationKind, Caps, LeaderKind};
 
 fn annotation_at(rig: &Rig) -> (AnnotationKind, Anchor) {
     match rig.last().geometry() {
@@ -400,4 +400,291 @@ fn a_locked_text_cannot_be_edited_in_place() {
     let place = text_place(&rig, id);
     rig.click(place);
     assert!(!rig.layer.is_editing_text());
+}
+
+// MARK: Note, Price note and Callout
+
+fn leader_at(rig: &Rig) -> (LeaderKind, Anchor, Anchor) {
+    match rig.last().geometry() {
+        Some(Geometry::Leader { kind, at, label }) => (*kind, *at, *label),
+        other => panic!("not a leader: {other:?}"),
+    }
+}
+
+#[test]
+fn a_note_and_a_callout_wait_for_their_text_after_both_points() {
+    for tool in [Tool::Note, Tool::Callout, Tool::Signpost] {
+        let mut rig = Rig::with_tool(tool);
+        rig.click(POINTS[0]);
+        assert!(
+            rig.layer.claims_drag(),
+            "{tool:?} waits for its second point"
+        );
+        rig.click(POINTS[1]);
+        rig.settle();
+        assert!(rig.layer.is_editing_text(), "{tool:?} opens its editor");
+        assert!(rig.drawings.is_empty() && rig.undo_steps == 0);
+        rig.key(Key::Escape);
+        rig.settle();
+        assert!(rig.drawings.is_empty(), "{tool:?}: Escape leaves nothing");
+        assert_eq!(rig.undo_steps, 0);
+    }
+}
+
+#[test]
+fn a_note_points_from_its_box_at_the_anchor_with_a_leader_and_a_dot() {
+    let (mut rig, id) = placed(Tool::Note);
+    let (kind, at, label) = leader_at(&rig);
+    assert_eq!(kind, LeaderKind::Note);
+    assert!(rig.px(at).distance(POINTS[0]) < 1.0 && rig.px(label).distance(POINTS[1]) < 1.0);
+    let screen = rig.screen_of(id);
+    let rect = screen.hit[0];
+    // The box is centred on the label point.
+    assert!(rect.center().distance(rig.px(label)) < 0.6);
+    // The leader joins the anchor to the nearest point of the box, and a dot marks the anchor.
+    let leader = &screen.lines[0];
+    assert_eq!(leader[0], rig.px(at));
+    assert!(rect.expand(0.01).contains(leader[1]));
+    assert_eq!(screen.discs.len(), 1);
+    assert_eq!(screen.discs[0].0, rig.px(at));
+    // The anchor, the label and the width each have a handle of their own.
+    let parts: Vec<Part> = screen.handles.iter().map(|h| h.part).collect();
+    assert!(parts.contains(&Part::Anchor(0)) && parts.contains(&Part::Label));
+    assert!(parts.contains(&Part::Width));
+}
+
+#[test]
+fn a_notes_label_moves_by_the_pointers_travel_without_jumping_and_the_anchor_stays() {
+    let (mut rig, id) = placed(Tool::Note);
+    let (_, at, label) = leader_at(&rig);
+    let screen = rig.screen_of(id);
+    let handle = screen
+        .handles
+        .iter()
+        .find(|h| h.part == Part::Label)
+        .unwrap()
+        .pos;
+    rig.drag(handle, handle + vec2(70.0, -25.0));
+    let (_, at_after, label_after) = leader_at(&rig);
+    assert_eq!(at_after, at, "the anchor does not move");
+    let moved = rig.px(label_after) - rig.px(label);
+    assert!((moved - vec2(70.0, -25.0)).length() < 1.5, "{moved:?}");
+    // And dragging the anchor moves it alone.
+    let screen = rig.screen_of(id);
+    let handle = screen
+        .handles
+        .iter()
+        .find(|h| h.part == Part::Anchor(0))
+        .unwrap()
+        .pos;
+    rig.drag(handle, handle + vec2(-40.0, 30.0));
+    let (_, _, label_last) = leader_at(&rig);
+    assert_eq!(label_last, label_after);
+}
+
+#[test]
+fn a_callouts_tail_reaches_its_anchor_and_goes_when_the_anchor_is_inside() {
+    let (mut rig, id) = placed(Tool::Callout);
+    let (_, at, _) = leader_at(&rig);
+    let screen = rig.screen_of(id);
+    assert!(
+        screen.frames[0].contains(&rig.px(at)),
+        "the tail ends on the anchor"
+    );
+    assert!(screen.lines.is_empty(), "a callout has no separate leader");
+    let rect = screen.hit[0];
+    let plain = screen.frames[0].len();
+    // Moved into its own bubble, the anchor has no tail to draw.
+    let mut inside = rig.last().clone();
+    if let Some(Geometry::Leader { at, .. }) = inside.geometry_mut() {
+        *at = rig.proj().anchor(rect.center());
+    }
+    rig.drawings = vec![inside];
+    let screen = rig.screen_of(id);
+    assert!(screen.frames[0].len() < plain);
+}
+
+#[test]
+fn a_price_note_is_added_at_once_and_writes_the_price_of_its_anchor() {
+    let mut rig = Rig::with_tool(Tool::PriceNote);
+    rig.click(POINTS[0]);
+    rig.click(POINTS[1]);
+    assert_eq!(rig.drawings.len(), 1, "its own text is optional");
+    assert!(!rig.layer.is_editing_text());
+    let id = rig.last().id();
+    let (kind, at, _) = leader_at(&rig);
+    assert_eq!(kind, LeaderKind::PriceNote);
+    assert_eq!(
+        rig.screen_of(id).heading,
+        Some(PriceFormat::AUTO.format(at.price))
+    );
+    // It follows the anchor.
+    let mut moved = rig.last().clone();
+    if let Some(Geometry::Leader { at, .. }) = moved.geometry_mut() {
+        at.price = 87.5;
+    }
+    rig.drawings = vec![moved];
+    assert_eq!(
+        rig.screen_of(id).heading,
+        Some(PriceFormat::AUTO.format(87.5))
+    );
+    // Its text is its own, below the price, and the price is not stored in it.
+    rig.drawings[0].set_text("support");
+    assert_eq!(rig.last().text(), "support");
+    assert!(
+        !serde_json::to_string(rig.last())
+            .unwrap()
+            .contains(&PriceFormat::AUTO.format(87.5))
+    );
+    assert!(rig.screen_of(id).hit[0].height() > 20.0);
+}
+
+// MARK: Signpost
+
+fn signpost_at(rig: &Rig) -> (Anchor, Anchor) {
+    match rig.last().geometry() {
+        Some(Geometry::Signpost { anchor, label }) => (*anchor, *label),
+        other => panic!("not a signpost: {other:?}"),
+    }
+}
+
+#[test]
+fn a_signposts_plate_is_always_straight_above_or_below_its_anchor() {
+    let (mut rig, id) = placed(Tool::Signpost);
+    let (anchor, label) = signpost_at(&rig);
+    // Placed with the second click off to the side: only its height was kept.
+    assert_eq!(label.time_ms, anchor.time_ms);
+    assert!((rig.px(label).y - POINTS[1].y).abs() < 1.5);
+    let screen = rig.screen_of(id);
+    let rect = screen.hit[0];
+    assert!((rect.center().x - rig.px(anchor).x).abs() < 0.6);
+    // The stem is one vertical line from the marker to the plate.
+    let stem = &screen.styled[0].path;
+    assert_eq!(stem[0].x, stem[1].x);
+    assert_eq!(stem[0].x, rig.px(anchor).x);
+    // The label handle cannot drag it sideways.
+    let handle = screen
+        .handles
+        .iter()
+        .find(|h| h.part == Part::Label)
+        .unwrap()
+        .pos;
+    rig.drag(handle, handle + vec2(120.0, 40.0));
+    let (anchor, label) = signpost_at(&rig);
+    assert_eq!(label.time_ms, anchor.time_ms, "the plate stays on its bar");
+    // Nor can the anchor take the plate with it off its bar.
+    let screen = rig.screen_of(id);
+    let handle = screen
+        .handles
+        .iter()
+        .find(|h| h.part == Part::Anchor(0))
+        .unwrap()
+        .pos;
+    rig.drag(handle, handle + vec2(-80.0, 20.0));
+    let (anchor, label) = signpost_at(&rig);
+    assert_eq!(label.time_ms, anchor.time_ms);
+    // The coordinates tab does not offer the time of the label, which is not its own.
+    assert_eq!(rig.last().geometry().unwrap().reads(1), (false, true));
+}
+
+#[test]
+fn a_signposts_plate_keeps_clear_of_its_marker_on_the_side_it_was_put() {
+    let (mut rig, id) = placed(Tool::Signpost);
+    let (anchor, _) = signpost_at(&rig);
+    let marker_y = rig.px(anchor).y;
+    // A label barely below the anchor still puts the plate below it and clear of the marker.
+    let mut near = rig.last().clone();
+    if let Some(Geometry::Signpost { label, .. }) = near.geometry_mut() {
+        label.price = anchor.price - 0.1;
+    }
+    rig.drawings = vec![near];
+    let rect = rig.screen_of(id).hit[0];
+    assert!(rect.top() > marker_y + 4.0, "{rect:?} vs {marker_y}");
+    // And above it for a label above.
+    let mut above = rig.last().clone();
+    if let Some(Geometry::Signpost { label, .. }) = above.geometry_mut() {
+        label.price = anchor.price + 0.1;
+    }
+    rig.drawings = vec![above];
+    let rect = rig.screen_of(id).hit[0];
+    assert!(rect.bottom() < marker_y - 4.0);
+}
+
+#[test]
+fn a_signposts_emoji_pin_is_shown_on_a_disc_of_its_own_colour_only_when_asked() {
+    let (mut rig, id) = placed(Tool::Signpost);
+    let plain = rig.screen_of(id);
+    assert!(plain.glyph.is_none() && plain.discs.len() == 1);
+    let small = plain.discs[0].1;
+    let mut with = rig.last().clone();
+    let mut style = *with.style().unwrap();
+    style.emoji_shown = true;
+    style.emoji = crate::model::drawing_style::Emoji::Crown;
+    style.emoji_fill = [200, 20, 20, 255];
+    with.set_style(style);
+    rig.drawings = vec![with];
+    let screen = rig.screen_of(id);
+    let (_, glyph, _) = screen.glyph.expect("the emoji");
+    assert_eq!(glyph, crate::model::drawing_style::Emoji::Crown.glyph());
+    assert_eq!(screen.discs[0].2, [200, 20, 20, 255]);
+    assert!(screen.discs[0].1 > small);
+}
+
+#[test]
+fn a_signpost_needs_a_height_to_exist() {
+    use crate::model::Geometry;
+    let a = anchor(300_000, 100.0);
+    assert!(Geometry::from_anchors(Tool::Signpost, &[a, a]).is_none());
+    assert!(Geometry::from_anchors(Tool::Signpost, &[a, anchor(900_000, 100.0)]).is_none());
+    let made = Geometry::from_anchors(Tool::Signpost, &[a, anchor(900_000, 104.0)]).unwrap();
+    assert_eq!(
+        made,
+        Geometry::Signpost {
+            anchor: a,
+            label: anchor(300_000, 104.0)
+        }
+    );
+}
+
+// MARK: Shared by the two-point notes
+
+#[test]
+fn the_two_point_notes_move_together_and_keep_their_look_through_a_round_trip() {
+    for tool in [Tool::Note, Tool::PriceNote, Tool::Callout, Tool::Signpost] {
+        let (mut rig, id) = placed(tool);
+        let before = rig.last().anchors();
+        let grab = rig.body(id);
+        rig.drag(grab, grab + vec2(0.0, 40.0));
+        let after = rig.last().anchors();
+        let moved = rig.px(after[0]) - rig.px(before[0]);
+        let moved_label = rig.px(after[1]) - rig.px(before[1]);
+        assert!(
+            (moved - vec2(0.0, 40.0)).length() < 1.5,
+            "{tool:?}: {moved:?}"
+        );
+        assert!(
+            (moved_label - moved).length() < 1.5,
+            "{tool:?}: both ends move"
+        );
+        let json = serde_json::to_value(rig.last()).unwrap();
+        let back: Drawing = serde_json::from_value(json).unwrap();
+        assert_eq!(&back, rig.last(), "{tool:?}");
+    }
+}
+
+// MARK: Emoji
+
+#[test]
+fn every_emoji_a_signpost_offers_is_one_the_apps_fonts_can_draw() {
+    use crate::model::drawing_style::Emoji;
+    let measure = TextMeasure::for_tests();
+    let mut seen = std::collections::HashSet::new();
+    for emoji in Emoji::ALL {
+        assert!(seen.insert(emoji.glyph()), "{emoji:?} repeats a glyph");
+        assert!(measure.can_draw(emoji.glyph()), "{emoji:?} has no glyph");
+        assert!(!emoji.label().is_empty());
+        // One character, so a stored name can never mean anything else.
+        assert_eq!(emoji.glyph().chars().count(), 1, "{emoji:?}");
+    }
+    assert_eq!(Emoji::default(), Emoji::ALL[0]);
 }

@@ -549,6 +549,18 @@ pub(super) fn paint(
     for (center, radius) in &screen.studs {
         painter.circle_filled(*center, *radius, Color32::WHITE);
     }
+    for (center, radius, fill) in &screen.discs {
+        painter.circle_filled(*center, *radius, series_render::color(*fill));
+    }
+    if let Some((center, glyph, size)) = screen.glyph {
+        painter.text(
+            center,
+            Align2::CENTER_CENTER,
+            glyph,
+            FontId::proportional(size),
+            Color32::WHITE,
+        );
+    }
 
     if emphasis.selected {
         for guide in &screen.guides {

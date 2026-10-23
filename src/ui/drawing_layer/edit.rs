@@ -81,6 +81,9 @@ pub(super) enum Part {
     Box(BoxHandle),
     /// The right edge of a text box: dragging it sets the width the text wraps at.
     Width,
+    /// The label of a note or a signpost (the second anchor): dragging it moves the label by
+    /// the pointer's travel, so a handle that is not on the anchor itself does not make it jump.
+    Label,
     /// A ruler's corner.
     Corner(RulerCorner),
 }
@@ -138,6 +141,11 @@ pub(super) fn edited(
             } = &mut result
             {
                 (*a, *b) = resize_box(*a, *b, handle, target);
+            }
+        }
+        Part::Label => {
+            if let Some(label) = result.anchors_mut().into_iter().nth(1) {
+                *label = proj.anchor(proj.point(*label) + delta);
             }
         }
         Part::Width => {

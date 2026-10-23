@@ -6,9 +6,10 @@
 use super::Projection;
 use super::draw::TEXT_PAD;
 use super::edit::Part;
-use super::shape::{HandleSpot, Popup, Screen, TextPlace};
+use super::shape::{HandleSpot, Popup, Screen, Styled, TextPlace};
+use crate::model::chart_type::LineDash;
 use crate::model::drawing_style::DrawingStyle;
-use crate::model::{Anchor, AnnotationKind, Geometry};
+use crate::model::{Anchor, AnnotationKind, Geometry, LeaderKind};
 use crate::ui::annotation_geometry as shapes;
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
 
@@ -30,17 +31,21 @@ pub(super) fn project(
     proj: &Projection,
     anchors: &[Pos2],
 ) -> Option<Screen> {
-    let Geometry::Annotation { kind, .. } = geometry else {
-        return None;
-    };
     let stored = *geometry.anchors().first()?;
     let at = *anchors.first()?;
-    let screen = match kind {
-        AnnotationKind::Text => text_box(style, text, proj, at),
-        AnnotationKind::Comment => comment(style, text, proj, at),
-        AnnotationKind::PriceLabel => price_label(style, proj, at, stored),
-        AnnotationKind::FlagMark => flag(at),
-        AnnotationKind::Pin => pin(style, text, proj, at),
+    let screen = match geometry {
+        Geometry::Annotation { kind, .. } => match kind {
+            AnnotationKind::Text => text_box(style, text, proj, at),
+            AnnotationKind::Comment => comment(style, text, proj, at),
+            AnnotationKind::PriceLabel => price_label(style, proj, at, stored),
+            AnnotationKind::FlagMark => flag(at),
+            AnnotationKind::Pin => pin(style, text, proj, at),
+        },
+        Geometry::Leader { kind, .. } => {
+            leader(*kind, style, text, proj, [at, *anchors.get(1)?], stored)
+        }
+        Geometry::Signpost { .. } => signpost(style, text, proj, at, *anchors.get(1)?),
+        _ => return None,
     };
     screen.finish(6.0)
 }
@@ -50,6 +55,15 @@ fn anchor_handle(pos: Pos2) -> HandleSpot {
         part: Part::Anchor(0),
         pos,
         control: false,
+    }
+}
+
+/// The handle that moves a label: the second anchor, by the pointer's travel.
+fn label_handle(pos: Pos2) -> HandleSpot {
+    HandleSpot {
+        part: Part::Label,
+        pos,
+        control: true,
     }
 }
 
@@ -142,6 +156,116 @@ fn price_label(style: &DrawingStyle, proj: &Projection, at: Pos2, stored: Anchor
     let mut screen = boxed(outline, rect);
     screen.heading = Some(price);
     screen.handles = vec![anchor_handle(at)];
+    screen
+}
+
+/// The radius of the dot where a note's leader meets its anchor, and of a signpost's plain marker
+/// and of its emoji's disc.
+const DOT: f32 = 4.0;
+const SIGNPOST_DOT: f32 = 4.5;
+const EMOJI_DISC: f32 = 11.0;
+/// The width of a callout's tail where it leaves the bubble.
+const CALLOUT_TAIL: f32 = 14.0;
+/// The room (px) kept between a signpost's marker and its plate.
+const SIGNPOST_GAP: f32 = 6.0;
+
+/// The point of `rect` nearest `point`.
+fn nearest_on(rect: eframe::egui::Rect, point: Pos2) -> Pos2 {
+    pos2(
+        point.x.clamp(rect.left(), rect.right()),
+        point.y.clamp(rect.top(), rect.bottom()),
+    )
+}
+
+/// The Note, Price note and Callout tools: a box centred on the second anchor, pointing at the
+/// first. A note and a price note join it with a leader ending in a dot; a callout is a bubble
+/// whose tail reaches the anchor. A price note writes the price of its anchor above its own text,
+/// worked out here, in the chart's own format, so it follows the anchor and is never stored.
+fn leader(
+    kind: LeaderKind,
+    style: &DrawingStyle,
+    text: &str,
+    proj: &Projection,
+    [at, label]: [Pos2; 2],
+    stored: Anchor,
+) -> Screen {
+    let heading = (kind == LeaderKind::PriceNote).then(|| proj.format.format(stored.price));
+    let shown = match (&heading, text.trim().is_empty()) {
+        (Some(heading), true) => heading.clone(),
+        (Some(heading), false) => format!("{heading}\n{text}"),
+        (None, _) => text.to_owned(),
+    };
+    let width = if kind == LeaderKind::PriceNote {
+        Width::Text
+    } else {
+        wrapping(style)
+    };
+    let size = dimensions(proj, &shown, style, width);
+    let rect = eframe::egui::Rect::from_center_size(label, size);
+    let mut screen = match kind {
+        LeaderKind::Callout => {
+            let outline = shapes::bubble(rect, BUBBLE_CORNER, Some(at), CALLOUT_TAIL);
+            boxed(outline, rect)
+        }
+        LeaderKind::Note | LeaderKind::PriceNote => {
+            let corner = if kind == LeaderKind::PriceNote {
+                TAG_CORNER
+            } else {
+                BUBBLE_CORNER
+            };
+            let mut screen = boxed(shapes::bubble(rect, corner, None, 0.0), rect);
+            let join = nearest_on(rect, at);
+            if join.distance(at) > 0.5 {
+                screen.lines.push(vec![at, join]);
+            }
+            screen.discs.push((at, DOT, style.stroke.color));
+            screen
+        }
+    };
+    screen.heading = heading;
+    screen.handles = vec![anchor_handle(at), label_handle(rect.center_top())];
+    // Dragging the width turns wrapping on, so a box that does not wrap has the handle too.
+    if kind != LeaderKind::PriceNote {
+        screen.handles.push(width_handle(rect));
+    }
+    screen
+}
+
+/// The Signpost tool: a marker at the anchor, a stem straight up or down from it and a plate
+/// with the text at the end of the stem. The plate is centred on the label's height, kept clear
+/// of the marker, on the side of the anchor the label is on (above, when they are level).
+fn signpost(style: &DrawingStyle, text: &str, proj: &Projection, at: Pos2, label: Pos2) -> Screen {
+    let size = dimensions(proj, text, style, Width::Text);
+    let marker = if style.emoji_shown {
+        EMOJI_DISC
+    } else {
+        SIGNPOST_DOT
+    };
+    let side = if label.y > at.y { 1.0 } else { -1.0 };
+    let reach = (label.y - at.y)
+        .abs()
+        .max(size.y / 2.0 + marker + SIGNPOST_GAP);
+    let rect = eframe::egui::Rect::from_center_size(pos2(at.x, at.y + side * reach), size);
+    let mut screen = boxed(shapes::bubble(rect, TAG_CORNER + 1.0, None, 0.0), rect);
+    let near = if side < 0.0 {
+        rect.bottom()
+    } else {
+        rect.top()
+    };
+    // The stem and the plain marker are the plate's colour: a signpost has the one.
+    screen.styled.push(Styled {
+        path: vec![pos2(at.x, at.y + side * marker), pos2(at.x, near)],
+        color: style.fill.color,
+        width: style.stroke.width,
+        dash: LineDash::Solid,
+    });
+    if style.emoji_shown {
+        screen.discs.push((at, marker, style.emoji_fill));
+        screen.glyph = Some((at, style.emoji.glyph(), marker * 1.35));
+    } else {
+        screen.discs.push((at, marker, style.fill.color));
+    }
+    screen.handles = vec![anchor_handle(at), label_handle(rect.left_center())];
     screen
 }
 

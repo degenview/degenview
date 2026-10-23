@@ -80,6 +80,37 @@ impl AnnotationKind {
     }
 }
 
+/// The note tools that point from a label at an anchor.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LeaderKind {
+    /// A card joined to its anchor by a leader line ending in a dot.
+    Note,
+    /// The same with the price of the anchor written first.
+    PriceNote,
+    /// A speech bubble whose tail points at the anchor.
+    Callout,
+}
+
+impl LeaderKind {
+    pub const fn tool(self) -> Tool {
+        match self {
+            Self::Note => Tool::Note,
+            Self::PriceNote => Tool::PriceNote,
+            Self::Callout => Tool::Callout,
+        }
+    }
+
+    pub const fn of_tool(tool: Tool) -> Option<Self> {
+        match tool {
+            Tool::Note => Some(Self::Note),
+            Tool::PriceNote => Some(Self::PriceNote),
+            Tool::Callout => Some(Self::Callout),
+            _ => None,
+        }
+    }
+}
+
 /// The shape of a drawing: only the anchors that define it, never derived corners, so a shape
 /// cannot drift into something its tool could not have drawn.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -236,6 +267,18 @@ pub enum Geometry {
         kind: AnnotationKind,
         at: Anchor,
     },
+    /// A label pointing at `at`; `label` is where its box is centred.
+    Leader {
+        kind: LeaderKind,
+        at: Anchor,
+        label: Anchor,
+    },
+    /// An event marker at `anchor` with its plate straight above or below it: `label` is the
+    /// plate's centre, always on the anchor's bar, so its time is not read.
+    Signpost {
+        anchor: Anchor,
+        label: Anchor,
+    },
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -321,6 +364,8 @@ impl Geometry {
             Self::DisjointChannel { .. } => Tool::DisjointChannel,
             Self::Pitchfork { variant, .. } => variant.tool(),
             Self::Annotation { kind, .. } => kind.tool(),
+            Self::Leader { kind, .. } => kind.tool(),
+            Self::Signpost { .. } => Tool::Signpost,
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -355,6 +400,10 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Ellipse { a, b } => vec![*a, *b],
+            Self::Leader { at, label, .. }
+            | Self::Signpost {
+                anchor: at, label, ..
+            } => vec![*at, *label],
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![*at],
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
@@ -394,6 +443,10 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Ellipse { a, b } => vec![a, b],
+            Self::Leader { at, label, .. }
+            | Self::Signpost {
+                anchor: at, label, ..
+            } => vec![at, label],
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![at],
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
@@ -429,6 +482,8 @@ impl Geometry {
             (Self::VerticalLine { .. }, _)
             | (Self::Regression { .. }, _)
             | (Self::DisjointChannel { .. }, 3) => (true, false),
+            // A signpost's plate stays on its anchor's bar: only its height is the user's.
+            (Self::Signpost { .. }, 1) => (false, true),
             _ => (true, true),
         }
     }
@@ -447,6 +502,7 @@ impl Geometry {
             (Self::FlatChannel { a, b, c }, _) => {
                 c.time_ms = a.time_ms / 2 + b.time_ms / 2 + (a.time_ms % 2 + b.time_ms % 2) / 2;
             }
+            (Self::Signpost { anchor, label }, _) => label.time_ms = anchor.time_ms,
             _ => {}
         }
     }
@@ -607,6 +663,18 @@ impl Geometry {
                 p2: at(1),
                 p3: last,
             },
+            Tool::Note | Tool::PriceNote | Tool::Callout => Self::Leader {
+                kind: LeaderKind::of_tool(tool)?,
+                at: first,
+                label: last,
+            },
+            Tool::Signpost => Self::Signpost {
+                anchor: first,
+                label: Anchor {
+                    time_ms: first.time_ms,
+                    price: last.price,
+                },
+            },
             Tool::Text | Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => {
                 Self::Annotation {
                     kind: AnnotationKind::of_tool(tool)?,
@@ -683,6 +751,21 @@ impl Geometry {
             (Tool::HorizontalRay, [at]) => Self::HorizontalRay { at: *at },
             (Tool::VerticalLine, [at]) => Self::VerticalLine { at: *at },
             (Tool::Crossline, [at]) => Self::Crossline { at: *at },
+            (tool, [at, label]) if at != label && LeaderKind::of_tool(tool).is_some() => {
+                Self::Leader {
+                    kind: LeaderKind::of_tool(tool)?,
+                    at: *at,
+                    label: *label,
+                }
+            }
+            // The plate is straight above or below the anchor, never on it.
+            (Tool::Signpost, [anchor, label]) if anchor.price != label.price => Self::Signpost {
+                anchor: *anchor,
+                label: Anchor {
+                    time_ms: anchor.time_ms,
+                    price: label.price,
+                },
+            },
             (tool, [at]) if AnnotationKind::of_tool(tool).is_some() => Self::Annotation {
                 kind: AnnotationKind::of_tool(tool)?,
                 at: *at,
