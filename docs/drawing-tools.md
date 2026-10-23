@@ -10,7 +10,9 @@ one style model and one geometry module serve all of them; a tool is a row in a 
 The text, note and content tools (Text, Note, Price note, Pin, Table, Callout, Comment, Price label,
 Signpost, Flag mark, Image, Post) are in a third flyout and are documented in
 [Text, note and content tools](annotation-tools.md); they share everything below except what that page
-says.
+says. The chart patterns, Elliott waves and cycles (XABCD, Cypher, Head and shoulders, ABCD, Triangle
+pattern, Three drives; five Elliott waves; Cyclic lines, Time cycles, Sine line) are in a fourth, the
+Patterns tile, and are documented in [Chart patterns, Elliott waves and cycles](pattern-tools.md).
 
 TradingView's own documentation and its Charting Library defaults are the reference. What they
 state is marked **doc** or **lib**; what they do not state, and was chosen here, is marked

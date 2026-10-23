@@ -75,11 +75,18 @@ behavior.
   (`skip_serializing_if`): `DrawingStyle` is written whole, and every drawing and every synced
   record would otherwise carry the levels of a pitchfork.
 - A tool is one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`. Add a
-  tool there, a `Geometry` variant, its projection (`shape::shape`, or `line_shapes::project` for
-  the lines, channels and pitchforks) and an icon; the controller, toolbar, dialog and tests
+  tool there, a `Geometry` variant, its projection (`shape::shape`, `line_shapes::project` for
+  the lines, channels and pitchforks, or `pattern_shapes::project` for the patterns, Elliott waves
+  and cycles) and an icon; the controller, toolbar, dialog and tests
   (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
-  handling. The two flyouts are `ToolGroup::MENU` and `ToolGroup::LINE_MENU`; Fibonacci is in
-  neither.
+  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU` and `PATTERN_MENU`;
+  Fibonacci is in none. A tool of more than four anchors needs the test fixtures' seven: the
+  every-tool loops slice a seven-point array by `Placement::Points(n)`.
+- A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
+  painted, not text drawn in the projection. Ratios are worked from stored prices
+  (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is
+  counted in bars (`model::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
+  (`ui::pattern_geometry`). See [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
 - A tool whose anchor means only part of itself (a level's time, a regression's price) says so in
   `Geometry::reads` and restores what an edit may not change in `Geometry::constrain`.
 - Geometry lives in `ui/drawing_geometry.rs` and `ui/line_geometry.rs` as pure functions on `Pos2`

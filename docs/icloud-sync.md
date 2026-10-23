@@ -150,6 +150,7 @@ stays safe. (Read from the code; it has not been tried between two real builds.)
 | A new field on an existing tool **without** the marker | The older build decodes the drawing, ignores the field and re-saves it without it, and the stripped copy syncs back over the newer one. Not allowed: see the rule below. |
 | A new record kind (as pictures were), or a higher `SCHEMA_VERSION` | Kept in the inbox, applied by the first launch that reads it (see above). |
 | A new tool or magnet value in `drawing.prefs` | That one option falls back to its default; the others are kept. (The fallback is then what this build saves.) |
+| A default style (`drawing.defaults`) or a template for a new tool | **Not read at all**: both are read whole, so one entry for a tool this build lacks leaves them unreadable. The build then refuses to change defaults or templates ("Default styles could not be read ...") and leaves them as written. Drawings are unaffected. Every new tool has this effect, once a default or a template is saved for it. |
 
 The rule: **a new tool is a new `Geometry` variant. A change to an existing tool's stored form that an
 older build would lose (a new field it ignores) must write `"since": N` in the drawing's body, with

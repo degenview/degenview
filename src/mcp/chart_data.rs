@@ -1148,6 +1148,42 @@ mod tests {
     }
 
     #[test]
+    fn every_pattern_wave_and_cycle_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
+        };
+        let anchors: Vec<Anchor> = (0..7).map(at).collect();
+        for (tool, name) in [
+            (Tool::XabcdPattern, "xabcd_pattern"),
+            (Tool::CypherPattern, "cypher_pattern"),
+            (Tool::HeadAndShoulders, "head_and_shoulders"),
+            (Tool::AbcdPattern, "abcd_pattern"),
+            (Tool::TrianglePattern, "triangle_pattern"),
+            (Tool::ThreeDrivesPattern, "three_drives_pattern"),
+            (Tool::ElliottImpulse, "elliott_impulse"),
+            (Tool::ElliottCorrection, "elliott_correction"),
+            (Tool::ElliottTriangle, "elliott_triangle"),
+            (Tool::ElliottDoubleCombo, "elliott_double_combo"),
+            (Tool::ElliottTripleCombo, "elliott_triple_combo"),
+            (Tool::CyclicLines, "cyclic_lines"),
+            (Tool::TimeCycles, "time_cycles"),
+            (Tool::SineLine, "sine_line"),
+        ] {
+            let count = match tool.spec().placement {
+                crate::model::Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let drawing = Drawing::build(tool, 1, &anchors[..count], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+            assert_eq!(info.anchors.len(), count.min(MAX_ANCHORS_SHOWN), "{name}");
+        }
+    }
+
+    #[test]
     fn every_text_note_and_content_tool_is_listed_read_only_by_name() {
         let at = |index: i64| Anchor {
             time_ms: T0 + index * DAY,

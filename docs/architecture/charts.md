@@ -27,7 +27,10 @@ carries a typed `Geometry` for every newer tool, all with time+price anchors. Th
 (`ui::drawing_layer`) is one controller driven by each tool's `Placement`; it reports
 `DrawingCommand`s and never mutates drawings. Lines, channels and pitchforks are projected by
 `drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::regression`, and a
-line's text is edited in place by `drawing_layer/text_edit.rs`. See
+line's text is edited in place by `drawing_layer/text_edit.rs`. The chart patterns, Elliott waves
+and cycles are projected by `drawing_layer/pattern_shapes.rs` from `model::{pattern, elliott,
+cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::pattern_geometry` (apex, arcs, sine);
+see [chart patterns, Elliott waves and cycles](../pattern-tools.md). See
 [drawing tools](../drawing-tools.md). Rulers and crosshairs are transient.
 
 `ChartWorkspace` keeps session-only per-workspace undo/redo entries containing one chart id and a
