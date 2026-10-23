@@ -192,6 +192,40 @@ fn every_tool_paints_inside_the_plot_and_nowhere_else() {
     }
 }
 
+/// A Post card among the last candles of a chart whose candles start at `base`, with the card
+/// over the plot's middle. The shapes painted for it.
+fn post_shapes(base: i64) -> usize {
+    let mut chart = Chart::new();
+    for (index, candle) in chart.candles.iter_mut().enumerate() {
+        candle.open_time = base + index as i64 * HOUR;
+        candle.close_time = candle.open_time + HOUR - 1;
+    }
+    let bare = chart.draw(&[]).len();
+    let at = Anchor {
+        time_ms: base + 150 * HOUR,
+        price: 215.0,
+    };
+    let post =
+        Drawing::sample(Tool::Post, 1, &[at], Tool::Post.default_style()).expect("a post card");
+    chart.draw(&[post]).len() - bare
+}
+
+#[test]
+fn a_post_card_is_joined_to_its_candle_by_a_painted_line() {
+    let sample =
+        crate::model::link_card::Link::parse("https://x.com/degenview/status/1750000000000000000")
+            .expect("a link");
+    let time = sample.time_ms().expect("a snowflake id has a time");
+    // The post's hour is among the candles, 280 of 300 in: the card, its line and its dot.
+    let joined = post_shapes(time - 280 * HOUR);
+    // Every candle is years older than the post: just the card.
+    let alone = post_shapes(time - 400_000 * HOUR);
+    assert!(
+        joined >= alone + 2,
+        "the line and its dot are painted: {joined} shapes against {alone}"
+    );
+}
+
 #[test]
 fn the_original_tools_still_paint_inside_the_plot() {
     for tool in [Tool::TrendLine, Tool::Fib] {

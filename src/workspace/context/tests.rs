@@ -1204,6 +1204,50 @@ fn a_card_opens_and_copies_its_link_only_when_asked() {
 }
 
 #[test]
+fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_cursor() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace
+        .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
+    assert!(rig.workspace.content.links.sheet.is_some());
+    let mut output = rig.ctx.run_ui(egui::RawInput::default(), |ui| {
+        rig.workspace.tick_content(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert!(
+        rig.workspace.content.links.sheet.is_some(),
+        "the sheet is still there"
+    );
+    // A sheet for a new post belongs to the Post tool and goes when it is put down.
+    rig.workspace.content.links.start();
+    let mut output = rig.ctx.run_ui(egui::RawInput::default(), |ui| {
+        rig.workspace.tick_content(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert!(rig.workspace.content.links.sheet.is_none());
+}
+
+#[test]
+fn a_replaced_link_clears_the_old_preview_and_keeps_the_card() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut fetched = card(Tool::Post, 1, POST_LINK);
+    if let Some(crate::model::Geometry::Card { card, .. }) = fetched.geometry_mut() {
+        card.meta = Some(fetched_meta("Old"));
+    }
+    rig.chart_mut(chart).drawings = vec![fetched];
+    let other =
+        crate::model::link_card::Link::parse("https://x.com/other/status/1750000000000000001")
+            .unwrap();
+    rig.workspace.link_chosen(other.clone(), Some((chart, 1)));
+    let after = card_of(&mut rig, chart, 1);
+    assert_eq!(after.link, other);
+    assert_eq!(after.meta, None);
+}
+
+#[test]
 fn a_preview_is_not_fetched_until_the_service_is_allowed() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);

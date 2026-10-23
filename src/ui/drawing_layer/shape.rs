@@ -754,7 +754,7 @@ fn shape(
         }
         Geometry::Table(table) => return table_shapes::project(table, style, proj),
         Geometry::Image(image) => return note_shapes::picture(image, &anchors),
-        Geometry::Card { card, .. } => return note_shapes::card(card, &anchors),
+        Geometry::Card { card, .. } => return note_shapes::card(card, style, proj, &anchors),
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }

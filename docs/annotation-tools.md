@@ -145,10 +145,17 @@ and writes every accepted link one canonical way. A card keeps the link, its siz
 * **What the card shows without a fetch** is what the link proves: the service, `@handle`, the id and
   the post's time, decoded from the snowflake id (`(id >> 22) + 1288834974657` ms; ids from before
   snowflake ids have none).
-* **Placement**: arming opens a sheet that checks the link as it is typed. A post is anchored at its
-  own time when that bar is on screen, otherwise where it was placed (a post with no time goes where
-  it was placed). A link pasted on a chart (Cmd+V, no text field focused) places a card in
-  the middle of the focused chart.
+* **Placement**: arming opens a sheet that checks the link as it is typed. A post is anchored where it
+  is placed, and can be dragged anywhere. A link pasted on a chart (Cmd+V, no text field focused) places
+  a card in the middle of the focused chart.
+* **Line to the candle**: a thin line with a dot joins the card to the candle of the time the post was
+  written, the way TradingView draws it. It is always there and is worked out each frame from the
+  link's time and the chart's own candles, so it follows a drag, a pan and a change of timeframe
+  (on 1D it lands on the day that holds the post, on 1H the hour); nothing about it is stored. It
+  meets the candle's high when the card is above the candle's middle, its low when below. There is
+  no line for a post with no time (numbered before snowflake ids), one older than the candles loaded
+  (it appears when older history is paged in), or one newer than the last candle. It is drawn in the
+  card's stroke colour (**inferred**: TradingView's exact look is not documented).
 * **Preview** is fetched automatically right after a card is placed (by a click or a paste) and only
   then: never on paint, on opening a layout, or for a card that arrived from another Mac (its preview
   syncs with it). The first time, the app asks once for permission (`content.prefs`, a setting that
@@ -161,8 +168,8 @@ and writes every accepted link one canonical way. A card keeps the link, its siz
   the result is written to the card as one undoable change. The picture's address is accepted only on
   `pbs.twimg.com` under `/profile_images/`; the picture goes through the same checks and re-encoding as
   an Image (so it is a stored picture, named on the preview, and syncs as one: see Images) and is best
-  effort, since the text is the preview and a card without a picture is not an error. The **Preview** button on a card asks
-  again (to retry after a failure or to refresh). A deleted or private link says so and leaves the card as it was. Post
+  effort, since the text is the preview and a card without a picture is not an error. The **Preview** chip on a card's toolbar is shown only while the card has no
+  preview (to retry after a failure); once one is loaded it is gone. A deleted or private link says so and leaves the card as it was. Post
   thumbnails and media are not fetched; the author's picture is.
 * **Open** (`ctx.open_url`) is always a deliberate click; so are Copy link and Replace link (which
   drops the old preview).

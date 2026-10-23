@@ -186,6 +186,7 @@ impl Caps {
         self.0 & other.0 == other.0 && other.0 != 0
     }
 
+    #[cfg(test)]
     pub const fn is_empty(self) -> bool {
         self.0 == 0
     }

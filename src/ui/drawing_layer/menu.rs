@@ -222,7 +222,7 @@ impl DrawingLayer {
                             // copying and deleting are offered.
                             if let Some(drawing) = single.as_ref().filter(|d| !d.locked()) {
                                 restyled = style_controls(ui, drawing);
-                                if drawing.tool().is_some_and(|tool| !tool.caps().is_empty()) {
+                                if has_style_controls(drawing) {
                                     divider(ui);
                                 }
                                 if drawing.edits_text_in_place()
@@ -1111,20 +1111,29 @@ fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
     op
 }
 
+/// The chips of a link card's toolbar. Fetching a preview is offered only while the card has none:
+/// once it is loaded there is nothing to ask for.
+pub(super) fn link_chips(drawing: &Drawing) -> Vec<(&'static str, super::LinkRequest)> {
+    use super::LinkRequest;
+    let mut chips = vec![
+        ("Open", LinkRequest::Open),
+        ("Copy link", LinkRequest::Copy),
+        ("Replace", LinkRequest::Replace),
+    ];
+    if matches!(drawing.geometry(), Some(Geometry::Card { card, .. }) if card.meta.is_none()) {
+        chips.push(("Preview", LinkRequest::Fetch));
+    }
+    chips
+}
+
 /// The toolbar's controls for a link card: open, copy, replace, fetch the preview. Returns the
 /// one used.
 fn link_controls(ui: &mut Ui, drawing: &Drawing) -> Option<super::LinkRequest> {
-    use super::LinkRequest;
     if !matches!(drawing.geometry(), Some(Geometry::Card { .. })) {
         return None;
     }
     let mut request = None;
-    for (label, asked) in [
-        ("Open", LinkRequest::Open),
-        ("Copy link", LinkRequest::Copy),
-        ("Replace", LinkRequest::Replace),
-        ("Preview", LinkRequest::Fetch),
-    ] {
+    for (label, asked) in link_chips(drawing) {
         if kit::value_chip(ui, label, false).clicked() {
             request = Some(asked);
         }
@@ -1140,6 +1149,26 @@ fn divider(ui: &mut Ui) {
         rect.y_range(),
         Stroke::new(1.0, theme::separator()),
     );
+}
+
+/// Whether `style_controls` draws anything for `drawing`, so the divider after them has something
+/// to divide. A picture or a post has caps (a Content page) but no colours or lines.
+pub(super) fn has_style_controls(drawing: &Drawing) -> bool {
+    let Some(tool) = drawing.tool() else {
+        return false;
+    };
+    let caps = tool.caps();
+    [
+        Caps::COLOR,
+        Caps::FILL,
+        Caps::BOX,
+        Caps::AUTO_TEXT,
+        Caps::WIDTH,
+        Caps::DASH,
+    ]
+    .into_iter()
+    .any(|cap| caps.has(cap))
+        || (drawing.edits_text_in_place() && !drawing.text().is_empty())
 }
 
 /// The toolbar's style controls for one drawing: colours, thickness and pattern, only those its

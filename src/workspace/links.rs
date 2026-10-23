@@ -53,6 +53,18 @@ impl LinkFlow {
         self.sheet = None;
     }
 
+    /// Drops the sheet that asks for a new post, leaving one that replaces a card's link: that
+    /// one is opened from the Cursor and has no tool to keep it alive.
+    pub(super) fn close_new_sheet(&mut self) {
+        if self
+            .sheet
+            .as_ref()
+            .is_some_and(|sheet| sheet.replace.is_none())
+        {
+            self.sheet = None;
+        }
+    }
+
     pub(super) fn start(&mut self) {
         self.sheet = Some(Sheet {
             text: String::new(),

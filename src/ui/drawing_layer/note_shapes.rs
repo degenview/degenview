@@ -168,6 +168,9 @@ const EMOJI_DISC: f32 = 11.0;
 const CALLOUT_TAIL: f32 = 14.0;
 /// The room (px) kept between a signpost's marker and its plate.
 const SIGNPOST_GAP: f32 = 6.0;
+/// The line from a Post card to its candle, and the dot where it lands.
+const POST_LINE: f32 = 1.0;
+const POST_DOT: f32 = 3.0;
 
 /// The point of `rect` nearest `point`.
 fn nearest_on(rect: eframe::egui::Rect, point: Pos2) -> Pos2 {
@@ -293,8 +296,14 @@ pub(super) fn picture(
 }
 
 /// The Post tool: a card whose top-left corner is the anchor. It is clickable all over,
-/// and has the anchor and its bottom-right corner to grab.
-pub(super) fn card(card: &crate::model::link_card::LinkCard, anchors: &[Pos2]) -> Option<Screen> {
+/// and has the anchor and its bottom-right corner to grab. A line joins it to the candle of the
+/// time the post was written, wherever the card is dragged to.
+pub(super) fn card(
+    card: &crate::model::link_card::LinkCard,
+    style: &DrawingStyle,
+    proj: &Projection,
+    anchors: &[Pos2],
+) -> Option<Screen> {
     let at = *anchors.first()?;
     let rect =
         eframe::egui::Rect::from_min_size(at, eframe::egui::vec2(card.size[0], card.size[1]));
@@ -304,6 +313,22 @@ pub(super) fn card(card: &crate::model::link_card::LinkCard, anchors: &[Pos2]) -
         rect,
         card: card.clone(),
     });
+    if let Some(candle) = post_candle(card, rect, proj) {
+        let edge = pos2(
+            candle.x.clamp(rect.left(), rect.right()),
+            candle.y.clamp(rect.top(), rect.bottom()),
+        );
+        // A card laid over its own candle has nothing to point at.
+        if edge != candle {
+            screen.styled.push(Styled {
+                path: vec![edge, candle],
+                color: style.stroke.color,
+                width: POST_LINE,
+                dash: LineDash::Solid,
+            });
+            screen.discs.push((candle, POST_DOT, style.stroke.color));
+        }
+    }
     screen.handles = vec![
         anchor_handle(at),
         HandleSpot {
@@ -313,6 +338,34 @@ pub(super) fn card(card: &crate::model::link_card::LinkCard, anchors: &[Pos2]) -
         },
     ];
     screen.finish(6.0)
+}
+
+/// Where the line from a card meets the candle its post was written in: the candle of this
+/// chart's timeframe that holds the post's time (whatever the timeframe, so it follows a change
+/// from 1H to 1D), on its high when the card is above the candle's middle and on its low when
+/// below. `None` for a post with no time, or one older than the candles the chart has loaded.
+pub(super) fn post_candle(
+    card: &crate::model::link_card::LinkCard,
+    rect: eframe::egui::Rect,
+    proj: &Projection,
+) -> Option<Pos2> {
+    let time = card.link.time_ms()?;
+    let bars = proj.times.bars();
+    let index = bars
+        .partition_point(|bar| bar.open_time <= time)
+        .checked_sub(1)?;
+    let bar = &bars[index];
+    // After the newest candle has ended there is nothing to point at yet.
+    if index + 1 == bars.len() && time > bar.close_time {
+        return None;
+    }
+    let (high, low) = (proj.scale.y(bar.high), proj.scale.y(bar.low));
+    let y = if rect.center().y <= (high + low) / 2.0 {
+        high
+    } else {
+        low
+    };
+    Some(pos2(proj.x_at_index(index as f64), y))
 }
 
 /// The Flag mark tool: a pole planted at the anchor, a flag at its top.

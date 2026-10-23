@@ -79,28 +79,78 @@ fn only_the_post_tool_makes_a_card() {
     );
 }
 
+/// The post of the sample link and `count` candles `step_ms` apart whose third one holds its time.
+fn candles_around_the_post(step_ms: i64, count: usize) -> (i64, Vec<Kline>) {
+    let time =
+        LinkCard::new(Link::parse("https://x.com/degenview/status/1750000000000000000").unwrap())
+            .link
+            .time_ms()
+            .expect("a snowflake id has a time");
+    let first = time - time.rem_euclid(step_ms) - 2 * step_ms;
+    let bars = (0..count as i64)
+        .map(|index| Kline {
+            open_time: first + index * step_ms,
+            close_time: first + (index + 1) * step_ms - 1,
+            open: 100.0,
+            high: 110.0,
+            low: 90.0,
+            close: 105.0,
+            volume: 1.0,
+        })
+        .collect();
+    (time, bars)
+}
+
+fn post_line(data: &[Kline], scale: &PriceScale, rect: Rect) -> Option<Pos2> {
+    let card =
+        LinkCard::new(Link::parse("https://x.com/degenview/status/1750000000000000000").unwrap());
+    note_shapes::post_candle(&card, rect, &projection(data, scale))
+}
+
 #[test]
-fn a_post_goes_to_its_own_time_when_that_bar_is_on_screen_and_anywhere_else_to_the_click() {
-    let placed = Anchor {
-        time_ms: 5_000,
-        price: 42.0,
-    };
-    // On screen: its own time, the price it was placed at.
-    assert_eq!(
-        anchor_for_card(Some(8_000), placed, (0, 10_000)),
-        Anchor {
-            time_ms: 8_000,
-            price: 42.0
-        }
+fn a_post_points_at_the_candle_that_holds_its_time_on_any_timeframe() {
+    let scale = scale(false);
+    let card_rect = Rect::from_min_size(pos2(100.0, 20.0), vec2(220.0, 100.0));
+    // 1H candles, then 1D candles: the line lands on whichever candle holds the time.
+    for step in [3_600_000, 86_400_000] {
+        let (time, data) = candles_around_the_post(step, 6);
+        let point = post_line(&data, &scale, card_rect).expect("a candle holds it");
+        let proj = projection(&data, &scale);
+        let index = data.partition_point(|bar| bar.open_time <= time) - 1;
+        assert_eq!(index, 2);
+        assert_eq!(point.x, proj.x_at_index(index as f64), "step {step}");
+    }
+}
+
+#[test]
+fn the_line_meets_the_high_of_a_candle_from_above_and_its_low_from_below() {
+    let scale = scale(false);
+    let (_, data) = candles_around_the_post(3_600_000, 6);
+    let proj = projection(&data, &scale);
+    let (high, low) = (proj.scale.y(110.0), proj.scale.y(90.0));
+    let above = Rect::from_min_size(pos2(100.0, high - 150.0), vec2(220.0, 100.0));
+    let below = Rect::from_min_size(pos2(100.0, low + 20.0), vec2(220.0, 100.0));
+    assert_eq!(post_line(&data, &scale, above).unwrap().y, high);
+    assert_eq!(post_line(&data, &scale, below).unwrap().y, low);
+}
+
+#[test]
+fn a_post_older_than_the_loaded_candles_or_newer_than_the_last_has_no_line() {
+    let scale = scale(false);
+    let rect = Rect::from_min_size(pos2(100.0, 20.0), vec2(220.0, 100.0));
+    let (time, mut data) = candles_around_the_post(3_600_000, 6);
+    data.drain(..3);
+    assert!(data[0].open_time > time);
+    assert!(
+        post_line(&data, &scale, rect).is_none(),
+        "older than the data"
     );
-    // The plot's edges may come in either order.
-    assert_eq!(
-        anchor_for_card(Some(8_000), placed, (10_000, 0)).time_ms,
-        8_000
+    let (_, mut data) = candles_around_the_post(3_600_000, 6);
+    data.truncate(2);
+    assert!(
+        post_line(&data, &scale, rect).is_none(),
+        "after the newest candle"
     );
-    // Off screen, or a post with no time (numbered before snowflake ids): where it was placed.
-    assert_eq!(anchor_for_card(Some(20_000), placed, (0, 10_000)), placed);
-    assert_eq!(anchor_for_card(None, placed, (0, 10_000)), placed);
 }
 
 #[test]
@@ -167,6 +217,37 @@ fn open_copy_replace_and_fetch_are_asked_of_the_workspace_and_change_nothing_her
         assert_eq!(frame.link_request, Some((id, request)));
         assert!(frame.commands.is_empty());
     }
+}
+
+#[test]
+fn the_preview_chip_is_offered_only_while_the_card_has_no_preview() {
+    use crate::model::link_card::LinkMeta;
+    let (mut rig, _) = placed_card(Tool::Post);
+    let labels = |rig: &Rig| -> Vec<&'static str> {
+        menu::link_chips(&rig.drawings[0])
+            .into_iter()
+            .map(|(label, _)| label)
+            .collect()
+    };
+    assert_eq!(labels(&rig), ["Open", "Copy link", "Replace", "Preview"]);
+    if let Some(Geometry::Card { card, .. }) = rig.drawings[0].geometry_mut() {
+        card.meta = Some(LinkMeta {
+            title: "Developers".into(),
+            author: "@degenview".into(),
+            excerpt: "Hello".into(),
+            fetched_at_ms: 1,
+            avatar: None,
+        });
+    }
+    assert_eq!(labels(&rig), ["Open", "Copy link", "Replace"]);
+}
+
+#[test]
+fn a_card_has_no_style_controls_for_a_divider_to_follow() {
+    let (rig, _) = placed_card(Tool::Post);
+    assert!(!menu::has_style_controls(&rig.drawings[0]));
+    let (rig, _) = placed_card(Tool::Image);
+    assert!(!menu::has_style_controls(&rig.drawings[0]));
 }
 
 #[test]

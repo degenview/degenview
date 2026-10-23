@@ -127,12 +127,12 @@ pub fn paint(
             1,
         ));
         painter.galley(
-            egui::pos2(text_left, picture.top() - 2.0),
+            egui::pos2(text_left, picture.top() - 1.0),
             name,
             Color32::WHITE,
         );
         painter.text(
-            egui::pos2(text_left, picture.bottom() + 1.0),
+            egui::pos2(text_left, picture.bottom() - 2.0),
             Align2::LEFT_BOTTOM,
             &words.headline,
             FontId::proportional(11.0),

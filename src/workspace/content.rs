@@ -242,7 +242,7 @@ impl ChartWorkspace {
                 self.content.pending = None;
                 self.content.sheet = false;
             }
-            self.content.links.close_sheet();
+            self.content.links.close_new_sheet();
         } else if armed {
             // Whatever waited for another content tool is dropped; this one asks again.
             self.content.pending = None;

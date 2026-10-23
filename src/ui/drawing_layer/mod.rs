@@ -1241,7 +1241,7 @@ impl DrawingLayer {
                 crate::model::image_content::Content::Link(card) => {
                     let rect = placed_card_rect(&card, first, proj.plot);
                     (
-                        card_anchor(&card, proj.anchor(rect.left_top()), proj),
+                        proj.anchor(rect.left_top()),
                         crate::model::image_content::Content::Link(card),
                     )
                 }
@@ -1672,29 +1672,6 @@ fn placed_card_rect(card: &crate::model::link_card::LinkCard, at: Pos2, plot: Re
     let left = at.x.min(plot.right() - size.x).max(plot.left());
     let top = at.y.min(plot.bottom() - size.y).max(plot.top());
     Rect::from_min_size(Pos2::new(left, top), size)
-}
-
-/// Where a card is anchored when it is placed at `placed`: a post goes to its own time when that
-/// bar is on screen (the price is where it was placed), and anywhere else to where it was placed.
-fn card_anchor(
-    card: &crate::model::link_card::LinkCard,
-    placed: Anchor,
-    proj: &Projection,
-) -> Anchor {
-    let (left, right) = (proj.time(proj.plot.left()), proj.time(proj.plot.right()));
-    anchor_for_card(card.link.time_ms(), placed, (left, right))
-}
-
-/// [`card_anchor`] with the card's own time and the times at the plot's two edges given.
-fn anchor_for_card(own_time_ms: Option<i64>, placed: Anchor, visible: (i64, i64)) -> Anchor {
-    let (from, to) = (visible.0.min(visible.1), visible.0.max(visible.1));
-    match own_time_ms {
-        Some(time_ms) if (from..=to).contains(&time_ms) => Anchor {
-            time_ms,
-            price: placed.price,
-        },
-        _ => placed,
-    }
 }
 
 /// Whether a tool collects any number of vertices (a path or polyline).
