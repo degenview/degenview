@@ -7,6 +7,7 @@ use crate::model::{DrawingStyle, Kline, Visibility};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
+mod image_tests;
 mod note_tests;
 mod table_tests;
 
@@ -300,6 +301,21 @@ struct Rig {
     background_click: Option<Pos2>,
     keys_blocked: bool,
     reveal_all: bool,
+    /// What is waiting to be placed by a click (a picture).
+    pending: Option<crate::model::image_content::Content>,
+    /// The picture that waits arrived by a drop or a paste: place it without a click.
+    place_now: bool,
+    /// A picture to put in place of a drawing's.
+    replace: Option<(u64, crate::model::image_content::ImageContent)>,
+}
+
+/// A picture to place, as the Image tool would have it once one is chosen.
+fn sample_picture() -> crate::model::image_content::Content {
+    crate::model::image_content::Content::Image(crate::model::image_content::ImageContent {
+        asset: "a".repeat(64),
+        name: "levels.png".into(),
+        pixels: [320, 200],
+    })
 }
 
 impl Rig {
@@ -329,6 +345,9 @@ impl Rig {
             background_click: None,
             keys_blocked: false,
             reveal_all: false,
+            pending: None,
+            place_now: false,
+            replace: None,
         };
         // egui hit-tests against the previous frame's widgets.
         rig.settle();
@@ -367,6 +386,8 @@ impl Rig {
             .with_view(self.timeframe, self.hide_all)
             .with_behavior(self.magnet, self.keep_drawing)
             .with_style_clipboard(self.style_clipboard)
+            .with_pending_content(self.pending.clone())
+            .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
             .with_keys_blocked(self.keys_blocked);
         let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
         let mut output = self.ctx.run_ui(input, |ui| {
@@ -384,6 +405,9 @@ impl Rig {
         self.escape_consumed |= frame.escape_consumed;
         if frame.disarm {
             self.tool = Tool::Cursor;
+        }
+        if frame.content_used {
+            self.pending = None;
         }
         if frame.open_properties.is_some() {
             self.opened = frame.open_properties;
@@ -510,6 +534,9 @@ impl Rig {
     fn place(&mut self, tool: Tool) {
         let before = self.drawings.len();
         self.tool = tool;
+        if tool.caps().has(Caps::CONTENT) {
+            self.pending = Some(sample_picture());
+        }
         match tool.spec().placement {
             Placement::Freehand => {
                 let path = [POINTS[0], pos2(260.0, 150.0), pos2(330.0, 190.0), POINTS[1]];
@@ -600,6 +627,17 @@ fn body_point(screen: &Screen, avoid: Option<Rect>) -> Pos2 {
             return point;
         }
     }
+    // A picture has nothing but its rectangle: a point inside it, off its handles.
+    if screen.solids.is_empty()
+        && let Some(rect) = screen.hit.first()
+    {
+        for (fx, fy) in [(0.5, 0.5), (0.3, 0.3), (0.7, 0.7), (0.3, 0.7), (0.7, 0.3)] {
+            let point = rect.min + rect.size() * vec2(fx, fy);
+            if usable(point) {
+                return point;
+            }
+        }
+    }
     let solid = &screen.solids[0];
     let centroid = solid
         .iter()
@@ -632,7 +670,13 @@ fn every_tool_is_placed_with_one_gesture_and_one_undo_step() {
             "{tool:?} left a gesture behind"
         );
         assert!(!rig.layer.claims_drag());
-        assert_eq!(rig.tool, tool, "keep drawing stays on the tool");
+        // A picture is chosen each time, so its tool does not stay armed.
+        let expected = if tool.caps().has(Caps::CONTENT) {
+            Tool::Cursor
+        } else {
+            tool
+        };
+        assert_eq!(rig.tool, expected, "keep drawing stays on the tool");
     }
 }
 

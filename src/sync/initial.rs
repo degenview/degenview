@@ -53,7 +53,9 @@ impl Counts {
             EntityKind::PaperAccount => self.paper_accounts += 1,
             EntityKind::Setting => self.settings += 1,
             // Counted with their portfolio and layout.
-            EntityKind::LayoutDrawing | EntityKind::PortfolioTransaction => {}
+            EntityKind::LayoutDrawing
+            | EntityKind::DrawingAsset
+            | EntityKind::PortfolioTransaction => {}
         }
     }
 }

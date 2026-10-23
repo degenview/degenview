@@ -18,6 +18,7 @@ pub mod drawing_template;
 pub mod drawing_tool;
 pub mod drawings;
 pub mod history;
+pub mod image_content;
 mod indicators;
 mod instrument;
 mod kline;

@@ -48,6 +48,15 @@ pub(super) struct Popup {
     pub outline: Vec<Pos2>,
 }
 
+/// A picture to paint: which stored picture, where, and how opaque.
+#[derive(Clone, Debug)]
+pub(super) struct PictureDraw {
+    pub rect: Rect,
+    pub asset: String,
+    pub name: String,
+    pub opacity: f32,
+}
+
 /// A line of a table that is dragged to resize the row or column beside it.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Divider {
@@ -166,6 +175,8 @@ pub(super) struct Screen {
     /// Regions that are on the shape for a click though nothing is painted there (the inside of
     /// a text box with no background).
     pub hit: Vec<Rect>,
+    /// A picture, painted in its rectangle.
+    pub picture: Option<PictureDraw>,
     /// A table's inner grid lines, stroked in the drawing's border.
     pub rules: Vec<[Pos2; 2]>,
     /// A table's cell texts, each with the cell it sits in.
@@ -226,6 +237,7 @@ impl Screen {
             outlines: Vec::new(),
             frames: Vec::new(),
             hit: Vec::new(),
+            picture: None,
             rules: Vec::new(),
             cell_texts: Vec::new(),
             dividers: Vec::new(),
@@ -402,7 +414,7 @@ fn vertex_handles(points: &[Pos2]) -> Vec<HandleSpot> {
         .collect()
 }
 
-fn box_handles(rect: Rect) -> Vec<HandleSpot> {
+pub(super) fn box_handles(rect: Rect) -> Vec<HandleSpot> {
     BoxHandle::ALL
         .iter()
         .map(|handle| HandleSpot {
@@ -731,6 +743,7 @@ fn shape(
             screen.handles = curve_handles(&anchors);
         }
         Geometry::Table(table) => return table_shapes::project(table, style, proj),
+        Geometry::Image(image) => return note_shapes::picture(image, &anchors),
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }

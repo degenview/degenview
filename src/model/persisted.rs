@@ -130,7 +130,7 @@ mod tests {
                     Placement::Single => 1,
                     _ => 3,
                 };
-                let mut drawing = Drawing::build(
+                let mut drawing = Drawing::sample(
                     *tool,
                     index as u64 + 1,
                     &anchors[..count],

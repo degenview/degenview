@@ -45,6 +45,10 @@ static QUEUE: WorkQueue = WorkQueue::new(4);
 /// chart's candles.
 pub static IMAGES: WorkQueue = WorkQueue::new(4);
 
+/// Pictures for drawings are read and decoded on workers of their own, so a chart with a few large
+/// images never holds up a chart's candles.
+pub static ASSETS: WorkQueue = WorkQueue::new(2);
+
 /// The updater's release check and download get one worker of their own: a download can run for
 /// minutes and must never hold one of the general workers that fetch candles and alert quotes.
 pub static UPDATES: WorkQueue = WorkQueue::new(1);

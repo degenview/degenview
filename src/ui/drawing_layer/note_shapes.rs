@@ -269,6 +269,25 @@ fn signpost(style: &DrawingStyle, text: &str, proj: &Projection, at: Pos2, label
     screen
 }
 
+/// The Image tool: a picture between two corners. The rectangle is clickable whether or not the
+/// picture has arrived, and has the eight handles of a box.
+pub(super) fn picture(
+    image: &crate::model::image_content::ImageData,
+    anchors: &[Pos2],
+) -> Option<Screen> {
+    let rect = eframe::egui::Rect::from_two_pos(*anchors.first()?, *anchors.get(1)?);
+    let mut screen = Screen::empty();
+    screen.hit.push(rect);
+    screen.picture = Some(super::shape::PictureDraw {
+        rect,
+        asset: image.asset.clone(),
+        name: image.name.clone(),
+        opacity: image.clamped_opacity(),
+    });
+    screen.handles = super::shape::box_handles(rect);
+    screen.finish(6.0)
+}
+
 /// The Flag mark tool: a pole planted at the anchor, a flag at its top.
 fn flag(at: Pos2) -> Screen {
     let (pole, flag) = shapes::flag(at);

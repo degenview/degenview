@@ -666,6 +666,10 @@ impl DegenViewApp {
             .unwrap_or_default();
         crate::ui::theme::install(&creation.egui_ctx, app_theme);
         egui_extras::install_image_loaders(&creation.egui_ctx);
+        crate::service::asset_host::install(
+            &creation.egui_ctx,
+            crate::service::asset_host::AssetHost::new(store.clone()),
+        );
         crate::service::cache_control::launch(&creation.egui_ctx);
         native_bridge::install(&creation.egui_ctx);
 

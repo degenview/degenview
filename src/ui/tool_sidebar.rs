@@ -217,6 +217,7 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::Callout => Icon::CalloutTool,
         Tool::Signpost => Icon::SignpostTool,
         Tool::Table => Icon::TableTool,
+        Tool::Image => Icon::ImageTool,
     }
 }
 

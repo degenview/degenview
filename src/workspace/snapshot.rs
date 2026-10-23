@@ -8,6 +8,7 @@
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
 
+use super::content::snapshot_images;
 use super::*;
 use crate::model::snapshot::{
     self, SnapshotAction, SnapshotDimensions, SnapshotHost as HostAddress, SnapshotRequest,
@@ -149,6 +150,7 @@ impl ChartWorkspace {
             return;
         };
         let open_notes = chart.chart.open_notes();
+        let images = snapshot_images(ctx, &chart.drawings);
         let input = SnapshotInput {
             symbol: &chart.symbol,
             source: chart.source,
@@ -157,6 +159,7 @@ impl ChartWorkspace {
             indicators: &chart.indicators,
             drawings: &chart.drawings,
             open_notes: &open_notes,
+            images: Some(&images),
             hide_all_drawings: self.hide_all_drawings,
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,

@@ -164,15 +164,17 @@ pub(super) fn edited(
                 table.scale_to(width + delta.x, height + delta.y);
             }
         }
-        Part::Box(handle) => {
-            if let Drawing::Shape {
+        Part::Box(handle) => match &mut result {
+            Drawing::Shape {
                 geometry: Geometry::Rectangle { a, b } | Geometry::Ellipse { a, b },
                 ..
-            } = &mut result
-            {
-                (*a, *b) = resize_box(*a, *b, handle, target);
-            }
-        }
+            } => (*a, *b) = resize_box(*a, *b, handle, target),
+            Drawing::Shape {
+                geometry: Geometry::Image(image),
+                ..
+            } => (image.a, image.b) = resize_image(image, handle, now, proj),
+            _ => {}
+        },
         Part::Label => {
             if let Some(label) = result.anchors_mut().into_iter().nth(1) {
                 *label = proj.anchor(proj.point(*label) + delta);
@@ -237,6 +239,116 @@ fn pinned(drawing: &Drawing) -> bool {
 /// Where the cells of a table drawing are on screen now.
 fn grid_of(drawing: &Drawing, proj: &Projection) -> Option<super::shape::Grid> {
     super::shape::build(drawing, proj)?.grid
+}
+
+/// The smallest a picture is resized to, on each side, in px.
+const MIN_PICTURE: f32 = 16.0;
+
+/// The corners of a picture with `handle` dragged to `pointer`. The opposite edges stay where
+/// they are. When the picture keeps its shape, a corner takes the larger of the two moves and the
+/// other side follows from the shape, and an edge takes its own move and the other side follows
+/// about its middle. Worked in screen space, so it is right on a log scale too, and written back
+/// to whichever stored corner each end is nearest, so the order they were stored in survives.
+pub(super) fn resize_image(
+    image: &crate::model::image_content::ImageData,
+    handle: BoxHandle,
+    pointer: Pos2,
+    proj: &Projection,
+) -> (Anchor, Anchor) {
+    let (pa, pb) = (proj.point(image.a), proj.point(image.b));
+    let rect = eframe::egui::Rect::from_two_pos(pa, pb);
+    let aspect = image.aspect();
+    let (left, right) = (
+        handle.horizontal() == Some(true),
+        handle.horizontal() == Some(false),
+    );
+    let (top, bottom) = (
+        handle.vertical() == Some(true),
+        handle.vertical() == Some(false),
+    );
+    // The edges that stay put.
+    let fixed_x = if left { rect.right() } else { rect.left() };
+    let fixed_y = if top { rect.bottom() } else { rect.top() };
+    let mut min = rect.min;
+    let mut max = rect.max;
+    if image.keep_aspect {
+        if (left || right) && (top || bottom) {
+            let across = (pointer.x - fixed_x).abs().max(MIN_PICTURE);
+            let down = (pointer.y - fixed_y).abs().max(MIN_PICTURE);
+            let width = across.max(down * aspect);
+            let height = width / aspect;
+            let x = if left {
+                fixed_x - width
+            } else {
+                fixed_x + width
+            };
+            let y = if top {
+                fixed_y - height
+            } else {
+                fixed_y + height
+            };
+            min = Pos2::new(x.min(fixed_x), y.min(fixed_y));
+            max = Pos2::new(x.max(fixed_x), y.max(fixed_y));
+        } else if left || right {
+            let width = (pointer.x - fixed_x).abs().max(MIN_PICTURE);
+            let height = width / aspect;
+            let x = if left {
+                fixed_x - width
+            } else {
+                fixed_x + width
+            };
+            min = Pos2::new(x.min(fixed_x), rect.center().y - height / 2.0);
+            max = Pos2::new(x.max(fixed_x), rect.center().y + height / 2.0);
+        } else {
+            let height = (pointer.y - fixed_y).abs().max(MIN_PICTURE);
+            let width = height * aspect;
+            let y = if top {
+                fixed_y - height
+            } else {
+                fixed_y + height
+            };
+            min = Pos2::new(rect.center().x - width / 2.0, y.min(fixed_y));
+            max = Pos2::new(rect.center().x + width / 2.0, y.max(fixed_y));
+        }
+    } else {
+        if left || right {
+            let x = pointer.x;
+            min.x = x.min(fixed_x);
+            max.x = x.max(fixed_x);
+        }
+        if top || bottom {
+            let y = pointer.y;
+            min.y = y.min(fixed_y);
+            max.y = y.max(fixed_y);
+        }
+    }
+    corners_for(image, eframe::egui::Rect::from_min_max(min, max), proj)
+}
+
+/// The two corner anchors of `image` once it fills `rect` on screen. Each end goes back to the
+/// corner it was at, so the order they were stored in survives.
+pub(super) fn corners_for(
+    image: &crate::model::image_content::ImageData,
+    rect: eframe::egui::Rect,
+    proj: &Projection,
+) -> (Anchor, Anchor) {
+    let (pa, pb) = (proj.point(image.a), proj.point(image.b));
+    let before = eframe::egui::Rect::from_two_pos(pa, pb);
+    let corner = |original: Pos2| {
+        Pos2::new(
+            if original.x <= before.center().x {
+                rect.left()
+            } else {
+                rect.right()
+            },
+            if original.y <= before.center().y {
+                rect.top()
+            } else {
+                rect.bottom()
+            },
+        )
+    };
+    (proj.anchor(corner(pa)), proj.anchor(corner(pb)))
 }
 
 /// A parallel channel keeps the price distance between its edges when an end of the first edge

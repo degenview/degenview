@@ -17,6 +17,7 @@ fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
         indicators: &harness.indicators,
         drawings: &harness.drawings,
         open_notes: &[],
+        images: None,
         hide_all_drawings: false,
         replay_active: harness.replay_active,
         include_trading,
@@ -939,6 +940,102 @@ fn gallery_of_the_table() {
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// Pictures on a chart, written as PNGs for a person to look at: one loaded, one faded, one that
+/// is not in the store (a placeholder).
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_image() {
+    use crate::model::image_content::{Content, ImageContent};
+    use crate::model::{Anchor, Geometry};
+    use crate::ui::theme::{self, AppTheme};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let picture = |asset: &str, name: &str| {
+        Content::Image(ImageContent {
+            asset: asset.repeat(64),
+            name: name.into(),
+            pixels: [160, 100],
+        })
+    };
+    let image = |id: u64, a: Anchor, b: Anchor, content: &Content| {
+        Drawing::build_with(
+            Tool::Image,
+            id,
+            &[a, b],
+            Tool::Image.default_style(),
+            content,
+        )
+        .expect("builds")
+    };
+    let loaded = image(
+        1,
+        at(205, 275.0),
+        at(225, 255.0),
+        &picture("a", "gradient.png"),
+    );
+    let mut faded = image(
+        2,
+        at(232, 262.0),
+        at(252, 242.0),
+        &picture("a", "gradient.png"),
+    );
+    if let Some(Geometry::Image(data)) = faded.geometry_mut() {
+        data.opacity = 0.35;
+    }
+    let missing = image(
+        3,
+        at(215, 235.0),
+        at(240, 215.0),
+        &picture("b", "still-syncing.png"),
+    );
+    let gradient = egui::ColorImage::from_rgba_unmultiplied(
+        [160, 100],
+        &(0..160 * 100)
+            .flat_map(|index| {
+                let (x, y) = (index % 160, index / 160);
+                [(x * 255 / 159) as u8, (y * 255 / 99) as u8, 180, 255]
+            })
+            .collect::<Vec<u8>>(),
+    );
+    let images: HashMap<String, Arc<egui::ColorImage>> =
+        HashMap::from([("a".repeat(64), Arc::new(gradient))]);
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![loaded.clone(), faded.clone(), missing.clone()];
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let mut snapshot = input(&harness, false);
+        snapshot.images = Some(&images);
+        let scene = harness
+            .card
+            .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let suffix = if light { "-light" } else { "" };
+        std::fs::write(dir.join(format!("image-1{suffix}.png")), png).expect("written");
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }

@@ -48,6 +48,8 @@ enum Tab {
     /// The extra lines of a channel or a pitchfork.
     Levels,
     Text,
+    /// What a content tool shows: an image's picture, name and opacity.
+    Content,
     Coordinates,
     Visibility,
 }
@@ -59,6 +61,7 @@ impl Tab {
             Self::Inputs => "Inputs",
             Self::Levels => "Levels",
             Self::Text => "Text",
+            Self::Content => "Image",
             Self::Coordinates => "Coordinates",
             Self::Visibility => "Visibility",
         }
@@ -70,6 +73,7 @@ impl Tab {
             Self::Inputs => Icon::ChartLine,
             Self::Levels => Icon::Layers,
             Self::Text => Icon::TextFormat,
+            Self::Content => Icon::ImageTool,
             Self::Coordinates => Icon::Hash,
             Self::Visibility => Icon::Eye,
         }
@@ -116,6 +120,10 @@ pub struct DrawingProperties {
     notice: Option<Notice>,
     /// The tallest page content seen, so switching tabs does not resize the dialog.
     page_height: f32,
+    /// The picture the Image tab previews, with the texture it was uploaded as.
+    preview: Option<(String, egui::TextureHandle)>,
+    /// A new picture was asked for; the workspace takes the request and runs the picker.
+    replace_requested: bool,
 }
 
 /// Whether the style page has anything to show for these capabilities.
@@ -210,6 +218,8 @@ impl DrawingProperties {
             prompt: None,
             notice: None,
             page_height: 0.0,
+            preview: None,
+            replace_requested: false,
         };
         dialog.tab = dialog.tabs()[0];
         dialog.reset_coordinate_text();
@@ -226,6 +236,20 @@ impl DrawingProperties {
         &self.draft
     }
 
+    /// Whether the user asked for another picture since this was last called.
+    pub fn take_replace_request(&mut self) -> bool {
+        std::mem::take(&mut self.replace_requested)
+    }
+
+    /// Hands the dialog the picture a replacement stored, so the draft shows it and keeps the
+    /// drawing's own size, opacity and name when the user has set one.
+    pub fn replace_picture(&mut self, content: &crate::model::image_content::ImageContent) {
+        if let Some(Geometry::Image(image)) = self.draft.geometry_mut() {
+            image.asset = content.asset.clone();
+            image.pixels = content.pixels;
+        }
+    }
+
     fn tabs(&self) -> Vec<Tab> {
         let caps = self.tool.caps();
         let mut tabs = Vec::new();
@@ -240,6 +264,9 @@ impl DrawingProperties {
         }
         if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
             tabs.push(Tab::Text);
+        }
+        if matches!(self.draft.geometry(), Some(Geometry::Image(_))) {
+            tabs.push(Tab::Content);
         }
         if !matches!(self.tool, Tool::Brush | Tool::Highlighter) {
             tabs.push(Tab::Coordinates);
@@ -360,6 +387,7 @@ impl DrawingProperties {
                             Tab::Inputs => self.inputs_page(ui),
                             Tab::Levels => self.levels_page(ui),
                             Tab::Text => self.text_page(ui),
+                            Tab::Content => self.content_page(ui),
                             Tab::Coordinates => self.coordinates_page(ui),
                             Tab::Visibility => self.visibility_page(ui),
                         }
@@ -1317,6 +1345,118 @@ impl DrawingProperties {
 
     // MARK: Visibility
 
+    // MARK: Content
+
+    fn content_page(&mut self, ui: &mut Ui) {
+        let Some(Geometry::Image(image)) = self.draft.geometry().cloned() else {
+            return;
+        };
+        let mut page = Page::new(true);
+        page.section(ui, "Picture", None);
+        self.preview_picture(ui, &image.asset, image.aspect(), image.clamped_opacity());
+        ui.label(kit::text(
+            format!("{} × {} pixels", image.pixels[0], image.pixels[1]),
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        if kit::push_button(ui, Some(Icon::ImageTool), "Replace image…", true).clicked() {
+            self.replace_requested = true;
+        }
+
+        page.section(ui, "Name", None);
+        let mut name = image.name.clone();
+        let focused_id = Id::new("drawing-image-name");
+        let focused = ui.memory(|memory| memory.has_focus(focused_id));
+        kit::field_frame(focused).show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut name)
+                    .id(focused_id)
+                    .frame(egui::Frame::NONE)
+                    .hint_text("Name this image")
+                    .char_limit(crate::model::image_content::MAX_NAME_CHARS)
+                    .desired_width(f32::INFINITY),
+            );
+        });
+
+        page.section(ui, "Appearance", None);
+        let mut opacity = image.opacity;
+        let mut keep_aspect = image.keep_aspect;
+        let (low, high) = crate::model::image_content::OPACITY_RANGE;
+        if let Some(percent) = settings_card::card(ui, Icon::Sliders, "Opacity (%)", None, |ui| {
+            number_field(
+                ui,
+                Id::new("drawing-image-opacity"),
+                f64::from(image.clamped_opacity() * 100.0),
+                5.0,
+                f64::from(low * 100.0)..=f64::from(high * 100.0),
+                0,
+            )
+        }) {
+            opacity = percent as f32 / 100.0;
+        }
+        toggle_row(
+            ui,
+            Icon::ImageTool,
+            "Keep shape",
+            "Resizing keeps the picture's proportions.",
+            &mut keep_aspect,
+        );
+        let changed =
+            name != image.name || opacity != image.opacity || keep_aspect != image.keep_aspect;
+        if changed && let Some(Geometry::Image(draft)) = self.draft.geometry_mut() {
+            draft.name = name;
+            draft.opacity = opacity;
+            draft.keep_aspect = keep_aspect;
+        }
+    }
+
+    /// The picture, fitted in a box as wide as the page, or what stands in for it.
+    fn preview_picture(&mut self, ui: &mut Ui, asset: &str, aspect: f32, opacity: f32) {
+        use crate::service::asset_host::{AssetImage, lookup};
+        const BOX_HEIGHT: f32 = 150.0;
+        let width = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(vec2(width, BOX_HEIGHT), Sense::hover());
+        ui.painter().rect_filled(rect, 8.0, theme::surface());
+        if self.preview.as_ref().is_none_or(|(held, _)| held != asset) {
+            self.preview = match lookup(ui.ctx(), asset) {
+                AssetImage::Ready(pixels) => Some((
+                    asset.to_owned(),
+                    ui.ctx().load_texture(
+                        format!("drawing-picture-preview-{asset}"),
+                        (*pixels).clone(),
+                        egui::TextureOptions::LINEAR,
+                    ),
+                )),
+                _ => None,
+            };
+        }
+        let Some((_, texture)) = &self.preview else {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "The picture is not available yet",
+                egui::FontId::proportional(13.0),
+                theme::text_secondary(),
+            );
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+            return;
+        };
+        let inner = rect.shrink(8.0);
+        let fitted = if inner.width() / inner.height() > aspect {
+            vec2(inner.height() * aspect, inner.height())
+        } else {
+            vec2(inner.width(), inner.width() / aspect)
+        };
+        ui.painter().image(
+            texture.id(),
+            egui::Rect::from_center_size(inner.center(), fitted),
+            egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE.gamma_multiply(opacity),
+        );
+    }
+
     fn visibility_page(&mut self, ui: &mut Ui) {
         let mut visibility = self.draft.visibility();
         let before = visibility;
@@ -1631,7 +1771,7 @@ mod tests {
             Placement::Single => 1,
             _ => 3,
         };
-        Drawing::build(tool, 1, &anchors[..count], tool.default_style()).expect("builds")
+        Drawing::sample(tool, 1, &anchors[..count], tool.default_style()).expect("builds")
     }
 
     fn frame(
@@ -1739,6 +1879,38 @@ mod tests {
     }
 
     #[test]
+    fn an_image_has_a_picture_page_and_replacing_the_picture_changes_only_the_picture() {
+        use crate::model::image_content::ImageContent;
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::Image)).expect("dialog");
+        assert_eq!(dialog.tabs()[0], Tab::Content, "it opens on the picture");
+        assert!(!dialog.tabs().contains(&Tab::Text));
+        let Some(Geometry::Image(before)) = dialog.draft().geometry().cloned() else {
+            panic!("an image");
+        };
+        let replacement = ImageContent {
+            asset: "b".repeat(64),
+            name: "other.png".into(),
+            pixels: [64, 64],
+        };
+        dialog.replace_picture(&replacement);
+        let Some(Geometry::Image(after)) = dialog.draft().geometry() else {
+            panic!("an image");
+        };
+        assert_eq!(after.asset, replacement.asset);
+        assert_eq!(after.pixels, [64, 64]);
+        assert_eq!(
+            (after.a, after.b),
+            (before.a, before.b),
+            "it stays where it was"
+        );
+        assert_eq!(after.name, before.name, "the user's name for it is kept");
+        assert!(!dialog.take_replace_request());
+        dialog.replace_requested = true;
+        assert!(dialog.take_replace_request());
+        assert!(!dialog.take_replace_request(), "a request is taken once");
+    }
+
+    #[test]
     fn every_page_leaves_the_card_spacing_as_it_found_it() {
         let ctx = egui::Context::default();
         let tools = Tool::GROUPED
@@ -1756,6 +1928,7 @@ mod tests {
                         Tab::Inputs => dialog.inputs_page(ui),
                         Tab::Levels => dialog.levels_page(ui),
                         Tab::Text => dialog.text_page(ui),
+                        Tab::Content => dialog.content_page(ui),
                         Tab::Coordinates => dialog.coordinates_page(ui),
                         Tab::Visibility => dialog.visibility_page(ui),
                     }

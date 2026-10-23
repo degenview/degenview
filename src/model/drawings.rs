@@ -9,6 +9,7 @@
 use super::Timeframe;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
+use super::image_content::{Content, ImageData};
 use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
@@ -282,6 +283,8 @@ pub enum Geometry {
     },
     /// A grid of text cells, at a chart point or pinned to the screen.
     Table(TableData),
+    /// A stored picture between two corners.
+    Image(ImageData),
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -370,6 +373,7 @@ impl Geometry {
             Self::Leader { kind, .. } => kind.tool(),
             Self::Signpost { .. } => Tool::Signpost,
             Self::Table(_) => Tool::Table,
+            Self::Image(_) => Tool::Image,
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -412,6 +416,7 @@ impl Geometry {
             // A pinned table is not at a chart point: it has no anchor to move or to show.
             Self::Table(table) if table.screen.is_none() => vec![table.at],
             Self::Table(_) => Vec::new(),
+            Self::Image(image) => vec![image.a, image.b],
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
             Self::Triangle { points } => points.to_vec(),
@@ -457,6 +462,7 @@ impl Geometry {
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![at],
             Self::Table(table) if table.screen.is_none() => vec![&mut table.at],
             Self::Table(_) => Vec::new(),
+            Self::Image(image) => vec![&mut image.a, &mut image.b],
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
             Self::Triangle { points } => points.iter_mut().collect(),
@@ -525,6 +531,7 @@ impl Geometry {
             Self::Path { .. } => anchors.len() >= 2,
             Self::Polyline { closed, .. } => anchors.len() >= if *closed { 3 } else { 2 },
             Self::Table(table) => table.is_valid(),
+            Self::Image(image) => image.is_valid(),
             _ => true,
         };
         enough && anchors.len() <= MAX_POINTS && anchors.iter().all(Anchor::is_finite)
@@ -692,7 +699,8 @@ impl Geometry {
                     at: last,
                 }
             }
-            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler => return None,
+            // A picture has to be chosen before it can be shown, so there is nothing to preview.
+            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler | Tool::Image => return None,
         })
     }
 
@@ -903,6 +911,54 @@ impl Drawing {
         }
     }
 
+    /// A drawing by any tool for a test that goes through every tool: a picture tool gets a
+    /// picture to show, the rest are built as usual. Not for the app: a real picture is chosen.
+    #[cfg(test)]
+    pub fn sample(tool: Tool, id: u64, anchors: &[Anchor], style: DrawingStyle) -> Option<Self> {
+        if tool.caps().has(super::Caps::CONTENT) {
+            let a = *anchors.first()?;
+            let b = anchors.get(1).copied().unwrap_or(Anchor {
+                time_ms: a.time_ms + 3_600_000,
+                price: a.price - 5.0,
+            });
+            let picture = Content::Image(super::image_content::ImageContent {
+                asset: "a".repeat(64),
+                name: "sample.png".into(),
+                pixels: [200, 100],
+            });
+            Self::build_with(tool, id, &[a, b], style, &picture)
+        } else {
+            Self::build(tool, id, anchors, style)
+        }
+    }
+
+    /// A new drawing of what was chosen (a picture) through `anchors`. `None` when they do not
+    /// make it.
+    pub fn build_with(
+        tool: Tool,
+        id: u64,
+        anchors: &[Anchor],
+        style: DrawingStyle,
+        content: &Content,
+    ) -> Option<Self> {
+        let geometry = match (tool, anchors, content) {
+            (Tool::Image, [a, b], Content::Image(picture)) if a != b => {
+                let image = ImageData::new(*a, *b, picture);
+                image.is_valid().then_some(Geometry::Image(image))?
+            }
+            _ => return None,
+        };
+        Some(Self::Shape {
+            id,
+            geometry,
+            style: style.sanitized(),
+            text: String::new(),
+            locked: false,
+            hidden: false,
+            visibility: Visibility::ALL,
+        })
+    }
+
     /// A new drawing by `tool` through `anchors`, in `style`. `None` when the anchors do not
     /// make that shape; the caller commits nothing then.
     pub fn build(tool: Tool, id: u64, anchors: &[Anchor], style: DrawingStyle) -> Option<Self> {
@@ -1090,6 +1146,7 @@ impl Drawing {
     pub fn summary(&self) -> Option<String> {
         match self.geometry()? {
             Geometry::Table(table) => Some(table.summary()),
+            Geometry::Image(image) => Some(image.name.clone()).filter(|name| !name.is_empty()),
             _ => None,
         }
     }
@@ -1438,15 +1495,16 @@ mod tests {
                 super::super::drawing_tool::Placement::Single => 1,
                 _ => 3,
             };
-            let drawing = Drawing::build(tool, 5, &anchors[..count], tool.default_style())
+            let drawing = Drawing::sample(tool, 5, &anchors[..count], tool.default_style())
                 .unwrap_or_else(|| panic!("{tool:?} did not build"));
             assert_eq!(drawing.tool(), Some(tool));
             // A disjoint channel is placed with three clicks and keeps a fourth anchor, the end
             // of its second edge.
-            let kept = if tool == Tool::DisjointChannel {
-                4
-            } else {
-                count
+            let kept = match tool {
+                Tool::DisjointChannel => 4,
+                // A picture is dropped by one click and sits between two corners.
+                Tool::Image => 2,
+                _ => count,
             };
             assert_eq!(drawing.anchors().len(), kept.max(1), "{tool:?}");
             assert_eq!(drawing.id(), 5);
@@ -1482,7 +1540,7 @@ mod tests {
                 super::super::drawing_tool::Placement::Single => 1,
                 _ => continue,
             };
-            let mut drawing = Drawing::build(tool, 3, &anchors[..count], rich_style()).unwrap();
+            let mut drawing = Drawing::sample(tool, 3, &anchors[..count], rich_style()).unwrap();
             drawing.set_text("on the line");
             let json = serde_json::to_string(&drawing).unwrap();
             let back: Drawing = serde_json::from_str(&json).unwrap();
@@ -1675,7 +1733,7 @@ mod tests {
         // One anchor placed plus the pointer: every tool previews, even degenerate.
         for tool in Tool::GROUPED
             .into_iter()
-            .filter(|tool| *tool != Tool::Brush)
+            .filter(|tool| *tool != Tool::Brush && *tool != Tool::Image)
         {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");

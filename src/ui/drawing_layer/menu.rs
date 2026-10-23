@@ -35,6 +35,21 @@ struct Target {
     point: Pos2,
 }
 
+/// What can be done to a picture.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum ImageOp {
+    /// Choose another picture for the drawing.
+    Replace,
+    /// Bring the drawing back to the shape of its picture.
+    ResetShape,
+    Opacity(f32),
+    ToggleShapeLock,
+    Copy,
+}
+
+/// The opacities the toolbar offers.
+const OPACITIES: [f32; 4] = [1.0, 0.75, 0.5, 0.25];
+
 /// What can be done to the grid of a table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum TableOp {
@@ -50,6 +65,7 @@ pub(super) enum TableOp {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Action {
     Table(TableOp),
+    Image(ImageOp),
     Settings,
     EditText,
     /// A price alert at a horizontal line's price.
@@ -227,6 +243,9 @@ impl DrawingLayer {
                                 if let Some(op) = self.table_controls(ui, drawing) {
                                     action = Some(Action::Table(op));
                                 }
+                                if let Some(op) = image_controls(ui, drawing) {
+                                    action = Some(Action::Image(op));
+                                }
                                 if is_price_line(drawing)
                                     && icons::button(
                                         ui,
@@ -360,6 +379,50 @@ impl DrawingLayer {
         );
         divider(ui);
         op
+    }
+
+    /// `drawing`, a picture, after `op`; `None` when it changes nothing or has to be asked of
+    /// the workspace instead.
+    fn image_edit(
+        &mut self,
+        drawing: &Drawing,
+        op: ImageOp,
+        proj: &Projection,
+        frame: &mut DrawingFrame,
+    ) -> Option<Drawing> {
+        let Some(Geometry::Image(image)) = drawing.geometry() else {
+            return None;
+        };
+        match op {
+            ImageOp::Replace => {
+                frame.replace_request = Some(drawing.id());
+                return None;
+            }
+            ImageOp::Copy => {
+                frame.copy_image = Some(image.asset.clone());
+                return None;
+            }
+            _ => {}
+        }
+        let mut changed = drawing.clone();
+        let Some(Geometry::Image(edited)) = changed.geometry_mut() else {
+            return None;
+        };
+        match op {
+            ImageOp::Opacity(value) => edited.opacity = value,
+            ImageOp::ToggleShapeLock => edited.keep_aspect = !edited.keep_aspect,
+            ImageOp::ResetShape => {
+                // The same width and top-left corner, the height the picture's own shape gives.
+                let rect = Rect::from_two_pos(proj.point(edited.a), proj.point(edited.b));
+                let reset = Rect::from_min_size(
+                    rect.min,
+                    vec2(rect.width(), rect.width() / edited.aspect()),
+                );
+                (edited.a, edited.b) = edit::corners_for(edited, reset, proj);
+            }
+            ImageOp::Replace | ImageOp::Copy => return None,
+        }
+        (changed != *drawing).then_some(changed)
     }
 
     /// `drawing`, a table, after `op`; `None` when it changes nothing. A selected cell stays on
@@ -514,6 +577,40 @@ impl DrawingLayer {
                     false,
                     Action::Alert,
                 );
+            }
+            if matches!(
+                first.filter(|_| single).and_then(|d| d.geometry()),
+                Some(Geometry::Image(_))
+            ) {
+                let unlocked = first.is_some_and(|d| !d.locked());
+                item(
+                    ui,
+                    Icon::ImageTool,
+                    "Replace image…",
+                    None,
+                    unlocked,
+                    false,
+                    Action::Image(ImageOp::Replace),
+                );
+                item(
+                    ui,
+                    Icon::ImageTool,
+                    "Reset aspect ratio",
+                    None,
+                    unlocked,
+                    false,
+                    Action::Image(ImageOp::ResetShape),
+                );
+                item(
+                    ui,
+                    Icon::CopyDoc,
+                    "Copy image",
+                    None,
+                    true,
+                    false,
+                    Action::Image(ImageOp::Copy),
+                );
+                kit::menu_separator(ui);
             }
             if let Some(Geometry::Table(table)) =
                 first.filter(|_| single).and_then(|d| d.geometry())
@@ -754,6 +851,14 @@ impl DrawingLayer {
                     self.begin_text_edit(drawing.id(), frame, proj);
                 }
             }
+            Action::Image(op) => {
+                if let [drawing] = &targets[..]
+                    && !drawing.locked()
+                    && let Some(changed) = self.image_edit(drawing, op, proj, frame)
+                {
+                    replace(frame, changed);
+                }
+            }
             Action::Table(op) => {
                 if let [drawing] = &targets[..]
                     && !drawing.locked()
@@ -919,6 +1024,41 @@ fn nearest_segment(path: &[Pos2], closed: bool, point: Pos2) -> Option<usize> {
         })
         .min_by(|a, b| a.1.total_cmp(&b.1))
         .map(|(index, _)| index)
+}
+
+/// The toolbar's controls for a picture: opacity, the shape lock, replace. Returns the one used.
+fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
+    let Some(Geometry::Image(image)) = drawing.geometry() else {
+        return None;
+    };
+    let mut op = None;
+    let labels: Vec<String> = OPACITIES
+        .iter()
+        .map(|value| format!("{:.0}%", value * 100.0))
+        .collect();
+    let current = OPACITIES
+        .iter()
+        .enumerate()
+        .min_by(|a, b| {
+            (a.1 - image.opacity)
+                .abs()
+                .total_cmp(&(b.1 - image.opacity).abs())
+        })
+        .map_or(0, |(index, _)| index);
+    if let Some(index) = kit::menu_picker(ui, 62.0, &labels, current, true) {
+        op = Some(ImageOp::Opacity(OPACITIES[index]));
+    }
+    if kit::value_chip(ui, "Keep shape", image.keep_aspect).clicked() {
+        op = Some(ImageOp::ToggleShapeLock);
+    }
+    if kit::value_chip(ui, "Reset shape", false).clicked() {
+        op = Some(ImageOp::ResetShape);
+    }
+    if kit::value_chip(ui, "Replace", false).clicked() {
+        op = Some(ImageOp::Replace);
+    }
+    divider(ui);
+    op
 }
 
 fn divider(ui: &mut Ui) {

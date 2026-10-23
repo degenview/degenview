@@ -103,6 +103,19 @@ pub struct DrawingFrame<'a> {
     pub background_click: Option<Pos2>,
     /// A drawing was placed while every drawing was hidden: show them again, or it would vanish.
     pub reveal_all: bool,
+    /// What was chosen and waits for a click to place it (a picture), while its tool is armed.
+    pub pending_content: Option<crate::model::image_content::Content>,
+    /// The content was placed: the workspace forgets it, and the tool disarms.
+    pub content_used: bool,
+    /// Place the waiting content now, in the middle of the plot, without a click: set on the
+    /// focused chart when a picture arrives by a drop or a paste.
+    pub place_pending: bool,
+    /// A picture to put in place of the one drawing `id` shows, from the workspace's pick.
+    pub replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+    /// The user asked to replace the picture of this drawing: the workspace asks for a new one.
+    pub replace_request: Option<u64>,
+    /// The user asked to copy the picture with this name.
+    pub copy_image: Option<String>,
     /// The user asked for a price alert at this price (a horizontal line's); the workspace opens
     /// the alert editor for them to review.
     pub alert_price: Option<f64>,
@@ -132,6 +145,12 @@ impl<'a> DrawingFrame<'a> {
             copy_requested: false,
             background_click: None,
             reveal_all: false,
+            pending_content: None,
+            content_used: false,
+            place_pending: false,
+            replace_with: None,
+            replace_request: None,
+            copy_image: None,
             alert_price: None,
         }
     }
@@ -165,6 +184,24 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_keys_blocked(mut self, blocked: bool) -> Self {
         self.keys_blocked = blocked;
+        self
+    }
+
+    pub fn with_pending_content(
+        mut self,
+        content: Option<crate::model::image_content::Content>,
+    ) -> Self {
+        self.pending_content = content;
+        self
+    }
+
+    pub fn with_picture_work(
+        mut self,
+        place_pending: bool,
+        replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+    ) -> Self {
+        self.place_pending = place_pending;
+        self.replace_with = replace_with;
         self
     }
 
@@ -358,6 +395,10 @@ pub(super) struct DrawingLayer {
     table_cell: Option<(u64, usize, usize)>,
     /// A table just placed, to start editing its first cell once it is on the chart.
     pending_cell: Option<(u64, u8)>,
+    /// The pictures painted, as textures.
+    textures: draw::Textures,
+    /// Where the pointer was on the plot last frame, for the picture waiting to be placed.
+    pointer: Option<Pos2>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -570,6 +611,7 @@ impl DrawingLayer {
             )
         });
 
+        self.pointer = pointer.filter(|point| plot.contains(*point));
         // A gesture must not outlive the conditions it began under: the card going unseen
         // (another tab), the window losing focus, or the tool being switched.
         let frame_nr = ui.ctx().cumulative_frame_nr();
@@ -590,6 +632,8 @@ impl DrawingLayer {
             ui.ctx()
                 .data_mut(|data| data.insert_temp(egui::Id::new(TABLE_CELL_FLAG), true));
         }
+        self.place_waiting_content(frame, proj);
+        self.replace_picture(frame, proj);
         self.handle_table_keys(ui, frame, proj);
         self.handle_keys(ui, response, frame, proj);
 
@@ -1159,7 +1203,26 @@ impl DrawingLayer {
             return;
         }
         let id = frame.next_id;
-        let Some(mut drawing) = Drawing::build(tool, id, &anchors, frame.style_for(tool)) else {
+        let built = if tool.caps().has(Caps::CONTENT) {
+            // What was chosen is dropped where the click was: a picture at its own size, brought
+            // to fit the plot.
+            let Some(content) = frame.pending_content.clone() else {
+                return;
+            };
+            let Some(first) = anchors.first().map(|anchor| proj.point(*anchor)) else {
+                return;
+            };
+            let crate::model::image_content::Content::Image(picture) = &content;
+            let rect = placed_rect(picture, first, proj.plot);
+            let corners = [
+                proj.anchor(rect.left_top()),
+                proj.anchor(rect.right_bottom()),
+            ];
+            Drawing::build_with(tool, id, &corners, frame.style_for(tool), &content)
+        } else {
+            Drawing::build(tool, id, &anchors, frame.style_for(tool))
+        };
+        let Some(mut drawing) = built else {
             return;
         };
         if closed && let Some(Geometry::Polyline { closed, .. }) = drawing.geometry_mut() {
@@ -1181,7 +1244,11 @@ impl DrawingLayer {
         if frame.hide_all {
             frame.reveal_all = true;
         }
-        if !frame.keep_drawing && tool != Tool::Ruler {
+        if tool.caps().has(Caps::CONTENT) {
+            // What was chosen is used up: the next one is chosen again.
+            frame.content_used = true;
+            frame.disarm = true;
+        } else if !frame.keep_drawing && tool != Tool::Ruler {
             frame.disarm = true;
         }
     }
@@ -1237,6 +1304,7 @@ impl DrawingLayer {
         let single = frame.selected.len() == 1;
         let mut live = HashSet::new();
         self.tags.clear();
+        self.textures.begin();
         for stored in frame.drawings {
             live.insert(stored.id());
             if !frame.shows(stored) {
@@ -1266,6 +1334,22 @@ impl DrawingLayer {
         if let Some(Gesture::Draft(draft)) = &gesture {
             self.paint_draft(&clipped, proj, frame, draft);
         }
+        // The picture waiting to be placed follows the pointer, faint, where a click would put it.
+        if frame.tool.caps().has(Caps::CONTENT)
+            && let Some(crate::model::image_content::Content::Image(picture)) =
+                &frame.pending_content
+            && let Some(point) = self.pointer
+        {
+            let rect = placed_rect(picture, point, proj.plot);
+            draw::draw_picture(
+                &clipped,
+                &mut self.textures,
+                rect,
+                &picture.asset,
+                &picture.name,
+                0.55,
+            );
+        }
         // A drawing waiting for its text is shown as it will be, growing as it is typed into.
         if let Some(preview) = self
             .text_edit
@@ -1276,6 +1360,7 @@ impl DrawingLayer {
         }
         drop(editing);
         self.gesture = gesture;
+        self.textures.end();
     }
 
     /// Paints the tags the drawings painted this frame asked for on the price and time axes.
@@ -1438,6 +1523,7 @@ impl DrawingLayer {
                             .map(|hit| hit.part)
                             .filter(|part| matches!(part, Part::Column(_) | Part::Row(_))),
                     },
+                    &mut self.textures,
                 );
                 if !draft {
                     match text_box {
@@ -1469,6 +1555,81 @@ impl DrawingLayer {
             Drawing::Unreadable(_) => {}
         }
     }
+}
+
+impl DrawingLayer {
+    /// Puts the waiting picture in the middle of the plot when the workspace says it arrived by
+    /// a drop or a paste, instead of waiting for a click.
+    fn place_waiting_content(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        if !frame.place_pending || frame.pending_content.is_none() {
+            return;
+        }
+        frame.place_pending = false;
+        let crate::model::image_content::Content::Image(picture) =
+            frame.pending_content.clone().expect("checked above");
+        let size = placed_rect(&picture, proj.plot.center(), proj.plot).size();
+        let at = proj.anchor(proj.plot.center() - size / 2.0);
+        let draft = Draft {
+            tool: Tool::Image,
+            placed: vec![at],
+            rubber: at,
+            dragging: false,
+            placed_at_press: 0,
+        };
+        self.commit_draft(draft, false, frame, proj);
+    }
+
+    /// Swaps the picture of a drawing for the one the user chose: the same place, the same
+    /// width and the same opacity, one undo step. A picture of another shape takes the shape
+    /// that suits it, from the same top-left corner, unless the drawing was told not to keep it.
+    fn replace_picture(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        let Some((id, content)) = frame.replace_with.take() else {
+            return;
+        };
+        let Some(drawing) = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id && !drawing.locked())
+        else {
+            return;
+        };
+        let mut changed = drawing.clone();
+        let Some(Geometry::Image(image)) = changed.geometry_mut() else {
+            return;
+        };
+        let before = Rect::from_two_pos(proj.point(image.a), proj.point(image.b));
+        image.asset = content.asset;
+        image.name = content.name;
+        image.pixels = content.pixels;
+        if image.keep_aspect {
+            let rect = Rect::from_min_size(
+                before.min,
+                egui::vec2(before.width(), before.width() / image.aspect()),
+            );
+            (image.a, image.b) = edit::corners_for(image, rect, proj);
+        }
+        frame.commands.push(DrawingCommand::Replace {
+            id,
+            drawing: changed,
+        });
+    }
+}
+
+/// The rectangle a picture takes when it is dropped with its top-left corner at `at`: its own size
+/// in logical pixels, scaled down to at most 40 % of the plot's width and half its height, and
+/// moved back onto the plot if that would put it over an edge.
+fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, plot: Rect) -> Rect {
+    let (width, height) = (
+        picture.pixels[0].max(1) as f32,
+        picture.pixels[1].max(1) as f32,
+    );
+    let scale = (plot.width() * 0.4 / width)
+        .min(plot.height() * 0.5 / height)
+        .min(1.0);
+    let size = egui::vec2((width * scale).max(24.0), (height * scale).max(24.0));
+    let left = at.x.min(plot.right() - size.x).max(plot.left());
+    let top = at.y.min(plot.bottom() - size.y).max(plot.top());
+    Rect::from_min_size(Pos2::new(left, top), size)
 }
 
 /// Whether a tool collects any number of vertices (a path or polyline).

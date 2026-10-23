@@ -62,6 +62,7 @@ pub enum Tool {
     Callout,
     Signpost,
     Table,
+    Image,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -81,6 +82,8 @@ pub enum ToolGroup {
     Pitchforks,
     /// Text on the chart: notes, labels, markers.
     TextNotes,
+    /// Pictures and links, which need something chosen before they can be placed.
+    Content,
 }
 
 impl ToolGroup {
@@ -89,7 +92,7 @@ impl ToolGroup {
     /// The groups listed in the Lines tile's menu, in order.
     pub const LINE_MENU: [Self; 3] = [Self::TrendLines, Self::Channels, Self::Pitchforks];
     /// The groups listed in the text and notes tile's menu, in order.
-    pub const NOTE_MENU: [Self; 1] = [Self::TextNotes];
+    pub const NOTE_MENU: [Self; 2] = [Self::TextNotes, Self::Content];
 
     pub const fn title(self) -> &'static str {
         match self {
@@ -102,6 +105,7 @@ impl ToolGroup {
             Self::Channels => "Channels",
             Self::Pitchforks => "Pitchforks",
             Self::TextNotes => "Text and notes",
+            Self::Content => "Content",
         }
     }
 }
@@ -161,6 +165,8 @@ impl Caps {
     pub const EMOJI: Self = Self(1 << 20);
     /// A grid of editable cells: edited cell by cell, pinned to the chart or to the screen.
     pub const TABLE: Self = Self(1 << 21);
+    /// Something chosen first (a picture, a link) and placed by a click; it has a Content page.
+    pub const CONTENT: Self = Self(1 << 22);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -249,7 +255,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 43] = [
+    pub const GROUPED: [Self; 44] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -277,6 +283,7 @@ impl Tool {
         Self::PriceLabel,
         Self::Signpost,
         Self::FlagMark,
+        Self::Image,
         Self::Brush,
         Self::Highlighter,
         Self::ArrowMarker,
@@ -298,8 +305,8 @@ impl Tool {
     pub const fn spec(self) -> ToolSpec {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
-            Arrows, Brushes, Channels, Lines, Measure, Pitchforks, Pointer, Shapes, TextNotes,
-            TrendLines,
+            Arrows, Brushes, Channels, Content, Lines, Measure, Pitchforks, Pointer, Shapes,
+            TextNotes, TrendLines,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
         // What every two-point line offers: text along it, ends, statistics and price tags.
@@ -423,6 +430,7 @@ impl Tool {
             ),
             Self::PriceNote => spec("Price note", TextNotes, Points(2), note.with(Caps::COLOR)),
             Self::Callout => spec("Callout", TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
+            Self::Image => spec("Image", Content, Single, Caps::CONTENT),
             Self::Table => spec(
                 "Table",
                 TextNotes,
@@ -733,7 +741,7 @@ impl Tool {
                 style.text.align = HorizontalAlign::Left;
                 style
             }
-            Self::Cursor | Self::Fib | Self::Ruler => DrawingStyle::default(),
+            Self::Cursor | Self::Fib | Self::Ruler | Self::Image => DrawingStyle::default(),
         };
         if matches!(self, Self::Rectangle) {
             style.middle_line.dash = LineDash::Dashed;
@@ -768,7 +776,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 43);
+        assert_eq!(Tool::GROUPED.len(), 44);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -791,7 +799,7 @@ mod tests {
         };
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
-        assert_eq!(counts(&ToolGroup::NOTE_MENU), [10]);
+        assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 1]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

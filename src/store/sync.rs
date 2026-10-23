@@ -939,6 +939,9 @@ impl Store {
                 by_id("portfolio_transaction", &local)?
                     .and_then(|payload| project_transaction(ids, &local, &payload))
             }
+            EntityKind::DrawingAsset => {
+                pick("drawing_asset", sync_id, by_id("drawing_asset", sync_id)?)
+            }
             EntityKind::Layout => pick("saved_view", sync_id, by_id("saved_view", sync_id)?),
             EntityKind::LayoutDrawing => {
                 let layout = sync_id.split('.').next().unwrap_or_default();
@@ -1784,7 +1787,10 @@ impl Store {
                 .insert(entity.sync_id.clone(), entity);
         }
         for table in crate::store::DOCUMENT_TABLES {
-            if !matches!(table_policy(table), TablePolicy::Synced(_)) {
+            // Pictures are large and immutable: they are looked at by id below, never read whole.
+            if !matches!(table_policy(table), TablePolicy::Synced(_))
+                || table == crate::store::asset_store::TABLE
+            {
                 continue;
             }
             let mut statement = self
@@ -1837,6 +1843,7 @@ impl Store {
             }
         }
         let mut total = Reconciled::default();
+        total.upserts += self.reconcile_assets()?;
         let mut kinds: Vec<_> = by_kind.into_iter().collect();
         kinds.sort_by_key(|(kind, _)| kind.prefix());
         for (kind, current) in kinds {
@@ -1845,6 +1852,45 @@ impl Store {
             total.deletes += done.deletes;
         }
         Ok(total)
+    }
+
+    /// Queues the upload of every kept picture the cloud is not known to have and that is not
+    /// already queued, from the ids alone: a picture's name is the hash of its bytes, so one that
+    /// is known never needs its bytes looked at again. Nothing is ever queued for deletion: a
+    /// picture is not deleted.
+    fn reconcile_assets(&self) -> rusqlite::Result<usize> {
+        let Some(state) = self.sync_state()? else {
+            return Ok(0);
+        };
+        let kind = EntityKind::DrawingAsset;
+        if self.disabled_categories().contains(&kind.category()) {
+            return Ok(0);
+        }
+        let queued: HashSet<String> = self
+            .outbox()?
+            .into_iter()
+            .filter(|row| row.kind == kind)
+            .map(|row| row.sync_id)
+            .collect();
+        let mut queued_now = 0;
+        for id in self.asset_ids()? {
+            let known = self
+                .entity_mark(kind, &id)?
+                .is_some_and(|mark| !mark.deleted);
+            if known || queued.contains(&id) {
+                continue;
+            }
+            let entity = Projected {
+                kind,
+                sync_id: id.clone(),
+                local_id: id,
+                payload: Vec::new(),
+                hash: String::new(),
+            };
+            self.queue_upsert(&entity, &state.device_id)?;
+            queued_now += 1;
+        }
+        Ok(queued_now)
     }
 
     /// Reconciles one kind against the complete set of entities that currently exist for it.

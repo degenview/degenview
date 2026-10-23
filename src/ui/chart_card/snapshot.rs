@@ -25,6 +25,8 @@ pub struct SnapshotInput<'a> {
     pub drawings: &'a [Drawing],
     /// The drawings whose note is open on the chart (a pin's).
     pub open_notes: &'a [u64],
+    /// The pictures the drawings show, decoded: a snapshot has no store to ask for them.
+    pub images: Option<&'a std::collections::HashMap<String, Arc<egui::ColorImage>>>,
     pub hide_all_drawings: bool,
     pub replay_active: bool,
     /// Draw the paper-trading orders and positions, if the chart shows them.
@@ -221,6 +223,12 @@ impl ChartCard {
         );
         let ctx = egui::Context::default();
         theme::install_offscreen(&ctx);
+        if let Some(images) = input.images {
+            crate::service::asset_host::freeze(
+                &ctx,
+                crate::service::asset_host::FrozenAssets(Arc::new(images.clone())),
+            );
+        }
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             viewports: std::iter::once((

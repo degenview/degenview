@@ -395,6 +395,118 @@ fn draw_arrow_extras(
     }
 }
 
+/// The textures of the pictures being painted, kept between frames so a picture is uploaded once
+/// however often the chart is panned, and dropped when nothing shows it any more.
+#[derive(Default)]
+pub(super) struct Textures {
+    held: std::collections::HashMap<String, egui::TextureHandle>,
+    used: std::collections::HashSet<String>,
+}
+
+impl Textures {
+    #[cfg(test)]
+    pub(super) fn holds(&self, asset: &str) -> bool {
+        self.held.contains_key(asset)
+    }
+
+    /// The texture of a picture, to tell a reused one from a new upload.
+    #[cfg(test)]
+    pub(super) fn id_of(&self, asset: &str) -> Option<egui::TextureId> {
+        self.held.get(asset).map(egui::TextureHandle::id)
+    }
+
+    /// Starts a frame: nothing is in use yet.
+    pub(super) fn begin(&mut self) {
+        self.used.clear();
+    }
+
+    /// Ends it: the pictures nothing painted are let go.
+    pub(super) fn end(&mut self) {
+        let used = std::mem::take(&mut self.used);
+        self.held.retain(|asset, _| used.contains(asset));
+    }
+
+    fn get(&mut self, painter: &Painter, asset: &str) -> Option<egui::TextureId> {
+        self.used.insert(asset.to_owned());
+        if let Some(texture) = self.held.get(asset) {
+            return Some(texture.id());
+        }
+        let crate::service::asset_host::AssetImage::Ready(pixels) =
+            crate::service::asset_host::lookup(painter.ctx(), asset)
+        else {
+            return None;
+        };
+        let texture = painter.ctx().load_texture(
+            format!("drawing-picture-{asset}"),
+            (*pixels).clone(),
+            egui::TextureOptions::LINEAR,
+        );
+        let id = texture.id();
+        self.held.insert(asset.to_owned(), texture);
+        Some(id)
+    }
+}
+
+/// What a picture that cannot be shown says, and in what state it is.
+fn picture_status(painter: &Painter, asset: &str) -> &'static str {
+    use crate::service::asset_host::{AssetImage, lookup};
+    match lookup(painter.ctx(), asset) {
+        AssetImage::Loading => "Loading image…",
+        AssetImage::Missing => "Image unavailable (waiting to sync)",
+        AssetImage::Corrupt => "This image could not be read",
+        AssetImage::Ready(_) => "",
+    }
+}
+
+/// Paints a picture in `rect`, or a placeholder that says why it is not there.
+pub(super) fn draw_picture(
+    painter: &Painter,
+    textures: &mut Textures,
+    rect: Rect,
+    asset: &str,
+    name: &str,
+    opacity: f32,
+) {
+    if let Some(texture) = textures.get(painter, asset) {
+        painter.image(
+            texture,
+            rect,
+            Rect::from_min_max(Pos2::ZERO, pos2(1.0, 1.0)),
+            Color32::WHITE.gamma_multiply(opacity),
+        );
+        return;
+    }
+    painter.rect_filled(rect, 4.0, with_alpha(theme::surface(), 200));
+    stroke_path(
+        painter,
+        &[
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+        ],
+        true,
+        Stroke::new(1.0, theme::text_tertiary()),
+        LineDash::Dashed,
+    );
+    let status = picture_status(painter, asset);
+    let label = if name.is_empty() {
+        status.to_owned()
+    } else {
+        format!("{status}\n{name}")
+    };
+    let galley = painter.layout(
+        label,
+        FontId::proportional(12.0),
+        theme::text_secondary(),
+        (rect.width() - 12.0).max(20.0),
+    );
+    let at = rect.center() - galley.size() / 2.0;
+    painter
+        .with_clip_rect(rect)
+        .galley(at, galley, theme::text_secondary());
+}
+
 /// Paints one projected drawing. `painter` is already clipped to the plot.
 pub(super) fn paint(
     painter: &Painter,
@@ -402,10 +514,38 @@ pub(super) fn paint(
     drawing: &Drawing,
     proj: &Projection,
     emphasis: Emphasis,
+    textures: &mut Textures,
 ) -> Option<TextBox> {
     let style = drawing.style()?;
     let color = series_render::color(style.stroke.color);
     let width = style.stroke.width;
+
+    if let Some(picture) = &screen.picture {
+        draw_picture(
+            painter,
+            textures,
+            picture.rect,
+            &picture.asset,
+            &picture.name,
+            picture.opacity,
+        );
+        if emphasis.halo && !emphasis.selected {
+            painter.rect_stroke(
+                picture.rect,
+                0.0,
+                Stroke::new(1.0, with_alpha(crate::ui::kit::ACCENT, 160)),
+                StrokeKind::Outside,
+            );
+        } else if emphasis.selected {
+            painter.rect_stroke(
+                picture.rect,
+                0.0,
+                Stroke::new(1.0, crate::ui::kit::ACCENT),
+                StrokeKind::Outside,
+            );
+        }
+        return None;
+    }
 
     if let Some(mask) = &screen.mask {
         let texture = screen.mask_texture.get_or_init(|| {

@@ -48,6 +48,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod content;
 mod context;
 mod snapshot;
 use crate::model::snapshot::SnapshotAction;
@@ -851,6 +852,8 @@ pub struct ChartWorkspace {
     autosave: AutosaveState,
     /// The chart drag in progress over the grid: where it would land, and the new-column preview.
     grid_drag: ui::grid_drop::GridDrag,
+    /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
+    content: content::ContentFlow,
 }
 
 /// How long the layout must sit unchanged before an autosave-enabled layout is written.
@@ -1062,6 +1065,7 @@ impl ChartWorkspace {
             saved_drawings_version: 0,
             saved_drawings: HashMap::new(),
             grid_drag: ui::grid_drop::GridDrag::default(),
+            content: content::ContentFlow::default(),
         }
     }
 
@@ -2292,7 +2296,11 @@ impl ChartWorkspace {
             return;
         }
         let templates = self.drawing_templates();
-        match dialog.show(ctx, templates) {
+        let outcome = dialog.show(ctx, templates);
+        if dialog.take_replace_request() {
+            self.replace_picture_request(ctx, chart_id, drawing_id);
+        }
+        match outcome {
             drawing_properties::Outcome::Open => self.drawing_props = Some(dialog),
             drawing_properties::Outcome::Cancel => {}
             drawing_properties::Outcome::Apply(drawing) => {
@@ -3841,11 +3849,16 @@ impl ChartWorkspace {
         let mut drawing_commands: Vec<(u64, Vec<DrawingCommand>)> = Vec::new();
         let mut drawing_select: Option<(u64, Vec<u64>)> = None;
         let mut drawing_disarm = false;
+        let picture_work = self.content.work_snapshot(self.focused);
+        let mut picture_used = false;
+        let mut picture_replace: Option<(u64, u64)> = None;
+        let mut picture_copy: Option<String> = None;
         let mut drawing_properties_request: Option<(u64, u64)> = None;
         let mut drawing_style_copied: Option<(Tool, DrawingStyle)> = None;
         let style_clipboard = self.style_clipboard;
         let dialog_open = self.drawing_props.is_some()
             || self.confirm_remove_drawings.is_some()
+            || self.content.sheet_open()
             || self.add_chart.is_open();
         let mut drawing_reveal = false;
         let mut drawing_copy = false;
@@ -4055,12 +4068,16 @@ impl ChartWorkspace {
                                                 .filter(|(chart, _)| *chart == chart_id)
                                                 .map(|(_, drawings)| drawings.clone())
                                                 .unwrap_or_default();
+                                            let (pending, place_now, replace_with) =
+                                                picture_work.for_chart(chart_id);
                                             let mut frame = DrawingFrame::new(
                                                 &chart.drawings,
                                                 active_tool,
                                                 None,
                                                 chart.next_drawing_id,
                                             )
+                                            .with_pending_content(pending)
+                                            .with_picture_work(place_now, replace_with)
                                             .with_selection(selected)
                                             .with_view(timeframe, hide_all_drawings)
                                             .with_behavior(magnet, keep_drawing)
@@ -4112,6 +4129,13 @@ impl ChartWorkspace {
                                             }
                                             drawing_escape |= frame.escape_consumed;
                                             drawing_disarm |= frame.disarm;
+                                            picture_used |= frame.content_used;
+                                            if let Some(drawing_id) = frame.replace_request {
+                                                picture_replace = Some((chart_id, drawing_id));
+                                            }
+                                            if frame.copy_image.is_some() {
+                                                picture_copy = frame.copy_image.take();
+                                            }
                                             drawing_reveal |= frame.reveal_all;
                                             drawing_copy |= frame.copy_requested;
                                             if let Some(price) = frame.alert_price {
@@ -4352,6 +4376,16 @@ impl ChartWorkspace {
         if drawing_disarm {
             self.active_tool = Tool::Cursor;
         }
+        self.picture_work_done();
+        if picture_used {
+            self.picture_used();
+        }
+        if let Some((chart_id, drawing_id)) = picture_replace {
+            self.replace_picture_request(&ctx, chart_id, drawing_id);
+        }
+        if let Some(asset) = picture_copy {
+            self.copy_picture(&ctx, &asset);
+        }
         if drawing_reveal {
             self.hide_all_drawings = false;
         }
@@ -4400,6 +4434,7 @@ impl ChartWorkspace {
         self.configure_paper_cards(paper_host);
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
+        self.tick_content(&ctx);
         self.tick_replay();
 
         self.add_chart.tick(&ctx);

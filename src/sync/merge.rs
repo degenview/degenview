@@ -113,6 +113,7 @@ pub fn merge(kind: EntityKind, base: Option<&Value>, local: Side, remote: Side) 
             }
         }
         EntityKind::LayoutDrawing
+        | EntityKind::DrawingAsset
         | EntityKind::ChartTemplate
         | EntityKind::DrawingTemplate
         | EntityKind::Alert

@@ -61,7 +61,7 @@ pub(super) fn symbols(row: &Value) -> Vec<String> {
         .collect()
 }
 
-fn pair() -> (MockCloud, Mac, Mac) {
+pub(super) fn pair() -> (MockCloud, Mac, Mac) {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "Mac A", "acct", Some("acct"));
     let mut b = mac(&cloud, "Mac B", "acct", Some("acct"));
@@ -71,7 +71,7 @@ fn pair() -> (MockCloud, Mac, Mac) {
 }
 
 /// Lets both Macs upload and fetch until nothing moves.
-fn settle(a: &mut Mac, b: &mut Mac) {
+pub(super) fn settle(a: &mut Mac, b: &mut Mac) {
     for _ in 0..6 {
         a.core.request_sync();
         a.run();

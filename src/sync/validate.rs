@@ -5,6 +5,7 @@
 
 use super::policy::EntityKind;
 use super::record::{FAVORITES_ID, MAX_RAW_PAYLOAD_BYTES, SCHEMA_VERSION, SyncRecord};
+use crate::store::asset_store::StoredAsset;
 use serde_json::Value;
 
 /// Same bound the Pine lexer enforces on a source (`Limits::source_characters`).
@@ -95,6 +96,20 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
                 return Err("drawing record name is not layout.chart.drawing".into());
             }
             bound_collections(object.get("drawing").ok_or("drawing is missing")?)
+        }
+        EntityKind::DrawingAsset => {
+            // Held to what a picture is before anything else looks at it: the bytes are decoded
+            // and hashed here, so a record whose name is not the hash of its bytes, or which is
+            // not a PNG or JPEG of the size it says, never reaches the store.
+            let asset: StoredAsset = serde_json::from_value(value.clone())
+                .map_err(|_| "a picture record is malformed".to_string())?;
+            if asset.id != id {
+                return Err("a picture's id is not its record's".into());
+            }
+            asset
+                .verified_bytes()
+                .map(|_| ())
+                .ok_or_else(|| "a picture is not what its name says".into())
         }
         EntityKind::Watchlist => {
             let object = object(value)?;
@@ -542,6 +557,62 @@ mod tests {
             json!({"id": 5, "name": "x", "charts": [{"id": 1, "pine_instances": [{"source": long}]}]}),
         );
         assert!(rejected(&pine).contains("Pine"));
+    }
+
+    fn picture_record() -> (String, serde_json::Value) {
+        let image =
+            image::RgbaImage::from_fn(20, 20, |x, y| image::Rgba([x as u8, y as u8, 9, 255]));
+        let mut png = Vec::new();
+        image::ImageEncoder::write_image(
+            image::codecs::png::PngEncoder::new(&mut png),
+            image.as_raw(),
+            20,
+            20,
+            image::ExtendedColorType::Rgba8,
+        )
+        .unwrap();
+        let kept = crate::service::image_ingest::ingest(&png).unwrap();
+        let asset = crate::store::asset_store::StoredAsset::from_ingested(&kept);
+        (asset.id.clone(), serde_json::to_value(asset).unwrap())
+    }
+
+    #[test]
+    fn a_picture_record_is_accepted_only_when_it_is_what_its_name_says() {
+        let (id, good) = picture_record();
+        let ok = record(EntityKind::DrawingAsset, &id, good.clone());
+        assert!(matches!(validate(&ok), Verdict::Accept(_)));
+        // Another name: the record is not the picture its name claims.
+        let renamed = record(EntityKind::DrawingAsset, &"b".repeat(64), good.clone());
+        assert!(rejected(&renamed).contains("id"));
+        // Bytes that do not hash to the name.
+        let mut tampered = good.clone();
+        tampered["data"] = json!("AAAAAAAA");
+        assert!(rejected(&record(EntityKind::DrawingAsset, &id, tampered)).contains("picture"));
+        // A type or size it does not have.
+        for (field, value) in [
+            ("mime", json!("image/png")),
+            ("width", json!(21)),
+            ("height", json!(0)),
+        ] {
+            let mut wrong = good.clone();
+            wrong[field] = value;
+            assert!(
+                matches!(
+                    validate(&record(EntityKind::DrawingAsset, &id, wrong)),
+                    Verdict::Reject(_)
+                ),
+                "{field}"
+            );
+        }
+        // Not a picture record at all.
+        let junk = record(EntityKind::DrawingAsset, &id, json!({"id": id}));
+        assert!(matches!(validate(&junk), Verdict::Reject(_)));
+        let oversized = {
+            let mut big = good.clone();
+            big["data"] = json!("A".repeat(2_000_000));
+            record(EntityKind::DrawingAsset, &id, big)
+        };
+        assert!(matches!(validate(&oversized), Verdict::Reject(_)));
     }
 
     #[test]

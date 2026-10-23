@@ -563,3 +563,95 @@ pub fn primary_button_down() -> Option<bool> {
 pub fn primary_button_down() -> Option<bool> {
     None
 }
+
+/// The picture on the system clipboard, as PNG or JPEG bytes: a copied image, or a picture file
+/// copied in Finder. `None` when there is none. Image-only clipboards give the windowing layer no
+/// paste event (it has no text to report), so this is read when the user asks for the picture.
+#[cfg(target_os = "macos")]
+pub fn clipboard_picture() -> Option<Vec<u8>> {
+    picture_on(&objc2_app_kit::NSPasteboard::generalPasteboard())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn clipboard_picture() -> Option<Vec<u8>> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn picture_on(board: &objc2_app_kit::NSPasteboard) -> Option<Vec<u8>> {
+    use objc2_foundation::NSString;
+    for kind in ["public.png", "public.jpeg"] {
+        if let Some(data) = board.dataForType(&NSString::from_str(kind)) {
+            return Some(data.to_vec());
+        }
+    }
+    let url = board.stringForType(&NSString::from_str("public.file-url"))?;
+    let path = file_url_path(&url.to_string())?;
+    crate::service::image_ingest::read_file(&path).ok()
+}
+
+/// The path a `file://` URL names, with its percent escapes undone. `None` for any other URL.
+pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
+    let rest = url.strip_prefix("file://")?;
+    // `file:///Users/me/a.png` has an empty host; `file://localhost/...` is the same place.
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    if !path.starts_with('/') {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(path.len());
+    let mut input = path.bytes();
+    while let Some(byte) = input.next() {
+        if byte == b'%' {
+            let high = input.next()?;
+            let low = input.next()?;
+            let hex = |digit: u8| (digit as char).to_digit(16);
+            bytes.push((hex(high)? * 16 + hex(low)?) as u8);
+        } else {
+            bytes.push(byte);
+        }
+    }
+    String::from_utf8(bytes).ok().map(std::path::PathBuf::from)
+}
+
+#[cfg(test)]
+mod picture_tests {
+    use super::*;
+
+    #[test]
+    fn a_file_url_names_its_path_and_nothing_else_does() {
+        assert_eq!(
+            file_url_path("file:///Users/me/My%20Pictures/a%C3%A9.png"),
+            Some(std::path::PathBuf::from("/Users/me/My Pictures/aé.png"))
+        );
+        assert_eq!(
+            file_url_path("file://localhost/tmp/x.png"),
+            Some(std::path::PathBuf::from("/tmp/x.png"))
+        );
+        assert_eq!(file_url_path("https://example.com/a.png"), None);
+        assert_eq!(file_url_path("file://example.com/a.png"), None);
+        assert_eq!(file_url_path("file:///bad%2"), None);
+        assert_eq!(file_url_path("file:///bad%zz"), None);
+    }
+
+    /// A pasteboard of the test's own: the user's clipboard is not touched.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_picture_on_a_pasteboard_is_read_back_and_other_things_are_not() {
+        use objc2_app_kit::NSPasteboard;
+        use objc2_foundation::{NSData, NSString};
+        let board = NSPasteboard::pasteboardWithUniqueName();
+        let png = b"\x89PNG\r\n\x1a\nnot really a picture, only its signature";
+        board.clearContents();
+        assert!(picture_on(&board).is_none(), "an empty pasteboard has none");
+        board.setString_forType(
+            &NSString::from_str("just text"),
+            &NSString::from_str("public.utf8-plain-text"),
+        );
+        assert!(picture_on(&board).is_none(), "text is not a picture");
+        board.setData_forType(
+            Some(&NSData::with_bytes(png)),
+            &NSString::from_str("public.png"),
+        );
+        assert_eq!(picture_on(&board).as_deref(), Some(&png[..]));
+    }
+}

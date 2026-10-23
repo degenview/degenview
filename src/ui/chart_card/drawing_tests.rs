@@ -49,7 +49,7 @@ fn drawing(tool: Tool, id: u64) -> Drawing {
         _ => 3,
     };
     let mut drawing =
-        Drawing::build(tool, id, &anchors[..count], tool.default_style()).expect("builds");
+        Drawing::sample(tool, id, &anchors[..count], tool.default_style()).expect("builds");
     drawing.set_text("note");
     drawing
 }

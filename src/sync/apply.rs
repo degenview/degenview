@@ -22,6 +22,7 @@ use super::project::{
 use super::record::{FAVORITES_ID, RecordName, sha256_hex};
 use super::scripts::ScriptSink;
 use crate::store::Store;
+use crate::store::asset_store::StoredAsset;
 use crate::store::sync::{
     ConflictRecord, EntityLink, EntityMeta, InboxRecord, OutboxOp, row_decodes,
 };
@@ -149,6 +150,7 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
         EntityKind::ChartTemplate => Some("chart_template"),
         EntityKind::DrawingTemplate => Some("drawing_template"),
         EntityKind::Layout | EntityKind::LayoutDrawing => Some("saved_view"),
+        EntityKind::DrawingAsset => Some("drawing_asset"),
         EntityKind::Alert => Some("price_alert"),
         EntityKind::Portfolio => Some("portfolio"),
         EntityKind::PortfolioTransaction => Some(portfolio::TRANSACTIONS),
@@ -348,10 +350,54 @@ impl<'a> Work<'a> {
             EntityKind::PortfolioTransaction => self.apply_transaction(record),
             EntityKind::Layout => self.apply_layout(record),
             EntityKind::LayoutDrawing => self.apply_drawing(record),
+            EntityKind::DrawingAsset => self.apply_asset(record),
             EntityKind::Alert => self.apply_alert(record),
             EntityKind::Script => self.apply_script(record),
             EntityKind::PaperAccount => self.apply_paper(record),
         }
+    }
+
+    /// A picture from the cloud. It is stored on its own (never through the table's working copy,
+    /// which would read every picture), and only when it is what its name says.
+    fn apply_asset(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+        let id = record.record.name.id.clone();
+        let Ok(asset) = serde_json::from_value::<StoredAsset>(record.value.clone()) else {
+            return self.keep(record, "invalid");
+        };
+        if asset.id != id || asset.verified_bytes().is_none() {
+            return self.keep(record, "invalid");
+        }
+        if self.store.put_asset_from_cloud(&asset)? {
+            self.report.tables.insert("drawing_asset".to_string());
+            self.report.applied += 1;
+        }
+        self.store.link_entity(&EntityLink {
+            kind: EntityKind::DrawingAsset,
+            sync_id: id.clone(),
+            local_id: id,
+            synced_hash: sha256_hex(&canonical_json(&record.value)),
+            system_fields: record.system_fields.clone(),
+            base_payload: None,
+            revision: record.record.revision as i64,
+            origin_device: record.record.origin_device.clone(),
+            now_ms: self.ctx.now_ms,
+        })?;
+        Ok(())
+    }
+
+    /// Another Mac deleted a picture. Nothing here ever deletes one: a drawing on some Mac, in a
+    /// layout not synced yet or on an undo stack may still show it. A picture this Mac holds goes
+    /// back up (an edit beats a delete); one it does not hold is only noted as gone.
+    fn keep_asset(&mut self, id: &str) -> rusqlite::Result<()> {
+        let kind = EntityKind::DrawingAsset;
+        if self.store.has_asset(id)? {
+            self.store.forget_synced(kind, id)?;
+            self.store.queue_entity_upsert(kind, id, id)?;
+            self.report.kept_local += 1;
+        } else {
+            self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+        }
+        Ok(())
     }
 
     fn apply_simple(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
@@ -1421,6 +1467,7 @@ impl<'a> Work<'a> {
             EntityKind::Script => return self.delete_script(id),
             EntityKind::PortfolioTransaction => return self.delete_transaction(name),
             EntityKind::PaperAccount => return self.delete_paper(name),
+            EntityKind::DrawingAsset => return self.keep_asset(id),
             _ => {}
         }
         if let Some(table) = table_of(kind)

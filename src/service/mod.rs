@@ -1,5 +1,6 @@
 mod alpaca;
 pub mod asset_auto_mapper;
+pub mod asset_host;
 mod binance;
 mod cache;
 pub mod cache_control;
@@ -17,6 +18,7 @@ pub mod fx_rates;
 mod geckoterminal;
 mod http;
 pub mod icon;
+pub mod image_ingest;
 pub mod image_loader;
 mod kalshi;
 pub mod keychain_api_keys;

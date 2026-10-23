@@ -26,6 +26,8 @@ pub mod mock;
 #[cfg(test)]
 mod apply_tests;
 #[cfg(test)]
+mod asset_tests;
+#[cfg(test)]
 mod core_tests;
 #[cfg(test)]
 mod crash_tests;

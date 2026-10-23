@@ -20,6 +20,7 @@ pub mod chart_templates;
 pub mod chart_type_menu;
 mod cmc_gauge;
 pub mod color_picker;
+pub mod content_sheet;
 pub mod date_picker;
 mod drawing_geometry;
 mod drawing_layer;
