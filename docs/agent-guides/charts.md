@@ -94,6 +94,15 @@ behavior.
   edits.
 - Drawings are main-pane only and use the bars the chart draws (constructed and replay-cut); never
   index candles directly.
+- The text, note and content tools ([Annotation tools](../annotation-tools.md)) add rules to the
+  above. A box is sized with `Projection.measure` (the context that paints), never a guess. A shape with
+  nothing painted where it is to be clicked needs `Screen.hit`. A tool that moves with the screen
+  (a pinned table) has no anchors and moves through `edit::translate`. Content is named, never carried:
+  a drawing holds a picture's hash or a link, and a new picture goes through
+  `service::image_ingest` on a worker, never the UI thread. Nothing contacts a service except the
+  Preview button on a Post or Idea card, after a one-time allow.
+- `Drawing::sample` and `sample_content` (tests) make a drawing of any tool; the every-tool loops must
+  keep covering the content tools rather than skip them.
 
 ## Context menus
 

@@ -1,6 +1,6 @@
 //! Pictures between two Macs: they travel whole, once, and never come back as a deletion.
 
-use super::apply_tests::{outbox_len, pair, settle};
+use super::apply_tests::{layout_of, outbox_len, pair, put_layouts, rows, settle};
 use super::mock::name_of;
 use super::policy::EntityKind;
 use crate::service::image_ingest::{self, Ingested};
@@ -123,4 +123,125 @@ fn a_picture_never_counts_as_deleted_when_a_layout_stops_using_it() {
     settle(&mut a, &mut b);
     assert_eq!(cloud.delete_attempts(), 0);
     assert!(b.store.lock().unwrap().has_asset(&kept.id).unwrap());
+}
+
+#[test]
+fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
+    use crate::model::{Anchor, Drawing, Geometry, Placement, Tool, ToolGroup};
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let anchors: Vec<Anchor> = (0..3)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + index as f64 * 7.5,
+        })
+        .collect();
+    let mut drawings: Vec<Drawing> = ToolGroup::NOTE_MENU
+        .into_iter()
+        .flat_map(Tool::in_group)
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut drawing = Drawing::sample(
+                tool,
+                index as u64 + 1,
+                &anchors[..count],
+                tool.default_style(),
+            )
+            .unwrap_or_else(|| panic!("{tool:?}"));
+            if tool.caps().has(crate::model::Caps::TEXT) {
+                drawing.set_text("a note\nin two lines");
+            }
+            drawing
+        })
+        .collect();
+    assert_eq!(drawings.len(), 13);
+    for drawing in &mut drawings {
+        match drawing.geometry_mut() {
+            Some(Geometry::Table(_)) => {
+                drawing.set_table_cell(1, 2, "a cell");
+            }
+            Some(Geometry::Card { card, .. }) => {
+                card.meta = Some(crate::model::link_card::LinkMeta {
+                    title: "A title".into(),
+                    author: "@someone".into(),
+                    excerpt: "A few words.".into(),
+                    fetched_at_ms: 9,
+                });
+            }
+            _ => {}
+        }
+    }
+    put_layouts(&a, &[layout_of(10, "Notes", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing; a picture is not part of a drawing's record.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 13);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        let back: Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent, "{:?}", sent.tool());
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+}
+
+#[test]
+fn a_drawing_that_arrives_before_its_picture_is_kept_and_the_picture_follows() {
+    use crate::model::image_content::{Content, ImageContent};
+    use crate::model::{Anchor, Drawing, Tool};
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let kept = picture(3);
+    let content = Content::Image(ImageContent {
+        asset: kept.id.clone(),
+        name: "levels".into(),
+        pixels: [36, 24],
+    });
+    let at = |index: i64| Anchor {
+        time_ms: 1_700_000_000_000 + index * 3_600_000,
+        price: 100.0 + index as f64,
+    };
+    let drawing = Drawing::build_with(
+        Tool::Image,
+        1,
+        &[at(0), at(5)],
+        Tool::Image.default_style(),
+        &content,
+    )
+    .unwrap();
+    put_layouts(
+        &a,
+        &[layout_of(10, "Pictures", std::slice::from_ref(&drawing))],
+    );
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        1,
+        "the drawing is there without its picture"
+    );
+    assert!(b.store.lock().unwrap().asset(&kept.id).unwrap().is_none());
+    // The picture follows, and is then the very bytes the drawing names.
+    a.store.lock().unwrap().put_asset(&kept).unwrap();
+    settle(&mut a, &mut b);
+    let arrived = b.store.lock().unwrap().asset(&kept.id).unwrap();
+    assert_eq!(arrived.as_ref(), Some(&kept));
+    assert!(arrived.unwrap().verified_bytes().is_some());
 }

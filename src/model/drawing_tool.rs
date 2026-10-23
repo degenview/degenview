@@ -745,6 +745,8 @@ impl Tool {
                 style.wrap = true;
                 style.box_width = 220.0;
                 style.text.align = HorizontalAlign::Left;
+                // A note longer than the plot is cut at its end, so it starts at the top.
+                style.text.valign = VerticalAlign::Top;
                 style
             }
             // A card takes its look from the theme, and a picture has none to style.

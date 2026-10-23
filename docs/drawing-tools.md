@@ -7,6 +7,11 @@ restyle, label, edit coordinates, hide by timeframe, lock, undo, save). One inte
 one style model and one geometry module serve all of them; a tool is a row in a table
 (`Tool::spec`), not a code path.
 
+The text, note and content tools (Text, Note, Price note, Pin, Table, Callout, Comment, Price label,
+Signpost, Flag mark, Image, Post, Idea) are in a third flyout and are documented in
+[Text, note and content tools](annotation-tools.md); they share everything below except what that page
+says.
+
 TradingView's own documentation and its Charting Library defaults are the reference. What they
 state is marked **doc** or **lib**; what they do not state, and was chosen here, is marked
 **inferred**. Nothing was compared pixel for pixel against TradingView (no access), so the visual

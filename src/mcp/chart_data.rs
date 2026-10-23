@@ -1146,4 +1146,38 @@ mod tests {
         assert!(listed.drawings[1].locked);
         assert_eq!(snake("DoubleCurve"), "double_curve");
     }
+
+    #[test]
+    fn every_text_note_and_content_tool_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + index as f64,
+        };
+        let anchors = [at(0), at(1), at(2)];
+        for (tool, name) in [
+            (Tool::Text, "text"),
+            (Tool::Note, "note"),
+            (Tool::PriceNote, "price_note"),
+            (Tool::Pin, "pin"),
+            (Tool::Table, "table"),
+            (Tool::Callout, "callout"),
+            (Tool::Comment, "comment"),
+            (Tool::PriceLabel, "price_label"),
+            (Tool::Signpost, "signpost"),
+            (Tool::FlagMark, "flag_mark"),
+            (Tool::Image, "image"),
+            (Tool::Post, "post"),
+            (Tool::Idea, "idea"),
+        ] {
+            let count = match tool.spec().placement {
+                crate::model::Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let drawing = Drawing::sample(tool, 1, &anchors[..count], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+        }
+    }
 }

@@ -622,7 +622,7 @@ fn layout(id: u64, name: &str, charts: &[TestChart]) -> Raw {
     Raw(value)
 }
 
-fn put_layouts(mac: &Mac, layouts: &[Raw]) {
+pub(super) fn put_layouts(mac: &Mac, layouts: &[Raw]) {
     mac.store
         .lock()
         .unwrap()
@@ -1115,7 +1115,7 @@ fn an_unreadable_future_drawing_travels_untouched() {
 }
 
 /// A layout holding one chart whose drawings are `drawings`, as stored.
-fn layout_of(id: u64, name: &str, drawings: &[crate::model::Drawing]) -> Raw {
+pub(super) fn layout_of(id: u64, name: &str, drawings: &[crate::model::Drawing]) -> Raw {
     let mut row = layout(id, name, &[(1, "BTC", &[])]).0;
     row["charts"][0]["drawings"] = Value::Array(
         drawings

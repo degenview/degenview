@@ -677,11 +677,19 @@ fn the_two_point_notes_move_together_and_keep_their_look_through_a_round_trip() 
 #[test]
 fn every_emoji_a_signpost_offers_is_one_the_apps_fonts_can_draw() {
     use crate::model::drawing_style::Emoji;
-    let measure = TextMeasure::for_tests();
+    // Only the fonts egui bundles: they are all a Linux build has, and the macOS system fonts the
+    // app puts before them would hide a symbol that is missing everywhere else.
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(Default::default(), |_| {});
+    output.textures_delta.clear();
+    let font = egui::FontId::proportional(14.0);
     let mut seen = std::collections::HashSet::new();
     for emoji in Emoji::ALL {
         assert!(seen.insert(emoji.glyph()), "{emoji:?} repeats a glyph");
-        assert!(measure.can_draw(emoji.glyph()), "{emoji:?} has no glyph");
+        assert!(
+            ctx.fonts_mut(|fonts| emoji.glyph().chars().all(|c| fonts.has_glyph(&font, c))),
+            "{emoji:?} has no glyph in the bundled fonts"
+        );
         assert!(!emoji.label().is_empty());
         // One character, so a stored name can never mean anything else.
         assert_eq!(emoji.glyph().chars().count(), 1, "{emoji:?}");

@@ -52,6 +52,11 @@ trades in their layers, script panes with their scales and separators, drawings 
 hidden, other-timeframe and unreadable ones stay out; no handles or selection), the last-price
 line and tag, both axes, and the chart's price alert lines.
 
+The text, note and content tools paint as on screen: boxes and tables, link cards, pictures, and the
+note of every pin that is open (`SnapshotInput.open_notes`). A picture is handed to the snapshot already
+decoded (frozen on the UI thread, since the scratch context has no store); one that is not ready is
+painted as the placeholder the chart shows. A snapshot never reads the store or the network.
+
 Left out: crosshair, hover, selection and drag previews, tooltips, the selection toolbar, pane
 buttons, the navigation pill, the replay badge and pick marker, the locked cursor line, the "refresh
 failed" warning, the header, and everything outside the chart (title bar, sidebars, menus, the

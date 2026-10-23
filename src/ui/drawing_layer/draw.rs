@@ -812,6 +812,15 @@ pub(super) fn paint(
     }
     let place = screen.text?;
     let words = shown_text(screen, drawing);
+    // A note that opens from a marker is cut to its box, which is held on the plot.
+    let clipped;
+    let painter = match &screen.popup {
+        Some(popup) => {
+            clipped = painter.with_clip_rect(popup.rect.intersect(painter.clip_rect()));
+            &clipped
+        }
+        None => painter,
+    };
     match emphasis.text {
         TextMode::Editing => None,
         // The same place and look as the text will have, faint, so the click lands on it: the

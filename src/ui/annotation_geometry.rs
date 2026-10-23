@@ -178,16 +178,35 @@ pub fn pin(tip: Pos2) -> (Vec<Pos2>, Pos2) {
 }
 
 /// Where a pin's note opens: centred above the pin, or below its point when there is no room
-/// above, and slid sideways to stay on the plot. Never over the pin itself.
+/// above, and slid sideways to stay on the plot. Never over the pin itself unless it is too tall
+/// for either side, in which case it is held on the plot on the side with more room. A note larger
+/// than the plot is cut to it; the text inside is clipped to what is left.
 pub fn pin_note_rect(tip: Pos2, size: Vec2, plot: Rect) -> Rect {
     let gap = 6.0;
-    let above = tip.y - PIN_HEIGHT - PIN_RADIUS - gap - size.y;
-    let top = if above >= plot.top() + 4.0 {
-        above
-    } else {
-        tip.y + gap
-    };
     let margin = 4.0;
+    let size = vec2(
+        size.x.min((plot.width() - 2.0 * margin).max(0.0)),
+        size.y.min((plot.height() - 2.0 * margin).max(0.0)),
+    );
+    let above = tip.y - PIN_HEIGHT - PIN_RADIUS - gap - size.y;
+    let below = tip.y + gap;
+    let top = if above >= plot.top() + margin {
+        above
+    } else if below + size.y <= plot.bottom() - margin {
+        below
+    } else {
+        let room_above = tip.y - PIN_HEIGHT - PIN_RADIUS - gap - plot.top();
+        let room_below = plot.bottom() - below;
+        let wanted = if room_below >= room_above {
+            below
+        } else {
+            above
+        };
+        wanted.clamp(
+            plot.top() + margin,
+            (plot.bottom() - margin - size.y).max(plot.top() + margin),
+        )
+    };
     let low = plot.left() + margin;
     let high = (plot.right() - margin - size.x).max(low);
     let left = (tip.x - size.x / 2.0).clamp(low, high);
@@ -360,5 +379,19 @@ mod tests {
         // A note wider than the plot is pinned to its left edge, not thrown off it.
         let wide = pin_note_rect(tip, vec2(900.0, 40.0), plot);
         assert_eq!(wide.left(), plot.left() + 4.0);
+    }
+
+    #[test]
+    fn a_pins_note_taller_than_either_side_is_held_on_the_plot() {
+        let plot = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 500.0));
+        for (tip, height) in [
+            (pos2(400.0, 250.0), 460.0),
+            (pos2(400.0, 100.0), 700.0),
+            (pos2(400.0, 450.0), 700.0),
+            (pos2(400.0, 250.0), 300.0),
+        ] {
+            let note = pin_note_rect(tip, vec2(220.0, height), plot);
+            assert!(plot.contains_rect(note), "{tip:?} {height}: {note:?}");
+        }
     }
 }
