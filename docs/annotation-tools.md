@@ -146,11 +146,14 @@ and writes every accepted link one canonical way. A card keeps the link, its siz
   own time when that bar is on screen, otherwise where it was placed (a post with no time goes where
   it was placed). A link pasted on a chart (Cmd+V, no text field focused) places a card in
   the middle of the focused chart.
-* **Preview** is never fetched on insert, paste or paint. The **Preview** button on a card asks, once,
-  for permission (`content.prefs`, a setting that stays on this Mac), then makes one request to
-  `publish.x.com/oembed` (the host `publish.twitter.com` only redirects), on `work_queue::LINKS`.
-  https only, no redirects, no cookies, no credentials, 12 s, at most 256 KB read. The answer is parsed as data, nothing in it runs, and the result is written to the card as
-  one undoable change. A deleted or private link says so and leaves the card as it was. Thumbnails and
+* **Preview** is fetched automatically right after a card is placed (by a click or a paste) and only
+  then: never on paint, on opening a layout, or for a card that arrived from another Mac (its preview
+  syncs with it). The first time, the app asks once for permission (`content.prefs`, a setting that
+  stays on this Mac); after that placing a card just loads it. One request to `publish.x.com/oembed`
+  (the host `publish.twitter.com` only redirects), on `work_queue::LINKS`: https only, no redirects, no
+  cookies, no credentials, 12 s, at most 256 KB read. The answer is parsed as data, nothing in it runs,
+  and the result is written to the card as one undoable change. The **Preview** button on a card asks
+  again (to retry after a failure or to refresh). A deleted or private link says so and leaves the card as it was. Thumbnails and
   avatars are not fetched.
 * **Open** (`ctx.open_url`) is always a deliberate click; so are Copy link and Replace link (which
   drops the old preview).

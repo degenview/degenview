@@ -1184,6 +1184,38 @@ fn a_preview_is_not_fetched_until_the_service_is_allowed() {
 }
 
 #[test]
+fn a_placed_post_card_asks_for_its_preview_without_being_pressed() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    rig.workspace.selected_drawing = Some((chart, vec![1]));
+    rig.workspace.preview_placed_card(&rig.ctx);
+    // Not allowed yet: the one-time question comes first, and nothing is contacted.
+    assert!(rig.workspace.content.links.consent.is_some());
+    assert!(rig.workspace.content.links.inbox.is_none());
+}
+
+#[test]
+fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut fetched = card(Tool::Post, 1, POST_LINK);
+    if let Some(crate::model::Geometry::Card { card, .. }) = fetched.geometry_mut() {
+        card.meta = Some(fetched_meta("Already"));
+    }
+    rig.chart_mut(chart).drawings = vec![fetched, rectangle(2, 5_000)];
+    for ids in [vec![1], vec![2], vec![1, 2], vec![]] {
+        rig.workspace.selected_drawing = Some((chart, ids));
+        rig.workspace.preview_placed_card(&rig.ctx);
+        assert!(rig.workspace.content.links.consent.is_none());
+        assert!(rig.workspace.content.links.inbox.is_none());
+    }
+    rig.workspace.selected_drawing = None;
+    rig.workspace.preview_placed_card(&rig.ctx);
+    assert!(rig.workspace.content.links.consent.is_none());
+}
+
+#[test]
 fn the_choice_to_allow_previews_stays_on_this_mac() {
     use crate::sync::policy::{SettingPolicy, setting_policy};
     assert_eq!(

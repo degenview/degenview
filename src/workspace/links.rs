@@ -144,6 +144,29 @@ impl ChartWorkspace {
             .cloned()
     }
 
+    /// A card was just placed: its preview is fetched without being asked. Only the card that
+    /// placement selected, and only when it has no preview yet, so painting, opening a layout or
+    /// a card arriving from another Mac never contacts X. The first time, the one-time question
+    /// comes first.
+    pub(super) fn preview_placed_card(&mut self, ctx: &egui::Context) {
+        let Some((chart_id, ids)) = self.selected_drawing.clone() else {
+            return;
+        };
+        let [drawing_id] = ids[..] else {
+            return;
+        };
+        let bare = self
+            .card_drawing(chart_id, drawing_id)
+            .and_then(|drawing| match drawing.geometry() {
+                Some(Geometry::Card { card, .. }) => Some(card.meta.is_none()),
+                _ => None,
+            })
+            .unwrap_or(false);
+        if bare {
+            self.link_requested(ctx, chart_id, drawing_id, LinkRequest::Fetch);
+        }
+    }
+
     /// What the user asked of a card: open its link, copy it, choose another, fetch a preview.
     pub(super) fn link_requested(
         &mut self,

@@ -4386,6 +4386,7 @@ impl ChartWorkspace {
         self.picture_work_done();
         if picture_used {
             self.picture_used();
+            self.preview_placed_card(&ctx);
         }
         if let Some((chart_id, drawing_id)) = picture_replace {
             self.replace_picture_request(&ctx, chart_id, drawing_id);
