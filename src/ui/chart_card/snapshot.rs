@@ -20,7 +20,7 @@ pub struct SnapshotInput<'a> {
     pub source: DataSource,
     /// The market's candles as the chart shows them (cut at the replay's time while it runs).
     pub candles: &'a [Kline],
-    pub log_scale: bool,
+    pub scale_mode: PriceScaleMode,
     pub indicators: &'a IndicatorConfig,
     pub drawings: &'a [Drawing],
     /// The drawings whose note is open on the chart (a pin's).
@@ -168,7 +168,7 @@ impl ChartCard {
             source,
             line,
             chart_type,
-            log_scale: input.log_scale,
+            scale_mode: input.scale_mode,
             candles,
             bars,
             constructed: constructed.as_deref(),
@@ -176,7 +176,7 @@ impl ChartCard {
             indicators: input.indicators,
         };
         let layout = self.frame_layout(&data, rect, painter, &style);
-        let Some(view) = self.view(bars, layout.plot, input.log_scale, chart_type) else {
+        let Some(view) = self.view(bars, layout.plot, input.scale_mode, chart_type) else {
             return Err(SnapshotError::Empty);
         };
         let mut layer = DrawingLayer::default();

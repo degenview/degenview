@@ -10,6 +10,7 @@ use super::sheet;
 use super::theme;
 use crate::model::pine_instance::{PineInstance, VisualOrder};
 use crate::model::price_format::MAX_DECIMALS;
+use crate::model::price_scale::PriceScaleMode;
 use crate::model::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, ChartAppearance, DataSource, EMA_PERIODS,
     IndicatorConfig, PriceFormat, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD, SUPERTREND_MULTIPLIER,
@@ -110,6 +111,8 @@ pub struct ChartSettingsContext<'a> {
     pub loaded_candles: usize,
     pub indicators: &'a mut IndicatorConfig,
     pub card: &'a mut ChartCard,
+    /// The chart's price-scale mode, which is not part of its appearance.
+    pub scale_mode: PriceScaleMode,
     /// Where chart templates are kept.
     pub store: &'a SharedStore,
 }
@@ -124,6 +127,8 @@ pub enum ChartSettingsAction {
     ConfigureScript(u64, Rect),
     /// Give every chart of the workspace this look.
     ApplyToAll(crate::model::chart_template::ApplyScope),
+    /// Read the price axis in this mode.
+    SetScaleMode(PriceScaleMode),
 }
 
 pub fn show(
@@ -165,7 +170,13 @@ pub fn show(
                                     action = Some(next);
                                 }
                             }
-                            Tab::Appearance => appearance_page(ui, &mut c, &mut state.templates),
+                            Tab::Appearance => {
+                                if let Some(next) =
+                                    appearance_page(ui, &mut c, &mut state.templates)
+                                {
+                                    action = Some(next);
+                                }
+                            }
                             Tab::Canvas => {
                                 let (store, templates) = (c.store, &mut state.templates);
                                 super::chart_canvas_settings::show(
@@ -280,7 +291,11 @@ fn footer(ui: &mut Ui, state: &mut ChartSettingsState) -> bool {
 
 // MARK: Appearance
 
-fn appearance_page(ui: &mut Ui, c: &mut ChartSettingsContext, templates: &mut TemplateState) {
+fn appearance_page(
+    ui: &mut Ui,
+    c: &mut ChartSettingsContext,
+    templates: &mut TemplateState,
+) -> Option<ChartSettingsAction> {
     ui.spacing_mut().item_spacing.y = 8.0;
     if c.source.is_line_chart() {
         // A market drawn as a line has no chart types: its two colours are all there is to set.
@@ -297,7 +312,25 @@ fn appearance_page(ui: &mut Ui, c: &mut ChartSettingsContext, templates: &mut Te
     }
 
     ui.add_space(16.0);
-    price_axis(ui, c.card);
+    price_axis(ui, c.card, c.scale_mode).map(ChartSettingsAction::SetScaleMode)
+}
+
+/// What the price scale reads, for the line under the Scale picker.
+fn scale_hint(mode: PriceScaleMode) -> &'static str {
+    match mode {
+        PriceScaleMode::Regular => {
+            "The axis reads prices; equal price differences are equally tall."
+        }
+        PriceScaleMode::Percent => {
+            "The change from the first bar shown, so 0% is that bar's close."
+        }
+        PriceScaleMode::IndexedTo100 => {
+            "The first bar shown reads 100; the rest are 100 plus their change."
+        }
+        PriceScaleMode::Logarithmic => {
+            "The axis reads prices; equal price ratios are equally tall."
+        }
+    }
 }
 
 /// The prices the example writes, each with what it stands for.
@@ -309,7 +342,10 @@ const PRICE_SAMPLES: [(&str, f64); 3] = [
 
 /// How the chart writes a price (axis, crosshair, readouts, rulers): how many decimal places, and
 /// how a price under 0.001 reads, with a preview of the choice.
-fn price_axis(ui: &mut Ui, card: &mut ChartCard) {
+///
+/// The scale mode is the chart's, not the look's: it is not in the appearance or its templates, so
+/// a pick is handed back for the workspace to set, the way the corner menu and the shortcuts do.
+fn price_axis(ui: &mut Ui, card: &mut ChartCard, mode: PriceScaleMode) -> Option<PriceScaleMode> {
     let appearance = card.appearance();
     let (decimals, small) = (appearance.axis_decimals, appearance.axis_small_prices);
     settings_card::section_title(
@@ -319,6 +355,26 @@ fn price_axis(ui: &mut Ui, card: &mut ChartCard) {
     );
     // The section title tightens the spacing for its own subtitle; the cards keep the page's.
     ui.spacing_mut().item_spacing.y = 8.0;
+    let mut picked = None;
+    settings_card::card(
+        ui,
+        Icon::PriceScale,
+        "Scale",
+        Some(scale_hint(mode)),
+        |ui| {
+            let labels: Vec<String> = PriceScaleMode::ALL
+                .iter()
+                .map(|mode| mode.label().to_owned())
+                .collect();
+            let selected = PriceScaleMode::ALL
+                .iter()
+                .position(|candidate| *candidate == mode)
+                .unwrap_or_default();
+            if let Some(index) = kit::menu_picker(ui, 150.0, &labels, selected, true) {
+                picked = Some(PriceScaleMode::ALL[index]);
+            }
+        },
+    );
     settings_card::card(
         ui,
         Icon::Hash,
@@ -357,6 +413,7 @@ fn price_axis(ui: &mut Ui, card: &mut ChartCard) {
         },
     );
     price_preview(ui, card.appearance().price_format());
+    picked
 }
 
 fn decimals_hint(decimals: Option<u8>) -> String {
@@ -1282,6 +1339,7 @@ mod tests {
                         loaded_candles: 0,
                         indicators,
                         card,
+                        scale_mode: PriceScaleMode::Regular,
                         store: &store,
                     },
                 );
@@ -1425,6 +1483,7 @@ mod tests {
                         loaded_candles: 0,
                         indicators: &mut indicators,
                         card: &mut card,
+                        scale_mode: PriceScaleMode::Regular,
                         store: &store,
                     },
                 );
@@ -1435,6 +1494,34 @@ mod tests {
             output.textures_delta.clear();
         }
         text
+    }
+
+    #[test]
+    fn the_price_axis_section_names_the_scale_and_says_what_each_mode_reads() {
+        let hints: Vec<&str> = PriceScaleMode::ALL.into_iter().map(scale_hint).collect();
+        for (index, hint) in hints.iter().enumerate() {
+            assert!(!hint.is_empty());
+            assert!(hints.iter().skip(index + 1).all(|other| other != hint));
+        }
+        for mode in PriceScaleMode::ALL {
+            let ctx = egui::Context::default();
+            let mut card = ChartCard::default();
+            let mut text = String::new();
+            let mut picked = Some(PriceScaleMode::Regular);
+            for _ in 0..2 {
+                text.clear();
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    picked = price_axis(ui, &mut card, mode);
+                });
+                for clipped in &output.shapes {
+                    shape_text(&clipped.shape, &mut text);
+                }
+                output.textures_delta.clear();
+            }
+            assert!(text.contains("Scale"), "{mode:?}: {text}");
+            assert!(text.contains(scale_hint(mode)), "{mode:?}: {text}");
+            assert_eq!(picked, None, "drawing the section picks nothing");
+        }
     }
 
     #[test]

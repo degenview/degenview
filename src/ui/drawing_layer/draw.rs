@@ -938,7 +938,9 @@ pub(super) fn paint_tag(
                 painter,
                 area.center(),
                 Align2::CENTER_CENTER,
-                &proj.format.format(price),
+                // On the axis it reads as the axis does (a change in Percent), while the line
+                // stays anchored to the real price.
+                &proj.scale.tag_label(proj.format, price),
                 style.price_font(),
                 Color32::WHITE,
             );

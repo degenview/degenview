@@ -44,6 +44,7 @@ pub mod portfolio_history;
 pub mod portfolio_ledger;
 pub mod portfolio_statistics;
 pub mod price_format;
+pub mod price_scale;
 pub mod regression;
 mod replay;
 mod saved_view;

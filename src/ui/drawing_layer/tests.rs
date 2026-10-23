@@ -30,11 +30,8 @@ fn candles() -> Vec<Kline> {
 
 fn scale(logarithmic: bool) -> PriceScale {
     PriceScale {
-        minimum: 80.0,
-        maximum: 120.0,
-        top: 0.0,
-        height: 400.0,
         logarithmic,
+        ..PriceScale::linear(80.0, 120.0, 0.0, 400.0)
     }
 }
 

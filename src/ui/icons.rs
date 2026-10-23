@@ -117,6 +117,8 @@ pub enum Icon {
     BoltSlash,
     Link,
     Camera,
+    /// A price axis: its line and the ticks along it.
+    PriceScale,
     /// The X (formerly Twitter) mark.
     XLogo,
     ChainLinked,
@@ -1474,6 +1476,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             );
             circle(p(8.0, 8.9), 2.5, false);
         }
+        // A price axis: the line with three ticks of different lengths running in from it.
+        Icon::PriceScale => {
+            line(&[p(12.0, 2.0), p(12.0, 14.0)]);
+            line(&[p(12.0, 3.6), p(6.4, 3.6)]);
+            line(&[p(12.0, 8.0), p(3.6, 8.0)]);
+            line(&[p(12.0, 12.4), p(7.6, 12.4)]);
+        }
         // The X mark: a heavy stroke down to the right, a light one up to the right.
         Icon::XLogo => {
             fill_poly(vec![p(2.2, 2.4), p(5.4, 2.4), p(13.8, 13.6), p(10.6, 13.6)]);
@@ -1678,6 +1687,7 @@ mod tests {
             BoltSlash,
             Link,
             Camera,
+            PriceScale,
             XLogo,
             ChainLinked,
             ChainBroken,

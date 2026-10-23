@@ -28,11 +28,8 @@ fn bars(closes: &[f64]) -> Vec<Kline> {
 
 fn scale(logarithmic: bool) -> PriceScale {
     PriceScale {
-        minimum: 80.0,
-        maximum: 120.0,
-        top: 0.0,
-        height: 400.0,
         logarithmic,
+        ..PriceScale::linear(80.0, 120.0, 0.0, 400.0)
     }
 }
 
@@ -407,13 +404,7 @@ fn a_pitchfork_is_unchanged_by_how_far_the_chart_is_zoomed() {
     // Squeeze the price axis to half: every construction keeps its ratios.
     let data = bars(&[100.0; 10]);
     let tall = scale(false);
-    let squeezed = PriceScale {
-        minimum: 40.0,
-        maximum: 160.0,
-        top: 0.0,
-        height: 400.0,
-        logarithmic: false,
-    };
+    let squeezed = PriceScale::linear(40.0, 160.0, 0.0, 400.0);
     let drawing = Drawing::build(
         Tool::Pitchfork,
         1,

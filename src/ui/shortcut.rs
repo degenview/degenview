@@ -111,6 +111,7 @@ fn key_name(key: Key) -> &'static str {
         Key::G => "G",
         Key::H => "H",
         Key::J => "J",
+        Key::L => "L",
         Key::P => "P",
         Key::S => "S",
         Key::T => "T",
@@ -364,6 +365,27 @@ pub fn snapshot(action: crate::model::snapshot::SnapshotAction) -> Option<Shortc
     }
 }
 
+/// Switches the focused chart's price scale to Percent, or back to Regular when it already is.
+/// TradingView's Alt+P.
+pub const SCALE_PERCENT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::P).alt()], &[Chord::new(Key::P).alt()]);
+
+/// Switches the focused chart's price scale to Logarithmic, or back to Regular when it already
+/// is. TradingView's Alt+L.
+pub const SCALE_LOGARITHMIC: Shortcut =
+    Shortcut::new(&[Chord::new(Key::L).alt()], &[Chord::new(Key::L).alt()]);
+
+/// The shortcut that switches to `mode`, for the modes that have one. TradingView documents none
+/// for Indexed to 100, so none is invented.
+pub fn scale_mode(mode: crate::model::price_scale::PriceScaleMode) -> Option<Shortcut> {
+    use crate::model::price_scale::PriceScaleMode;
+    match mode {
+        PriceScaleMode::Percent => Some(SCALE_PERCENT),
+        PriceScaleMode::Logarithmic => Some(SCALE_LOGARITHMIC),
+        PriceScaleMode::Regular | PriceScaleMode::IndexedTo100 => None,
+    }
+}
+
 pub const UNDO: Shortcut = Shortcut::new(
     &[Chord::new(Key::Z).primary()],
     &[Chord::new(Key::Z).primary()],
@@ -381,7 +403,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 30] = [
+    const ALL: [(&str, Shortcut); 32] = [
         ("save", SAVE),
         ("new tab", NEW_TAB),
         ("close tab", CLOSE_TAB),
@@ -405,6 +427,8 @@ mod tests {
         ("snapshot download", SNAPSHOT_DOWNLOAD),
         ("snapshot copy image", SNAPSHOT_COPY_IMAGE),
         ("snapshot copy link", SNAPSHOT_COPY_LINK),
+        ("percent scale", SCALE_PERCENT),
+        ("logarithmic scale", SCALE_LOGARITHMIC),
         ("undo", UNDO),
         ("redo", REDO),
         ("trend line", TOOL_TREND_LINE),

@@ -370,13 +370,28 @@ fn axes_get_their_own_menus_not_the_background_one() {
     let mut price = context(Some(10.0));
     price.target = Target::PriceAxis;
     let mut facts = facts();
-    facts.log_scale = true;
+    facts.scale_mode = PriceScaleMode::Percent;
     let menu_price = menu(&price, &facts);
     assert_eq!(
         labels(&menu_price),
-        ["Reset price scale", "Logarithmic scale"]
+        [
+            "Reset price scale",
+            "Regular",
+            "Percent",
+            "Indexed to 100",
+            "Logarithmic"
+        ]
     );
-    assert!(find(&menu_price, &Command::ToggleLogScale).unwrap().checked);
+    // One mode is marked, the active one, and each row sets exactly its own.
+    let marked: Vec<_> = PriceScaleMode::ALL
+        .into_iter()
+        .filter(|mode| {
+            find(&menu_price, &Command::SetScaleMode(*mode))
+                .unwrap()
+                .checked
+        })
+        .collect();
+    assert_eq!(marked, [PriceScaleMode::Percent]);
 
     let mut time = context(None);
     time.target = Target::TimeAxis;

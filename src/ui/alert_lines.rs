@@ -335,13 +335,7 @@ mod tests {
 
     /// 80 at the bottom of a 400pt plot, 120 at the top: 10pt a unit.
     fn scale() -> PriceScale {
-        PriceScale {
-            minimum: 80.0,
-            maximum: 120.0,
-            top: 0.0,
-            height: 400.0,
-            logarithmic: false,
-        }
+        PriceScale::linear(80.0, 120.0, 0.0, 400.0)
     }
 
     fn plot() -> Rect {
@@ -421,13 +415,7 @@ mod tests {
 
     #[test]
     fn a_level_that_is_not_a_price_is_refused() {
-        let flat = PriceScale {
-            minimum: 0.0,
-            maximum: 4.0,
-            top: 0.0,
-            height: 400.0,
-            logarithmic: false,
-        };
+        let flat = PriceScale::linear(0.0, 4.0, 0.0, 400.0);
         let market = Market {
             last: Some(2.0),
             tick: 1.0,
@@ -445,13 +433,7 @@ mod tests {
             tick: 0.000_000_01,
             ..Market::default()
         };
-        let btc = PriceScale {
-            minimum: 117_000.0,
-            maximum: 119_000.0,
-            top: 0.0,
-            height: 400.0,
-            logarithmic: false,
-        };
+        let btc = PriceScale::linear(117_000.0, 119_000.0, 0.0, 400.0);
         // 123.456pt from the top is 118,382.72 on this scale: two places, not the pointer's eight.
         let level = landed(&line(true), &btc, plot(), 123.456, market)
             .unwrap()
@@ -480,13 +462,7 @@ mod tests {
             tick: 0.000_000_01,
             ..Market::default()
         };
-        let token = PriceScale {
-            minimum: 0.000_01,
-            maximum: 0.000_02,
-            top: 0.0,
-            height: 400.0,
-            logarithmic: false,
-        };
+        let token = PriceScale::linear(0.000_01, 0.000_02, 0.0, 400.0);
         let level = landed(&line(true), &token, plot(), 200.0, market)
             .unwrap()
             .price;

@@ -4,6 +4,7 @@ use crate::model::chart_look::Palette;
 use crate::model::chart_type::{ChartStyle, ChartType, DataClass};
 use crate::model::paper::PaperOrderSide;
 use crate::model::pine_instance::{PineInstance, StoredInput, VisualOrder};
+use crate::model::price_scale::{self, PriceScaleMode};
 use crate::model::synthetic::{self, BarShape, Construction, SyntheticBar, SyntheticSeries};
 use crate::model::viewport::{ChartViewport, PriceRange, SavedViewport};
 use crate::model::{
@@ -29,6 +30,7 @@ use crate::ui::pine_chart_render::{self, CandleStyle, PineLayer};
 use crate::ui::pine_geometry::{OverlayExtent, overlay_extent};
 use crate::ui::price_text;
 use crate::ui::replay_overlay::{self, ReplayChartFrame};
+use crate::ui::scale_menu;
 use crate::ui::series_render::{self, SeriesFrame};
 use crate::ui::snapshot_menu::SnapshotMenu;
 use crate::ui::theme;
@@ -350,6 +352,10 @@ pub struct ChartCard {
     /// workspace last took them.
     alert_market: alert_lines::Market,
     alert_moves: Vec<alert_lines::AlertMove>,
+    /// Whether the corner carries the price-scale menu (a script preview has none), and the mode
+    /// picked from it since the workspace last took it.
+    scale_menu: bool,
+    scale_request: Option<PriceScaleMode>,
 }
 
 /// A saved bullish/bearish colour as an opaque `Rgba`.
@@ -629,6 +635,8 @@ impl Default for ChartCard {
             alert_menu: None,
             alert_market: alert_lines::Market::default(),
             alert_moves: Vec::new(),
+            scale_menu: true,
+            scale_request: None,
         }
     }
 }
@@ -857,16 +865,6 @@ impl ChartCard {
 
     fn bearish_color(&self) -> Color32 {
         self.up_down_colors().1
-    }
-
-    /// A price as this chart's price display setting writes it.
-    fn axis_price(&self, value: f64) -> String {
-        self.appearance.price_format().format(value)
-    }
-
-    /// A grid label. The places follow the distance between ticks, so two labels never read alike.
-    fn axis_tick(&self, value: f64, step: f64) -> String {
-        self.appearance.price_format().format_tick(value, step)
     }
 
     pub fn set_y_zoom(&mut self, y_zoom: f64) {
@@ -1292,20 +1290,106 @@ pub fn supports_alerts(source: DataSource) -> bool {
     source != DataSource::CoinMarketCap && !source.is_prediction_market()
 }
 
+/// The one map between a price and a height, and what the axis says at a height.
+///
+/// The map is linear, or logarithmic where `logarithmic` is set. `mode` and `reference` only
+/// change what the axis, its tags and the crosshair say: Percent and Indexed are linear in the
+/// price, so they move no pixel and every price a chart stores or sends stays a real price.
 pub(super) struct PriceScale {
     pub(super) minimum: f64,
     pub(super) maximum: f64,
     pub(super) top: f32,
     pub(super) height: f32,
+    /// Whether this frame is drawn on a logarithmic map: the mode asks for it and the view has
+    /// no price a logarithm cannot take ([`price_scale::can_draw_logarithmic`]).
     pub(super) logarithmic: bool,
+    pub(super) mode: PriceScaleMode,
+    /// What Percent and Indexed measure from: the close of the first bar shown.
+    pub(super) reference: Option<f64>,
+}
+
+/// The labelled prices of an axis, and the distance between two of them as the axis reads it.
+pub(super) struct AxisTicks {
+    pub(super) prices: Vec<f64>,
+    pub(super) step: f64,
 }
 
 impl PriceScale {
+    /// A linear scale that reads prices.
+    pub(super) fn linear(minimum: f64, maximum: f64, top: f32, height: f32) -> Self {
+        Self {
+            minimum,
+            maximum,
+            top,
+            height,
+            logarithmic: false,
+            mode: PriceScaleMode::Regular,
+            reference: None,
+        }
+    }
+
     fn project(&self, price: f64) -> f64 {
         if self.logarithmic {
+            // Only a price below the range gets here with no logarithm, and it is off the plot.
             price.max(f64::MIN_POSITIVE).ln()
         } else {
             price
+        }
+    }
+
+    /// The mode the axis reads in: a relative one only while it has a reference to measure from.
+    fn reading(&self) -> Option<(PriceScaleMode, f64)> {
+        let reference = self.reference?;
+        self.mode.is_relative().then_some((self.mode, reference))
+    }
+
+    /// The prices the axis labels, where the grid is drawn too. A relative mode picks its ticks
+    /// in the change it shows, so they are round there (`-10%`, `0%`, `+10%`) and `0%` sits on
+    /// the reference, and maps them back to prices.
+    pub(super) fn axis_ticks(&self, budget: usize) -> AxisTicks {
+        let Some((mode, reference)) = self.reading() else {
+            let prices = canvas::price_ticks(self.minimum, self.maximum, self.logarithmic, budget);
+            let step = tick_step(&prices);
+            return AxisTicks { prices, step };
+        };
+        let shown = |price| price_scale::display(mode, Some(reference), price);
+        let (Some(low), Some(high)) = (shown(self.minimum), shown(self.maximum)) else {
+            return AxisTicks {
+                prices: Vec::new(),
+                step: 0.0,
+            };
+        };
+        let values = canvas::price_ticks(low, high, false, budget);
+        let step = tick_step(&values);
+        let prices = values
+            .into_iter()
+            .filter_map(|value| price_scale::from_display(mode, Some(reference), value))
+            .collect();
+        AxisTicks { prices, step }
+    }
+
+    /// An axis label for `price`; `step` is the distance between ticks as [`Self::axis_ticks`]
+    /// gives it.
+    pub(super) fn tick_label(&self, format: PriceFormat, price: f64, step: f64) -> String {
+        match self.reading() {
+            Some((mode, reference)) => price_scale::display(mode, Some(reference), price)
+                .map_or_else(
+                    || "—".to_owned(),
+                    |value| price_scale::format_relative(mode, value, Some(step)),
+                ),
+            None => format.format_tick(price, step),
+        }
+    }
+
+    /// A tag on the axis (the last price, the crosshair, a line's level) as the axis reads.
+    pub(super) fn tag_label(&self, format: PriceFormat, price: f64) -> String {
+        match self.reading() {
+            Some((mode, reference)) => price_scale::display(mode, Some(reference), price)
+                .map_or_else(
+                    || "—".to_owned(),
+                    |value| price_scale::format_relative(mode, value, None),
+                ),
+            None => format.format(price),
         }
     }
 
@@ -1393,7 +1477,7 @@ impl ChartCard {
         &self,
         candles: &[Kline],
         plot: Rect,
-        log_scale: bool,
+        mode: PriceScaleMode,
         chart_type: ChartType,
     ) -> Option<View> {
         let window = self.window(candles.len());
@@ -1422,12 +1506,15 @@ impl ChartCard {
             low = low.min(*value);
             high = high.max(*value);
         }
+        // A logarithm takes no price at or below zero. Such a view is drawn linear, the mode
+        // staying chosen so the log scale comes back with the data.
+        let logarithmic = mode.is_logarithmic() && price_scale::can_draw_logarithmic(low);
         let (minimum, maximum) =
-            canvas::price_range(low, high, self.appearance.canvas.margins, log_scale);
+            canvas::price_range(low, high, self.appearance.canvas.margins, logarithmic);
         let PriceRange { minimum, maximum } = self
             .viewport
             .vertical
-            .resolve(PriceRange::new(minimum, maximum), log_scale);
+            .resolve(PriceRange::new(minimum, maximum), logarithmic);
         Some(View {
             start,
             end,
@@ -1436,7 +1523,11 @@ impl ChartCard {
                 maximum,
                 top: plot.top(),
                 height: plot.height(),
-                logarithmic: log_scale,
+                logarithmic,
+                mode,
+                // Percent and Indexed measure from the first bar shown, so a pan moves the
+                // reference and the axis follows; the map itself does not change.
+                reference: price_scale::reference_from(shown[0].close),
             },
             slot_width: self.slot_width(plot),
             lead: window.lead,
@@ -1844,7 +1935,7 @@ impl ChartCard {
         candles: &[Kline],
         loading: bool,
         error: Option<&str>,
-        log_scale: bool,
+        scale_mode: PriceScaleMode,
         source: DataSource,
         indicators: &IndicatorConfig,
         crosshair: Option<&CrosshairInfo>,
@@ -1857,7 +1948,7 @@ impl ChartCard {
             symbol,
             candles,
             error,
-            log_scale,
+            scale_mode,
             source,
             indicators,
             crosshair,
@@ -1882,13 +1973,19 @@ impl ChartCard {
         let BodyArgs {
             symbol,
             candles,
-            log_scale,
+            scale_mode,
             source,
             indicators,
             crosshair,
             chart_id,
             ..
         } = *args;
+        // An open scale menu owns the keyboard: Escape closes it and nothing else, and no draft
+        // takes the Enter or Delete meant for one of its rows.
+        if scale_menu::is_open(ui.ctx(), chart_id) {
+            drawing.keys_blocked = true;
+            scale_menu::close_on_escape(ui.ctx(), chart_id);
+        }
         let line = source.is_line_chart();
         let mut pointer = ChartPointer::default();
         let available = ui.available_size();
@@ -1950,7 +2047,7 @@ impl ChartCard {
             source,
             line,
             chart_type,
-            log_scale,
+            scale_mode,
             candles,
             bars,
             constructed: constructed.as_deref(),
@@ -1964,7 +2061,7 @@ impl ChartCard {
         let chart_hovered = ui.rect_contains_pointer(full_rect);
         let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);
 
-        let Some(view) = self.view(bars, plot, log_scale, chart_type) else {
+        let Some(view) = self.view(bars, plot, scale_mode, chart_type) else {
             return pointer;
         };
         self.near_oldest = view.start <= self.viewport.horizontal.visible * NEAR_OLDEST_SCREENS;
@@ -2001,6 +2098,7 @@ impl ChartCard {
             alert_moves: Vec::new(),
             paper: (Vec::new(), None),
             navigation: None,
+            scale_mode: None,
         };
         self.paint_frame(
             &painter,
@@ -2023,6 +2121,7 @@ impl ChartCard {
             alert_moves,
             paper,
             navigation,
+            scale_mode,
             ..
         } = overlays;
         self.layer = layer;
@@ -2033,6 +2132,7 @@ impl ChartCard {
                 alert_moves,
                 paper,
                 navigation,
+                scale_mode,
             },
             bars.len(),
         );
@@ -2091,8 +2191,7 @@ impl ChartCard {
         tick_xs: &[f32],
     ) {
         let budget = canvas::tick_budget(plot.height(), style.price_tick_spacing());
-        let prices = canvas::price_ticks(scale.minimum, scale.maximum, scale.logarithmic, budget);
-        let step = tick_step(&prices);
+        let AxisTicks { prices, step } = scale.axis_ticks(budget);
         let half = style.tag_half_height();
         for price in prices {
             let y = scale.y(price);
@@ -2108,7 +2207,7 @@ impl ChartCard {
                     painter,
                     Pos2::new(rect.right() - 7.0, y),
                     Align2::RIGHT_CENTER,
-                    &self.axis_tick(price, step),
+                    &scale.tick_label(self.appearance.price_format(), price, step),
                     style.price_font(),
                     style.text_color,
                 );
@@ -2473,7 +2572,7 @@ impl ChartCard {
                     painter,
                     tag.center(),
                     Align2::CENTER_CENTER,
-                    &self.axis_price(bar.close),
+                    &scale.tag_label(self.appearance.price_format(), bar.close),
                     style.price_font(),
                     tint,
                 );
@@ -2504,13 +2603,14 @@ impl ChartCard {
             painter,
             tag.center(),
             Align2::CENTER_CENTER,
-            &self.axis_price(last.close),
+            &scale.tag_label(self.appearance.price_format(), last.close),
             style.price_font(),
             Color32::WHITE,
         );
     }
 
     /// The time labels, on the bars the vertical grid stands on.
+    #[allow(clippy::too_many_arguments)]
     fn draw_time_axis(
         &self,
         painter: &egui::Painter,
@@ -2518,6 +2618,7 @@ impl ChartCard {
         candles: &[Kline],
         ticks: &[usize],
         x_for: &dyn Fn(usize) -> f32,
+        plot_right: f32,
         style: &CanvasStyle,
     ) {
         let y = rect.bottom() - style.time_axis_height() / 2.0;
@@ -2526,13 +2627,17 @@ impl ChartCard {
                 continue;
             };
             let label = format::timestamp(candle.open_time);
-            painter.text(
-                Pos2::new(x_for(*index), y),
-                Align2::CENTER_CENTER,
-                &label[5..],
-                style.time_font(),
-                style.text_color,
-            );
+            let x = x_for(*index);
+            // A label that would hang over the plot's right edge waits for the chart to move, as a
+            // price label does at the plot's top and bottom: it would run into the price axis and
+            // the scale button in the corner.
+            let galley =
+                painter.layout_no_wrap(label[5..].to_owned(), style.time_font(), style.text_color);
+            if x + galley.size().x / 2.0 > plot_right {
+                continue;
+            }
+            let at = Pos2::new(x, y) - galley.size() / 2.0;
+            painter.galley(at, galley, style.text_color);
         }
     }
 
@@ -2583,7 +2688,7 @@ impl ChartCard {
                     painter,
                     price_tag.center(),
                     Align2::CENTER_CENTER,
-                    &self.axis_price(crosshair.price),
+                    &scale.tag_label(self.appearance.price_format(), crosshair.price),
                     style.price_font(),
                     Color32::WHITE,
                 );
@@ -2929,6 +3034,9 @@ mod sync_tests;
 mod drawing_tests;
 
 #[cfg(test)]
+mod price_scale_tests;
+
+#[cfg(test)]
 mod tests {
     #[test]
     fn contained_center_keeps_an_item_inside_the_bounds() {
@@ -3058,7 +3166,7 @@ mod tests {
         let candles: Vec<Kline> = (0..100).map(|i| point(i, 1.0)).collect();
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(550.0, 200.0));
         let alone = card
-            .view(&candles, plot, false, ChartType::Candles)
+            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
             .expect("view");
         assert_eq!(alone.slot_width, 5.5);
         card.script_extent = OverlayExtent {
@@ -3066,7 +3174,7 @@ mod tests {
             values: vec![9.0],
         };
         let with_script = card
-            .view(&candles, plot, false, ChartType::Candles)
+            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
             .expect("view");
         assert_eq!(with_script.slot_width, 5.0, "550 px over 100 + 10 slots");
         assert!(
@@ -3081,13 +3189,13 @@ mod tests {
         let candles = [point(0, 0.2), point(1, 0.3)];
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
         let alone = card
-            .view(&candles, plot, false, ChartType::Candles)
+            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
             .expect("view")
             .scale
             .maximum;
         card.set_series(two_lines());
         let with_lines = card
-            .view(&candles, plot, false, ChartType::Candles)
+            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
             .expect("view")
             .scale
             .maximum;

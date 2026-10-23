@@ -9,6 +9,7 @@ use super::navigation::{Region, Regions};
 use super::{ChartCard, PriceScale};
 use crate::model::Anchor;
 use crate::model::chart_context::Target;
+use crate::model::price_scale::PriceScaleMode;
 use crate::ui::alert_lines;
 use crate::ui::drawing_layer::DrawingFrame;
 use crate::ui::drawing_layer::Projection;
@@ -148,6 +149,16 @@ impl ChartCard {
             tick,
             ..alert_lines::Market::default()
         };
+    }
+
+    /// Shows or hides the price-scale menu in the corner of the chart.
+    pub fn set_scale_menu(&mut self, shown: bool) {
+        self.scale_menu = shown;
+    }
+
+    /// The mode picked from the corner menu since the last call.
+    pub fn take_scale_request(&mut self) -> Option<PriceScaleMode> {
+        self.scale_request.take()
     }
 
     /// The alert tags dropped on a new level since the last call.

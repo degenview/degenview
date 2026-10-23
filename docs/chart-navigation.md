@@ -70,8 +70,12 @@ moves the range in the scale's own space (log space on a log scale), so a log dr
 ratio and can never produce a non-positive minimum; a drag too far to draw is refused and the
 previous range stays. A manual range does not follow the data.
 
-Not present in the app, so not implemented: inverted scales, percentage and indexed scales.
-"Scale price chart only" does not exist either; autoscale semantics for indicators are unchanged.
+Percentage and indexed scales exist as [price scale modes](price-scale.md). They are linear in the
+price, so they change nothing here (the range, pan and zoom are the same), and a mode switch keeps a
+manual range that is valid for the new map. `logarithmic` in these calls is the frame's effective flag:
+false while the view holds a price a logarithm cannot take. Not present in the app, so not
+implemented: inverted scales. "Scale price chart only" does not exist either; autoscale semantics for
+indicators are unchanged.
 
 ## Persistence
 

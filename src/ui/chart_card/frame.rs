@@ -35,7 +35,7 @@ pub(super) struct FrameData<'a> {
     pub source: DataSource,
     pub line: bool,
     pub chart_type: ChartType,
-    pub log_scale: bool,
+    pub scale_mode: PriceScaleMode,
     /// The market's candles (replay-cut).
     pub candles: &'a [Kline],
     /// What the chart draws: the constructed bars of a price-based type, else the candles.
@@ -150,11 +150,11 @@ impl ChartCard {
         painter: &egui::Painter,
         style: &CanvasStyle,
     ) -> FrameLayout<'a> {
-        let (line, bars, candles, log_scale, chart_type) = (
+        let (line, bars, candles, scale_mode, chart_type) = (
             data.line,
             data.bars,
             data.candles,
-            data.log_scale,
+            data.scale_mode,
             data.chart_type,
         );
         let full_rect = rect;
@@ -225,14 +225,13 @@ impl ChartCard {
                     .x
             };
             let mut widest = 0.0f32;
-            if let Some(view) = self.view(bars, provisional, log_scale, chart_type) {
+            if let Some(view) = self.view(bars, provisional, scale_mode, chart_type) {
                 let scale = &view.scale;
                 let budget = canvas::tick_budget(provisional.height(), style.price_tick_spacing());
-                let ticks =
-                    canvas::price_ticks(scale.minimum, scale.maximum, scale.logarithmic, budget);
-                let step = tick_step(&ticks);
-                for price in &ticks {
-                    widest = widest.max(measure(&self.axis_tick(*price, step)));
+                let AxisTicks { prices, step } = scale.axis_ticks(budget);
+                let format = self.appearance.price_format();
+                for price in &prices {
+                    widest = widest.max(measure(&scale.tick_label(format, *price, step)));
                 }
                 // The tags: the range's ends bound the crosshair's price, and the last closes
                 // sit in the range or off it, but are written in full wherever they are.
@@ -241,7 +240,7 @@ impl ChartCard {
                     .chain(bars.last().map(|bar| bar.close))
                     .chain(candles.last().map(|bar| bar.close));
                 for price in tagged {
-                    widest = widest.max(measure(&self.axis_price(price)));
+                    widest = widest.max(measure(&scale.tag_label(format, price)));
                 }
                 let shown = view.end - view.start;
                 for (pane_rect, (_, pine)) in pane_rects.iter().zip(&pane_outputs) {
@@ -452,7 +451,7 @@ impl ChartCard {
             shown_synthetic.and_then(|_| bars.last()),
             style,
         );
-        self.draw_time_axis(painter, rect, shown, &ticks, &x_for, style);
+        self.draw_time_axis(painter, rect, shown, &ticks, &x_for, plot.right(), style);
         // The tags of the lines at a price or a time sit on the axes, which the drawings'
         // clipped painter cannot reach.
         layer.paint_tags(&main_painter, rect, plot, &projection, style);

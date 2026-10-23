@@ -170,7 +170,7 @@ fn auto_places(magnitude: f64) -> usize {
 }
 
 /// Decimal places that tell apart two ticks `step` apart: `0.5` needs one, `0.25` two, `5` none.
-fn places_for_step(step: f64) -> usize {
+pub(super) fn places_for_step(step: f64) -> usize {
     if !step.is_finite() || step <= 0.0 {
         return 0;
     }

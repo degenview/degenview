@@ -85,7 +85,8 @@ pub struct ChartConfig {
     pub id: u64,
     pub symbol: String,
     pub source: DataSource,
-    pub log_scale: bool,
+    #[serde(default)]
+    pub scale_mode: super::price_scale::PriceScaleMode,
     #[serde(default)]
     pub appearance: super::ChartAppearance,
     /// Set for a portfolio card; its kind, scope and range are part of the layout.
@@ -189,7 +190,7 @@ mod tests {
                     id: 1,
                     symbol: "BTCUSDT".into(),
                     source: DataSource::Binance,
-                    log_scale: false,
+                    scale_mode: Default::default(),
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
                 },
@@ -197,7 +198,7 @@ mod tests {
                     id: 2,
                     symbol: "ETHUSDT".into(),
                     source: DataSource::Binance,
-                    log_scale: true,
+                    scale_mode: crate::model::price_scale::PriceScaleMode::Logarithmic,
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
                 },
@@ -221,7 +222,7 @@ mod tests {
                 id: 1,
                 symbol: "BTCUSDT".into(),
                 source: DataSource::Binance,
-                log_scale: false,
+                scale_mode: Default::default(),
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
             }],

@@ -69,6 +69,7 @@ pub(crate) mod render_tests;
 pub mod replay_bar;
 pub mod replay_date_sheet;
 mod replay_overlay;
+pub mod scale_menu;
 pub mod script_alert_list;
 mod series_render;
 pub mod settings_about;

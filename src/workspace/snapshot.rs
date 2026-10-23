@@ -155,7 +155,7 @@ impl ChartWorkspace {
             symbol: &chart.symbol,
             source: chart.source,
             candles: displayed_candles(&chart.candles, replay_ms),
-            log_scale: chart.log_scale,
+            scale_mode: chart.scale_mode,
             indicators: &chart.indicators,
             drawings: &chart.drawings,
             open_notes: &open_notes,

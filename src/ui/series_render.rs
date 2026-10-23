@@ -757,13 +757,7 @@ mod tests {
     ) -> usize {
         let ctx = egui::Context::default();
         let plot = Rect::from_min_max(pos2(0.0, 0.0), pos2(400.0, 200.0));
-        let scale = PriceScale {
-            minimum: 80.0,
-            maximum: 120.0,
-            top: 0.0,
-            height: 200.0,
-            logarithmic: false,
-        };
+        let scale = PriceScale::linear(80.0, 120.0, 0.0, 200.0);
         let slot = plot.width() / bars.len().max(1) as f32;
         let series = Construction::of(&ChartStyle {
             chart_type,

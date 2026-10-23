@@ -13,7 +13,7 @@ fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
         symbol: "BTCUSDT",
         source: DataSource::Binance,
         candles: &harness.candles,
-        log_scale: false,
+        scale_mode: PriceScaleMode::Regular,
         indicators: &harness.indicators,
         drawings: &harness.drawings,
         open_notes: &[],
@@ -73,8 +73,11 @@ fn gist(dump: &str) -> String {
     dump.chars().take(160).collect()
 }
 
-/// The live chart's last frame with nothing pointing at it, and its plot's rectangle.
+/// The live chart's last frame with nothing pointing at it, and its plot's rectangle. The
+/// scale button of the corner is the live chart's alone and has a test of its own below, so the
+/// comparisons of everything else leave it out.
 fn settled(harness: &mut Harness) -> (Vec<ClippedShape>, Rect) {
+    harness.card.set_scale_menu(false);
     let mut last = harness.frame();
     for _ in 0..4 {
         last = harness.frame();
@@ -353,6 +356,33 @@ fn the_crosshair_a_hover_and_the_replay_badge_never_reach_a_snapshot() {
     assert!(only_snapshot.is_empty());
     // (The plot's own replay badge only shows on a narrow chart; this one is wide.)
     assert!(only_live.is_empty(), "{only_live:?}");
+}
+
+#[test]
+fn the_scale_button_is_the_live_chart_alone_and_never_reaches_a_snapshot() {
+    let mut with_button = Harness::new(ChartCanvas::default());
+    for _ in 0..5 {
+        with_button.frame();
+    }
+    let (live, rect) = {
+        let last = with_button.frame();
+        (last.0, last.1.rect.expect("the chart's rectangle"))
+    };
+    let mut without_button = Harness::new(ChartCanvas::default());
+    let (quiet, _) = settled(&mut without_button);
+    let (drawn_only_with_it, lost) = differences(&live, &quiet);
+    assert!(lost.is_empty(), "nothing is taken away: {lost:?}");
+    assert!(
+        !drawn_only_with_it.is_empty(),
+        "the live chart draws the button in the corner"
+    );
+    // The snapshot is the same image whether the live chart carries the button or not.
+    let image = |harness: &Harness| {
+        let mut shapes = dumped(&snapshot_shapes(harness, rect, false));
+        shapes.sort();
+        shapes
+    };
+    assert_eq!(image(&with_button), image(&without_button));
 }
 
 #[test]

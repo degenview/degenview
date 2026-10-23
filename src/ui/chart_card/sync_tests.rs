@@ -137,7 +137,7 @@ impl Linked {
                         &member.candles,
                         false,
                         None,
-                        false,
+                        PriceScaleMode::Regular,
                         member.source,
                         &IndicatorConfig::default(),
                         None,

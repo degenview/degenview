@@ -3,6 +3,7 @@ use crate::model::chart_sync::SyncHub;
 use crate::model::history::{self, OlderHistory};
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
 use crate::model::portfolio_card::PortfolioCard;
+use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, new_id, now_ms};
 use crate::model::watchlist_text::ImportReport;
 use crate::model::{
@@ -246,7 +247,7 @@ struct Chart {
     older_inbox: Option<OlderRequest>,
     fetch_generation: Arc<AtomicU64>,
     chart: ChartCard,
-    log_scale: bool,
+    scale_mode: PriceScaleMode,
     indicators: IndicatorConfig,
     drawings: Vec<Drawing>,
     next_drawing_id: u64,
@@ -314,7 +315,7 @@ impl Chart {
             older_inbox: None,
             fetch_generation: Arc::new(AtomicU64::new(0)),
             chart: ChartCard::default(),
-            log_scale: false,
+            scale_mode: PriceScaleMode::default(),
             indicators: IndicatorConfig::default(),
             drawings: Vec::new(),
             next_drawing_id: 1,
@@ -384,13 +385,14 @@ impl Chart {
 
     fn restored(saved: PersistedChart, timeframe: Timeframe, ctx: &egui::Context) -> Self {
         let instances = saved.instances();
+        let scale_mode = saved.price_scale_mode();
         let mut chart = Self::blank(saved.id, saved.symbol, saved.source);
         chart.card = saved.card;
         chart.chart.set_title(saved.title);
         chart.pm_series = saved.pm_series;
         chart.image_url = saved.image_url;
         chart.fetch(timeframe, ctx);
-        chart.log_scale = saved.log_scale;
+        chart.scale_mode = scale_mode;
         chart.chart.set_y_zoom(saved.y_zoom);
         chart.chart.set_appearance(saved.appearance);
         chart.chart.set_pine_instances(instances);
@@ -1398,6 +1400,19 @@ impl ChartWorkspace {
         id
     }
 
+    /// Sets a chart's price-scale mode: the one place the corner menu, the shortcuts and the
+    /// price-axis menu all end up. A view, not data: nothing is refetched, rerun or redrawn
+    /// beyond the next frame, and the horizontal position and the drawings stay as they are.
+    pub(crate) fn set_scale_mode(&mut self, chart_id: u64, mode: PriceScaleMode) {
+        if let Some(chart) = self
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id && chart.is_market())
+        {
+            chart.scale_mode = mode;
+        }
+    }
+
     fn resolved_focused_id(&self) -> Option<u64> {
         if let Some(id) = self.focused
             && self.charts.iter().any(|chart| chart.id == id)
@@ -1438,7 +1453,8 @@ impl ChartWorkspace {
                     id: chart.id,
                     symbol: chart.symbol.clone(),
                     source: chart.source,
-                    log_scale: chart.log_scale,
+                    log_scale: chart.scale_mode.is_logarithmic(),
+                    scale_mode: Some(chart.scale_mode),
                     y_zoom: chart.chart.y_zoom(),
                     indicators: chart.indicators,
                     appearance: chart.chart.appearance(),
@@ -1473,7 +1489,7 @@ impl ChartWorkspace {
                     id: chart.id,
                     symbol: chart.symbol.clone(),
                     source: chart.source,
-                    log_scale: chart.log_scale,
+                    scale_mode: chart.scale_mode,
                     appearance: chart.chart.appearance(),
                     card: chart.card,
                 })
@@ -2086,6 +2102,7 @@ impl ChartWorkspace {
                 loaded_candles: chart.candles.len(),
                 indicators: &mut chart.indicators,
                 card: &mut chart.chart,
+                scale_mode: chart.scale_mode,
                 store: &self.store,
             },
         );
@@ -2108,6 +2125,7 @@ impl ChartWorkspace {
             Some(ChartSettingsAction::ConfigureScript(id, anchor)) => {
                 self.toggle_script_popover(chart_id, id, anchor);
             }
+            Some(ChartSettingsAction::SetScaleMode(mode)) => self.set_scale_mode(chart_id, mode),
             Some(ChartSettingsAction::ApplyToAll(scope)) => {
                 let appearance = self
                     .charts
@@ -2623,6 +2641,19 @@ impl ChartWorkspace {
                 }
             }
         }
+        // Alt+P and Alt+L switch the focused chart's price scale, and press again to go back to
+        // Regular. They are letters on a Mac too, so a text field keeps them.
+        if !typing && let Some(chart_id) = self.resolved_focused_id() {
+            for target in [PriceScaleMode::Percent, PriceScaleMode::Logarithmic] {
+                let pressed = shortcut::scale_mode(target)
+                    .is_some_and(|shortcut| ui.input_mut(|input| shortcut.consume(input)));
+                if let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id)
+                    && pressed
+                {
+                    self.set_scale_mode(chart_id, chart.scale_mode.toggled(target));
+                }
+            }
+        }
         // The snapshot shortcuts act on the focused chart, the one whose frame is lit. Option+S
         // types a letter on a Mac, so they leave a text field alone.
         if !typing && let Some(chart_id) = self.resolved_focused_id() {
@@ -2829,7 +2860,6 @@ impl ChartWorkspace {
             .iter()
             .map(|view| (view.id, view.name.clone()))
             .collect();
-        let focused = self.resolved_focused_id();
         let unlinkable: Vec<String> = self
             .charts
             .iter()
@@ -2850,9 +2880,6 @@ impl ChartWorkspace {
         );
         let input = workspace_toolbar::ToolbarInput {
             timeframe: self.timeframe,
-            log_scale: focused
-                .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
-                .map(|chart| chart.log_scale),
             layout_name: self.active_view_name.as_deref().unwrap_or("Unnamed"),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
@@ -2880,13 +2907,6 @@ impl ChartWorkspace {
                         chart.reset_history();
                         chart.last_live_open_time = None;
                         chart.fetch(self.timeframe, ctx);
-                    }
-                }
-                ToolbarAction::ToggleLogScale => {
-                    if let Some(chart) =
-                        focused.and_then(|id| self.charts.iter_mut().find(|chart| chart.id == id))
-                    {
-                        chart.log_scale = !chart.log_scale;
                     }
                 }
                 ToolbarAction::SaveLayout => save_clicked = true,
@@ -4112,7 +4132,7 @@ impl ChartWorkspace {
                                                 candles,
                                                 chart.loading,
                                                 chart.error.as_deref(),
-                                                chart.log_scale,
+                                                chart.scale_mode,
                                                 chart.source,
                                                 &chart.indicators,
                                                 crosshair.as_ref(),
@@ -5338,6 +5358,7 @@ mod tests {
                     symbol: "BTCUSDT".into(),
                     source: DataSource::Binance,
                     log_scale: false,
+                    scale_mode: None,
                     y_zoom: 1.0,
                     indicators: IndicatorConfig::default(),
                     appearance: crate::model::ChartAppearance::default(),
@@ -5355,6 +5376,7 @@ mod tests {
                     symbol: "ETHUSDT".into(),
                     source: DataSource::Coinbase,
                     log_scale: true,
+                    scale_mode: None,
                     y_zoom: 1.5,
                     indicators: IndicatorConfig {
                         show_rsi: true,
@@ -5404,6 +5426,107 @@ mod tests {
         let decoded: PersistedWorkspace =
             serde_json::from_str(&encoded).expect("deserialize workspace");
         assert_eq!(decoded, saved);
+    }
+
+    #[test]
+    fn each_chart_keeps_its_own_scale_mode_through_a_restart_and_marks_the_layout_changed() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(6);
+        let ids: Vec<u64> = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"]
+            .into_iter()
+            .map(|symbol| {
+                workspace
+                    .add_chart_for(&InstrumentId::new(DataSource::Binance, symbol), &ctx)
+                    .chart_id
+            })
+            .collect();
+        workspace.mark_clean();
+        for (id, mode) in ids.iter().zip(PriceScaleMode::ALL) {
+            workspace.set_scale_mode(*id, mode);
+        }
+        assert!(workspace.is_dirty(), "a scale mode is part of the layout");
+
+        let persisted = workspace.persisted();
+        for (saved, mode) in persisted.charts.iter().zip(PriceScaleMode::ALL) {
+            assert_eq!(saved.scale_mode, Some(mode));
+            assert_eq!(
+                saved.log_scale,
+                mode == PriceScaleMode::Logarithmic,
+                "the switch older builds read says the same"
+            );
+        }
+        let decoded: PersistedWorkspace =
+            serde_json::from_str(&serde_json::to_string(&persisted).expect("encode"))
+                .expect("decode");
+        let restored = ChartWorkspace::restored(
+            decoded,
+            workspace.watchlist.clone(),
+            workspace.quote_book.clone(),
+            workspace.quote_coordinator.clone(),
+            workspace.store.clone(),
+            &ctx,
+        );
+        let modes: Vec<PriceScaleMode> = restored.charts.iter().map(|c| c.scale_mode).collect();
+        assert_eq!(modes, PriceScaleMode::ALL);
+
+        // Changing one chart leaves the others as they were; the same mode again changes nothing.
+        workspace.mark_clean();
+        workspace.set_scale_mode(ids[0], PriceScaleMode::Regular);
+        assert!(!workspace.is_dirty());
+        workspace.set_scale_mode(ids[0], PriceScaleMode::Percent);
+        assert_eq!(workspace.charts[0].scale_mode, PriceScaleMode::Percent);
+        assert_eq!(workspace.charts[1].scale_mode, PriceScaleMode::Percent);
+        assert_eq!(workspace.charts[3].scale_mode, PriceScaleMode::Logarithmic);
+    }
+
+    #[test]
+    fn a_layout_saved_before_the_scale_modes_opens_with_the_log_switch_it_had() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(6);
+        for symbol in ["BTCUSDT", "ETHUSDT"] {
+            workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, symbol), &ctx);
+        }
+        // What v0.5 wrote: the on/off switch, and no mode.
+        let mut row = serde_json::to_value(workspace.persisted()).expect("encode");
+        for (chart, log) in row["charts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .zip([true, false])
+        {
+            let chart = chart.as_object_mut().unwrap();
+            chart.remove("scale_mode");
+            chart.insert("log_scale".to_owned(), log.into());
+        }
+        let decoded: PersistedWorkspace = serde_json::from_value(row).expect("decode");
+        let restored = ChartWorkspace::restored(
+            decoded,
+            workspace.watchlist.clone(),
+            workspace.quote_book.clone(),
+            workspace.quote_coordinator.clone(),
+            workspace.store.clone(),
+            &ctx,
+        );
+        let modes: Vec<PriceScaleMode> = restored.charts.iter().map(|c| c.scale_mode).collect();
+        assert_eq!(
+            modes,
+            [PriceScaleMode::Logarithmic, PriceScaleMode::Regular]
+        );
+    }
+
+    #[test]
+    fn a_portfolio_card_has_no_price_scale_to_set() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(6);
+        let id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        workspace.charts[0].card = Some(PortfolioCard::new(
+            crate::model::portfolio_card::CardKind::Allocation,
+            None,
+        ));
+        workspace.set_scale_mode(id, PriceScaleMode::Percent);
+        assert_eq!(workspace.charts[0].scale_mode, PriceScaleMode::Regular);
     }
 
     #[test]
@@ -5525,6 +5648,7 @@ mod tests {
             symbol: "111".into(),
             source: DataSource::Polymarket,
             log_scale: false,
+            scale_mode: None,
             y_zoom: 1.0,
             indicators: IndicatorConfig::default(),
             appearance: crate::model::ChartAppearance::default(),
@@ -5613,14 +5737,14 @@ mod tests {
         assert!(!ui::supports_alerts(DataSource::Kalshi));
     }
 
-    fn snapshot(log_scale: bool) -> LayoutSnapshot {
+    fn snapshot(logarithmic: bool) -> LayoutSnapshot {
         LayoutSnapshot {
             timeframe: Timeframe::Hour,
             configs: vec![crate::model::ChartConfig {
                 id: 1,
                 symbol: "BTCUSDT".into(),
                 source: DataSource::Binance,
-                log_scale,
+                scale_mode: PriceScaleMode::from_log_flag(logarithmic),
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
             }],

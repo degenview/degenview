@@ -14,7 +14,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
 | A price alert tag | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
 | A script's pane | Settings, Hide or Show, Visual order, Open Script Manager, Remove from chart. |
-| The price axis | Reset price scale, Logarithmic scale. |
+| The price axis | Reset price scale, then the four [price scale modes](price-scale.md) (Regular, Percent, Indexed to 100, Logarithmic; the active one checked). |
 | The time axis | Reset chart view. |
 | Empty plot | The background menu (below). |
 
@@ -49,8 +49,8 @@ chart with nothing to trade).
 
 Opening a menu captures a `ChartContext` once: the chart, its symbol and source, the time and the
 price under the click and the target. The price is read through the chart's own `Projection` and
-`PriceScale` (log scale included), so it is the number the axis and crosshair would show, never a
-second formula, and it is not recomputed from where the pointer is later. Choosing an entry first
+`PriceScale` (log scale included), so it is a real price whatever the scale mode reads on the axis
+(never a percentage or an index), never a second formula, and it is not recomputed from where the pointer is later. Choosing an entry first
 `check`s the snapshot against the live workspace: the chart must still exist and still show the
 same market, and a pane, alert, order or position the menu was opened on must still be there.
 Otherwise nothing is done and a message says why.

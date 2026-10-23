@@ -2615,6 +2615,7 @@ mod tests {
                     symbol: "ETHUSDT".into(),
                     source: DataSource::Binance,
                     log_scale: false,
+                    scale_mode: None,
                     y_zoom: 1.0,
                     indicators: crate::model::IndicatorConfig::default(),
                     appearance: crate::model::ChartAppearance::default(),

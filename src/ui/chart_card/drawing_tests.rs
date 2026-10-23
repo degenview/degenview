@@ -58,7 +58,7 @@ struct Chart {
     ctx: egui::Context,
     card: ChartCard,
     candles: Vec<Kline>,
-    log_scale: bool,
+    scale_mode: PriceScaleMode,
     tool: Tool,
     hide_all: bool,
     timeframe: Timeframe,
@@ -73,7 +73,7 @@ impl Chart {
             ctx: egui::Context::default(),
             card,
             candles: series(300),
-            log_scale: false,
+            scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
             hide_all: false,
             timeframe: Timeframe::Hour,
@@ -86,7 +86,7 @@ impl Chart {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, SIZE)),
             ..Default::default()
         };
-        let (card, candles, log_scale) = (&mut self.card, &self.candles, self.log_scale);
+        let (card, candles, scale_mode) = (&mut self.card, &self.candles, self.scale_mode);
         let (tool, hide_all, timeframe) = (self.tool, self.hide_all, self.timeframe);
         let selected = self.selected.clone();
         let mut output = self.ctx.run_ui(input, |ui| {
@@ -104,7 +104,7 @@ impl Chart {
                 candles,
                 false,
                 None,
-                log_scale,
+                scale_mode,
                 DataSource::Binance,
                 &IndicatorConfig::default(),
                 None,
@@ -302,12 +302,90 @@ fn a_replay_cut_off_leaves_drawings_where_they_are() {
 #[test]
 fn a_log_scale_draws_every_tool_inside_the_plot() {
     let mut chart = Chart::new();
-    chart.log_scale = true;
+    chart.scale_mode = PriceScaleMode::Logarithmic;
     let bare = chart.draw(&[]);
     for tool in Tool::GROUPED {
         let with = chart.draw(&[drawing(tool, 1)]);
         assert!(!gained(&bare, &with).is_empty(), "{tool:?}");
     }
+}
+
+/// Every word painted, nested shapes included.
+fn words(shapes: &[ClippedShape]) -> Vec<String> {
+    fn of(shape: &egui::Shape, into: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(text) => into.push(text.galley.text().to_owned()),
+            egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| of(shape, into)),
+            _ => {}
+        }
+    }
+    let mut words = Vec::new();
+    for clipped in shapes {
+        of(&clipped.shape, &mut words);
+    }
+    words
+}
+
+#[test]
+fn drawings_stay_where_their_prices_are_in_percent_and_indexed() {
+    let mut regular = Chart::new();
+    let bare = regular.draw(&[]);
+    for mode in [PriceScaleMode::Percent, PriceScaleMode::IndexedTo100] {
+        let mut chart = Chart::new();
+        chart.scale_mode = mode;
+        let bare_in_mode = chart.draw(&[]);
+        for tool in Tool::GROUPED {
+            let stored = [drawing(tool, 1)];
+            let expected = gained(&bare, &regular.draw(&stored));
+            let drawn = gained(&bare_in_mode, &chart.draw(&stored));
+            assert!(!drawn.is_empty(), "{mode:?} {tool:?}");
+            // Percent and indexed are linear in the price: the same clips take the same shapes at the
+            // same heights. Their width follows the plot, which a wider axis label narrows.
+            let height = |rects: &[Rect]| -> Vec<(f32, f32)> {
+                rects.iter().map(|r| (r.top(), r.bottom())).collect()
+            };
+            assert_eq!(height(&drawn), height(&expected), "{mode:?} {tool:?} moved");
+            assert_eq!(
+                stored[0],
+                drawing(tool, 1),
+                "{mode:?} {tool:?} was rewritten"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_price_tag_on_the_axis_reads_as_the_axis_does_while_the_line_keeps_its_price() {
+    let line = [drawing(Tool::HorizontalLine, 1)];
+    let tag_price = line[0].anchors()[0].price;
+    let plain = |chart: &mut Chart| {
+        let bare = words(&chart.draw(&[]));
+        let mut with = words(&chart.draw(&line));
+        for word in bare {
+            if let Some(index) = with.iter().position(|other| *other == word) {
+                with.remove(index);
+            }
+        }
+        with
+    };
+    let mut regular = Chart::new();
+    let added = plain(&mut regular);
+    let price = crate::model::PriceFormat::AUTO.format(tag_price);
+    assert!(
+        added.contains(&price),
+        "regular tags the price {price}: {added:?}"
+    );
+
+    let mut percent = Chart::new();
+    percent.scale_mode = PriceScaleMode::Percent;
+    let added = plain(&mut percent);
+    assert!(
+        added.iter().any(|word| word.ends_with('%')),
+        "percent tags the change: {added:?}"
+    );
+    assert!(!added.contains(&price), "{added:?}");
+    // The line is still the one stored at its price.
+    assert_eq!(line[0].anchors()[0].price, tag_price);
 }
 
 #[test]

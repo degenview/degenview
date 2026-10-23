@@ -597,13 +597,7 @@ mod tests {
     }
 
     fn scale() -> PriceScale {
-        PriceScale {
-            minimum: 0.0,
-            maximum: 200.0,
-            top: 0.0,
-            height: 200.0,
-            logarithmic: false,
-        }
+        PriceScale::linear(0.0, 200.0, 0.0, 200.0)
     }
 
     #[test]

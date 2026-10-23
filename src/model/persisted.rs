@@ -3,6 +3,7 @@
 
 use crate::model::pine_instance::PineInstance;
 use crate::model::portfolio_card::PortfolioCard;
+use crate::model::price_scale::PriceScaleMode;
 use crate::model::viewport::SavedViewport;
 use crate::model::{ChartAppearance, DataSource, Drawing, IndicatorConfig};
 use serde::{Deserialize, Serialize};
@@ -12,7 +13,14 @@ pub struct PersistedChart {
     pub id: u64,
     pub symbol: String,
     pub source: DataSource,
+    /// The log switch of builds before the four scale modes. Still written (it is
+    /// `scale_mode == Logarithmic`) so such a build opens the layout a newer one saved; read only
+    /// when `scale_mode` is missing, i.e. a row an older build wrote.
+    #[serde(default)]
     pub log_scale: bool,
+    /// The price-scale mode; `None` in a row written before the modes existed.
+    #[serde(default)]
+    pub scale_mode: Option<PriceScaleMode>,
     pub y_zoom: f64,
     pub indicators: IndicatorConfig,
     #[serde(default)]
@@ -45,6 +53,12 @@ pub struct PersistedChart {
 }
 
 impl PersistedChart {
+    /// The chart's price-scale mode: the explicit one, else what the old log switch meant.
+    pub fn price_scale_mode(&self) -> PriceScaleMode {
+        self.scale_mode
+            .unwrap_or_else(|| PriceScaleMode::from_log_flag(self.log_scale))
+    }
+
     /// The chart's scripts.
     pub fn instances(&self) -> Vec<PineInstance> {
         self.pine_instances.clone()
@@ -61,6 +75,7 @@ mod tests {
             symbol: "BTCUSDT".into(),
             source: DataSource::Binance,
             log_scale: false,
+            scale_mode: None,
             y_zoom: 1.0,
             indicators: IndicatorConfig::default(),
             appearance: ChartAppearance::default(),
@@ -88,6 +103,70 @@ mod tests {
         row.as_object_mut().unwrap().remove("card");
         let restored: PersistedChart = serde_json::from_value(row).unwrap();
         assert_eq!(restored.card, None);
+    }
+
+    fn row_with(log_scale: Option<bool>, scale_mode: Option<&str>) -> PersistedChart {
+        let mut row = serde_json::to_value(chart()).unwrap();
+        let object = row.as_object_mut().unwrap();
+        object.remove("log_scale");
+        object.remove("scale_mode");
+        if let Some(log) = log_scale {
+            object.insert("log_scale".into(), log.into());
+        }
+        if let Some(mode) = scale_mode {
+            object.insert("scale_mode".into(), mode.into());
+        }
+        serde_json::from_value(row).unwrap()
+    }
+
+    #[test]
+    fn a_row_from_before_the_scale_modes_keeps_the_log_switch_it_had() {
+        assert_eq!(
+            row_with(Some(true), None).price_scale_mode(),
+            PriceScaleMode::Logarithmic
+        );
+        assert_eq!(
+            row_with(Some(false), None).price_scale_mode(),
+            PriceScaleMode::Regular
+        );
+        // Neither key at all, or a row with only a mode, still opens.
+        assert_eq!(
+            row_with(None, None).price_scale_mode(),
+            PriceScaleMode::Regular
+        );
+        assert_eq!(
+            row_with(None, Some("percent")).price_scale_mode(),
+            PriceScaleMode::Percent
+        );
+    }
+
+    #[test]
+    fn an_explicit_mode_wins_over_the_old_switch_and_an_unknown_one_is_regular() {
+        assert_eq!(
+            row_with(Some(true), Some("indexed_to_100")).price_scale_mode(),
+            PriceScaleMode::IndexedTo100
+        );
+        assert_eq!(
+            row_with(Some(false), Some("logarithmic")).price_scale_mode(),
+            PriceScaleMode::Logarithmic
+        );
+        // A newer build's mode this one does not know opens as Regular, never failing the row.
+        assert_eq!(
+            row_with(Some(true), Some("inverted_percent")).price_scale_mode(),
+            PriceScaleMode::Regular
+        );
+    }
+
+    #[test]
+    fn a_saved_chart_writes_the_mode_and_the_switch_an_older_build_reads() {
+        let mut saved = chart();
+        saved.scale_mode = Some(PriceScaleMode::Logarithmic);
+        saved.log_scale = true;
+        let json = serde_json::to_value(&saved).unwrap();
+        assert_eq!(json["scale_mode"], "logarithmic");
+        assert_eq!(json["log_scale"], true);
+        let back: PersistedChart = serde_json::from_value(json).unwrap();
+        assert_eq!(back, saved);
     }
 
     #[test]

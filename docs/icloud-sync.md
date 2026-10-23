@@ -158,6 +158,13 @@ out of the row while it holds its default (as the style fields are) and needs no
 set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
 a count elsewhere would be easy to add.
 
+A chart's price-scale mode (`scale_mode` in the layout's chart rows) is not a drawing field and has no
+such marker. A layout field an older build does not know is dropped when that build re-saves the
+layout, which changes `layout_structure_hash` and can make a "conflict from" copy. The mode is written
+next to the `log_scale` switch older builds require, so those builds still decode the layout and keep
+a logarithmic chart logarithmic; a Percent or Indexed chart opens as Regular there. See
+[price scale modes](price-scale.md).
+
 ## Portfolios and paper trading
 
 **Ids.** Portfolios, transactions and everything in a paper account are numbered 1, 2, 3… by each

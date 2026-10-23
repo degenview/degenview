@@ -4,6 +4,7 @@
 use super::frame::{FrameData, FrameLayout, Overlays, PaneSlot, paint_pane_title};
 use super::*;
 use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
+use crate::ui::scale_menu;
 
 pub(super) struct LiveOverlays<'a> {
     pub ui: &'a mut egui::Ui,
@@ -17,6 +18,7 @@ pub(super) struct LiveOverlays<'a> {
     pub alert_moves: Vec<alert_lines::AlertMove>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
+    pub scale_mode: Option<PriceScaleMode>,
 }
 
 impl Overlays for LiveOverlays<'_> {
@@ -107,6 +109,21 @@ impl Overlays for LiveOverlays<'_> {
             )
         {
             self.navigation = Some(action);
+        }
+        // The scale menu sits where the axes meet, which a chart with no plot to draw has not got.
+        if layout.main_visible
+            && self.card.scale_menu
+            && let Some(cell) = scale_menu::corner(plot, layout.rect)
+        {
+            let state = scale_menu::ScaleButton {
+                mode: scale.mode,
+                logarithmic_drawn: scale.logarithmic,
+            };
+            if let Some(mode) =
+                scale_menu::show(self.ui, scale_menu::id(self.chart_id), cell, &state)
+            {
+                self.scale_mode = Some(mode);
+            }
         }
     }
 }

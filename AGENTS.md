@@ -58,6 +58,7 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 - [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
+- [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.
 - [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, and templates.
 - [Chart context menus](docs/chart-context-menu.md) — right-click menus, Table view, Object tree, what is verified.

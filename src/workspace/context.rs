@@ -18,6 +18,7 @@ use crate::model::chart_context::{
 use crate::model::chart_template::ApplyScope;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
+use crate::model::price_scale::PriceScaleMode;
 use crate::ui::ContextRequest;
 use crate::ui::chart_context_menu::{self, MenuState, Outcome};
 use crate::ui::chart_table_view::{self, TableAction, TableViewState};
@@ -238,7 +239,7 @@ impl ChartWorkspace {
             time_locked: chart.chart.time_lock().is_some(),
             table_open: self.context.table_chart == Some(chart.id),
             tree_open: self.context.tree_chart == Some(chart.id),
-            log_scale: chart.log_scale,
+            scale_mode: chart.scale_mode,
             ..Facts::default()
         };
         match &context.target {
@@ -316,6 +317,7 @@ impl ChartWorkspace {
         host: &mut PaperHost,
     ) -> Vec<WorkspaceAction> {
         let mut actions = self.apply_alert_moves();
+        self.apply_scale_requests();
         if let Some(mut open) = self.context.menu.take() {
             match self.context_facts(ctx, &open.context, &open.templates) {
                 // The chart closed while the menu was up: it goes with it.
@@ -462,7 +464,7 @@ impl ChartWorkspace {
                 self.settings_chart = Some(chart_id);
             }
             Command::ResetPriceScale => self.charts[index].chart.reset_price_scale(),
-            Command::ToggleLogScale => self.charts[index].log_scale ^= true,
+            Command::SetScaleMode(mode) => self.set_scale_mode(chart_id, mode),
             Command::ResetChartView => self.charts[index].chart.reset_view(),
             Command::PaneSettings(_) => {
                 self.settings_state = ChartSettingsState::default();
@@ -729,7 +731,11 @@ impl ChartWorkspace {
             return;
         };
         let target = at.unwrap_or(origin);
-        let drawings = match clip.placed(target, chart.log_scale, chart.next_drawing_id) {
+        let drawings = match clip.placed(
+            target,
+            chart.scale_mode.is_logarithmic(),
+            chart.next_drawing_id,
+        ) {
             Ok(drawings) => drawings,
             Err(error) => {
                 self.say(error.to_string(), true);
@@ -792,6 +798,20 @@ impl ChartWorkspace {
                     .set_alert_market(last, Self::paper_instrument(chart).tick_size);
             }
             chart.chart.set_alert_lines(lines);
+        }
+    }
+
+    /// Applies the modes picked from the charts' corner menus since the last frame. The chart
+    /// picked from is the focused one from then on, as after any click on it.
+    fn apply_scale_requests(&mut self) {
+        let picks: Vec<(u64, PriceScaleMode)> = self
+            .charts
+            .iter_mut()
+            .filter_map(|chart| Some((chart.id, chart.chart.take_scale_request()?)))
+            .collect();
+        for (chart_id, mode) in picks {
+            self.set_scale_mode(chart_id, mode);
+            self.focused = Some(chart_id);
         }
     }
 

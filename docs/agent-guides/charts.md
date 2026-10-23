@@ -9,7 +9,11 @@ behavior.
 - `ui::chart_card::ChartCard` owns the painter loop. `ui::series_render` draws every main series;
   `model::chart_look` decides bar appearance. Do not add type-specific drawing to `chart_card.rs`.
 - Chart state lives in `workspace::Chart`. Draw grid, main series, overlays/indicators, then labels.
-  The price transform supports linear and log scales.
+  `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
+  one) and carries the chart's `PriceScaleMode` and reference. Percent and Indexed to 100 change only
+  what the axis, its tags and the crosshair say, never a stored price. Read
+  [price scale modes](../price-scale.md) before touching axis labels, ticks, tags or the corner
+  button, and write an axis-column tag with `PriceScale::tag_label`, not the bare `PriceFormat`.
 - Every chart price uses `ChartAppearance::price_format()` and `PriceFormat`, never
   `format::price`. This includes axes, tags, crosshair/OHLC, ruler/Fibonacci, and high/low markers.
 - Automatic precision is deliberately not the Swift app's: no decimals from 1,000, two from 1,
