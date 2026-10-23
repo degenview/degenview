@@ -16,6 +16,8 @@ use eframe::egui::{
 
 /// A step past any stack: bring to front and send to back move by this much and are clamped.
 const TO_EXTREME: i32 = 1_000_000;
+/// Font sizes the toolbar's size menu offers for a text box.
+const FONT_SIZES: [f32; 10] = [10.0, 11.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 32.0, 48.0];
 /// Stroke widths the toolbar's width menu offers.
 const WIDTHS: [f32; 9] = [1.0, 2.0, 3.0, 4.0, 6.0, 8.0, 12.0, 20.0, 40.0];
 
@@ -758,7 +760,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         )
     {
         next.stroke.color = picked.to_srgba_unmultiplied();
-        if !caps.has(Caps::WIDTH) {
+        if !caps.has(Caps::WIDTH) && !caps.has(Caps::BOX) {
             next.text.color = next.stroke.color;
         }
     }
@@ -774,9 +776,22 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         next.fill.color = picked.to_srgba_unmultiplied();
         next.fill.enabled = true;
     }
+    if caps.has(Caps::BOX)
+        && let Some(picked) = kit::color_well(
+            ui,
+            vec2(24.0, 20.0),
+            "Border color",
+            series_render::color(style.border.color),
+            Alpha::OnlyBlend,
+        )
+    {
+        next.border.color = picked.to_srgba_unmultiplied();
+        next.border.enabled = true;
+    }
     // A drawing with text has its colour at hand; the rest of the text's look is in Settings.
-    if drawing.edits_text_in_place()
-        && !drawing.text().is_empty()
+    let has_text =
+        caps.has(Caps::AUTO_TEXT) || (drawing.edits_text_in_place() && !drawing.text().is_empty());
+    if has_text
         && let Some(picked) = kit::color_well(
             ui,
             vec2(24.0, 20.0),
@@ -786,6 +801,27 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         )
     {
         next.text.color = picked.to_srgba_unmultiplied();
+    }
+    if caps.has(Caps::BOX) && has_text {
+        let labels: Vec<String> = FONT_SIZES.iter().map(|size| format!("{size:.0}")).collect();
+        let selected = FONT_SIZES
+            .iter()
+            .enumerate()
+            .min_by(|a, b| {
+                (a.1 - style.text.size)
+                    .abs()
+                    .total_cmp(&(b.1 - style.text.size).abs())
+            })
+            .map_or(0, |(index, _)| index);
+        if let Some(index) = kit::menu_picker(ui, 56.0, &labels, selected, true) {
+            next.text.size = FONT_SIZES[index];
+        }
+        if kit::value_chip(ui, "B", style.text.bold).clicked() {
+            next.text.bold = !style.text.bold;
+        }
+        if kit::value_chip(ui, "I", style.text.italic).clicked() {
+            next.text.italic = !style.text.italic;
+        }
     }
     if caps.has(Caps::WIDTH) {
         let labels: Vec<String> = WIDTHS

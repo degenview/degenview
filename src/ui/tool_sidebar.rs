@@ -23,6 +23,8 @@ pub struct ToolSidebarInput {
     pub group_tool: Tool,
     /// The tool the Lines tile shows and arms: the last one used from its menu.
     pub line_tool: Tool,
+    /// The tool the text and notes tile shows and arms: the last one used from its menu.
+    pub note_tool: Tool,
     pub magnet: MagnetMode,
     pub keep_drawing: bool,
     pub hide_all: bool,
@@ -85,12 +87,13 @@ enum Slot {
     Menu(Menu),
 }
 
-/// The two menus a tile opens: the lines, channels and pitchforks, and the brushes, arrows and
-/// shapes.
+/// The menus a tile opens: the lines, channels and pitchforks; the brushes, arrows and shapes;
+/// and the text and notes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Menu {
     Lines,
     Shapes,
+    Notes,
 }
 
 impl Menu {
@@ -98,6 +101,7 @@ impl Menu {
         match self {
             Self::Lines => &ToolGroup::LINE_MENU,
             Self::Shapes => &ToolGroup::MENU,
+            Self::Notes => &ToolGroup::NOTE_MENU,
         }
     }
 
@@ -110,6 +114,7 @@ impl Menu {
         match self {
             Self::Lines => input.line_tool,
             Self::Shapes => input.group_tool,
+            Self::Notes => input.note_tool,
         }
     }
 
@@ -117,6 +122,7 @@ impl Menu {
         match self {
             Self::Lines => 268.0,
             Self::Shapes => 224.0,
+            Self::Notes => 224.0,
         }
     }
 
@@ -137,6 +143,7 @@ impl Menu {
         match self {
             Self::Lines => "lines",
             Self::Shapes => "group",
+            Self::Notes => "notes",
         }
     }
 
@@ -144,15 +151,17 @@ impl Menu {
         match self {
             Self::Lines => "More lines, channels and pitchforks",
             Self::Shapes => "More brushes, arrows and shapes",
+            Self::Notes => "More text and notes",
         }
     }
 }
 
-const SLOTS: [Slot; 5] = [
+const SLOTS: [Slot; 6] = [
     Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
     Slot::Menu(Menu::Lines),
     Slot::Tool(Tool::Fib, Icon::FibPoints, "Fib Retracement"),
     Slot::Menu(Menu::Shapes),
+    Slot::Menu(Menu::Notes),
     Slot::Tool(Tool::Ruler, Icon::Ruler, "Ruler"),
 ];
 
@@ -198,6 +207,11 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::SchiffPitchfork => Icon::ForkSchiff,
         Tool::ModifiedSchiffPitchfork => Icon::ForkModifiedSchiff,
         Tool::InsidePitchfork => Icon::ForkInside,
+        Tool::Text => Icon::TextTool,
+        Tool::Comment => Icon::CommentTool,
+        Tool::PriceLabel => Icon::PriceLabelTool,
+        Tool::FlagMark => Icon::FlagTool,
+        Tool::Pin => Icon::PinTool,
     }
 }
 
@@ -909,6 +923,7 @@ mod tests {
                 active_tool: tool,
                 group_tool: Tool::Brush,
                 line_tool: Tool::TrendLine,
+                note_tool: Tool::Text,
                 magnet: MagnetMode::Weak,
                 keep_drawing: true,
                 hide_all: false,
@@ -931,6 +946,7 @@ mod tests {
             active_tool: Tool::Cursor,
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
+            note_tool: Tool::Text,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all: false,

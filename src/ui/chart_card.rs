@@ -1368,6 +1368,11 @@ impl View {
 }
 
 impl ChartCard {
+    /// The drawings whose note is open (a pin's), so a snapshot can show them as they stand.
+    pub fn open_notes(&self) -> Vec<u64> {
+        self.layer.open_notes()
+    }
+
     /// Visible range and price scale for the current pan/zoom, if anything is shown.
     fn view(
         &self,

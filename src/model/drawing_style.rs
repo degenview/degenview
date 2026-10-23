@@ -228,6 +228,9 @@ impl ArrowStats {
 
 /// The widest a text box may be told to wrap at, in logical pixels.
 pub const MAX_BOX_WIDTH: f32 = 2_000.0;
+/// The narrowest, and the width a wrapping box has when its style does not say.
+pub const MIN_BOX_WIDTH: f32 = 60.0;
+pub const DEFAULT_BOX_WIDTH: f32 = 200.0;
 
 /// The border of a text box (a note, a callout, a table). It is separate from the stroke, which a
 /// note's connector and a pin's glyph use, because TradingView colours the two apart.
@@ -462,6 +465,15 @@ impl Default for DrawingStyle {
 }
 
 impl DrawingStyle {
+    /// The outer width of a wrapping text box in this style.
+    pub fn wrapped_width(&self) -> f32 {
+        if self.box_width > 0.0 {
+            self.box_width.max(MIN_BOX_WIDTH)
+        } else {
+            DEFAULT_BOX_WIDTH
+        }
+    }
+
     /// A trend line's own look: a solid blue 1.5 px segment, its text in the same blue and
     /// below the line, as TradingView puts it.
     pub fn trend_line() -> Self {

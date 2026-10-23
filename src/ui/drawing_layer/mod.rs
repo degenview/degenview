@@ -13,6 +13,7 @@ mod line_shapes;
 #[cfg(test)]
 mod line_tests;
 mod menu;
+mod note_shapes;
 mod shape;
 mod snap;
 #[cfg(test)]
@@ -345,6 +346,8 @@ pub(super) struct DrawingLayer {
     tags: Vec<shape::Tag>,
     /// The text being edited in place.
     text_edit: Option<text_edit::TextEditing>,
+    /// The drawings whose note is open (a pin's): view state, never saved or synced.
+    open_notes: HashSet<u64>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -431,6 +434,16 @@ impl DrawingLayer {
         self.gesture.is_some() || self.cancelled_drag
     }
 
+    /// The drawings whose note is open, in no particular order.
+    pub(super) fn open_notes(&self) -> Vec<u64> {
+        self.open_notes.iter().copied().collect()
+    }
+
+    /// Opens the notes of these drawings: a snapshot shows a pin as it stands on the chart.
+    pub(super) fn set_open_notes(&mut self, ids: &[u64]) {
+        self.open_notes = ids.iter().copied().collect();
+    }
+
     /// Forgets the hovered drawing (input is bypassed this frame).
     pub(super) fn clear_hover(&mut self) {
         self.hover = None;
@@ -495,6 +508,7 @@ impl DrawingLayer {
                         continue;
                     };
                     let style = drawing.style().copied().unwrap_or_default();
+                    let open = self.open_notes.contains(&drawing.id());
                     let tolerance = HIT_TOLERANCE + style.stroke.width / 2.0;
                     // A trend line's ends can be grabbed without selecting it first, as they
                     // always could, whether or not it has text.
@@ -503,7 +517,7 @@ impl DrawingLayer {
                         .flatten();
                     end.or_else(|| {
                         screen
-                            .hits_body(pointer, tolerance, style.fill.enabled)
+                            .hits_body(pointer, tolerance, style.fill.enabled, open)
                             .then_some(Part::Body)
                     })
                 }
@@ -646,6 +660,15 @@ impl DrawingLayer {
             )
         });
         let typing = ui.ctx().egui_wants_keyboard_input() || frame.keys_blocked;
+        if escape
+            && self.gesture.is_none()
+            && !self.open_notes.is_empty()
+            && !self.is_editing_text()
+        {
+            self.open_notes.clear();
+            frame.escape_consumed = true;
+            return;
+        }
         if escape {
             match self.gesture.take() {
                 Some(Gesture::Draft(draft)) => {
@@ -939,6 +962,9 @@ impl DrawingLayer {
                 }
                 // Shift is for building a selection: a handle under the pointer is no target.
                 let hit = self.hit_test(frame, point, proj, !modifiers.shift);
+                if !modifiers.shift {
+                    self.toggle_notes(hit, point, frame, proj);
+                }
                 frame.select = Some(match (hit, modifiers.shift) {
                     (Some(hit), true) => {
                         let mut selection = frame.selected.clone();
@@ -957,7 +983,17 @@ impl DrawingLayer {
                     && let Some(hit) = hit
                     && !hit.locked
                 {
-                    frame.open_properties = Some(hit.id);
+                    // A pin's note is written where it opens; the rest open their properties.
+                    let in_place = frame.drawings.iter().any(|drawing| {
+                        drawing.id() == hit.id
+                            && drawing.edits_text_in_place()
+                            && drawing
+                                .tool()
+                                .is_some_and(|tool| tool.caps().has(Caps::COLLAPSIBLE))
+                    });
+                    if !(in_place && self.begin_text_edit(hit.id, frame, proj)) {
+                        frame.open_properties = Some(hit.id);
+                    }
                 }
             }
             tool => {
@@ -977,6 +1013,44 @@ impl DrawingLayer {
                     _ => self.gesture = Some(Gesture::Draft(draft)),
                 }
             }
+        }
+    }
+
+    /// A click on a pin opens its note, or shuts it when it is open; a click anywhere else shuts
+    /// every note, except on the open note itself.
+    fn toggle_notes(
+        &mut self,
+        hit: Option<Hit>,
+        point: Pos2,
+        frame: &DrawingFrame,
+        proj: &Projection,
+    ) {
+        let pin = hit.and_then(|hit| {
+            frame
+                .drawings
+                .iter()
+                .find(|drawing| drawing.id() == hit.id)
+                .filter(|drawing| {
+                    drawing
+                        .tool()
+                        .is_some_and(|tool| tool.caps().has(Caps::COLLAPSIBLE))
+                })
+        });
+        let Some(pin) = pin else {
+            self.open_notes.clear();
+            return;
+        };
+        let id = pin.id();
+        let was_open = self.open_notes.contains(&id);
+        let on_note = was_open
+            && self
+                .screen(pin, proj)
+                .and_then(|screen| screen.popup.as_ref().map(|popup| popup.rect))
+                .is_some_and(|rect| rect.contains(point));
+        self.open_notes.clear();
+        if was_open == on_note {
+            // Opened, or the note itself was clicked and stays as it is.
+            self.open_notes.insert(id);
         }
     }
 
@@ -1080,6 +1154,7 @@ impl DrawingLayer {
             None => self.hover.map(|hit| match hit.part {
                 Part::Body => CursorIcon::Move,
                 Part::Anchor(_) => CursorIcon::Grab,
+                Part::Width => CursorIcon::ResizeHorizontal,
                 Part::Box(handle) => match handle {
                     BoxHandle::TopLeft | BoxHandle::BottomRight => CursorIcon::ResizeNwSe,
                     BoxHandle::TopRight | BoxHandle::BottomLeft => CursorIcon::ResizeNeSw,
@@ -1306,6 +1381,7 @@ impl DrawingLayer {
                         halo: emphasized && !draft,
                         selected: with_handles,
                         text,
+                        open: !draft && self.open_notes.contains(&drawing.id()),
                     },
                 );
                 if !draft {

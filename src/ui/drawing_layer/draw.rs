@@ -31,6 +31,8 @@ pub(super) struct Emphasis {
     pub selected: bool,
     /// What the drawing's text place shows.
     pub text: TextMode,
+    /// The drawing's note is open (a pin's).
+    pub open: bool,
 }
 
 /// What a drawing's text place shows this frame.
@@ -124,7 +126,20 @@ impl TextBox {
 /// Space (px) between text and the line or edge it sits against.
 const TEXT_GAP: f32 = 4.0;
 /// Space (px) kept between text and the end of the line it sits on.
-const TEXT_PAD: f32 = 5.0;
+pub(super) const TEXT_PAD: f32 = 5.0;
+
+/// Paints `galley` with the top-left corner of its text at `at`, whatever its alignment: egui
+/// anchors a galley at its alignment point (the middle of a centred one), so the position it is
+/// painted at is moved back by where its rectangle starts.
+fn paint_galley_at(
+    painter: &Painter,
+    at: Pos2,
+    galley: std::sync::Arc<egui::Galley>,
+    color: Color32,
+) {
+    let origin = at - galley.rect.min.to_vec2();
+    painter.galley(origin, galley, color);
+}
 
 /// Paints `galley` centred on `center` and turned by `angle` (radians, clockwise), pixel-snapped
 /// at the pivot so a level label stays as sharp as any other text.
@@ -182,7 +197,7 @@ fn draw_text(
                 VerticalAlign::Bottom => rect.bottom() - TEXT_PAD - size.y,
             };
             let at = Pos2::new(x, y);
-            painter.galley(at, galley, color);
+            paint_galley_at(painter, at, galley, color);
             Some(TextBox {
                 center: at + size / 2.0,
                 size,
@@ -198,7 +213,7 @@ fn draw_text(
                 point.y + 6.0
             };
             let at = Pos2::new(point.x - size.x / 2.0, y);
-            painter.galley(at, galley, color);
+            paint_galley_at(painter, at, galley, color);
             Some(TextBox {
                 center: at + size / 2.0,
                 size,
@@ -432,6 +447,23 @@ pub(super) fn paint(
     if let Some(mesh) = &screen.fill_mesh {
         painter.add(Shape::mesh(mesh.clone()));
     }
+    if emphasis.open
+        && let Some(popup) = &screen.popup
+    {
+        if let Some(mesh) = &screen.popup_mesh {
+            painter.add(Shape::mesh(mesh.clone()));
+        }
+        let border = &style.border;
+        if border.enabled {
+            stroke_path(
+                painter,
+                &popup.outline,
+                true,
+                Stroke::new(border.width, series_render::color(border.color)),
+                border.dash,
+            );
+        }
+    }
     for frame in &screen.frames {
         let border = &style.border;
         if border.enabled {
@@ -514,6 +546,9 @@ pub(super) fn paint(
     if let Some(dot) = screen.middle_dot {
         painter.circle_filled(dot, (width + 2.0).max(3.0), color);
     }
+    for (center, radius) in &screen.studs {
+        painter.circle_filled(*center, *radius, Color32::WHITE);
+    }
 
     if emphasis.selected {
         for guide in &screen.guides {
@@ -566,7 +601,12 @@ pub(super) fn paint(
     if style.hide_text && emphasis.text != TextMode::Invite {
         return None;
     }
+    // A note that opens from a marker has nothing to show while it is shut.
+    if screen.popup.is_some() && !emphasis.open {
+        return None;
+    }
     let place = screen.text?;
+    let words = shown_text(screen, drawing);
     match emphasis.text {
         TextMode::Editing => None,
         // The same place and look as the text will have, faint, so the click lands on it: the
@@ -585,10 +625,19 @@ pub(super) fn paint(
         _ => draw_text(
             painter,
             place,
-            drawing.text(),
+            &words,
             &style.text,
             style.middle_line.enabled,
         ),
+    }
+}
+
+/// The text a drawing shows: what its tool writes (a price) and then its own text.
+fn shown_text(screen: &Screen, drawing: &Drawing) -> String {
+    match (&screen.heading, drawing.text().trim().is_empty()) {
+        (Some(heading), true) => heading.clone(),
+        (Some(heading), false) => format!("{heading}\n{}", drawing.text()),
+        (None, _) => drawing.text().to_owned(),
     }
 }
 

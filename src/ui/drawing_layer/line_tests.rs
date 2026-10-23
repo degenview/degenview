@@ -132,7 +132,7 @@ fn an_extended_line_far_from_its_anchors_is_still_found_and_a_missing_one_is_not
     let [from, to] = only_line(&screen);
     assert!(PLOT.expand(0.01).contains(from) && PLOT.expand(0.01).contains(to));
     // Hit-testing follows the visible line, not the far-off anchors.
-    assert!(screen.hits_body(from.lerp(to, 0.5), 6.0, false));
+    assert!(screen.hits_body(from.lerp(to, 0.5), 6.0, false, false));
     // A line that passes beside the plot is not drawn at all.
     let beside = built(Tool::ExtendedLine, &[at(-40, 80.0), at(-40, 120.0)]);
     assert!(beside.lines.is_empty());
@@ -190,9 +190,9 @@ fn a_crossline_is_two_lines_through_one_handle() {
     assert!(near(screen.handles[0].pos, pos2(250.0, 200.0)));
     assert_eq!(screen.tags.len(), 2);
     // Both arms can be picked.
-    assert!(screen.hits_body(pos2(700.0, 200.0), 6.0, false));
-    assert!(screen.hits_body(pos2(250.0, 30.0), 6.0, false));
-    assert!(!screen.hits_body(pos2(700.0, 120.0), 6.0, false));
+    assert!(screen.hits_body(pos2(700.0, 200.0), 6.0, false, false));
+    assert!(screen.hits_body(pos2(250.0, 30.0), 6.0, false, false));
+    assert!(!screen.hits_body(pos2(700.0, 120.0), 6.0, false, false));
 }
 
 #[test]

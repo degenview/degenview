@@ -9,7 +9,7 @@ use super::drawing_style::{
     ArrowStats, DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, TextOrientation,
     VerticalAlign,
 };
-use super::drawings::MAX_TEXT_CHARS;
+use super::drawings::{LONG_TEXT_CHARS, MAX_TEXT_CHARS};
 use serde::{Deserialize, Serialize};
 
 /// A drawing tool armed on the tool strip. `Cursor` is the crosshair (default).
@@ -52,6 +52,11 @@ pub enum Tool {
     SchiffPitchfork,
     ModifiedSchiffPitchfork,
     InsidePitchfork,
+    Text,
+    Comment,
+    PriceLabel,
+    FlagMark,
+    Pin,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -69,6 +74,8 @@ pub enum ToolGroup {
     TrendLines,
     Channels,
     Pitchforks,
+    /// Text on the chart: notes, labels, markers.
+    TextNotes,
 }
 
 impl ToolGroup {
@@ -76,6 +83,8 @@ impl ToolGroup {
     pub const MENU: [Self; 3] = [Self::Brushes, Self::Arrows, Self::Shapes];
     /// The groups listed in the Lines tile's menu, in order.
     pub const LINE_MENU: [Self; 3] = [Self::TrendLines, Self::Channels, Self::Pitchforks];
+    /// The groups listed in the text and notes tile's menu, in order.
+    pub const NOTE_MENU: [Self; 1] = [Self::TextNotes];
 
     pub const fn title(self) -> &'static str {
         match self {
@@ -87,6 +96,7 @@ impl ToolGroup {
             Self::Shapes => "Shapes",
             Self::Channels => "Channels",
             Self::Pitchforks => "Pitchforks",
+            Self::TextNotes => "Text and notes",
         }
     }
 }
@@ -135,10 +145,13 @@ impl Caps {
     /// dialog alone.
     pub const INLINE_TEXT: Self = Self(1 << 15);
     /// A text box: its background, border and wrapping.
-    #[allow(dead_code)]
     pub const BOX: Self = Self(1 << 16);
     /// Nothing without its text: placing it opens the editor, and it is added once it has some.
     pub const TEXT_FIRST: Self = Self(1 << 17);
+    /// The tool writes its text itself (a price): the dialog offers the font, not the content.
+    pub const AUTO_TEXT: Self = Self(1 << 18);
+    /// A note that is shown only once its marker is clicked (a pin's).
+    pub const COLLAPSIBLE: Self = Self(1 << 19);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -227,7 +240,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 33] = [
+    pub const GROUPED: [Self; 38] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -245,6 +258,11 @@ impl Tool {
         Self::SchiffPitchfork,
         Self::ModifiedSchiffPitchfork,
         Self::InsidePitchfork,
+        Self::Text,
+        Self::Pin,
+        Self::Comment,
+        Self::PriceLabel,
+        Self::FlagMark,
         Self::Brush,
         Self::Highlighter,
         Self::ArrowMarker,
@@ -266,7 +284,8 @@ impl Tool {
     pub const fn spec(self) -> ToolSpec {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
-            Arrows, Brushes, Channels, Lines, Measure, Pitchforks, Pointer, Shapes, TrendLines,
+            Arrows, Brushes, Channels, Lines, Measure, Pitchforks, Pointer, Shapes, TextNotes,
+            TrendLines,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
         // What every two-point line offers: text along it, ends, statistics and price tags.
@@ -292,6 +311,11 @@ impl Tool {
             .with(Caps::FILL)
             .with(Caps::EXTEND)
             .with(Caps::LEVELS);
+        // A box of text on the chart: typed in place, with a background and a border.
+        let note = Caps::BOX
+            .with(Caps::FILL)
+            .with(Caps::TEXT)
+            .with(Caps::INLINE_TEXT);
         match self {
             Self::Cursor => spec("Crosshair", Pointer, Single, Caps::NONE),
             Self::TrendLine => spec("Trend line", TrendLines, Points(2), line),
@@ -360,6 +384,21 @@ impl Tool {
                 spec("Modified Schiff pitchfork", Pitchforks, Points(3), fork)
             }
             Self::InsidePitchfork => spec("Inside pitchfork", Pitchforks, Points(3), fork),
+            Self::Text => spec("Text", TextNotes, Single, note.with(Caps::TEXT_FIRST)),
+            Self::Comment => spec("Comment", TextNotes, Single, note.with(Caps::TEXT_FIRST)),
+            Self::PriceLabel => spec(
+                "Price label",
+                TextNotes,
+                Single,
+                Caps::BOX.with(Caps::FILL).with(Caps::AUTO_TEXT),
+            ),
+            Self::FlagMark => spec("Flag mark", TextNotes, Single, Caps::COLOR),
+            Self::Pin => spec(
+                "Pin",
+                TextNotes,
+                Single,
+                note.with(Caps::COLOR).with(Caps::COLLAPSIBLE),
+            ),
             Self::Fib => spec("Fib Retracement", Lines, Points(2), Caps::NONE),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
@@ -439,7 +478,10 @@ impl Tool {
 
     /// The most characters of text a drawing by this tool may carry.
     pub const fn max_text(self) -> usize {
-        MAX_TEXT_CHARS
+        match self {
+            Self::Pin => LONG_TEXT_CHARS,
+            _ => MAX_TEXT_CHARS,
+        }
     }
 
     /// The tools of one menu group, in menu order.
@@ -453,6 +495,14 @@ impl Tool {
     /// Brush, which keeps the orange it has always had).
     pub fn default_style(self) -> DrawingStyle {
         let tinted = |color: Rgba, fill: bool| DrawingStyle::colored(color, FILL_ALPHA, fill);
+        // A filled box with white text and a border, as the Charting Library's bubbles.
+        let text_box = |fill: Rgba, border: Rgba, bordered: bool| {
+            let mut style = DrawingStyle::colored(fill, fill[3], true);
+            style.text.color = [255, 255, 255, 255];
+            style.border.color = border;
+            style.border.enabled = bordered;
+            style
+        };
         // The Charting Library's line: its blue, 2 px, nothing extended, no tags.
         let line_style = |change: fn(&mut DrawingStyle)| {
             let mut style = tinted([41, 98, 255, 255], false);
@@ -571,6 +621,35 @@ impl Tool {
                 style.fill.color = [242, 54, 69, FILL_ALPHA];
                 style
             }
+            Self::Text => {
+                // The Charting Library's: blue text, nothing behind it, no border.
+                let mut style = tinted([41, 98, 255, 255], false);
+                style.fill.color = [41, 98, 255, 64];
+                style.border.color = [112, 112, 112, 255];
+                style.box_width = 200.0;
+                style.text.align = HorizontalAlign::Left;
+                style
+            }
+            Self::Comment => {
+                let mut style = text_box([41, 98, 255, 255], [41, 98, 255, 255], true);
+                style.text.size = 16.0;
+                style
+            }
+            Self::PriceLabel => {
+                let mut style = text_box([41, 98, 255, 255], [41, 98, 255, 255], true);
+                style.text.bold = true;
+                style
+            }
+            Self::FlagMark => tinted([41, 98, 255, 255], false),
+            Self::Pin => {
+                // Not in the Charting Library: the note's look is a blue card like its Note.
+                let mut style = text_box([41, 98, 255, 179], [41, 98, 255, 255], false);
+                style.stroke.color = [41, 98, 255, 255];
+                style.wrap = true;
+                style.box_width = 220.0;
+                style.text.align = HorizontalAlign::Left;
+                style
+            }
             Self::Cursor | Self::Fib | Self::Ruler => DrawingStyle::default(),
         };
         if matches!(self, Self::Rectangle) {
@@ -606,12 +685,18 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 33);
+        assert_eq!(Tool::GROUPED.len(), 38);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
-            assert!(
-                ToolGroup::MENU.contains(&group) != ToolGroup::LINE_MENU.contains(&group),
+            let menus = [
+                ToolGroup::MENU.as_slice(),
+                &ToolGroup::LINE_MENU,
+                &ToolGroup::NOTE_MENU,
+            ];
+            assert_eq!(
+                menus.iter().filter(|menu| menu.contains(&group)).count(),
+                1,
                 "{tool:?} is in exactly one menu"
             );
         }
@@ -623,6 +708,7 @@ mod tests {
         };
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
+        assert_eq!(counts(&ToolGroup::NOTE_MENU), [5]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

@@ -37,8 +37,10 @@ pub struct DrawingPrefs {
     pub keep_drawing: bool,
     /// The tool the grouped brushes, arrows and shapes tile shows.
     pub group_tool: Tool,
-    /// The tool the Lines tile shows. A row saved before the tile existed has none.
+    /// The tool the Lines tile shows.
     pub line_tool: Tool,
+    /// The tool the text and notes tile shows.
+    pub note_tool: Tool,
 }
 
 impl Default for DrawingPrefs {
@@ -48,6 +50,7 @@ impl Default for DrawingPrefs {
             keep_drawing: true,
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
+            note_tool: Tool::Text,
         }
     }
 }
@@ -63,6 +66,9 @@ impl DrawingPrefs {
         }
         if !ToolGroup::LINE_MENU.contains(&self.line_tool.spec().group) {
             self.line_tool = defaults.line_tool;
+        }
+        if !ToolGroup::NOTE_MENU.contains(&self.note_tool.spec().group) {
+            self.note_tool = defaults.note_tool;
         }
         self
     }
@@ -423,13 +429,14 @@ mod tests {
             keep_drawing: false,
             group_tool: Tool::Curve,
             line_tool: Tool::SchiffPitchfork,
+            note_tool: Tool::Pin,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
     }
 
     #[test]
-    fn prefs_saved_before_the_lines_tile_open_on_the_trend_line_and_odd_tools_are_replaced() {
+    fn prefs_saved_before_a_tile_open_on_its_first_tool_and_odd_tools_are_replaced() {
         let store = shared();
         store
             .lock()
@@ -448,11 +455,12 @@ mod tests {
             .unwrap()
             .set_setting(
                 PREFS_KEY,
-                &serde_json::json!({"group_tool": "Ray", "line_tool": "Brush"}),
+                &serde_json::json!({"group_tool": "Ray", "line_tool": "Brush", "note_tool": "Arc"}),
             )
             .unwrap();
         let prefs = DrawingTemplateStore::new(store).prefs();
         assert_eq!(prefs.group_tool, Tool::Brush);
         assert_eq!(prefs.line_tool, Tool::TrendLine);
+        assert_eq!(prefs.note_tool, Tool::Text);
     }
 }

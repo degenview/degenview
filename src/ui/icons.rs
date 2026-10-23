@@ -162,6 +162,17 @@ pub enum Icon {
     LockOpen,
     BringForward,
     SendBackward,
+    TextTool,
+    NoteTool,
+    PriceNoteTool,
+    PinTool,
+    TableTool,
+    CalloutTool,
+    CommentTool,
+    PriceLabelTool,
+    SignpostTool,
+    FlagTool,
+    ImageTool,
 }
 
 /// Stroke width on the 16 grid.
@@ -1183,6 +1194,120 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(2.0, 8.0), p(12.0, 8.0)]);
             circle(p(12.0, 8.0), 1.6, true);
         }
+        Icon::TextTool => {
+            // A capital T.
+            line(&[p(2.8, 3.0), p(13.2, 3.0)]);
+            line(&[p(8.0, 3.0), p(8.0, 13.4)]);
+            line(&[p(5.8, 13.4), p(10.2, 13.4)]);
+        }
+        Icon::NoteTool => {
+            // A text box with a thin leader down to its dot.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.2), p(14.2, 9.2)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.4, 4.9), p(11.6, 4.9)]);
+            line(&[p(4.4, 6.9), p(9.0, 6.9)]);
+            line(&[p(8.0, 9.2), p(8.0, 12.6)]);
+            circle(p(8.0, 13.3), 1.3, true);
+        }
+        Icon::PriceNoteTool => {
+            // A note over a price level, its leader meeting the level at a dot.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.0), p(14.2, 7.6)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.4, 4.8), p(8.6, 4.8)]);
+            line(&[p(5.5, 7.6), p(5.5, 11.8)]);
+            line(&[p(1.8, 12.2), p(14.2, 12.2)]);
+            circle(p(5.5, 12.2), 1.3, true);
+        }
+        Icon::PinTool => {
+            // A map pin: the head is a circle, the point is where it is pinned.
+            let mut pin = arc(8.0, 6.2, 4.4, 140.0, 400.0);
+            pin.push(p(8.0, 14.6));
+            closed(&pin);
+            circle(p(8.0, 6.2), 1.5, false);
+        }
+        Icon::TableTool => {
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.6), p(14.2, 13.4)),
+                round(1.6),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(1.8, 6.2), p(14.2, 6.2)]);
+            line(&[p(1.8, 9.8), p(14.2, 9.8)]);
+            line(&[p(6.0, 2.6), p(6.0, 13.4)]);
+            line(&[p(10.0, 2.6), p(10.0, 13.4)]);
+        }
+        Icon::CalloutTool => {
+            // A speech box whose tail points at the thing it is about.
+            closed(&[
+                p(1.8, 2.4),
+                p(14.2, 2.4),
+                p(14.2, 9.6),
+                p(7.6, 9.6),
+                p(4.0, 13.6),
+                p(4.4, 9.6),
+                p(1.8, 9.6),
+            ]);
+            line(&[p(4.4, 5.0), p(11.6, 5.0)]);
+            line(&[p(4.4, 7.0), p(8.8, 7.0)]);
+        }
+        Icon::CommentTool => {
+            // A small round bubble with three dots.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.4), p(14.2, 10.6)),
+                round(4.0),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.6, 10.6), p(3.6, 13.6), p(7.8, 10.6)]);
+            for x in [5.0, 8.0, 11.0] {
+                circle(p(x, 6.5), 0.8, true);
+            }
+        }
+        Icon::PriceLabelTool => {
+            // A tag pointing left at the price it names.
+            closed(&[
+                p(1.6, 8.0),
+                p(4.8, 4.0),
+                p(14.4, 4.0),
+                p(14.4, 12.0),
+                p(4.8, 12.0),
+            ]);
+            line(&[p(7.2, 8.0), p(12.0, 8.0)]);
+        }
+        Icon::SignpostTool => {
+            // A star in a circle: the marker on the pole.
+            circle(p(8.0, 8.0), 6.3, false);
+            fill_poly(star_points(3.7, 1.6));
+        }
+        Icon::FlagTool => {
+            line(&[p(4.0, 1.8), p(4.0, 14.6)]);
+            fill_poly(vec![p(4.0, 2.2), p(13.6, 5.0), p(4.0, 8.2)]);
+        }
+        Icon::ImageTool => {
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.8), p(14.2, 13.2)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            circle(p(5.4, 6.4), 1.3, true);
+            line(&[
+                p(2.4, 12.2),
+                p(6.2, 8.6),
+                p(8.8, 11.0),
+                p(10.8, 9.0),
+                p(13.6, 12.2),
+            ]);
+        }
         Icon::Magnet => {
             line(&arc(8.0, 7.2, 5.4, 180.0, 360.0));
             line(&[p(2.6, 7.2), p(2.6, 13.6)]);
@@ -1584,6 +1709,17 @@ mod tests {
             LockOpen,
             BringForward,
             SendBackward,
+            TextTool,
+            NoteTool,
+            PriceNoteTool,
+            PinTool,
+            TableTool,
+            CalloutTool,
+            CommentTool,
+            PriceLabelTool,
+            SignpostTool,
+            FlagTool,
+            ImageTool,
         ];
         for icon in all {
             let ctx = egui::Context::default();

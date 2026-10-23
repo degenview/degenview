@@ -4,6 +4,7 @@ pub mod alert_banner;
 pub mod alert_center;
 pub mod alert_editor;
 mod alert_lines;
+mod annotation_geometry;
 pub mod canvas_render;
 mod chart_buttons;
 mod chart_canvas_settings;

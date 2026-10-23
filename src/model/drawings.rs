@@ -16,6 +16,9 @@ use serde::{Deserialize, Serialize};
 pub const MAX_POINTS: usize = 5_000;
 /// The most characters of text one drawing may carry.
 pub const MAX_TEXT_CHARS: usize = 500;
+/// The most a note that is meant to hold a paragraph may carry. Far below what a synced
+/// drawing may hold in one string.
+pub const LONG_TEXT_CHARS: usize = 2_000;
 
 /// One end of a hand-drawn line, pinned to data rather than pixels: continuous
 /// time plus price, so a drawing survives zoom, scroll, and timeframe switches.
@@ -36,6 +39,45 @@ impl Anchor {
 pub enum ArrowDirection {
     Up,
     Down,
+}
+
+/// The text and note tools that sit on one anchor.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnnotationKind {
+    /// A box of text with its top-left corner on the anchor.
+    Text,
+    /// A speech bubble whose tail points at the anchor.
+    Comment,
+    /// The price at the anchor, in a tag that points at it.
+    PriceLabel,
+    /// A small flag on a pole planted at the anchor.
+    FlagMark,
+    /// A pin planted at the anchor; its note opens when the pin is clicked.
+    Pin,
+}
+
+impl AnnotationKind {
+    pub const fn tool(self) -> Tool {
+        match self {
+            Self::Text => Tool::Text,
+            Self::Comment => Tool::Comment,
+            Self::PriceLabel => Tool::PriceLabel,
+            Self::FlagMark => Tool::FlagMark,
+            Self::Pin => Tool::Pin,
+        }
+    }
+
+    pub const fn of_tool(tool: Tool) -> Option<Self> {
+        match tool {
+            Tool::Text => Some(Self::Text),
+            Tool::Comment => Some(Self::Comment),
+            Tool::PriceLabel => Some(Self::PriceLabel),
+            Tool::FlagMark => Some(Self::FlagMark),
+            Tool::Pin => Some(Self::Pin),
+            _ => None,
+        }
+    }
 }
 
 /// The shape of a drawing: only the anchors that define it, never derived corners, so a shape
@@ -189,6 +231,11 @@ pub enum Geometry {
         p2: Anchor,
         p3: Anchor,
     },
+    /// A text or note tool on one anchor.
+    Annotation {
+        kind: AnnotationKind,
+        at: Anchor,
+    },
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -273,6 +320,7 @@ impl Geometry {
             Self::FlatChannel { .. } => Tool::FlatChannel,
             Self::DisjointChannel { .. } => Tool::DisjointChannel,
             Self::Pitchfork { variant, .. } => variant.tool(),
+            Self::Annotation { kind, .. } => kind.tool(),
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -307,7 +355,7 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Ellipse { a, b } => vec![*a, *b],
-            Self::ArrowMark { at, .. } => vec![*at],
+            Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![*at],
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
             Self::Triangle { points } => points.to_vec(),
@@ -346,7 +394,7 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Ellipse { a, b } => vec![a, b],
-            Self::ArrowMark { at, .. } => vec![at],
+            Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![at],
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
             Self::Triangle { points } => points.iter_mut().collect(),
@@ -559,6 +607,12 @@ impl Geometry {
                 p2: at(1),
                 p3: last,
             },
+            Tool::Text | Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => {
+                Self::Annotation {
+                    kind: AnnotationKind::of_tool(tool)?,
+                    at: last,
+                }
+            }
             Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler => return None,
         })
     }
@@ -629,6 +683,10 @@ impl Geometry {
             (Tool::HorizontalRay, [at]) => Self::HorizontalRay { at: *at },
             (Tool::VerticalLine, [at]) => Self::VerticalLine { at: *at },
             (Tool::Crossline, [at]) => Self::Crossline { at: *at },
+            (tool, [at]) if AnnotationKind::of_tool(tool).is_some() => Self::Annotation {
+                kind: AnnotationKind::of_tool(tool)?,
+                at: *at,
+            },
             (Tool::ParallelChannel, [a, b, c]) if a != b => Self::ParallelChannel {
                 a: *a,
                 b: *b,

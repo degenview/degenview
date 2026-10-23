@@ -799,6 +799,7 @@ pub struct ChartWorkspace {
     /// The tool the strip's grouped brushes, arrows and shapes tile shows: the last one used.
     group_tool: Tool,
     line_tool: Tool,
+    note_tool: Tool,
     /// How drawings snap to the bars' prices (the strip's magnet).
     magnet: MagnetMode,
     /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
@@ -1022,6 +1023,7 @@ impl ChartWorkspace {
             selected_drawing: None,
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
+            note_tool: Tool::Text,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all_drawings: false,
@@ -2180,6 +2182,7 @@ impl ChartWorkspace {
             self.keep_drawing = prefs.keep_drawing;
             self.group_tool = prefs.group_tool;
             self.line_tool = prefs.line_tool;
+            self.note_tool = prefs.note_tool;
             self.saved_prefs = prefs;
             self.drawing_templates = Some(templates);
         }
@@ -2195,6 +2198,7 @@ impl ChartWorkspace {
             keep_drawing: self.keep_drawing,
             group_tool: self.group_tool,
             line_tool: self.line_tool,
+            note_tool: self.note_tool,
         };
         if prefs != self.saved_prefs {
             self.saved_prefs = prefs;
@@ -2986,6 +2990,7 @@ impl ChartWorkspace {
             active_tool: self.active_tool,
             group_tool: self.group_tool,
             line_tool: self.line_tool,
+            note_tool: self.note_tool,
             magnet: self.magnet,
             keep_drawing: self.keep_drawing,
             hide_all: self.hide_all_drawings,
@@ -3047,6 +3052,8 @@ impl ChartWorkspace {
             self.group_tool = tool;
         } else if ToolGroup::LINE_MENU.contains(&group) {
             self.line_tool = tool;
+        } else if ToolGroup::NOTE_MENU.contains(&group) {
+            self.note_tool = tool;
         }
     }
 

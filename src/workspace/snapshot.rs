@@ -148,6 +148,7 @@ impl ChartWorkspace {
             self.say("There is no chart to take a picture of yet.", true);
             return;
         };
+        let open_notes = chart.chart.open_notes();
         let input = SnapshotInput {
             symbol: &chart.symbol,
             source: chart.source,
@@ -155,6 +156,7 @@ impl ChartWorkspace {
             log_scale: chart.log_scale,
             indicators: &chart.indicators,
             drawings: &chart.drawings,
+            open_notes: &open_notes,
             hide_all_drawings: self.hide_all_drawings,
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,

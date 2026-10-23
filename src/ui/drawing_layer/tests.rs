@@ -7,6 +7,8 @@ use crate::model::{DrawingStyle, Kline, Visibility};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
+mod note_tests;
+
 const PLOT: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 400.0));
 
 fn candles() -> Vec<Kline> {
@@ -505,6 +507,7 @@ impl Rig {
 
     /// The gesture that places `tool` with `POINTS`, by clicks.
     fn place(&mut self, tool: Tool) {
+        let before = self.drawings.len();
         self.tool = tool;
         match tool.spec().placement {
             Placement::Freehand => {
@@ -523,6 +526,15 @@ impl Rig {
                 }
                 self.double_click(POINTS[3]);
             }
+        }
+        // A tool that is nothing without its text is added once its text is typed and kept.
+        if tool.caps().has(Caps::TEXT_FIRST) {
+            assert!(self.layer.is_editing_text(), "{tool:?} opens its editor");
+            assert_eq!(self.drawings.len(), before, "{tool:?} waits for its text");
+            self.settle();
+            self.frame(vec![Event::Text("a note".to_owned())]);
+            self.key(Key::Enter);
+            self.settle();
         }
     }
 }
@@ -556,7 +568,7 @@ fn body_point(screen: &Screen, avoid: Option<Rect>) -> Pos2 {
     {
         return point;
     }
-    for path in &screen.outlines {
+    for path in screen.outlines.iter().chain(&screen.frames) {
         let mut closed = path.clone();
         closed.push(path[0]);
         if let Some(point) = along(&closed) {

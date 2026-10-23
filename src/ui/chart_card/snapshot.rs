@@ -23,6 +23,8 @@ pub struct SnapshotInput<'a> {
     pub log_scale: bool,
     pub indicators: &'a IndicatorConfig,
     pub drawings: &'a [Drawing],
+    /// The drawings whose note is open on the chart (a pin's).
+    pub open_notes: &'a [u64],
     pub hide_all_drawings: bool,
     pub replay_active: bool,
     /// Draw the paper-trading orders and positions, if the chart shows them.
@@ -176,6 +178,7 @@ impl ChartCard {
             return Err(SnapshotError::Empty);
         };
         let mut layer = DrawingLayer::default();
+        layer.set_open_notes(input.open_notes);
         let mut drawing = DrawingFrame::new(input.drawings, Tool::Cursor, None, 1).with_view(
             self.timeframe.unwrap_or(Timeframe::Day),
             input.hide_all_drawings,

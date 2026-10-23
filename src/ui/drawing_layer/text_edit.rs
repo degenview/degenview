@@ -15,7 +15,7 @@
 use super::shape::TextPlace;
 use super::{DrawingFrame, DrawingLayer, Projection, text};
 use crate::model::drawing_style::{HorizontalAlign, TextStyle};
-use crate::model::{Drawing, DrawingCommand};
+use crate::model::{Caps, Drawing, DrawingCommand};
 use crate::ui::{kit, series_render, theme};
 use eframe::egui::{
     self, Align, Align2, Event, FontId, Id, Key, Margin, Order, Pos2, Stroke, TextEdit, Ui,
@@ -95,6 +95,13 @@ impl DrawingLayer {
             return false;
         };
         let (anchor, width) = self.edit_place(drawing, proj);
+        // A pin's note is edited where it opens, so it opens.
+        if drawing
+            .tool()
+            .is_some_and(|tool| tool.caps().has(Caps::COLLAPSIBLE))
+        {
+            self.open_notes.insert(id);
+        }
         self.text_edit = Some(TextEditing {
             id,
             draft: None,

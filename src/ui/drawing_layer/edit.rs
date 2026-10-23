@@ -79,6 +79,8 @@ pub(super) enum Part {
     /// The anchor at this index of `Drawing::anchors`.
     Anchor(usize),
     Box(BoxHandle),
+    /// The right edge of a text box: dragging it sets the width the text wraps at.
+    Width,
     /// A ruler's corner.
     Corner(RulerCorner),
 }
@@ -138,6 +140,14 @@ pub(super) fn edited(
                 (*a, *b) = resize_box(*a, *b, handle, target);
             }
         }
+        Part::Width => {
+            if let Some(width) = dragged_width(original, proj, press, now)
+                && let Drawing::Shape { style, .. } = &mut result
+            {
+                style.wrap = true;
+                style.box_width = width;
+            }
+        }
         Part::Corner(corner) => {
             if let Drawing::Ruler { a, b, .. } = &mut result {
                 (*a, *b) = drawing_render::resize_ruler(*a, *b, corner, target);
@@ -149,6 +159,19 @@ pub(super) fn edited(
         edited.constrain(before);
     }
     result
+}
+
+/// The outer width a text box has after its right edge is dragged from `press` to `now`: its
+/// width now, moved by the pointer's travel. `None` for a drawing with no text box.
+fn dragged_width(original: &Drawing, proj: &Projection, press: Pos2, now: Pos2) -> Option<f32> {
+    let screen = super::shape::build(original, proj)?;
+    let Some(super::shape::TextPlace::Inside(rect)) = screen.text else {
+        return None;
+    };
+    Some((rect.width() + (now.x - press.x)).clamp(
+        crate::model::drawing_style::MIN_BOX_WIDTH,
+        crate::model::drawing_style::MAX_BOX_WIDTH,
+    ))
 }
 
 /// A parallel channel keeps the price distance between its edges when an end of the first edge

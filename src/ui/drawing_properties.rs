@@ -132,6 +132,7 @@ fn has_style_page(caps: Caps) -> bool {
         Caps::PRICE_LABELS,
         Caps::TIME_LABEL,
         Caps::MIDDLE_POINT,
+        Caps::BOX,
     ]
     .into_iter()
     .any(|cap| caps.has(cap))
@@ -178,6 +179,8 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         Tool::Curve => &["Start", "End", "Control point"],
         Tool::DoubleCurve => &["Start", "End", "Control point 1", "Control point 2"],
         Tool::ArrowMarkUp | Tool::ArrowMarkDown => &["Anchor"],
+        Tool::Text => &["Top-left corner"],
+        Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &["Anchor"],
         _ => &[],
     };
     named
@@ -230,7 +233,7 @@ impl DrawingProperties {
         if caps.has(Caps::LEVELS) {
             tabs.push(Tab::Levels);
         }
-        if caps.has(Caps::TEXT) {
+        if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
             tabs.push(Tab::Text);
         }
         if !matches!(self.tool, Tool::Brush | Tool::Highlighter) {
@@ -621,6 +624,7 @@ impl DrawingProperties {
         let mut style = self.style();
         let before = style;
         let line = caps.has(Caps::COLOR) || caps.has(Caps::WIDTH) || caps.has(Caps::DASH);
+        let boxed = caps.has(Caps::BOX);
         let shape = caps.has(Caps::FILL) || caps.has(Caps::MIDDLE_LINE);
         let details = caps.has(Caps::MIDDLE_POINT)
             || caps.has(Caps::PRICE_LABELS)
@@ -663,7 +667,14 @@ impl DrawingProperties {
             }
         }
         if line {
-            page.section(ui, if variant.is_some() { "Median" } else { "Line" }, None);
+            let title = if variant.is_some() {
+                "Median"
+            } else if caps.has(Caps::WIDTH) || caps.has(Caps::DASH) {
+                "Line"
+            } else {
+                "Marker"
+            };
+            page.section(ui, title, None);
         }
         if caps.has(Caps::COLOR) {
             let title = if variant.is_some() {
@@ -674,8 +685,8 @@ impl DrawingProperties {
                 "Color"
             };
             color_card(ui, Icon::Palette, title, None, &mut style.stroke.color);
-            // The marks and the marker carry their text in the same colour.
-            if !caps.has(Caps::WIDTH) {
+            // The marks and the marker carry their text in the same colour; a box has its own.
+            if !caps.has(Caps::WIDTH) && !boxed {
                 style.text.color = style.stroke.color;
             }
         }
@@ -719,7 +730,7 @@ impl DrawingProperties {
             );
         }
         if shape {
-            page.section(ui, "Shape", None);
+            page.section(ui, if boxed { "Box" } else { "Shape" }, None);
         }
         if caps.has(Caps::FILL) {
             // A channel or a fork fills the space between its lines: a background.
@@ -732,6 +743,30 @@ impl DrawingProperties {
                 color_well(ui, "Fill color", &mut style.fill.color);
                 settings_card::switch(ui, &mut style.fill.enabled);
             });
+        }
+        if boxed {
+            settings_card::card(ui, Icon::RectDashed, "Border", None, |ui| {
+                color_well(ui, "Border color", &mut style.border.color);
+                settings_card::switch(ui, &mut style.border.enabled);
+            });
+            if style.border.enabled {
+                let max = crate::model::drawing_style::MAX_STROKE_WIDTH as f64;
+                if let Some(width) =
+                    settings_card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-border-width"),
+                            f64::from(style.border.width),
+                            1.0,
+                            1.0..=max,
+                            0,
+                        )
+                    })
+                {
+                    style.border.width = width as f32;
+                }
+                dash_card(ui, "Border style", &mut style.border.dash);
+            }
         }
         if caps.has(Caps::MIDDLE_LINE) {
             settings_card::card(ui, Icon::Minus, "Middle line", None, |ui| {
@@ -994,23 +1029,26 @@ impl DrawingProperties {
 
     fn text_page(&mut self, ui: &mut Ui) {
         let mut page = Page::new(true);
-        page.section(ui, "Text", None);
-        let mut text = self.draft.text().to_owned();
-        let focused_id = Id::new("drawing-text");
-        let focused = ui.memory(|memory| memory.has_focus(focused_id));
-        kit::field_frame(focused).show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut text)
-                    .id(focused_id)
-                    .frame(egui::Frame::NONE)
-                    .hint_text("Add text to this drawing")
-                    .char_limit(self.draft.max_text())
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
-        });
-        if text != self.draft.text() {
-            self.draft.set_text(&text);
+        // A price label's text is its price: there is nothing to type.
+        if self.tool.caps().has(Caps::TEXT) {
+            page.section(ui, "Text", None);
+            let mut text = self.draft.text().to_owned();
+            let focused_id = Id::new("drawing-text");
+            let focused = ui.memory(|memory| memory.has_focus(focused_id));
+            kit::field_frame(focused).show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut text)
+                        .id(focused_id)
+                        .frame(egui::Frame::NONE)
+                        .hint_text("Add text to this drawing")
+                        .char_limit(self.draft.max_text())
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY),
+                );
+            });
+            if text != self.draft.text() {
+                self.draft.set_text(&text);
+            }
         }
 
         let mut style = self.style();
@@ -1079,6 +1117,33 @@ impl DrawingProperties {
                 &mut shown,
             );
             style.text.orientation = shown;
+        }
+        if self.tool.caps().has(Caps::BOX) && !self.tool.caps().has(Caps::AUTO_TEXT) {
+            page.section(ui, "Box", None);
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Wrap text",
+                "Break long lines to fit a box of the width below.",
+                &mut style.wrap,
+            );
+            if style.wrap {
+                use crate::model::drawing_style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
+                if let Some(width) =
+                    settings_card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-box-width"),
+                            f64::from(style.wrapped_width()),
+                            10.0,
+                            f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
+                            0,
+                        )
+                    })
+                {
+                    style.box_width = width as f32;
+                }
+            }
         }
         let mut visible = !style.hide_text;
         toggle_row(
@@ -1546,7 +1611,7 @@ mod tests {
             );
             assert_eq!(
                 tabs.contains(&Tab::Text),
-                caps.has(Caps::TEXT),
+                caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT),
                 "{tool:?} text"
             );
             assert_eq!(

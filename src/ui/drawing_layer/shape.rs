@@ -5,6 +5,7 @@
 use super::Projection;
 use super::edit::{BoxHandle, Part};
 use super::line_shapes;
+use super::note_shapes;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
 use crate::model::{ArrowDirection, Drawing, Geometry};
@@ -36,6 +37,14 @@ pub(super) enum TextPlace {
     /// Beside a vertical line at `x` that runs from `top` to `bottom`: the horizontal alignment
     /// says which side of the line, the vertical alignment where along it.
     Column { x: f32, top: f32, bottom: f32 },
+}
+
+/// A note that opens from its marker (a pin's): where it sits and its outline. Its background,
+/// border and text are shown only while it is open.
+#[derive(Clone, Debug)]
+pub(super) struct Popup {
+    pub rect: Rect,
+    pub outline: Vec<Pos2>,
 }
 
 /// A line with a look of its own: a level of a channel or a pitchfork, a regression band.
@@ -119,6 +128,14 @@ pub(super) struct Screen {
     /// Regions that are on the shape for a click though nothing is painted there (the inside of
     /// a text box with no background).
     pub hit: Vec<Rect>,
+    /// Discs painted white on the shape (the hole of a pin).
+    pub studs: Vec<(Pos2, f32)>,
+    /// Text the tool writes itself (a price), shown above the drawing's own.
+    pub heading: Option<String>,
+    /// A note shown only while it is open.
+    pub popup: Option<Popup>,
+    /// The popup's background as a mesh, made when the shape is built.
+    pub popup_mesh: Option<Arc<Mesh>>,
     /// The region to fill (even-odd); empty for none.
     pub fill: Vec<Pos2>,
     /// Solid polygons painted in the stroke colour: arrowheads, the arrow marker, the marks.
@@ -158,6 +175,10 @@ impl Screen {
             outlines: Vec::new(),
             frames: Vec::new(),
             hit: Vec::new(),
+            studs: Vec::new(),
+            heading: None,
+            popup: None,
+            popup_mesh: None,
             fill: Vec::new(),
             solids: Vec::new(),
             guides: Vec::new(),
@@ -210,7 +231,15 @@ impl Screen {
 
     /// Whether `point` is on the shape's body: near a stroke, inside a solid, or inside the
     /// fill when it has one.
-    pub(super) fn hits_body(&self, point: Pos2, tolerance: f32, filled: bool) -> bool {
+    pub(super) fn hits_body(&self, point: Pos2, tolerance: f32, filled: bool, open: bool) -> bool {
+        let in_popup = open
+            && self
+                .popup
+                .as_ref()
+                .is_some_and(|popup| popup.rect.expand(tolerance).contains(point));
+        if in_popup {
+            return true;
+        }
         if !self.bounds.expand(tolerance).contains(point) {
             return false;
         }
@@ -323,8 +352,11 @@ pub(super) fn build(drawing: &Drawing, proj: &Projection) -> Option<Screen> {
             ..
         } => freehand(points, style, proj),
         Drawing::Shape {
-            geometry, style, ..
-        } => finished(shape(geometry, style, proj)?, style),
+            geometry,
+            style,
+            text,
+            ..
+        } => finished(shape(geometry, style, text, proj)?, style),
         _ => None,
     }
 }
@@ -334,6 +366,12 @@ fn finished(mut screen: Screen, style: &DrawingStyle) -> Option<Screen> {
     if style.fill.enabled && !screen.fill.is_empty() {
         let mesh = geo::fill_mesh(&screen.fill, series_render::color(style.fill.color));
         screen.fill_mesh = Some(Arc::new(mesh));
+    }
+    if style.fill.enabled
+        && let Some(popup) = &screen.popup
+    {
+        let mesh = geo::fill_mesh(&popup.outline, series_render::color(style.fill.color));
+        screen.popup_mesh = Some(Arc::new(mesh));
     }
     if style.fill.enabled {
         screen.band_meshes = screen
@@ -395,7 +433,12 @@ fn freehand(
     screen.finish(width / 2.0 + 2.0)
 }
 
-fn shape(geometry: &Geometry, style: &DrawingStyle, proj: &Projection) -> Option<Screen> {
+fn shape(
+    geometry: &Geometry,
+    style: &DrawingStyle,
+    text: &str,
+    proj: &Projection,
+) -> Option<Screen> {
     let anchors: Vec<Pos2> = geometry.anchors().iter().map(|a| proj.point(*a)).collect();
     if !geo::all_finite(&anchors) {
         return None;
@@ -614,6 +657,9 @@ fn shape(geometry: &Geometry, style: &DrawingStyle, proj: &Projection) -> Option
             curved(&mut screen, curve, style, proj, [a - c1, b - c2], [a, b]);
             screen.guides = vec![[a, c1], [b, c2]];
             screen.handles = curve_handles(&anchors);
+        }
+        Geometry::Annotation { .. } => {
+            return note_shapes::project(geometry, style, text, proj, &anchors);
         }
         _ => return line_shapes::project(geometry, style, proj, anchors),
     }

@@ -66,7 +66,8 @@ pub use chart_type::{ChartKind, ChartStyle, ChartType};
 pub use drawing_style::{DrawingStyle, Visibility};
 pub use drawing_tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
-    Anchor, ArrowDirection, Drawing, DrawingCommand, Geometry, MAX_POINTS, PitchforkVariant,
+    Anchor, AnnotationKind, ArrowDirection, Drawing, DrawingCommand, Geometry, MAX_POINTS,
+    PitchforkVariant,
 };
 pub use indicators::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, BollingerSeries, BuiltIn, EMA_DEFAULT_PERIOD,

@@ -16,6 +16,7 @@ fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
         log_scale: false,
         indicators: &harness.indicators,
         drawings: &harness.drawings,
+        open_notes: &[],
         hide_all_drawings: false,
         replay_active: harness.replay_active,
         include_trading,
@@ -613,6 +614,101 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
             let scene = harness
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// The text and note tools on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_text_and_note_tools() {
+    use crate::model::{Anchor, DrawingStyle};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let make = |tool: Tool, id: u64, anchor: Anchor, text: &str, tweak: fn(&mut DrawingStyle)| {
+        let mut style = tool.default_style();
+        tweak(&mut style);
+        let mut drawing = Drawing::build(tool, id, &[anchor], style).expect("builds");
+        drawing.set_text(text);
+        drawing
+    };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let sets: Vec<(&str, Vec<Drawing>, Vec<u64>)> = vec![
+        (
+            "notes-1",
+            vec![
+                make(Tool::Text, 1, at(222, 258.0), "Breakout above 250", plain),
+                make(Tool::Comment, 2, at(262, 244.0), "Retest", plain),
+                make(Tool::PriceLabel, 3, at(252, 206.0), "", plain),
+                make(Tool::FlagMark, 4, at(276, 236.0), "", plain),
+                make(
+                    Tool::Pin,
+                    5,
+                    at(236, 214.0),
+                    "Earnings gap: watch the close above the prior high",
+                    plain,
+                ),
+            ],
+            vec![5],
+        ),
+        (
+            "notes-2",
+            vec![
+                make(
+                    Tool::Text,
+                    1,
+                    at(224, 262.0),
+                    "A boxed note that wraps its long text inside a fixed width",
+                    |style| {
+                        style.fill.enabled = true;
+                        style.border.enabled = true;
+                        style.wrap = true;
+                        style.box_width = 150.0;
+                        style.text.bold = true;
+                    },
+                ),
+                make(Tool::Comment, 2, at(262, 244.0), "Two\nlines", plain),
+                make(Tool::Pin, 3, at(240, 218.0), "closed pin", plain),
+                make(Tool::Pin, 4, at(268, 222.0), "open pin", plain),
+            ],
+            vec![4],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings, open) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let mut snapshot = input(&harness, false);
+            snapshot.open_notes = open;
+            let scene = harness
+                .card
+                .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
                 .expect("a scene");
             let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
             let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
