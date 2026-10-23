@@ -10,6 +10,7 @@ use super::Timeframe;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
 use super::image_content::{Content, ImageData};
+use super::link_card::{LinkCard, LinkKind};
 use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
@@ -285,6 +286,12 @@ pub enum Geometry {
     Table(TableData),
     /// A stored picture between two corners.
     Image(ImageData),
+    /// A link to an X post or a TradingView idea, drawn as a card whose top-left corner is at
+    /// `anchor`: a post's time for a post, the bar it was placed at for an idea.
+    Card {
+        anchor: Anchor,
+        card: LinkCard,
+    },
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -374,6 +381,10 @@ impl Geometry {
             Self::Signpost { .. } => Tool::Signpost,
             Self::Table(_) => Tool::Table,
             Self::Image(_) => Tool::Image,
+            Self::Card { card, .. } => match card.link.kind() {
+                LinkKind::Post => Tool::Post,
+                LinkKind::Idea => Tool::Idea,
+            },
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -417,6 +428,7 @@ impl Geometry {
             Self::Table(table) if table.screen.is_none() => vec![table.at],
             Self::Table(_) => Vec::new(),
             Self::Image(image) => vec![image.a, image.b],
+            Self::Card { anchor, .. } => vec![*anchor],
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
             Self::Triangle { points } => points.to_vec(),
@@ -463,6 +475,7 @@ impl Geometry {
             Self::Table(table) if table.screen.is_none() => vec![&mut table.at],
             Self::Table(_) => Vec::new(),
             Self::Image(image) => vec![&mut image.a, &mut image.b],
+            Self::Card { anchor, .. } => vec![anchor],
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
             Self::Triangle { points } => points.iter_mut().collect(),
@@ -532,6 +545,7 @@ impl Geometry {
             Self::Polyline { closed, .. } => anchors.len() >= if *closed { 3 } else { 2 },
             Self::Table(table) => table.is_valid(),
             Self::Image(image) => image.is_valid(),
+            Self::Card { card, .. } => card.is_valid(),
             _ => true,
         };
         enough && anchors.len() <= MAX_POINTS && anchors.iter().all(Anchor::is_finite)
@@ -700,7 +714,13 @@ impl Geometry {
                 }
             }
             // A picture has to be chosen before it can be shown, so there is nothing to preview.
-            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler | Tool::Image => return None,
+            Tool::Cursor
+            | Tool::Fib
+            | Tool::Brush
+            | Tool::Ruler
+            | Tool::Image
+            | Tool::Post
+            | Tool::Idea => return None,
         })
     }
 
@@ -915,7 +935,15 @@ impl Drawing {
     /// picture to show, the rest are built as usual. Not for the app: a real picture is chosen.
     #[cfg(test)]
     pub fn sample(tool: Tool, id: u64, anchors: &[Anchor], style: DrawingStyle) -> Option<Self> {
-        if tool.caps().has(super::Caps::CONTENT) {
+        if matches!(tool, Tool::Post | Tool::Idea) {
+            let link = if tool == Tool::Post {
+                "https://x.com/degenview/status/1750000000000000000"
+            } else {
+                "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/"
+            };
+            let card = LinkCard::new(super::link_card::Link::parse(link).ok()?);
+            Self::build_with(tool, id, anchors, style, &Content::Link(card))
+        } else if tool.caps().has(super::Caps::CONTENT) {
             let a = *anchors.first()?;
             let b = anchors.get(1).copied().unwrap_or(Anchor {
                 time_ms: a.time_ms + 3_600_000,
@@ -945,6 +973,18 @@ impl Drawing {
             (Tool::Image, [a, b], Content::Image(picture)) if a != b => {
                 let image = ImageData::new(*a, *b, picture);
                 image.is_valid().then_some(Geometry::Image(image))?
+            }
+            (Tool::Post | Tool::Idea, [at], Content::Link(card))
+                if card.link.kind()
+                    == if tool == Tool::Post {
+                        LinkKind::Post
+                    } else {
+                        LinkKind::Idea
+                    } =>
+            {
+                let card = card.clone().sanitized();
+                card.is_valid()
+                    .then_some(Geometry::Card { anchor: *at, card })?
             }
             _ => return None,
         };
@@ -1147,6 +1187,7 @@ impl Drawing {
         match self.geometry()? {
             Geometry::Table(table) => Some(table.summary()),
             Geometry::Image(image) => Some(image.name.clone()).filter(|name| !name.is_empty()),
+            Geometry::Card { card, .. } => Some(card.summary()),
             _ => None,
         }
     }
@@ -1733,7 +1774,7 @@ mod tests {
         // One anchor placed plus the pointer: every tool previews, even degenerate.
         for tool in Tool::GROUPED
             .into_iter()
-            .filter(|tool| *tool != Tool::Brush && *tool != Tool::Image)
+            .filter(|tool| !matches!(tool, Tool::Brush | Tool::Image | Tool::Post | Tool::Idea))
         {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");

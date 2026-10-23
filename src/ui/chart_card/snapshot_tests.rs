@@ -1039,3 +1039,106 @@ fn gallery_of_the_image() {
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
+
+/// Post and Idea cards on a chart, written as PNGs for a person to look at: a bare link, a card
+/// with a fetched preview, an idea, and a small one that has to cut its words.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_cards() {
+    use crate::model::Anchor;
+    use crate::model::image_content::Content;
+    use crate::model::link_card::{Link, LinkCard, LinkMeta};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let card = |tool: Tool, id: u64, anchor: Anchor, link: &str, meta: Option<LinkMeta>, size| {
+        let mut card = LinkCard::new(Link::parse(link).expect("a link"));
+        card.meta = meta;
+        if let Some(size) = size {
+            card.size = size;
+        }
+        Drawing::build_with(
+            tool,
+            id,
+            &[anchor],
+            tool.default_style(),
+            &Content::Link(card),
+        )
+        .expect("builds")
+    };
+    let post_meta = LinkMeta {
+        title: "Developers".into(),
+        author: "@XDevelopers".into(),
+        excerpt: "Fish & chips for everyone: the range held three times, and the third retest was the one to buy. Stops under the low.".into(),
+        fetched_at_ms: 1,
+    };
+    let idea_meta = LinkMeta {
+        title: "BTC range break: what to watch next".into(),
+        author: "".into(),
+        excerpt: "Price reclaimed the range high on rising volume. A retest of that level would confirm the move.".into(),
+        fetched_at_ms: 1,
+    };
+    let bare = card(
+        Tool::Post,
+        1,
+        at(186, 276.0),
+        "https://x.com/degenview/status/1750000000000000000",
+        None,
+        Some([260.0, 110.0]),
+    );
+    let fetched = card(
+        Tool::Post,
+        2,
+        at(240, 276.0),
+        "https://x.com/XDevelopers/status/1750000000000000001",
+        Some(post_meta),
+        Some([320.0, 150.0]),
+    );
+    let idea = card(
+        Tool::Idea,
+        3,
+        at(196, 226.0),
+        "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-Range-Break-Setup/",
+        Some(idea_meta),
+        Some([300.0, 130.0]),
+    );
+    let small = card(
+        Tool::Idea,
+        4,
+        at(262, 226.0),
+        "https://www.tradingview.com/i/AbCdEf13/",
+        None,
+        Some([180.0, 96.0]),
+    );
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![bare.clone(), fetched.clone(), idea.clone(), small.clone()];
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let scene = harness
+            .card
+            .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let suffix = if light { "-light" } else { "" };
+        std::fs::write(dir.join(format!("cards-1{suffix}.png")), png).expect("written");
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}

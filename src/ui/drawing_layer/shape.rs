@@ -57,6 +57,13 @@ pub(super) struct PictureDraw {
     pub opacity: f32,
 }
 
+/// A link card to paint: its rectangle and what it says.
+#[derive(Clone, Debug)]
+pub(super) struct CardDraw {
+    pub rect: Rect,
+    pub card: crate::model::link_card::LinkCard,
+}
+
 /// A line of a table that is dragged to resize the row or column beside it.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Divider {
@@ -177,6 +184,8 @@ pub(super) struct Screen {
     pub hit: Vec<Rect>,
     /// A picture, painted in its rectangle.
     pub picture: Option<PictureDraw>,
+    /// A Post or Idea card, painted in its rectangle.
+    pub card: Option<CardDraw>,
     /// A table's inner grid lines, stroked in the drawing's border.
     pub rules: Vec<[Pos2; 2]>,
     /// A table's cell texts, each with the cell it sits in.
@@ -238,6 +247,7 @@ impl Screen {
             frames: Vec::new(),
             hit: Vec::new(),
             picture: None,
+            card: None,
             rules: Vec::new(),
             cell_texts: Vec::new(),
             dividers: Vec::new(),
@@ -744,6 +754,7 @@ fn shape(
         }
         Geometry::Table(table) => return table_shapes::project(table, style, proj),
         Geometry::Image(image) => return note_shapes::picture(image, &anchors),
+        Geometry::Card { card, .. } => return note_shapes::card(card, &anchors),
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }

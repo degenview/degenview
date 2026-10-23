@@ -66,6 +66,7 @@ pub(super) enum TableOp {
 pub(super) enum Action {
     Table(TableOp),
     Image(ImageOp),
+    Link(super::LinkRequest),
     Settings,
     EditText,
     /// A price alert at a horizontal line's price.
@@ -245,6 +246,9 @@ impl DrawingLayer {
                                 }
                                 if let Some(op) = image_controls(ui, drawing) {
                                     action = Some(Action::Image(op));
+                                }
+                                if let Some(request) = link_controls(ui, drawing) {
+                                    action = Some(Action::Link(request));
                                 }
                                 if is_price_line(drawing)
                                     && icons::button(
@@ -612,6 +616,49 @@ impl DrawingLayer {
                 );
                 kit::menu_separator(ui);
             }
+            if matches!(
+                first.filter(|_| single).and_then(|d| d.geometry()),
+                Some(Geometry::Card { .. })
+            ) {
+                let unlocked = first.is_some_and(|d| !d.locked());
+                item(
+                    ui,
+                    Icon::ArrowUpRightSquare,
+                    "Open link",
+                    None,
+                    true,
+                    false,
+                    Action::Link(super::LinkRequest::Open),
+                );
+                item(
+                    ui,
+                    Icon::CopyDoc,
+                    "Copy link",
+                    None,
+                    true,
+                    false,
+                    Action::Link(super::LinkRequest::Copy),
+                );
+                item(
+                    ui,
+                    Icon::Link,
+                    "Replace link…",
+                    None,
+                    unlocked,
+                    false,
+                    Action::Link(super::LinkRequest::Replace),
+                );
+                item(
+                    ui,
+                    Icon::Cycle,
+                    "Fetch preview…",
+                    None,
+                    unlocked,
+                    false,
+                    Action::Link(super::LinkRequest::Fetch),
+                );
+                kit::menu_separator(ui);
+            }
             if let Some(Geometry::Table(table)) =
                 first.filter(|_| single).and_then(|d| d.geometry())
             {
@@ -851,6 +898,15 @@ impl DrawingLayer {
                     self.begin_text_edit(drawing.id(), frame, proj);
                 }
             }
+            Action::Link(request) => {
+                if let [drawing] = &targets[..]
+                    && matches!(drawing.geometry(), Some(Geometry::Card { .. }))
+                    && (!drawing.locked()
+                        || matches!(request, super::LinkRequest::Open | super::LinkRequest::Copy))
+                {
+                    frame.link_request = Some((drawing.id(), request));
+                }
+            }
             Action::Image(op) => {
                 if let [drawing] = &targets[..]
                     && !drawing.locked()
@@ -1059,6 +1115,28 @@ fn image_controls(ui: &mut Ui, drawing: &Drawing) -> Option<ImageOp> {
     }
     divider(ui);
     op
+}
+
+/// The toolbar's controls for a link card: open, copy, replace, fetch the preview. Returns the
+/// one used.
+fn link_controls(ui: &mut Ui, drawing: &Drawing) -> Option<super::LinkRequest> {
+    use super::LinkRequest;
+    if !matches!(drawing.geometry(), Some(Geometry::Card { .. })) {
+        return None;
+    }
+    let mut request = None;
+    for (label, asked) in [
+        ("Open", LinkRequest::Open),
+        ("Copy link", LinkRequest::Copy),
+        ("Replace", LinkRequest::Replace),
+        ("Preview", LinkRequest::Fetch),
+    ] {
+        if kit::value_chip(ui, label, false).clicked() {
+            request = Some(asked);
+        }
+    }
+    divider(ui);
+    request
 }
 
 fn divider(ui: &mut Ui) {

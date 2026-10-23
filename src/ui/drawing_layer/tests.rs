@@ -7,6 +7,7 @@ use crate::model::{DrawingStyle, Kline, Visibility};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
+mod card_tests;
 mod image_tests;
 mod note_tests;
 mod table_tests;
@@ -310,6 +311,17 @@ struct Rig {
 }
 
 /// A picture to place, as the Image tool would have it once one is chosen.
+/// What a content tool is waiting to place: a card for the link tools, a picture for the rest.
+fn sample_content(tool: Tool) -> crate::model::image_content::Content {
+    use crate::model::link_card::{Link, LinkCard};
+    let link = match tool {
+        Tool::Post => "https://x.com/degenview/status/1750000000000000000",
+        Tool::Idea => "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/",
+        _ => return sample_picture(),
+    };
+    crate::model::image_content::Content::Link(LinkCard::new(Link::parse(link).unwrap()))
+}
+
 fn sample_picture() -> crate::model::image_content::Content {
     crate::model::image_content::Content::Image(crate::model::image_content::ImageContent {
         asset: "a".repeat(64),
@@ -535,7 +547,7 @@ impl Rig {
         let before = self.drawings.len();
         self.tool = tool;
         if tool.caps().has(Caps::CONTENT) {
-            self.pending = Some(sample_picture());
+            self.pending = Some(sample_content(tool));
         }
         match tool.spec().placement {
             Placement::Freehand => {

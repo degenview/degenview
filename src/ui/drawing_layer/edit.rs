@@ -173,6 +173,10 @@ pub(super) fn edited(
                 geometry: Geometry::Image(image),
                 ..
             } => (image.a, image.b) = resize_image(image, handle, now, proj),
+            Drawing::Shape {
+                geometry: Geometry::Card { card, .. },
+                ..
+            } if handle == BoxHandle::BottomRight => card.resize_by(delta.x, delta.y),
             _ => {}
         },
         Part::Label => {

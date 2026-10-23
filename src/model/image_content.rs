@@ -6,6 +6,7 @@
 //! the way TradingView's image does.
 
 use super::drawings::Anchor;
+use super::link_card::LinkCard;
 use serde::{Deserialize, Serialize};
 
 /// The longest name an image may be given, in characters.
@@ -102,9 +103,11 @@ pub struct ImageContent {
 }
 
 /// What is waiting to be placed by a click while a content tool is armed.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Content {
     Image(ImageContent),
+    /// A link to an X post or a TradingView idea, as a card.
+    Link(LinkCard),
 }
 
 #[cfg(test)]

@@ -61,12 +61,14 @@ pub(super) struct ContentFlow {
     pub replace_with: Option<(u64, u64, ImageContent)>,
     /// The sheet is open.
     sheet: bool,
-    /// The tool the last frame had, to notice the Image tool being armed.
-    last_tool: Tool,
+    /// The tool the last frame had, to notice a content tool being armed.
+    pub(super) last_tool: Tool,
     inbox: Option<Receiver<Outcome>>,
     target: Option<Target>,
     /// Why the last picture was refused, for the sheet.
     error: Option<String>,
+    /// The Post and Idea tools: their sheets and the preview fetch.
+    pub links: super::links::LinkFlow,
 }
 
 /// What the chart frames are told about content this frame: a copy taken before they run, so
@@ -108,7 +110,7 @@ impl ContentFlow {
     }
 
     pub(super) fn sheet_open(&self) -> bool {
-        self.sheet
+        self.sheet || self.links.open()
     }
 
     fn working(&self) -> bool {
@@ -231,18 +233,36 @@ impl ChartWorkspace {
     pub(super) fn tick_content(&mut self, ctx: &egui::Context) {
         self.take_picture(ctx);
         let tool = self.active_tool;
-        let armed = tool == Tool::Image && self.content.last_tool != Tool::Image;
+        let content_tool = matches!(tool, Tool::Image | Tool::Post | Tool::Idea);
+        let armed = content_tool && self.content.last_tool != tool;
         self.content.last_tool = tool;
-        if tool != Tool::Image {
-            // The tool was put down: what waited for it, and its sheet, go.
+        if !content_tool {
+            // The tool was put down: what waited for it, and its sheets, go.
             if !self.content.working() {
                 self.content.pending = None;
                 self.content.sheet = false;
             }
-        } else if armed && self.content.pending.is_none() {
-            self.content.sheet = true;
+            self.content.links.close_sheet();
+        } else if armed {
+            // Whatever waited for another content tool is dropped; this one asks again.
+            self.content.pending = None;
+            match tool {
+                Tool::Post => self
+                    .content
+                    .links
+                    .start(crate::model::link_card::LinkKind::Post),
+                Tool::Idea => self
+                    .content
+                    .links
+                    .start(crate::model::link_card::LinkKind::Idea),
+                _ => {
+                    self.content.sheet = true;
+                    self.content.links.close_sheet();
+                }
+            }
             self.content.error = None;
         }
+        self.tick_links(ctx);
         self.take_drops(ctx);
         if self.content.sheet {
             self.show_image_sheet(ctx);

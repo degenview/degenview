@@ -218,6 +218,8 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::Signpost => Icon::SignpostTool,
         Tool::Table => Icon::TableTool,
         Tool::Image => Icon::ImageTool,
+        Tool::Post => Icon::XLogo,
+        Tool::Idea => Icon::Lightbulb,
     }
 }
 

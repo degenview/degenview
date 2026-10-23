@@ -9,9 +9,6 @@
 //! port, and only the hosts the tools are for, so a pasted link can never point the app, or the
 //! preview fetch, anywhere else.
 
-// Used from the Post and Idea tools, which land after this model.
-#![allow(dead_code)]
-
 use serde::{Deserialize, Serialize};
 
 /// The longest link accepted, in bytes.
@@ -216,6 +213,29 @@ impl LinkMeta {
     }
 }
 
+/// What the user has agreed to, kept on this Mac only (it is not a synced setting): fetching a
+/// preview sends the link to the service's own host, so each service asks once.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct ContentPrefs {
+    /// The services the user allowed previews from.
+    pub previews: Vec<LinkKind>,
+}
+
+impl ContentPrefs {
+    pub const KEY: &'static str = "content.prefs";
+
+    pub fn allows(&self, kind: LinkKind) -> bool {
+        self.previews.contains(&kind)
+    }
+
+    pub fn allow(&mut self, kind: LinkKind) {
+        if !self.allows(kind) {
+            self.previews.push(kind);
+        }
+    }
+}
+
 /// A Post or Idea drawing's content: the link, what the link proves, and what a fetch added.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LinkCard {
@@ -255,6 +275,39 @@ impl LinkCard {
             .map(LinkMeta::sanitized)
             .filter(|meta| !meta.is_empty());
         self
+    }
+
+    /// The card's size after its bottom-right corner is dragged by (`dx`, `dy`), held to the
+    /// range a card may have.
+    pub fn resize_by(&mut self, dx: f32, dy: f32) {
+        self.size = [self.size[0] + dx, self.size[1] + dy];
+        let (low, high) = CARD_SIZE_RANGE;
+        for axis in 0..2 {
+            self.size[axis] = if self.size[axis].is_finite() {
+                self.size[axis].clamp(low[axis], high[axis])
+            } else {
+                DEFAULT_CARD_SIZE[axis]
+            };
+        }
+    }
+
+    /// What to call the card in a list: what a fetch returned if the user asked for it, else
+    /// what the link itself says.
+    pub fn summary(&self) -> String {
+        if let Some(meta) = &self.meta {
+            let headline = if meta.title.is_empty() {
+                &meta.author
+            } else {
+                &meta.title
+            };
+            if !headline.is_empty() {
+                return headline.clone();
+            }
+        }
+        match self.link.slug_words() {
+            Some(words) => format!("{} · {words}", self.link.headline()),
+            None => self.link.headline(),
+        }
     }
 
     /// Whether the card is one a tool could have made.

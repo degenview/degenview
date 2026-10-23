@@ -670,7 +670,14 @@ impl ChartWorkspace {
         use crate::model::chart_clipboard::ClipError;
         let clip = match DrawingClip::decode(text) {
             Ok(clip) => clip,
-            Err(ClipError::NotDrawings) => return,
+            // Not DegenView's own copy: a link to an X post or a TradingView idea becomes a card;
+            // anything else on the clipboard is not ours.
+            Err(ClipError::NotDrawings) => {
+                if let Ok(link) = crate::model::link_card::Link::parse(text) {
+                    self.place_pasted_link(link);
+                }
+                return;
+            }
             Err(error) => {
                 self.say(error.to_string(), true);
                 return;

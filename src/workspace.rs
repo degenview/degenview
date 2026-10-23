@@ -50,6 +50,7 @@ use std::time::{Duration, Instant};
 
 mod content;
 mod context;
+mod links;
 mod snapshot;
 use crate::model::snapshot::SnapshotAction;
 use context::ContextState;
@@ -3853,6 +3854,7 @@ impl ChartWorkspace {
         let mut picture_used = false;
         let mut picture_replace: Option<(u64, u64)> = None;
         let mut picture_copy: Option<String> = None;
+        let mut link_request: Option<(u64, u64, ui::LinkRequest)> = None;
         let mut drawing_properties_request: Option<(u64, u64)> = None;
         let mut drawing_style_copied: Option<(Tool, DrawingStyle)> = None;
         let style_clipboard = self.style_clipboard;
@@ -4136,6 +4138,11 @@ impl ChartWorkspace {
                                             if frame.copy_image.is_some() {
                                                 picture_copy = frame.copy_image.take();
                                             }
+                                            if let Some((drawing_id, request)) = frame.link_request
+                                            {
+                                                link_request =
+                                                    Some((chart_id, drawing_id, request));
+                                            }
                                             drawing_reveal |= frame.reveal_all;
                                             drawing_copy |= frame.copy_requested;
                                             if let Some(price) = frame.alert_price {
@@ -4385,6 +4392,9 @@ impl ChartWorkspace {
         }
         if let Some(asset) = picture_copy {
             self.copy_picture(&ctx, &asset);
+        }
+        if let Some((chart_id, drawing_id, request)) = link_request {
+            self.link_requested(&ctx, chart_id, drawing_id, request);
         }
         if drawing_reveal {
             self.hide_all_drawings = false;

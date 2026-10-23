@@ -50,6 +50,8 @@ enum Tab {
     Text,
     /// What a content tool shows: an image's picture, name and opacity.
     Content,
+    /// A Post or Idea card's link, preview and size.
+    Link,
     Coordinates,
     Visibility,
 }
@@ -62,6 +64,7 @@ impl Tab {
             Self::Levels => "Levels",
             Self::Text => "Text",
             Self::Content => "Image",
+            Self::Link => "Link",
             Self::Coordinates => "Coordinates",
             Self::Visibility => "Visibility",
         }
@@ -74,6 +77,7 @@ impl Tab {
             Self::Levels => Icon::Layers,
             Self::Text => Icon::TextFormat,
             Self::Content => Icon::ImageTool,
+            Self::Link => Icon::Link,
             Self::Coordinates => Icon::Hash,
             Self::Visibility => Icon::Eye,
         }
@@ -265,8 +269,10 @@ impl DrawingProperties {
         if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
             tabs.push(Tab::Text);
         }
-        if matches!(self.draft.geometry(), Some(Geometry::Image(_))) {
-            tabs.push(Tab::Content);
+        match self.draft.geometry() {
+            Some(Geometry::Image(_)) => tabs.push(Tab::Content),
+            Some(Geometry::Card { .. }) => tabs.push(Tab::Link),
+            _ => {}
         }
         if !matches!(self.tool, Tool::Brush | Tool::Highlighter) {
             tabs.push(Tab::Coordinates);
@@ -388,6 +394,7 @@ impl DrawingProperties {
                             Tab::Levels => self.levels_page(ui),
                             Tab::Text => self.text_page(ui),
                             Tab::Content => self.content_page(ui),
+                            Tab::Link => self.link_page(ui),
                             Tab::Coordinates => self.coordinates_page(ui),
                             Tab::Visibility => self.visibility_page(ui),
                         }
@@ -1411,6 +1418,82 @@ impl DrawingProperties {
         }
     }
 
+    fn link_page(&mut self, ui: &mut Ui) {
+        let Some(Geometry::Card { card, .. }) = self.draft.geometry().cloned() else {
+            return;
+        };
+        let words = crate::ui::content_card::CardText::of(&card);
+        let mut page = Page::new(true);
+        page.section(
+            ui,
+            card.link.kind().service(),
+            Some("The card shows what the link says, and a preview only when you fetch one."),
+        );
+        let url = card.link.url();
+        ui.label(kit::text(
+            &url,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            if kit::push_button(ui, Some(Icon::ArrowUpRightSquare), "Open link", true).clicked() {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(url.clone()));
+            }
+            if kit::push_button(ui, Some(Icon::CopyDoc), "Copy link", true).clicked() {
+                ui.ctx().copy_text(url.clone());
+            }
+        });
+
+        page.section(ui, "Preview", None);
+        let preview = match &card.meta {
+            Some(_) => [
+                words.title.as_str(),
+                words.excerpt.as_str(),
+                words.footer.as_str(),
+            ]
+            .into_iter()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+            None => "No preview fetched. Choose Preview on the card's toolbar to ask for one."
+                .to_owned(),
+        };
+        ui.label(kit::text(
+            &preview,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+
+        page.section(ui, "Size", None);
+        let (low, high) = crate::model::link_card::CARD_SIZE_RANGE;
+        let mut size = card.size;
+        for (axis, title, id) in [
+            (0, "Width", "drawing-card-width"),
+            (1, "Height", "drawing-card-height"),
+        ] {
+            if let Some(value) = settings_card::card(ui, Icon::Sliders, title, None, |ui| {
+                number_field(
+                    ui,
+                    Id::new(id),
+                    f64::from(card.size[axis]),
+                    10.0,
+                    f64::from(low[axis])..=f64::from(high[axis]),
+                    0,
+                )
+            }) {
+                size[axis] = value as f32;
+            }
+        }
+        if size != card.size
+            && let Some(Geometry::Card { card, .. }) = self.draft.geometry_mut()
+        {
+            card.size = size;
+        }
+    }
+
     /// The picture, fitted in a box as wide as the page, or what stands in for it.
     fn preview_picture(&mut self, ui: &mut Ui, asset: &str, aspect: f32, opacity: f32) {
         use crate::service::asset_host::{AssetImage, lookup};
@@ -1929,6 +2012,7 @@ mod tests {
                         Tab::Levels => dialog.levels_page(ui),
                         Tab::Text => dialog.text_page(ui),
                         Tab::Content => dialog.content_page(ui),
+                        Tab::Link => dialog.link_page(ui),
                         Tab::Coordinates => dialog.coordinates_page(ui),
                         Tab::Visibility => dialog.visibility_page(ui),
                     }

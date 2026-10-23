@@ -547,6 +547,20 @@ pub(super) fn paint(
         return None;
     }
 
+    if let Some(card) = &screen.card {
+        crate::ui::content_card::paint(painter, card.rect, &card.card, 1.0);
+        if emphasis.selected || emphasis.halo {
+            let alpha = if emphasis.selected { 255 } else { 160 };
+            painter.rect_stroke(
+                card.rect,
+                8.0,
+                Stroke::new(1.0, with_alpha(crate::ui::kit::ACCENT, alpha)),
+                StrokeKind::Outside,
+            );
+        }
+        return None;
+    }
+
     if let Some(mask) = &screen.mask {
         let texture = screen.mask_texture.get_or_init(|| {
             let [r, g, b, a] = style.stroke.color;

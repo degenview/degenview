@@ -288,6 +288,29 @@ pub(super) fn picture(
     screen.finish(6.0)
 }
 
+/// The Post and Idea tools: a card whose top-left corner is the anchor. It is clickable all over,
+/// and has the anchor and its bottom-right corner to grab.
+pub(super) fn card(card: &crate::model::link_card::LinkCard, anchors: &[Pos2]) -> Option<Screen> {
+    let at = *anchors.first()?;
+    let rect =
+        eframe::egui::Rect::from_min_size(at, eframe::egui::vec2(card.size[0], card.size[1]));
+    let mut screen = Screen::empty();
+    screen.hit.push(rect);
+    screen.card = Some(super::shape::CardDraw {
+        rect,
+        card: card.clone(),
+    });
+    screen.handles = vec![
+        anchor_handle(at),
+        HandleSpot {
+            part: Part::Box(super::edit::BoxHandle::BottomRight),
+            pos: rect.right_bottom(),
+            control: false,
+        },
+    ];
+    screen.finish(6.0)
+}
+
 /// The Flag mark tool: a pole planted at the anchor, a flag at its top.
 fn flag(at: Pos2) -> Screen {
     let (pole, flag) = shapes::flag(at);

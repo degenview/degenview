@@ -24,6 +24,7 @@ mod kalshi;
 pub mod keychain_api_keys;
 pub mod keychain_snapshot_token;
 pub mod keychain_webhook_secrets;
+pub mod link_fetch;
 pub mod live;
 pub mod lookup_cache;
 pub mod macos_notifications;

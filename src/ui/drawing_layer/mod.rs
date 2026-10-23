@@ -116,9 +116,24 @@ pub struct DrawingFrame<'a> {
     pub replace_request: Option<u64>,
     /// The user asked to copy the picture with this name.
     pub copy_image: Option<String>,
+    /// The user asked for something of a link card: the workspace opens the link, copies it,
+    /// asks for another, or fetches the preview.
+    pub link_request: Option<(u64, LinkRequest)>,
     /// The user asked for a price alert at this price (a horizontal line's); the workspace opens
     /// the alert editor for them to review.
     pub alert_price: Option<f64>,
+}
+
+/// What can be asked of a Post or Idea card that only the workspace can do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkRequest {
+    /// Open the link in the browser: always a deliberate click.
+    Open,
+    Copy,
+    /// Choose another link for the card.
+    Replace,
+    /// Fetch the preview the service offers.
+    Fetch,
 }
 
 impl<'a> DrawingFrame<'a> {
@@ -151,6 +166,7 @@ impl<'a> DrawingFrame<'a> {
             replace_with: None,
             replace_request: None,
             copy_image: None,
+            link_request: None,
             alert_price: None,
         }
     }
@@ -1212,12 +1228,19 @@ impl DrawingLayer {
             let Some(first) = anchors.first().map(|anchor| proj.point(*anchor)) else {
                 return;
             };
-            let crate::model::image_content::Content::Image(picture) = &content;
-            let rect = placed_rect(picture, first, proj.plot);
-            let corners = [
-                proj.anchor(rect.left_top()),
-                proj.anchor(rect.right_bottom()),
-            ];
+            let corners = match &content {
+                crate::model::image_content::Content::Image(picture) => {
+                    let rect = placed_rect(picture, first, proj.plot);
+                    vec![
+                        proj.anchor(rect.left_top()),
+                        proj.anchor(rect.right_bottom()),
+                    ]
+                }
+                crate::model::image_content::Content::Link(card) => {
+                    let rect = placed_card_rect(card, first, proj.plot);
+                    vec![card_anchor(card, proj.anchor(rect.left_top()), proj)]
+                }
+            };
             Drawing::build_with(tool, id, &corners, frame.style_for(tool), &content)
         } else {
             Drawing::build(tool, id, &anchors, frame.style_for(tool))
@@ -1336,19 +1359,26 @@ impl DrawingLayer {
         }
         // The picture waiting to be placed follows the pointer, faint, where a click would put it.
         if frame.tool.caps().has(Caps::CONTENT)
-            && let Some(crate::model::image_content::Content::Image(picture)) =
-                &frame.pending_content
+            && let Some(content) = &frame.pending_content
             && let Some(point) = self.pointer
         {
-            let rect = placed_rect(picture, point, proj.plot);
-            draw::draw_picture(
-                &clipped,
-                &mut self.textures,
-                rect,
-                &picture.asset,
-                &picture.name,
-                0.55,
-            );
+            match content {
+                crate::model::image_content::Content::Image(picture) => {
+                    let rect = placed_rect(picture, point, proj.plot);
+                    draw::draw_picture(
+                        &clipped,
+                        &mut self.textures,
+                        rect,
+                        &picture.asset,
+                        &picture.name,
+                        0.55,
+                    );
+                }
+                crate::model::image_content::Content::Link(card) => {
+                    let rect = placed_card_rect(card, point, proj.plot);
+                    crate::ui::content_card::paint(&clipped, rect, card, 0.55);
+                }
+            }
         }
         // A drawing waiting for its text is shown as it will be, growing as it is typed into.
         if let Some(preview) = self
@@ -1565,12 +1595,22 @@ impl DrawingLayer {
             return;
         }
         frame.place_pending = false;
-        let crate::model::image_content::Content::Image(picture) =
-            frame.pending_content.clone().expect("checked above");
-        let size = placed_rect(&picture, proj.plot.center(), proj.plot).size();
+        let (tool, size) = match frame.pending_content.clone().expect("checked above") {
+            crate::model::image_content::Content::Image(picture) => (
+                Tool::Image,
+                placed_rect(&picture, proj.plot.center(), proj.plot).size(),
+            ),
+            crate::model::image_content::Content::Link(card) => (
+                match card.link.kind() {
+                    crate::model::link_card::LinkKind::Post => Tool::Post,
+                    crate::model::link_card::LinkKind::Idea => Tool::Idea,
+                },
+                placed_card_rect(&card, proj.plot.center(), proj.plot).size(),
+            ),
+        };
         let at = proj.anchor(proj.plot.center() - size / 2.0);
         let draft = Draft {
-            tool: Tool::Image,
+            tool,
             placed: vec![at],
             rubber: at,
             dragging: false,
@@ -1630,6 +1670,41 @@ fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, pl
     let left = at.x.min(plot.right() - size.x).max(plot.left());
     let top = at.y.min(plot.bottom() - size.y).max(plot.top());
     Rect::from_min_size(Pos2::new(left, top), size)
+}
+
+/// The rectangle a card takes when it is dropped with its top-left corner at `at`: its own size,
+/// moved back onto the plot if that would put it over an edge.
+fn placed_card_rect(card: &crate::model::link_card::LinkCard, at: Pos2, plot: Rect) -> Rect {
+    let size = egui::vec2(
+        card.size[0].min(plot.width()),
+        card.size[1].min(plot.height()),
+    );
+    let left = at.x.min(plot.right() - size.x).max(plot.left());
+    let top = at.y.min(plot.bottom() - size.y).max(plot.top());
+    Rect::from_min_size(Pos2::new(left, top), size)
+}
+
+/// Where a card is anchored when it is placed at `placed`: a post goes to its own time when that
+/// bar is on screen (the price is where it was placed), and anywhere else to where it was placed.
+fn card_anchor(
+    card: &crate::model::link_card::LinkCard,
+    placed: Anchor,
+    proj: &Projection,
+) -> Anchor {
+    let (left, right) = (proj.time(proj.plot.left()), proj.time(proj.plot.right()));
+    anchor_for_card(card.link.time_ms(), placed, (left, right))
+}
+
+/// [`card_anchor`] with the card's own time and the times at the plot's two edges given.
+fn anchor_for_card(own_time_ms: Option<i64>, placed: Anchor, visible: (i64, i64)) -> Anchor {
+    let (from, to) = (visible.0.min(visible.1), visible.0.max(visible.1));
+    match own_time_ms {
+        Some(time_ms) if (from..=to).contains(&time_ms) => Anchor {
+            time_ms,
+            price: placed.price,
+        },
+        _ => placed,
+    }
 }
 
 /// Whether a tool collects any number of vertices (a path or polyline).
