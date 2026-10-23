@@ -352,4 +352,23 @@ mod tests {
             "&#1114112; &#xD800;"
         );
     }
+
+    /// The shipped request path against the two real services. Not run with the suite (it needs the
+    /// network and neither service promises its answer): `cargo test --lib live_ -- --ignored
+    /// --nocapture`.
+    #[test]
+    #[ignore = "contacts x.com and tradingview.com"]
+    fn live_a_real_post_and_a_real_idea_give_a_preview() {
+        let post = Link::parse("https://x.com/Interior/status/463440424141459456").unwrap();
+        let meta = fetch(&post, 1).expect("the post's preview");
+        println!("POST {meta:?}");
+        assert!(!meta.is_empty());
+        let idea = Link::parse(
+            "https://www.tradingview.com/chart/BTCUSD/B2y8MoWY-Bitcoin-Btcusd-Bullish-Trendline-Key-Decision-Zone/",
+        )
+        .unwrap();
+        let meta = fetch(&idea, 1).expect("the idea's preview");
+        println!("IDEA {meta:?}");
+        assert!(!meta.is_empty());
+    }
 }

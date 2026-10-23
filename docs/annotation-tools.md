@@ -158,10 +158,13 @@ accepted link one canonical way. A card keeps the link, its size and, if the use
 * **Open** (`ctx.open_url`) is always a deliberate click; so are Copy link and Replace link (which
   drops the old preview).
 
-The endpoints were tried by hand from this Mac while building this (X's oEmbed answer for a public
-post; a TradingView idea page's first 256 KB containing its `og:` tags). They are not part of the test
-suite, and neither service promises either behaviour. If one stops answering, the card shows the link
-and the failure reason, and everything else works.
+The shipped request path (`link_fetch::fetch`: the client, https-only, the `Range` header, the parsers)
+was run once, on 2026-10-23, against a real public post (the oEmbed answer's author name, `@handle` and
+text came back) and a real published idea (its `og:title` and `og:description` came back; the page gave
+no author). That is the ignored test `live_a_real_post_and_a_real_idea_give_a_preview`
+(`cargo test --lib live_ -- --ignored --nocapture`). It is not part of the suite, and neither service
+promises either behaviour. If one stops answering, the card shows the link and the failure reason, and
+everything else works.
 
 ## Persistence and sync
 
@@ -203,9 +206,14 @@ DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_ -- --ignored
 * **Pictures are never deleted.** Layouts sync, tab sessions do not, so no Mac can know another still
   draws a picture, and a tombstone for an immutable record would also trip the mass-delete hold. A
   picture stays after its drawing is gone: at most 600 kB per distinct image.
-* **Live X and TradingView.** See above. Embedded timelines, counts, avatars and images are not
-  implemented, by design.
+* **Live X and TradingView** were reached once (see above), not continuously. Embedded timelines, counts,
+  avatars and images are not implemented, by design.
 * **TradingView pixel parity**, the exact look of Pin, Table, Price note and the Post and Idea cards.
+* **Real window.** On 2026-10-23 a release build was launched against a throwaway home whose saved
+  session held one BTC/USDT chart with a drawing of each of the 13 tools (the stored picture included).
+  All 13 restored and painted correctly with the real fonts and GPU textures. Synthetic mouse clicks
+  did not register in that window, so no placement, editing, dragging or sheet was driven in a real
+  window: those are covered by the controller tests only.
 * **IME**, VoiceOver and a real-window drag of a table border were not exercised.
 * **Windows and Linux**: the file panel and the clipboard picture are macOS-only; drag and drop work
   where egui reports them.
