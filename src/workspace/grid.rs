@@ -3,11 +3,11 @@
 use super::ChartWorkspace;
 use super::alerts::AlertRequest;
 use super::chart::displayed_candles;
+use crate::host::paper_host::PaperHost;
 use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
     Tool,
 };
-use crate::paper_host::PaperHost;
 use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::{self, ChartCardAction, CrosshairInfo, DrawingFrame, ReplayChartFrame, shortcut};
 use eframe::egui;
@@ -233,8 +233,8 @@ impl ChartWorkspace {
         let replay_selecting = self.replay.status == ReplayStatus::SelectingStart;
         let timeframe = self.timeframe;
         let hosting_note = match self.snapshot_hosting() {
-            crate::snapshot_host::Hosting::Ready(_) => None,
-            crate::snapshot_host::Hosting::NotConfigured => {
+            crate::host::snapshot_host::Hosting::Ready(_) => None,
+            crate::host::snapshot_host::Hosting::NotConfigured => {
                 Some("Set a snapshot host in Settings ▸ Snapshots to share.")
             }
         };

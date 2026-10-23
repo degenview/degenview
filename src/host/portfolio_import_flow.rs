@@ -7,10 +7,10 @@
 // Transient: reached through the Portfolio tab's Import or Export menu.
 #![allow(dead_code)]
 
+use crate::host::portfolio_host::PortfolioHost;
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::model::portfolio_csv::{self, CmcPreview, CsvPreview, Mint};
 use crate::model::watchlist::new_id;
-use crate::portfolio_host::PortfolioHost;
 use crate::service::asset_auto_mapper::{self, asset_from_search_result};
 use crate::service::file_dialog;
 use crate::service::portfolio_quotes::PortfolioFxRates;

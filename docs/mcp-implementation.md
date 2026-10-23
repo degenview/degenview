@@ -68,7 +68,7 @@ src/ui/add_chart_sheet.rs
 ### Alerts
 
 ```text
-src/alert_host.rs
+src/host/alert_host.rs
 src/model/alert.rs
 src/model/alert_engine.rs
 src/store/alert.rs
@@ -79,8 +79,8 @@ src/ui/alert_editor.rs
 ### Pine Script
 
 ```text
-src/pine_host.rs
-src/pine_subscription_host.rs
+src/host/pine_host.rs
+src/host/pine_subscription_host.rs
 src/model/pine_instance.rs
 src/model/pine_alert.rs
 src/pine/compiler.rs
@@ -498,7 +498,7 @@ src/
 │   │   ├── alerts.rs
 │   │   └── pine.rs
 │   └── resources.rs
-├── mcp_host.rs
+├── host/mcp_host.rs
 ├── model/mcp.rs
 ├── store/mcp.rs
 ├── service/keychain_mcp.rs

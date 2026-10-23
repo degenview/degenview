@@ -10,12 +10,12 @@
 
 use super::content::snapshot_images;
 use super::*;
+use crate::host::snapshot_host::{Hosting, SnapshotHost};
 use crate::model::snapshot::{
     self, SnapshotAction, SnapshotDimensions, SnapshotHost as HostAddress, SnapshotRequest,
 };
 use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
 use crate::service::{keychain_snapshot_token, timezone, work_queue};
-use crate::snapshot_host::{Hosting, SnapshotHost};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;

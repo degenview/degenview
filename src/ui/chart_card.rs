@@ -1,4 +1,5 @@
 use crate::format;
+use crate::host::pine_host::KlineSecurityDataProvider;
 use crate::model::canvas::{self, PaneSpec, Window};
 use crate::model::chart_look::Palette;
 use crate::model::chart_type::{ChartStyle, ChartType, DataClass};
@@ -16,7 +17,6 @@ use crate::pine::program::ChartTheme;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
 use crate::pine::token::{Diagnostic, Limits};
-use crate::pine_host::KlineSecurityDataProvider;
 use crate::script_manager::registry::LibraryRegistry;
 use crate::ui::alert_lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
@@ -738,7 +738,7 @@ impl ChartCard {
         candles: &[Kline],
         source: DataSource,
         now_ms: i64,
-    ) -> (Vec<Kline>, crate::pine_subscription_host::ChartRun) {
+    ) -> (Vec<Kline>, crate::host::pine_subscription_host::ChartRun) {
         let mut style = self.appearance.style;
         style.chart_type = self.effective_chart_type(source);
         match Construction::of(&style) {
@@ -750,7 +750,7 @@ impl ChartCard {
                     .filter(|seconds| *seconds > 0.0);
                 (
                     bars,
-                    crate::pine_subscription_host::ChartRun {
+                    crate::host::pine_subscription_host::ChartRun {
                         construction: Some(construction),
                         bar_seconds,
                     },
@@ -758,7 +758,7 @@ impl ChartCard {
             }
             None => (
                 candles.to_vec(),
-                crate::pine_subscription_host::ChartRun::default(),
+                crate::host::pine_subscription_host::ChartRun::default(),
             ),
         }
     }

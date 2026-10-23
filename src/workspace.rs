@@ -1,3 +1,5 @@
+use crate::host::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
+use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart_sync::SyncHub;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
@@ -6,8 +8,6 @@ use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
     InstrumentId, LayoutSnapshot, MagnetMode, ReplayEngine, ReplayStatus, Timeframe, Tool,
 };
-use crate::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
-use crate::portfolio_card_host::PortfolioCardEnv;
 use crate::service::live::BinanceLiveFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
@@ -205,7 +205,7 @@ pub struct ChartWorkspace {
     /// The snapshot being made, and what it waits for.
     snapshot: SnapshotState,
     /// The snapshot settings all windows share (set by the app).
-    snapshots: Option<crate::snapshot_host::SnapshotHost>,
+    snapshots: Option<crate::host::snapshot_host::SnapshotHost>,
     /// The "Create Price Alert" sheet, over this tab's window.
     alert_editor: Option<PriceAlertEditorState>,
     /// USD → currency rates for the sheet's currency menu, pushed in by the app.

@@ -6,8 +6,8 @@ use super::icons::{self, Icon};
 use super::theme;
 use super::update_indicator;
 use super::window_chrome::{self, Control};
+use crate::host::update_host::UpdateView;
 use crate::model::tab_windows::{TabId, WindowId};
-use crate::update_host::UpdateView;
 use eframe::egui::{
     self, Align2, Color32, CornerRadius, FontId, Id, Painter, Pos2, Rect, Sense, Shadow, Stroke,
     StrokeKind, Ui, Vec2, pos2, vec2,
@@ -514,7 +514,7 @@ mod tests {
 
     #[test]
     fn the_strip_gives_way_to_an_update_mark_only_while_there_is_one() {
-        use crate::update_host::Phase;
+        use crate::host::update_host::Phase;
         let view = |phase| UpdateView {
             phase,
             checking: false,

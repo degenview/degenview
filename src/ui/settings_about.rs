@@ -2,15 +2,15 @@
 //! update channel and a copyable build summary, the project links, and the copyright line.
 
 use crate::format::civil_from_days;
+use crate::host::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use crate::service::update_check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme, update_indicator};
-use crate::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::time::{Duration, UNIX_EPOCH};
 
 pub const NAME: &str = "DegenView";
-pub use crate::update_host::VERSION;
+pub use crate::host::update_host::VERSION;
 pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
 pub const DONATION_URL: &str = "https://buymeacoffee.com/degenview";

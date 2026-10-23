@@ -208,8 +208,8 @@ fn paper_names(mac: &Mac) -> Vec<String> {
     names
 }
 
-fn paper_host(mac: &Mac) -> crate::paper_host::PaperHost {
-    crate::paper_host::PaperHost::load(mac.store.clone())
+fn paper_host(mac: &Mac) -> crate::host::paper_host::PaperHost {
+    crate::host::paper_host::PaperHost::load(mac.store.clone())
 }
 
 #[test]

@@ -2,9 +2,9 @@
 
 use super::ChartWorkspace;
 use super::chart::{Chart, REFRESH_INTERVAL};
+use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
-use crate::paper_host::PaperHost;
 use crate::ui::paper_chart_trading::PaperOverlayAction;
 use std::time::{Duration, Instant};
 

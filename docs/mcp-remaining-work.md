@@ -1,6 +1,6 @@
 # MCP server — remaining work
 
-Status of the local MCP server (`src/mcp/`, `src/mcp_host.rs`; design in
+Status of the local MCP server (`src/mcp/`, `src/host/mcp_host.rs`; design in
 [architecture/mcp.md](architecture/mcp.md)) and what is still planned. Ordered by what I would do
 next. Nothing here is started.
 
@@ -161,7 +161,7 @@ bypass.
 
 ## 12. Cleanup
 
-- `src/mcp_host.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
+- `src/host/mcp_host.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
   projections into `mcp/projection/{charts,alerts,pine}.rs` and keep the host to lifecycle and
   credentials.
 - `mcp/tools.rs` (~1,500 lines) could split per domain the same way.

@@ -1,6 +1,7 @@
 mod alpaca;
 pub mod asset_auto_mapper;
 pub mod asset_host;
+pub mod background_service;
 mod binance;
 mod cache;
 pub mod cache_control;

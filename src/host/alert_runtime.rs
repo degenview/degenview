@@ -1,7 +1,7 @@
 //! Exclusive ownership and the shared price-alert runtime loop used by both the GUI fallback and
 //! the embedded login item. Pine alerts deliberately stay in the GUI.
 
-use crate::alert_host::AlertHost;
+use crate::host::alert_host::AlertHost;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommandPayload, AlertRuntimeHealth, AlertRuntimeOwner,
     AlertServiceState, AlertTriggerEvent,

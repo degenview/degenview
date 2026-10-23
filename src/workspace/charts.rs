@@ -2,11 +2,11 @@
 
 use super::ChartWorkspace;
 use super::chart::{Chart, displayed_candles};
+use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, InstrumentId, Kline};
-use crate::portfolio_card_host::PortfolioCardEnv;
 use crate::service::SearchResult;
 use eframe::egui;
 

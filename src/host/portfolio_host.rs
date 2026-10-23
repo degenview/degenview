@@ -5,6 +5,7 @@
 //! writes for this host instance so corrupt data can never be replaced by an empty snapshot.
 #![allow(dead_code)]
 
+use crate::host::portfolio_import_flow::PortfolioImportFlow;
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioError, PortfolioHoldingsSort,
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
@@ -17,7 +18,6 @@ use crate::model::portfolio_history::rebuild_start;
 use crate::model::portfolio_ledger::PortfolioLedger;
 use crate::model::portfolio_statistics::PortfolioHistoryRange;
 use crate::model::watchlist::new_id;
-use crate::portfolio_import_flow::PortfolioImportFlow;
 use crate::service::asset_auto_mapper::asset_from_search_result;
 use crate::service::portfolio_history::{HistoryRebuilder, IntradayFeed, IntradayRequest};
 use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
@@ -793,7 +793,7 @@ impl PortfolioTab {
                     self.import.begin_export(
                         &ctx,
                         text,
-                        crate::portfolio_import_flow::CSV_FILENAME,
+                        crate::host::portfolio_import_flow::CSV_FILENAME,
                     );
                 }
                 if header_controls::action(ui, Icon::ShareUp, "Export Current Holdings\u{2026}") {
@@ -892,11 +892,11 @@ impl PortfolioTab {
                             .map_or("All Portfolios", |portfolio| portfolio.name.as_str()),
                         now_ms,
                     ),
-                    crate::portfolio_import_flow::HOLDINGS_FILENAME,
+                    crate::host::portfolio_import_flow::HOLDINGS_FILENAME,
                 ),
                 PendingExport::History => (
                     portfolio_csv::export_history(history),
-                    crate::portfolio_import_flow::HISTORY_FILENAME,
+                    crate::host::portfolio_import_flow::HISTORY_FILENAME,
                 ),
             };
             self.import.begin_export(ui.ctx(), text, name);

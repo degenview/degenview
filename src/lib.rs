@@ -1,37 +1,23 @@
-mod alert_host;
-mod alert_runtime;
 mod app;
-mod background_service;
 mod format;
+mod host;
 mod mcp;
-mod mcp_host;
 mod model;
 mod native_bridge;
-mod paper_host;
 mod pine;
-mod pine_host;
-mod pine_subscription_host;
 mod platform;
-mod portfolio_card_host;
-mod portfolio_host;
-mod portfolio_import_flow;
 mod script_manager;
 mod service;
-mod snapshot_host;
 mod store;
 mod sync;
-mod sync_host;
-mod tab_window_host;
 mod ui;
-mod update_host;
-mod webhook_host;
 mod workspace;
 
 use app::DegenViewApp;
 use eframe::egui;
 
+pub use host::sync_host::{EventSink, TransportFactory};
 pub use sync::native::{CloudKitFactory, NativeApi};
-pub use sync_host::{EventSink, TransportFactory};
 
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
     run_gui_with(None)
@@ -73,7 +59,7 @@ pub fn run_gui_with(
 }
 
 pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
-    alert_runtime::run_alert_agent()
+    host::alert_runtime::run_alert_agent()
 }
 
 /// Fraction of the canvas the icon art fills. AppKit draws `applicationIconImage` as-is, so the

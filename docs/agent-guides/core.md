@@ -13,7 +13,7 @@ See [the architecture map](../architecture.md) before changing module boundaries
 ## Architecture rules
 
 - Use modules, not MVVM: `model/` is pure domain logic, `service/` owns providers and network
-  boundaries, `ui/` contains egui renderers, `store/` owns SQLite, top-level `*_host.rs` files bridge
+  boundaries, `ui/` contains egui renderers, `store/` owns SQLite, `host/*_host.rs` files bridge
   stateful engines/stores/views, `workspace.rs` owns one chart workspace, and `app.rs` coordinates.
 - egui is immediate-mode. Pass state into views; do not add observed view models. Charts use
   `egui::Painter`, not a chart library.

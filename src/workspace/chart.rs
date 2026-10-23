@@ -1,12 +1,12 @@
 //! One chart's market data: what it holds, how it fetches, and how older history is paged in.
 
 use super::PersistedChart;
+use crate::host::portfolio_card_host::CardRuntime;
 use crate::model::history::{self, OlderHistory};
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, PmSeries, Timeframe};
-use crate::portfolio_card_host::CardRuntime;
 use crate::service;
 use crate::ui::{ChartCard, SeriesLine};
 use eframe::egui;

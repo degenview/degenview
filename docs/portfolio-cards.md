@@ -18,7 +18,7 @@ same card when kind and portfolio match; adding one that exists focuses it. The 
 
 - `model/portfolio_card.rs`: `CardKind`, `PortfolioCard`, `CardData` (everything a card paints),
   `performance()` (the ranking). Pure.
-- `portfolio_card_host.rs`: `PortfolioCardEnv::view` builds a `CardData` the way the Portfolio tab
+- `host/portfolio_card_host.rs`: `PortfolioCardEnv::view` builds a `CardData` the way the Portfolio tab
   does; each card has a `CardRuntime` (its own quote feed and demand owner).
 - `service/portfolio_performers.rs`: `PerformerFeed`, start prices from hourly (ranges up to 36 h)
   or daily candles, cached in memory (5 min fresh, 1 min retry after a failure).
