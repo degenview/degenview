@@ -100,7 +100,7 @@ impl DrawingProperties {
         ) {
             options.lot = value;
         }
-        let units = [(true, "Percent of account"), (false, "Amount")];
+        let units = [(true, "% of account"), (false, "Amount")];
         picker_row(
             ui,
             Icon::Percent,

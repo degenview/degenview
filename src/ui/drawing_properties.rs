@@ -25,6 +25,8 @@ use eframe::egui::{
 
 const WIDTH: f32 = 440.0;
 const PAGE_HEIGHT: f32 = 380.0;
+/// Room kept either side of the tab bar.
+const TAB_BAR_MARGIN: f32 = 12.0;
 /// The page's inset on every side, as the other sheets.
 const PAGE_MARGIN: f32 = sheet::INSET as f32;
 /// The vertical rhythm between the cards of a page, as on the chart settings pages.
@@ -132,6 +134,8 @@ pub struct DrawingProperties {
     notice: Option<Notice>,
     /// The tallest page content seen, so switching tabs does not resize the dialog.
     page_height: f32,
+    /// The sheet's width: `WIDTH`, or wider when the tab bar needs more.
+    width: f32,
     /// The picture the Image tab previews, with the texture it was uploaded as.
     preview: Option<(String, egui::TextureHandle)>,
     /// A new picture was asked for; the workspace takes the request and runs the picker.
@@ -306,6 +310,7 @@ impl DrawingProperties {
             prompt: None,
             notice: None,
             page_height: 0.0,
+            width: WIDTH,
             preview: None,
             replace_requested: false,
         };
@@ -410,7 +415,8 @@ impl DrawingProperties {
                     }),
             );
         window.show(ctx, |ui| {
-            ui.set_width(WIDTH);
+            self.width = self.sheet_width(ui);
+            ui.set_width(self.width);
             ui.spacing_mut().item_spacing.y = 0.0;
             outcome = self.body(ui, templates);
         });
@@ -425,6 +431,26 @@ impl DrawingProperties {
             self.close_calendars(ctx);
         }
         outcome
+    }
+
+    /// The sheet is `WIDTH` wide, or wider when its tab bar (five tabs for most new tools) would
+    /// not fit: the bar, the pages and the footer then share one width, so nothing is cut.
+    fn sheet_width(&self, ui: &Ui) -> f32 {
+        let tabs = self.tabs();
+        if tabs.len() < 2 {
+            return WIDTH;
+        }
+        let items: Vec<kit::TabItem<Tab>> = tabs.iter().map(|&tab| self.tab_item(tab)).collect();
+        WIDTH.max(kit::tab_bar_regular_width(ui, &items) + 2.0 * TAB_BAR_MARGIN)
+    }
+
+    fn tab_item(&self, tab: Tab) -> kit::TabItem<Tab> {
+        kit::TabItem {
+            value: tab,
+            title: tab.title(),
+            icon: tab.icon(),
+            count: 0,
+        }
     }
 
     fn time_id(&self, index: usize) -> Id {
@@ -460,15 +486,8 @@ impl DrawingProperties {
             self.tab = tabs[0];
         }
         if tabs.len() > 1 {
-            let items: Vec<kit::TabItem<Tab>> = tabs
-                .iter()
-                .map(|&tab| kit::TabItem {
-                    value: tab,
-                    title: tab.title(),
-                    icon: tab.icon(),
-                    count: 0,
-                })
-                .collect();
+            let items: Vec<kit::TabItem<Tab>> =
+                tabs.iter().map(|&tab| self.tab_item(tab)).collect();
             ui.vertical_centered(|ui| {
                 kit::tab_bar_regular(
                     ui,
@@ -490,7 +509,7 @@ impl DrawingProperties {
                 let page = egui::Frame::new()
                     .inner_margin(egui::Margin::same(margin))
                     .show(ui, |ui| {
-                        ui.set_width(WIDTH - 2.0 * PAGE_MARGIN);
+                        ui.set_width(self.width - 2.0 * PAGE_MARGIN);
                         // The tallest page so far, so a tab switch does not resize the dialog.
                         ui.set_min_height((self.page_height - 2.0 * PAGE_MARGIN).max(0.0));
                         ui.spacing_mut().item_spacing.y = CARD_SPACING;
@@ -544,7 +563,7 @@ impl DrawingProperties {
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(sheet::INSET, 10))
             .show(ui, |ui| {
-                ui.set_width(WIDTH - 2.0 * PAGE_MARGIN);
+                ui.set_width(self.width - 2.0 * PAGE_MARGIN);
                 if self.prompt.is_some() {
                     self.prompt_row(ui, templates);
                     return;
@@ -2394,6 +2413,62 @@ mod tests {
         );
     }
 
+    /// The window is exactly as wide as the sheet says on every tab of every tool, and the sheet is
+    /// wide enough for its tab bar: five tabs used to push the window past the page, cutting the bar
+    /// and the content off.
+    #[test]
+    fn every_tool_s_sheet_is_as_wide_as_its_tab_bar_and_its_window() {
+        use crate::ui::render_tests::Screen;
+        let mut widest = 0.0_f32;
+        let mut screen = Screen::new(vec2(1200.0, 900.0));
+        for tool in Tool::GROUPED {
+            let Some(mut dialog) = DrawingProperties::new(1, &drawing(tool)) else {
+                continue;
+            };
+            let mut store = templates();
+            let tabs = dialog.tabs();
+            for tab in tabs {
+                dialog.tab = tab;
+                for _ in 0..2 {
+                    screen.run(Vec::new(), |ui| {
+                        dialog.show(ui.ctx(), &mut store);
+                    });
+                }
+                let window = screen
+                    .ctx
+                    .memory(|memory| memory.area_rect(Id::new(("drawing-properties", 1_u64))))
+                    .expect("the dialog is shown");
+                assert!(
+                    // The frame's hairline is one point either side.
+                    (window.width() - dialog.width - 2.0).abs() < 1.0,
+                    "{tool:?} {tab:?}: the window is {} wide, the sheet {}",
+                    window.width(),
+                    dialog.width
+                );
+            }
+            let items: Vec<kit::TabItem<Tab>> = dialog
+                .tabs()
+                .iter()
+                .map(|&tab| dialog.tab_item(tab))
+                .collect();
+            if items.len() > 1 {
+                screen.run(Vec::new(), |ui| {
+                    let bar = kit::tab_bar_regular_width(ui, &items);
+                    assert!(
+                        bar + 2.0 * TAB_BAR_MARGIN <= dialog.width + 0.5,
+                        "{tool:?}: a {bar} wide tab bar in a {} wide sheet",
+                        dialog.width
+                    );
+                });
+            }
+            widest = widest.max(dialog.width);
+        }
+        assert!(
+            widest > WIDTH,
+            "no tool needed a wider sheet: is the check live?"
+        );
+    }
+
     /// The new tools' pages as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
     #[test]
     #[ignore = "writes images for a person to look at"]
@@ -2461,7 +2536,7 @@ mod tests {
             let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
             dialog.tab = tab;
             let mut store = templates();
-            let mut screen = Screen::new(vec2(520.0, 760.0));
+            let mut screen = Screen::new(vec2(640.0, 760.0));
             let mut last = None;
             for _ in 0..4 {
                 last = Some(screen.run(Vec::new(), |ui| {
