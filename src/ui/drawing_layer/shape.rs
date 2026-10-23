@@ -6,6 +6,7 @@ use super::Projection;
 use super::edit::{BoxHandle, Part};
 use super::line_shapes;
 use super::note_shapes;
+use super::table_shapes;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
 use crate::model::{ArrowDirection, Drawing, Geometry};
@@ -45,6 +46,43 @@ pub(super) enum TextPlace {
 pub(super) struct Popup {
     pub rect: Rect,
     pub outline: Vec<Pos2>,
+}
+
+/// A line of a table that is dragged to resize the row or column beside it.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Divider {
+    pub part: Part,
+    pub a: Pos2,
+    pub b: Pos2,
+}
+
+/// Where a table's cells are: the x of each column's left edge and then the last column's right
+/// edge, and the y of each row's top and then the last row's bottom.
+#[derive(Clone, Debug)]
+pub(super) struct Grid {
+    pub xs: Vec<f32>,
+    pub ys: Vec<f32>,
+}
+
+impl Grid {
+    /// The cell under `point`, as `(row, column)`.
+    pub(super) fn cell_at(&self, point: Pos2) -> Option<(usize, usize)> {
+        let find = |edges: &[f32], at: f32| {
+            let last = edges.len().checked_sub(2)?;
+            (0..=last).find(|index| {
+                at >= edges[*index]
+                    && (at < edges[index + 1] || *index == last && at <= edges[index + 1])
+            })
+        };
+        Some((find(&self.ys, point.y)?, find(&self.xs, point.x)?))
+    }
+
+    pub(super) fn cell_rect(&self, row: usize, column: usize) -> Option<Rect> {
+        Some(Rect::from_min_max(
+            pos2(*self.xs.get(column)?, *self.ys.get(row)?),
+            pos2(*self.xs.get(column + 1)?, *self.ys.get(row + 1)?),
+        ))
+    }
 }
 
 /// A line with a look of its own: a level of a channel or a pitchfork, a regression band.
@@ -128,6 +166,14 @@ pub(super) struct Screen {
     /// Regions that are on the shape for a click though nothing is painted there (the inside of
     /// a text box with no background).
     pub hit: Vec<Rect>,
+    /// A table's inner grid lines, stroked in the drawing's border.
+    pub rules: Vec<[Pos2; 2]>,
+    /// A table's cell texts, each with the cell it sits in.
+    pub cell_texts: Vec<(Rect, String)>,
+    /// The borders a table's rows and columns are resized by.
+    pub dividers: Vec<Divider>,
+    /// Where a table's cells are.
+    pub grid: Option<Grid>,
     /// Discs painted white on the shape (the hole of a pin).
     pub studs: Vec<(Pos2, f32)>,
     /// Solid discs in a colour of their own: the dot where a note's leader meets its anchor, the
@@ -180,6 +226,10 @@ impl Screen {
             outlines: Vec::new(),
             frames: Vec::new(),
             hit: Vec::new(),
+            rules: Vec::new(),
+            cell_texts: Vec::new(),
+            dividers: Vec::new(),
+            grid: None,
             studs: Vec::new(),
             discs: Vec::new(),
             glyph: None,
@@ -274,6 +324,21 @@ impl Screen {
                 .iter()
                 .any(|solid| geo::polygon_contains(solid, point) || near(solid, true))
             || (filled && !self.fill.is_empty() && geo::polygon_contains(&self.fill, point))
+    }
+
+    /// The row or column border within `reach` of `point`, the nearest when two meet.
+    pub(super) fn divider_at(&self, point: Pos2, reach: f32) -> Option<Part> {
+        self.dividers
+            .iter()
+            .map(|divider| {
+                (
+                    divider,
+                    geo::distance_to_segment(point, divider.a, divider.b),
+                )
+            })
+            .filter(|(_, distance)| *distance <= reach)
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(divider, _)| divider.part)
     }
 
     /// The handle under `point`, the nearest when several overlap.
@@ -665,6 +730,7 @@ fn shape(
             screen.guides = vec![[a, c1], [b, c2]];
             screen.handles = curve_handles(&anchors);
         }
+        Geometry::Table(table) => return table_shapes::project(table, style, proj),
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }

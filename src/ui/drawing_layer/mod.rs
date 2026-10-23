@@ -16,6 +16,7 @@ mod menu;
 mod note_shapes;
 mod shape;
 mod snap;
+mod table_shapes;
 #[cfg(test)]
 mod tests;
 mod text;
@@ -51,6 +52,11 @@ const CLOSE_RADIUS: f32 = 9.0;
 const SIMPLIFY_EPSILON: f32 = 0.4;
 /// The reach (px) of a handle beyond its drawn radius.
 const HANDLE_REACH: f32 = HANDLE_RADIUS + 3.0;
+/// The note left in the context for the workspace: a table's cell is selected on some chart, so
+/// Copy, Cut and Paste are the cell's this frame and not the drawing's.
+pub(in crate::ui) const TABLE_CELL_FLAG: &str = "drawing-table-cell-selected";
+/// The reach (px) of a table's row or column border.
+const DIVIDER_REACH: f32 = 4.0;
 
 /// Per-frame exchange between the workspace and one chart card's drawing layer.
 /// The workspace fills the inputs and applies the outputs after the card draws.
@@ -348,6 +354,10 @@ pub(super) struct DrawingLayer {
     text_edit: Option<text_edit::TextEditing>,
     /// The drawings whose note is open (a pin's): view state, never saved or synced.
     open_notes: HashSet<u64>,
+    /// The selected cell of the selected table, as `(drawing, row, column)`: view state too.
+    table_cell: Option<(u64, usize, usize)>,
+    /// A table just placed, to start editing its first cell once it is on the chart.
+    pending_cell: Option<(u64, u8)>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -496,7 +506,9 @@ impl DrawingLayer {
             && frame.shows(drawing)
             && !drawing.locked()
             && let Some(screen) = self.screen(drawing, proj)
-            && let Some(part) = screen.handle_at(pointer, HANDLE_REACH)
+            && let Some(part) = screen
+                .handle_at(pointer, HANDLE_REACH)
+                .or_else(|| screen.divider_at(pointer, DIVIDER_REACH))
         {
             return Some(Hit {
                 id: selected,
@@ -568,6 +580,17 @@ impl DrawingLayer {
         if matches!(&self.gesture, Some(Gesture::Draft(draft)) if draft.tool != frame.tool) {
             self.abort();
         }
+        // A cell is selected only while its table is the one thing selected.
+        if let Some((id, ..)) = self.table_cell
+            && frame.selected != [id]
+        {
+            self.table_cell = None;
+        }
+        if self.table_cell.is_some() {
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(egui::Id::new(TABLE_CELL_FLAG), true));
+        }
+        self.handle_table_keys(ui, frame, proj);
         self.handle_keys(ui, response, frame, proj);
 
         self.hover = None;
@@ -668,10 +691,12 @@ impl DrawingLayer {
         let typing = ui.ctx().egui_wants_keyboard_input() || frame.keys_blocked;
         if escape
             && self.gesture.is_none()
-            && !self.open_notes.is_empty()
             && !self.is_editing_text()
+            && (!self.open_notes.is_empty() || self.table_cell.is_some())
         {
+            // Escape lets go of what was opened or selected inside a drawing first.
             self.open_notes.clear();
+            self.table_cell = None;
             frame.escape_consumed = true;
             return;
         }
@@ -958,6 +983,16 @@ impl DrawingLayer {
         }
         match frame.tool {
             Tool::Cursor => {
+                // A click on a cell of the one selected table selects it; a second edits it.
+                if !modifiers.shift
+                    && let Some((id, row, column)) = self.table_cell_at(frame, point, proj)
+                {
+                    self.table_cell = Some((id, row, column));
+                    if double {
+                        self.begin_cell_edit(id, row, column, None, frame, proj);
+                    }
+                    return;
+                }
                 // A click on the text place of the one selected drawing edits its text, ahead of
                 // whatever line the text sits on.
                 if !modifiers.shift
@@ -1138,6 +1173,10 @@ impl DrawingLayer {
         } else {
             frame.commands.push(DrawingCommand::Add(drawing));
             frame.select = Some(vec![id]);
+            if tool.caps().has(Caps::TABLE) {
+                // Its first cell takes the keyboard as soon as the table is on the chart.
+                self.pending_cell = Some((id, 0));
+            }
         }
         if frame.hide_all {
             frame.reveal_all = true;
@@ -1160,7 +1199,8 @@ impl DrawingLayer {
             None => self.hover.map(|hit| match hit.part {
                 Part::Body => CursorIcon::Move,
                 Part::Anchor(_) | Part::Label => CursorIcon::Grab,
-                Part::Width => CursorIcon::ResizeHorizontal,
+                Part::Width | Part::Column(_) => CursorIcon::ResizeHorizontal,
+                Part::Row(_) => CursorIcon::ResizeVertical,
                 Part::Box(handle) => match handle {
                     BoxHandle::TopLeft | BoxHandle::BottomRight => CursorIcon::ResizeNwSe,
                     BoxHandle::TopRight | BoxHandle::BottomLeft => CursorIcon::ResizeNeSw,
@@ -1388,6 +1428,15 @@ impl DrawingLayer {
                         selected: with_handles,
                         text,
                         open: !draft && self.open_notes.contains(&drawing.id()),
+                        cell: self
+                            .table_cell
+                            .filter(|(id, ..)| !draft && *id == drawing.id())
+                            .map(|(_, row, column)| (row, column)),
+                        divider: self
+                            .hover
+                            .filter(|hit| !draft && hit.id == drawing.id())
+                            .map(|hit| hit.part)
+                            .filter(|part| matches!(part, Part::Column(_) | Part::Row(_))),
                     },
                 );
                 if !draft {

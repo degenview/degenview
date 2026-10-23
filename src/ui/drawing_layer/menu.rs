@@ -35,8 +35,21 @@ struct Target {
     point: Pos2,
 }
 
+/// What can be done to the grid of a table.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum TableOp {
+    /// A row after the selected cell's (at the end with none selected).
+    AddRow,
+    AddColumn,
+    DeleteRow,
+    DeleteColumn,
+    /// Pins the table to the screen, or back to the chart where it now is.
+    TogglePin,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Action {
+    Table(TableOp),
     Settings,
     EditText,
     /// A price alert at a horizontal line's price.
@@ -70,6 +83,15 @@ impl DrawingLayer {
         if !frame.is_selected(hit.id) {
             frame.select = Some(vec![hit.id]);
         }
+        // On a table the cell under the click is the one the menu's row and column entries mean.
+        if let Some(drawing) = frame.drawings.iter().find(|drawing| drawing.id() == hit.id)
+            && matches!(drawing.geometry(), Some(Geometry::Table(_)))
+            && let Some((row, column)) = self
+                .screen(drawing, proj)
+                .and_then(|screen| screen.grid.as_ref()?.cell_at(point))
+        {
+            self.table_cell = Some((hit.id, row, column));
+        }
         self.menu = Some(MenuState {
             at: point,
             target: Target {
@@ -88,6 +110,7 @@ impl DrawingLayer {
 
     /// Draws what floats over the chart: the toolbar and the open menu.
     pub(in crate::ui) fn overlay(&mut self, ui: &Ui, proj: &Projection, frame: &mut DrawingFrame) {
+        self.start_pending_cell(frame, proj);
         self.show_text_editor(ui, proj, frame);
         self.toolbar(ui, proj, frame);
         self.show_menu(ui, proj, frame);
@@ -201,6 +224,9 @@ impl DrawingLayer {
                                 {
                                     action = Some(Action::EditText);
                                 }
+                                if let Some(op) = self.table_controls(ui, drawing) {
+                                    action = Some(Action::Table(op));
+                                }
                                 if is_price_line(drawing)
                                     && icons::button(
                                         ui,
@@ -277,6 +303,101 @@ impl DrawingLayer {
         if let Some(action) = action {
             self.run(action, &ids, None, frame, proj);
         }
+    }
+
+    /// The toolbar's controls for a table: rows and columns to add, and (with a cell selected)
+    /// to delete, and the pin. Returns the one pressed.
+    fn table_controls(&self, ui: &mut Ui, drawing: &Drawing) -> Option<TableOp> {
+        let Some(Geometry::Table(table)) = drawing.geometry() else {
+            return None;
+        };
+        let has_cell = self.table_cell.is_some_and(|(id, ..)| id == drawing.id());
+        let mut op = None;
+        let mut chip =
+            |ui: &mut Ui, label: &str, selected: bool, enabled: bool, wanted: TableOp| {
+                if enabled && kit::value_chip(ui, label, selected).clicked() {
+                    op = Some(wanted);
+                }
+            };
+        chip(
+            ui,
+            "+ Row",
+            false,
+            table.row_count() < crate::model::table::MAX_ROWS,
+            TableOp::AddRow,
+        );
+        chip(
+            ui,
+            "+ Column",
+            false,
+            table.column_count() < crate::model::table::MAX_COLUMNS,
+            TableOp::AddColumn,
+        );
+        chip(
+            ui,
+            "− Row",
+            false,
+            has_cell && table.row_count() > 1,
+            TableOp::DeleteRow,
+        );
+        chip(
+            ui,
+            "− Column",
+            false,
+            has_cell && table.column_count() > 1,
+            TableOp::DeleteColumn,
+        );
+        chip(
+            ui,
+            if table.screen.is_some() {
+                "Pinned to screen"
+            } else {
+                "Pin to screen"
+            },
+            table.screen.is_some(),
+            true,
+            TableOp::TogglePin,
+        );
+        divider(ui);
+        op
+    }
+
+    /// `drawing`, a table, after `op`; `None` when it changes nothing. A selected cell stays on
+    /// the grid it is in.
+    fn table_edit(&mut self, drawing: &Drawing, op: TableOp, proj: &Projection) -> Option<Drawing> {
+        let cell = self
+            .table_cell
+            .filter(|(id, ..)| *id == drawing.id())
+            .map(|(_, row, column)| (row, column));
+        let mut changed = drawing.clone();
+        let Some(Geometry::Table(table)) = changed.geometry_mut() else {
+            return None;
+        };
+        let done = match op {
+            TableOp::AddRow => table.insert_row(cell.map(|cell| cell.0)),
+            TableOp::AddColumn => table.insert_column(cell.map(|cell| cell.1)),
+            TableOp::DeleteRow => cell.is_some_and(|cell| table.delete_row(cell.0)),
+            TableOp::DeleteColumn => cell.is_some_and(|cell| table.delete_column(cell.1)),
+            TableOp::TogglePin => {
+                // Where the corner is now stays where it is: only what it is tied to changes.
+                let corner = super::table_shapes::origin(table, proj);
+                if table.screen.is_some() {
+                    table.at = proj.anchor(corner);
+                    table.screen = None;
+                } else {
+                    table.screen = Some(super::table_shapes::pinned_at(corner, proj));
+                }
+                true
+            }
+        };
+        if let Some((id, row, column)) = self.table_cell.filter(|(id, ..)| *id == drawing.id()) {
+            self.table_cell = Some((
+                id,
+                row.min(table.row_count() - 1),
+                column.min(table.column_count() - 1),
+            ));
+        }
+        done.then_some(changed)
     }
 
     // MARK: Menu
@@ -393,6 +514,64 @@ impl DrawingLayer {
                     false,
                     Action::Alert,
                 );
+            }
+            if let Some(Geometry::Table(table)) =
+                first.filter(|_| single).and_then(|d| d.geometry())
+            {
+                let unlocked = first.is_some_and(|d| !d.locked());
+                let has_cell = self
+                    .table_cell
+                    .is_some_and(|(id, ..)| first.is_some_and(|d| d.id() == id));
+                item(
+                    ui,
+                    Icon::Plus,
+                    "Add row",
+                    None,
+                    unlocked && table.row_count() < crate::model::table::MAX_ROWS,
+                    false,
+                    Action::Table(TableOp::AddRow),
+                );
+                item(
+                    ui,
+                    Icon::Plus,
+                    "Add column",
+                    None,
+                    unlocked && table.column_count() < crate::model::table::MAX_COLUMNS,
+                    false,
+                    Action::Table(TableOp::AddColumn),
+                );
+                item(
+                    ui,
+                    Icon::Minus,
+                    "Delete row",
+                    None,
+                    unlocked && has_cell && table.row_count() > 1,
+                    false,
+                    Action::Table(TableOp::DeleteRow),
+                );
+                item(
+                    ui,
+                    Icon::Minus,
+                    "Delete column",
+                    None,
+                    unlocked && has_cell && table.column_count() > 1,
+                    false,
+                    Action::Table(TableOp::DeleteColumn),
+                );
+                item(
+                    ui,
+                    Icon::TableTool,
+                    if table.screen.is_some() {
+                        "Pin to chart"
+                    } else {
+                        "Pin to screen"
+                    },
+                    None,
+                    unlocked,
+                    false,
+                    Action::Table(TableOp::TogglePin),
+                );
+                kit::menu_separator(ui);
             }
             if let Some(drawing) = first.filter(|d| single && d.edits_text_in_place()) {
                 item(
@@ -573,6 +752,14 @@ impl DrawingLayer {
             Action::EditText => {
                 if let [drawing] = &targets[..] {
                     self.begin_text_edit(drawing.id(), frame, proj);
+                }
+            }
+            Action::Table(op) => {
+                if let [drawing] = &targets[..]
+                    && !drawing.locked()
+                    && let Some(changed) = self.table_edit(drawing, op, proj)
+                {
+                    replace(frame, changed);
                 }
             }
             Action::Alert => {

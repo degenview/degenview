@@ -142,7 +142,9 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             Row {
                 key: Key::Drawing(drawing.id()),
                 label: format!("{name} {number}"),
-                detail: drawing.text().to_owned(),
+                detail: drawing
+                    .summary()
+                    .unwrap_or_else(|| drawing.text().to_owned()),
                 shown: Some(!drawing.hidden()),
                 locked: Some(drawing.locked()),
                 tool: drawing.tool(),

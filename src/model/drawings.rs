@@ -9,6 +9,7 @@
 use super::Timeframe;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
+use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
 /// The most vertices one drawing may hold: a safety limit on memory and rendering, far above
@@ -279,6 +280,8 @@ pub enum Geometry {
         anchor: Anchor,
         label: Anchor,
     },
+    /// A grid of text cells, at a chart point or pinned to the screen.
+    Table(TableData),
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -366,6 +369,7 @@ impl Geometry {
             Self::Annotation { kind, .. } => kind.tool(),
             Self::Leader { kind, .. } => kind.tool(),
             Self::Signpost { .. } => Tool::Signpost,
+            Self::Table(_) => Tool::Table,
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -405,6 +409,9 @@ impl Geometry {
                 anchor: at, label, ..
             } => vec![*at, *label],
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![*at],
+            // A pinned table is not at a chart point: it has no anchor to move or to show.
+            Self::Table(table) if table.screen.is_none() => vec![table.at],
+            Self::Table(_) => Vec::new(),
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
             Self::Triangle { points } => points.to_vec(),
@@ -448,6 +455,8 @@ impl Geometry {
                 anchor: at, label, ..
             } => vec![at, label],
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![at],
+            Self::Table(table) if table.screen.is_none() => vec![&mut table.at],
+            Self::Table(_) => Vec::new(),
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
             Self::Triangle { points } => points.iter_mut().collect(),
@@ -515,6 +524,7 @@ impl Geometry {
             Self::Highlighter { .. } => !anchors.is_empty(),
             Self::Path { .. } => anchors.len() >= 2,
             Self::Polyline { closed, .. } => anchors.len() >= if *closed { 3 } else { 2 },
+            Self::Table(table) => table.is_valid(),
             _ => true,
         };
         enough && anchors.len() <= MAX_POINTS && anchors.iter().all(Anchor::is_finite)
@@ -663,6 +673,7 @@ impl Geometry {
                 p2: at(1),
                 p3: last,
             },
+            Tool::Table => Self::Table(TableData::new(last)),
             Tool::Note | Tool::PriceNote | Tool::Callout => Self::Leader {
                 kind: LeaderKind::of_tool(tool)?,
                 at: first,
@@ -766,6 +777,7 @@ impl Geometry {
                     price: label.price,
                 },
             },
+            (Tool::Table, [at]) => Self::Table(TableData::new(*at)),
             (tool, [at]) if AnnotationKind::of_tool(tool).is_some() => Self::Annotation {
                 kind: AnnotationKind::of_tool(tool)?,
                 at: *at,
@@ -1063,6 +1075,23 @@ impl Drawing {
     pub fn edits_text_in_place(&self) -> bool {
         self.tool()
             .is_some_and(|tool| tool.caps().has(super::Caps::INLINE_TEXT))
+    }
+
+    /// Sets one cell of a table drawing. `false` for another drawing or a cell outside the grid.
+    pub fn set_table_cell(&mut self, row: usize, column: usize, text: &str) -> bool {
+        if let Some(Geometry::Table(table)) = self.geometry_mut() {
+            table.set_cell(row, column, text)
+        } else {
+            false
+        }
+    }
+
+    /// What to say of a drawing whose words are not its own text (a table's size), for lists.
+    pub fn summary(&self) -> Option<String> {
+        match self.geometry()? {
+            Geometry::Table(table) => Some(table.summary()),
+            _ => None,
+        }
     }
 
     /// Every anchor in placement order.

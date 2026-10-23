@@ -61,6 +61,7 @@ pub enum Tool {
     PriceNote,
     Callout,
     Signpost,
+    Table,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -158,6 +159,8 @@ impl Caps {
     pub const COLLAPSIBLE: Self = Self(1 << 19);
     /// An emoji at the anchor, shown or not, and what it sits on.
     pub const EMOJI: Self = Self(1 << 20);
+    /// A grid of editable cells: edited cell by cell, pinned to the chart or to the screen.
+    pub const TABLE: Self = Self(1 << 21);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -246,7 +249,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 42] = [
+    pub const GROUPED: [Self; 43] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -268,6 +271,7 @@ impl Tool {
         Self::Note,
         Self::PriceNote,
         Self::Pin,
+        Self::Table,
         Self::Callout,
         Self::Comment,
         Self::PriceLabel,
@@ -419,6 +423,15 @@ impl Tool {
             ),
             Self::PriceNote => spec("Price note", TextNotes, Points(2), note.with(Caps::COLOR)),
             Self::Callout => spec("Callout", TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
+            Self::Table => spec(
+                "Table",
+                TextNotes,
+                Single,
+                Caps::BOX
+                    .with(Caps::FILL)
+                    .with(Caps::AUTO_TEXT)
+                    .with(Caps::TABLE),
+            ),
             Self::Signpost => spec(
                 "Signpost",
                 TextNotes,
@@ -686,6 +699,17 @@ impl Tool {
                 style.text.bold = true;
                 style
             }
+            Self::Table => {
+                // Not in the Charting Library: a slate card with a grey grid and light text, so
+                // it reads over the candles on a dark or a light chart.
+                let mut style = tinted([230, 234, 242, 255], true);
+                style.fill.color = [38, 43, 56, 235];
+                style.border.enabled = true;
+                style.border.color = [112, 125, 150, 255];
+                style.text.size = 13.0;
+                style.text.align = HorizontalAlign::Left;
+                style
+            }
             Self::Callout => {
                 let mut style = text_box([0, 151, 167, 179], [0, 151, 167, 255], true);
                 style.border.width = 2.0;
@@ -744,7 +768,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 42);
+        assert_eq!(Tool::GROUPED.len(), 43);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -767,7 +791,7 @@ mod tests {
         };
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
-        assert_eq!(counts(&ToolGroup::NOTE_MENU), [9]);
+        assert_eq!(counts(&ToolGroup::NOTE_MENU), [10]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

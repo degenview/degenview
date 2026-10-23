@@ -8,6 +8,7 @@ use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
 mod note_tests;
+mod table_tests;
 
 const PLOT: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 400.0));
 
@@ -536,6 +537,20 @@ impl Rig {
             self.key(Key::Enter);
             self.settle();
         }
+        // A table starts editing its first cell: leave it, and let go of the cell, so the table
+        // is a plain selected drawing like the rest.
+        if tool.caps().has(Caps::TABLE) {
+            self.settle();
+            assert!(
+                self.layer.is_editing_text(),
+                "{tool:?} edits its first cell"
+            );
+            self.key(Key::Escape);
+            self.settle();
+            self.key(Key::Escape);
+            self.settle();
+            assert!(!self.layer.is_editing_text() && self.layer.table_cell.is_none());
+        }
     }
 }
 
@@ -567,6 +582,16 @@ fn body_point(screen: &Screen, avoid: Option<Rect>) -> Pos2 {
         .find_map(along)
     {
         return point;
+    }
+    // A table's borders resize its rows and columns: its body is the inside of a cell.
+    if !screen.dividers.is_empty() {
+        let rect = screen.hit[0];
+        for (fx, fy) in [(0.3, 0.3), (0.5, 0.5), (0.7, 0.3), (0.3, 0.7), (0.7, 0.7)] {
+            let point = rect.min + rect.size() * vec2(fx, fy);
+            if usable(point) && screen.divider_at(point, 8.0).is_none() {
+                return point;
+            }
+        }
     }
     for path in screen.outlines.iter().chain(&screen.frames) {
         let mut closed = path.clone();
@@ -806,7 +831,11 @@ fn every_placed_tool_can_be_selected_moved_and_deleted() {
             );
         }
 
-        // Delete removes it, in one step.
+        // Delete removes it, in one step. (With a table's cell selected it clears the cell, so the
+        // cell is let go of first.)
+        if rig.layer.table_cell.is_some() {
+            rig.key(Key::Escape);
+        }
         rig.key(Key::Delete);
         assert!(rig.drawings.is_empty(), "{tool:?}");
         assert_eq!(rig.undo_steps, steps + 2);

@@ -1367,6 +1367,15 @@ impl View {
     }
 }
 
+/// Whether a table's cell was selected on some chart in the last frame, and forgets it: while one
+/// is, the keyboard's Copy, Cut and Paste are the cell's and the workspace leaves them alone.
+pub fn take_table_cell_selected(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|data| {
+        data.remove_temp::<bool>(egui::Id::new(crate::ui::drawing_layer::TABLE_CELL_FLAG))
+            .unwrap_or(false)
+    })
+}
+
 impl ChartCard {
     /// The drawings whose note is open (a pin's), so a snapshot can show them as they stand.
     pub fn open_notes(&self) -> Vec<u64> {

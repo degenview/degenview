@@ -143,11 +143,13 @@ fn has_style_page(caps: Caps) -> bool {
 /// middle or bottom of it), or on a line or channel (above it, on it or below it).
 fn text_has_position(tool: Tool) -> bool {
     use crate::model::ToolGroup;
-    matches!(tool, Tool::Rectangle | Tool::Circle | Tool::Ellipse)
-        || matches!(
-            tool.spec().group,
-            ToolGroup::TrendLines | ToolGroup::Channels
-        )
+    matches!(
+        tool,
+        Tool::Rectangle | Tool::Circle | Tool::Ellipse | Tool::Table
+    ) || matches!(
+        tool.spec().group,
+        ToolGroup::TrendLines | ToolGroup::Channels
+    )
 }
 
 /// The label of anchor `index` of a drawing by `tool`.
@@ -1195,8 +1197,55 @@ impl DrawingProperties {
 
     // MARK: Coordinates
 
+    /// Where a table pinned to the screen is, as percentages of the plot. A table at a chart point
+    /// is placed by its anchor like any other drawing; pinning and unpinning are on the chart,
+    /// which knows where the corner is.
+    fn pinned_table_position(&mut self, ui: &mut Ui, page: &mut Page) {
+        let Some(Geometry::Table(table)) = self.draft.geometry() else {
+            return;
+        };
+        let Some(place) = table.screen else {
+            return;
+        };
+        page.section(
+            ui,
+            "Position on screen",
+            Some("The table stays here however the chart is scrolled."),
+        );
+        let mut edited = place;
+        for (title, id, value) in [
+            ("Horizontal", "table-pin-x", &mut edited.x),
+            ("Vertical", "table-pin-y", &mut edited.y),
+        ] {
+            if let Some(percent) = settings_card::card(
+                ui,
+                Icon::ArrowLeftRight,
+                title,
+                Some("Percent of the chart's width or height, from its top-left corner."),
+                |ui| {
+                    number_field(
+                        ui,
+                        Id::new((id, self.draft.id())),
+                        f64::from(*value) * 100.0,
+                        1.0,
+                        0.0..=100.0,
+                        1,
+                    )
+                },
+            ) {
+                *value = (percent / 100.0) as f32;
+            }
+        }
+        if edited != place
+            && let Some(Geometry::Table(table)) = self.draft.geometry_mut()
+        {
+            table.screen = Some(edited.clamped());
+        }
+    }
+
     fn coordinates_page(&mut self, ui: &mut Ui) {
         let mut page = Page::new(true);
+        self.pinned_table_position(ui, &mut page);
         let anchors = self.draft.anchors();
         let shown = anchors.len().min(MAX_LISTED);
         for (index, &anchor) in anchors.iter().enumerate().take(shown) {

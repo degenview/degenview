@@ -15,7 +15,8 @@
 use super::shape::TextPlace;
 use super::{DrawingFrame, DrawingLayer, Projection, text};
 use crate::model::drawing_style::{HorizontalAlign, TextStyle};
-use crate::model::{Caps, Drawing, DrawingCommand};
+use crate::model::table::MAX_CELL_CHARS;
+use crate::model::{Caps, Drawing, DrawingCommand, Geometry};
 use crate::ui::{kit, series_render, theme};
 use eframe::egui::{
     self, Align, Align2, Event, FontId, Id, Key, Margin, Order, Pos2, Stroke, TextEdit, Ui,
@@ -29,10 +30,33 @@ const TEXT_SLACK: f32 = 1.0;
 const EDITOR_WIDTH: f32 = 200.0;
 /// The widest the editor grows to follow a wide text box, in px.
 const EDITOR_MAX_WIDTH: f32 = 480.0;
+/// The narrowest and widest the editor of a table's cell is: a narrow column still gets room to
+/// type in.
+const TABLE_EDITOR_WIDTH: (f32, f32) = (140.0, 480.0);
+
+/// The cell after (or before) `row`, `column` in reading order, wrapping round at either end.
+fn neighbour_cell(
+    row: usize,
+    column: usize,
+    rows: usize,
+    columns: usize,
+    backwards: bool,
+) -> (usize, usize) {
+    let total = rows * columns;
+    let index = row * columns + column;
+    let next = if backwards {
+        (index + total - 1) % total
+    } else {
+        (index + 1) % total
+    };
+    (next / columns, next % columns)
+}
 
 /// The text of one drawing while it is being edited.
 pub(super) struct TextEditing {
     pub(super) id: u64,
+    /// The cell of a table being edited, as `(row, column)`; `None` for a drawing's own text.
+    cell: Option<(usize, usize)>,
     /// The drawing, while it is not yet on the chart (see the module note).
     draft: Option<Drawing>,
     buffer: String,
@@ -104,6 +128,7 @@ impl DrawingLayer {
         }
         self.text_edit = Some(TextEditing {
             id,
+            cell: None,
             draft: None,
             buffer: drawing.text().to_owned(),
             original: drawing.text().to_owned(),
@@ -121,6 +146,7 @@ impl DrawingLayer {
         let (anchor, width) = self.edit_place(&drawing, proj);
         self.text_edit = Some(TextEditing {
             id: drawing.id(),
+            cell: None,
             buffer: String::new(),
             original: String::new(),
             draft: Some(drawing),
@@ -141,6 +167,252 @@ impl DrawingLayer {
             .or_else(|| place.map(place_center))
             .unwrap_or_else(|| proj.plot.center());
         (anchor, place.map_or(EDITOR_WIDTH, editor_width))
+    }
+
+    /// Starts editing one cell of the table `id`, with `typed` (what the user began typing with a
+    /// cell selected) added to what is there. `false` when it cannot be: the drawing is locked,
+    /// hidden or no table, or the cell is not in it.
+    pub(super) fn begin_cell_edit(
+        &mut self,
+        id: u64,
+        row: usize,
+        column: usize,
+        typed: Option<&str>,
+        frame: &mut DrawingFrame,
+        proj: &Projection,
+    ) -> bool {
+        let Some(drawing) = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id)
+            .filter(|drawing| !drawing.locked() && frame.shows(drawing))
+        else {
+            return false;
+        };
+        let Some(Geometry::Table(table)) = drawing.geometry() else {
+            return false;
+        };
+        if row >= table.row_count() || column >= table.column_count() {
+            return false;
+        }
+        let original = table.cell(row, column).to_owned();
+        let Some(rect) = self
+            .screen(drawing, proj)
+            .and_then(|screen| screen.grid.as_ref()?.cell_rect(row, column))
+        else {
+            return false;
+        };
+        let mut buffer = original.clone();
+        buffer.push_str(typed.unwrap_or(""));
+        self.table_cell = Some((id, row, column));
+        self.text_edit = Some(TextEditing {
+            id,
+            cell: Some((row, column)),
+            draft: None,
+            buffer,
+            original,
+            anchor: rect.center(),
+            width: rect
+                .width()
+                .clamp(TABLE_EDITOR_WIDTH.0, TABLE_EDITOR_WIDTH.1),
+            focused: false,
+        });
+        frame.select = Some(vec![id]);
+        true
+    }
+
+    /// The cell of the one selected table that `point` is on, as `(drawing, row, column)`.
+    pub(super) fn table_cell_at(
+        &mut self,
+        frame: &DrawingFrame,
+        point: Pos2,
+        proj: &Projection,
+    ) -> Option<(u64, usize, usize)> {
+        let [id] = frame.selected[..] else {
+            return None;
+        };
+        let drawing = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id)
+            .filter(|drawing| !drawing.locked() && frame.shows(drawing))?;
+        if !matches!(drawing.geometry(), Some(Geometry::Table(_))) {
+            return None;
+        }
+        let (row, column) = self.screen(drawing, proj)?.grid.as_ref()?.cell_at(point)?;
+        Some((id, row, column))
+    }
+
+    /// Starts the first cell of a table that has just been placed, once it is on the chart.
+    pub(super) fn start_pending_cell(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        let Some((id, waited)) = self.pending_cell.take() else {
+            return;
+        };
+        if frame.drawings.iter().any(|drawing| drawing.id() == id) {
+            self.begin_cell_edit(id, 0, 0, None, frame, proj);
+        } else if waited < 5 {
+            self.pending_cell = Some((id, waited + 1));
+        }
+    }
+
+    /// What the keyboard does to the selected cell of a table while it is not being edited:
+    /// Return edits it, Tab and the arrows move to another, Delete clears it, and typing starts
+    /// editing it with what was typed.
+    pub(super) fn handle_table_keys(
+        &mut self,
+        ui: &Ui,
+        frame: &mut DrawingFrame,
+        proj: &Projection,
+    ) {
+        let Some((id, row, column)) = self.table_cell else {
+            return;
+        };
+        let ctx = ui.ctx();
+        // A text field, an open menu or a popup has the keyboard: it is theirs.
+        if self.gesture.is_some()
+            || self.is_editing_text()
+            || frame.keys_blocked
+            || self.menu.is_some()
+            || ctx.text_edit_focused()
+            || egui::Popup::is_any_open(ctx)
+        {
+            return;
+        }
+        // egui's own Tab and arrow navigation may have focused some widget this very frame (the
+        // plot, a button of the toolbar). With a cell selected the keys are the cell's, so that
+        // focus is let go: it would otherwise take the app's shortcuts with it.
+        ctx.memory_mut(|memory| {
+            if let Some(focused) = memory.focused() {
+                memory.surrender_focus(focused);
+            }
+        });
+        let Some(table) = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id && !drawing.locked() && frame.shows(drawing))
+            .and_then(|drawing| match drawing.geometry() {
+                Some(Geometry::Table(table)) => Some(table.clone()),
+                _ => None,
+            })
+        else {
+            self.table_cell = None;
+            return;
+        };
+        enum Step {
+            Edit(Option<String>),
+            Move(isize, isize),
+            Tab(bool),
+            Clear,
+            Copy { cut: bool },
+            Paste(String),
+        }
+        let step = ui.ctx().input_mut(|input| {
+            let typed: String = input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    Event::Text(text) if !text.chars().all(char::is_control) => Some(text.as_str()),
+                    _ => None,
+                })
+                .collect();
+            if !typed.is_empty() {
+                input
+                    .events
+                    .retain(|event| !matches!(event, Event::Text(_)));
+                return Some(Step::Edit(Some(typed)));
+            }
+            // The platform reports the clipboard keys as events. They belong to the cell while
+            // one is selected, so they are taken here.
+            let clipboard = input.events.iter().find_map(|event| match event {
+                Event::Copy => Some(Step::Copy { cut: false }),
+                Event::Cut => Some(Step::Copy { cut: true }),
+                Event::Paste(text) => Some(Step::Paste(text.clone())),
+                _ => None,
+            });
+            if clipboard.is_some() {
+                input
+                    .events
+                    .retain(|event| !matches!(event, Event::Copy | Event::Cut | Event::Paste(_)));
+                return clipboard;
+            }
+            let none = egui::Modifiers::NONE;
+            if input.consume_key(none, Key::Enter) {
+                Some(Step::Edit(None))
+            } else if input.consume_key(egui::Modifiers::SHIFT, Key::Tab) {
+                Some(Step::Tab(true))
+            } else if input.consume_key(none, Key::Tab) {
+                Some(Step::Tab(false))
+            } else if input.consume_key(none, Key::ArrowUp) {
+                Some(Step::Move(-1, 0))
+            } else if input.consume_key(none, Key::ArrowDown) {
+                Some(Step::Move(1, 0))
+            } else if input.consume_key(none, Key::ArrowLeft) {
+                Some(Step::Move(0, -1))
+            } else if input.consume_key(none, Key::ArrowRight) {
+                Some(Step::Move(0, 1))
+            } else if input.consume_key(none, Key::Delete)
+                || input.consume_key(none, Key::Backspace)
+            {
+                Some(Step::Clear)
+            } else {
+                None
+            }
+        });
+        let (rows, columns) = (table.row_count(), table.column_count());
+        match step {
+            None => {}
+            Some(Step::Edit(typed)) => {
+                self.begin_cell_edit(id, row, column, typed.as_deref(), frame, proj);
+            }
+            Some(Step::Move(dy, dx)) => {
+                let row = row.saturating_add_signed(dy).min(rows - 1);
+                let column = column.saturating_add_signed(dx).min(columns - 1);
+                self.table_cell = Some((id, row, column));
+            }
+            Some(Step::Tab(backwards)) => {
+                let (row, column) = neighbour_cell(row, column, rows, columns, backwards);
+                self.table_cell = Some((id, row, column));
+            }
+            Some(Step::Clear) => {
+                self.replace_table(frame, id, |table| table.set_cell(row, column, ""));
+            }
+            Some(Step::Copy { cut }) => {
+                ui.ctx().copy_text(table.cell(row, column).to_owned());
+                if cut {
+                    self.replace_table(frame, id, |table| table.set_cell(row, column, ""));
+                }
+            }
+            Some(Step::Paste(text)) => {
+                self.replace_table(frame, id, |table| table.paste(row, column, &text) > 0);
+            }
+        }
+    }
+
+    /// Replaces the table `id` with itself after `change`, when that reports a change and the
+    /// table is not locked or hidden.
+    fn replace_table(
+        &mut self,
+        frame: &mut DrawingFrame,
+        id: u64,
+        change: impl FnOnce(&mut crate::model::table::TableData) -> bool,
+    ) {
+        let Some(drawing) = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id && !drawing.locked() && frame.shows(drawing))
+        else {
+            return;
+        };
+        let mut changed = drawing.clone();
+        if let Some(Geometry::Table(table)) = changed.geometry_mut()
+            && change(table)
+            && changed != *drawing
+        {
+            frame.commands.push(DrawingCommand::Replace {
+                id,
+                drawing: changed,
+            });
+        }
     }
 
     /// Whether a text is being edited.
@@ -192,12 +464,18 @@ impl DrawingLayer {
         let style = drawing
             .style()
             .map_or_else(TextStyle::default, |style| style.text);
-        let limit = drawing.max_text();
+        let limit = if editing.cell.is_some() {
+            MAX_CELL_CHARS
+        } else {
+            drawing.max_text()
+        };
         let ctx = ui.ctx();
         // The keys that end the edit are taken first, so the field never sees them. Shift+Return
-        // is not one: it adds a line.
-        let (keep, cancel) = ctx.input_mut(|input| {
-            let mut keep = false;
+        // is not one: it adds a line. Tab ends a table cell's edit and starts the next cell's
+        // (Shift+Tab the one before).
+        let in_table = editing.cell.is_some();
+        let (keep, tab, cancel) = ctx.input_mut(|input| {
+            let (mut keep, mut tab) = (false, None);
             input.events.retain(|event| match event {
                 Event::Key {
                     key: Key::Enter,
@@ -208,12 +486,32 @@ impl DrawingLayer {
                     keep = true;
                     false
                 }
+                Event::Key {
+                    key: Key::Tab,
+                    pressed: true,
+                    modifiers,
+                    ..
+                } if in_table => {
+                    tab = Some(modifiers.shift);
+                    false
+                }
                 _ => true,
             });
-            (keep, input.key_pressed(Key::Escape))
+            (keep, tab, input.key_pressed(Key::Escape))
         });
         let field = Id::new(("drawing-text-field", editing.id));
         let mut left = false;
+        // A field that starts with text in it has the caret after it, to add to it.
+        if !editing.focused {
+            let mut state = egui::text_edit::TextEditState::load(ctx, field).unwrap_or_default();
+            let end = editing.buffer.chars().count();
+            state
+                .cursor
+                .set_char_range(Some(egui::text::CCursorRange::one(
+                    egui::text::CCursor::new(end),
+                )));
+            state.store(ctx, field);
+        }
         // The field shows the text as it will be drawn: the same size, weight and colour.
         let mut layouter = |ui: &Ui, text: &dyn egui::TextBuffer, wrap_width: f32| {
             let job = text::layout_job(text.as_str(), &style, wrap_width);
@@ -270,9 +568,30 @@ impl DrawingLayer {
             frame.escape_consumed = true;
             return;
         }
-        if keep || left {
+        if keep || left || tab.is_some() {
             let kept = editing.buffer.trim_end();
-            if !on_chart {
+            if let Some((row, column)) = editing.cell {
+                // A cell is one edit of the table: one undo step, and only if it changed.
+                if kept != editing.original && drawing.set_table_cell(row, column, kept) {
+                    frame.commands.push(DrawingCommand::Replace {
+                        id: editing.id,
+                        drawing,
+                    });
+                }
+                self.table_cell = Some((editing.id, row, column));
+                if let Some(backwards) = tab
+                    && let Some(Geometry::Table(table)) = stored_table(frame, editing.id)
+                {
+                    let (next_row, next_column) = neighbour_cell(
+                        row,
+                        column,
+                        table.row_count(),
+                        table.column_count(),
+                        backwards,
+                    );
+                    self.begin_cell_edit(editing.id, next_row, next_column, None, frame, proj);
+                }
+            } else if !on_chart {
                 // A draft is added with its text, or not at all.
                 if !kept.trim().is_empty() {
                     drawing.set_text(kept);
@@ -290,4 +609,13 @@ impl DrawingLayer {
         }
         self.text_edit = Some(editing);
     }
+}
+
+/// The geometry of the drawing `id` as it stands on the chart.
+fn stored_table<'a>(frame: &'a DrawingFrame<'_>, id: u64) -> Option<&'a Geometry> {
+    frame
+        .drawings
+        .iter()
+        .find(|drawing| drawing.id() == id)?
+        .geometry()
 }

@@ -99,6 +99,7 @@ pub mod workspace_toolbar;
 pub use chart_card::ContextRequest;
 pub use chart_card::SnapshotInput;
 pub use chart_card::supports_alerts;
+pub use chart_card::take_table_cell_selected;
 pub use chart_card::{ChartCard, ChartCardAction, CrosshairInfo, SeriesLine, WatchlistMembership};
 pub use drawing_layer::DrawingFrame;
 pub use replay_overlay::ReplayChartFrame;

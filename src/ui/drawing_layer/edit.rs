@@ -81,6 +81,10 @@ pub(super) enum Part {
     Box(BoxHandle),
     /// The right edge of a text box: dragging it sets the width the text wraps at.
     Width,
+    /// The border to the right of this column of a table: dragging it resizes the column.
+    Column(usize),
+    /// The border under this row of a table: dragging it resizes the row.
+    Row(usize),
     /// The label of a note or a signpost (the second anchor): dragging it moves the label by
     /// the pointer's travel, so a handle that is not on the anchor itself does not make it jump.
     Label,
@@ -124,14 +128,40 @@ pub(super) fn edited(
     let delta = now - press;
     let mut result = original.clone();
     match part {
-        Part::Body => {
-            for anchor in result.anchors_mut() {
-                *anchor = proj.anchor(proj.point(*anchor) + delta);
-            }
-        }
+        Part::Body => translate(&mut result, delta, proj),
+        // A pinned table has no anchor to set: its corner moves with the pointer instead.
+        Part::Anchor(_) if pinned(&result) => translate(&mut result, delta, proj),
         Part::Anchor(index) => {
             if let Some(anchor) = result.anchors_mut().into_iter().nth(index) {
                 *anchor = target;
+            }
+        }
+        Part::Column(column) => {
+            if let Some(grid) = grid_of(original, proj)
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+                && let (Some(left), Some(right)) = (grid.xs.get(column), grid.xs.get(column + 1))
+            {
+                table.resize_column(column, (right - left) + delta.x);
+            }
+        }
+        Part::Row(row) => {
+            if let Some(grid) = grid_of(original, proj)
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+                && let (Some(top), Some(bottom)) = (grid.ys.get(row), grid.ys.get(row + 1))
+            {
+                table.resize_row(row, (bottom - top) + delta.y);
+            }
+        }
+        Part::Box(handle) if matches!(original.geometry(), Some(Geometry::Table(_))) => {
+            if handle == BoxHandle::BottomRight
+                && let Some(grid) = grid_of(original, proj)
+                && let (Some(width), Some(height)) = (
+                    grid.xs.last().zip(grid.xs.first()).map(|(r, l)| r - l),
+                    grid.ys.last().zip(grid.ys.first()).map(|(b, t)| b - t),
+                )
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+            {
+                table.scale_to(width + delta.x, height + delta.y);
             }
         }
         Part::Box(handle) => {
@@ -180,6 +210,33 @@ fn dragged_width(original: &Drawing, proj: &Projection, press: Pos2, now: Pos2) 
         crate::model::drawing_style::MIN_BOX_WIDTH,
         crate::model::drawing_style::MAX_BOX_WIDTH,
     ))
+}
+
+/// Moves a drawing by `delta` px on screen. A drawing at chart points moves every anchor, which
+/// keeps it right on a log scale too; a table pinned to the screen moves its pinned place by the
+/// same fraction of the plot.
+pub(super) fn translate(drawing: &mut Drawing, delta: Vec2, proj: &Projection) {
+    if let Some(Geometry::Table(table)) = drawing.geometry_mut()
+        && let Some(place) = &mut table.screen
+    {
+        place.x += delta.x / proj.plot.width().max(1.0);
+        place.y += delta.y / proj.plot.height().max(1.0);
+        *place = place.clamped();
+        return;
+    }
+    for anchor in drawing.anchors_mut() {
+        *anchor = proj.anchor(proj.point(*anchor) + delta);
+    }
+}
+
+/// Whether the drawing is a table pinned to the screen.
+fn pinned(drawing: &Drawing) -> bool {
+    matches!(drawing.geometry(), Some(Geometry::Table(table)) if table.screen.is_some())
+}
+
+/// Where the cells of a table drawing are on screen now.
+fn grid_of(drawing: &Drawing, proj: &Projection) -> Option<super::shape::Grid> {
+    super::shape::build(drawing, proj)?.grid
 }
 
 /// A parallel channel keeps the price distance between its edges when an end of the first edge
@@ -271,9 +328,7 @@ pub(super) fn without_vertex(drawing: &Drawing, index: usize) -> Option<Drawing>
 /// exactly on the original, and unlocked.
 pub(super) fn duplicate(drawing: &Drawing, id: u64, proj: &Projection) -> Drawing {
     let mut copy = drawing.clone().with_id(id);
-    for anchor in copy.anchors_mut() {
-        *anchor = proj.anchor(proj.point(*anchor) + DUPLICATE_OFFSET);
-    }
+    translate(&mut copy, DUPLICATE_OFFSET, proj);
     copy.set_locked(false);
     copy
 }

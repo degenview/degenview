@@ -612,7 +612,10 @@ impl ChartWorkspace {
     /// Copy and Paste from the keyboard: the platform reports them as events, not keys.
     pub(super) fn handle_clipboard(&mut self, ui: &egui::Ui) {
         let ctx = ui.ctx();
-        if self.add_chart.is_open() || ctx.egui_wants_keyboard_input() {
+        // A selected table cell takes the clipboard keys for itself; the chart's draw this frame
+        // handles them.
+        let cell_selected = crate::ui::take_table_cell_selected(ctx);
+        if self.add_chart.is_open() || ctx.egui_wants_keyboard_input() || cell_selected {
             return;
         }
         let (copy, paste) = ui.input(|input| {

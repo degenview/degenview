@@ -33,6 +33,10 @@ pub(super) struct Emphasis {
     pub text: TextMode,
     /// The drawing's note is open (a pin's).
     pub open: bool,
+    /// The selected cell of a table, as `(row, column)`.
+    pub cell: Option<(usize, usize)>,
+    /// The row or column border of a table the pointer is on.
+    pub divider: Option<super::edit::Part>,
 }
 
 /// What a drawing's text place shows this frame.
@@ -485,6 +489,41 @@ pub(super) fn paint(
                 LineDash::Solid,
             );
         }
+    }
+    if style.border.enabled {
+        let border = &style.border;
+        for rule in &screen.rules {
+            stroke_path(
+                painter,
+                rule,
+                false,
+                Stroke::new(border.width, series_render::color(border.color)),
+                border.dash,
+            );
+        }
+    }
+    for (cell, text) in &screen.cell_texts {
+        // A cell never spills into its neighbours.
+        let clipped = painter.with_clip_rect(cell.shrink(0.5).intersect(painter.clip_rect()));
+        draw_text(&clipped, TextPlace::Inside(*cell), text, &style.text, false);
+    }
+    if let (Some((row, column)), Some(grid)) = (emphasis.cell, &screen.grid)
+        && let Some(cell) = grid.cell_rect(row, column)
+    {
+        painter.rect_stroke(
+            cell,
+            0.0,
+            Stroke::new(2.0, crate::ui::kit::ACCENT),
+            StrokeKind::Inside,
+        );
+    }
+    if let Some(part) = emphasis.divider
+        && let Some(divider) = screen.dividers.iter().find(|divider| divider.part == part)
+    {
+        painter.line_segment(
+            [divider.a, divider.b],
+            Stroke::new(2.5, crate::ui::kit::ACCENT),
+        );
     }
     for styled in &screen.styled {
         stroke_path(

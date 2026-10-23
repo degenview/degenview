@@ -840,3 +840,105 @@ fn gallery_of_the_two_point_notes() {
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
+
+/// Tables on a chart, written as PNGs for a person to look at.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_table() {
+    use crate::model::table::ScreenAnchor;
+    use crate::model::{Anchor, DrawingStyle, Geometry};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let table = |id: u64, anchor: Anchor, cells: &[&str], tweak: fn(&mut DrawingStyle)| {
+        let mut style = Tool::Table.default_style();
+        tweak(&mut style);
+        let mut drawing = Drawing::build(Tool::Table, id, &[anchor], style).expect("builds");
+        for (index, text) in cells.iter().enumerate() {
+            drawing.set_table_cell(index / 3, index % 3, text);
+        }
+        drawing
+    };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let mut pinned = table(
+        2,
+        at(250, 200.0),
+        &["Pinned", "to the", "screen"],
+        |style| {
+            style.text.bold = true;
+            style.text.align = crate::model::drawing_style::HorizontalAlign::Center;
+        },
+    );
+    if let Some(Geometry::Table(data)) = pinned.geometry_mut() {
+        data.screen = Some(ScreenAnchor { x: 0.62, y: 0.08 });
+    }
+    let sets: Vec<(&str, Vec<Drawing>)> = vec![
+        (
+            "table-1",
+            vec![
+                table(
+                    1,
+                    at(224, 262.0),
+                    &[
+                        "Level",
+                        "Price",
+                        "Note",
+                        "Entry",
+                        "238.50",
+                        "Break of range",
+                        "Stop",
+                        "226.00",
+                        "A longer note that has to wrap inside its narrow column and make the row taller",
+                    ],
+                    plain,
+                ),
+                pinned,
+            ],
+        ),
+        (
+            "table-2",
+            vec![table(
+                1,
+                at(236, 250.0),
+                &["", "", "", "", "no border", "", "", "", ""],
+                |style| {
+                    style.border.enabled = false;
+                    style.fill.enabled = false;
+                },
+            )],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
