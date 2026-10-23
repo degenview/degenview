@@ -10,7 +10,7 @@ use super::Timeframe;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
 use super::image_content::{Content, ImageData};
-use super::link_card::{LinkCard, LinkKind};
+use super::link_card::LinkCard;
 use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
@@ -286,8 +286,8 @@ pub enum Geometry {
     Table(TableData),
     /// A stored picture between two corners.
     Image(ImageData),
-    /// A link to an X post or a TradingView idea, drawn as a card whose top-left corner is at
-    /// `anchor`: a post's time for a post, the bar it was placed at for an idea.
+    /// A link to an X post, drawn as a card whose top-left corner is at `anchor`: the post's own
+    /// time when that bar was on screen where it was placed, else where it was placed.
     Card {
         anchor: Anchor,
         card: LinkCard,
@@ -381,10 +381,7 @@ impl Geometry {
             Self::Signpost { .. } => Tool::Signpost,
             Self::Table(_) => Tool::Table,
             Self::Image(_) => Tool::Image,
-            Self::Card { card, .. } => match card.link.kind() {
-                LinkKind::Post => Tool::Post,
-                LinkKind::Idea => Tool::Idea,
-            },
+            Self::Card { .. } => Tool::Post,
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -714,13 +711,9 @@ impl Geometry {
                 }
             }
             // A picture has to be chosen before it can be shown, so there is nothing to preview.
-            Tool::Cursor
-            | Tool::Fib
-            | Tool::Brush
-            | Tool::Ruler
-            | Tool::Image
-            | Tool::Post
-            | Tool::Idea => return None,
+            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler | Tool::Image | Tool::Post => {
+                return None;
+            }
         })
     }
 
@@ -935,12 +928,8 @@ impl Drawing {
     /// picture to show, the rest are built as usual. Not for the app: a real picture is chosen.
     #[cfg(test)]
     pub fn sample(tool: Tool, id: u64, anchors: &[Anchor], style: DrawingStyle) -> Option<Self> {
-        if matches!(tool, Tool::Post | Tool::Idea) {
-            let link = if tool == Tool::Post {
-                "https://x.com/degenview/status/1750000000000000000"
-            } else {
-                "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/"
-            };
+        if tool == Tool::Post {
+            let link = "https://x.com/degenview/status/1750000000000000000";
             let card = LinkCard::new(super::link_card::Link::parse(link).ok()?);
             Self::build_with(tool, id, anchors, style, &Content::Link(card))
         } else if tool.caps().has(super::Caps::CONTENT) {
@@ -974,14 +963,7 @@ impl Drawing {
                 let image = ImageData::new(*a, *b, picture);
                 image.is_valid().then_some(Geometry::Image(image))?
             }
-            (Tool::Post | Tool::Idea, [at], Content::Link(card))
-                if card.link.kind()
-                    == if tool == Tool::Post {
-                        LinkKind::Post
-                    } else {
-                        LinkKind::Idea
-                    } =>
-            {
+            (Tool::Post, [at], Content::Link(card)) => {
                 let card = card.clone().sanitized();
                 card.is_valid()
                     .then_some(Geometry::Card { anchor: *at, card })?
@@ -1774,7 +1756,7 @@ mod tests {
         // One anchor placed plus the pointer: every tool previews, even degenerate.
         for tool in Tool::GROUPED
             .into_iter()
-            .filter(|tool| !matches!(tool, Tool::Brush | Tool::Image | Tool::Post | Tool::Idea))
+            .filter(|tool| !matches!(tool, Tool::Brush | Tool::Image | Tool::Post))
         {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");

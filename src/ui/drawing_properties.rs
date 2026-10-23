@@ -50,7 +50,7 @@ enum Tab {
     Text,
     /// What a content tool shows: an image's picture, name and opacity.
     Content,
-    /// A Post or Idea card's link, preview and size.
+    /// A Post card's link, preview and size.
     Link,
     Coordinates,
     Visibility,
@@ -1426,7 +1426,7 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            card.link.kind().service(),
+            crate::model::link_card::SERVICE,
             Some("The card shows what the link says, and a preview only when you fetch one."),
         );
         let url = card.link.url();

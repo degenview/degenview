@@ -83,8 +83,8 @@ Reading candles and drawing trend lines and rectangles are done (phase 7).
   lines, rays, channels, regression trend and pitchforks (they can be deleted over MCP). Creating
   them needs an argument shape with one to four anchors and per-tool settings; until then a
   horizontal level made over MCP is a trend line with equal prices. The text, note and content tools
-  (text, note, price note, pin, table, callout, comment, price label, signpost, flag mark, image, post,
-  idea) are the same: listed read-only by their snake-case names and deletable, never created. A
+  (text, note, price note, pin, table, callout, comment, price label, signpost, flag mark, image, post)
+  are the same: listed read-only by their snake-case names and deletable, never created. A
   picture's bytes and a card's preview are not exposed; a table's cells and a pinned table's place are
   not in `anchors` (it has none).
 - `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).

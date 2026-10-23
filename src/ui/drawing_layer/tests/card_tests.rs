@@ -1,4 +1,4 @@
-//! The Post and Idea tools: placing a link card, moving and resizing it, and what it asks of the
+//! The Post tool: placing a link card, moving and resizing it, and what it asks of the
 //! workspace.
 
 use super::*;
@@ -32,23 +32,21 @@ fn placed_card(tool: Tool) -> (Rig, u64) {
 
 #[test]
 fn a_chosen_link_becomes_a_card_where_clicked_and_the_choice_is_used_up() {
-    for tool in [Tool::Post, Tool::Idea] {
-        let mut rig = Rig::with_tool(tool);
-        rig.pending = Some(sample_content(tool));
-        rig.click(POINTS[0]);
-        assert_eq!(rig.drawings.len(), 1, "{tool:?}");
-        assert_eq!(rig.undo_steps, 1);
-        assert_eq!(rig.last().tool(), Some(tool));
-        let rect = rect_of(&rig);
-        assert!(rect.left_top().distance(POINTS[0]) < 1.0, "{rect:?}");
-        assert_eq!(
-            rect.size(),
-            vec2(DEFAULT_CARD_SIZE[0], DEFAULT_CARD_SIZE[1])
-        );
-        assert_eq!(rig.selected, vec![rig.last().id()]);
-        assert!(rig.pending.is_none());
-        assert_eq!(rig.tool, Tool::Cursor);
-    }
+    let mut rig = Rig::with_tool(Tool::Post);
+    rig.pending = Some(sample_content(Tool::Post));
+    rig.click(POINTS[0]);
+    assert_eq!(rig.drawings.len(), 1);
+    assert_eq!(rig.undo_steps, 1);
+    assert_eq!(rig.last().tool(), Some(Tool::Post));
+    let rect = rect_of(&rig);
+    assert!(rect.left_top().distance(POINTS[0]) < 1.0, "{rect:?}");
+    assert_eq!(
+        rect.size(),
+        vec2(DEFAULT_CARD_SIZE[0], DEFAULT_CARD_SIZE[1])
+    );
+    assert_eq!(rig.selected, vec![rig.last().id()]);
+    assert!(rig.pending.is_none());
+    assert_eq!(rig.tool, Tool::Cursor);
 }
 
 #[test]
@@ -61,22 +59,24 @@ fn a_click_with_no_link_chosen_places_nothing() {
 
 #[test]
 fn a_card_dropped_near_an_edge_is_moved_back_onto_the_plot() {
-    let mut rig = Rig::with_tool(Tool::Idea);
-    rig.pending = Some(sample_content(Tool::Idea));
+    let mut rig = Rig::with_tool(Tool::Post);
+    rig.pending = Some(sample_content(Tool::Post));
     rig.click(pos2(980.0, 390.0));
     let rect = rect_of(&rig);
     assert!(PLOT.expand(0.5).contains_rect(rect), "{rect:?}");
 }
 
 #[test]
-fn a_link_of_the_other_kind_does_not_make_a_card_for_the_tool() {
+fn only_the_post_tool_makes_a_card() {
     let post = sample_content(Tool::Post);
     let at = Anchor {
         time_ms: 1,
         price: 1.0,
     };
-    assert!(Drawing::build_with(Tool::Idea, 1, &[at], Tool::Idea.default_style(), &post).is_none());
     assert!(Drawing::build_with(Tool::Post, 1, &[at], Tool::Post.default_style(), &post).is_some());
+    assert!(
+        Drawing::build_with(Tool::Image, 1, &[at], Tool::Image.default_style(), &post).is_none()
+    );
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn a_post_goes_to_its_own_time_when_that_bar_is_on_screen_and_anywhere_else_to_t
         anchor_for_card(Some(8_000), placed, (10_000, 0)).time_ms,
         8_000
     );
-    // Off screen, or an idea (no time): where it was placed.
+    // Off screen, or a post with no time (numbered before snowflake ids): where it was placed.
     assert_eq!(anchor_for_card(Some(20_000), placed, (0, 10_000)), placed);
     assert_eq!(anchor_for_card(None, placed, (0, 10_000)), placed);
 }
@@ -138,7 +138,7 @@ fn dragging_the_corner_resizes_the_card_within_its_limits_in_one_step() {
 
 #[test]
 fn dragging_the_body_moves_the_card_and_keeps_its_size() {
-    let (mut rig, id) = placed_card(Tool::Idea);
+    let (mut rig, id) = placed_card(Tool::Post);
     let (_, before) = card_of(&rig);
     let from = rig.body(id);
     rig.drag(from, from + vec2(60.0, 30.0));
@@ -198,16 +198,13 @@ fn a_waiting_link_is_placed_in_the_middle_of_the_plot_without_a_click() {
     let rect = rect_of(&rig);
     assert!(PLOT.contains_rect(rect));
     assert!((rect.center().x - PLOT.center().x).abs() < 2.0);
-    assert!(matches!(
-        rig.last().geometry(),
-        Some(Geometry::Card { card, .. }) if matches!(card.link, Link::Post { .. })
-    ));
+    assert_eq!(rig.last().tool(), Some(Tool::Post));
     assert!(rig.pending.is_none(), "the choice is used up");
 }
 
 #[test]
 fn a_card_survives_being_saved_and_a_hand_edited_bad_link_does_not() {
-    let (rig, _) = placed_card(Tool::Idea);
+    let (rig, _) = placed_card(Tool::Post);
     let json = serde_json::to_string(&rig.drawings).unwrap();
     let back: Vec<Drawing> = serde_json::from_str(&json).unwrap();
     // A price read off the screen may differ from its text form in the last digit.
@@ -221,10 +218,9 @@ fn a_card_survives_being_saved_and_a_hand_edited_bad_link_does_not() {
     assert!(back[0].geometry().unwrap().is_valid());
     // The link is a structured value, not text: a card of a link that does not parse is refused.
     let (anchor, mut card) = card_of(&rig);
-    card.link = Link::Idea {
-        id: "no spaces allowed".into(),
-        symbol: None,
-        slug: None,
+    card.link = Link {
+        id: 7,
+        handle: Some("not a handle".into()),
     };
     assert!(!Geometry::Card { anchor, card }.is_valid());
 }

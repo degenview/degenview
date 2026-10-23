@@ -184,7 +184,7 @@ pub(super) struct Screen {
     pub hit: Vec<Rect>,
     /// A picture, painted in its rectangle.
     pub picture: Option<PictureDraw>,
-    /// A Post or Idea card, painted in its rectangle.
+    /// A Post card, painted in its rectangle.
     pub card: Option<CardDraw>,
     /// A table's inner grid lines, stroked in the drawing's border.
     pub rules: Vec<[Pos2; 2]>,

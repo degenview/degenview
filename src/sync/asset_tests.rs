@@ -159,7 +159,7 @@ fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
             drawing
         })
         .collect();
-    assert_eq!(drawings.len(), 13);
+    assert_eq!(drawings.len(), 12);
     for drawing in &mut drawings {
         match drawing.geometry_mut() {
             Some(Geometry::Table(_)) => {
@@ -187,7 +187,7 @@ fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
     );
     let on_b = rows(&b, "saved_view");
     let received = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
-    assert_eq!(received.len(), 13);
+    assert_eq!(received.len(), 12);
     for (sent, got) in drawings.iter().zip(&received) {
         assert_eq!(
             &serde_json::to_value(sent).unwrap(),

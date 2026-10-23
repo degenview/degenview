@@ -64,7 +64,6 @@ pub enum Tool {
     Table,
     Image,
     Post,
-    Idea,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -257,7 +256,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 46] = [
+    pub const GROUPED: [Self; 45] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -287,7 +286,6 @@ impl Tool {
         Self::FlagMark,
         Self::Image,
         Self::Post,
-        Self::Idea,
         Self::Brush,
         Self::Highlighter,
         Self::ArrowMarker,
@@ -436,7 +434,6 @@ impl Tool {
             Self::Callout => spec("Callout", TextNotes, Points(2), note.with(Caps::TEXT_FIRST)),
             Self::Image => spec("Image", Content, Single, Caps::CONTENT),
             Self::Post => spec("Post", Content, Single, Caps::CONTENT),
-            Self::Idea => spec("Idea", Content, Single, Caps::CONTENT),
             Self::Table => spec(
                 "Table",
                 TextNotes,
@@ -750,7 +747,7 @@ impl Tool {
                 style
             }
             // A card takes its look from the theme, and a picture has none to style.
-            Self::Cursor | Self::Fib | Self::Ruler | Self::Image | Self::Post | Self::Idea => {
+            Self::Cursor | Self::Fib | Self::Ruler | Self::Image | Self::Post => {
                 DrawingStyle::default()
             }
         };
@@ -787,7 +784,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 46);
+        assert_eq!(Tool::GROUPED.len(), 45);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -810,7 +807,7 @@ mod tests {
         };
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
-        assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 3]);
+        assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

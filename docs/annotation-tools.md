@@ -1,8 +1,8 @@
 # Text, note and content tools
 
-Thirteen drawing tools in a third flyout off the strip (the Notes tile, after Shapes), in two
+Twelve drawing tools in a third flyout off the strip (the Notes tile, after Shapes), in two
 sections: **TEXT AND NOTES** (Text, Note, Price note, Pin, Table, Callout, Comment, Price label,
-Signpost, Flag mark) and **CONTENT** (Image, Post, Idea). They are ordinary drawings: placed,
+Signpost, Flag mark) and **CONTENT** (Image, Post). They are ordinary drawings: placed,
 edited in place, styled, moved, resized, locked, hidden by timeframe, undone, saved, synced,
 listed in the object tree and painted into snapshots by the code every other tool uses. A tool is
 a row of `Tool::spec()` and `Tool::default_style()`, a `Geometry` variant and a projection; there
@@ -28,7 +28,6 @@ compared pixel for pixel with TradingView.
 | Table | 1 click | a grid of text cells, 3 × 3 to start; chart-anchored or pinned to the screen | slate card, grey border, light 13 px text (**inferred**) |
 | Image | choose, then 1 click | a stored picture between two corners | none |
 | Post | paste a link, then 1 click | a card for an X post | theme colours (**inferred**) |
-| Idea | paste a link, then 1 click | a card for a TradingView idea | theme colours (**inferred**) |
 
 Text, Comment, Note and Callout open their editor as soon as they are placed and leave nothing
 behind if it is cancelled with Escape. Text of the other tools is added with Edit text or the
@@ -50,9 +49,10 @@ dialog. A Price label's text is its price, formatted at paint time with the char
   slid sideways to stay on the plot, and closes with Escape or a click elsewhere. A note taller than
   the plot is held on it and its text is cut at the box's end (there is no scrolling). Which pins are
   open is layer state: it is never saved or synced.
-* **Table, Pin, Price note, Image, Post and Idea defaults** are not in any TradingView page.
-* **Post and Idea** have no official page. They follow the community description: an idea is tied
-  to a link, a post attaches to the time it was made.
+* **Table, Pin, Price note, Image and Post defaults** are not in any TradingView page.
+* **Post** has no official page. It follows the community description: a post is pasted as a link
+  and attaches to the time it was made. TradingView's **Idea** tool (a published idea tied to a
+  symbol) is not built.
 
 ## How it is built
 
@@ -132,39 +132,34 @@ into cells within the limits and never grows the grid past them.
 * **Snapshots** are handed the decoded pictures of the visible images (frozen on the UI thread) and
   paint the same placeholder for any that are not ready.
 
-### Post and Idea
+### Post
 
 `model/link_card.rs` is pure. It accepts `https` (and upgrades `http`), no user name or port, and only
-`x.com`, `twitter.com` and their `www`/`mobile` forms (`/{handle}/status/{id}` and `/i/status/{id}`) or
-any `*.tradingview.com` (`/chart/{SYMBOL}/{id}-{slug}/`, `/chart/{id}/`, `/i/{id}/`), and writes every
-accepted link one canonical way. A card keeps the link, its size and, if the user fetched one, a
+`x.com`, `twitter.com` and their `www`/`mobile` forms (`/{handle}/status/{id}` and `/i/status/{id}`),
+and writes every accepted link one canonical way. A card keeps the link, its size and, if the user fetched one, a
 `LinkMeta` of title, author and text, each cut to a cap.
 
-* **What the card shows without a fetch** is what the link proves: the service, `@handle` or the
-  symbol, the id, an idea's slug words and, for a post, its time, decoded from the snowflake id
-  (`(id >> 22) + 1288834974657` ms; ids from before snowflake ids have none).
+* **What the card shows without a fetch** is what the link proves: the service, `@handle`, the id and
+  the post's time, decoded from the snowflake id (`(id >> 22) + 1288834974657` ms; ids from before
+  snowflake ids have none).
 * **Placement**: arming opens a sheet that checks the link as it is typed. A post is anchored at its
-  own time when that bar is on screen, otherwise where it was placed; an idea has no offline time and
-  goes where it was placed. A link pasted on a chart (Cmd+V, no text field focused) places a card in
+  own time when that bar is on screen, otherwise where it was placed (a post with no time goes where
+  it was placed). A link pasted on a chart (Cmd+V, no text field focused) places a card in
   the middle of the focused chart.
-* **Preview** is never fetched on insert, paste or paint. The **Preview** button on a card asks, once
-  per service, for permission (`content.prefs`, a setting that stays on this Mac), then makes one
-  request to the service's own host, on `work_queue::LINKS`: `publish.x.com/oembed` for a post (the
-  host `publish.twitter.com` only redirects), the idea's own page with a `Range` request for the first
-  256 KB (its `og:` tags) for an idea. https only, no redirects, no cookies, no credentials, 12 s,
-  256 KB. The answer is parsed as data, nothing in it runs, and the result is written to the card as
+* **Preview** is never fetched on insert, paste or paint. The **Preview** button on a card asks, once,
+  for permission (`content.prefs`, a setting that stays on this Mac), then makes one request to
+  `publish.x.com/oembed` (the host `publish.twitter.com` only redirects), on `work_queue::LINKS`.
+  https only, no redirects, no cookies, no credentials, 12 s, at most 256 KB read. The answer is parsed as data, nothing in it runs, and the result is written to the card as
   one undoable change. A deleted or private link says so and leaves the card as it was. Thumbnails and
   avatars are not fetched.
 * **Open** (`ctx.open_url`) is always a deliberate click; so are Copy link and Replace link (which
   drops the old preview).
 
-The shipped request path (`link_fetch::fetch`: the client, https-only, the `Range` header, the parsers)
-was run once, on 2026-10-23, against a real public post (the oEmbed answer's author name, `@handle` and
-text came back) and a real published idea (its `og:title` and `og:description` came back; the page gave
-no author). That is the ignored test `live_a_real_post_and_a_real_idea_give_a_preview`
-(`cargo test --lib live_ -- --ignored --nocapture`). It is not part of the suite, and neither service
-promises either behaviour. If one stops answering, the card shows the link and the failure reason, and
-everything else works.
+The shipped request path (`link_fetch::fetch`: the client, https-only, the parser) was run once, on
+2026-10-23, against a real public post: the oEmbed answer's author name, `@handle` and text came back.
+That is the ignored test `live_a_real_post_gives_a_preview` (`cargo test --lib live_ -- --ignored
+--nocapture`). It is not part of the suite, and X does not promise that behaviour. If it stops
+answering, the card shows the link and the failure reason, and everything else works.
 
 ## Persistence and sync
 
@@ -187,7 +182,7 @@ exposed.
 
 ## Tests
 
-Every `every_tool_…` loop in `ui/drawing_layer/tests.rs` runs over all 46 grouped tools, content tools
+Every `every_tool_…` loop in `ui/drawing_layer/tests.rs` runs over all 45 grouped tools, content tools
 included (through `Drawing::sample` and `sample_content`): placement in one gesture and one undo step,
 select, move, delete, every handle, save and reopen, the toolbar. Per-area suites:
 `drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/image_ingest.rs`,
@@ -206,12 +201,12 @@ DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_ -- --ignored
 * **Pictures are never deleted.** Layouts sync, tab sessions do not, so no Mac can know another still
   draws a picture, and a tombstone for an immutable record would also trip the mass-delete hold. A
   picture stays after its drawing is gone: at most 600 kB per distinct image.
-* **Live X and TradingView** were reached once (see above), not continuously. Embedded timelines, counts,
+* **Live X** was reached once (see above), not continuously. Embedded timelines, counts,
   avatars and images are not implemented, by design.
-* **TradingView pixel parity**, the exact look of Pin, Table, Price note and the Post and Idea cards.
+* **TradingView pixel parity**, the exact look of Pin, Table, Price note and the Post card.
 * **Real window.** On 2026-10-23 a release build was launched against a throwaway home whose saved
-  session held one BTC/USDT chart with a drawing of each of the 13 tools (the stored picture included).
-  All 13 restored and painted correctly with the real fonts and GPU textures. Synthetic mouse clicks
+  session held one BTC/USDT chart with a drawing of each of the tools (the stored picture included).
+  They all restored and painted correctly with the real fonts and GPU textures. Synthetic mouse clicks
   did not register in that window, so no placement, editing, dragging or sheet was driven in a real
   window: those are covered by the controller tests only.
 * **IME**, VoiceOver and a real-window drag of a table border were not exercised.

@@ -124,7 +124,7 @@ pub struct DrawingFrame<'a> {
     pub alert_price: Option<f64>,
 }
 
-/// What can be asked of a Post or Idea card that only the workspace can do.
+/// What can be asked of a Post card that only the workspace can do.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum LinkRequest {
     /// Open the link in the browser: always a deliberate click.
@@ -1601,10 +1601,7 @@ impl DrawingLayer {
                 placed_rect(&picture, proj.plot.center(), proj.plot).size(),
             ),
             crate::model::image_content::Content::Link(card) => (
-                match card.link.kind() {
-                    crate::model::link_card::LinkKind::Post => Tool::Post,
-                    crate::model::link_card::LinkKind::Idea => Tool::Idea,
-                },
+                Tool::Post,
                 placed_card_rect(&card, proj.plot.center(), proj.plot).size(),
             ),
         };

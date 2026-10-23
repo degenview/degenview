@@ -1,18 +1,17 @@
-//! The preview of a Post or Idea card, fetched only when the user asks for it.
+//! The preview of a Post card, fetched only when the user asks for it.
 //!
-//! One request per click, to a fixed host (`publish.x.com` for an X post, `www.tradingview.com`
-//! for an idea), over https, with no redirects, no cookies and no credentials, a short timeout and
-//! a cap on how much of the answer is read. The answer is parsed as data: nothing in it is run,
-//! and only a title, an author and a short text are kept, cut to the card's limits. What the
-//! service does not say stays empty; nothing is filled in.
+//! One request per click, to a fixed host (`publish.x.com`), over https, with no redirects, no
+//! cookies and no credentials, a short timeout and a cap on how much of the answer is read. The
+//! answer is parsed as data: nothing in it is run, and only a name, a handle and the post's text
+//! are kept, cut to the card's limits. What X does not say stays empty; nothing is filled in.
 
-use crate::model::link_card::{Link, LinkKind, LinkMeta};
+use crate::model::link_card::{FETCH_HOST, Link, LinkMeta};
 use std::io::Read;
 use std::time::Duration;
 
 /// How long the whole request may take.
 const TIMEOUT: Duration = Duration::from_secs(12);
-/// How much of an answer is read, in bytes. An idea's page carries its `<meta>` tags at the top.
+/// How much of an answer is read, in bytes. An oEmbed answer is far smaller.
 const MAX_BODY_BYTES: u64 = 256 * 1024;
 
 /// Why a preview could not be had, in words for the person who asked.
@@ -20,7 +19,7 @@ const MAX_BODY_BYTES: u64 = 256 * 1024;
 pub enum FetchError {
     /// No answer in time, or none at all.
     Network,
-    /// The service answered that there is nothing there (a deleted post, a private idea).
+    /// The service answered that there is nothing there (a deleted or protected post).
     Unavailable,
     /// The service refused or failed, with this status.
     Refused(u16),
@@ -41,16 +40,12 @@ impl FetchError {
     }
 }
 
-/// The address asked for `link`'s preview. Always `https` and always on the kind's own host.
+/// The address asked for `link`'s preview. Always `https` and always on X's own oEmbed host.
 pub fn request_url(link: &Link) -> String {
-    match link.kind() {
-        LinkKind::Post => format!(
-            "https://{}/oembed?url={}&omit_script=true&dnt=true",
-            LinkKind::Post.fetch_host(),
-            percent_encode(&link.url())
-        ),
-        LinkKind::Idea => link.url(),
-    }
+    format!(
+        "https://{FETCH_HOST}/oembed?url={}&omit_script=true&dnt=true",
+        percent_encode(&link.url())
+    )
 }
 
 /// Fetches the preview of `link`. Blocks; run it on a worker.
@@ -64,13 +59,12 @@ pub fn fetch(link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
         .user_agent("DegenView")
         .build();
     let agent = ureq::Agent::new_with_config(config);
-    let mut request = agent.get(request_url(link));
-    if link.kind() == LinkKind::Idea {
-        request = request.header("Range", format!("bytes=0-{}", MAX_BODY_BYTES - 1));
-    }
-    let mut response = request.call().map_err(|_| FetchError::Network)?;
+    let mut response = agent
+        .get(request_url(link))
+        .call()
+        .map_err(|_| FetchError::Network)?;
     match response.status().as_u16() {
-        200 | 206 => {}
+        200 => {}
         404 | 403 | 410 => return Err(FetchError::Unavailable),
         status => return Err(FetchError::Refused(status)),
     }
@@ -82,15 +76,12 @@ pub fn fetch(link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
         .read_to_end(&mut bytes)
         .map_err(|_| FetchError::Network)?;
     let body = String::from_utf8_lossy(&bytes);
-    let meta = match link.kind() {
-        LinkKind::Post => parse_oembed(&body, link),
-        LinkKind::Idea => parse_idea(&body),
-    };
-    meta.map(|meta| LinkMeta {
-        fetched_at_ms: now_ms,
-        ..meta
-    })
-    .ok_or(FetchError::Unreadable)
+    parse_oembed(&body, link)
+        .map(|meta| LinkMeta {
+            fetched_at_ms: now_ms,
+            ..meta
+        })
+        .ok_or(FetchError::Unreadable)
 }
 
 /// What X's oEmbed answer says: the author's name, their handle, and the post's own words.
@@ -103,13 +94,7 @@ pub fn parse_oembed(body: &str, link: &Link) -> Option<LinkMeta> {
         .and_then(|url| url.trim_end_matches('/').rsplit('/').next())
         .filter(|handle| !handle.is_empty())
         .map(|handle| format!("@{handle}"))
-        .or_else(|| match link {
-            Link::Post {
-                handle: Some(handle),
-                ..
-            } => Some(format!("@{handle}")),
-            _ => None,
-        })
+        .or_else(|| link.handle.as_ref().map(|handle| format!("@{handle}")))
         .unwrap_or_default();
     let html = value.get("html").and_then(serde_json::Value::as_str)?;
     // The words are the blockquote's first paragraph; what follows it is the byline.
@@ -124,64 +109,6 @@ pub fn parse_oembed(body: &str, link: &Link) -> Option<LinkMeta> {
     }
     .sanitized();
     (!meta.is_empty()).then_some(meta)
-}
-
-/// What a TradingView idea's page says about itself in its `<meta>` tags.
-pub fn parse_idea(html: &str) -> Option<LinkMeta> {
-    let mut title = String::new();
-    let mut excerpt = String::new();
-    let mut author = String::new();
-    let mut rest = html;
-    while let Some(start) = rest.find("<meta") {
-        rest = &rest[start + 5..];
-        let Some(end) = rest.find('>') else { break };
-        let tag = &rest[..end];
-        let key = attribute(tag, "property").or_else(|| attribute(tag, "name"));
-        let content = attribute(tag, "content");
-        if let (Some(key), Some(content)) = (key, content) {
-            let slot = match key.as_str() {
-                "og:title" => &mut title,
-                "og:description" => &mut excerpt,
-                "author" | "article:author" => &mut author,
-                _ => continue,
-            };
-            if slot.is_empty() {
-                *slot = decode_entities(&content);
-            }
-        }
-        rest = &rest[end..];
-    }
-    let meta = LinkMeta {
-        title,
-        author,
-        excerpt,
-        fetched_at_ms: 0,
-    }
-    .sanitized();
-    (!meta.is_empty()).then_some(meta)
-}
-
-/// The value of attribute `name` in the text of one tag, quoted either way.
-fn attribute(tag: &str, name: &str) -> Option<String> {
-    let lower = tag.to_ascii_lowercase();
-    let mut from = 0;
-    while let Some(found) = lower[from..].find(name) {
-        let at = from + found;
-        from = at + name.len();
-        let before_ok = at == 0 || lower.as_bytes()[at - 1].is_ascii_whitespace();
-        let rest = tag[at + name.len()..].trim_start();
-        let Some(rest) = rest.strip_prefix('=') else {
-            continue;
-        };
-        if !before_ok {
-            continue;
-        }
-        let rest = rest.trim_start();
-        let quote = rest.chars().next().filter(|c| matches!(c, '"' | '\''))?;
-        let value = &rest[1..];
-        return value.find(quote).map(|end| value[..end].to_owned());
-    }
-    None
 }
 
 /// The text of some HTML with its tags taken out. Line breaks become spaces.
@@ -272,26 +199,24 @@ mod tests {
     }
 
     #[test]
-    fn a_request_goes_to_the_kinds_own_host_over_https() {
+    fn a_request_goes_to_xs_own_host_over_https() {
         let url = request_url(&post());
         assert_eq!(
             url,
             "https://publish.x.com/oembed?url=https%3A%2F%2Fx.com%2FXDevelopers%2Fstatus%2F1750000000000000000&omit_script=true&dnt=true"
         );
-        let idea = Link::parse("https://www.tradingview.com/chart/BTCUSD/AbCdEf12-Setup/").unwrap();
-        assert_eq!(
-            request_url(&idea),
-            "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-Setup/"
-        );
-        for link in [post(), idea] {
-            let url = request_url(&link);
+        for text in [
+            "https://x.com/jack/status/20",
+            "https://twitter.com/i/web/status/1519480761749016577",
+        ] {
+            let url = request_url(&Link::parse(text).unwrap());
             let host = url
                 .strip_prefix("https://")
                 .unwrap()
                 .split('/')
                 .next()
                 .unwrap();
-            assert_eq!(host, link.kind().fetch_host());
+            assert_eq!(host, FETCH_HOST);
         }
     }
 
@@ -312,29 +237,12 @@ mod tests {
     }
 
     #[test]
-    fn an_ideas_meta_tags_give_its_title_and_description() {
-        let html = r#"<html><head><title>x</title>
-            <meta charset="utf-8">
-            <meta property="og:title" content="BTC &amp; the range: a setup">
-            <meta property='og:description' content="Breaks above &quot;resistance&quot;.">
-            <meta property="og:image" content="https://s3.tradingview.com/x.png">
-            <meta name="author" content="someone">
-            <meta property="og:title" content="a later title is ignored">
-            </head><body><script>var meta = '<meta property="og:title" content="no">'</script>"#;
-        let meta = parse_idea(html).unwrap();
-        assert_eq!(meta.title, "BTC & the range: a setup");
-        assert_eq!(meta.excerpt, "Breaks above \"resistance\".");
-        assert_eq!(meta.author, "someone");
-        assert!(parse_idea("<html><head></head></html>").is_none());
-    }
-
-    #[test]
     fn what_is_kept_is_cut_to_the_cards_limits() {
-        let html = format!(
-            r#"<meta property="og:description" content="{}">"#,
+        let body = format!(
+            r#"{{"author_name":"A","html":"<blockquote><p>{}</p></blockquote>"}}"#,
             "word ".repeat(1_000)
         );
-        let meta = parse_idea(&html).unwrap();
+        let meta = parse_oembed(&body, &post()).unwrap();
         assert_eq!(
             meta.excerpt.chars().count(),
             crate::model::link_card::MAX_EXCERPT_CHARS
@@ -353,22 +261,15 @@ mod tests {
         );
     }
 
-    /// The shipped request path against the two real services. Not run with the suite (it needs the
-    /// network and neither service promises its answer): `cargo test --lib live_ -- --ignored
+    /// The shipped request path against the real service. Not run with the suite (it needs the
+    /// network and X does not promise its answer): `cargo test --lib live_ -- --ignored
     /// --nocapture`.
     #[test]
-    #[ignore = "contacts x.com and tradingview.com"]
-    fn live_a_real_post_and_a_real_idea_give_a_preview() {
+    #[ignore = "contacts x.com"]
+    fn live_a_real_post_gives_a_preview() {
         let post = Link::parse("https://x.com/Interior/status/463440424141459456").unwrap();
         let meta = fetch(&post, 1).expect("the post's preview");
         println!("POST {meta:?}");
-        assert!(!meta.is_empty());
-        let idea = Link::parse(
-            "https://www.tradingview.com/chart/BTCUSD/B2y8MoWY-Bitcoin-Btcusd-Bullish-Trendline-Key-Decision-Zone/",
-        )
-        .unwrap();
-        let meta = fetch(&idea, 1).expect("the idea's preview");
-        println!("IDEA {meta:?}");
         assert!(!meta.is_empty());
     }
 }

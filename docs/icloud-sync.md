@@ -33,7 +33,7 @@ against SQLite, and every sync problem leaves the app fully usable.
 Never synced: market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
-snapshot consent and token, and `content.prefs` (which services a Post or Idea card may fetch a preview from). Every document table and `setting` key is classified in
+snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 
@@ -126,7 +126,7 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
   that arrived from iCloud is written with `put_asset_from_cloud` (no entry back).
 
 Tested on `MockCloud` (`sync/asset_tests.rs`: upload, a second device receiving it, a picture arriving
-after its drawing, a remote delete, a layout that stops using a picture, and all thirteen text, note and
+after its drawing, a remote delete, a layout that stops using a picture, and all twelve text, note and
 content drawings reaching the other Mac exactly as drawn; `sync/validate.rs`: damaged and oversize
 records). Not verified: a real CloudKit transfer of a
 picture, and a record near the size limit.

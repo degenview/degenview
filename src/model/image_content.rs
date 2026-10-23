@@ -106,7 +106,7 @@ pub struct ImageContent {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Content {
     Image(ImageContent),
-    /// A link to an X post or a TradingView idea, as a card.
+    /// A link to an X post, as a card.
     Link(LinkCard),
 }
 

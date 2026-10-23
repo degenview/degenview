@@ -288,7 +288,7 @@ pub(super) fn picture(
     screen.finish(6.0)
 }
 
-/// The Post and Idea tools: a card whose top-left corner is the anchor. It is clickable all over,
+/// The Post tool: a card whose top-left corner is the anchor. It is clickable all over,
 /// and has the anchor and its bottom-right corner to grab.
 pub(super) fn card(card: &crate::model::link_card::LinkCard, anchors: &[Pos2]) -> Option<Screen> {
     let at = *anchors.first()?;

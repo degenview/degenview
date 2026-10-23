@@ -316,7 +316,6 @@ fn sample_content(tool: Tool) -> crate::model::image_content::Content {
     use crate::model::link_card::{Link, LinkCard};
     let link = match tool {
         Tool::Post => "https://x.com/degenview/status/1750000000000000000",
-        Tool::Idea => "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/",
         _ => return sample_picture(),
     };
     crate::model::image_content::Content::Link(LinkCard::new(Link::parse(link).unwrap()))

@@ -1,10 +1,10 @@
-//! The card a Post or Idea drawing paints on the chart: native shapes and text, no web view. It
-//! shows what the link proves (the service, an X handle or a symbol, an id, an idea's slug words,
-//! a post's time) and, only once the user asked for a preview, what that returned. Nothing else
+//! The card a Post drawing paints on the chart: native shapes and text, no web view. It shows what
+//! the link proves (the service, an X handle, an id, the post's time) and, only once the user asked
+//! for a preview, what that returned. Nothing else
 //! is ever shown: no avatar, counts or text are made up to fill the card.
 
 use crate::format;
-use crate::model::link_card::{LinkCard, LinkKind};
+use crate::model::link_card::{LinkCard, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{
@@ -14,14 +14,12 @@ use eframe::egui::{
 const PADDING: f32 = 10.0;
 const CORNER: f32 = 8.0;
 const HEADER_HEIGHT: f32 = 20.0;
-/// TradingView's blue, the Idea card's accent.
-const IDEA_ACCENT: Color32 = Color32::from_rgb(41, 98, 255);
 
 /// The words of a card, before they are laid out.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CardText {
     pub service: &'static str,
-    /// The handle of a post, or the symbol of an idea.
+    /// The handle of the post.
     pub headline: String,
     pub title: String,
     pub excerpt: String,
@@ -35,12 +33,7 @@ impl CardText {
         let fetched_title = meta
             .map(|meta| meta.title.clone())
             .filter(|t| !t.is_empty());
-        let title = fetched_title.unwrap_or_else(|| match link.kind() {
-            LinkKind::Post => format!("Post {}", link.short_id()),
-            LinkKind::Idea => link
-                .slug_words()
-                .unwrap_or_else(|| format!("Idea {}", link.short_id())),
-        });
+        let title = fetched_title.unwrap_or_else(|| format!("Post {}", link.id));
         let mut footer = Vec::new();
         match meta {
             Some(meta) => {
@@ -54,26 +47,12 @@ impl CardText {
             footer.push(format::timestamp(time));
         }
         Self {
-            service: link.kind().service(),
+            service: SERVICE,
             headline: link.headline(),
             title,
             excerpt: meta.map(|meta| meta.excerpt.clone()).unwrap_or_default(),
             footer: footer.join(" · "),
         }
-    }
-}
-
-fn accent(kind: LinkKind) -> Color32 {
-    match kind {
-        LinkKind::Post => theme::text_primary(),
-        LinkKind::Idea => IDEA_ACCENT,
-    }
-}
-
-fn icon(kind: LinkKind) -> Icon {
-    match kind {
-        LinkKind::Post => Icon::XLogo,
-        LinkKind::Idea => Icon::Lightbulb,
     }
 }
 
@@ -86,7 +65,7 @@ fn wrapped(text: &str, font: FontId, color: Color32, width: f32, rows: usize) ->
 /// Paints the card in `rect`. `opacity` fades it (the ghost that follows the pointer).
 pub fn paint(painter: &Painter, rect: Rect, card: &LinkCard, opacity: f32) {
     let fade = |color: Color32| color.gamma_multiply(opacity);
-    let kind = card.link.kind();
+    let accent = theme::text_primary();
     let words = CardText::of(card);
     painter.rect_filled(rect, CORNER, fade(theme::surface()));
     painter.rect_stroke(
@@ -101,8 +80,8 @@ pub fn paint(painter: &Painter, rect: Rect, card: &LinkCard, opacity: f32) {
     icons::paint(
         &painter,
         Rect::from_min_size(header.min + vec2(0.0, 2.0), vec2(16.0, 16.0)),
-        icon(kind),
-        fade(accent(kind)),
+        Icon::XLogo,
+        fade(accent),
     );
     painter.text(
         header.min + vec2(22.0, HEADER_HEIGHT / 2.0),
@@ -116,7 +95,7 @@ pub fn paint(painter: &Painter, rect: Rect, card: &LinkCard, opacity: f32) {
         Align2::RIGHT_CENTER,
         &words.headline,
         FontId::proportional(12.0),
-        fade(accent(kind)),
+        fade(accent),
     );
     // The footer keeps its line; the title and the excerpt share what is above it.
     let footer_top = inner.bottom() - 14.0;
@@ -173,17 +152,11 @@ mod tests {
             words.footer.starts_with("Preview not fetched · "),
             "{words:?}"
         );
-        let idea = LinkCard::new(
-            Link::parse("https://www.tradingview.com/chart/BTCUSD/AbCdEf12-Range-Break-Setup/")
-                .unwrap(),
-        );
-        let words = CardText::of(&idea);
-        assert_eq!(words.headline, "BTCUSD");
-        assert_eq!(words.title, "Range Break Setup");
-        assert_eq!(
-            words.footer, "Preview not fetched",
-            "an idea has no offline time"
-        );
+        // A post numbered before snowflake ids has no time to show.
+        let old = CardText::of(&LinkCard::new(
+            Link::parse("https://x.com/jack/status/20").unwrap(),
+        ));
+        assert_eq!(old.footer, "Preview not fetched");
     }
 
     #[test]
@@ -202,11 +175,11 @@ mod tests {
     }
 
     #[test]
-    fn every_kind_of_card_paints_inside_its_rectangle() {
+    fn a_card_paints_inside_its_rectangle() {
         let ctx = egui::Context::default();
         crate::ui::theme::install_offscreen(&ctx);
-        let idea = LinkCard::new(Link::parse("https://www.tradingview.com/i/AbCdEf12/").unwrap());
-        for card in [post(), idea] {
+        let bare = LinkCard::new(Link::parse("https://x.com/i/status/20").unwrap());
+        for card in [post(), bare] {
             for size in [[180.0, 96.0], [300.0, 132.0], [640.0, 480.0]] {
                 let rect = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(size[0], size[1]));
                 let mut output = ctx.run_ui(

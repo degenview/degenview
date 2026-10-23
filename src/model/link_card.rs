@@ -1,13 +1,13 @@
-//! The links the Post and Idea tools hold: an X post, or a published TradingView idea. Pure
-//! parsing and normalisation, no network and no egui.
+//! The link the Post tool holds: an X post. Pure parsing and normalisation, no network and no
+//! egui.
 //!
-//! A card keeps only what the link itself proves (an X handle and post id, an idea's id, symbol
-//! and slug) plus, once the user asks for it, the few fields a fetch returned. Nothing is guessed:
-//! a post's time is decoded from its snowflake id, an idea's has no offline source.
+//! A card keeps only what the link itself proves (an X handle and post id) plus, once the user asks
+//! for it, the few fields a fetch returned. Nothing is guessed: a post's time is decoded from its
+//! snowflake id.
 //!
 //! The parser is deliberately strict. It accepts `https` (and upgrades `http`), no user info, no
-//! port, and only the hosts the tools are for, so a pasted link can never point the app, or the
-//! preview fetch, anywhere else.
+//! port, and only X's own hosts, so a pasted link can never point the app, or the preview fetch,
+//! anywhere else.
 
 use serde::{Deserialize, Serialize};
 
@@ -23,30 +23,10 @@ const SNOWFLAKE_EPOCH_MS: i64 = 1_288_834_974_657;
 /// Posts up to this id were numbered in sequence, before snowflake ids: they carry no time.
 const LAST_SEQUENTIAL_POST: u64 = 29_700_859_247;
 
-/// Which service a card refers to.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LinkKind {
-    Post,
-    Idea,
-}
-
-impl LinkKind {
-    pub const fn service(self) -> &'static str {
-        match self {
-            Self::Post => "X",
-            Self::Idea => "TradingView",
-        }
-    }
-
-    /// The only hosts a fetch for this kind may contact.
-    pub const fn fetch_host(self) -> &'static str {
-        match self {
-            Self::Post => "publish.x.com",
-            Self::Idea => "www.tradingview.com",
-        }
-    }
-}
+/// The service the cards are for.
+pub const SERVICE: &str = "X";
+/// The only host a preview fetch may contact.
+pub const FETCH_HOST: &str = "publish.x.com";
 
 /// Why a link was refused, in words for the person who pasted it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,9 +39,9 @@ pub enum LinkError {
     Scheme,
     /// A user name, password or port in the address.
     Authority,
-    /// Not a host this tool is for.
+    /// Not an X host.
     Host,
-    /// A supported host, but not the address of one post or idea.
+    /// An X host, but not the address of one post.
     Path,
 }
 
@@ -73,97 +53,40 @@ impl LinkError {
             Self::Malformed => "That is not a valid link.",
             Self::Scheme => "Only https links are supported.",
             Self::Authority => "Links with a user name or port are not supported.",
-            Self::Host => "That link is not from a supported site.",
-            Self::Path => "That link does not point to a single post or idea.",
+            Self::Host => "That link is not from X.",
+            Self::Path => "That link does not point to a single post.",
         }
     }
 }
 
-/// A link understood: what it points at, without contacting anything.
+/// A link understood: the post it points at, without contacting anything. The handle is absent
+/// for the `x.com/i/status/…` form.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Link {
-    /// An X post. The handle is absent for the `x.com/i/status/…` form.
-    Post { id: u64, handle: Option<String> },
-    /// A TradingView idea. `symbol` and `slug` are absent for the short forms.
-    Idea {
-        id: String,
-        symbol: Option<String>,
-        slug: Option<String>,
-    },
+pub struct Link {
+    pub id: u64,
+    pub handle: Option<String>,
 }
 
 impl Link {
-    pub const fn kind(&self) -> LinkKind {
-        match self {
-            Self::Post { .. } => LinkKind::Post,
-            Self::Idea { .. } => LinkKind::Idea,
-        }
-    }
-
     /// The link written one way, whatever way it was pasted.
     pub fn url(&self) -> String {
-        match self {
-            Self::Post {
-                id,
-                handle: Some(handle),
-            } => format!("https://x.com/{handle}/status/{id}"),
-            Self::Post { id, handle: None } => format!("https://x.com/i/status/{id}"),
-            Self::Idea {
-                id,
-                symbol: Some(symbol),
-                slug: Some(slug),
-            } => format!("https://www.tradingview.com/chart/{symbol}/{id}-{slug}/"),
-            Self::Idea {
-                id,
-                symbol: Some(symbol),
-                slug: None,
-            } => format!("https://www.tradingview.com/chart/{symbol}/{id}/"),
-            Self::Idea { id, .. } => format!("https://www.tradingview.com/chart/{id}/"),
+        match &self.handle {
+            Some(handle) => format!("https://x.com/{handle}/status/{}", self.id),
+            None => format!("https://x.com/i/status/{}", self.id),
         }
     }
 
-    /// The post's time, from its snowflake id. `None` for an idea and for a post numbered
-    /// before snowflake ids existed.
+    /// The post's time, from its snowflake id. `None` for a post numbered before snowflake ids
+    /// existed.
     pub fn time_ms(&self) -> Option<i64> {
-        match self {
-            Self::Post { id, .. } => post_time_ms(*id),
-            Self::Idea { .. } => None,
-        }
+        post_time_ms(self.id)
     }
 
-    /// What the link says about itself, for a card that has fetched nothing: `@handle` for a
-    /// post, the symbol for an idea.
+    /// What the link says about itself, for a card that has fetched nothing.
     pub fn headline(&self) -> String {
-        match self {
-            Self::Post {
-                handle: Some(handle),
-                ..
-            } => format!("@{handle}"),
-            Self::Post { handle: None, .. } => "Post".to_owned(),
-            Self::Idea {
-                symbol: Some(symbol),
-                ..
-            } => symbol.clone(),
-            Self::Idea { .. } => "Idea".to_owned(),
-        }
-    }
-
-    /// The words of an idea's slug (`Add-Tweets-To-Your-Chart`), which the link itself carries.
-    pub fn slug_words(&self) -> Option<String> {
-        match self {
-            Self::Idea {
-                slug: Some(slug), ..
-            } => Some(slug.replace(['-', '_'], " ")),
-            _ => None,
-        }
-    }
-
-    /// A short stable form of the id for a card's footer.
-    pub fn short_id(&self) -> String {
-        match self {
-            Self::Post { id, .. } => id.to_string(),
-            Self::Idea { id, .. } => id.clone(),
+        match &self.handle {
+            Some(handle) => format!("@{handle}"),
+            None => "Post".to_owned(),
         }
     }
 }
@@ -214,29 +137,19 @@ impl LinkMeta {
 }
 
 /// What the user has agreed to, kept on this Mac only (it is not a synced setting): fetching a
-/// preview sends the link to the service's own host, so each service asks once.
+/// preview sends the link to X's own host, so it is asked once.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct ContentPrefs {
-    /// The services the user allowed previews from.
-    pub previews: Vec<LinkKind>,
+    /// The user allowed previews to be fetched from X.
+    pub previews: bool,
 }
 
 impl ContentPrefs {
     pub const KEY: &'static str = "content.prefs";
-
-    pub fn allows(&self, kind: LinkKind) -> bool {
-        self.previews.contains(&kind)
-    }
-
-    pub fn allow(&mut self, kind: LinkKind) {
-        if !self.allows(kind) {
-            self.previews.push(kind);
-        }
-    }
 }
 
-/// A Post or Idea drawing's content: the link, what the link proves, and what a fetch added.
+/// A Post drawing's content: the link, what the link proves, and what a fetch added.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct LinkCard {
     pub link: Link,
@@ -304,10 +217,7 @@ impl LinkCard {
                 return headline.clone();
             }
         }
-        match self.link.slug_words() {
-            Some(words) => format!("{} · {words}", self.link.headline()),
-            None => self.link.headline(),
-        }
+        self.link.headline()
     }
 
     /// Whether the card is one a tool could have made.
@@ -359,24 +269,6 @@ fn is_handle(text: &str) -> bool {
     (1..=15).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-fn is_idea_id(text: &str) -> bool {
-    text.len() == 8 && text.bytes().all(|b| b.is_ascii_alphanumeric())
-}
-
-fn is_symbol(text: &str) -> bool {
-    (1..=32).contains(&text.len())
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'!' | b'-'))
-}
-
-fn is_slug(text: &str) -> bool {
-    (1..=200).contains(&text.len())
-        && text
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
-}
-
 fn is_x_host(host: &str) -> bool {
     matches!(
         host,
@@ -389,81 +281,24 @@ fn is_x_host(host: &str) -> bool {
     )
 }
 
-/// A TradingView host: the bare domain, `www` or one short language label (`kr`, `de`).
-fn is_tradingview_host(host: &str) -> bool {
-    if host == "tradingview.com" {
-        return true;
-    }
-    host.strip_suffix(".tradingview.com").is_some_and(|prefix| {
-        (1..=8).contains(&prefix.len()) && prefix.bytes().all(|b| b.is_ascii_lowercase())
-    })
-}
-
 impl Link {
     /// An X post's address.
-    pub fn parse_post(input: &str) -> Result<Self, LinkError> {
+    pub fn parse(input: &str) -> Result<Self, LinkError> {
         let (host, segments) = split(input)?;
         if !is_x_host(&host) {
             return Err(LinkError::Host);
         }
         match segments[..] {
             // `i` is no handle: these are the forms with none.
-            ["i", "web", "status", id, ..] | ["i", "status", id, ..] => Ok(Self::Post {
+            ["i", "web", "status", id, ..] | ["i", "status", id, ..] => Ok(Self {
                 id: parse_post_id(id)?,
                 handle: None,
             }),
-            [handle, "status" | "statuses", id, ..] if is_handle(handle) => Ok(Self::Post {
+            [handle, "status" | "statuses", id, ..] if is_handle(handle) => Ok(Self {
                 id: parse_post_id(id)?,
                 handle: Some(handle.to_owned()),
             }),
             _ => Err(LinkError::Path),
-        }
-    }
-
-    /// A published TradingView idea's address: `/chart/SYMBOL/ID-slug/`, `/chart/ID/` or `/i/ID/`.
-    pub fn parse_idea(input: &str) -> Result<Self, LinkError> {
-        let (host, segments) = split(input)?;
-        if !is_tradingview_host(&host) {
-            return Err(LinkError::Host);
-        }
-        match segments[..] {
-            // `/chart/NAME/` is also how a symbol's own chart is written, so a bare id has to look
-            // like an id: those always mix in lower case, which a symbol never does.
-            ["chart", id] if is_idea_id(id) && id.bytes().any(|b| b.is_ascii_lowercase()) => {
-                Ok(Self::Idea {
-                    id: id.to_owned(),
-                    symbol: None,
-                    slug: None,
-                })
-            }
-            ["i", id] if is_idea_id(id) => Ok(Self::Idea {
-                id: id.to_owned(),
-                symbol: None,
-                slug: None,
-            }),
-            ["chart", symbol, tail] if is_symbol(symbol) => {
-                let (id, slug) = match tail.split_once('-') {
-                    Some((id, slug)) => (id, Some(slug)),
-                    None => (tail, None),
-                };
-                if !is_idea_id(id) || slug.is_some_and(|slug| !is_slug(slug)) {
-                    return Err(LinkError::Path);
-                }
-                Ok(Self::Idea {
-                    id: id.to_owned(),
-                    symbol: Some(symbol.to_owned()),
-                    slug: slug.map(str::to_owned),
-                })
-            }
-            _ => Err(LinkError::Path),
-        }
-    }
-
-    /// Whichever of the two the text is.
-    pub fn parse(input: &str) -> Result<Self, LinkError> {
-        match Self::parse_post(input) {
-            Err(LinkError::Host) => Self::parse_idea(input),
-            other => other,
         }
     }
 }
@@ -480,7 +315,7 @@ mod tests {
     use super::*;
 
     fn post(text: &str) -> Link {
-        Link::parse_post(text).unwrap_or_else(|error| panic!("{text}: {error:?}"))
+        Link::parse(text).unwrap_or_else(|error| panic!("{text}: {error:?}"))
     }
 
     #[test]
@@ -562,19 +397,19 @@ mod tests {
             ("https://x.com/i/web/status", LinkError::Path),
         ];
         for (text, error) in &refused {
-            assert_eq!(Link::parse_post(text), Err(*error), "{text:?}");
+            assert_eq!(Link::parse(text), Err(*error), "{text:?}");
         }
-        assert!(Link::parse_post("https://x.com/jack/status/20 \n").is_ok());
+        assert!(Link::parse("https://x.com/jack/status/20 \n").is_ok());
         assert_eq!(
-            Link::parse_post("https://x.com/jack/status/2 0"),
+            Link::parse("https://x.com/jack/status/2 0"),
             Err(LinkError::Malformed)
         );
         assert_eq!(
-            Link::parse_post("https://x.com/jäck/status/20"),
+            Link::parse("https://x.com/jäck/status/20"),
             Err(LinkError::Malformed)
         );
         assert_eq!(
-            Link::parse_post(&format!("https://x.com/jack/status/{}", "9".repeat(3_000))),
+            Link::parse(&format!("https://x.com/jack/status/{}", "9".repeat(3_000))),
             Err(LinkError::TooLong)
         );
     }
@@ -598,107 +433,12 @@ mod tests {
     }
 
     #[test]
-    fn idea_links_in_every_form_normalise_and_keep_what_they_prove() {
-        let full = Link::parse_idea(
-            "https://de.tradingview.com/chart/DOGE/Gj4niqTa-Add-Tweets-To-Your-Chart/?utm=1",
-        )
-        .unwrap();
-        assert_eq!(
-            full.url(),
-            "https://www.tradingview.com/chart/DOGE/Gj4niqTa-Add-Tweets-To-Your-Chart/"
-        );
-        assert_eq!(full.headline(), "DOGE");
-        assert_eq!(
-            full.slug_words().as_deref(),
-            Some("Add Tweets To Your Chart")
-        );
-        assert_eq!(full.short_id(), "Gj4niqTa");
-        assert_eq!(full.time_ms(), None);
-        assert_eq!(full.kind(), LinkKind::Idea);
-        let short = Link::parse_idea("https://www.tradingview.com/i/Gj4niqTa/").unwrap();
-        assert_eq!(short.url(), "https://www.tradingview.com/chart/Gj4niqTa/");
-        let bare = Link::parse_idea("http://tradingview.com/chart/Gj4niqTa").unwrap();
-        assert_eq!(bare.url(), "https://www.tradingview.com/chart/Gj4niqTa/");
-        let no_slug =
-            Link::parse_idea("https://www.tradingview.com/chart/BTCUSD/Gj4niqTa/").unwrap();
-        assert_eq!(
-            no_slug.url(),
-            "https://www.tradingview.com/chart/BTCUSD/Gj4niqTa/"
-        );
-    }
-
-    #[test]
-    fn an_idea_link_must_name_one_idea_on_tradingview() {
-        for (text, error) in [
-            ("https://www.tradingview.com/", LinkError::Path),
-            ("https://www.tradingview.com/chart/", LinkError::Path),
-            // A symbol's own chart is not an idea, even when its name is eight characters long.
-            (
-                "https://www.tradingview.com/chart/USDCUSDT/",
-                LinkError::Path,
-            ),
-            (
-                "https://www.tradingview.com/symbols/BTCUSD/",
-                LinkError::Path,
-            ),
-            (
-                "https://www.tradingview.com/chart/BTCUSD/short/",
-                LinkError::Path,
-            ),
-            (
-                "https://www.tradingview.com/chart/BTCUSD/Gj4niqT-x/",
-                LinkError::Path,
-            ),
-            (
-                "https://www.tradingview.com/chart/BTCUSD/Gj4niqTa-bad slug/",
-                LinkError::Malformed,
-            ),
-            (
-                "https://www.tradingview.com/chart/BTCUSD/Gj4niqTa-bad$slug/",
-                LinkError::Path,
-            ),
-            (
-                "https://tradingview.com.evil.com/chart/DOGE/Gj4niqTa/",
-                LinkError::Host,
-            ),
-            (
-                "https://nottradingview.com/chart/DOGE/Gj4niqTa/",
-                LinkError::Host,
-            ),
-            (
-                "https://a.b.tradingview.com/chart/DOGE/Gj4niqTa/",
-                LinkError::Host,
-            ),
-            (
-                "https://www.tradingview.com@evil.com/chart/DOGE/Gj4niqTa/",
-                LinkError::Authority,
-            ),
-            (
-                "https://www.tradingview.com:444/chart/DOGE/Gj4niqTa/",
-                LinkError::Authority,
-            ),
-            (
-                "www.tradingview.com/chart/DOGE/Gj4niqTa/",
-                LinkError::Scheme,
-            ),
-        ] {
-            assert_eq!(Link::parse_idea(text), Err(error), "{text}");
-        }
-    }
-
-    #[test]
-    fn a_pasted_link_is_whichever_it_is_and_a_stranger_is_refused() {
-        assert_eq!(
-            Link::parse("https://x.com/jack/status/20").unwrap().kind(),
-            LinkKind::Post
-        );
-        assert_eq!(
-            Link::parse("https://www.tradingview.com/i/Gj4niqTa/")
-                .unwrap()
-                .kind(),
-            LinkKind::Idea
-        );
+    fn a_stranger_is_refused_and_every_error_has_words() {
         assert_eq!(Link::parse("https://example.com/"), Err(LinkError::Host));
+        assert_eq!(
+            Link::parse("https://www.tradingview.com/i/Gj4niqTa/"),
+            Err(LinkError::Host)
+        );
         // A wrong path on X stays an X error, not "unsupported site".
         assert_eq!(Link::parse("https://x.com/home"), Err(LinkError::Path));
         for error in [
@@ -719,9 +459,6 @@ mod tests {
         for link in [
             post("https://x.com/jack/status/20"),
             post("https://x.com/i/status/1519480761749016577"),
-            Link::parse_idea("https://www.tradingview.com/chart/DOGE/Gj4niqTa-Add-Tweets/")
-                .unwrap(),
-            Link::parse_idea("https://www.tradingview.com/i/Gj4niqTa/").unwrap(),
         ] {
             assert_eq!(Link::parse(&link.url()), Ok(link));
         }

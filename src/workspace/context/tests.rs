@@ -1066,10 +1066,11 @@ fn the_template_the_chart_wears_is_marked_current_in_the_menu() {
     );
 }
 
-// MARK: Post and Idea cards
+// MARK: Post cards
 
 const POST_LINK: &str = "https://x.com/degenview/status/1750000000000000000";
-const IDEA_LINK: &str = "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/";
+const OTHER_LINK: &str = "https://x.com/other/status/1750000000000000001";
+const TRADINGVIEW_LINK: &str = "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/";
 
 fn card(tool: Tool, id: u64, link: &str) -> Drawing {
     let card = crate::model::link_card::LinkCard::new(
@@ -1124,11 +1125,12 @@ fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
     ));
     assert!(rig.workspace.content.place_now);
     assert_eq!(rig.workspace.active_tool, Tool::Post);
-    rig.workspace.paste_text(&rig.ctx, IDEA_LINK);
-    assert_eq!(
-        rig.workspace.active_tool,
-        Tool::Idea,
-        "the link decides the tool"
+    rig.workspace.content.pending = None;
+    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
+    assert!(
+        rig.workspace.content.pending.is_none() && rig.workspace.active_tool == Tool::Cursor,
+        "only X links become cards"
     );
     assert!(
         rig.workspace.undo.is_empty(),
@@ -1163,7 +1165,6 @@ fn a_card_opens_and_copies_its_link_only_when_asked() {
 
 #[test]
 fn a_preview_is_not_fetched_until_the_service_is_allowed() {
-    use crate::model::link_card::LinkKind;
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
@@ -1177,13 +1178,9 @@ fn a_preview_is_not_fetched_until_the_service_is_allowed() {
         rig.workspace.content.links.inbox.is_none(),
         "and contacts nobody"
     );
-    assert!(!rig.workspace.previews_allowed(LinkKind::Post));
-    rig.workspace.allow_previews(LinkKind::Post);
-    assert!(rig.workspace.previews_allowed(LinkKind::Post));
-    assert!(
-        !rig.workspace.previews_allowed(LinkKind::Idea),
-        "each service asks for itself"
-    );
+    assert!(!rig.workspace.previews_allowed());
+    rig.workspace.allow_previews();
+    assert!(rig.workspace.previews_allowed());
 }
 
 #[test]
@@ -1249,14 +1246,14 @@ fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
     use crate::service::link_fetch::FetchError;
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
-    rig.chart_mut(chart).drawings = vec![card(Tool::Idea, 1, IDEA_LINK)];
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
     let (sender, receiver) = std::sync::mpsc::channel();
     rig.workspace.content.links.inbox = Some(receiver);
     sender
         .send(links::Fetched {
             chart_id: chart,
             drawing_id: 1,
-            link: crate::model::link_card::Link::parse(IDEA_LINK).unwrap(),
+            link: crate::model::link_card::Link::parse(POST_LINK).unwrap(),
             result: Err(FetchError::Unavailable),
         })
         .unwrap();
@@ -1295,12 +1292,12 @@ fn a_new_link_waits_for_a_click_and_arms_its_tool() {
     use crate::model::image_content::Content;
     let mut rig = Rig::new();
     rig.chart("BTCUSDT", 100.0);
-    let link = crate::model::link_card::Link::parse(IDEA_LINK).unwrap();
+    let link = crate::model::link_card::Link::parse(OTHER_LINK).unwrap();
     rig.workspace.link_chosen(link, None);
     assert!(matches!(
         rig.workspace.content.pending,
         Some(Content::Link(_))
     ));
     assert!(!rig.workspace.content.place_now, "a click places it");
-    assert_eq!(rig.workspace.active_tool, Tool::Idea);
+    assert_eq!(rig.workspace.active_tool, Tool::Post);
 }

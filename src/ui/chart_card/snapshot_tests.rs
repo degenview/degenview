@@ -1040,8 +1040,8 @@ fn gallery_of_the_image() {
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
 
-/// Post and Idea cards on a chart, written as PNGs for a person to look at: a bare link, a card
-/// with a fetched preview, an idea, and a small one that has to cut its words.
+/// Post cards on a chart, written as PNGs for a person to look at: a bare link, a card with a
+/// fetched preview, one with a long preview, and a small one that has to cut its words.
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_cards() {
@@ -1078,9 +1078,9 @@ fn gallery_of_the_cards() {
         excerpt: "Fish & chips for everyone: the range held three times, and the third retest was the one to buy. Stops under the low.".into(),
         fetched_at_ms: 1,
     };
-    let idea_meta = LinkMeta {
+    let long_meta = LinkMeta {
         title: "BTC range break: what to watch next".into(),
-        author: "".into(),
+        author: "@degenview".into(),
         excerpt: "Price reclaimed the range high on rising volume. A retest of that level would confirm the move.".into(),
         fetched_at_ms: 1,
     };
@@ -1100,19 +1100,19 @@ fn gallery_of_the_cards() {
         Some(post_meta),
         Some([320.0, 150.0]),
     );
-    let idea = card(
-        Tool::Idea,
+    let long = card(
+        Tool::Post,
         3,
         at(196, 226.0),
-        "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-Range-Break-Setup/",
-        Some(idea_meta),
+        "https://x.com/degenview/status/1750000000000000002",
+        Some(long_meta),
         Some([300.0, 130.0]),
     );
     let small = card(
-        Tool::Idea,
+        Tool::Post,
         4,
         at(262, 226.0),
-        "https://www.tradingview.com/i/AbCdEf13/",
+        "https://x.com/i/status/1750000000000000003",
         None,
         Some([180.0, 96.0]),
     );
@@ -1126,7 +1126,7 @@ fn gallery_of_the_cards() {
             },
         );
         let mut harness = Harness::new(ChartCanvas::default());
-        harness.drawings = vec![bare.clone(), fetched.clone(), idea.clone(), small.clone()];
+        harness.drawings = vec![bare.clone(), fetched.clone(), long.clone(), small.clone()];
         settled(&mut harness);
         let size = harness.card.snapshot_size();
         let dimensions =

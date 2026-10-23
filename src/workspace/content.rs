@@ -67,7 +67,7 @@ pub(super) struct ContentFlow {
     target: Option<Target>,
     /// Why the last picture was refused, for the sheet.
     error: Option<String>,
-    /// The Post and Idea tools: their sheets and the preview fetch.
+    /// The Post tool: its sheets and the preview fetch.
     pub links: super::links::LinkFlow,
 }
 
@@ -233,7 +233,7 @@ impl ChartWorkspace {
     pub(super) fn tick_content(&mut self, ctx: &egui::Context) {
         self.take_picture(ctx);
         let tool = self.active_tool;
-        let content_tool = matches!(tool, Tool::Image | Tool::Post | Tool::Idea);
+        let content_tool = matches!(tool, Tool::Image | Tool::Post);
         let armed = content_tool && self.content.last_tool != tool;
         self.content.last_tool = tool;
         if !content_tool {
@@ -247,14 +247,7 @@ impl ChartWorkspace {
             // Whatever waited for another content tool is dropped; this one asks again.
             self.content.pending = None;
             match tool {
-                Tool::Post => self
-                    .content
-                    .links
-                    .start(crate::model::link_card::LinkKind::Post),
-                Tool::Idea => self
-                    .content
-                    .links
-                    .start(crate::model::link_card::LinkKind::Idea),
+                Tool::Post => self.content.links.start(),
                 _ => {
                     self.content.sheet = true;
                     self.content.links.close_sheet();

@@ -8,7 +8,7 @@ one style model and one geometry module serve all of them; a tool is a row in a 
 (`Tool::spec`), not a code path.
 
 The text, note and content tools (Text, Note, Price note, Pin, Table, Callout, Comment, Price label,
-Signpost, Flag mark, Image, Post, Idea) are in a third flyout and are documented in
+Signpost, Flag mark, Image, Post) are in a third flyout and are documented in
 [Text, note and content tools](annotation-tools.md); they share everything below except what that page
 says.
 

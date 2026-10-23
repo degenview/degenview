@@ -1167,7 +1167,6 @@ mod tests {
             (Tool::FlagMark, "flag_mark"),
             (Tool::Image, "image"),
             (Tool::Post, "post"),
-            (Tool::Idea, "idea"),
         ] {
             let count = match tool.spec().placement {
                 crate::model::Placement::Points(count) => usize::from(count),

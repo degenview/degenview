@@ -1,14 +1,13 @@
-//! What the workspace does for Post and Idea cards: asks for the link, places the card, and (only
-//! when the user asks) fetches the preview.
+//! What the workspace does for Post cards: asks for the link, places the card, and (only when the
+//! user asks) fetches the preview.
 //!
-//! Arming Post or Idea opens a sheet for the link; nothing is created until a link is accepted,
-//! and nothing is contacted until the user presses Preview on a card and, once per service, agrees
-//! to it. Opening a link is always a deliberate click. The fetch runs on a worker of its own and
+//! Arming Post opens a sheet for the link; nothing is created until a link is accepted, and
+//! nothing is contacted until the user presses Preview on a card and, once, agrees to it. Opening a link is always a deliberate click. The fetch runs on a worker of its own and
 //! its answer is written to the card as one undoable change, so it syncs like any edit.
 
 use super::ChartWorkspace;
 use crate::model::image_content::Content;
-use crate::model::link_card::{ContentPrefs, Link, LinkCard, LinkKind, LinkMeta};
+use crate::model::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
 use crate::model::{DrawingCommand, Geometry, Tool};
 use crate::service::link_fetch::{self, FetchError};
 use crate::service::work_queue;
@@ -19,17 +18,15 @@ use std::sync::mpsc::{self, Receiver};
 
 /// The sheet that asks for a link: what is typed, and which card it is for.
 pub(super) struct Sheet {
-    kind: LinkKind,
     text: String,
     /// The card whose link is being replaced: `(chart, drawing)`.
     replace: Option<(u64, u64)>,
 }
 
-/// A preview waiting for the user's agreement to contact the service.
+/// A preview waiting for the user's agreement to contact X.
 pub(super) struct Ask {
     chart_id: u64,
     drawing_id: u64,
-    kind: LinkKind,
 }
 
 /// What a fetch found, with the card it was for.
@@ -56,20 +53,11 @@ impl LinkFlow {
         self.sheet = None;
     }
 
-    pub(super) fn start(&mut self, kind: LinkKind) {
+    pub(super) fn start(&mut self) {
         self.sheet = Some(Sheet {
-            kind,
             text: String::new(),
             replace: None,
         });
-    }
-}
-
-/// The tool that places a card of this kind.
-pub(super) fn tool_of(kind: LinkKind) -> Tool {
-    match kind {
-        LinkKind::Post => Tool::Post,
-        LinkKind::Idea => Tool::Idea,
     }
 }
 
@@ -81,7 +69,6 @@ impl ChartWorkspace {
             let action = content_sheet::show_link(
                 ctx,
                 LinkSheet {
-                    kind: sheet.kind,
                     text: &mut sheet.text,
                     replacing: sheet.replace.is_some(),
                 },
@@ -97,10 +84,10 @@ impl ChartWorkspace {
             }
         }
         if let Some(ask) = self.content.links.consent.take() {
-            match content_sheet::show_consent(ctx, ask.kind) {
+            match content_sheet::show_consent(ctx) {
                 ConsentAction::None => self.content.links.consent = Some(ask),
                 ConsentAction::Allow => {
-                    self.allow_previews(ask.kind);
+                    self.allow_previews();
                     self.start_fetch(ctx, ask.chart_id, ask.drawing_id);
                 }
                 ConsentAction::Cancel => {}
@@ -111,11 +98,10 @@ impl ChartWorkspace {
     /// A link was accepted: a new card waits for a click, or an existing card takes it.
     pub(super) fn link_chosen(&mut self, link: Link, replace: Option<(u64, u64)>) {
         let Some((chart_id, drawing_id)) = replace else {
-            let tool = tool_of(link.kind());
             self.content.pending = Some(Content::Link(LinkCard::new(link)));
             self.content.place_now = false;
-            self.active_tool = tool;
-            self.content.last_tool = tool;
+            self.active_tool = Tool::Post;
+            self.content.last_tool = Tool::Post;
             return;
         };
         let Some(mut drawing) = self.card_drawing(chart_id, drawing_id) else {
@@ -137,11 +123,10 @@ impl ChartWorkspace {
 
     /// A link pasted on a chart: a card for it is placed in the middle of the focused chart.
     pub(super) fn place_pasted_link(&mut self, link: Link) {
-        let tool = tool_of(link.kind());
         self.content.pending = Some(Content::Link(LinkCard::new(link)));
         self.content.place_now = true;
-        self.active_tool = tool;
-        self.content.last_tool = tool;
+        self.active_tool = Tool::Post;
+        self.content.last_tool = Tool::Post;
         self.content.links.close_sheet();
     }
 
@@ -187,42 +172,37 @@ impl ChartWorkspace {
             }
             LinkRequest::Replace => {
                 self.content.links.sheet = Some(Sheet {
-                    kind: card.link.kind(),
                     text: card.link.url(),
                     replace: Some((chart_id, drawing_id)),
                 });
             }
             LinkRequest::Fetch => {
-                if self.previews_allowed(card.link.kind()) {
+                if self.previews_allowed() {
                     self.start_fetch(ctx, chart_id, drawing_id);
                 } else {
                     self.content.links.consent = Some(Ask {
                         chart_id,
                         drawing_id,
-                        kind: card.link.kind(),
                     });
                 }
             }
         }
     }
 
-    pub(super) fn previews_allowed(&self, kind: LinkKind) -> bool {
+    pub(super) fn previews_allowed(&self) -> bool {
         self.store
             .lock()
             .ok()
             .and_then(|store| store.setting::<ContentPrefs>(ContentPrefs::KEY))
-            .is_some_and(|prefs| prefs.allows(kind))
+            .is_some_and(|prefs| prefs.previews)
     }
 
-    pub(super) fn allow_previews(&mut self, kind: LinkKind) {
+    pub(super) fn allow_previews(&mut self) {
         let saved = self
             .store
             .lock()
             .map(|store| {
-                let mut prefs = store
-                    .setting::<ContentPrefs>(ContentPrefs::KEY)
-                    .unwrap_or_default();
-                prefs.allow(kind);
+                let prefs = ContentPrefs { previews: true };
                 store.set_setting(ContentPrefs::KEY, &prefs).is_ok()
             })
             .unwrap_or(false);

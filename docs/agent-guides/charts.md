@@ -100,7 +100,7 @@ behavior.
   (a pinned table) has no anchors and moves through `edit::translate`. Content is named, never carried:
   a drawing holds a picture's hash or a link, and a new picture goes through
   `service::image_ingest` on a worker, never the UI thread. Nothing contacts a service except the
-  Preview button on a Post or Idea card, after a one-time allow.
+  Preview button on a Post card, after a one-time allow.
 - `Drawing::sample` and `sample_content` (tests) make a drawing of any tool; the every-tool loops must
   keep covering the content tools rather than skip them.
 

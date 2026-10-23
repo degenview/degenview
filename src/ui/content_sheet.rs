@@ -3,7 +3,7 @@
 //! only asks: the workspace reads the picture, checks it and stores it (off the UI thread), and the
 //! sheet shows what it is doing and why a picture was refused.
 
-use crate::model::link_card::{Link, LinkError, LinkKind};
+use crate::model::link_card::{FETCH_HOST, Link, LinkError, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::{sheet, theme};
@@ -102,59 +102,37 @@ pub enum LinkSheetAction {
 
 /// What the link sheet shows, and the text the user is typing, which it edits.
 pub struct LinkSheet<'a> {
-    pub kind: LinkKind,
     pub text: &'a mut String,
     /// The sheet replaces the link of a drawing rather than starting a new one.
     pub replacing: bool,
 }
 
-/// The link a kind accepts, or why not. Empty text is not an error to show yet.
-pub fn check_link(kind: LinkKind, text: &str) -> Result<Link, Option<LinkError>> {
+/// The link the text is, or why not. Empty text is not an error to show yet.
+pub fn check_link(text: &str) -> Result<Link, Option<LinkError>> {
     if text.trim().is_empty() {
         return Err(None);
     }
-    match kind {
-        LinkKind::Post => Link::parse_post(text),
-        LinkKind::Idea => Link::parse_idea(text),
-    }
-    .map_err(Some)
+    Link::parse(text).map_err(Some)
 }
 
-/// Shows the sheet that asks for the link of a Post or an Idea. The link is checked as it is
-/// typed; nothing is contacted.
+/// Shows the sheet that asks for the link of a Post. The link is checked as it is typed; nothing
+/// is contacted.
 pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
     let mut action = LinkSheetAction::None;
-    let (title, subtitle, hint) = match (view.kind, view.replacing) {
-        (LinkKind::Post, false) => (
+    let (title, subtitle) = if view.replacing {
+        ("Replace link", "Paste the link of another post on X.")
+    } else {
+        (
             "Add post",
             "Paste the link of a post on X. It is placed at the time it was posted.",
-            "https://x.com/name/status/…",
-        ),
-        (LinkKind::Idea, false) => (
-            "Add idea",
-            "Paste the link of a published TradingView idea.",
-            "https://www.tradingview.com/chart/…",
-        ),
-        (LinkKind::Post, true) => (
-            "Replace link",
-            "Paste the link of another post on X.",
-            "https://x.com/name/status/…",
-        ),
-        (LinkKind::Idea, true) => (
-            "Replace link",
-            "Paste the link of another TradingView idea.",
-            "https://www.tradingview.com/chart/…",
-        ),
+        )
     };
-    let checked = check_link(view.kind, view.text);
+    let hint = "https://x.com/name/status/…";
+    let checked = check_link(view.text);
     sheet::show(ctx, Id::new("link-sheet"), WIDTH, |ui| {
         ui.add_space(f32::from(sheet::INSET));
         sheet::inset(ui, |ui| {
-            let icon = match view.kind {
-                LinkKind::Post => Icon::XLogo,
-                LinkKind::Idea => Icon::Lightbulb,
-            };
-            sheet::header(ui, icon, title, subtitle, kit::ACCENT);
+            sheet::header(ui, Icon::XLogo, title, subtitle, kit::ACCENT);
             ui.add_space(18.0);
             let field = Id::new("link-sheet-field");
             let focused = ui.memory(|memory| memory.has_focus(field));
@@ -174,7 +152,7 @@ pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
             ui.add_space(10.0);
             let (text, color) = match &checked {
                 Ok(link) => (
-                    format!("{} · {}", link.kind().service(), link.headline()),
+                    format!("{SERVICE} · {}", link.headline()),
                     theme::text_secondary(),
                 ),
                 Err(Some(error)) => (error.message().to_owned(), kit::RED),
@@ -217,20 +195,16 @@ pub enum ConsentAction {
     Cancel,
 }
 
-/// Asks once per service whether its link may be sent to it to fetch a preview.
-pub fn show_consent(ctx: &egui::Context, kind: LinkKind) -> ConsentAction {
+/// Asks once whether links may be sent to X to fetch a preview.
+pub fn show_consent(ctx: &egui::Context) -> ConsentAction {
     let mut action = ConsentAction::None;
     sheet::show(ctx, Id::new("link-consent-sheet"), WIDTH, |ui| {
         ui.add_space(f32::from(sheet::INSET));
         sheet::inset(ui, |ui| {
-            let icon = match kind {
-                LinkKind::Post => Icon::XLogo,
-                LinkKind::Idea => Icon::Lightbulb,
-            };
             sheet::header(
                 ui,
-                icon,
-                &format!("Fetch previews from {}?", kind.service()),
+                Icon::XLogo,
+                &format!("Fetch previews from {SERVICE}?"),
                 "Only when you ask, for the one link you chose",
                 kit::ACCENT,
             );
@@ -238,7 +212,7 @@ pub fn show_consent(ctx: &egui::Context, kind: LinkKind) -> ConsentAction {
             ui.label(kit::text(
                 format!(
                     "To show its title and text, DegenView sends this link to {} and keeps the few lines it answers with on the card. Nothing else is sent: no account, no cookies, nothing about your charts.",
-                    kind.fetch_host()
+                    FETCH_HOST
                 ),
                 size::SUBHEADLINE,
                 REGULAR,
@@ -314,20 +288,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_sheet_accepts_only_the_link_of_its_own_kind() {
+    fn the_sheet_accepts_only_the_link_of_a_post() {
         let post = "https://x.com/degenview/status/1750000000000000000";
         let idea = "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/";
-        assert!(check_link(LinkKind::Post, post).is_ok());
-        assert!(check_link(LinkKind::Idea, idea).is_ok());
-        assert!(check_link(LinkKind::Post, idea).is_err());
-        assert!(check_link(LinkKind::Idea, post).is_err());
+        assert!(check_link(post).is_ok());
+        assert_eq!(check_link(idea), Err(Some(LinkError::Host)));
+        assert_eq!(check_link("  "), Err(None), "nothing typed is not an error");
         assert_eq!(
-            check_link(LinkKind::Post, "  "),
-            Err(None),
-            "nothing typed is not an error"
-        );
-        assert_eq!(
-            check_link(LinkKind::Post, "ftp://x.com/a/status/1"),
+            check_link("ftp://x.com/a/status/1"),
             Err(Some(LinkError::Scheme))
         );
     }
@@ -364,7 +332,6 @@ mod tests {
             action = show_link(
                 ctx,
                 LinkSheet {
-                    kind: LinkKind::Post,
                     text: &mut good,
                     replacing: false,
                 },
@@ -376,7 +343,6 @@ mod tests {
             action = show_link(
                 ctx,
                 LinkSheet {
-                    kind: LinkKind::Post,
                     text: &mut bad,
                     replacing: false,
                 },
@@ -404,7 +370,6 @@ mod tests {
             action = show_link(
                 ctx,
                 LinkSheet {
-                    kind: LinkKind::Idea,
                     text: &mut text,
                     replacing: false,
                 },
@@ -413,11 +378,11 @@ mod tests {
         assert_eq!(action, LinkSheetAction::Close);
         let mut answer = ConsentAction::None;
         frame(&ctx, escape(), |ctx| {
-            answer = show_consent(ctx, LinkKind::Idea);
+            answer = show_consent(ctx);
         });
         assert_eq!(answer, ConsentAction::Cancel);
         frame(&ctx, Vec::new(), |ctx| {
-            answer = show_consent(ctx, LinkKind::Post);
+            answer = show_consent(ctx);
         });
         assert_eq!(answer, ConsentAction::None, "it waits for an answer");
     }
