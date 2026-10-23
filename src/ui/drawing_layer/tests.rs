@@ -2214,6 +2214,11 @@ fn gallery_of_the_selection_and_the_editor() {
         (Tool::XabcdPattern, "selected-xabcd"),
         (Tool::ElliottImpulse, "selected-impulse"),
         (Tool::TimeCycles, "selected-time-cycles"),
+        (Tool::LongPosition, "selected-long-position"),
+        (Tool::PositionForecast, "selected-position-forecast"),
+        (Tool::AnchoredVwap, "selected-anchored-vwap"),
+        (Tool::FixedRangeVolumeProfile, "selected-volume-profile"),
+        (Tool::DateAndPriceRange, "selected-date-price-range"),
     ] {
         let mut rig = Rig::with_tool(tool);
         for point in &POINTS[..usize::from(match tool.spec().placement {

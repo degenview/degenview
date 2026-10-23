@@ -2432,6 +2432,31 @@ mod tests {
                 Tab::Coordinates,
             ),
             ("dialog-time-cycles-style", Tool::TimeCycles, Tab::Style),
+            ("dialog-long-inputs", Tool::LongPosition, Tab::Inputs),
+            ("dialog-long-style", Tool::LongPosition, Tab::Style),
+            (
+                "dialog-forecast-inputs",
+                Tool::PositionForecast,
+                Tab::Inputs,
+            ),
+            ("dialog-bars-inputs", Tool::BarsPattern, Tab::Inputs),
+            ("dialog-ghost-inputs", Tool::GhostFeed, Tab::Inputs),
+            ("dialog-vwap-inputs", Tool::AnchoredVwap, Tab::Inputs),
+            (
+                "dialog-profile-inputs",
+                Tool::FixedRangeVolumeProfile,
+                Tab::Inputs,
+            ),
+            (
+                "dialog-measure-inputs",
+                Tool::DateAndPriceRange,
+                Tab::Inputs,
+            ),
+            (
+                "dialog-price-range-coordinates",
+                Tool::PriceRange,
+                Tab::Coordinates,
+            ),
         ] {
             let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
             dialog.tab = tab;
