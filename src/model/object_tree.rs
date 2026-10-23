@@ -170,24 +170,24 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
 mod tests {
     use super::*;
     use crate::model::Anchor;
-    use crate::model::drawing_style::Visibility;
 
     fn line(id: u64) -> Drawing {
-        Drawing::TrendLine {
+        Drawing::build(
+            crate::model::Tool::TrendLine,
             id,
-            a: Anchor {
-                time_ms: 0,
-                price: 1.0,
-            },
-            b: Anchor {
-                time_ms: 1,
-                price: 2.0,
-            },
-            locked: false,
-            hidden: false,
-            visibility: Visibility::default(),
-            style: crate::model::drawing_style::DrawingStyle::trend_line(),
-        }
+            &[
+                Anchor {
+                    time_ms: 0,
+                    price: 1.0,
+                },
+                Anchor {
+                    time_ms: 1,
+                    price: 2.0,
+                },
+            ],
+            crate::model::Tool::TrendLine.default_style(),
+        )
+        .expect("a trend line")
     }
 
     fn inputs<'a>(

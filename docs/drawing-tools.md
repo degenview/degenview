@@ -23,7 +23,7 @@ a focused text field alone.
 
 | Tool | Anchors / placement | What is drawn | Default (lib unless noted) |
 |---|---|---|---|
-| Trend line | 2 | segment, extend left/right (past the first / second anchor) | DegenView's own `#0A84FF` 1.5 px; stored form unchanged |
+| Trend line | 2 | segment, extend left/right (past the first / second anchor) | DegenView's own `#0A84FF` 1.5 px |
 | Ray | 2 | from the first anchor through the second, on to the plot's edge | `#2962FF` 2 px, extend right on |
 | Info line | 2 | trend line and a statistics box (price range, %, bars, time, distance, angle) | stats on and always shown |
 | Extended line | 2 | through both anchors, no end | extend both on |
@@ -89,36 +89,31 @@ text, Shift+Return adds a line, Escape drops the edit and is spent on it. The ed
 toolbar's Text button and the right-click menu open it too, and the dialog's Text tab edits the
 same text.
 
-### Compatibility and sync
+### Storage and sync
 
-- A plain trend line is still `{"TrendLine": ...}`, byte for byte. A trend line with **text** is
-  written as a `Shape` with the new `trend_line` geometry, so a build without it keeps the row as
-  an unreadable drawing and writes it back untouched instead of dropping the text; clearing the
-  text returns it to the original form (`Drawing::set_text`).
+- The app has not shipped with the older forms, so nothing is kept for them: the trend line is a
+  `Shape` with a `trend_line` geometry like every other line (it was a variant of its own), and a
+  row saved by an earlier development build may be unreadable now.
 - Every style field the new tools added is left out of a stored drawing while it holds its default
-  (`skip_serializing_if`), so a drawing that does not use a feature is written exactly as before
-  (same bytes, same sync hash). `a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did`
-  pins that against a fixture captured from the build before the tools existed.
+  (`skip_serializing_if`), so a rectangle does not carry nine pitchfork levels around in every
+  layout and synced record.
 - Drawings sync as part of saved layouts, one record each, as JSON: the new tools needed no change
   to the sync engine. Tests run all seventeen through two Macs on `MockCloud`, edit and delete
   them, and round-trip a trend line gaining and losing text. Real CloudKit and two real Macs were
   not exercised.
-- A build that predates the tools sees them as unreadable drawings and keeps them. Templates and
-  defaults are keyed by `Tool`, so such a build cannot read the template rows and defaults that name
-  the new tools (it refuses to overwrite them). `merge_remote_drawings` used to treat every
-  unreadable drawing as one drawing (their `id()` is 0); it now matches them by the id they were
-  stored with, and builds already out there keep the old behaviour, so update every Mac together.
+- A row this version cannot read (a tool from a newer build) is kept and written back untouched.
+  `merge_remote_drawings` used to treat every such drawing as one drawing (their `id()` is 0); it
+  now matches them by the id they were stored with.
 
 ## Trend line style
 
-The trend line carries a `DrawingStyle` like the shapes: colour, width, pattern, and extend left
-and right. A row saved before this had none and decodes to the blue 1.5 px segment it always was
-(`DrawingStyle::trend_line()`); a line still in that look is written without a style, so stored
-rows and saved layouts do not change. It is projected by the same code as the other lines
-(`ui/drawing_layer/line_shapes.rs`), so it also takes text, statistics, price labels and arrow
-ends; a line saved without them draws as it did. The painter prolongs it to the plot edge and the
-hit test follows the prolongation. The properties dialog edits it through the tool's capabilities.
-Drawings an MCP client makes use the same model (see `docs/architecture/mcp.md`).
+The trend line carries a `DrawingStyle` like the other lines: colour, width, pattern, extend left
+and right, arrow ends, price labels, statistics and text. Its default is DegenView's own blue
+1.5 px (`DrawingStyle::trend_line()`). It is projected by the same code as the other lines
+(`ui/drawing_layer/line_shapes.rs`); the painter prolongs it to the plot edge and the hit test
+follows the prolongation, and its ends can be grabbed without selecting it first. The properties
+dialog edits it through the tool's capabilities. Drawings an MCP client makes use the same model
+(see `docs/architecture/mcp.md`).
 
 ## Tools
 
@@ -249,8 +244,8 @@ here has a pip convention to follow.
 
 ## Persistence and undo
 
-Drawings are saved with their chart in the existing session and saved layouts. The four original
-variants keep their serialized form; new fields default. A chart's drawings decode one by one
+Drawings are saved with their chart in the existing session and saved layouts; new fields
+default. A chart's drawings decode one by one
 (`model::drawings::lenient`): a row this version cannot read, such as a tool from a newer build,
 stays in the list as `Drawing::Unreadable` and is written back byte for byte, instead of costing
 the whole tab or layout. Geometry with a non-finite number or too few points is treated the same.

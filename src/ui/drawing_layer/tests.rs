@@ -88,16 +88,21 @@ fn candle_centres_land_mid_slot_and_a_lead_shifts_right() {
     assert_eq!(proj.x(3 * 60_000), 50.0);
 }
 
+/// A trend line from `a` to `b` in `style`.
+fn line_in(id: u64, a: Anchor, b: Anchor, style: DrawingStyle, locked: bool) -> Drawing {
+    let mut line = Drawing::build(Tool::TrendLine, id, &[a, b], style).expect("a trend line");
+    line.set_locked(locked);
+    line
+}
+
 fn trend_line(id: u64, locked: bool) -> Drawing {
-    Drawing::TrendLine {
+    line_in(
         id,
-        a: anchor(60_000, 90.0),
-        b: anchor(180_000, 110.0),
+        anchor(60_000, 90.0),
+        anchor(180_000, 110.0),
+        Tool::TrendLine.default_style(),
         locked,
-        hidden: false,
-        visibility: Visibility::ALL,
-        style: crate::model::drawing_style::DrawingStyle::trend_line(),
-    }
+    )
 }
 
 #[test]
@@ -113,10 +118,9 @@ fn dragging_the_body_moves_every_anchor_and_keeps_the_id() {
         anchor(0, 0.0),
         &proj,
     );
-    let Drawing::TrendLine { id, a, b, .. } = moved else {
-        panic!("variant changed");
-    };
-    assert_eq!(id, 7);
+    assert_eq!(moved.tool(), Some(Tool::TrendLine), "still a trend line");
+    assert_eq!(moved.id(), 7);
+    let (a, b) = (moved.anchors()[0], moved.anchors()[1]);
     assert_eq!(a.time_ms, 120_000);
     assert_eq!(b.time_ms, 240_000);
     assert!((a.price - 90.0).abs() < 1e-3 && (b.price - 110.0).abs() < 1e-3);
@@ -1244,15 +1248,13 @@ fn locked_drawings_report_locked_hits() {
     let data = candles();
     let scale = scale(false);
     let proj = projection(&data, &scale);
-    let line = Drawing::TrendLine {
-        id: 3,
-        a: anchor(0, 100.0),
-        b: anchor(540_000, 100.0),
-        locked: true,
-        hidden: false,
-        visibility: Visibility::ALL,
-        style: crate::model::drawing_style::DrawingStyle::trend_line(),
-    };
+    let line = line_in(
+        3,
+        anchor(0, 100.0),
+        anchor(540_000, 100.0),
+        Tool::TrendLine.default_style(),
+        true,
+    );
     let y = scale.y(100.0);
     let frame = DrawingFrame::new(std::slice::from_ref(&line), Tool::Cursor, None, 1);
     let mut layer = DrawingLayer::default();
@@ -1275,17 +1277,9 @@ fn an_extended_trend_line_is_hit_beyond_its_anchors_and_a_plain_one_is_not() {
     let proj = projection(&data, &scale);
     let y = scale.y(100.0);
     let at = |extend_right: bool| {
-        let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+        let mut style = Tool::TrendLine.default_style();
         style.extend_right = extend_right;
-        Drawing::TrendLine {
-            id: 3,
-            a: anchor(0, 100.0),
-            b: anchor(180_000, 100.0),
-            locked: false,
-            hidden: false,
-            visibility: Visibility::ALL,
-            style,
-        }
+        line_in(3, anchor(0, 100.0), anchor(180_000, 100.0), style, false)
     };
     let beyond = pos2(proj.plot.right() - 40.0, y + 1.0);
     let mut layer = DrawingLayer::default();
@@ -1309,20 +1303,18 @@ fn styled_trend_lines_paint_in_every_dash_and_extension() {
     let proj = projection(&data, &scale);
     for dash in LineDash::ALL {
         for (left, right) in [(false, false), (true, false), (false, true), (true, true)] {
-            let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+            let mut style = Tool::TrendLine.default_style();
             style.stroke.dash = dash;
             style.stroke.color = [255, 193, 7, 200];
             style.extend_left = left;
             style.extend_right = right;
-            let line = Drawing::TrendLine {
-                id: 1,
-                a: anchor(60_000, 99.0),
-                b: anchor(240_000, 101.0),
-                locked: false,
-                hidden: false,
-                visibility: Visibility::ALL,
+            let line = line_in(
+                1,
+                anchor(60_000, 99.0),
+                anchor(240_000, 101.0),
                 style,
-            };
+                false,
+            );
             let mut layer = DrawingLayer::default();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let painter = ui.painter().clone();
@@ -1732,7 +1724,7 @@ fn an_end_of_an_unselected_trend_line_reshapes_it_without_selecting_it_first() {
     let after = rig.last().anchors();
     assert_eq!(after[0], before[0], "the other end stays");
     assert_ne!(after[1], before[1], "the end under the pointer moved");
-    // A line with text behaves the same: it is one tool in two stored forms.
+    // A line with text behaves the same.
     let mut texted = rig.last().clone();
     texted.set_text("note");
     rig.drawings[0] = texted;
@@ -1877,7 +1869,7 @@ fn a_selected_line_invites_text_and_a_click_on_the_invitation_opens_the_editor()
 }
 
 #[test]
-fn typed_text_is_kept_by_return_as_one_undo_step_and_the_line_keeps_its_form_in_the_row() {
+fn typed_text_is_kept_by_return_as_one_undo_step() {
     let (mut rig, id) = line_awaiting_text();
     let steps = rig.undo_steps;
     let place = text_place(&rig, id);
@@ -1963,18 +1955,13 @@ fn shift_return_adds_a_line_and_return_keeps_both() {
 }
 
 #[test]
-fn clearing_the_text_returns_the_line_to_its_original_stored_form() {
+fn clearing_the_text_leaves_the_line_without_any() {
     let (mut rig, id) = line_awaiting_text();
     let plain = serde_json::to_value(rig.last()).unwrap();
     let place = text_place(&rig, id);
     rig.click(place);
     type_and_keep(&mut rig, "hi");
-    assert!(
-        serde_json::to_value(rig.last())
-            .unwrap()
-            .get("Shape")
-            .is_some()
-    );
+    assert_eq!(rig.last().text(), "hi");
     let place = text_place(&rig, id);
     rig.click(place);
     rig.settle();

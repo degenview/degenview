@@ -62,14 +62,14 @@ behavior.
 
 ## Drawings
 
-- A drawing is pinned to time+price. The four original tools keep their serialized form; every
-  newer tool is `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`.
-  New fields need `#[serde(default)]`. Nothing stores a pixel or a derived corner.
-- **A style field a drawing does not use must not reach its stored row.** `DrawingStyle` is
-  written whole, so a new field needs `skip_serializing_if` its default, or every stored drawing
-  is rewritten, changes its sync hash and uploads again (and an older build strips the field and
-  bounces it back). `a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did` fails if
-  one does not.
+- A drawing is pinned to time+price. Fibonacci, the brush and the ruler have variants of their
+  own; every other tool, the trend line included, is
+  `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New fields
+  need `#[serde(default)]`. Nothing stores a pixel or a derived corner. The app has not shipped
+  an older stored form that must keep reading, so do not add compatibility readers.
+- A style field only some tools use is left out of the stored row while it holds its default
+  (`skip_serializing_if`): `DrawingStyle` is written whole, and every drawing and every synced
+  record would otherwise carry the levels of a pitchfork.
 - A tool is one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`. Add a
   tool there, a `Geometry` variant, its projection (`shape::shape`, or `line_shapes::project` for
   the lines, channels and pitchforks) and an icon; the controller, toolbar, dialog and tests
@@ -82,9 +82,8 @@ behavior.
   with their own tests. Polygons fill by the even-odd rule; translucent freehand strokes are
   painted from a coverage map (`rasterize_stroke`), never overlapping triangles. A line with no end
   is cut to the plot with `line_in_rect`; never draw from an enormous coordinate.
-- A drawing's text is part of it: `Drawing::set_text` (a trend line changes stored form with
-  text and back), the inline editor in `drawing_layer/text_edit.rs`, and `TextPlace` for where the
-  painter puts it. Axis tags are painted by `paint_frame`'s label pass, never by the drawing
+- A drawing's text is part of it: `Drawing::set_text`, the inline editor in
+  `drawing_layer/text_edit.rs`, and `TextPlace` for where the painter puts it. Axis tags are painted by `paint_frame`'s label pass, never by the drawing
   painter (it is clipped to the plot).
 - The layer never mutates drawings: it returns `DrawingCommand`s in the `DrawingFrame`, and
   `drawings::apply_commands` applies them. One batch is one undo step; use `Style` for restyles

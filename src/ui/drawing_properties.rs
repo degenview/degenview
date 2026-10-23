@@ -1743,16 +1743,15 @@ mod tests {
     }
 
     #[test]
-    fn typing_text_on_a_trend_line_moves_it_to_the_form_that_keeps_the_text_and_back() {
+    fn a_trend_line_takes_text_in_the_dialog_like_any_other_line() {
         let mut dialog = DrawingProperties::new(1, &drawing(Tool::TrendLine)).expect("dialog");
-        assert!(matches!(dialog.draft(), Drawing::TrendLine { .. }));
         dialog.draft.set_text("support");
         assert_eq!(dialog.draft().text(), "support");
-        assert!(matches!(dialog.draft(), Drawing::Shape { .. }));
         assert_eq!(dialog.draft().tool(), Some(Tool::TrendLine));
         assert_eq!(dialog.tool, Tool::TrendLine);
+        assert!(dialog.tabs().contains(&Tab::Text));
         dialog.draft.set_text("");
-        assert!(matches!(dialog.draft(), Drawing::TrendLine { .. }));
+        assert_eq!(dialog.draft().text(), "");
     }
 
     #[test]

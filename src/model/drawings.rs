@@ -1,8 +1,8 @@
 //! Drawings on a chart: pinned to market coordinates (time and price), never to pixels, so a
 //! drawing survives zoom, scroll, a resize and a timeframe switch.
 //!
-//! The four original drawings (trend line, Fibonacci, brush, ruler) keep their serialized shape;
-//! every new tool is one [`Drawing::Shape`] whose typed [`Geometry`] owns its anchors. Styling,
+//! Fibonacci, the brush and the ruler have variants of their own;
+//! every other tool is one [`Drawing::Shape`] whose typed [`Geometry`] owns its anchors. Styling,
 //! text and per-timeframe visibility live beside the geometry, so moving, restyling and hiding a
 //! drawing never touch each other.
 
@@ -113,9 +113,7 @@ pub enum Geometry {
         c1: Anchor,
         c2: Anchor,
     },
-    /// A trend line that carries text. A plain one is the original `Drawing::TrendLine`, so a
-    /// row an older build wrote keeps its form; one with text is written as this, which an
-    /// older build keeps untouched rather than dropping the text.
+    /// The segment from `a` to `b`, continued past either end by the style's extension.
     TrendLine {
         a: Anchor,
         b: Anchor,
@@ -514,6 +512,7 @@ impl Geometry {
                     c2: last,
                 },
             },
+            Tool::TrendLine => Self::TrendLine { a: first, b: last },
             Tool::Ray => Self::Ray { a: first, b: last },
             Tool::InfoLine => Self::InfoLine { a: first, b: last },
             Tool::ExtendedLine => Self::ExtendedLine { a: first, b: last },
@@ -560,7 +559,7 @@ impl Geometry {
                 p2: at(1),
                 p3: last,
             },
-            Tool::Cursor | Tool::TrendLine | Tool::Fib | Tool::Brush | Tool::Ruler => return None,
+            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler => return None,
         })
     }
 
@@ -669,27 +668,10 @@ impl Geometry {
 
 /// A drawing on a chart, keyed by a stable id.
 ///
-/// The four original variants keep their serialized shape; their later fields (`hidden`,
-/// `visibility`, the brush's `style`) default so an old row decodes unchanged.
+/// Fibonacci, the brush and the ruler have variants of their own; every other tool, the trend
+/// line included, is one [`Drawing::Shape`] whose geometry says which.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum Drawing {
-    TrendLine {
-        id: u64,
-        a: Anchor,
-        b: Anchor,
-        locked: bool,
-        #[serde(default)]
-        hidden: bool,
-        #[serde(default)]
-        visibility: Visibility,
-        /// Colour, width, dash and extension. A row without one is the blue segment it always
-        /// was, and a line still in that look is written without it, so nothing stored changes.
-        #[serde(
-            default = "DrawingStyle::trend_line",
-            skip_serializing_if = "is_plain_trend_line"
-        )]
-        style: DrawingStyle,
-    },
     Fib {
         id: u64,
         a: Anchor,
@@ -717,7 +699,7 @@ pub enum Drawing {
         a: Anchor,
         b: Anchor,
     },
-    /// Every tool added after the originals.
+    /// Every other tool.
     Shape {
         id: u64,
         geometry: Geometry,
@@ -743,15 +725,10 @@ fn brush_style() -> DrawingStyle {
     Tool::Brush.default_style()
 }
 
-fn is_plain_trend_line(style: &DrawingStyle) -> bool {
-    *style == DrawingStyle::trend_line()
-}
-
 impl Drawing {
     pub fn id(&self) -> u64 {
         match self {
-            Self::TrendLine { id, .. }
-            | Self::Fib { id, .. }
+            Self::Fib { id, .. }
             | Self::Brush { id, .. }
             | Self::Ruler { id, .. }
             | Self::Shape { id, .. } => *id,
@@ -780,15 +757,6 @@ impl Drawing {
         let at = |index: usize| anchors.get(index).copied();
         Some(match tool {
             Tool::Cursor => return None,
-            Tool::TrendLine => Self::TrendLine {
-                id,
-                a: at(0)?,
-                b: at(1)?,
-                locked: false,
-                hidden: false,
-                visibility: Visibility::ALL,
-                style,
-            },
             Tool::Fib => Self::Fib {
                 id,
                 a: at(0)?,
@@ -839,7 +807,6 @@ impl Drawing {
     /// The tool that draws this, `None` for an unreadable row.
     pub fn tool(&self) -> Option<Tool> {
         match self {
-            Self::TrendLine { .. } => Some(Tool::TrendLine),
             Self::Fib { .. } => Some(Tool::Fib),
             Self::Brush { .. } => Some(Tool::Brush),
             Self::Ruler { .. } => Some(Tool::Ruler),
@@ -850,28 +817,25 @@ impl Drawing {
 
     pub fn locked(&self) -> bool {
         match self {
-            Self::TrendLine { locked, .. }
-            | Self::Fib { locked, .. }
-            | Self::Brush { locked, .. }
-            | Self::Shape { locked, .. } => *locked,
+            Self::Fib { locked, .. } | Self::Brush { locked, .. } | Self::Shape { locked, .. } => {
+                *locked
+            }
             Self::Ruler { .. } | Self::Unreadable(_) => false,
         }
     }
 
     pub fn hidden(&self) -> bool {
         match self {
-            Self::TrendLine { hidden, .. }
-            | Self::Fib { hidden, .. }
-            | Self::Brush { hidden, .. }
-            | Self::Shape { hidden, .. } => *hidden,
+            Self::Fib { hidden, .. } | Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => {
+                *hidden
+            }
             Self::Ruler { .. } | Self::Unreadable(_) => false,
         }
     }
 
     pub fn visibility(&self) -> Visibility {
         match self {
-            Self::TrendLine { visibility, .. }
-            | Self::Fib { visibility, .. }
+            Self::Fib { visibility, .. }
             | Self::Brush { visibility, .. }
             | Self::Shape { visibility, .. } => *visibility,
             Self::Ruler { .. } | Self::Unreadable(_) => Visibility::ALL,
@@ -886,40 +850,35 @@ impl Drawing {
 
     pub fn set_locked(&mut self, value: bool) {
         match self {
-            Self::TrendLine { locked, .. }
-            | Self::Fib { locked, .. }
-            | Self::Brush { locked, .. }
-            | Self::Shape { locked, .. } => *locked = value,
+            Self::Fib { locked, .. } | Self::Brush { locked, .. } | Self::Shape { locked, .. } => {
+                *locked = value
+            }
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
 
     pub fn set_hidden(&mut self, value: bool) {
         match self {
-            Self::TrendLine { hidden, .. }
-            | Self::Fib { hidden, .. }
-            | Self::Brush { hidden, .. }
-            | Self::Shape { hidden, .. } => *hidden = value,
+            Self::Fib { hidden, .. } | Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => {
+                *hidden = value
+            }
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
 
     pub fn set_visibility(&mut self, value: Visibility) {
         match self {
-            Self::TrendLine { visibility, .. }
-            | Self::Fib { visibility, .. }
+            Self::Fib { visibility, .. }
             | Self::Brush { visibility, .. }
             | Self::Shape { visibility, .. } => *visibility = value,
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
 
-    /// The style, for the drawings that carry one (the trend line, the brush and every shape).
+    /// The style, for the drawings that carry one (the brush and every shape).
     pub fn style(&self) -> Option<&DrawingStyle> {
         match self {
-            Self::TrendLine { style, .. }
-            | Self::Brush { style, .. }
-            | Self::Shape { style, .. } => Some(style),
+            Self::Brush { style, .. } | Self::Shape { style, .. } => Some(style),
             _ => None,
         }
     }
@@ -932,7 +891,7 @@ impl Drawing {
                 *width = value.stroke.width;
                 *style = value;
             }
-            Self::TrendLine { style, .. } | Self::Shape { style, .. } => *style = value,
+            Self::Shape { style, .. } => *style = value,
             _ => {}
         }
     }
@@ -944,75 +903,11 @@ impl Drawing {
         }
     }
 
-    /// Sets the text of a drawing that has any. A trend line gets its text by changing form (see
-    /// [`Geometry::TrendLine`]) and returns to the original form when its text is cleared, so a
-    /// line without text is always stored exactly as it was before lines could carry any.
+    /// Sets the text of a drawing that has any (a shape); the rest ignore it.
     pub fn set_text(&mut self, value: &str) {
-        let value: String = value.chars().take(MAX_TEXT_CHARS).collect();
-        let taken = std::mem::replace(self, Self::Unreadable(serde_json::Value::Null));
-        *self = match taken {
-            Self::Shape {
-                id,
-                geometry,
-                style,
-                locked,
-                hidden,
-                visibility,
-                ..
-            } => Self::Shape {
-                id,
-                geometry,
-                style,
-                text: value,
-                locked,
-                hidden,
-                visibility,
-            },
-            Self::TrendLine {
-                id,
-                a,
-                b,
-                locked,
-                hidden,
-                visibility,
-                style,
-            } if !value.is_empty() => Self::Shape {
-                id,
-                geometry: Geometry::TrendLine { a, b },
-                style,
-                text: value,
-                locked,
-                hidden,
-                visibility,
-            },
-            other => other,
-        };
-        self.normalize_trend_line();
-    }
-
-    /// A trend line with no text goes back to its original stored form.
-    fn normalize_trend_line(&mut self) {
-        let taken = std::mem::replace(self, Self::Unreadable(serde_json::Value::Null));
-        *self = match taken {
-            Self::Shape {
-                id,
-                geometry: Geometry::TrendLine { a, b },
-                style,
-                text,
-                locked,
-                hidden,
-                visibility,
-            } if text.is_empty() => Self::TrendLine {
-                id,
-                a,
-                b,
-                locked,
-                hidden,
-                visibility,
-                style,
-            },
-            other => other,
-        };
+        if let Self::Shape { text, .. } = self {
+            *text = value.chars().take(MAX_TEXT_CHARS).collect();
+        }
     }
 
     /// Whether the drawing's text rides on a line or a channel (the trend line, the tools of its
@@ -1032,9 +927,7 @@ impl Drawing {
     /// Every anchor in placement order.
     pub fn anchors(&self) -> Vec<Anchor> {
         match self {
-            Self::TrendLine { a, b, .. } | Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => {
-                vec![*a, *b]
-            }
+            Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => vec![*a, *b],
             Self::Brush { points, .. } => points.clone(),
             Self::Shape { geometry, .. } => geometry.anchors(),
             Self::Unreadable(_) => Vec::new(),
@@ -1044,9 +937,7 @@ impl Drawing {
     /// Mutable access to every anchor in placement order, to move or edit them.
     pub fn anchors_mut(&mut self) -> Vec<&mut Anchor> {
         match self {
-            Self::TrendLine { a, b, .. } | Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => {
-                vec![a, b]
-            }
+            Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => vec![a, b],
             Self::Brush { points, .. } => points.iter_mut().collect(),
             Self::Shape { geometry, .. } => geometry.anchors_mut(),
             Self::Unreadable(_) => Vec::new(),
@@ -1071,8 +962,7 @@ impl Drawing {
     /// This drawing under a new id (a duplicate).
     pub fn with_id(mut self, new_id: u64) -> Self {
         match &mut self {
-            Self::TrendLine { id, .. }
-            | Self::Fib { id, .. }
+            Self::Fib { id, .. }
             | Self::Brush { id, .. }
             | Self::Ruler { id, .. }
             | Self::Shape { id, .. } => *id = new_id,
@@ -1216,23 +1106,14 @@ mod tests {
     fn rows_written_before_styles_existed_decode_unchanged() {
         // The exact JSON the previous version wrote for each original drawing.
         let old = r#"[
-            {"TrendLine":{"id":1,"a":{"time_ms":10,"price":1.5},"b":{"time_ms":20,"price":2.5},"locked":false}},
             {"Fib":{"id":2,"a":{"time_ms":10,"price":1.5},"b":{"time_ms":20,"price":2.5},"locked":true}},
             {"Brush":{"id":3,"points":[{"time_ms":1,"price":1.0}],"width":2.0,"locked":false}}
         ]"#;
         let drawings: Vec<Drawing> = serde_json::from_str(old).unwrap();
-        assert_eq!(drawings.len(), 3);
-        assert!(matches!(
-            drawings[0],
-            Drawing::TrendLine {
-                id: 1,
-                hidden: false,
-                ..
-            }
-        ));
+        assert_eq!(drawings.len(), 2);
         assert!(drawings[0].visibility().is_all());
-        assert!(drawings[1].locked());
-        let Drawing::Brush { style, width, .. } = &drawings[2] else {
+        assert!(drawings[0].locked());
+        let Drawing::Brush { style, width, .. } = &drawings[1] else {
             panic!("brush");
         };
         assert_eq!(*width, 2.0);
@@ -1271,16 +1152,13 @@ mod tests {
     fn an_unreadable_row_is_kept_and_written_back_verbatim() {
         let stored = r#"{"drawings":[
             {"Shape":{"id":1,"geometry":{"hologram":{"x":1}}}},
-            {"TrendLine":{"id":2,"a":{"time_ms":0,"price":1.0},"b":{"time_ms":1,"price":2.0},"locked":false}},
+            {"Fib":{"id":2,"a":{"time_ms":0,"price":1.0},"b":{"time_ms":1,"price":2.0},"locked":false}},
             "not even an object"
         ]}"#;
         let holder: Holder = serde_json::from_str(stored).unwrap();
         assert_eq!(holder.drawings.len(), 3);
         assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
-        assert!(matches!(
-            holder.drawings[1],
-            Drawing::TrendLine { id: 2, .. }
-        ));
+        assert!(matches!(holder.drawings[1], Drawing::Fib { id: 2, .. }));
         assert!(matches!(holder.drawings[2], Drawing::Unreadable(_)));
         let again = serde_json::to_value(&holder).unwrap();
         let original: serde_json::Value = serde_json::from_str(stored).unwrap();
@@ -1292,33 +1170,28 @@ mod tests {
     }
 
     #[test]
-    fn a_trend_line_without_a_style_is_the_line_it_always_was() {
-        use crate::model::chart_type::LineDash;
-        let old = r#"{"TrendLine":{"id":1,"a":{"time_ms":10,"price":1.5},"b":{"time_ms":20,"price":2.5},"locked":false}}"#;
-        let line: Drawing = serde_json::from_str(old).unwrap();
-        assert_eq!(line.style(), Some(&DrawingStyle::trend_line()));
-        assert_eq!(line.style().unwrap().stroke.dash, LineDash::Solid);
-        assert!(!line.style().unwrap().extend_right);
-        // Still in that look, it is written without a style: nothing stored changes.
-        let written = serde_json::to_value(&line).unwrap();
-        assert!(written["TrendLine"].get("style").is_none(), "{written}");
-        // The GUI's default for the tool builds the same line.
-        let built = Drawing::build(
+    fn a_trend_line_is_one_shape_with_a_geometry_like_every_other_line() {
+        let line = Drawing::build(
             Tool::TrendLine,
             1,
             &[anchor(10, 1.5), anchor(20, 2.5)],
             Tool::TrendLine.default_style(),
         )
         .unwrap();
-        assert_eq!(
-            serde_json::to_value(&built).unwrap()["TrendLine"]["a"],
-            written["TrendLine"]["a"]
-        );
-        assert!(
-            serde_json::to_value(&built).unwrap()["TrendLine"]
-                .get("style")
-                .is_none()
-        );
+        assert!(matches!(line.geometry(), Some(Geometry::TrendLine { .. })));
+        assert_eq!(line.tool(), Some(Tool::TrendLine));
+        assert_eq!(line.style(), Some(&DrawingStyle::trend_line()));
+        let written = serde_json::to_value(&line).unwrap();
+        assert!(written["Shape"]["geometry"].get("trend_line").is_some());
+        // Text sits in the same drawing, set and cleared like any other, and the line is the
+        // same line throughout.
+        let mut texted = line.clone();
+        texted.set_text("support");
+        assert_eq!(texted.text(), "support");
+        assert_eq!(texted.anchors(), line.anchors());
+        assert_eq!(texted.tool(), Some(Tool::TrendLine));
+        texted.set_text("");
+        assert_eq!(texted, line);
     }
 
     #[test]
@@ -1348,12 +1221,6 @@ mod tests {
         wild.stroke.width = f32::NAN;
         restyled.set_style(wild);
         assert!(restyled.style().unwrap().stroke.width.is_finite());
-        restyled.set_style(DrawingStyle::trend_line());
-        assert!(
-            serde_json::to_value(&restyled).unwrap()["TrendLine"]
-                .get("style")
-                .is_none()
-        );
         // Moving the anchors and the lock still work on a styled line.
         restyled.set_locked(true);
         assert!(restyled.locked());
@@ -1494,59 +1361,6 @@ mod tests {
     }
 
     #[test]
-    fn a_trend_line_keeps_its_stored_form_until_it_has_text() {
-        let build = || {
-            Drawing::build(
-                Tool::TrendLine,
-                1,
-                &[anchor(10, 1.5), anchor(20, 2.5)],
-                Tool::TrendLine.default_style(),
-            )
-            .unwrap()
-        };
-        let mut line = build();
-        let plain = serde_json::to_value(&line).unwrap();
-        assert!(plain.get("TrendLine").is_some());
-        line.set_text("support");
-        assert_eq!(line.text(), "support");
-        assert_eq!(line.tool(), Some(Tool::TrendLine));
-        assert_eq!(line.id(), 1);
-        let texted = serde_json::to_value(&line).unwrap();
-        // A new form an older build cannot read, so it keeps the row instead of dropping the text.
-        assert!(texted.get("Shape").is_some(), "{texted}");
-        assert_eq!(texted["Shape"]["text"], "support");
-        assert!(texted["Shape"]["geometry"].get("trend_line").is_some());
-        let back: Drawing = serde_json::from_value(texted).unwrap();
-        assert_eq!(back, line);
-        // Cleared, it goes back to the original form, byte for byte.
-        line.set_text("");
-        assert_eq!(line, build());
-        assert_eq!(serde_json::to_value(&line).unwrap(), plain);
-        // Moving, locking and restyling a texted line keep its text.
-        let mut texted = build();
-        texted.set_text("keep");
-        texted.set_locked(true);
-        for anchor in texted.anchors_mut() {
-            anchor.price += 1.0;
-        }
-        assert_eq!(texted.text(), "keep");
-        assert!(texted.locked());
-        assert!(texted.text_on_line());
-    }
-
-    #[test]
-    fn a_line_with_text_is_an_unreadable_row_to_a_build_without_the_variant() {
-        // What an older build sees: a geometry it does not know keeps the whole row.
-        let json = r#"{"drawings":[{"Shape":{"id":4,"geometry":{"trend_line_from_the_future":{"a":{"time_ms":0,"price":1.0},"b":{"time_ms":1,"price":2.0}}},"text":"hi"}}]}"#;
-        let holder: Holder = serde_json::from_str(json).unwrap();
-        assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
-        assert_eq!(holder.drawings[0].stored_id(), 4);
-        let again = serde_json::to_value(&holder).unwrap();
-        let original: serde_json::Value = serde_json::from_str(json).unwrap();
-        assert_eq!(again, original);
-    }
-
-    #[test]
     fn degenerate_placements_make_no_new_shape() {
         let (a, b, c) = (anchor(0, 1.0), anchor(60_000, 2.0), anchor(30_000, 3.0));
         let style = DrawingStyle::default();
@@ -1682,10 +1496,9 @@ mod tests {
         let a = anchor(0, 1.0);
         let b = anchor(30, 4.0);
         // One anchor placed plus the pointer: every tool previews, even degenerate.
-        // The trend line is previewed as the original drawing, not as a geometry.
         for tool in Tool::GROUPED
             .into_iter()
-            .filter(|tool| !matches!(tool, Tool::Brush | Tool::TrendLine))
+            .filter(|tool| *tool != Tool::Brush)
         {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");
@@ -1887,68 +1700,6 @@ mod tests {
         drawing.set_hidden(true);
         assert!(!drawing.is_visible(Timeframe::Day));
         assert!(!Drawing::Unreadable(serde_json::Value::Null).is_visible(Timeframe::Day));
-    }
-
-    /// One drawing per pre-existing tool, built the way the app builds it: the fixture captured
-    /// from the build before the lines, channels and pitchforks existed.
-    fn legacy_drawings() -> Vec<(String, Drawing)> {
-        let anchors: Vec<Anchor> = (0..4)
-            .map(|i| anchor(i * 60_000, 100.0 + i as f64 * 7.5))
-            .collect();
-        let mut tools = vec![Tool::TrendLine, Tool::Fib];
-        tools.extend(LEGACY_TOOLS);
-        tools
-            .into_iter()
-            .map(|tool| {
-                let count = match tool.spec().placement {
-                    super::super::drawing_tool::Placement::Points(count) => count as usize,
-                    super::super::drawing_tool::Placement::Single => 1,
-                    _ => 3,
-                };
-                let drawing = Drawing::build(tool, 7, &anchors[..count], tool.default_style())
-                    .unwrap_or_else(|| panic!("{tool:?} did not build"));
-                (format!("{tool:?}"), drawing)
-            })
-            .collect()
-    }
-
-    const LEGACY_TOOLS: [Tool; 16] = [
-        Tool::Brush,
-        Tool::Highlighter,
-        Tool::ArrowMarker,
-        Tool::Arrow,
-        Tool::ArrowMarkUp,
-        Tool::ArrowMarkDown,
-        Tool::Rectangle,
-        Tool::RotatedRectangle,
-        Tool::Path,
-        Tool::Circle,
-        Tool::Ellipse,
-        Tool::Polyline,
-        Tool::Triangle,
-        Tool::Arc,
-        Tool::Curve,
-        Tool::DoubleCurve,
-    ];
-
-    /// New style fields must not reach a drawing that does not use them: a stored drawing that is
-    /// rewritten with extra keys changes its sync hash, uploads again, and is stripped and
-    /// bounced back by any Mac still on an older build.
-    #[test]
-    fn a_drawing_of_every_older_tool_serializes_exactly_as_it_always_did() {
-        let golden: serde_json::Map<String, serde_json::Value> =
-            serde_json::from_str(include_str!("testdata/legacy_drawings.json")).unwrap();
-        let built = legacy_drawings();
-        assert_eq!(built.len(), golden.len());
-        for (name, drawing) in built {
-            assert_eq!(
-                serde_json::to_value(&drawing).unwrap(),
-                golden[&name],
-                "{name} no longer serializes as it did"
-            );
-            let back: Drawing = serde_json::from_value(golden[&name].clone()).unwrap();
-            assert_eq!(back, drawing, "{name} no longer decodes to what it was");
-        }
     }
 
     #[test]

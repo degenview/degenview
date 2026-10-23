@@ -303,11 +303,6 @@ pub(super) fn build(drawing: &Drawing, proj: &Projection) -> Option<Screen> {
         Drawing::Shape {
             geometry, style, ..
         } => finished(shape(geometry, style, proj)?, style),
-        // The original trend line is drawn like every other line.
-        Drawing::TrendLine { a, b, style, .. } => finished(
-            shape(&Geometry::TrendLine { a: *a, b: *b }, style, proj)?,
-            style,
-        ),
         _ => None,
     }
 }

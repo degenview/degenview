@@ -141,14 +141,16 @@ mod tests {
                 drawing
             })
             .chain([
-                Drawing::TrendLine {
-                    id: 90,
-                    a: anchors[0],
-                    b: anchors[1],
-                    locked: true,
-                    hidden: false,
-                    visibility: Default::default(),
-                    style: crate::model::drawing_style::DrawingStyle::trend_line(),
+                {
+                    let mut locked = Drawing::build(
+                        Tool::TrendLine,
+                        90,
+                        &anchors[..2],
+                        Tool::TrendLine.default_style(),
+                    )
+                    .expect("builds");
+                    locked.set_locked(true);
+                    locked
                 },
                 Drawing::Fib {
                     id: 91,

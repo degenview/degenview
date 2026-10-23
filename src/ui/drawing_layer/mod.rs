@@ -486,7 +486,7 @@ impl DrawingLayer {
                 continue;
             }
             let part = match drawing {
-                Drawing::Brush { .. } | Drawing::Shape { .. } | Drawing::TrendLine { .. } => {
+                Drawing::Brush { .. } | Drawing::Shape { .. } => {
                     let Some(screen) = self.screen(drawing, proj) else {
                         continue;
                     };
@@ -1166,18 +1166,9 @@ impl DrawingLayer {
             anchors.push(draft.rubber);
         }
         let preview = match tool {
-            Tool::TrendLine | Tool::Fib | Tool::Ruler => {
+            Tool::Fib | Tool::Ruler => {
                 let (a, b) = (draft.placed[0], draft.rubber);
                 Some(match tool {
-                    Tool::TrendLine => Drawing::TrendLine {
-                        id: 0,
-                        a,
-                        b,
-                        locked: false,
-                        hidden: false,
-                        visibility: Default::default(),
-                        style: frame.style_for(tool),
-                    },
                     Tool::Fib => Drawing::Fib {
                         id: 0,
                         a,
@@ -1255,7 +1246,7 @@ impl DrawingLayer {
                     draft,
                 );
             }
-            Drawing::Brush { .. } | Drawing::Shape { .. } | Drawing::TrendLine { .. } => {
+            Drawing::Brush { .. } | Drawing::Shape { .. } => {
                 // A draft is rebuilt every frame as it grows; a placed drawing is cached.
                 let screen = if draft {
                     shape::build(drawing, proj).map(Arc::new)

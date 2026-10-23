@@ -1221,7 +1221,7 @@ fn every_line_channel_and_pitchfork_reaches_the_other_mac_exactly_as_drawn() {
 }
 
 #[test]
-fn a_trend_line_gaining_text_syncs_as_the_form_that_keeps_it_and_losing_it_restores_the_original() {
+fn a_trend_line_gaining_and_losing_text_syncs_each_change_as_one_record() {
     use crate::model::{Anchor, Drawing, Tool};
     let (cloud, mut a, mut b) = pair();
     a.core.start();
@@ -1248,7 +1248,7 @@ fn a_trend_line_gaining_text_syncs_as_the_form_that_keeps_it_and_losing_it_resto
     assert_eq!(
         rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
         plain,
-        "a plain line crosses as the original form, byte for byte"
+        "a line crosses exactly as drawn"
     );
     let before = cloud.save_attempts();
     line.set_text("support");
@@ -1268,7 +1268,7 @@ fn a_trend_line_gaining_text_syncs_as_the_form_that_keeps_it_and_losing_it_resto
     assert_eq!(
         rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
         plain,
-        "clearing the text returns the stored row to what it was"
+        "clearing the text arrives too"
     );
 }
 

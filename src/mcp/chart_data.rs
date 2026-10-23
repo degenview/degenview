@@ -797,9 +797,10 @@ mod tests {
         zone.patch.text = Some("Supply".into());
         let planned = plan_add(&[], &data, 7, &[line, zone]).unwrap();
         assert_eq!(planned.iter().map(Drawing::id).collect::<Vec<_>>(), [7, 8]);
-        let Drawing::TrendLine { a, b, style, .. } = &planned[0] else {
+        let Some(crate::model::Geometry::TrendLine { a, b }) = planned[0].geometry() else {
             panic!("trend line expected: {:?}", planned[0]);
         };
+        let style = planned[0].style().unwrap();
         assert_eq!((a.time_ms, a.price), (T0 + DAY, 99.0));
         assert_eq!((b.time_ms, b.price), (T0 + 6 * DAY, 104.0));
         assert_eq!(style.stroke.color, [255, 193, 7, 255]);

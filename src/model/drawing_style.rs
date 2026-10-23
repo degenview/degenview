@@ -17,9 +17,9 @@ pub const TEXT_SIZE_RANGE: (f32, f32) = (8.0, 72.0);
 /// The blue the generic style (and the trend line) is drawn in.
 pub const BLUE: Rgba = [41, 98, 255, 255];
 
-/// The blue a trend line has always been drawn in.
+/// The blue a trend line is drawn in.
 pub const TREND_LINE_COLOR: Rgba = [10, 132, 255, 255];
-/// The width a trend line has always been drawn at.
+/// The width a trend line is drawn at.
 pub const TREND_LINE_WIDTH: f32 = 1.5;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
@@ -354,9 +354,9 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
-/// How a drawing looks. Every field after `stats` belongs to a newer tool and is left out of a
-/// stored drawing while it holds its default, so a drawing that does not use it is written
-/// exactly as it always was (same bytes, same sync hash, readable by older builds).
+/// How a drawing looks. Every field after `stats` belongs to the lines, channels and pitchforks
+/// and is left out of a stored drawing while it holds its default, so a rectangle does not carry
+/// nine pitchfork levels around in every saved layout and every synced record.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DrawingStyle {
@@ -417,14 +417,12 @@ impl Default for DrawingStyle {
 }
 
 impl DrawingStyle {
-    /// How a trend line looked before it had a style: a solid blue 1.5 px segment. A row
-    /// without a style decodes to this, so no stored line changes.
+    /// A trend line's own look: a solid blue 1.5 px segment, its text in the same blue and
+    /// below the line, as TradingView puts it.
     pub fn trend_line() -> Self {
         let mut style = Self::default();
         style.stroke.color = TREND_LINE_COLOR;
         style.stroke.width = TREND_LINE_WIDTH;
-        // Text on a line: in the line's colour, below it, as TradingView's default. A line
-        // saved before it could carry text has none, so this changes nothing already drawn.
         style.text.color = TREND_LINE_COLOR;
         style.text.valign = VerticalAlign::Bottom;
         style
