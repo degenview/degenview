@@ -211,7 +211,7 @@ pub fn show_consent(ctx: &egui::Context) -> ConsentAction {
             ui.add_space(14.0);
             ui.label(kit::text(
                 format!(
-                    "To show its title and text, DegenView sends this link to {} and keeps the few lines it answers with on the card. Nothing else is sent: no account, no cookies, nothing about your charts.",
+                    "To show its text and the author's picture, DegenView sends this post's link to {}, asks X's embed service for the author's picture and downloads it from X's image server. The few lines and the picture it gets back are kept on the card. Nothing else is sent: no account, no cookies, nothing about your charts.",
                     FETCH_HOST
                 ),
                 size::SUBHEADLINE,

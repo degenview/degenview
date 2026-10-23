@@ -36,6 +36,8 @@ impl CardText {
         let title = fetched_title.unwrap_or_else(|| format!("Post {}", link.id));
         let mut footer = Vec::new();
         match meta {
+            // With the author's picture the handle is already beside it.
+            Some(meta) if meta.avatar.is_some() => {}
             Some(meta) => {
                 if !meta.author.is_empty() {
                     footer.push(meta.author.clone());
@@ -62,11 +64,23 @@ fn wrapped(text: &str, font: FontId, color: Color32, width: f32, rows: usize) ->
     job
 }
 
-/// Paints the card in `rect`. `opacity` fades it (the ghost that follows the pointer).
-pub fn paint(painter: &Painter, rect: Rect, card: &LinkCard, opacity: f32) {
+/// The author's picture on a card is this wide, in logical pixels.
+const AVATAR: f32 = 32.0;
+
+/// Paints the card in `rect`. `opacity` fades it (the ghost that follows the pointer). `avatar` is
+/// the texture of the author's picture when it is loaded; a card whose preview names a picture
+/// keeps the room for it either way, so it does not move when the picture arrives.
+pub fn paint(
+    painter: &Painter,
+    rect: Rect,
+    card: &LinkCard,
+    opacity: f32,
+    avatar: Option<egui::TextureId>,
+) {
     let fade = |color: Color32| color.gamma_multiply(opacity);
     let accent = theme::text_primary();
     let words = CardText::of(card);
+    let with_avatar = card.meta.as_ref().is_some_and(|meta| meta.avatar.is_some());
     painter.rect_filled(rect, CORNER, fade(theme::surface()));
     painter.rect_stroke(
         rect,
@@ -76,40 +90,89 @@ pub fn paint(painter: &Painter, rect: Rect, card: &LinkCard, opacity: f32) {
     );
     let painter = painter.with_clip_rect(rect.shrink(1.0));
     let inner = rect.shrink(PADDING);
-    let header = Rect::from_min_size(inner.min, vec2(inner.width(), HEADER_HEIGHT));
-    icons::paint(
-        &painter,
-        Rect::from_min_size(header.min + vec2(0.0, 2.0), vec2(16.0, 16.0)),
-        Icon::XLogo,
-        fade(accent),
-    );
-    painter.text(
-        header.min + vec2(22.0, HEADER_HEIGHT / 2.0),
-        Align2::LEFT_CENTER,
-        words.service,
-        FontId::proportional(12.0),
-        fade(theme::text_secondary()),
-    );
-    painter.text(
-        header.right_center(),
-        Align2::RIGHT_CENTER,
-        &words.headline,
-        FontId::proportional(12.0),
-        fade(accent),
-    );
-    // The footer keeps its line; the title and the excerpt share what is above it.
+    // The footer keeps its line; what is above it is shared by the title and the excerpt.
     let footer_top = inner.bottom() - 14.0;
-    let mut y = header.bottom() + 6.0;
-    let title = painter.layout_job(wrapped(
-        &words.title,
-        FontId::proportional(13.0),
-        fade(theme::text_primary()),
-        inner.width(),
-        2,
-    ));
-    let title_height = title.size().y;
-    painter.galley(egui::pos2(inner.left(), y), title, Color32::WHITE);
-    y += title_height + 4.0;
+    let mut y;
+    if with_avatar {
+        let picture = Rect::from_min_size(inner.min, vec2(AVATAR, AVATAR));
+        match avatar {
+            Some(texture) => {
+                painter.add(
+                    egui::epaint::RectShape::filled(picture, AVATAR / 2.0, fade(Color32::WHITE))
+                        .with_texture(
+                            texture,
+                            Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1.0, 1.0)),
+                        ),
+                );
+            }
+            None => {
+                painter.rect_filled(picture, AVATAR / 2.0, fade(theme::text_tertiary()));
+            }
+        }
+        icons::paint(
+            &painter,
+            Rect::from_min_size(
+                egui::pos2(inner.right() - 16.0, inner.top()),
+                vec2(16.0, 16.0),
+            ),
+            Icon::XLogo,
+            fade(accent),
+        );
+        let text_left = picture.right() + 8.0;
+        let name = painter.layout_job(wrapped(
+            &words.title,
+            FontId::proportional(13.0),
+            fade(theme::text_primary()),
+            (inner.right() - 24.0 - text_left).max(20.0),
+            1,
+        ));
+        painter.galley(
+            egui::pos2(text_left, picture.top() - 2.0),
+            name,
+            Color32::WHITE,
+        );
+        painter.text(
+            egui::pos2(text_left, picture.bottom() + 1.0),
+            Align2::LEFT_BOTTOM,
+            &words.headline,
+            FontId::proportional(11.0),
+            fade(theme::text_secondary()),
+        );
+        y = picture.bottom() + 8.0;
+    } else {
+        let header = Rect::from_min_size(inner.min, vec2(inner.width(), HEADER_HEIGHT));
+        icons::paint(
+            &painter,
+            Rect::from_min_size(header.min + vec2(0.0, 2.0), vec2(16.0, 16.0)),
+            Icon::XLogo,
+            fade(accent),
+        );
+        painter.text(
+            header.min + vec2(22.0, HEADER_HEIGHT / 2.0),
+            Align2::LEFT_CENTER,
+            words.service,
+            FontId::proportional(12.0),
+            fade(theme::text_secondary()),
+        );
+        painter.text(
+            header.right_center(),
+            Align2::RIGHT_CENTER,
+            &words.headline,
+            FontId::proportional(12.0),
+            fade(accent),
+        );
+        y = header.bottom() + 6.0;
+        let title = painter.layout_job(wrapped(
+            &words.title,
+            FontId::proportional(13.0),
+            fade(theme::text_primary()),
+            inner.width(),
+            2,
+        ));
+        let title_height = title.size().y;
+        painter.galley(egui::pos2(inner.left(), y), title, Color32::WHITE);
+        y += title_height + 4.0;
+    }
     if !words.excerpt.is_empty() && footer_top - y > 14.0 {
         let rows = (((footer_top - y - 4.0) / 15.0).floor() as usize).max(1);
         let excerpt = painter.layout_job(wrapped(
@@ -167,11 +230,57 @@ mod tests {
             author: "Some Author".into(),
             excerpt: "The post's words".into(),
             fetched_at_ms: 1,
+            ..Default::default()
         });
         let words = CardText::of(&card);
         assert_eq!(words.title, "A title");
         assert_eq!(words.excerpt, "The post's words");
         assert!(words.footer.starts_with("Some Author · "), "{words:?}");
+    }
+
+    #[test]
+    fn a_card_with_an_author_picture_paints_it_inside_its_rectangle_loaded_or_not() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        let mut card = post();
+        card.meta = Some(LinkMeta {
+            title: "A long author name that has to be cut".into(),
+            author: "@degenview".into(),
+            excerpt: "The post's words, a good few of them so that they wrap and are cut.".into(),
+            avatar: Some("a".repeat(64)),
+            ..LinkMeta::default()
+        });
+        let texture = ctx.load_texture(
+            "avatar-test",
+            egui::ColorImage::filled([4, 4], Color32::RED),
+            egui::TextureOptions::LINEAR,
+        );
+        for avatar in [None, Some(texture.id())] {
+            for size in [[180.0, 96.0], [300.0, 132.0], [640.0, 480.0]] {
+                let rect = Rect::from_min_size(egui::pos2(20.0, 20.0), vec2(size[0], size[1]));
+                let mut output = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            vec2(800.0, 600.0),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| paint(&ui.painter_at(rect), rect, &card, 1.0, avatar),
+                );
+                output.textures_delta.clear();
+                let textured = output.shapes.iter().any(|clipped| {
+                    matches!(&clipped.shape, egui::Shape::Rect(r) if r.fill_texture_id() == texture.id())
+                });
+                assert_eq!(textured, avatar.is_some(), "{size:?}");
+                for clipped in &output.shapes {
+                    assert!(
+                        rect.expand(1.0).contains_rect(clipped.clip_rect),
+                        "{size:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -190,7 +299,7 @@ mod tests {
                         )),
                         ..Default::default()
                     },
-                    |ui| paint(&ui.painter_at(rect), rect, &card, 1.0),
+                    |ui| paint(&ui.painter_at(rect), rect, &card, 1.0, None),
                 );
                 output.textures_delta.clear();
                 assert!(!output.shapes.is_empty());

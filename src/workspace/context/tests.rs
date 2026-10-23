@@ -1108,6 +1108,7 @@ fn fetched_meta(title: &str) -> crate::model::link_card::LinkMeta {
         author: "@degenview".into(),
         excerpt: "words".into(),
         fetched_at_ms: 5,
+        ..Default::default()
     }
 }
 

@@ -1376,7 +1376,7 @@ impl DrawingLayer {
                 }
                 crate::model::image_content::Content::Link(card) => {
                     let rect = placed_card_rect(card, point, proj.plot);
-                    crate::ui::content_card::paint(&clipped, rect, card, 0.55);
+                    crate::ui::content_card::paint(&clipped, rect, card, 0.55, None);
                 }
             }
         }

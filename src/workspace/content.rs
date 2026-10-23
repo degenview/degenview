@@ -132,6 +132,10 @@ pub(super) fn snapshot_images(
         .iter()
         .filter_map(|drawing| match drawing.geometry() {
             Some(crate::model::Geometry::Image(image)) => Some(image.asset.clone()),
+            // A card's author picture is a stored picture too.
+            Some(crate::model::Geometry::Card { card, .. }) => {
+                card.meta.as_ref().and_then(|meta| meta.avatar.clone())
+            }
             _ => None,
         })
         .filter_map(|asset| host.ready(&asset).map(|pixels| (asset, pixels)))

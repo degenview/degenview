@@ -110,6 +110,10 @@ pub struct LinkMeta {
     pub author: String,
     pub excerpt: String,
     pub fetched_at_ms: i64,
+    /// The author's profile picture, as the name of a stored picture (see `store::asset_store`);
+    /// absent when X gave none or it could not be had.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<String>,
 }
 
 impl LinkMeta {
@@ -132,6 +136,9 @@ impl LinkMeta {
             author: tidy(&self.author, MAX_AUTHOR_CHARS),
             excerpt: tidy(&self.excerpt, MAX_EXCERPT_CHARS),
             fetched_at_ms: self.fetched_at_ms,
+            avatar: self
+                .avatar
+                .filter(|name| super::image_content::is_asset_id(name)),
         }
     }
 }
@@ -222,7 +229,13 @@ impl LinkCard {
 
     /// Whether the card is one a tool could have made.
     pub fn is_valid(&self) -> bool {
-        self.size.iter().all(|side| side.is_finite()) && Link::parse(&self.link.url()).is_ok()
+        self.size.iter().all(|side| side.is_finite())
+            && Link::parse(&self.link.url()).is_ok()
+            && self.meta.as_ref().is_none_or(|meta| {
+                meta.avatar
+                    .as_deref()
+                    .is_none_or(super::image_content::is_asset_id)
+            })
     }
 }
 
@@ -472,6 +485,7 @@ mod tests {
             author: "A\nB".into(),
             excerpt: long.clone(),
             fetched_at_ms: 7,
+            ..Default::default()
         }
         .sanitized();
         assert_eq!(meta.title.chars().count(), MAX_TITLE_CHARS);
@@ -485,6 +499,37 @@ mod tests {
         assert_eq!(card.meta, None);
         assert_eq!(card.size[0], DEFAULT_CARD_SIZE[0]);
         assert_eq!(card.size[1], CARD_SIZE_RANGE.1[1]);
+        assert!(card.is_valid());
+    }
+
+    #[test]
+    fn an_avatar_is_kept_only_if_it_names_a_stored_picture() {
+        let named = |avatar: &str| {
+            LinkMeta {
+                title: "t".into(),
+                avatar: Some(avatar.to_owned()),
+                ..LinkMeta::default()
+            }
+            .sanitized()
+        };
+        assert_eq!(named(&"a".repeat(64)).avatar, Some("a".repeat(64)));
+        for bad in [
+            "",
+            "short",
+            &"A".repeat(64),
+            &"g".repeat(64),
+            &"a".repeat(65),
+        ] {
+            assert_eq!(named(bad).avatar, None, "{bad:?}");
+        }
+        let mut card = LinkCard::new(post("https://x.com/jack/status/20"));
+        card.meta = Some(LinkMeta {
+            title: "t".into(),
+            avatar: Some("../etc/passwd".into()),
+            ..LinkMeta::default()
+        });
+        assert!(!card.is_valid(), "a hand-edited avatar is refused");
+        card.meta.as_mut().unwrap().avatar = Some("b".repeat(64));
         assert!(card.is_valid());
     }
 

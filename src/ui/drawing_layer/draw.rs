@@ -548,7 +548,13 @@ pub(super) fn paint(
     }
 
     if let Some(card) = &screen.card {
-        crate::ui::content_card::paint(painter, card.rect, &card.card, 1.0);
+        let avatar = card
+            .card
+            .meta
+            .as_ref()
+            .and_then(|meta| meta.avatar.as_deref())
+            .and_then(|asset| textures.get(painter, asset));
+        crate::ui::content_card::paint(painter, card.rect, &card.card, 1.0, avatar);
         if emphasis.selected || emphasis.halo {
             let alpha = if emphasis.selected { 255 } else { 160 };
             painter.rect_stroke(

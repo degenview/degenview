@@ -1072,8 +1072,10 @@ fn gallery_of_the_cards() {
         )
         .expect("builds")
     };
+    let picture = "c".repeat(64);
     let post_meta = LinkMeta {
         title: "Developers".into(),
+        avatar: Some(picture.clone()),
         author: "@XDevelopers".into(),
         excerpt: "Fish & chips for everyone: the range held three times, and the third retest was the one to buy. Stops under the low.".into(),
         fetched_at_ms: 1,
@@ -1083,6 +1085,7 @@ fn gallery_of_the_cards() {
         author: "@degenview".into(),
         excerpt: "Price reclaimed the range high on rising volume. A retest of that level would confirm the move.".into(),
         fetched_at_ms: 1,
+        avatar: Some(picture.clone()),
     };
     let bare = card(
         Tool::Post,
@@ -1131,9 +1134,23 @@ fn gallery_of_the_cards() {
         let size = harness.card.snapshot_size();
         let dimensions =
             SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let mut snapshot = input(&harness, false);
+        let pictures = std::collections::HashMap::from([(
+            picture.clone(),
+            std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
+                [48, 48],
+                &(0..48 * 48)
+                    .flat_map(|index| {
+                        let (x, y) = (index % 48, index / 48);
+                        [(x * 5) as u8, 90, (y * 5) as u8, 255]
+                    })
+                    .collect::<Vec<u8>>(),
+            )),
+        )]);
+        snapshot.images = Some(&pictures);
         let scene = harness
             .card
-            .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+            .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
             .expect("a scene");
         let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
         let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");

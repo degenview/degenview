@@ -122,6 +122,9 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
   (and the row sent again). Deleting a drawing, undo, replace and deleting a layout all leave the
   picture. Cost: at most 600 kB per distinct picture, for good. A scan across devices before deleting is
   the way to fix this; it is not built.
+* **What uses a picture:** Image drawings, and the author's picture on a fetched Post card (named in
+  its preview). The same rules apply to both: stored once by hash, synced as their own record, never
+  deleted.
 * **Writes** go through `Store::put_asset` (idempotent, one outbox entry in its own savepoint); a picture
   that arrived from iCloud is written with `put_asset_from_cloud` (no entry back).
 

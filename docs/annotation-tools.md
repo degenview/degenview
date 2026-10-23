@@ -149,17 +149,24 @@ and writes every accepted link one canonical way. A card keeps the link, its siz
 * **Preview** is fetched automatically right after a card is placed (by a click or a paste) and only
   then: never on paint, on opening a layout, or for a card that arrived from another Mac (its preview
   syncs with it). The first time, the app asks once for permission (`content.prefs`, a setting that
-  stays on this Mac); after that placing a card just loads it. One request to `publish.x.com/oembed`
-  (the host `publish.twitter.com` only redirects), on `work_queue::LINKS`: https only, no redirects, no
-  cookies, no credentials, 12 s, at most 256 KB read. The answer is parsed as data, nothing in it runs,
-  and the result is written to the card as one undoable change. The **Preview** button on a card asks
-  again (to retry after a failure or to refresh). A deleted or private link says so and leaves the card as it was. Thumbnails and
-  avatars are not fetched.
+  stays on this Mac); after that placing a card just loads it. Three requests, all to X's own hosts, on
+  `work_queue::LINKS`: `publish.x.com/oembed` for the name, handle and text (the host
+  `publish.twitter.com` only redirects), `cdn.syndication.twimg.com/tweet-result` (the endpoint X's own
+  embeds use; it wants a token computed from the post id) for the address of the author's picture, and
+  `pbs.twimg.com` for the picture. https only, no redirects, no cookies, no credentials, 12 s, at most
+  256 KB read of an answer and 1 MB of a picture. Answers are parsed as data, nothing in them runs, and
+  the result is written to the card as one undoable change. The picture's address is accepted only on
+  `pbs.twimg.com` under `/profile_images/`; the picture goes through the same checks and re-encoding as
+  an Image (so it is a stored picture, named on the preview, and syncs as one: see Images) and is best
+  effort, since the text is the preview and a card without a picture is not an error. The **Preview** button on a card asks
+  again (to retry after a failure or to refresh). A deleted or private link says so and leaves the card as it was. Post
+  thumbnails and media are not fetched; the author's picture is.
 * **Open** (`ctx.open_url`) is always a deliberate click; so are Copy link and Replace link (which
   drops the old preview).
 
-The shipped request path (`link_fetch::fetch`: the client, https-only, the parser) was run once, on
-2026-10-23, against a real public post: the oEmbed answer's author name, `@handle` and text came back.
+The shipped request path (`link_fetch::fetch`: the client, https-only, the parsers) was run, on
+2026-10-23, against a real public post: the oEmbed answer's author name, `@handle` and text came back,
+and the author's picture (73 × 73 px, 3.9 kB after re-encoding) was downloaded and accepted.
 That is the ignored test `live_a_real_post_gives_a_preview` (`cargo test --lib live_ -- --ignored
 --nocapture`). It is not part of the suite, and X does not promise that behaviour. If it stops
 answering, the card shows the link and the failure reason, and everything else works.
@@ -204,8 +211,9 @@ DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_ -- --ignored
 * **Pictures are never deleted.** Layouts sync, tab sessions do not, so no Mac can know another still
   draws a picture, and a tombstone for an immutable record would also trip the mass-delete hold. A
   picture stays after its drawing is gone: at most 600 kB per distinct image.
-* **Live X** was reached once (see above), not continuously. Embedded timelines, counts,
-  avatars and images are not implemented, by design.
+* **Live X** was reached once (see above), not continuously. Embedded timelines, counts and
+  post media are not implemented, by design. The embed endpoint for the author's picture is
+  undocumented (it is what X's own embeds call); if it changes, cards load without a picture.
 * **TradingView pixel parity**, the exact look of Pin, Table, Price note and the Post card.
 * **Real window.** On 2026-10-23 a release build was launched against a throwaway home whose saved
   session held one BTC/USDT chart with a drawing of each of the tools (the stored picture included).

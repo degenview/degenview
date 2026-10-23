@@ -1,13 +1,25 @@
-//! The preview of a Post card, fetched only when the user asks for it.
+//! The preview of a Post card, fetched when a card is placed or the user asks again.
 //!
-//! One request per click, to a fixed host (`publish.x.com`), over https, with no redirects, no
-//! cookies and no credentials, a short timeout and a cap on how much of the answer is read. The
-//! answer is parsed as data: nothing in it is run, and only a name, a handle and the post's text
-//! are kept, cut to the card's limits. What X does not say stays empty; nothing is filled in.
+//! Requests go only to X's own hosts, over https, with no redirects, no cookies and no
+//! credentials, a short timeout and a cap on how much of each answer is read: `publish.x.com` for
+//! the post's name, handle and text (oEmbed), `cdn.syndication.twimg.com` for the author's picture
+//! address (the endpoint X's own embeds use), and `pbs.twimg.com` for the picture itself. Answers
+//! are parsed as data: nothing in them is run, and only a name, a handle, the post's text and a
+//! picture are kept, cut to the card's limits and the picture checked and re-encoded like any
+//! other. What X does not say stays empty; nothing is filled in. The picture is best effort: the
+//! text is the preview, and a missing picture is not a failure.
 
 use crate::model::link_card::{FETCH_HOST, Link, LinkMeta};
+use crate::service::image_ingest::{self, Ingested};
 use std::io::Read;
 use std::time::Duration;
+
+/// The host the author's picture address is asked of.
+const SYNDICATION_HOST: &str = "cdn.syndication.twimg.com";
+/// The only host a picture is downloaded from.
+const AVATAR_HOST: &str = "pbs.twimg.com";
+/// A picture larger than this is not read (a profile picture is a few kilobytes).
+const MAX_AVATAR_BYTES: u64 = 1024 * 1024;
 
 /// How long the whole request may take.
 const TIMEOUT: Duration = Duration::from_secs(12);
@@ -48,8 +60,14 @@ pub fn request_url(link: &Link) -> String {
     )
 }
 
-/// Fetches the preview of `link`. Blocks; run it on a worker.
-pub fn fetch(link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
+/// What a fetch found: the preview, and the author's picture if it could be had. The picture is
+/// checked and re-encoded but not yet stored: the caller stores it and names it on the preview.
+pub struct Preview {
+    pub meta: LinkMeta,
+    pub avatar: Option<Ingested>,
+}
+
+fn agent() -> ureq::Agent {
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
@@ -58,7 +76,18 @@ pub fn fetch(link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
         .https_only(true)
         .user_agent("DegenView")
         .build();
-    let agent = ureq::Agent::new_with_config(config);
+    ureq::Agent::new_with_config(config)
+}
+
+/// Fetches the preview of `link`. Blocks; run it on a worker.
+pub fn fetch(link: &Link, now_ms: i64) -> Result<Preview, FetchError> {
+    let agent = agent();
+    let meta = fetch_text(&agent, link, now_ms)?;
+    let avatar = avatar_url(&agent, link).and_then(|url| download_avatar(&agent, &url));
+    Ok(Preview { meta, avatar })
+}
+
+fn fetch_text(agent: &ureq::Agent, link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
     let mut response = agent
         .get(request_url(link))
         .call()
@@ -84,6 +113,94 @@ pub fn fetch(link: &Link, now_ms: i64) -> Result<LinkMeta, FetchError> {
         .ok_or(FetchError::Unreadable)
 }
 
+/// The token X's embed endpoint expects with a post id: the id over 10^15 times pi, in base 36,
+/// with the dots and zeros taken out. It is not a secret, only what the endpoint asks for.
+fn syndication_token(id: u64) -> String {
+    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let value = id as f64 / 1e15 * std::f64::consts::PI;
+    let mut whole = value.trunc() as u64;
+    let mut fraction = value.fract();
+    let mut head = Vec::new();
+    while whole > 0 {
+        head.push(DIGITS[(whole % 36) as usize]);
+        whole /= 36;
+    }
+    head.reverse();
+    let mut text: Vec<u8> = head;
+    for _ in 0..12 {
+        fraction *= 36.0;
+        let digit = fraction.trunc();
+        text.push(DIGITS[digit as usize]);
+        fraction -= digit;
+    }
+    text.retain(|byte| *byte != b'0');
+    String::from_utf8(text).unwrap_or_default()
+}
+
+/// The address X's embed endpoint is asked for a post's author. Always `https` and on its own host.
+pub fn syndication_url(link: &Link) -> String {
+    format!(
+        "https://{SYNDICATION_HOST}/tweet-result?id={}&lang=en&token={}",
+        link.id,
+        syndication_token(link.id)
+    )
+}
+
+/// The address of the author's picture in an embed answer, if it is one this app will download:
+/// `https` on X's own image host, under its profile pictures, with no user info or port. The
+/// small size X names (`_normal`, 48 px) is swapped for the one a card draws (`_bigger`, 73 px).
+pub fn parse_avatar_url(body: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let url = value
+        .get("user")?
+        .get("profile_image_url_https")?
+        .as_str()?;
+    let rest = url.strip_prefix(&format!("https://{AVATAR_HOST}/profile_images/"))?;
+    let well_formed = !rest.is_empty()
+        && rest.len() <= 200
+        && rest
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'/' | b'_' | b'-' | b'.'))
+        && !rest.contains("..");
+    well_formed.then(|| {
+        format!(
+            "https://{AVATAR_HOST}/profile_images/{}",
+            rest.replacen("_normal.", "_bigger.", 1)
+        )
+    })
+}
+
+fn avatar_url(agent: &ureq::Agent, link: &Link) -> Option<String> {
+    let mut response = agent.get(syndication_url(link)).call().ok()?;
+    if response.status().as_u16() != 200 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    response
+        .body_mut()
+        .as_reader()
+        .take(MAX_BODY_BYTES)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    parse_avatar_url(&String::from_utf8_lossy(&bytes))
+}
+
+fn download_avatar(agent: &ureq::Agent, url: &str) -> Option<Ingested> {
+    let mut response = agent.get(url).call().ok()?;
+    if response.status().as_u16() != 200 {
+        return None;
+    }
+    let mut bytes = Vec::new();
+    response
+        .body_mut()
+        .as_reader()
+        .take(MAX_AVATAR_BYTES)
+        .read_to_end(&mut bytes)
+        .ok()?;
+    // Checked, scaled and re-encoded like every picture: whatever the host sent is not kept as is.
+    image_ingest::ingest(&bytes).ok()
+}
+
 /// What X's oEmbed answer says: the author's name, their handle, and the post's own words.
 pub fn parse_oembed(body: &str, link: &Link) -> Option<LinkMeta> {
     let value: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -106,6 +223,7 @@ pub fn parse_oembed(body: &str, link: &Link) -> Option<LinkMeta> {
         author: handle,
         excerpt: decode_entities(&strip_tags(paragraph)),
         fetched_at_ms: 0,
+        avatar: None,
     }
     .sanitized();
     (!meta.is_empty()).then_some(meta)
@@ -268,8 +386,76 @@ mod tests {
     #[ignore = "contacts x.com"]
     fn live_a_real_post_gives_a_preview() {
         let post = Link::parse("https://x.com/Interior/status/463440424141459456").unwrap();
-        let meta = fetch(&post, 1).expect("the post's preview");
-        println!("POST {meta:?}");
-        assert!(!meta.is_empty());
+        let preview = fetch(&post, 1).expect("the post's preview");
+        println!(
+            "POST {:?} avatar {:?}",
+            preview.meta,
+            preview
+                .avatar
+                .as_ref()
+                .map(|a| (a.width, a.height, a.bytes.len()))
+        );
+        assert!(!preview.meta.is_empty());
+        assert!(preview.avatar.is_some(), "the author's picture");
+    }
+
+    #[test]
+    fn the_embed_token_is_base_36_without_dots_or_zeros() {
+        for id in [
+            20,
+            463_440_424_141_459_456,
+            1_750_000_000_000_000_000,
+            u64::MAX,
+        ] {
+            let token = syndication_token(id);
+            assert!(
+                !token.is_empty()
+                    && token
+                        .bytes()
+                        .all(|b| b.is_ascii_digit() || b.is_ascii_lowercase()),
+                "{id}: {token}"
+            );
+            assert!(!token.contains('0'));
+        }
+        assert_eq!(
+            syndication_token(463_440_424_141_459_456),
+            "14fxvks611f263w"
+        );
+    }
+
+    #[test]
+    fn the_embed_request_goes_to_xs_own_host() {
+        let url = syndication_url(&post());
+        assert!(
+            url.starts_with(
+                "https://cdn.syndication.twimg.com/tweet-result?id=1750000000000000000&"
+            )
+        );
+    }
+
+    #[test]
+    fn only_a_profile_picture_on_xs_image_host_is_downloaded() {
+        let answer = |url: &str| format!(r#"{{"user":{{"profile_image_url_https":"{url}"}}}}"#);
+        assert_eq!(
+            parse_avatar_url(&answer(
+                "https://pbs.twimg.com/profile_images/432081479/DOI_LOGO_normal.jpg"
+            )),
+            Some("https://pbs.twimg.com/profile_images/432081479/DOI_LOGO_bigger.jpg".to_owned())
+        );
+        for refused in [
+            "http://pbs.twimg.com/profile_images/1/a_normal.jpg",
+            "https://evil.com/profile_images/1/a_normal.jpg",
+            "https://pbs.twimg.com.evil.com/profile_images/1/a_normal.jpg",
+            "https://pbs.twimg.com@evil.com/profile_images/1/a_normal.jpg",
+            "https://pbs.twimg.com/media/1/a_normal.jpg",
+            "https://pbs.twimg.com/profile_images/../media/a.jpg",
+            "https://pbs.twimg.com/profile_images/1/a b.jpg",
+            "https://pbs.twimg.com/profile_images/",
+            "",
+        ] {
+            assert_eq!(parse_avatar_url(&answer(refused)), None, "{refused:?}");
+        }
+        assert_eq!(parse_avatar_url("not json"), None);
+        assert_eq!(parse_avatar_url("{}"), None);
     }
 }

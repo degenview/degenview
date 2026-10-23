@@ -251,8 +251,22 @@ impl ChartWorkspace {
         self.content.links.inbox = Some(receiver);
         self.say("Fetching the preview…", false);
         let ctx = ctx.clone();
+        let store = self.store.clone();
         work_queue::LINKS.submit(move || {
-            let result = link_fetch::fetch(&link, crate::alert_runtime::now_ms());
+            let result = link_fetch::fetch(&link, crate::alert_runtime::now_ms()).map(|preview| {
+                // The author's picture is kept like any other: stored once by its hash, named
+                // on the preview. If it cannot be stored the preview simply has none.
+                let avatar = preview.avatar.and_then(|picture| {
+                    let kept = store.lock().ok()?.put_asset(
+                        &crate::store::asset_store::StoredAsset::from_ingested(&picture),
+                    );
+                    kept.ok().map(|_| picture.id)
+                });
+                LinkMeta {
+                    avatar,
+                    ..preview.meta
+                }
+            });
             let _ = sender.send(Fetched {
                 chart_id,
                 drawing_id,

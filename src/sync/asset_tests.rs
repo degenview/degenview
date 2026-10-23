@@ -171,6 +171,7 @@ fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
                     author: "@someone".into(),
                     excerpt: "A few words.".into(),
                     fetched_at_ms: 9,
+                    ..Default::default()
                 });
             }
             _ => {}
