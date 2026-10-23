@@ -22,6 +22,7 @@ mod indicators;
 mod instrument;
 mod kline;
 mod layout;
+pub mod link_card;
 pub mod mcp;
 pub mod object_tree;
 pub mod paper;
@@ -65,8 +66,7 @@ pub use chart_type::{ChartKind, ChartStyle, ChartType};
 pub use drawing_style::{DrawingStyle, Visibility};
 pub use drawing_tool::{Caps, MagnetMode, Placement, Tool, ToolGroup};
 pub use drawings::{
-    Anchor, ArrowDirection, Drawing, DrawingCommand, Geometry, MAX_POINTS, MAX_TEXT_CHARS,
-    PitchforkVariant,
+    Anchor, ArrowDirection, Drawing, DrawingCommand, Geometry, MAX_POINTS, PitchforkVariant,
 };
 pub use indicators::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, BollingerSeries, BuiltIn, EMA_DEFAULT_PERIOD,

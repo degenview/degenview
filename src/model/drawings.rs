@@ -903,25 +903,25 @@ impl Drawing {
         }
     }
 
+    /// The most characters of text this drawing may carry.
+    pub fn max_text(&self) -> usize {
+        self.tool().map_or(MAX_TEXT_CHARS, Tool::max_text)
+    }
+
     /// Sets the text of a drawing that has any (a shape); the rest ignore it.
     pub fn set_text(&mut self, value: &str) {
+        let limit = self.max_text();
         if let Self::Shape { text, .. } = self {
-            *text = value.chars().take(MAX_TEXT_CHARS).collect();
+            *text = value.chars().take(limit).collect();
         }
     }
 
-    /// Whether the drawing's text rides on a line or a channel (the trend line, the tools of its
-    /// menu, and the channels). That text is edited in place on the chart; the text of a shape or
-    /// an arrow is edited in the dialog, as it always was.
-    pub fn text_on_line(&self) -> bool {
-        use super::drawing_tool::ToolGroup;
-        self.tool().is_some_and(|tool| {
-            tool.caps().has(super::Caps::TEXT)
-                && matches!(
-                    tool.spec().group,
-                    ToolGroup::TrendLines | ToolGroup::Channels
-                )
-        })
+    /// Whether the drawing's text is typed in place on the chart (a line's, a channel's, a
+    /// note's): its tool says so with [`Caps::INLINE_TEXT`]. The text of a shape or an arrow is
+    /// edited in the dialog, as it always was.
+    pub fn edits_text_in_place(&self) -> bool {
+        self.tool()
+            .is_some_and(|tool| tool.caps().has(super::Caps::INLINE_TEXT))
     }
 
     /// Every anchor in placement order.
@@ -1294,6 +1294,10 @@ mod tests {
         style.time_label = true;
         style.hide_text = true;
         style.text.orientation = crate::model::drawing_style::TextOrientation::Vertical;
+        style.border.enabled = true;
+        style.border.color = [10, 20, 30, 200];
+        style.wrap = true;
+        style.box_width = 180.0;
         style
     }
 
@@ -1334,6 +1338,9 @@ mod tests {
             "use_one_color",
             "time_label",
             "hide_text",
+            "border",
+            "wrap",
+            "box_width",
         ] {
             assert!(!keys.contains(&new), "{new} would rewrite stored drawings");
         }

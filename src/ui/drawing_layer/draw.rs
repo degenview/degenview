@@ -16,10 +16,9 @@ use crate::ui::drawing_render::{ArrowReadout, HANDLE_RADIUS};
 use crate::ui::line_geometry as lines;
 use crate::ui::price_text;
 use crate::ui::{series_render, theme};
-use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{
-    self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, TextFormat,
-    epaint::TextShape, pos2, text::LayoutJob, vec2,
+    self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind,
+    epaint::TextShape, pos2, vec2,
 };
 use std::f32::consts::FRAC_PI_2;
 
@@ -95,25 +94,7 @@ fn text_galley(
     style: &TextStyle,
     wrap: f32,
 ) -> std::sync::Arc<eframe::egui::Galley> {
-    let mut job = LayoutJob::default();
-    job.append(
-        text,
-        0.0,
-        TextFormat {
-            font_id: FontId::proportional(style.size),
-            color: series_render::color(style.color),
-            italics: style.italic,
-            coords: VariationCoords::new([("wght", if style.bold { 700.0 } else { 400.0 })]),
-            ..Default::default()
-        },
-    );
-    job.wrap.max_width = wrap.max(20.0);
-    job.halign = match style.align {
-        HorizontalAlign::Left => eframe::egui::Align::LEFT,
-        HorizontalAlign::Center => eframe::egui::Align::Center,
-        HorizontalAlign::Right => eframe::egui::Align::RIGHT,
-    };
-    painter.layout_job(job)
+    painter.layout_job(super::text::layout_job(text, style, wrap))
 }
 
 /// Where a drawing's text was last laid out: its unrotated size, its centre and the angle it is
@@ -450,6 +431,28 @@ pub(super) fn paint(
     }
     if let Some(mesh) = &screen.fill_mesh {
         painter.add(Shape::mesh(mesh.clone()));
+    }
+    for frame in &screen.frames {
+        let border = &style.border;
+        if border.enabled {
+            stroke_path(
+                painter,
+                frame,
+                true,
+                Stroke::new(border.width, series_render::color(border.color)),
+                border.dash,
+            );
+        } else if emphasis.halo {
+            // A box without a border still shows how far it reaches while it is hovered or
+            // selected.
+            stroke_path(
+                painter,
+                frame,
+                true,
+                Stroke::new(1.0, with_alpha(color, 120)),
+                LineDash::Solid,
+            );
+        }
     }
     for styled in &screen.styled {
         stroke_path(

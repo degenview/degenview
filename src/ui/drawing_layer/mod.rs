@@ -17,6 +17,7 @@ mod shape;
 mod snap;
 #[cfg(test)]
 mod tests;
+mod text;
 mod text_edit;
 
 use super::chart_card::PriceScale;
@@ -27,14 +28,15 @@ use super::drawing_render::{
 };
 use crate::model::drawing_style::DrawingStyle;
 use crate::model::{
-    Anchor, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement, PriceFormat,
-    Timeframe, Tool,
+    Anchor, Caps, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
+    PriceFormat, Timeframe, Tool,
 };
 use edit::{BoxHandle, Part};
 use eframe::egui::{self, Color32, CursorIcon, Painter, PointerButton, Pos2, Rect, Response};
 use shape::Screen;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+pub(super) use text::TextMeasure;
 
 /// Brush samples closer than this (px) to the previous one are dropped.
 const BRUSH_MIN_STEP: f32 = 1.5;
@@ -196,6 +198,8 @@ pub(super) struct Projection<'a> {
     pub start: usize,
     pub slot_width: f32,
     pub lead: f32,
+    /// Sizes text with the painting context, for the shapes sized to their text.
+    pub measure: TextMeasure,
 }
 
 /// Everything a projected shape depends on besides the drawing: when it changes, cached
@@ -1047,8 +1051,14 @@ impl DrawingLayer {
             *closed = true;
         }
         frame.next_id += 1;
-        frame.commands.push(DrawingCommand::Add(drawing));
-        frame.select = Some(vec![id]);
+        if tool.caps().has(Caps::TEXT_FIRST) {
+            // Nothing without its text: the editor opens, and the drawing is added with what is
+            // typed. Escape leaves nothing behind.
+            self.begin_draft_text_edit(drawing, proj);
+        } else {
+            frame.commands.push(DrawingCommand::Add(drawing));
+            frame.select = Some(vec![id]);
+        }
         if frame.hide_all {
             frame.reveal_all = true;
         }
@@ -1134,6 +1144,14 @@ impl DrawingLayer {
 
         if let Some(Gesture::Draft(draft)) = &gesture {
             self.paint_draft(&clipped, proj, frame, draft);
+        }
+        // A drawing waiting for its text is shown as it will be, growing as it is typed into.
+        if let Some(preview) = self
+            .text_edit
+            .as_ref()
+            .and_then(text_edit::TextEditing::preview)
+        {
+            self.paint_drawing(&clipped, proj, &preview, true, true, true);
         }
         drop(editing);
         self.gesture = gesture;
@@ -1270,7 +1288,11 @@ impl DrawingLayer {
                     .is_some_and(|editing| editing.id == drawing.id())
                 {
                     draw::TextMode::Editing
-                } else if with_handles && !draft && !drawing.locked() && drawing.text_on_line() {
+                } else if with_handles
+                    && !draft
+                    && !drawing.locked()
+                    && drawing.edits_text_in_place()
+                {
                     draw::TextMode::Invite
                 } else {
                     draw::TextMode::Text

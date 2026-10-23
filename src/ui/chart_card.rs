@@ -21,7 +21,7 @@ use crate::ui::alert_lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use crate::ui::chart_buttons::{self, PaneAction};
 use crate::ui::chart_indicator_strip;
-use crate::ui::drawing_layer::{DrawingFrame, DrawingLayer, Projection};
+use crate::ui::drawing_layer::{DrawingFrame, DrawingLayer, Projection, TextMeasure};
 use crate::ui::drawing_render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper_chart_trading::{self, PaperCardState};
@@ -1351,11 +1351,12 @@ impl View {
         plot: Rect,
         candles: &'a [Kline],
         format: PriceFormat,
-        pixels_per_point: f32,
+        ctx: &egui::Context,
     ) -> Projection<'a> {
         Projection {
             plot,
-            pixels_per_point,
+            pixels_per_point: ctx.pixels_per_point(),
+            measure: TextMeasure::new(ctx),
             format,
             scale: &self.scale,
             times: TimeIndex::new(candles),
@@ -1958,12 +1959,7 @@ impl ChartCard {
                 maximum: view.scale.maximum,
             });
         }
-        let projection = view.projection(
-            plot,
-            bars,
-            self.appearance.price_format(),
-            ui.ctx().pixels_per_point(),
-        );
+        let projection = view.projection(plot, bars, self.appearance.price_format(), ui.ctx());
         pointer.context = self.context_request(
             &response,
             &regions,
@@ -1997,7 +1993,6 @@ impl ChartCard {
                 replay_active: overlays.replay.active,
                 time_lock: true,
                 crosshair,
-                pixels_per_point: overlays.ui.ctx().pixels_per_point(),
             },
             &mut overlays,
         );

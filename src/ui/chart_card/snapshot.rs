@@ -197,7 +197,6 @@ impl ChartCard {
                 replay_active: input.replay_active,
                 time_lock: false,
                 crosshair: None,
-                pixels_per_point: painter.ctx().pixels_per_point(),
             },
             &mut overlays,
         );

@@ -154,12 +154,7 @@ impl ChartCard {
                 self.layer.update(
                     ui,
                     response,
-                    &view.projection(
-                        plot,
-                        bars,
-                        self.appearance.price_format(),
-                        ui.ctx().pixels_per_point(),
-                    ),
+                    &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
                     drawing,
                 );
             }

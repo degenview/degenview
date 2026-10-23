@@ -46,6 +46,7 @@ fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
         start: 0,
         slot_width: 100.0,
         lead: 0.0,
+        measure: super::TextMeasure::for_tests(),
     }
 }
 

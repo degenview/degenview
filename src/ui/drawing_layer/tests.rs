@@ -43,6 +43,7 @@ fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
         start: 0,
         slot_width: 100.0,
         lead: 0.0,
+        measure: super::TextMeasure::for_tests(),
     }
 }
 
@@ -1751,7 +1752,7 @@ fn the_text_of_a_shape_is_still_edited_in_the_dialog_not_in_place() {
         rig.tool = Tool::Cursor;
         rig.selected = vec![rig.last().id()];
         rig.settle();
-        assert!(!rig.last().text_on_line(), "{tool:?}");
+        assert!(!rig.last().edits_text_in_place(), "{tool:?}");
         assert!(
             rig.layer.text_boxes.is_empty(),
             "{tool:?} offers no invitation"
@@ -1993,7 +1994,7 @@ fn a_locked_line_offers_no_text_and_a_drawing_that_cannot_hold_text_none() {
     rig.selected = vec![rig.last().id()];
     rig.settle();
     assert!(rig.layer.text_boxes.is_empty());
-    assert!(!rig.last().text_on_line());
+    assert!(!rig.last().edits_text_in_place());
 }
 
 #[test]

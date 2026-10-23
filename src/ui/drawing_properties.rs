@@ -12,9 +12,7 @@ use crate::model::drawing_style::{
     VerticalAlign,
 };
 use crate::model::drawing_template::style_for;
-use crate::model::{
-    Anchor, Caps, Drawing, Geometry, MAX_TEXT_CHARS, PitchforkVariant, Tool, Visibility,
-};
+use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool, Visibility};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
 use crate::ui::icons::Icon;
@@ -1006,7 +1004,7 @@ impl DrawingProperties {
                     .id(focused_id)
                     .frame(egui::Frame::NONE)
                     .hint_text("Add text to this drawing")
-                    .char_limit(MAX_TEXT_CHARS)
+                    .char_limit(self.draft.max_text())
                     .desired_rows(3)
                     .desired_width(f32::INFINITY),
             );
@@ -1783,7 +1781,7 @@ mod tests {
         assert!(kept.text.size.is_finite());
         // Text is capped, and a drawing without a text field refuses it.
         dialog.draft.set_text(&"x".repeat(10_000));
-        assert!(dialog.draft().text().chars().count() <= crate::model::MAX_TEXT_CHARS);
+        assert!(dialog.draft().text().chars().count() <= dialog.draft().max_text());
         let mut brush = DrawingProperties::new(1, &drawing(Tool::Brush)).expect("brush dialog");
         brush.draft.set_text("ignored");
         assert_eq!(brush.draft().text(), "");

@@ -9,6 +9,7 @@ use super::drawing_style::{
     ArrowStats, DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, TextOrientation,
     VerticalAlign,
 };
+use super::drawings::MAX_TEXT_CHARS;
 use serde::{Deserialize, Serialize};
 
 /// A drawing tool armed on the tool strip. `Cursor` is the crosshair (default).
@@ -107,7 +108,7 @@ pub enum Placement {
 /// The style controls a tool offers. A tool shows exactly these in its floating toolbar and its
 /// properties dialog; nothing else is drawn or editable.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Caps(u16);
+pub struct Caps(u32);
 
 impl Caps {
     pub const NONE: Self = Self(0);
@@ -130,6 +131,14 @@ impl Caps {
     pub const ORIENTATION: Self = Self(1 << 13);
     /// A tag on the time axis.
     pub const TIME_LABEL: Self = Self(1 << 14);
+    /// Text typed in place on the chart, where it sits (a line's, a note's), rather than in the
+    /// dialog alone.
+    pub const INLINE_TEXT: Self = Self(1 << 15);
+    /// A text box: its background, border and wrapping.
+    #[allow(dead_code)]
+    pub const BOX: Self = Self(1 << 16);
+    /// Nothing without its text: placing it opens the editor, and it is added once it has some.
+    pub const TEXT_FIRST: Self = Self(1 << 17);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -267,13 +276,18 @@ impl Tool {
             .with(Caps::MIDDLE_POINT)
             .with(Caps::PRICE_LABELS)
             .with(Caps::STATS)
-            .with(Caps::TEXT);
+            .with(Caps::TEXT)
+            .with(Caps::INLINE_TEXT);
         // A line at one price or one time.
         let level_line = Caps::LINE
             .with(Caps::TEXT)
+            .with(Caps::INLINE_TEXT)
             .with(Caps::PRICE_LABELS)
             .with(Caps::ORIENTATION);
-        let channel = shape_line.with(Caps::EXTEND).with(Caps::TEXT);
+        let channel = shape_line
+            .with(Caps::EXTEND)
+            .with(Caps::TEXT)
+            .with(Caps::INLINE_TEXT);
         let fork = Caps::LINE
             .with(Caps::FILL)
             .with(Caps::EXTEND)
@@ -421,6 +435,11 @@ impl Tool {
 
     pub const fn caps(self) -> Caps {
         self.spec().caps
+    }
+
+    /// The most characters of text a drawing by this tool may carry.
+    pub const fn max_text(self) -> usize {
+        MAX_TEXT_CHARS
     }
 
     /// The tools of one menu group, in menu order.

@@ -226,6 +226,31 @@ impl ArrowStats {
     }
 }
 
+/// The widest a text box may be told to wrap at, in logical pixels.
+pub const MAX_BOX_WIDTH: f32 = 2_000.0;
+
+/// The border of a text box (a note, a callout, a table). It is separate from the stroke, which a
+/// note's connector and a pin's glyph use, because TradingView colours the two apart.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct BorderStyle {
+    pub enabled: bool,
+    pub color: Rgba,
+    pub width: f32,
+    pub dash: LineDash,
+}
+
+impl Default for BorderStyle {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            color: BLUE,
+            width: 1.0,
+            dash: LineDash::Solid,
+        }
+    }
+}
+
 /// How many extra lines a pitchfork can carry besides its median.
 pub const PITCHFORK_LEVELS: usize = 9;
 /// How many extra lines a parallel channel can carry besides its two edges and its middle line.
@@ -354,6 +379,14 @@ fn is_false(value: &bool) -> bool {
     !*value
 }
 
+fn is_default_border(border: &BorderStyle) -> bool {
+    *border == BorderStyle::default()
+}
+
+fn is_zero(value: &f32) -> bool {
+    *value == 0.0
+}
+
 /// How a drawing looks. Every field after `stats` belongs to the lines, channels and pitchforks
 /// and is left out of a stored drawing while it holds its default, so a rectangle does not carry
 /// nine pitchfork levels around in every saved layout and every synced record.
@@ -390,6 +423,15 @@ pub struct DrawingStyle {
     /// Keep the text but do not draw it.
     #[serde(skip_serializing_if = "is_false")]
     pub hide_text: bool,
+    /// The border of a text box. Only the tools with [`Caps::BOX`](super::Caps::BOX) read it.
+    #[serde(skip_serializing_if = "is_default_border")]
+    pub border: BorderStyle,
+    /// Wrap a text box's text at `box_width`.
+    #[serde(skip_serializing_if = "is_false")]
+    pub wrap: bool,
+    /// The width a wrapping text box is laid out at, in logical pixels; `0` is the tool's own.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub box_width: f32,
 }
 
 impl Default for DrawingStyle {
@@ -412,6 +454,9 @@ impl Default for DrawingStyle {
             use_one_color: false,
             time_label: false,
             hide_text: false,
+            border: BorderStyle::default(),
+            wrap: false,
+            box_width: 0.0,
         }
     }
 }
@@ -486,6 +531,12 @@ impl DrawingStyle {
         ] {
             line.width = width(line.width, 1.0);
         }
+        self.border.width = width(self.border.width, 1.0);
+        self.box_width = if self.box_width.is_finite() {
+            self.box_width.clamp(0.0, MAX_BOX_WIDTH)
+        } else {
+            0.0
+        };
         self.text.size = if self.text.size.is_finite() {
             self.text.size.clamp(TEXT_SIZE_RANGE.0, TEXT_SIZE_RANGE.1)
         } else {

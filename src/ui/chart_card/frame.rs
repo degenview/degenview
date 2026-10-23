@@ -78,7 +78,6 @@ pub(super) struct Decor<'a> {
     pub replay_active: bool,
     pub time_lock: bool,
     pub crosshair: Option<&'a CrosshairInfo>,
-    pub pixels_per_point: f32,
 }
 
 /// One script pane, as its overlay hook sees it.
@@ -436,12 +435,7 @@ impl ChartCard {
             }
         }
 
-        let projection = view.projection(
-            plot,
-            bars,
-            self.appearance.price_format(),
-            decor.pixels_per_point,
-        );
+        let projection = view.projection(plot, bars, self.appearance.price_format(), painter.ctx());
         layer.paint(&clipped, &projection, drawing);
         overlays.after_drawings(layer, &projection, drawing, layout);
         for (pine_layer, _) in &pine_layers {

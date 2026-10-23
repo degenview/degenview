@@ -113,6 +113,12 @@ pub(super) struct Screen {
     pub readout: Option<Readout>,
     /// Closed outlines to stroke.
     pub outlines: Vec<Vec<Pos2>>,
+    /// The containers of text (a note's box, a callout's bubble), stroked in the drawing's
+    /// border rather than its stroke. The background is `fill`.
+    pub frames: Vec<Vec<Pos2>>,
+    /// Regions that are on the shape for a click though nothing is painted there (the inside of
+    /// a text box with no background).
+    pub hit: Vec<Rect>,
     /// The region to fill (even-odd); empty for none.
     pub fill: Vec<Pos2>,
     /// Solid polygons painted in the stroke colour: arrowheads, the arrow marker, the marks.
@@ -150,6 +156,8 @@ impl Screen {
             angle: None,
             readout: None,
             outlines: Vec::new(),
+            frames: Vec::new(),
+            hit: Vec::new(),
             fill: Vec::new(),
             solids: Vec::new(),
             guides: Vec::new(),
@@ -169,8 +177,17 @@ impl Screen {
     /// Computes the bounds from everything the shape touches, grown by `margin`.
     pub(super) fn finish(mut self, margin: f32) -> Option<Self> {
         let mut all: Vec<Pos2> = Vec::new();
-        for path in self.lines.iter().chain(&self.outlines).chain(&self.solids) {
+        for path in self
+            .lines
+            .iter()
+            .chain(&self.outlines)
+            .chain(&self.frames)
+            .chain(&self.solids)
+        {
             all.extend(path);
+        }
+        for rect in &self.hit {
+            all.extend([rect.left_top(), rect.right_bottom()]);
         }
         for styled in &self.styled {
             all.extend(&styled.path);
@@ -208,6 +225,11 @@ impl Screen {
                     .iter()
                     .any(|band| geo::polygon_contains(&band.polygon, point)))
             || self.outlines.iter().any(|path| near(path, true))
+            || self.frames.iter().any(|path| near(path, true))
+            || self
+                .hit
+                .iter()
+                .any(|rect| rect.expand(tolerance).contains(point))
             || self
                 .middle
                 .is_some_and(|line| geo::distance_to_segment(point, line[0], line[1]) <= tolerance)
