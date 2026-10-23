@@ -30,7 +30,10 @@ carries a typed `Geometry` for every newer tool, all with time+price anchors. Th
 line's text is edited in place by `drawing_layer/text_edit.rs`. The chart patterns, Elliott waves
 and cycles are projected by `drawing_layer/pattern_shapes.rs` from `model::{pattern, elliott,
 cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::pattern_geometry` (apex, arcs, sine);
-see [chart patterns, Elliott waves and cycles](../pattern-tools.md). See
+see [chart patterns, Elliott waves and cycles](../pattern-tools.md). Positions, forecasts, the
+bars pattern, ghost feed, sector, anchored VWAP, volume profiles and measurers are projected by
+`forecast_shapes.rs` and `volume_shapes.rs` from `model::{position, volume_profile, ghost,
+bars_pattern, measure}`; see [forecasting, volume and measurement tools](../forecast-tools.md). See
 [drawing tools](../drawing-tools.md). Rulers and crosshairs are transient.
 
 `ChartWorkspace` keeps session-only per-workspace undo/redo entries containing one chart id and a

@@ -79,7 +79,7 @@ behavior.
   the lines, channels and pitchforks, or `pattern_shapes::project` for the patterns, Elliott waves
   and cycles) and an icon; the controller, toolbar, dialog and tests
   (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
-  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU` and `PATTERN_MENU`;
+  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU` and `FORECAST_MENU`;
   Fibonacci is in none. A tool of more than four anchors needs the test fixtures' seven: the
   every-tool loops slice a seven-point array by `Placement::Points(n)`.
 - A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
@@ -87,6 +87,12 @@ behavior.
   (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is
   counted in bars (`model::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
   (`ui::pattern_geometry`). See [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
+- The forecasting, volume and measurement tools (`forecast_shapes`, `volume_shapes`; maths in
+  `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`
+  and `shade_meshes`. They read only the bars the chart draws, never fetch, and never reach an
+  order, alert or script: a position is hypothetical (a test pins that the trading and alert
+  engines do not mention drawings). `ProjectionKey` includes the newest bar's volume. See
+  [Forecasting, volume and measurement tools](../forecast-tools.md).
 - A tool whose anchor means only part of itself (a level's time, a regression's price) says so in
   `Geometry::reads` and restores what an edit may not change in `Geometry::constrain`.
 - Geometry lives in `ui/drawing_geometry.rs` and `ui/line_geometry.rs` as pure functions on `Pos2`
