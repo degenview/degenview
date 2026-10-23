@@ -1245,6 +1245,19 @@ impl Store {
             .collect()
     }
 
+    /// How many kept records are waiting for one of `reasons`, without reading their payloads.
+    pub fn inbox_count(&self, reasons: &[&str]) -> rusqlite::Result<usize> {
+        let mut total = 0;
+        for reason in reasons {
+            total += self.connection.query_row(
+                "SELECT COUNT(*) FROM sync_inbox WHERE reason = ?1",
+                [reason],
+                |row| row.get::<_, i64>(0).map(|count| count as usize),
+            )?;
+        }
+        Ok(total)
+    }
+
     pub fn remove_inbox(&self, record_name: &str) -> rusqlite::Result<()> {
         self.connection.execute(
             "DELETE FROM sync_inbox WHERE record_name = ?1",

@@ -249,6 +249,25 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         self.started = true;
+        // Records an earlier launch had to set aside (a kind or schema it did not know) are
+        // looked at again, now that this one may.
+        if state.initial_sync_done
+            && self
+                .store
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .inbox_count(&[super::apply::UNKNOWN_TYPE, super::apply::NEWER_SCHEMA])
+                .is_ok_and(|waiting| waiting > 0)
+        {
+            let id = self.next_batch;
+            self.next_batch += 1;
+            self.unapplied.insert(id);
+            self.effects.push(Effect::RemoteChanges(RemoteBatch {
+                id,
+                records: Vec::new(),
+                deletions: Vec::new(),
+            }));
+        }
         // An older build running beside this one (or before it) writes rows without queuing them.
         self.reconcile_needed = true;
         // The checkpoint is only valid for the account it was saved under, and only trusted if
@@ -751,13 +770,13 @@ impl<T: SyncTransport> SyncCore<T> {
         let (record, system_fields) = match raw.clone().into_record() {
             Ok(parsed) => parsed,
             Err(unknown) => {
-                keep("unknown_type", &unknown, self);
+                keep(super::apply::UNKNOWN_TYPE, &unknown, self);
                 return None;
             }
         };
         match validate(&record) {
             Verdict::NewerSchema => {
-                keep("newer_schema", &raw, self);
+                keep(super::apply::NEWER_SCHEMA, &raw, self);
                 None
             }
             Verdict::Reject(_) => {
