@@ -286,6 +286,7 @@ fn with_account(harness: &mut Harness) {
             price: 230.0,
             paused: false,
             above: true,
+            editable: true,
         }]);
 }
 

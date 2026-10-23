@@ -22,6 +22,7 @@ pub(super) struct BodyArgs<'a> {
 pub(super) struct OverlayResults {
     pub pane_actions: Vec<(u64, PaneAction)>,
     pub alert_menu: Option<alert_lines::LineMenu>,
+    pub alert_moves: Vec<alert_lines::AlertMove>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
 }
@@ -185,6 +186,7 @@ impl ChartCard {
         let OverlayResults {
             pane_actions,
             alert_menu,
+            alert_moves,
             paper,
             navigation,
         } = results;
@@ -194,6 +196,7 @@ impl ChartCard {
         if alert_menu.is_some() {
             self.alert_menu = alert_menu;
         }
+        self.alert_moves.extend(alert_moves);
         self.paper.actions.extend(paper.0);
         self.paper.menu = paper.1.or(self.paper.menu.take());
         if let Some(action) = navigation {

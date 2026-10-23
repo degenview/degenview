@@ -423,11 +423,19 @@ fn an_alert_line_menu_reflects_its_state() {
         find(&menu_active, &Command::ToggleAlert(9)).unwrap().label,
         "Pause alert"
     );
+    assert_eq!(
+        find(&menu_active, &Command::ToggleAlert(9)).unwrap().glyph,
+        Some(Glyph::Pause)
+    );
     facts.alert = Some(AlertState::Paused);
     let menu_paused = menu(&line, &facts);
     assert_eq!(
         find(&menu_paused, &Command::ToggleAlert(9)).unwrap().label,
         "Resume alert"
+    );
+    assert_eq!(
+        find(&menu_paused, &Command::ToggleAlert(9)).unwrap().glyph,
+        Some(Glyph::Play)
     );
     assert!(
         find(&menu_paused, &Command::DeleteAlert(9))

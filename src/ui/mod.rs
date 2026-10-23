@@ -98,6 +98,7 @@ pub mod webhook_settings;
 pub mod window_chrome;
 pub mod workspace_toolbar;
 
+pub use alert_lines::AlertMove;
 pub use chart_card::ContextRequest;
 pub use chart_card::SnapshotInput;
 pub use chart_card::supports_alerts;

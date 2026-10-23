@@ -122,6 +122,9 @@ behavior.
 - Opening a menu, an order entry or Add alert never places an order or saves an alert: they open
   the paper ticket and the alert editor for the user to review.
 - Drags and clicks that move the chart or draw are primary-button only.
+- An alert's tag is draggable to a new level. The card only reports an `AlertMove`; the workspace
+  turns it into `WorkspaceAction::MoveAlert` (`workspace/context.rs`), so the card never edits a
+  `PriceAlert`, and a percentage alert or a replay is never draggable.
 - Cursor time lock, the Table view feed and the alert lines are card state that is never saved and
   never part of a template or linked navigation. Table and Object Tree read the bars and state the
   chart already draws; the tree is a view over the drawings, indicators and scripts, not a store.

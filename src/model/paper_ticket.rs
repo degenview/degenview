@@ -170,12 +170,18 @@ pub fn rounded_down(value: f64, increment: f64) -> f64 {
 
 /// A price rounded to the nearest tick.
 pub fn rounded_to_tick(value: f64, instrument: &PaperInstrument) -> f64 {
-    if instrument.tick_size <= 0.0 {
+    rounded_to_increment(value, instrument.tick_size)
+}
+
+/// `value` rounded to the nearest multiple of `tick`, with the float noise cleaned off; a tick
+/// that is not positive leaves it alone.
+pub fn rounded_to_increment(value: f64, tick: f64) -> f64 {
+    if tick <= 0.0 {
         return value;
     }
-    let scale = 10_f64.powi(decimal_places(instrument.tick_size).min(15) as i32);
-    let ticks = (value / instrument.tick_size).round();
-    (ticks * instrument.tick_size * scale).round() / scale
+    let scale = 10_f64.powi(decimal_places(tick).min(15) as i32);
+    let ticks = (value / tick).round();
+    (ticks * tick * scale).round() / scale
 }
 
 /// The asset being traded: `BTC` for `BTC/USDT`; a name without a pair falls back to the symbol.

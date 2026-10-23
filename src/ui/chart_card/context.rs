@@ -9,6 +9,7 @@ use super::navigation::{Region, Regions};
 use super::{ChartCard, PriceScale};
 use crate::model::Anchor;
 use crate::model::chart_context::Target;
+use crate::ui::alert_lines;
 use crate::ui::drawing_layer::DrawingFrame;
 use crate::ui::drawing_layer::Projection;
 use eframe::egui::{self, Pos2, Rect};
@@ -125,6 +126,29 @@ impl ChartCard {
     #[cfg(test)]
     pub fn alert_line_ids(&self) -> Vec<u64> {
         self.alert_lines.iter().map(|line| line.id).collect()
+    }
+
+    /// Whether every alert line this chart draws can be dragged, for tests.
+    #[cfg(test)]
+    pub fn alert_lines_editable(&self) -> bool {
+        !self.alert_lines.is_empty() && self.alert_lines.iter().all(|line| line.editable)
+    }
+
+    /// A tag dropped on `price`, as the pointer would report it, for tests.
+    #[cfg(test)]
+    pub fn queue_alert_move(&mut self, id: u64, price: f64) {
+        self.alert_moves.push(alert_lines::AlertMove { id, price });
+    }
+
+    /// Sets the market the alert tags are dragged on: the last price, which decides the side a
+    /// moved alert then watches, and the tick a drop lands on.
+    pub fn set_alert_market(&mut self, last: Option<f64>, tick: f64) {
+        self.alert_market = alert_lines::Market { last, tick };
+    }
+
+    /// The alert tags dropped on a new level since the last call.
+    pub fn take_alert_moves(&mut self) -> Vec<alert_lines::AlertMove> {
+        std::mem::take(&mut self.alert_moves)
     }
 
     /// Sets the price alerts this chart draws as lines.

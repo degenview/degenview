@@ -5,7 +5,9 @@
 //! the FX rates the app holds and says nothing about drawing.
 
 use super::InstrumentId;
-use super::alert::{AlertCurrency, AlertId, AlertState, PriceAlert};
+use super::alert::{AlertCondition, AlertCurrency, AlertId, AlertState, PriceAlert};
+use super::chart_context::{AlertSide, alert_side};
+use super::paper_ticket::rounded_to_increment;
 use std::collections::HashMap;
 
 /// One alert on one chart.
@@ -17,6 +19,26 @@ pub struct AlertLine {
     pub paused: bool,
     /// Whether the alert fires when the price rises to the level.
     pub above: bool,
+    /// Whether dragging the line may move the level. A percentage alert's level follows from its
+    /// percent and reference, so moving it would make it a different alert.
+    pub editable: bool,
+}
+
+/// Whether an alert dragged to `price` fires on a rise: the side the price lies on from `last`
+/// (as for "Add alert at this price"), or the side it had when the market is unknown or level.
+pub fn above_after_drag(was_above: bool, price: f64, last: Option<f64>) -> bool {
+    match alert_side(price, last) {
+        Some(AlertSide::Above) => true,
+        Some(AlertSide::Below) => false,
+        None => was_above,
+    }
+}
+
+/// Where a line dragged to `price` lands: on the market's tick, `None` unless that is a price an
+/// alert can have.
+pub fn dropped_level(price: f64, tick: f64) -> Option<f64> {
+    let level = rounded_to_increment(price, tick);
+    (level.is_finite() && level > 0.0).then_some(level)
 }
 
 /// The lines for the chart of `market`: its active and paused alerts that have a level. Levels
@@ -43,6 +65,10 @@ pub fn lines_for(
                 price: level / rate,
                 paused: alert.state == AlertState::Paused,
                 above: alert.condition.crosses_above(),
+                editable: matches!(
+                    alert.condition,
+                    AlertCondition::CrossesAbove { .. } | AlertCondition::CrossesBelow { .. }
+                ),
             })
         })
         .collect()
@@ -88,13 +114,15 @@ mod tests {
                     id: 1,
                     price: 110.0,
                     paused: false,
-                    above: true
+                    above: true,
+                    editable: true
                 },
                 AlertLine {
                     id: 2,
                     price: 90.0,
                     paused: true,
-                    above: false
+                    above: false,
+                    editable: true
                 },
             ]
         );
@@ -121,5 +149,38 @@ mod tests {
             AlertCondition::CrossesAbove { target: f64::NAN },
         )];
         assert!(lines_for(&alerts, &market("BTCUSDT"), &HashMap::new()).is_empty());
+    }
+
+    #[test]
+    fn only_a_plain_crossing_can_be_dragged() {
+        let alerts = [
+            alert(1, "BTCUSDT", AlertCondition::CrossesBelow { target: 90.0 }),
+            alert(2, "BTCUSDT", AlertCondition::rises_by(5.0, 100.0)),
+            alert(3, "BTCUSDT", AlertCondition::falls_by(5.0, 100.0)),
+        ];
+        let editable: Vec<bool> = lines_for(&alerts, &market("BTCUSDT"), &HashMap::new())
+            .iter()
+            .map(|line| line.editable)
+            .collect();
+        assert_eq!(editable, [true, false, false]);
+    }
+
+    #[test]
+    fn a_dragged_alert_watches_the_side_its_level_is_on() {
+        assert!(above_after_drag(false, 110.0, Some(100.0)));
+        assert!(!above_after_drag(true, 90.0, Some(100.0)));
+        // Level with the market, or no market: it keeps the side it had.
+        assert!(above_after_drag(true, 100.0, Some(100.0)));
+        assert!(!above_after_drag(false, 110.0, None));
+        assert!(!above_after_drag(false, 110.0, Some(f64::NAN)));
+    }
+
+    #[test]
+    fn a_drop_lands_on_the_tick_and_never_on_a_non_price() {
+        assert_eq!(dropped_level(101.237, 0.01), Some(101.24));
+        assert_eq!(dropped_level(101.237, 0.0), Some(101.237));
+        assert_eq!(dropped_level(0.004, 0.01), None);
+        assert_eq!(dropped_level(-3.0, 0.01), None);
+        assert_eq!(dropped_level(f64::NAN, 0.01), None);
     }
 }

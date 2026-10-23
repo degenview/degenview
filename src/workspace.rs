@@ -87,6 +87,13 @@ pub enum WorkspaceAction {
     },
     /// Delete a price alert (its line on a chart).
     DeleteAlert(crate::model::alert::AlertId),
+    /// An alert's line was dragged to a new level: queue the alert as changed. `baseline` is the
+    /// market's last price in the alert's currency, which arms it for the side it now watches.
+    /// Unlike a save from the sheet it asks for nothing: the alert already exists.
+    MoveAlert {
+        alert: Box<PriceAlert>,
+        baseline: Option<f64>,
+    },
     OpenWatchlistInNewTab(WatchlistInstrument),
 }
 

@@ -198,6 +198,8 @@ pub enum Command {
 pub enum Glyph {
     Template,
     Layers,
+    Pause,
+    Play,
 }
 
 /// One row of a menu.
@@ -662,13 +664,13 @@ fn alert(id: AlertId, facts: &Facts) -> Vec<Entry> {
         return Vec::new();
     };
     let toggle = match state {
-        AlertState::Paused => Some("Resume alert"),
-        AlertState::Active => Some("Pause alert"),
+        AlertState::Paused => Some(("Resume alert", Glyph::Play)),
+        AlertState::Active => Some(("Pause alert", Glyph::Pause)),
         AlertState::Triggered | AlertState::Unsupported => None,
     };
     let mut first = vec![Item::new(Command::EditAlert(id), "Edit alert…")];
-    if let Some(label) = toggle {
-        first.push(Item::new(Command::ToggleAlert(id), label));
+    if let Some((label, glyph)) = toggle {
+        first.push(Item::new(Command::ToggleAlert(id), label).glyph(glyph));
     }
     grouped(vec![
         first,

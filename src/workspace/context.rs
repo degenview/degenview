@@ -10,6 +10,7 @@
 //! message.
 
 use super::*;
+use crate::model::alert::AlertCondition;
 use crate::model::chart_clipboard::DrawingClip;
 use crate::model::chart_context::{
     self, ChartContext, Command, Facts, Live, OrderFacts, PaneFacts, PaperAccess, TemplateRow,
@@ -314,7 +315,7 @@ impl ChartWorkspace {
         ctx: &Context,
         host: &mut PaperHost,
     ) -> Vec<WorkspaceAction> {
-        let mut actions = Vec::new();
+        let mut actions = self.apply_alert_moves();
         if let Some(mut open) = self.context.menu.take() {
             match self.context_facts(ctx, &open.context, &open.templates) {
                 // The chart closed while the menu was up: it goes with it.
@@ -763,9 +764,12 @@ impl ChartWorkspace {
             }
         }
         let table = self.context.table_chart;
+        let replay_ms = self.replay_cut();
+        let replaying =
+            self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart;
         for chart in &mut self.charts {
             chart.chart.set_table_wanted(table == Some(chart.id));
-            let lines = if chart.is_market() {
+            let mut lines = if chart.is_market() {
                 crate::model::alert_line::lines_for(
                     &self.context.alerts,
                     &InstrumentId::new(chart.source, &chart.symbol),
@@ -774,8 +778,96 @@ impl ChartWorkspace {
             } else {
                 Vec::new()
             };
+            if !lines.is_empty() {
+                // A level moved while the replay rewinds the market would be judged against a
+                // price that is not the market's.
+                for line in &mut lines {
+                    line.editable &= !replaying;
+                }
+                let last = displayed_candles(&chart.candles, replay_ms)
+                    .last()
+                    .map(|candle| candle.close);
+                chart
+                    .chart
+                    .set_alert_market(last, Self::paper_instrument(chart).tick_size);
+            }
             chart.chart.set_alert_lines(lines);
         }
+    }
+
+    /// Turns the alert tags dropped on a new level since the last frame into saves.
+    fn apply_alert_moves(&mut self) -> Vec<WorkspaceAction> {
+        let mut actions = Vec::new();
+        for index in 0..self.charts.len() {
+            for moved in self.charts[index].chart.take_alert_moves() {
+                actions.extend(self.move_alert(index, moved));
+            }
+        }
+        actions
+    }
+
+    /// The save for alert `moved.id` dragged to `moved.price` on chart `index`. The level is the
+    /// drop's, in the alert's currency; the side is the one the level is on from the market's
+    /// last price, as for "Add alert at this price". State, frequency, note and webhooks stay.
+    fn move_alert(&mut self, index: usize, moved: ui::AlertMove) -> Option<WorkspaceAction> {
+        if self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart {
+            self.say("Alerts are not available during replay.", true);
+            return None;
+        }
+        let chart = &self.charts[index];
+        let market = InstrumentId::new(chart.source, &chart.symbol);
+        let last = displayed_candles(&chart.candles, self.replay_cut())
+            .last()
+            .map(|candle| candle.close);
+        let alert = self
+            .context
+            .alerts
+            .iter()
+            .find(|alert| alert.id == moved.id && alert.asset.instrument == market)?;
+        let rate = if alert.currency == AlertCurrency::Usd {
+            Some(1.0)
+        } else {
+            self.alert_fx_rates
+                .get(&alert.currency)
+                .copied()
+                .filter(|rate| *rate > 0.0)
+        };
+        let Some(rate) = rate else {
+            self.say(
+                "The exchange rate for this alert is not available yet.",
+                true,
+            );
+            return None;
+        };
+        let above = crate::model::alert_line::above_after_drag(
+            alert.condition.crosses_above(),
+            moved.price,
+            last,
+        );
+        // The rate leaves float noise (`90.00000000000001`) the alert would show.
+        let target: f64 = format!("{:.9e}", moved.price * rate)
+            .parse()
+            .unwrap_or(moved.price * rate);
+        let condition = match alert.condition {
+            AlertCondition::CrossesAbove { .. } | AlertCondition::CrossesBelow { .. } => {
+                if above {
+                    AlertCondition::CrossesAbove { target }
+                } else {
+                    AlertCondition::CrossesBelow { target }
+                }
+            }
+            // A percentage alert has no level of its own to move.
+            _ => return None,
+        };
+        if condition == alert.condition {
+            return None;
+        }
+        let mut alert = alert.clone();
+        alert.condition = condition;
+        Some(WorkspaceAction::MoveAlert {
+            alert: Box::new(alert),
+            baseline: last.map(|last| last * rate),
+        })
     }
 
     pub(super) fn show_table_panel(&mut self, ui: &mut egui::Ui) {

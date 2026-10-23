@@ -22,7 +22,8 @@ const FRAME: f32 = 5.0;
 const MARGIN: f32 = 8.0;
 /// How far the menu sits from the click, so the pointer is not already over a row.
 const OFFSET: f32 = 2.0;
-const MIN_WIDTH: f32 = 220.0;
+/// A short menu (the alert's three rows) hugs its labels instead of padding out to a wide one.
+const MIN_WIDTH: f32 = 148.0;
 const MAX_WIDTH: f32 = 420.0;
 
 /// What a frame of the menu decided.
@@ -153,6 +154,8 @@ fn icon_for(item: &Item) -> Option<Icon> {
         return Some(match glyph {
             Glyph::Template => Icon::Palette,
             Glyph::Layers => Icon::Layers,
+            Glyph::Pause => Icon::PauseFill,
+            Glyph::Play => Icon::PlayFill,
         });
     }
     Some(match item.command.as_ref()? {
@@ -253,6 +256,12 @@ fn rows(ui: &mut egui::Ui, entries: &[Entry], focus: Option<usize>) -> Rows {
     out
 }
 
+/// The width a row needs: the label starts `text_left` in, then comes its shortcut, then the
+/// chevron or check, then the edge padding.
+fn row_width(text_left: f32, label: f32, hint: f32, trailing: f32) -> f32 {
+    text_left + label + hint + trailing + 14.0
+}
+
 /// The width the widest row of `entries` needs.
 fn measure(ui: &egui::Ui, entries: &[Entry]) -> f32 {
     let text_left = if needs_icon_column(entries) {
@@ -294,7 +303,7 @@ fn measure(ui: &egui::Ui, entries: &[Entry]) -> f32 {
             } else {
                 22.0
             };
-            text_left + label + hint + chevron + 14.0
+            row_width(text_left, label, hint, chevron)
         })
         .fold(0.0f32, f32::max);
     widest.clamp(MIN_WIDTH, MAX_WIDTH)
@@ -794,6 +803,28 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[test]
+    fn the_alert_toggle_has_an_icon_for_each_state() {
+        let toggle = |glyph| Item {
+            glyph: Some(glyph),
+            ..match plain("Pause alert") {
+                Entry::Item(item) => item,
+                _ => unreachable!(),
+            }
+        };
+        assert_eq!(icon_for(&toggle(Glyph::Pause)), Some(Icon::PauseFill));
+        assert_eq!(icon_for(&toggle(Glyph::Play)), Some(Icon::PlayFill));
+    }
+
+    #[test]
+    fn a_short_menu_hugs_its_labels_and_a_long_row_still_wins() {
+        // "Delete alert" is about 75pt of text behind the icon column.
+        let short = row_width(32.0, 75.0, 0.0, 0.0).clamp(MIN_WIDTH, MAX_WIDTH);
+        assert!(short < 170.0, "{short}");
+        let long = row_width(32.0, 260.0, 0.0, 0.0).clamp(MIN_WIDTH, MAX_WIDTH);
+        assert_eq!(long, 306.0);
     }
 
     #[test]

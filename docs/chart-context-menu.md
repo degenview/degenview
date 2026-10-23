@@ -12,7 +12,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | --- | --- |
 | A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing_layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
-| A price alert tag | Edit, Pause or Resume, Delete. |
+| A price alert tag | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
 | A script's pane | Settings, Hide or Show, Visual order, Open Script Manager, Remove from chart. |
 | The price axis | Reset price scale, Logarithmic scale. |
 | The time axis | Reset chart view. |
@@ -117,6 +117,29 @@ and cursor locks are not in history. Removing a script from a chart never touche
 or its alert subscriptions; a subscription whose instance is gone is marked changed by the
 existing reconcile, and Undo brings the instance (same id) back.
 
+## Dragging an alert tag
+
+A price alert's tag can be dragged up or down to move its level, as a paper order's can
+(`ui::alert_lines`). The cursor is the vertical resize arrow over the tag and for the whole drag.
+
+- While dragged, the tag, its dashed line and its caption follow the pointer, clamped to the plot,
+  and the caption shows the level it would land on (on the market's tick) and the side that level
+  is on. Esc ends the drag, puts the tag back and saves nothing (egui reports that stop like a
+  release, so the view checks for the key).
+- The drop is a `WorkspaceAction::MoveAlert`: the alert as it is, with a new `CrossesAbove` or
+  `CrossesBelow` level in its own currency (the USD drop times the app's FX rate; no rate, no
+  save, and a message). The side follows the level against the market's last price, as for Add
+  alert at a price, and a drop level with the market keeps the side it had. The save carries the
+  last price as its baseline so the alert is armed for the side it now watches. State, frequency,
+  note and webhooks are untouched: a paused alert stays paused. The app only queues the save
+  (`AppAction::MoveAlert`); it does not ask for notification permission again.
+- The tag stays at the dropped level for up to two seconds, until the alert list reports a
+  different level, so it does not jump back while the save travels the command queue. If the save
+  never lands, it returns to the alert's level.
+- A percentage alert (rises or falls by) is not draggable: its level follows from its percent and
+  reference. Nothing is draggable during replay.
+- A tag dropped where it started saves nothing.
+
 ## TradingView: verified and not
 
 Verified in TradingView's help centre: Table view opens from the chart's right-click menu, has a
@@ -157,3 +180,8 @@ Not verifiable from the documentation, so built from the specification and marke
 7. Remove drawings and Remove indicators: the count is right, one Undo restores all.
 8. Two charts: every entry acts on the chart that was clicked.
 9. Light and dark themes; a detached window.
+10. Alert tag: the cursor is the vertical arrow; drag it, release, and it stays; the Alerts window
+    shows the new level. Drag across the last price and the arrow in the caption turns. Esc
+    mid-drag restores it. A paused alert stays paused. A percentage alert has no drag cursor.
+11. Alert tag menu: Pause has the pause icon, Resume the play icon, and the menu is no wider than
+    its longest label needs.

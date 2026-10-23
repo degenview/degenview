@@ -346,6 +346,10 @@ pub struct ChartCard {
     /// right-clicked since the last request was read.
     alert_lines: Vec<crate::model::alert_line::AlertLine>,
     alert_menu: Option<alert_lines::LineMenu>,
+    /// The market the alert tags are dragged on, and the tags dropped on a new level since the
+    /// workspace last took them.
+    alert_market: alert_lines::Market,
+    alert_moves: Vec<alert_lines::AlertMove>,
 }
 
 /// A saved bullish/bearish colour as an opaque `Rgba`.
@@ -623,6 +627,8 @@ impl Default for ChartCard {
             table_stamp: 0,
             alert_lines: Vec::new(),
             alert_menu: None,
+            alert_market: alert_lines::Market::default(),
+            alert_moves: Vec::new(),
         }
     }
 }
@@ -1992,6 +1998,7 @@ impl ChartCard {
             chart_hovered,
             pane_actions: Vec::new(),
             alert_menu: None,
+            alert_moves: Vec::new(),
             paper: (Vec::new(), None),
             navigation: None,
         };
@@ -2013,6 +2020,7 @@ impl ChartCard {
         let LiveOverlays {
             pane_actions,
             alert_menu,
+            alert_moves,
             paper,
             navigation,
             ..
@@ -2022,6 +2030,7 @@ impl ChartCard {
             OverlayResults {
                 pane_actions,
                 alert_menu,
+                alert_moves,
                 paper,
                 navigation,
             },

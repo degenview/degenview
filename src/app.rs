@@ -214,6 +214,11 @@ enum AppAction {
     },
     /// A chart's alert line was deleted.
     DeleteAlert(crate::model::alert::AlertId),
+    /// A chart's alert line was dragged to a new level.
+    MoveAlert {
+        alert: Box<crate::model::alert::PriceAlert>,
+        baseline: Option<f64>,
+    },
     OpenWatchlistInNewTab(WatchlistInstrument),
     /// Add a Pine script to the focused chart (the Script Manager's "Add to Chart").
     AddPineScript {
@@ -584,6 +589,9 @@ fn show_tab(
                         AppAction::SetAlertState { id, state }
                     }
                     WorkspaceAction::DeleteAlert(id) => AppAction::DeleteAlert(id),
+                    WorkspaceAction::MoveAlert { alert, baseline } => {
+                        AppAction::MoveAlert { alert, baseline }
+                    }
                 }));
             }
         }
@@ -1004,6 +1012,14 @@ impl DegenViewApp {
                                 state,
                                 baseline: None,
                             },
+                            now_ms(),
+                        ));
+                    }
+                }
+                AppAction::MoveAlert { alert, baseline } => {
+                    if let Ok(store) = self.store.lock() {
+                        let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
+                            AlertRuntimeCommandPayload::Save { alert, baseline },
                             now_ms(),
                         ));
                     }

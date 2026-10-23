@@ -751,6 +751,157 @@ fn pausing_and_deleting_an_alert_go_out_as_app_actions() {
     );
 }
 
+fn alert_at(id: u64, symbol: &str, condition: crate::model::alert::AlertCondition) -> PriceAlert {
+    use crate::model::alert::AlertAsset;
+    let mut alert = PriceAlert::new(
+        AlertAsset::new(
+            InstrumentId::new(DataSource::Binance, symbol),
+            symbol.to_owned(),
+            symbol.to_owned(),
+        ),
+        condition,
+        0,
+    );
+    alert.id = id;
+    alert
+}
+
+/// Drops alert `id`'s tag on `price` and returns what the workspace queues.
+fn drop_alert(rig: &mut Rig, chart: u64, id: u64, price: f64) -> Vec<WorkspaceAction> {
+    rig.chart_mut(chart).chart.queue_alert_move(id, price);
+    rig.workspace.apply_alert_moves()
+}
+
+fn moved(action: &WorkspaceAction) -> (&PriceAlert, Option<f64>) {
+    match action {
+        WorkspaceAction::MoveAlert { alert, baseline } => (alert, *baseline),
+        other => panic!("not a move: {other:?}"),
+    }
+}
+
+#[test]
+fn dropping_an_alert_tag_saves_it_at_the_new_level_on_the_side_it_now_watches() {
+    use crate::model::alert::{AlertCondition, AlertState};
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut paused = alert_at(2, "BTCUSDT", AlertCondition::CrossesAbove { target: 130.0 });
+    paused.state = AlertState::Paused;
+    paused.note = "keep".to_owned();
+    rig.workspace.set_price_alerts(&[
+        alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 120.0 }),
+        paused,
+    ]);
+
+    // Dragged below the market, an alert that waited for a rise now waits for a fall, and is
+    // armed from where the market is.
+    let actions = drop_alert(&mut rig, chart, 1, 90.0);
+    let [action] = actions.as_slice() else {
+        panic!("{actions:?}")
+    };
+    let (alert, baseline) = moved(action);
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesBelow { target: 90.0 }
+    );
+    assert_eq!(baseline, Some(100.0));
+
+    // A paused alert stays paused, and nothing else about it changes.
+    let actions = drop_alert(&mut rig, chart, 2, 140.0);
+    let (alert, _) = moved(&actions[0]);
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesAbove { target: 140.0 }
+    );
+    assert_eq!(alert.state, AlertState::Paused);
+    assert_eq!(alert.note, "keep");
+}
+
+#[test]
+fn a_drop_on_the_same_level_or_on_a_percentage_alert_saves_nothing() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[
+        alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 120.0 }),
+        alert_at(2, "BTCUSDT", AlertCondition::rises_by(10.0, 100.0)),
+        alert_at(3, "ETHUSDT", AlertCondition::CrossesAbove { target: 5.0 }),
+    ]);
+    assert!(drop_alert(&mut rig, chart, 1, 120.0).is_empty());
+    assert!(drop_alert(&mut rig, chart, 2, 130.0).is_empty());
+    // Another market's alert is not this chart's to move.
+    assert!(drop_alert(&mut rig, chart, 3, 6.0).is_empty());
+    assert!(drop_alert(&mut rig, chart, 99, 6.0).is_empty());
+}
+
+#[test]
+fn an_alert_in_another_currency_is_saved_in_that_currency() {
+    use crate::model::alert::{AlertCondition, AlertCurrency};
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut euro = alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 108.0 });
+    euro.currency = AlertCurrency::Eur;
+    rig.workspace.set_price_alerts(&[euro]);
+
+    // Without a rate there is no level to save, and the user is told.
+    assert!(drop_alert(&mut rig, chart, 1, 120.0).is_empty());
+    assert_eq!(rig.message().map(|(_, error)| error), Some(true));
+
+    rig.workspace
+        .set_alert_fx_rates(&std::collections::HashMap::from([(
+            AlertCurrency::Eur,
+            0.9,
+        )]));
+    let actions = drop_alert(&mut rig, chart, 1, 130.0);
+    let (alert, baseline) = moved(&actions[0]);
+    // 130 USD at 0.9 is 117 EUR without the float noise 130 * 0.9 carries.
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesAbove { target: 117.0 }
+    );
+    assert_eq!(alert.currency, AlertCurrency::Eur);
+    assert_eq!(baseline, Some(90.0));
+}
+
+#[test]
+fn an_alert_cannot_be_moved_during_replay() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[alert_at(
+        1,
+        "BTCUSDT",
+        AlertCondition::CrossesAbove { target: 120.0 },
+    )]);
+    rig.workspace.replay.start(
+        3 * 86_400_000,
+        "BTCUSDT",
+        (0..10).map(|i| i * 86_400_000).collect(),
+    );
+    assert!(drop_alert(&mut rig, chart, 1, 90.0).is_empty());
+    assert_eq!(rig.message().map(|(_, error)| error), Some(true));
+}
+
+#[test]
+fn the_tags_of_a_replayed_chart_are_not_draggable() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[alert_at(
+        1,
+        "BTCUSDT",
+        AlertCondition::CrossesAbove { target: 120.0 },
+    )]);
+    rig.workspace.sync_context_panels();
+    assert!(rig.chart_mut(chart).chart.alert_lines_editable());
+    rig.workspace.replay.start(
+        3 * 86_400_000,
+        "BTCUSDT",
+        (0..10).map(|i| i * 86_400_000).collect(),
+    );
+    rig.workspace.sync_context_panels();
+    assert!(!rig.chart_mut(chart).chart.alert_lines_editable());
+}
+
 #[test]
 fn the_menu_built_for_a_snapshot_matches_its_chart() {
     let mut rig = Rig::new().with_account();
