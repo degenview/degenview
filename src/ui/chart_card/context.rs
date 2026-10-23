@@ -143,7 +143,11 @@ impl ChartCard {
     /// Sets the market the alert tags are dragged on: the last price, which decides the side a
     /// moved alert then watches, and the tick a drop lands on.
     pub fn set_alert_market(&mut self, last: Option<f64>, tick: f64) {
-        self.alert_market = alert_lines::Market { last, tick };
+        self.alert_market = alert_lines::Market {
+            last,
+            tick,
+            ..alert_lines::Market::default()
+        };
     }
 
     /// The alert tags dropped on a new level since the last call.

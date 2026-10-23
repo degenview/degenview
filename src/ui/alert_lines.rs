@@ -18,8 +18,10 @@ use std::time::Duration;
 
 const HEIGHT: f32 = 20.0;
 const MARGIN: f32 = 8.0;
-/// How long a dropped tag stays at its new level while the save reaches the alert list.
-const HOLD_SECONDS: f64 = 2.0;
+/// The longest a dropped tag waits at its new level for the alert list to show it. The app drains
+/// saves about once a second, and a background agent that owns the alerts takes longer; a save
+/// that never lands sends the tag back after this.
+const HOLD_SECONDS: f64 = 10.0;
 
 /// A tag that was right-clicked, and where.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -48,6 +50,18 @@ pub(super) struct Shown {
 pub struct Market {
     pub last: Option<f64>,
     pub tick: f64,
+    /// The chart's price places: a drop lands on a price the chart can write, not on the
+    /// hundred-millionth the pointer happened to be over.
+    pub format: PriceFormat,
+}
+
+impl Market {
+    /// `price` on the tick and on the chart's places; `None` unless an alert can have it.
+    fn snap(self, price: f64) -> Option<f64> {
+        let level = dropped_level(price, self.tick)?;
+        let written = self.format.plain(level).parse::<f64>().ok()?;
+        (written > 0.0).then_some(written)
+    }
 }
 
 /// A dropped tag held at its new level until the alert list catches up with the save. `from` is
@@ -164,7 +178,7 @@ fn landed(
     y: f32,
     market: Market,
 ) -> Option<AlertLine> {
-    let price = dropped_level(scale.price(clamped_y(plot, y)), market.tick)?;
+    let price = market.snap(scale.price(clamped_y(plot, y)))?;
     Some(AlertLine {
         price,
         above: above_after_drag(line.above, price, market.last),
@@ -183,6 +197,7 @@ pub(super) fn show(
     market: Market,
 ) -> Shown {
     let painter = ui.painter().with_clip_rect(plot);
+    let market = Market { format, ..market };
     let mut shown = Shown::default();
     let now = ui.input(|input| input.time);
     for line in lines {
@@ -283,7 +298,7 @@ fn follow_drag(
             return;
         };
         // Let go where it started: nothing to save.
-        if Some(drop.price) == dropped_level(line.price, market.tick) {
+        if Some(drop.price) == market.snap(line.price) {
             return;
         }
         ctx.data_mut(|data| {
@@ -356,6 +371,7 @@ mod tests {
         let market = Market {
             last: Some(100.0),
             tick: 0.5,
+            ..Market::default()
         };
         // 100pt from the top is 110 (120 - 100/10).
         let up = landed(&line(false), &scale(), plot(), 100.0, market).unwrap();
@@ -371,6 +387,7 @@ mod tests {
         let market = Market {
             last: Some(100.0),
             tick: 0.01,
+            ..Market::default()
         };
         // 300pt from the top is 90.
         let below = landed(&line(true), &scale(), plot(), 300.0, market).unwrap();
@@ -380,6 +397,7 @@ mod tests {
         let unknown = Market {
             last: None,
             tick: 0.01,
+            ..Market::default()
         };
         assert!(
             landed(&line(true), &scale(), plot(), 300.0, unknown)
@@ -393,6 +411,7 @@ mod tests {
         let market = Market {
             last: Some(100.0),
             tick: 0.01,
+            ..Market::default()
         };
         let top = landed(&line(true), &scale(), plot(), -500.0, market).unwrap();
         // The tag's centre stops half a tag below the top: 120 - 10/10.
@@ -412,9 +431,66 @@ mod tests {
         let market = Market {
             last: Some(2.0),
             tick: 1.0,
+            ..Market::default()
         };
         // The bottom of this scale rounds to 0 on a whole-number tick.
         assert!(landed(&line(true), &flat, plot(), 400.0, market).is_none());
+    }
+
+    #[test]
+    fn a_drop_lands_on_a_price_the_chart_can_write() {
+        // The paper tick of a crypto market is a hundred-millionth, finer than any label.
+        let market = Market {
+            last: Some(118_000.0),
+            tick: 0.000_000_01,
+            ..Market::default()
+        };
+        let btc = PriceScale {
+            minimum: 117_000.0,
+            maximum: 119_000.0,
+            top: 0.0,
+            height: 400.0,
+            logarithmic: false,
+        };
+        // 123.456pt from the top is 118,382.72 on this scale: two places, not the pointer's eight.
+        let level = landed(&line(true), &btc, plot(), 123.456, market)
+            .unwrap()
+            .price;
+        assert_eq!(level, 118_382.72);
+        // A pinned precision rules: whole numbers only.
+        let whole = Market {
+            format: PriceFormat {
+                decimals: Some(0),
+                ..PriceFormat::default()
+            },
+            ..market
+        };
+        assert_eq!(
+            landed(&line(true), &btc, plot(), 123.456, whole)
+                .unwrap()
+                .price,
+            118_383.0
+        );
+    }
+
+    #[test]
+    fn a_token_priced_in_millionths_can_still_be_dragged() {
+        let market = Market {
+            last: Some(0.000_015),
+            tick: 0.000_000_01,
+            ..Market::default()
+        };
+        let token = PriceScale {
+            minimum: 0.000_01,
+            maximum: 0.000_02,
+            top: 0.0,
+            height: 400.0,
+            logarithmic: false,
+        };
+        let level = landed(&line(true), &token, plot(), 200.0, market)
+            .unwrap()
+            .price;
+        assert!((level - 0.000_015).abs() < 1e-8, "{level}");
     }
 
     // MARK: Driven with a pointer
@@ -453,6 +529,7 @@ mod tests {
             let market = Market {
                 last: Some(100.0),
                 tick: 0.01,
+                ..Market::default()
             };
             let mut output = self.ctx.run_ui(raw, |ui| {
                 shown = show(ui, plot(), &scale(), line, PriceFormat::AUTO, market);

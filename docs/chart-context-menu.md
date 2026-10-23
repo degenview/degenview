@@ -133,9 +133,12 @@ A price alert's tag can be dragged up or down to move its level, as a paper orde
   last price as its baseline so the alert is armed for the side it now watches. State, frequency,
   note and webhooks are untouched: a paused alert stays paused. The app only queues the save
   (`AppAction::MoveAlert`); it does not ask for notification permission again.
-- The tag stays at the dropped level for up to two seconds, until the alert list reports a
-  different level, so it does not jump back while the save travels the command queue. If the save
-  never lands, it returns to the alert's level.
+- A drop lands on the market's tick and on the chart's price places (`PriceFormat::plain`), so
+  the level saved is the one the caption showed, not the pointer's eight decimals.
+- The tag stays at the dropped level until the alert list reports a different level (the app
+  drains saves about once a second; a background agent that owns the alerts takes longer), so it
+  does not jump back while the save travels the command queue. If the save never lands it returns
+  to the alert's level after ten seconds.
 - A percentage alert (rises or falls by) is not draggable: its level follows from its percent and
   reference. Nothing is draggable during replay.
 - A tag dropped where it started saves nothing.
