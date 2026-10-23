@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::chart_context::{self, QuickOrder, Target};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
-use crate::model::{Anchor, Tool};
+use crate::model::{Anchor, Kline, Tool};
 use eframe::egui::{OutputCommand, pos2};
 
 struct Rig {

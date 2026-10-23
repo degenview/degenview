@@ -373,6 +373,7 @@ fn system_backend(host: Option<HostAddress>) -> Arc<dyn snapshot_job::Backend> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Kline;
     use crate::model::snapshot::{SharedSnapshot, UploadError};
     use crate::service::snapshot_export::ExportError;
     use crate::store::SharedStore;

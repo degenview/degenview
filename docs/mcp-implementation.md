@@ -53,6 +53,7 @@ Audit these modules first:
 src/main.rs
 src/app.rs
 src/workspace.rs
+src/workspace/
 src/native_bridge.rs
 src/model/layout.rs
 src/model/persisted.rs

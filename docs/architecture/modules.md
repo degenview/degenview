@@ -18,6 +18,33 @@ inventory.
 Feature hosts (`alert_host`, `paper_host`, `pine_host`, `pine_subscription_host`, `portfolio_host`,
 `portfolio_card_host`, `webhook_host`, `snapshot_host`, `mcp_host`) bridge pure engines, persistence, workers, and UI.
 
+## Inside a workspace
+
+`workspace.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
+Every other concern is a child module in `workspace/` that adds an `impl ChartWorkspace` block; a
+child sees the root's private fields, and anything another child calls is `pub(super)`.
+
+| Module | Owns |
+| --- | --- |
+| `chart` | One chart's market data: fetching, refresh cadence, older-history paging |
+| `charts` | The chart collection: add, replace, focus, remove, summaries for MCP |
+| `grid` | The column grid: drawing cards, drag between columns, applying what a pass collected |
+| `drawings` | Drawing properties, templates, locking, merging another Mac's drawings |
+| `undo` | Undo/redo of drawing and indicator edits; restyle bursts as one step |
+| `tool_rail` | The drawing tool rail and its grouped tiles |
+| `pine` | Scripts and indicators on a chart, and the views the app and MCP take |
+| `layouts` | Saved layouts: persisted form, dirty state, open/save/rename/delete |
+| `autosave` | The autosave debounce |
+| `replay` | The replay bar, timeline and stepping |
+| `live` | The live Binance feed |
+| `paper` | Paper quotes, portfolio cards and chart orders |
+| `alerts` | The price-alert request and editor sheet |
+| `watchlist` | The watchlist sidebar and what it reports |
+| `empty_page` | The page a tab shows before it has a chart |
+| `toolbar`, `settings`, `input` | The toolbar, the chart settings window, keyboard shortcuts |
+| `content`, `context`, `links`, `snapshot` | Content tools, chart menus, Post cards, chart snapshots |
+| `test_support` | Fixtures the module tests share (test builds only) |
+
 ## Feature directories
 
 | Directory | Contents |
