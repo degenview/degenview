@@ -3,7 +3,7 @@
 //! neutral plates behind labels and the handle faces.
 
 use super::Projection;
-use super::shape::{HandleSpot, Screen, Tag, TextPlace};
+use super::shape::{HandleSpot, LabelLook, LabelPlace, Screen, Tag, TextPlace};
 use crate::model::Drawing;
 use crate::model::chart_type::LineDash;
 use crate::model::drawing_style::{
@@ -819,6 +819,7 @@ pub(super) fn paint(
             accent,
         );
     }
+    draw_labels(painter, screen, style);
     if screen.arrow.is_some() {
         draw_arrow_extras(painter, screen, drawing, style, proj, emphasis.selected);
     }
@@ -862,6 +863,80 @@ pub(super) fn paint(
             &style.text,
             style.middle_line.enabled,
         ),
+    }
+}
+
+/// Space (px) between a pivot and the name beside it.
+const LABEL_GAP: f32 = 7.0;
+/// Space (px) kept between two labels that would meet.
+const LABEL_CLEARANCE: f32 = 2.0;
+/// How many times a label gives way to the ones already placed before it stays where it is.
+const LABEL_TRIES: usize = 5;
+
+/// A shape's pivot names and ratios. A chart pattern's sit on plates in its line colour, in its
+/// text colour; a wave's are the text alone with a halo. Each is laid out here, where text can be
+/// sized, and gives way along its push to the labels already placed, so a ratio never sits on a
+/// neighbour's.
+fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
+    if screen.labels.is_empty() {
+        return;
+    }
+    let ppp = painter.ctx().pixels_per_point();
+    let snap = |value: f32| (value * ppp).round() / ppp;
+    let plate = series_render::color(style.stroke.color);
+    let ink = series_render::color(style.text.color);
+    let halo = with_alpha(theme::surface(), 210);
+    let mut placed: Vec<Rect> = Vec::with_capacity(screen.labels.len());
+    for label in &screen.labels {
+        let galley = text_galley(painter, &label.text, &style.text, 400.0);
+        let size = galley.size();
+        let padding = match label.look {
+            LabelLook::Pill => vec2(6.0, 2.5),
+            LabelLook::Plain => vec2(1.0, 0.0),
+        };
+        let outer = size + padding * 2.0;
+        let step = outer.y + LABEL_CLEARANCE;
+        let rect_at = |tries: usize| {
+            let along = tries as f32 * step;
+            let center = match label.place {
+                LabelPlace::On => label.at + label.push * along,
+                LabelPlace::Beside => label.at + label.push * (LABEL_GAP + outer.y / 2.0 + along),
+            };
+            Rect::from_center_size(pos2(snap(center.x), snap(center.y)), outer)
+        };
+        let mut rect = rect_at(0);
+        for tries in 1..=LABEL_TRIES {
+            if !placed.iter().any(|other| other.intersects(rect)) {
+                break;
+            }
+            rect = rect_at(tries);
+        }
+        placed.push(rect);
+        // egui anchors a galley at its alignment point, so it is moved back by where its
+        // rectangle starts.
+        let origin = pos2(
+            snap(rect.center().x - size.x / 2.0),
+            snap(rect.center().y - size.y / 2.0),
+        ) - galley.rect.min.to_vec2();
+        match label.look {
+            LabelLook::Pill => {
+                painter.rect_filled(rect, 4.0, plate);
+            }
+            LabelLook::Plain => {
+                for offset in [
+                    vec2(-1.0, 0.0),
+                    vec2(1.0, 0.0),
+                    vec2(0.0, -1.0),
+                    vec2(0.0, 1.0),
+                ] {
+                    painter.add(
+                        TextShape::new(origin + offset, galley.clone(), ink)
+                            .with_override_text_color(halo),
+                    );
+                }
+            }
+        }
+        painter.galley(origin, galley, ink);
     }
 }
 

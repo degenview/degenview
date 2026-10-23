@@ -7,10 +7,13 @@
 //! drawing never touch each other.
 
 use super::Timeframe;
+use super::cycle::CycleKind;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
+use super::elliott::WaveKind;
 use super::image_content::{Content, ImageData};
 use super::link_card::LinkCard;
+use super::pattern::PatternKind;
 use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
@@ -292,6 +295,22 @@ pub enum Geometry {
         anchor: Anchor,
         card: LinkCard,
     },
+    /// A chart pattern through its pivots: exactly `kind.points()` of them, in placement order.
+    Pattern {
+        kind: PatternKind,
+        points: Vec<Anchor>,
+    },
+    /// An Elliott wave through its pivots: the start of the first wave, then the end of each.
+    Wave {
+        kind: WaveKind,
+        points: Vec<Anchor>,
+    },
+    /// A cycle set by two anchors, whose distance in bars is its period.
+    Cycle {
+        kind: CycleKind,
+        a: Anchor,
+        b: Anchor,
+    },
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -382,6 +401,9 @@ impl Geometry {
             Self::Table(_) => Tool::Table,
             Self::Image(_) => Tool::Image,
             Self::Card { .. } => Tool::Post,
+            Self::Pattern { kind, .. } => kind.tool(),
+            Self::Wave { kind, .. } => kind.tool(),
+            Self::Cycle { kind, .. } => kind.tool(),
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -411,10 +433,13 @@ impl Geometry {
         match self {
             Self::Highlighter { points }
             | Self::Path { points }
-            | Self::Polyline { points, .. } => points.clone(),
+            | Self::Polyline { points, .. }
+            | Self::Pattern { points, .. }
+            | Self::Wave { points, .. } => points.clone(),
             Self::ArrowMarker { a, b }
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
+            | Self::Cycle { a, b, .. }
             | Self::Ellipse { a, b } => vec![*a, *b],
             Self::Leader { at, label, .. }
             | Self::Signpost {
@@ -459,10 +484,13 @@ impl Geometry {
         match self {
             Self::Highlighter { points }
             | Self::Path { points }
-            | Self::Polyline { points, .. } => points.iter_mut().collect(),
+            | Self::Polyline { points, .. }
+            | Self::Pattern { points, .. }
+            | Self::Wave { points, .. } => points.iter_mut().collect(),
             Self::ArrowMarker { a, b }
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
+            | Self::Cycle { a, b, .. }
             | Self::Ellipse { a, b } => vec![a, b],
             Self::Leader { at, label, .. }
             | Self::Signpost {
@@ -543,6 +571,9 @@ impl Geometry {
             Self::Table(table) => table.is_valid(),
             Self::Image(image) => image.is_valid(),
             Self::Card { card, .. } => card.is_valid(),
+            // A pattern or a wave has its tool's number of pivots and no other.
+            Self::Pattern { kind, .. } => anchors.len() == kind.points(),
+            Self::Wave { kind, .. } => anchors.len() == kind.points(),
             _ => true,
         };
         enough && anchors.len() <= MAX_POINTS && anchors.iter().all(Anchor::is_finite)
@@ -710,6 +741,37 @@ impl Geometry {
                     at: last,
                 }
             }
+            // The pivots placed so far, then the pointer for every one still to come, so the
+            // preview is already the whole shape: it moves with the pointer and settles as each
+            // pivot is placed.
+            Tool::XabcdPattern
+            | Tool::CypherPattern
+            | Tool::HeadAndShoulders
+            | Tool::AbcdPattern
+            | Tool::TrianglePattern
+            | Tool::ThreeDrivesPattern => {
+                let kind = PatternKind::of_tool(tool)?;
+                Self::Pattern {
+                    kind,
+                    points: (0..kind.points()).map(at).collect(),
+                }
+            }
+            Tool::ElliottImpulse
+            | Tool::ElliottCorrection
+            | Tool::ElliottTriangle
+            | Tool::ElliottDoubleCombo
+            | Tool::ElliottTripleCombo => {
+                let kind = WaveKind::of_tool(tool)?;
+                Self::Wave {
+                    kind,
+                    points: (0..kind.points()).map(at).collect(),
+                }
+            }
+            Tool::CyclicLines | Tool::TimeCycles | Tool::SineLine => Self::Cycle {
+                kind: CycleKind::of_tool(tool)?,
+                a: first,
+                b: last,
+            },
             // A picture has to be chosen before it can be shown, so there is nothing to preview.
             Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler | Tool::Image | Tool::Post => {
                 return None;
@@ -826,6 +888,33 @@ impl Geometry {
                 c: *c,
                 d: disjoint_end(*a, *b, *c),
             },
+            // A pattern needs all its pivots, and not every one on the same point.
+            (tool, points)
+                if PatternKind::of_tool(tool).is_some_and(|kind| kind.points() == points.len())
+                    && points.windows(2).any(|pair| pair[0] != pair[1]) =>
+            {
+                Self::Pattern {
+                    kind: PatternKind::of_tool(tool)?,
+                    points: points.to_vec(),
+                }
+            }
+            (tool, points)
+                if WaveKind::of_tool(tool).is_some_and(|kind| kind.points() == points.len())
+                    && points.windows(2).any(|pair| pair[0] != pair[1]) =>
+            {
+                Self::Wave {
+                    kind: WaveKind::of_tool(tool)?,
+                    points: points.to_vec(),
+                }
+            }
+            // A cycle's period is the distance in time between its anchors.
+            (tool, [a, b]) if CycleKind::of_tool(tool).is_some() && a.time_ms != b.time_ms => {
+                Self::Cycle {
+                    kind: CycleKind::of_tool(tool)?,
+                    a: *a,
+                    b: *b,
+                }
+            }
             (tool, [p1, p2, p3]) if p1 != p2 && PitchforkVariant::of_tool(tool).is_some() => {
                 Self::Pitchfork {
                     variant: PitchforkVariant::of_tool(tool)?,
@@ -1599,7 +1688,7 @@ mod tests {
 
     #[test]
     fn every_grouped_tool_builds_and_reports_itself() {
-        let anchors: Vec<Anchor> = (0..4).map(|i| anchor(i * 10, 1.0 + i as f64)).collect();
+        let anchors: Vec<Anchor> = (0..7).map(|i| anchor(i * 10, 1.0 + i as f64)).collect();
         for tool in Tool::GROUPED {
             let count = match tool.spec().placement {
                 super::super::drawing_tool::Placement::Points(count) => count as usize,
@@ -1640,7 +1729,7 @@ mod tests {
 
     #[test]
     fn every_new_geometry_round_trips_with_a_customised_style() {
-        let anchors: Vec<Anchor> = (0..4)
+        let anchors: Vec<Anchor> = (0..7)
             .map(|i| anchor(i * 60_000, 100.0 + i as f64 * 7.5))
             .collect();
         for tool in Tool::GROUPED {

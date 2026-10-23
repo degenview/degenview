@@ -42,6 +42,9 @@ fn drawing(tool: Tool, id: u64) -> Drawing {
         anchor(270, 245.0),
         anchor(262, 212.0),
         anchor(280, 235.0),
+        anchor(284, 226.0),
+        anchor(288, 241.0),
+        anchor(292, 230.0),
     ];
     let count = match tool.spec().placement {
         Placement::Points(count) => usize::from(count),

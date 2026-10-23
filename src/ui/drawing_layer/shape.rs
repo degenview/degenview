@@ -6,6 +6,7 @@ use super::Projection;
 use super::edit::{BoxHandle, Part};
 use super::line_shapes;
 use super::note_shapes;
+use super::pattern_shapes;
 use super::table_shapes;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
@@ -153,6 +154,38 @@ pub(super) struct AngleMark {
     pub toward: Pos2,
 }
 
+/// How a [`PivotLabel`] is dressed.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LabelLook {
+    /// On a plate in the drawing's line colour, in the text colour: a chart pattern's.
+    Pill,
+    /// The text alone, in the text colour, with a halo so it reads over the candles: a wave's.
+    Plain,
+}
+
+/// Where a [`PivotLabel`] sits against its point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LabelPlace {
+    /// Centred on the point.
+    On,
+    /// Beside the point, pushed away along the label's `push`.
+    Beside,
+}
+
+/// Text pinned to a point of a shape: the name of a pivot, a Fibonacci ratio on its line. It is
+/// laid out when it is painted (only the painter can size text), moving along `push` to keep
+/// clear of the labels already placed.
+#[derive(Clone, Debug)]
+pub(super) struct PivotLabel {
+    pub at: Pos2,
+    pub text: String,
+    pub look: LabelLook,
+    pub place: LabelPlace,
+    /// A unit vector: the way the label sits from its point (`Beside`) and the way it gives
+    /// way to another label.
+    pub push: Vec2,
+}
+
 /// A line of text a shape prints at a point (Pearson's R).
 #[derive(Clone, Debug)]
 pub(super) struct Readout {
@@ -174,6 +207,8 @@ pub(super) struct Screen {
     pub end_labels: Vec<EndLabel>,
     pub angle: Option<AngleMark>,
     pub readout: Option<Readout>,
+    /// Names and ratios pinned to points of the shape.
+    pub labels: Vec<PivotLabel>,
     /// Closed outlines to stroke.
     pub outlines: Vec<Vec<Pos2>>,
     /// The containers of text (a note's box, a callout's bubble), stroked in the drawing's
@@ -243,6 +278,7 @@ impl Screen {
             end_labels: Vec::new(),
             angle: None,
             readout: None,
+            labels: Vec::new(),
             outlines: Vec::new(),
             frames: Vec::new(),
             hit: Vec::new(),
@@ -299,6 +335,7 @@ impl Screen {
             all.extend(guide);
         }
         all.extend(self.handles.iter().map(|handle| handle.pos));
+        all.extend(self.labels.iter().map(|label| label.at));
         all.extend(self.middle.iter().flatten());
         all.extend(self.fill.iter());
         if !geo::all_finite(&all) {
@@ -412,7 +449,7 @@ pub(super) fn with_heads(
     (points, heads)
 }
 
-fn vertex_handles(points: &[Pos2]) -> Vec<HandleSpot> {
+pub(super) fn vertex_handles(points: &[Pos2]) -> Vec<HandleSpot> {
     points
         .iter()
         .enumerate()
@@ -757,6 +794,9 @@ fn shape(
         Geometry::Card { card, .. } => return note_shapes::card(card, style, proj, &anchors),
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
+        }
+        Geometry::Pattern { .. } | Geometry::Wave { .. } | Geometry::Cycle { .. } => {
+            return pattern_shapes::project(geometry, style, proj, anchors);
         }
         _ => return line_shapes::project(geometry, style, proj, anchors),
     }

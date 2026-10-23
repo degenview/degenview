@@ -25,6 +25,9 @@ pub struct ToolSidebarInput {
     pub line_tool: Tool,
     /// The tool the text and notes tile shows and arms: the last one used from its menu.
     pub note_tool: Tool,
+    /// The tool the chart patterns, Elliott waves and cycles tile shows and arms: the last one
+    /// used from its menu.
+    pub pattern_tool: Tool,
     pub magnet: MagnetMode,
     pub keep_drawing: bool,
     pub hide_all: bool,
@@ -87,11 +90,12 @@ enum Slot {
     Menu(Menu),
 }
 
-/// The menus a tile opens: the lines, channels and pitchforks; the brushes, arrows and shapes;
-/// and the text and notes.
+/// The menus a tile opens: the lines, channels and pitchforks; the chart patterns, Elliott waves
+/// and cycles; the brushes, arrows and shapes; and the text and notes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Menu {
     Lines,
+    Patterns,
     Shapes,
     Notes,
 }
@@ -100,6 +104,7 @@ impl Menu {
     fn groups(self) -> &'static [ToolGroup] {
         match self {
             Self::Lines => &ToolGroup::LINE_MENU,
+            Self::Patterns => &ToolGroup::PATTERN_MENU,
             Self::Shapes => &ToolGroup::MENU,
             Self::Notes => &ToolGroup::NOTE_MENU,
         }
@@ -113,6 +118,7 @@ impl Menu {
     fn tool(self, input: &ToolSidebarInput) -> Tool {
         match self {
             Self::Lines => input.line_tool,
+            Self::Patterns => input.pattern_tool,
             Self::Shapes => input.group_tool,
             Self::Notes => input.note_tool,
         }
@@ -121,6 +127,8 @@ impl Menu {
     fn width(self) -> f32 {
         match self {
             Self::Lines => 268.0,
+            // Wide enough for "Elliott triple combo wave (W·X·Y·X·Z)".
+            Self::Patterns => 322.0,
             Self::Shapes => 224.0,
             Self::Notes => 224.0,
         }
@@ -142,6 +150,7 @@ impl Menu {
     fn key(self) -> &'static str {
         match self {
             Self::Lines => "lines",
+            Self::Patterns => "patterns",
             Self::Shapes => "group",
             Self::Notes => "notes",
         }
@@ -150,16 +159,18 @@ impl Menu {
     fn corner_label(self) -> &'static str {
         match self {
             Self::Lines => "More lines, channels and pitchforks",
+            Self::Patterns => "More chart patterns, Elliott waves and cycles",
             Self::Shapes => "More brushes, arrows and shapes",
             Self::Notes => "More text and notes",
         }
     }
 }
 
-const SLOTS: [Slot; 6] = [
+const SLOTS: [Slot; 7] = [
     Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
     Slot::Menu(Menu::Lines),
     Slot::Tool(Tool::Fib, Icon::FibPoints, "Fib Retracement"),
+    Slot::Menu(Menu::Patterns),
     Slot::Menu(Menu::Shapes),
     Slot::Menu(Menu::Notes),
     Slot::Tool(Tool::Ruler, Icon::Ruler, "Ruler"),
@@ -219,6 +230,20 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::Table => Icon::TableTool,
         Tool::Image => Icon::ImageTool,
         Tool::Post => Icon::XLogo,
+        Tool::XabcdPattern => Icon::PatternXabcd,
+        Tool::CypherPattern => Icon::PatternCypher,
+        Tool::HeadAndShoulders => Icon::PatternHeadShoulders,
+        Tool::AbcdPattern => Icon::PatternAbcd,
+        Tool::TrianglePattern => Icon::PatternTriangle,
+        Tool::ThreeDrivesPattern => Icon::PatternThreeDrives,
+        Tool::ElliottImpulse => Icon::WaveImpulse,
+        Tool::ElliottCorrection => Icon::WaveCorrection,
+        Tool::ElliottTriangle => Icon::WaveTriangle,
+        Tool::ElliottDoubleCombo => Icon::WaveDouble,
+        Tool::ElliottTripleCombo => Icon::WaveTriple,
+        Tool::CyclicLines => Icon::CycleLines,
+        Tool::TimeCycles => Icon::CycleArcs,
+        Tool::SineLine => Icon::CycleSine,
     }
 }
 
@@ -931,6 +956,7 @@ mod tests {
                 group_tool: Tool::Brush,
                 line_tool: Tool::TrendLine,
                 note_tool: Tool::Text,
+                pattern_tool: Tool::XabcdPattern,
                 magnet: MagnetMode::Weak,
                 keep_drawing: true,
                 hide_all: false,
@@ -954,6 +980,7 @@ mod tests {
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
             note_tool: Tool::Text,
+            pattern_tool: Tool::XabcdPattern,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all: false,
@@ -1023,7 +1050,10 @@ mod tests {
     }
 
     /// The grouped tile's corner, where the menu opens from.
-    const CORNER: Pos2 = pos2(31.0, 156.0);
+    const CORNER: Pos2 = pos2(31.0, 196.0);
+
+    /// The patterns tile's corner, where its menu opens from.
+    const PATTERNS_CORNER: Pos2 = pos2(31.0, 156.0);
 
     #[test]
     fn the_grouped_menu_opens_from_the_corner_lists_every_tool_and_arms_the_pick() {
@@ -1034,7 +1064,7 @@ mod tests {
             frame(&ctx, &mut time, size, Vec::new(), &input);
         }
         // A click on the tile itself arms its tool and opens nothing.
-        let actions = click(&ctx, &mut time, size, pos2(14.0, 140.0), &input);
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 180.0), &input);
         assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::Brush)]);
         assert!(frame(&ctx, &mut time, size, Vec::new(), &input).1.is_none());
 
@@ -1146,6 +1176,38 @@ mod tests {
         assert_eq!(armed[9], Tool::ParallelChannel);
         assert_eq!(armed[13], Tool::Pitchfork);
         assert!(menu.left() >= WIDTH && menu.width() >= Menu::Lines.width() - 1.0);
+    }
+
+    #[test]
+    fn the_patterns_menu_lists_patterns_waves_and_cycles_in_order() {
+        let (menu, armed) = tools_armed_by_the_menu(PATTERNS_CORNER);
+        let expected: Vec<Tool> = ToolGroup::PATTERN_MENU
+            .iter()
+            .flat_map(|group| Tool::in_group(*group))
+            .collect();
+        assert_eq!(armed, expected, "every row, in order");
+        assert_eq!(armed.len(), 14);
+        assert_eq!(armed[0], Tool::XabcdPattern);
+        assert_eq!(armed[6], Tool::ElliottImpulse);
+        assert_eq!(armed[11], Tool::CyclicLines);
+        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Patterns.width() - 1.0);
+    }
+
+    #[test]
+    fn the_patterns_tile_shows_its_last_tool_and_a_click_arms_it() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let mut input = state();
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 140.0), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::XabcdPattern)]);
+        input.pattern_tool = Tool::SineLine;
+        let actions = click(&ctx, &mut time, size, pos2(14.0, 140.0), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::SineLine)]);
+        assert!(Menu::Patterns.contains(Tool::ElliottTripleCombo));
+        assert!(!Menu::Patterns.contains(Tool::Arc) && !Menu::Shapes.contains(Tool::SineLine));
     }
 
     #[test]

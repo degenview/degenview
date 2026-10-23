@@ -64,6 +64,20 @@ pub enum Tool {
     Table,
     Image,
     Post,
+    XabcdPattern,
+    CypherPattern,
+    HeadAndShoulders,
+    AbcdPattern,
+    TrianglePattern,
+    ThreeDrivesPattern,
+    ElliottImpulse,
+    ElliottCorrection,
+    ElliottTriangle,
+    ElliottDoubleCombo,
+    ElliottTripleCombo,
+    CyclicLines,
+    TimeCycles,
+    SineLine,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -85,6 +99,10 @@ pub enum ToolGroup {
     TextNotes,
     /// Pictures and links, which need something chosen before they can be placed.
     Content,
+    /// The harmonic and structural chart patterns: the first menu of the Patterns tile.
+    ChartPatterns,
+    ElliottWaves,
+    Cycles,
 }
 
 impl ToolGroup {
@@ -94,6 +112,8 @@ impl ToolGroup {
     pub const LINE_MENU: [Self; 3] = [Self::TrendLines, Self::Channels, Self::Pitchforks];
     /// The groups listed in the text and notes tile's menu, in order.
     pub const NOTE_MENU: [Self; 2] = [Self::TextNotes, Self::Content];
+    /// The groups listed in the patterns, waves and cycles tile's menu, in order.
+    pub const PATTERN_MENU: [Self; 3] = [Self::ChartPatterns, Self::ElliottWaves, Self::Cycles];
 
     pub const fn title(self) -> &'static str {
         match self {
@@ -107,6 +127,9 @@ impl ToolGroup {
             Self::Pitchforks => "Pitchforks",
             Self::TextNotes => "Text and notes",
             Self::Content => "Content",
+            Self::ChartPatterns => "Chart patterns",
+            Self::ElliottWaves => "Elliott waves",
+            Self::Cycles => "Cycles",
         }
     }
 }
@@ -168,6 +191,10 @@ impl Caps {
     pub const TABLE: Self = Self(1 << 21);
     /// Something chosen first (a picture, a link) and placed by a click; it has a Content page.
     pub const CONTENT: Self = Self(1 << 22);
+    /// A chart pattern's pivot labels and the Fibonacci ratios printed between its legs.
+    pub const PATTERN: Self = Self(1 << 23);
+    /// An Elliott wave's degree, which writes its labels.
+    pub const WAVE: Self = Self(1 << 24);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -257,7 +284,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 45] = [
+    pub const GROUPED: [Self; 59] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -303,13 +330,27 @@ impl Tool {
         Self::Arc,
         Self::Curve,
         Self::DoubleCurve,
+        Self::XabcdPattern,
+        Self::CypherPattern,
+        Self::HeadAndShoulders,
+        Self::AbcdPattern,
+        Self::TrianglePattern,
+        Self::ThreeDrivesPattern,
+        Self::ElliottImpulse,
+        Self::ElliottCorrection,
+        Self::ElliottTriangle,
+        Self::ElliottDoubleCombo,
+        Self::ElliottTripleCombo,
+        Self::CyclicLines,
+        Self::TimeCycles,
+        Self::SineLine,
     ];
 
     pub const fn spec(self) -> ToolSpec {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
-            Arrows, Brushes, Channels, Content, Lines, Measure, Pitchforks, Pointer, Shapes,
-            TextNotes, TrendLines,
+            Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Lines,
+            Measure, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
         // What every two-point line offers: text along it, ends, statistics and price tags.
@@ -340,6 +381,13 @@ impl Tool {
             .with(Caps::FILL)
             .with(Caps::TEXT)
             .with(Caps::INLINE_TEXT);
+        // A pattern: its border and background, the font of its labels, and what it prints.
+        let pattern = Caps::LINE
+            .with(Caps::FILL)
+            .with(Caps::AUTO_TEXT)
+            .with(Caps::PATTERN);
+        // An Elliott wave: its line, the font of its labels, and the degree that writes them.
+        let wave = Caps::LINE.with(Caps::AUTO_TEXT).with(Caps::WAVE);
         match self {
             Self::Cursor => spec("Crosshair", Pointer, Single, Caps::NONE),
             Self::TrendLine => spec("Trend line", TrendLines, Points(2), line),
@@ -520,6 +568,57 @@ impl Tool {
                 Points(4),
                 shape_line.with(Caps::ENDS).with(Caps::EXTEND),
             ),
+            Self::XabcdPattern => spec("XABCD pattern", ChartPatterns, Points(5), pattern),
+            Self::CypherPattern => spec("Cypher pattern", ChartPatterns, Points(5), pattern),
+            Self::HeadAndShoulders => spec("Head and shoulders", ChartPatterns, Points(7), pattern),
+            Self::AbcdPattern => spec(
+                "ABCD pattern",
+                ChartPatterns,
+                Points(4),
+                pattern.without(Caps::FILL),
+            ),
+            Self::TrianglePattern => spec("Triangle pattern", ChartPatterns, Points(4), pattern),
+            Self::ThreeDrivesPattern => {
+                spec("Three drives pattern", ChartPatterns, Points(6), pattern)
+            }
+            Self::ElliottImpulse => spec(
+                "Elliott impulse wave (1\u{b7}2\u{b7}3\u{b7}4\u{b7}5)",
+                ElliottWaves,
+                Points(6),
+                wave,
+            ),
+            Self::ElliottCorrection => spec(
+                "Elliott correction wave (A\u{b7}B\u{b7}C)",
+                ElliottWaves,
+                Points(4),
+                wave,
+            ),
+            Self::ElliottTriangle => spec(
+                "Elliott triangle wave (A\u{b7}B\u{b7}C\u{b7}D\u{b7}E)",
+                ElliottWaves,
+                Points(6),
+                wave,
+            ),
+            Self::ElliottDoubleCombo => spec(
+                "Elliott double combo wave (W\u{b7}X\u{b7}Y)",
+                ElliottWaves,
+                Points(4),
+                wave,
+            ),
+            Self::ElliottTripleCombo => spec(
+                "Elliott triple combo wave (W\u{b7}X\u{b7}Y\u{b7}X\u{b7}Z)",
+                ElliottWaves,
+                Points(6),
+                wave,
+            ),
+            Self::CyclicLines => spec("Cyclic lines", Cycles, Points(2), Caps::LINE),
+            Self::TimeCycles => spec(
+                "Time cycles",
+                Cycles,
+                Points(2),
+                Caps::LINE.with(Caps::FILL),
+            ),
+            Self::SineLine => spec("Sine line", Cycles, Points(2), Caps::LINE),
         }
     }
 
@@ -564,6 +663,25 @@ impl Tool {
             // Text below the line, as the Charting Library has it.
             style.text.valign = VerticalAlign::Bottom;
             change(&mut style);
+            style
+        };
+        // A pattern, as the Charting Library draws a new one: a 2 px line, a background at the
+        // given opacity (none for the ABCD pattern, which has no background) and 12 px white
+        // labels on plates of the line's colour.
+        let pattern_style = |color: Rgba, fill_alpha: u8| {
+            let mut style = DrawingStyle::colored(color, fill_alpha, fill_alpha > 0);
+            style.stroke.width = 2.0;
+            style.text.color = [255, 255, 255, 255];
+            style.text.size = 12.0;
+            style
+        };
+        // An Elliott wave: its line and its labels in one colour, 2 px, labels a little larger
+        // than a pattern's and bold (**inferred**: the library has no label overrides for them).
+        let wave_style = |color: Rgba| {
+            let mut style = DrawingStyle::colored(color, 0, false);
+            style.stroke.width = 2.0;
+            style.text.size = 14.0;
+            style.text.bold = true;
             style
         };
         let mut style = match self {
@@ -747,6 +865,30 @@ impl Tool {
                 style.text.valign = VerticalAlign::Top;
                 style
             }
+            Self::XabcdPattern => pattern_style([8, 153, 129, 255], 38),
+            Self::CypherPattern => pattern_style([41, 98, 255, 255], 38),
+            Self::HeadAndShoulders => pattern_style([8, 153, 129, 255], 38),
+            Self::AbcdPattern => pattern_style([8, 153, 129, 255], 0),
+            Self::TrianglePattern => pattern_style([103, 58, 183, 255], 38),
+            Self::ThreeDrivesPattern => {
+                let mut style = pattern_style([103, 58, 183, 255], 128);
+                style.fill.color = [149, 40, 204, 128];
+                style
+            }
+            Self::ElliottImpulse | Self::ElliottCorrection => wave_style([61, 133, 198, 255]),
+            Self::ElliottTriangle => wave_style([255, 152, 0, 255]),
+            Self::ElliottDoubleCombo | Self::ElliottTripleCombo => wave_style([106, 168, 79, 255]),
+            Self::CyclicLines => {
+                let mut style = tinted([128, 204, 219, 255], false);
+                style.stroke.width = 1.0;
+                style
+            }
+            Self::TimeCycles => {
+                let mut style = tinted([21, 153, 128, 255], true);
+                style.fill.color = [106, 168, 79, 128];
+                style
+            }
+            Self::SineLine => tinted([21, 153, 128, 255], false),
             // A card takes its look from the theme, and a picture has none to style.
             Self::Cursor | Self::Fib | Self::Ruler | Self::Image | Self::Post => {
                 DrawingStyle::default()
@@ -785,7 +927,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 45);
+        assert_eq!(Tool::GROUPED.len(), 59);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -793,6 +935,7 @@ mod tests {
                 ToolGroup::MENU.as_slice(),
                 &ToolGroup::LINE_MENU,
                 &ToolGroup::NOTE_MENU,
+                &ToolGroup::PATTERN_MENU,
             ];
             assert_eq!(
                 menus.iter().filter(|menu| menu.contains(&group)).count(),
@@ -809,6 +952,7 @@ mod tests {
         assert_eq!(counts(&ToolGroup::MENU), [2, 4, 10]);
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
+        assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
         assert_eq!(Tool::line_tools().count(), 17);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));

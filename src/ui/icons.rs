@@ -160,6 +160,20 @@ pub enum Icon {
     ForkSchiff,
     ForkModifiedSchiff,
     ForkInside,
+    PatternXabcd,
+    PatternCypher,
+    PatternHeadShoulders,
+    PatternAbcd,
+    PatternTriangle,
+    PatternThreeDrives,
+    WaveImpulse,
+    WaveCorrection,
+    WaveTriangle,
+    WaveDouble,
+    WaveTriple,
+    CycleLines,
+    CycleArcs,
+    CycleSine,
     Magnet,
     KeepDrawing,
     LockOpen,
@@ -256,6 +270,56 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             })
             .collect();
         fill_poly(points);
+    };
+    // A character of a wave's name, drawn as strokes in a box `h` tall with its top-left at
+    // (`x`, `y`): crisp at any size, with no font to load.
+    let glyph = |ch: char, x: f32, y: f32, h: f32| {
+        let k = h / 5.0;
+        let strokes: &[&[(f32, f32)]] = match ch {
+            '1' => &[&[(0.4, 1.2), (1.6, 0.0), (1.6, 5.0)]],
+            '5' => &[&[
+                (2.7, 0.0),
+                (0.5, 0.0),
+                (0.3, 2.3),
+                (1.5, 2.0),
+                (2.5, 2.8),
+                (2.7, 4.2),
+                (1.6, 5.0),
+                (0.0, 4.5),
+            ]],
+            'A' => &[
+                &[(0.0, 5.0), (1.4, 0.0), (2.8, 5.0)],
+                &[(0.5, 3.4), (2.3, 3.4)],
+            ],
+            'C' => &[&[
+                (2.7, 0.9),
+                (1.7, 0.0),
+                (0.7, 0.3),
+                (0.0, 2.5),
+                (0.7, 4.7),
+                (1.7, 5.0),
+                (2.7, 4.1),
+            ]],
+            'E' => &[
+                &[(2.7, 0.0), (0.0, 0.0), (0.0, 5.0), (2.7, 5.0)],
+                &[(0.0, 2.5), (2.1, 2.5)],
+            ],
+            'W' => &[&[(0.0, 0.0), (0.8, 5.0), (1.6, 1.8), (2.4, 5.0), (3.2, 0.0)]],
+            'Y' => &[
+                &[(0.0, 0.0), (1.5, 2.6), (3.0, 0.0)],
+                &[(1.5, 2.6), (1.5, 5.0)],
+            ],
+            'Z' => &[&[(0.0, 0.0), (2.8, 0.0), (0.0, 5.0), (2.8, 5.0)]],
+            _ => &[],
+        };
+        let thin = Stroke::new((W * 0.8 * scale).max(1.0), color);
+        for points in strokes {
+            let path: Vec<Pos2> = points
+                .iter()
+                .map(|(dx, dy)| p(x + dx * k, y + dy * k))
+                .collect();
+            painter.add(Shape::Path(PathShape::line(path, thin)));
+        }
     };
 
     match icon {
@@ -1202,6 +1266,158 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(2.0, 8.0), p(12.0, 8.0)]);
             circle(p(12.0, 8.0), 1.6, true);
         }
+        Icon::PatternXabcd => {
+            line(&[
+                p(1.6, 12.6),
+                p(4.8, 2.8),
+                p(8.0, 10.4),
+                p(11.0, 5.0),
+                p(14.4, 12.8),
+            ]);
+            painter.extend(Shape::dashed_line(
+                &[p(1.6, 12.6), p(8.0, 10.4)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            painter.extend(Shape::dashed_line(
+                &[p(4.8, 2.8), p(11.0, 5.0)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(1.6, 12.6), 1.2, true);
+            circle(p(14.4, 12.8), 1.2, true);
+        }
+        Icon::PatternCypher => {
+            line(&[
+                p(1.6, 11.4),
+                p(4.6, 4.4),
+                p(7.2, 9.4),
+                p(11.4, 2.2),
+                p(14.4, 10.6),
+            ]);
+            painter.extend(Shape::dashed_line(
+                &[p(1.6, 11.4), p(11.4, 2.2)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(1.6, 11.4), 1.2, true);
+            circle(p(14.4, 10.6), 1.2, true);
+        }
+        Icon::PatternHeadShoulders => {
+            line(&[
+                p(1.2, 12.4),
+                p(3.6, 6.8),
+                p(5.6, 11.2),
+                p(8.0, 2.6),
+                p(10.4, 11.2),
+                p(12.4, 6.8),
+                p(14.8, 12.4),
+            ]);
+            line(&[p(1.6, 11.2), p(14.4, 11.2)]);
+        }
+        Icon::PatternAbcd => {
+            line(&[p(2.0, 13.0), p(6.0, 3.4), p(10.0, 10.8), p(14.0, 1.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(2.0, 13.0), p(10.0, 10.8)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(2.0, 13.0), 1.2, true);
+            circle(p(14.0, 1.8), 1.2, true);
+        }
+        Icon::PatternTriangle => {
+            line(&[p(1.8, 3.0), p(4.4, 12.8), p(8.0, 5.4), p(10.4, 10.6)]);
+            line(&[p(1.8, 3.0), p(14.4, 7.6)]);
+            line(&[p(4.4, 12.8), p(14.4, 8.4)]);
+            circle(p(1.8, 3.0), 1.2, true);
+            circle(p(10.4, 10.6), 1.2, true);
+        }
+        Icon::PatternThreeDrives => {
+            line(&[
+                p(1.4, 13.6),
+                p(3.8, 8.0),
+                p(5.2, 10.4),
+                p(8.2, 4.8),
+                p(9.6, 7.2),
+                p(13.0, 1.8),
+            ]);
+            circle(p(1.4, 13.6), 1.2, true);
+            circle(p(13.0, 1.8), 1.2, true);
+        }
+        Icon::WaveImpulse => {
+            line(&[
+                p(1.4, 13.6),
+                p(4.4, 7.0),
+                p(6.2, 10.6),
+                p(10.4, 3.6),
+                p(11.8, 7.4),
+                p(14.6, 2.8),
+            ]);
+            glyph('1', 2.4, 1.2, 4.2);
+            glyph('5', 12.0, 8.6, 4.2);
+        }
+        Icon::WaveCorrection => {
+            line(&[p(1.6, 3.4), p(6.4, 12.4), p(9.2, 7.6), p(14.4, 13.4)]);
+            glyph('A', 1.2, 6.6, 4.2);
+            glyph('C', 11.6, 6.0, 4.2);
+        }
+        Icon::WaveTriangle => {
+            line(&[
+                p(1.4, 12.0),
+                p(4.0, 3.2),
+                p(6.4, 10.8),
+                p(8.8, 5.4),
+                p(10.8, 9.6),
+                p(13.2, 6.4),
+            ]);
+            glyph('A', 2.4, 12.4, 3.4);
+            glyph('E', 11.8, 10.0, 3.4);
+        }
+        Icon::WaveDouble => {
+            line(&[p(1.4, 4.0), p(5.0, 12.6), p(8.6, 7.4), p(14.6, 13.2)]);
+            glyph('W', 1.2, 7.6, 3.8);
+            glyph('Y', 11.6, 6.0, 3.8);
+        }
+        Icon::WaveTriple => {
+            line(&[
+                p(1.4, 4.2),
+                p(4.2, 11.6),
+                p(6.4, 6.8),
+                p(9.2, 12.6),
+                p(11.4, 8.0),
+                p(14.4, 13.4),
+            ]);
+            glyph('W', 1.0, 7.0, 3.6);
+            glyph('Z', 12.0, 4.6, 3.6);
+        }
+        Icon::CycleLines => {
+            for x in [2.4, 6.1, 9.8, 13.5] {
+                line(&[p(x, 2.0), p(x, 14.0)]);
+            }
+            circle(p(2.4, 8.0), 1.3, true);
+            circle(p(6.1, 8.0), 1.3, true);
+        }
+        Icon::CycleArcs => {
+            line(&[p(1.2, 12.4), p(14.8, 12.4)]);
+            line(&arc(4.8, 12.4, 3.2, 180.0, 360.0));
+            line(&arc(11.2, 12.4, 3.2, 180.0, 360.0));
+        }
+        Icon::CycleSine => {
+            let wave: Vec<Pos2> = (0..=28)
+                .map(|k| {
+                    let t = k as f32 / 28.0;
+                    p(
+                        1.4 + 13.2 * t,
+                        8.0 - 4.6 * (std::f32::consts::TAU * t).sin(),
+                    )
+                })
+                .collect();
+            line(&wave);
+        }
         Icon::TextTool => {
             // A capital T.
             line(&[p(2.8, 3.0), p(13.2, 3.0)]);
@@ -1728,6 +1944,20 @@ mod tests {
             ForkSchiff,
             ForkModifiedSchiff,
             ForkInside,
+            PatternXabcd,
+            PatternCypher,
+            PatternHeadShoulders,
+            PatternAbcd,
+            PatternTriangle,
+            PatternThreeDrives,
+            WaveImpulse,
+            WaveCorrection,
+            WaveTriangle,
+            WaveDouble,
+            WaveTriple,
+            CycleLines,
+            CycleArcs,
+            CycleSine,
             Magnet,
             KeepDrawing,
             LockOpen,

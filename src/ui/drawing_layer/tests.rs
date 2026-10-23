@@ -53,12 +53,16 @@ fn anchor(time_ms: i64, price: f64) -> Anchor {
     Anchor { time_ms, price }
 }
 
-/// Four well-separated points inside the plot.
-const POINTS: [Pos2; 4] = [
+/// Seven well-separated points inside the plot: the longest tool takes seven, and the first four
+/// are what the tools of three or four points have always been placed with.
+const POINTS: [Pos2; 7] = [
     pos2(200.0, 200.0),
     pos2(420.0, 110.0),
     pos2(640.0, 270.0),
     pos2(520.0, 340.0),
+    pos2(720.0, 150.0),
+    pos2(800.0, 300.0),
+    pos2(880.0, 120.0),
 ];
 
 // MARK: Projection and editing
@@ -1296,6 +1300,9 @@ fn shapes_survive_extreme_and_broken_anchors() {
         anchor(-i64::MAX / 4, -1e300),
         anchor(0, 0.0),
         anchor(0, 0.0),
+        anchor(1, 1.0),
+        anchor(2, 2.0),
+        anchor(3, 3.0),
     ];
     for tool in Tool::GROUPED {
         let count = match tool.spec().placement {

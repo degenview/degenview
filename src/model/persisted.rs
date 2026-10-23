@@ -188,7 +188,7 @@ mod tests {
     }
 
     fn anchors() -> Vec<crate::model::Anchor> {
-        (0..4)
+        (0..7)
             .map(|index| crate::model::Anchor {
                 time_ms: index * 60_000,
                 price: 100.0 + index as f64 * 3.5,

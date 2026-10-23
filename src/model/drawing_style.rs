@@ -7,6 +7,7 @@
 
 use super::Timeframe;
 use super::chart_type::{LineDash, PriceSource, Rgba};
+use super::elliott::Degree;
 use serde::{Deserialize, Serialize};
 
 /// The thickest stroke a drawing may carry, in logical pixels.
@@ -497,6 +498,38 @@ impl Default for RegressionOptions {
     }
 }
 
+/// What a chart pattern or an Elliott wave prints on itself.
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(default)]
+pub struct PatternOptions {
+    /// The names of the pivots (X, A, B ..., the waves' labels).
+    pub labels: bool,
+    /// The Fibonacci ratios between a pattern's legs.
+    pub ratios: bool,
+    /// Decimal places of a ratio.
+    pub precision: u8,
+    /// The degree an Elliott wave's labels are written in.
+    pub degree: Degree,
+}
+
+/// The most places a printed ratio may have.
+pub const MAX_RATIO_PRECISION: u8 = 6;
+
+impl Default for PatternOptions {
+    fn default() -> Self {
+        Self {
+            labels: true,
+            ratios: true,
+            precision: 3,
+            degree: Degree::default(),
+        }
+    }
+}
+
+fn is_default_pattern(options: &PatternOptions) -> bool {
+    *options == PatternOptions::default()
+}
+
 fn is_default_pitchfork_levels(levels: &[Level; PITCHFORK_LEVELS]) -> bool {
     *levels == default_pitchfork_levels()
 }
@@ -563,6 +596,9 @@ pub struct DrawingStyle {
     pub channel_levels: [Level; CHANNEL_LEVELS],
     #[serde(skip_serializing_if = "is_default_regression")]
     pub regression: RegressionOptions,
+    /// What a chart pattern or an Elliott wave prints on itself.
+    #[serde(skip_serializing_if = "is_default_pattern")]
+    pub pattern: PatternOptions,
     /// Draw every line of a pitchfork in the median's colour.
     #[serde(skip_serializing_if = "is_false")]
     pub use_one_color: bool,
@@ -610,6 +646,7 @@ impl Default for DrawingStyle {
             pitchfork_levels: default_pitchfork_levels(),
             channel_levels: default_channel_levels(),
             regression: RegressionOptions::default(),
+            pattern: PatternOptions::default(),
             use_one_color: false,
             time_label: false,
             hide_text: false,
@@ -703,6 +740,7 @@ impl DrawingStyle {
             line.width = width(line.width, 1.0);
         }
         self.border.width = width(self.border.width, 1.0);
+        self.pattern.precision = self.pattern.precision.min(MAX_RATIO_PRECISION);
         self.box_width = if self.box_width.is_finite() {
             self.box_width.clamp(0.0, MAX_BOX_WIDTH)
         } else {

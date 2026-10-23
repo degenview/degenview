@@ -8,9 +8,9 @@ use crate::model::chart_type::PriceSource;
 use crate::model::{DrawingStyle, Kline, PitchforkVariant};
 use eframe::egui::{Rect, Vec2, pos2};
 
-const PLOT: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 400.0));
+pub(super) const PLOT: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 400.0));
 
-fn bars(closes: &[f64]) -> Vec<Kline> {
+pub(super) fn bars(closes: &[f64]) -> Vec<Kline> {
     closes
         .iter()
         .enumerate()
@@ -26,14 +26,14 @@ fn bars(closes: &[f64]) -> Vec<Kline> {
         .collect()
 }
 
-fn scale(logarithmic: bool) -> PriceScale {
+pub(super) fn scale(logarithmic: bool) -> PriceScale {
     PriceScale {
         logarithmic,
         ..PriceScale::linear(80.0, 120.0, 0.0, 400.0)
     }
 }
 
-fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
+pub(super) fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
     Projection {
         plot: PLOT,
         pixels_per_point: 2.0,
@@ -48,14 +48,14 @@ fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
 }
 
 /// An anchor at bar `bar` and `price`: x = 50 + 100 bar, y = (120 - price) * 10.
-fn at(bar: i64, price: f64) -> Anchor {
+pub(super) fn at(bar: i64, price: f64) -> Anchor {
     Anchor {
         time_ms: bar * 60_000,
         price,
     }
 }
 
-fn near(a: Pos2, b: Pos2) -> bool {
+pub(super) fn near(a: Pos2, b: Pos2) -> bool {
     a.distance(b) < 0.05
 }
 

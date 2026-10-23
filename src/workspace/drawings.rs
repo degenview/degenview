@@ -93,6 +93,7 @@ impl ChartWorkspace {
             self.group_tool = prefs.group_tool;
             self.line_tool = prefs.line_tool;
             self.note_tool = prefs.note_tool;
+            self.pattern_tool = prefs.pattern_tool;
             self.saved_prefs = prefs;
             self.drawing_templates = Some(templates);
         }
@@ -109,6 +110,7 @@ impl ChartWorkspace {
             group_tool: self.group_tool,
             line_tool: self.line_tool,
             note_tool: self.note_tool,
+            pattern_tool: self.pattern_tool,
         };
         if prefs != self.saved_prefs {
             self.saved_prefs = prefs;

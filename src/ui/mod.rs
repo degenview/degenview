@@ -43,6 +43,7 @@ pub mod paper_grid;
 pub mod paper_header;
 pub mod paper_order_ticket;
 pub mod paper_tables;
+mod pattern_geometry;
 pub mod pine_alert_editor;
 pub mod pine_chart_render;
 pub mod pine_geometry;

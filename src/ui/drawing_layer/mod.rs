@@ -14,6 +14,9 @@ mod line_shapes;
 mod line_tests;
 mod menu;
 mod note_shapes;
+mod pattern_shapes;
+#[cfg(test)]
+mod pattern_tests;
 mod shape;
 mod snap;
 mod table_shapes;

@@ -37,6 +37,10 @@ const CONTROL_WIDTH: f32 = 130.0;
 const TIME_FIELD_WIDTH: f32 = 150.0;
 /// The price field has the stepper beside it, and the card's 14 pt gap, so it is narrower.
 const PRICE_FIELD_WIDTH: f32 = CONTROL_WIDTH - 18.0 - 16.0 - 14.0;
+/// The names of the precisions a ratio can be printed at.
+const PLACES: [&str; 7] = [
+    "0 places", "1 place", "2 places", "3 places", "4 places", "5 places", "6 places",
+];
 /// How many anchors the Coordinates tab lists; a long path keeps the rest on the chart.
 const MAX_LISTED: usize = 40;
 
@@ -153,6 +157,18 @@ fn has_style_page(caps: Caps) -> bool {
     .any(|cap| caps.has(cap))
 }
 
+/// Whether the tool has inputs of its own: a regression's, a chart pattern's or a wave's.
+fn has_inputs_page(caps: Caps) -> bool {
+    [Caps::REGRESSION, Caps::PATTERN, Caps::WAVE]
+        .into_iter()
+        .any(|cap| caps.has(cap))
+}
+
+/// Whether a tool writes its labels itself, so its text page is only their font.
+fn labels_are_written_by_the_tool(caps: Caps) -> bool {
+    caps.has(Caps::PATTERN) || caps.has(Caps::WAVE)
+}
+
 /// Whether a tool's text has a vertical alignment that means something: inside a shape (top,
 /// middle or bottom of it), or on a line or channel (above it, on it or below it).
 fn text_has_position(tool: Tool) -> bool {
@@ -200,6 +216,40 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         Tool::Note | Tool::PriceNote | Tool::Callout => &["Anchor", "Label position"],
         Tool::Signpost => &["Anchor", "Label height"],
         Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &["Anchor"],
+        Tool::XabcdPattern | Tool::CypherPattern => &["X", "A", "B", "C", "D"],
+        Tool::AbcdPattern | Tool::TrianglePattern => &["A", "B", "C", "D"],
+        Tool::HeadAndShoulders => &[
+            "Start",
+            "Left shoulder",
+            "Left neckline",
+            "Head",
+            "Right neckline",
+            "Right shoulder",
+            "End",
+        ],
+        Tool::ThreeDrivesPattern => &[
+            "Start",
+            "Drive 1",
+            "Retracement A",
+            "Drive 2",
+            "Retracement C",
+            "Drive 3",
+        ],
+        Tool::ElliottImpulse => &["Start", "Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5"],
+        Tool::ElliottCorrection => &["Start", "Wave A", "Wave B", "Wave C"],
+        Tool::ElliottTriangle => &["Start", "Wave A", "Wave B", "Wave C", "Wave D", "Wave E"],
+        Tool::ElliottDoubleCombo => &["Start", "Wave W", "Wave X", "Wave Y"],
+        Tool::ElliottTripleCombo => &[
+            "Start",
+            "Wave W",
+            "Wave X",
+            "Wave Y",
+            "Second wave X",
+            "Wave Z",
+        ],
+        Tool::CyclicLines => &["First line", "Second line"],
+        Tool::TimeCycles => &["Start", "End of first cycle"],
+        Tool::SineLine => &["First extreme", "Next extreme"],
         _ => &[],
     };
     named
@@ -262,7 +312,7 @@ impl DrawingProperties {
         if has_style_page(caps) {
             tabs.push(Tab::Style);
         }
-        if caps.has(Caps::REGRESSION) {
+        if has_inputs_page(caps) {
             tabs.push(Tab::Inputs);
         }
         if caps.has(Caps::LEVELS) {
@@ -1065,6 +1115,9 @@ impl DrawingProperties {
     /// The regression trend's source, the deviations its bands sit at, and its three lines.
     fn inputs_page(&mut self, ui: &mut Ui) {
         use crate::model::chart_type::PriceSource;
+        if labels_are_written_by_the_tool(self.tool.caps()) {
+            return self.pattern_inputs_page(ui);
+        }
         let mut style = self.style();
         let before = style;
         let mut page = Page::new(true);
@@ -1121,6 +1174,75 @@ impl DrawingProperties {
         }
     }
 
+    /// What a chart pattern or an Elliott wave prints on itself: the names of its pivots, the
+    /// ratios between a pattern's legs and how many places they have, a wave's degree.
+    fn pattern_inputs_page(&mut self, ui: &mut Ui) {
+        use crate::model::drawing_style::MAX_RATIO_PRECISION;
+        use crate::model::elliott::Degree;
+        let caps = self.tool.caps();
+        let mut style = self.style();
+        let before = style;
+        let mut page = Page::new(true);
+        if caps.has(Caps::WAVE) {
+            page.section(ui, "Wave", None);
+            let options: Vec<(Degree, String)> = Degree::ALL
+                .iter()
+                .map(|degree| (*degree, format!("{}  {}", degree.label(), degree.sample())))
+                .collect();
+            let shown: Vec<(Degree, &str)> = options
+                .iter()
+                .map(|(degree, label)| (*degree, label.as_str()))
+                .collect();
+            picker_row(
+                ui,
+                Icon::Hash,
+                "Degree",
+                Some("The scale of the move: it sets how the waves are written."),
+                &shown,
+                &mut style.pattern.degree,
+            );
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Labels",
+                "Print the name of each wave at its end.",
+                &mut style.pattern.labels,
+            );
+        } else {
+            page.section(ui, "Labels", None);
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Pivot names",
+                "Print the name of each pivot beside it.",
+                &mut style.pattern.labels,
+            );
+            toggle_row(
+                ui,
+                Icon::Percent,
+                "Ratios",
+                "Print the Fibonacci ratio of each leg on the dashed line it is measured along.",
+                &mut style.pattern.ratios,
+            );
+            if style.pattern.ratios {
+                let places: Vec<(u8, &str)> = (0..=MAX_RATIO_PRECISION)
+                    .map(|places| (places, PLACES[usize::from(places)]))
+                    .collect();
+                picker_row(
+                    ui,
+                    Icon::Hash,
+                    "Precision",
+                    Some("Decimal places of a ratio."),
+                    &places,
+                    &mut style.pattern.precision,
+                );
+            }
+        }
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
     // MARK: Text
 
     fn text_page(&mut self, ui: &mut Ui) {
@@ -1166,6 +1288,12 @@ impl DrawingProperties {
         }
         toggle_row(ui, Icon::TextFormat, "Bold", "", &mut style.text.bold);
         toggle_row(ui, Icon::TextFormat, "Italic", "", &mut style.text.italic);
+        if labels_are_written_by_the_tool(self.tool.caps()) {
+            if style != before {
+                self.set_style(style);
+            }
+            return;
+        }
         page.section(ui, "Alignment", None);
         let horizontal: Vec<(HorizontalAlign, &str)> = HorizontalAlign::ALL
             .iter()
@@ -1830,7 +1958,7 @@ mod tests {
     }
 
     fn drawing(tool: Tool) -> Drawing {
-        let anchors: Vec<Anchor> = (0..4)
+        let anchors: Vec<Anchor> = (0..7)
             .map(|index| Anchor {
                 time_ms: 1_700_000_000_000 + index * 3_600_000,
                 price: 100.0 + index as f64 * 7.0,
@@ -1914,7 +2042,7 @@ mod tests {
             );
             assert_eq!(
                 tabs.contains(&Tab::Inputs),
-                caps.has(Caps::REGRESSION),
+                has_inputs_page(caps),
                 "{tool:?} inputs"
             );
             assert_eq!(

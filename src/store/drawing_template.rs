@@ -50,6 +50,9 @@ pub struct DrawingPrefs {
     /// The tool the text and notes tile shows.
     #[serde(deserialize_with = "note_tool_or_default")]
     pub note_tool: Tool,
+    /// The tool the chart patterns, Elliott waves and cycles tile shows.
+    #[serde(deserialize_with = "pattern_tool_or_default")]
+    pub pattern_tool: Tool,
 }
 
 /// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
@@ -84,6 +87,10 @@ fn note_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<To
     field_or(deserializer, DrawingPrefs::default().note_tool)
 }
 
+fn pattern_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().pattern_tool)
+}
+
 impl Default for DrawingPrefs {
     fn default() -> Self {
         Self {
@@ -92,6 +99,7 @@ impl Default for DrawingPrefs {
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
             note_tool: Tool::Text,
+            pattern_tool: Tool::XabcdPattern,
         }
     }
 }
@@ -110,6 +118,9 @@ impl DrawingPrefs {
         }
         if !ToolGroup::NOTE_MENU.contains(&self.note_tool.spec().group) {
             self.note_tool = defaults.note_tool;
+        }
+        if !ToolGroup::PATTERN_MENU.contains(&self.pattern_tool.spec().group) {
+            self.pattern_tool = defaults.pattern_tool;
         }
         self
     }
@@ -471,6 +482,7 @@ mod tests {
             group_tool: Tool::Curve,
             line_tool: Tool::SchiffPitchfork,
             note_tool: Tool::Pin,
+            pattern_tool: Tool::SineLine,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
@@ -491,6 +503,7 @@ mod tests {
                     "group_tool": "Arc",
                     "line_tool": "AToolFromTheFuture",
                     "note_tool": "Callout",
+                    "pattern_tool": "ElliottImpulse",
                 }),
             )
             .unwrap();
@@ -504,6 +517,7 @@ mod tests {
             "the unknown tool falls back"
         );
         assert_eq!(prefs.note_tool, Tool::Callout);
+        assert_eq!(prefs.pattern_tool, Tool::ElliottImpulse);
         // A value of the wrong kind altogether is the same.
         store
             .lock()
@@ -539,12 +553,18 @@ mod tests {
             .unwrap()
             .set_setting(
                 PREFS_KEY,
-                &serde_json::json!({"group_tool": "Ray", "line_tool": "Brush", "note_tool": "Arc"}),
+                &serde_json::json!({
+                    "group_tool": "Ray",
+                    "line_tool": "Brush",
+                    "note_tool": "Arc",
+                    "pattern_tool": "Rectangle",
+                }),
             )
             .unwrap();
         let prefs = DrawingTemplateStore::new(store).prefs();
         assert_eq!(prefs.group_tool, Tool::Brush);
         assert_eq!(prefs.line_tool, Tool::TrendLine);
         assert_eq!(prefs.note_tool, Tool::Text);
+        assert_eq!(prefs.pattern_tool, Tool::XabcdPattern);
     }
 }

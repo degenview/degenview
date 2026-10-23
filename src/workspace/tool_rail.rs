@@ -15,6 +15,7 @@ impl ChartWorkspace {
             group_tool: self.group_tool,
             line_tool: self.line_tool,
             note_tool: self.note_tool,
+            pattern_tool: self.pattern_tool,
             magnet: self.magnet,
             keep_drawing: self.keep_drawing,
             hide_all: self.hide_all_drawings,
@@ -78,6 +79,8 @@ impl ChartWorkspace {
             self.line_tool = tool;
         } else if ToolGroup::NOTE_MENU.contains(&group) {
             self.note_tool = tool;
+        } else if ToolGroup::PATTERN_MENU.contains(&group) {
+            self.pattern_tool = tool;
         }
     }
 }
