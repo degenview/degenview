@@ -91,7 +91,12 @@ behavior.
   commands.
 - `PersistedChart.drawings` decodes leniently: a row this version cannot read stays as
   `Drawing::Unreadable` and is written back untouched. Skip it in anything that draws, picks or
-  edits.
+  edits (the Object tree lists it, deletable only, by `Drawing::stored_id`).
+- **Older builds meet your changes through iCloud.** A new tool is a new `Geometry` variant and needs
+  nothing more. A new field on an existing tool that an older build would silently drop on re-save
+  needs `"since": N` in the drawing body and `DRAWING_FORMAT` raised to N (`model/drawings.rs`); without
+  it the older build strips the field and syncs the stripped copy over yours. The full table is in
+  [iCloud Sync](../icloud-sync.md#newer-versions).
 - Drawings are main-pane only and use the bars the chart draws (constructed and replay-cut); never
   index candles directly.
 - The text, note and content tools ([Annotation tools](../annotation-tools.md)) add rules to the

@@ -12,7 +12,7 @@ use crate::model::drawing_template::{DrawingTemplate, TemplateBook};
 use crate::model::watchlist::now_ms;
 use crate::model::{DrawingStyle, Tool};
 use crate::store::{Document, SharedStore, Store};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -30,17 +30,58 @@ impl Document for DrawingTemplate {
 }
 
 /// The strip's drawing options, remembered between launches.
+///
+/// This setting syncs, so a newer build may have written a value this one does not know (a tool it
+/// has not got, a magnet mode it lacks). Each field is read on its own: one it cannot read falls
+/// back to its default and the others are kept, instead of every option resetting.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DrawingPrefs {
+    #[serde(deserialize_with = "magnet_or_default")]
     pub magnet: crate::model::MagnetMode,
+    #[serde(deserialize_with = "keep_drawing_or_default")]
     pub keep_drawing: bool,
     /// The tool the grouped brushes, arrows and shapes tile shows.
+    #[serde(deserialize_with = "group_tool_or_default")]
     pub group_tool: Tool,
     /// The tool the Lines tile shows.
+    #[serde(deserialize_with = "line_tool_or_default")]
     pub line_tool: Tool,
     /// The tool the text and notes tile shows.
+    #[serde(deserialize_with = "note_tool_or_default")]
     pub note_tool: Tool,
+}
+
+/// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
+fn field_or<'de, D, T>(deserializer: D, fallback: T) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or(fallback))
+}
+
+fn magnet_or_default<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::model::MagnetMode, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().magnet)
+}
+
+fn keep_drawing_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().keep_drawing)
+}
+
+fn group_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().group_tool)
+}
+
+fn line_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().line_tool)
+}
+
+fn note_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().note_tool)
 }
 
 impl Default for DrawingPrefs {
@@ -433,6 +474,49 @@ mod tests {
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
+    }
+
+    #[test]
+    fn a_value_this_version_does_not_know_resets_only_its_own_option() {
+        let store = shared();
+        // A newer build's tile tool, and a magnet mode this one lacks, beside options it reads.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({
+                    "magnet": "a_future_mode",
+                    "keep_drawing": false,
+                    "group_tool": "Arc",
+                    "line_tool": "AToolFromTheFuture",
+                    "note_tool": "Callout",
+                }),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store.clone()).prefs();
+        assert_eq!(prefs.magnet, MagnetMode::Off, "the unknown mode falls back");
+        assert!(!prefs.keep_drawing, "what it can read is kept");
+        assert_eq!(prefs.group_tool, Tool::Arc);
+        assert_eq!(
+            prefs.line_tool,
+            Tool::TrendLine,
+            "the unknown tool falls back"
+        );
+        assert_eq!(prefs.note_tool, Tool::Callout);
+        // A value of the wrong kind altogether is the same.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({"keep_drawing": "yes", "note_tool": 7, "group_tool": "Arc"}),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store).prefs();
+        assert!(prefs.keep_drawing, "the default");
+        assert_eq!(prefs.note_tool, Tool::Text);
+        assert_eq!(prefs.group_tool, Tool::Arc);
     }
 
     #[test]

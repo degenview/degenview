@@ -295,8 +295,9 @@ reinterpreted as a pane value.
   two anchors, a colour and a width (`docs/mcp-remaining-work.md`).
 - **Rotated text** is laid out by egui like any text and may look a little softer than level text
   on a low-density display.
-- **Unreadable drawings** (a tool from a newer build) are never drawn, picked or counted, and are
-  written back byte for byte.
+- **Unreadable drawings** (a tool, or a field, from a newer build) are never drawn or picked, are listed
+  in the Object tree as "From a newer version" (only Delete works), and are written back byte for byte.
+  See [iCloud Sync](icloud-sync.md#newer-versions) for how newer data reaches an older build.
 - **Pips**, as above.
 - **Bar-index coordinate field.** The Coordinates tab edits price and UTC date-time; a bar number
   is not offered.

@@ -559,7 +559,7 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
                     ui,
                     Icon::Sliders,
                     "Settings…",
-                    row.locked != Some(true),
+                    row.locked != Some(true) && readable(row),
                     false,
                 )
             {
@@ -574,7 +574,7 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
                     ("Bring to front", i32::MAX / 2),
                     ("Send to back", i32::MIN / 2),
                 ] {
-                    if kit::menu_item(ui, Icon::Layers, label, true, false) {
+                    if kit::menu_item(ui, Icon::Layers, label, readable(row), false) {
                         actions.push(TreeAction::Reorder(id, step));
                         ui.close();
                     }
@@ -588,6 +588,11 @@ fn row_menu(response: &egui::Response, row: &Row, actions: &mut Vec<TreeAction>)
                 }
             }
         });
+}
+
+/// Whether a row can be changed: a drawing from a newer version (it has no tool) can only be deleted.
+fn readable(row: &Row) -> bool {
+    !matches!(row.key, Key::Drawing(_)) || row.tool.is_some()
 }
 
 fn heading_text(section: Section) -> &'static str {

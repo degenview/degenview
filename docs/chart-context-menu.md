@@ -103,7 +103,9 @@ The symbol, the built-in indicators and scripts, and the drawings (topmost first
 drawing (the workspace's one selection, so it highlights on the chart too); double-click opens its
 settings; the row buttons hide, lock and delete; the row menu reorders and deletes. Everything goes
 through the paths the chart's own controls use, so drawing changes are undoable. There is no
-rename or grouping: drawings have no name and no group model.
+rename or grouping: drawings have no name and no group model. A drawing this version cannot read (from
+a newer build) is a row too, "From a newer version", with only Delete: it is not drawn or selectable,
+and nothing else changes it.
 
 ## Undo
 

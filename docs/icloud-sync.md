@@ -84,8 +84,12 @@ Private database, zone `DegenViewZone`, **one record type `DegenViewSyncRecord`*
 entity never need a manual schema deploy. `recordName = <kind>.<id>`, deterministic from the
 entity's identity, so repeated uploads and downloads hit the same record. Plain fields:
 `schemaVersion`, `entityType`, `revision`, `originDevice`, `payloadSize`. Encrypted
-(`encryptedValues`): `payload` (JSON), `modifiedAtMs`. A record from a newer schema is kept
-untouched in the inbox and applied after an update. A payload over ~900 KB as written (in practice a long paper-trading
+(`encryptedValues`): `payload` (JSON), `modifiedAtMs`. A record this build cannot read when it
+arrives (a kind it does not know, `unknown_type`, or a schema above its own, `newer_schema`) is kept
+untouched in the inbox. An update that teaches it to read the record applies it: `apply_batch` looks at
+those entries again on every apply, and a launch with any waiting (after the first sync) asks for one
+empty apply, so nothing waits for new changes. What it still cannot read stays put, byte for byte. See
+[Newer versions](#newer-versions). A payload over ~900 KB as written (in practice a long paper-trading
 history) is deflated behind a `DVZ1` marker (`record::to_wire` / `from_wire`, applied in the core's
 `build` and `RawRecord::into_record`, so nothing else sees the difference); a paper account
 built by the real engine shrinks about 30 times. A payload that is still over ~900 KB deflated is blocked and
@@ -133,6 +137,26 @@ after its drawing, a remote delete, a layout that stops using a picture, and all
 content drawings reaching the other Mac exactly as drawn; `sync/validate.rs`: damaged and oversize
 records). Not verified: a real CloudKit transfer of a
 picture, and a record near the size limit.
+
+## Newer versions
+
+What an older build does with data a newer one wrote, and the rules a change has to follow so that
+stays safe. (Read from the code; it has not been tried between two real builds.)
+
+| A newer build writes | An older build |
+|---|---|
+| A new drawing tool (a new `Geometry` variant in the existing drawing record, same schema number) | Accepts the record and stores it. The drawing decodes as `Drawing::Unreadable`: it is not drawn, selected or edited, is listed in the Object tree as "From a newer version" (deletable, nothing else), and is written back and synced byte for byte. |
+| A new field on an existing tool, marked `"since": N` above the older build's `DRAWING_FORMAT` | The same: kept whole as `Unreadable`, never re-saved without the field. |
+| A new field on an existing tool **without** the marker | The older build decodes the drawing, ignores the field and re-saves it without it, and the stripped copy syncs back over the newer one. Not allowed: see the rule below. |
+| A new record kind (as pictures were), or a higher `SCHEMA_VERSION` | Kept in the inbox, applied by the first launch that reads it (see above). |
+| A new tool or magnet value in `drawing.prefs` | That one option falls back to its default; the others are kept. (The fallback is then what this build saves.) |
+
+The rule: **a new tool is a new `Geometry` variant. A change to an existing tool's stored form that an
+older build would lose (a new field it ignores) must write `"since": N` in the drawing's body, with
+`DRAWING_FORMAT` in `model/drawings.rs` raised to N.** A field that only some drawings use can be left
+out of the row while it holds its default (as the style fields are) and needs no marker until it is
+set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
+a count elsewhere would be easy to add.
 
 ## Portfolios and paper trading
 

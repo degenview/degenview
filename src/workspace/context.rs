@@ -836,7 +836,7 @@ impl ChartWorkspace {
             workspace.charts[index]
                 .drawings
                 .iter()
-                .find(|candidate| candidate.id() == id)
+                .find(|candidate| candidate.stored_id() == id)
                 .cloned()
         };
         match action {

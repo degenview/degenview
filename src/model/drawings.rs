@@ -1263,7 +1263,8 @@ pub fn apply_commands(drawings: &mut Vec<Drawing>, commands: Vec<DrawingCommand>
             DrawingCommand::Remove(id) => {
                 let before = drawings.len();
                 let ruler = drawings.iter().any(|d| d.id() == id && d.is_ruler());
-                drawings.retain(|d| d.id() != id);
+                // By the id a row was saved with, so one this version cannot read can be deleted.
+                drawings.retain(|d| d.stored_id() != id);
                 changed |= drawings.len() != before && !ruler;
             }
             DrawingCommand::Reorder { id, step } => {
@@ -1280,6 +1281,28 @@ pub fn apply_commands(drawings: &mut Vec<Drawing>, commands: Vec<DrawingCommand>
         }
     }
     changed
+}
+
+/// The newest drawing format this build reads.
+///
+/// A new tool needs nothing here: it is a new `Geometry` variant, which an older build cannot
+/// decode, so it keeps the drawing as [`Drawing::Unreadable`] and writes it back untouched. A new
+/// field on a tool that already exists is the dangerous change: an older build would decode the
+/// drawing, ignore the field, and write it back without it (and sync the stripped copy over the
+/// newer one). So a build that adds a field an older build would drop must write `"since": N`
+/// (N = this constant plus one, and this constant raised to N) inside the drawing's body, and an
+/// older build then treats the drawing as unreadable. See `docs/agent-guides/charts.md`.
+pub const DRAWING_FORMAT: u32 = 1;
+
+/// Whether a stored drawing says it was written for a newer format than this build reads: a
+/// `since` number in its body (`{"Shape": {"id": 1, "since": 2, ...}}`) above [`DRAWING_FORMAT`].
+fn written_for_a_newer_format(value: &serde_json::Value) -> bool {
+    value
+        .as_object()
+        .and_then(|variant| variant.values().next())
+        .and_then(|body| body.get("since"))
+        .and_then(serde_json::Value::as_u64)
+        .is_some_and(|since| since > u64::from(DRAWING_FORMAT))
 }
 
 /// Serde adapter for a chart's stored drawings that decodes each one on its own. A row this
@@ -1312,6 +1335,9 @@ pub mod lenient {
         Ok(values
             .into_iter()
             .map(|value| {
+                if super::written_for_a_newer_format(&value) {
+                    return Drawing::Unreadable(value);
+                }
                 serde_json::from_value::<Drawing>(value.clone())
                     .ok()
                     .filter(drawing_is_sane)
@@ -1391,6 +1417,73 @@ mod tests {
         assert_eq!(drawing.tool(), Some(Tool::Rectangle));
         assert!(!drawing.locked() && !drawing.hidden());
         assert_eq!(drawing.text(), "");
+    }
+
+    /// The JSON of a real trend line this build wrote, with `extra` added to its body.
+    fn stored_trend_line(id: u64, extra: serde_json::Value) -> serde_json::Value {
+        let drawing = Drawing::build(
+            Tool::TrendLine,
+            id,
+            &[anchor(0, 1.0), anchor(60_000, 2.0)],
+            Tool::TrendLine.default_style(),
+        )
+        .expect("a trend line");
+        let mut value = serde_json::to_value(drawing).unwrap();
+        let body = value
+            .as_object_mut()
+            .and_then(|variants| variants.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("a body");
+        for (key, field) in extra.as_object().unwrap() {
+            body.insert(key.clone(), field.clone());
+        }
+        value
+    }
+
+    #[test]
+    fn a_drawing_written_for_a_newer_format_is_kept_whole_even_when_this_build_could_decode_it() {
+        // A trend line this build reads fine, plus a field it does not know and the marker a newer
+        // build puts on a drawing that uses it: decoding would silently drop the field.
+        let newer = stored_trend_line(
+            7,
+            serde_json::json!({"since": DRAWING_FORMAT + 1, "shadow": {"blur": 4}}),
+        );
+        let older = stored_trend_line(8, serde_json::json!({"shadow": {"blur": 4}}));
+        let stored = serde_json::json!({"drawings": [newer.clone(), older]});
+        let holder: Holder = serde_json::from_value(stored).unwrap();
+        assert!(
+            matches!(&holder.drawings[0], Drawing::Unreadable(raw) if *raw == newer),
+            "kept as it was: {:?}",
+            holder.drawings[0]
+        );
+        // Not drawn, selected or edited, but it keeps its id for merging.
+        assert_eq!(holder.drawings[0].stored_id(), 7);
+        assert!(holder.drawings[0].tool().is_none());
+        // Without the marker the same drawing is an ordinary one: the gate is the marker alone.
+        assert!(matches!(holder.drawings[1], Drawing::Shape { id: 8, .. }));
+        // And it is written back byte for byte.
+        let again = serde_json::to_value(&holder).unwrap();
+        assert_eq!(again["drawings"][0], newer);
+    }
+
+    #[test]
+    fn a_since_this_build_reads_or_does_not_understand_does_not_hide_a_drawing() {
+        for since in [
+            serde_json::json!(0),
+            serde_json::json!(DRAWING_FORMAT),
+            serde_json::json!("two"),
+            serde_json::json!(-3),
+            serde_json::json!(null),
+        ] {
+            let stored = serde_json::json!({
+                "drawings": [stored_trend_line(1, serde_json::json!({ "since": since }))]
+            });
+            let holder: Holder = serde_json::from_value(stored).unwrap();
+            assert!(
+                matches!(holder.drawings[0], Drawing::Shape { id: 1, .. }),
+                "{since}"
+            );
+        }
     }
 
     #[test]

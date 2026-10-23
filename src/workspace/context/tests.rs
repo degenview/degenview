@@ -938,6 +938,45 @@ fn the_tree_hides_and_removes_indicators_and_scripts() {
 }
 
 #[test]
+fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_it() {
+    use crate::model::object_tree::Key as TreeKey;
+    use crate::ui::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 40, "blob": [1, 2]}}));
+    rig.chart_mut(chart).drawings.push(future.clone());
+    let stored = |rig: &mut Rig| -> Vec<u64> {
+        rig.chart_mut(chart)
+            .drawings
+            .iter()
+            .map(Drawing::stored_id)
+            .collect()
+    };
+    assert_eq!(stored(&mut rig), [1, 2, 40]);
+    // Hiding, locking and restyling find nothing to change in it, and it stays exactly as it was.
+    for action in [
+        TreeAction::ToggleShown(TreeKey::Drawing(40)),
+        TreeAction::ToggleLocked(40),
+        TreeAction::Settings(TreeKey::Drawing(40)),
+        TreeAction::Reorder(40, 1),
+    ] {
+        rig.workspace.apply_tree_action(chart, action);
+    }
+    assert_eq!(rig.chart_mut(chart).drawings[2], future);
+    assert!(rig.workspace.undo.is_empty(), "no change, no undo step");
+    // Deleting it works, and undoes.
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(40)));
+    assert_eq!(stored(&mut rig), [1, 2]);
+    rig.workspace.undo();
+    assert_eq!(stored(&mut rig), [1, 2, 40]);
+    assert_eq!(
+        rig.chart_mut(chart).drawings[2],
+        future,
+        "restored untouched"
+    );
+}
+
+#[test]
 fn a_tree_action_for_a_closed_chart_does_nothing() {
     use crate::model::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
