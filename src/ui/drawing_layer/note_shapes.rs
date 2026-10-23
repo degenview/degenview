@@ -269,13 +269,17 @@ fn signpost(style: &DrawingStyle, text: &str, proj: &Projection, at: Pos2, label
     screen
 }
 
-/// The Image tool: a picture between two corners. The rectangle is clickable whether or not the
-/// picture has arrived, and has the eight handles of a box.
+/// The Image tool: a picture whose top-left corner is the anchor, at a size of its own. The
+/// rectangle is clickable whether or not the picture has arrived, and has the eight handles of a
+/// box.
 pub(super) fn picture(
     image: &crate::model::image_content::ImageData,
     anchors: &[Pos2],
 ) -> Option<Screen> {
-    let rect = eframe::egui::Rect::from_two_pos(*anchors.first()?, *anchors.get(1)?);
+    let rect = eframe::egui::Rect::from_min_size(
+        *anchors.first()?,
+        eframe::egui::vec2(image.size[0], image.size[1]),
+    );
     let mut screen = Screen::empty();
     screen.hit.push(rect);
     screen.picture = Some(super::shape::PictureDraw {

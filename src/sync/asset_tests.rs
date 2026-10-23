@@ -210,11 +210,7 @@ fn a_drawing_that_arrives_before_its_picture_is_kept_and_the_picture_follows() {
     a.core.start();
     b.core.start();
     let kept = picture(3);
-    let content = Content::Image(ImageContent {
-        asset: kept.id.clone(),
-        name: "levels".into(),
-        pixels: [36, 24],
-    });
+    let content = Content::Image(ImageContent::new(kept.id.clone(), "levels", [36, 24]));
     let at = |index: i64| Anchor {
         time_ms: 1_700_000_000_000 + index * 3_600_000,
         price: 100.0 + index as f64,
@@ -222,7 +218,7 @@ fn a_drawing_that_arrives_before_its_picture_is_kept_and_the_picture_follows() {
     let drawing = Drawing::build_with(
         Tool::Image,
         1,
-        &[at(0), at(5)],
+        &[at(0)],
         Tool::Image.default_style(),
         &content,
     )

@@ -190,11 +190,7 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
         return Outcome::Failed(message);
     }
     Outcome::Stored {
-        content: ImageContent {
-            asset: picture.id,
-            name,
-            pixels: [picture.width, picture.height],
-        },
+        content: ImageContent::new(picture.id, name, [picture.width, picture.height]),
         pixels,
     }
 }

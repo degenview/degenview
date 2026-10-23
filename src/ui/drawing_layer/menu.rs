@@ -391,7 +391,6 @@ impl DrawingLayer {
         &mut self,
         drawing: &Drawing,
         op: ImageOp,
-        proj: &Projection,
         frame: &mut DrawingFrame,
     ) -> Option<Drawing> {
         let Some(Geometry::Image(image)) = drawing.geometry() else {
@@ -417,12 +416,7 @@ impl DrawingLayer {
             ImageOp::ToggleShapeLock => edited.keep_aspect = !edited.keep_aspect,
             ImageOp::ResetShape => {
                 // The same width and top-left corner, the height the picture's own shape gives.
-                let rect = Rect::from_two_pos(proj.point(edited.a), proj.point(edited.b));
-                let reset = Rect::from_min_size(
-                    rect.min,
-                    vec2(rect.width(), rect.width() / edited.aspect()),
-                );
-                (edited.a, edited.b) = edit::corners_for(edited, reset, proj);
+                edited.size[1] = edited.size[0] / edited.aspect();
             }
             ImageOp::Replace | ImageOp::Copy => return None,
         }
@@ -910,7 +904,7 @@ impl DrawingLayer {
             Action::Image(op) => {
                 if let [drawing] = &targets[..]
                     && !drawing.locked()
-                    && let Some(changed) = self.image_edit(drawing, op, proj, frame)
+                    && let Some(changed) = self.image_edit(drawing, op, frame)
                 {
                     replace(frame, changed);
                 }

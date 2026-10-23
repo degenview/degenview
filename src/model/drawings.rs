@@ -424,7 +424,7 @@ impl Geometry {
             // A pinned table is not at a chart point: it has no anchor to move or to show.
             Self::Table(table) if table.screen.is_none() => vec![table.at],
             Self::Table(_) => Vec::new(),
-            Self::Image(image) => vec![image.a, image.b],
+            Self::Image(image) => vec![image.at],
             Self::Card { anchor, .. } => vec![*anchor],
             Self::RotatedRectangle { a, b, width } => vec![*a, *b, *width],
             Self::Circle { center, edge } => vec![*center, *edge],
@@ -471,7 +471,7 @@ impl Geometry {
             Self::ArrowMark { at, .. } | Self::Annotation { at, .. } => vec![at],
             Self::Table(table) if table.screen.is_none() => vec![&mut table.at],
             Self::Table(_) => Vec::new(),
-            Self::Image(image) => vec![&mut image.a, &mut image.b],
+            Self::Image(image) => vec![&mut image.at],
             Self::Card { anchor, .. } => vec![anchor],
             Self::RotatedRectangle { a, b, width } => vec![a, b, width],
             Self::Circle { center, edge } => vec![center, edge],
@@ -933,17 +933,12 @@ impl Drawing {
             let card = LinkCard::new(super::link_card::Link::parse(link).ok()?);
             Self::build_with(tool, id, anchors, style, &Content::Link(card))
         } else if tool.caps().has(super::Caps::CONTENT) {
-            let a = *anchors.first()?;
-            let b = anchors.get(1).copied().unwrap_or(Anchor {
-                time_ms: a.time_ms + 3_600_000,
-                price: a.price - 5.0,
-            });
-            let picture = Content::Image(super::image_content::ImageContent {
-                asset: "a".repeat(64),
-                name: "sample.png".into(),
-                pixels: [200, 100],
-            });
-            Self::build_with(tool, id, &[a, b], style, &picture)
+            let picture = Content::Image(super::image_content::ImageContent::new(
+                "a".repeat(64),
+                "sample.png",
+                [200, 100],
+            ));
+            Self::build_with(tool, id, anchors, style, &picture)
         } else {
             Self::build(tool, id, anchors, style)
         }
@@ -959,8 +954,8 @@ impl Drawing {
         content: &Content,
     ) -> Option<Self> {
         let geometry = match (tool, anchors, content) {
-            (Tool::Image, [a, b], Content::Image(picture)) if a != b => {
-                let image = ImageData::new(*a, *b, picture);
+            (Tool::Image, [at], Content::Image(picture)) => {
+                let image = ImageData::new(*at, picture);
                 image.is_valid().then_some(Geometry::Image(image))?
             }
             (Tool::Post, [at], Content::Link(card)) => {
@@ -1525,8 +1520,6 @@ mod tests {
             // of its second edge.
             let kept = match tool {
                 Tool::DisjointChannel => 4,
-                // A picture is dropped by one click and sits between two corners.
-                Tool::Image => 2,
                 _ => count,
             };
             assert_eq!(drawing.anchors().len(), kept.max(1), "{tool:?}");

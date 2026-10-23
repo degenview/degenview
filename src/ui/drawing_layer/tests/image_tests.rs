@@ -15,7 +15,7 @@ fn picture_of(rig: &Rig) -> ImageData {
 /// The picture's rectangle on screen.
 fn rect_of(rig: &Rig) -> Rect {
     let image = picture_of(rig);
-    Rect::from_two_pos(rig.px(image.a), rig.px(image.b))
+    Rect::from_min_size(rig.px(image.at), vec2(image.size[0], image.size[1]))
 }
 
 /// An image placed by a click, then left selected with the crosshair armed.
@@ -32,11 +32,7 @@ fn placed_image() -> (Rig, u64) {
 }
 
 fn another_picture(pixels: [u32; 2]) -> ImageContent {
-    ImageContent {
-        asset: "b".repeat(64),
-        name: "other.png".into(),
-        pixels,
-    }
+    ImageContent::new("b".repeat(64), "other.png", pixels)
 }
 
 #[test]
@@ -70,11 +66,11 @@ fn a_click_with_nothing_chosen_places_nothing() {
 #[test]
 fn a_large_picture_is_brought_to_the_plot_and_kept_on_it() {
     let mut rig = Rig::with_tool(Tool::Image);
-    rig.pending = Some(Content::Image(ImageContent {
-        asset: "a".repeat(64),
-        name: "big.png".into(),
-        pixels: [2_000, 1_500],
-    }));
+    rig.pending = Some(Content::Image(ImageContent::new(
+        "a".repeat(64),
+        "big.png",
+        [2_000, 1_500],
+    )));
     // Near the bottom right corner: it would run off, so it is moved back onto the plot.
     rig.click(pos2(950.0, 380.0));
     let rect = rect_of(&rig);
@@ -95,6 +91,51 @@ fn a_picture_that_arrives_by_a_drop_or_a_paste_is_placed_in_the_middle_without_a
     assert!(rect.center().distance(PLOT.center()) < 2.0, "{rect:?}");
     assert!(rig.pending.is_none());
     assert_eq!(rig.undo_steps, 1);
+}
+
+#[test]
+fn zooming_or_dragging_an_axis_moves_a_picture_but_never_resizes_it() {
+    let (mut rig, id) = placed_image();
+    let drawing = rig.drawings[0].clone();
+    let before = rig.screen_of(id).picture.clone().expect("a picture").rect;
+    // The time axis zoomed out and in, scrolled, and the price axis stretched or made
+    // logarithmic: every one changes where the picture's corner is, none changes its size.
+    let stretched = PriceScale {
+        minimum: 90.0,
+        maximum: 100.0,
+        ..scale(false)
+    };
+    let log = scale(true);
+    let mut corners = Vec::new();
+    for (slot_width, start, price_scale) in [
+        (25.0, 0, &log),
+        (400.0, 2, &log),
+        (100.0, 3, &stretched),
+        (7.0, 0, &stretched),
+    ] {
+        let mut proj = projection(&rig.data, price_scale);
+        proj.slot_width = slot_width;
+        proj.start = start;
+        let screen = rig.layer.screen(&drawing, &proj).expect("a screen");
+        let rect = screen.picture.as_ref().expect("a picture").rect;
+        assert_eq!(
+            rect.size(),
+            before.size(),
+            "slot {slot_width}, start {start}: the size does not follow the axes"
+        );
+        corners.push(rect.min);
+    }
+    assert!(
+        corners
+            .iter()
+            .any(|corner| corner.distance(before.min) > 5.0),
+        "its corner does follow its chart point: {corners:?}"
+    );
+    // The hit area is the picture's rectangle, at the same size.
+    let mut proj = projection(&rig.data, &log);
+    proj.slot_width = 25.0;
+    let screen = rig.layer.screen(&drawing, &proj).expect("a screen");
+    assert_eq!(screen.hit[0].size(), before.size());
 }
 
 // MARK: Resizing

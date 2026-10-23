@@ -963,43 +963,18 @@ fn gallery_of_the_image() {
         price,
     };
     let picture = |asset: &str, name: &str| {
-        Content::Image(ImageContent {
-            asset: asset.repeat(64),
-            name: name.into(),
-            pixels: [160, 100],
-        })
+        Content::Image(ImageContent::new(asset.repeat(64), name, [160, 100]))
     };
-    let image = |id: u64, a: Anchor, b: Anchor, content: &Content| {
-        Drawing::build_with(
-            Tool::Image,
-            id,
-            &[a, b],
-            Tool::Image.default_style(),
-            content,
-        )
-        .expect("builds")
+    let image = |id: u64, at: Anchor, content: &Content| {
+        Drawing::build_with(Tool::Image, id, &[at], Tool::Image.default_style(), content)
+            .expect("builds")
     };
-    let loaded = image(
-        1,
-        at(205, 275.0),
-        at(225, 255.0),
-        &picture("a", "gradient.png"),
-    );
-    let mut faded = image(
-        2,
-        at(232, 262.0),
-        at(252, 242.0),
-        &picture("a", "gradient.png"),
-    );
+    let loaded = image(1, at(205, 275.0), &picture("a", "gradient.png"));
+    let mut faded = image(2, at(232, 262.0), &picture("a", "gradient.png"));
     if let Some(Geometry::Image(data)) = faded.geometry_mut() {
         data.opacity = 0.35;
     }
-    let missing = image(
-        3,
-        at(215, 235.0),
-        at(240, 215.0),
-        &picture("b", "still-syncing.png"),
-    );
+    let missing = image(3, at(215, 235.0), &picture("b", "still-syncing.png"));
     let gradient = egui::ColorImage::from_rgba_unmultiplied(
         [160, 100],
         &(0..160 * 100)

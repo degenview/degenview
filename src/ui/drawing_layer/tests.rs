@@ -322,11 +322,11 @@ fn sample_content(tool: Tool) -> crate::model::image_content::Content {
 }
 
 fn sample_picture() -> crate::model::image_content::Content {
-    crate::model::image_content::Content::Image(crate::model::image_content::ImageContent {
-        asset: "a".repeat(64),
-        name: "levels.png".into(),
-        pixels: [320, 200],
-    })
+    crate::model::image_content::Content::Image(crate::model::image_content::ImageContent::new(
+        "a".repeat(64),
+        "levels.png",
+        [320, 200],
+    ))
 }
 
 impl Rig {

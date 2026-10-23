@@ -172,7 +172,11 @@ pub(super) fn edited(
             Drawing::Shape {
                 geometry: Geometry::Image(image),
                 ..
-            } => (image.a, image.b) = resize_image(image, handle, now, proj),
+            } => {
+                let resized = resize_image(image, handle, now, proj);
+                image.at = proj.anchor(resized.min);
+                image.size = [resized.width(), resized.height()];
+            }
             Drawing::Shape {
                 geometry: Geometry::Card { card, .. },
                 ..
@@ -248,19 +252,29 @@ fn grid_of(drawing: &Drawing, proj: &Projection) -> Option<super::shape::Grid> {
 /// The smallest a picture is resized to, on each side, in px.
 const MIN_PICTURE: f32 = 16.0;
 
-/// The corners of a picture with `handle` dragged to `pointer`. The opposite edges stay where
+/// Where a picture is on screen: its top-left corner at its chart point, and its own size.
+pub(super) fn picture_rect(
+    image: &crate::model::image_content::ImageData,
+    proj: &Projection,
+) -> eframe::egui::Rect {
+    eframe::egui::Rect::from_min_size(
+        proj.point(image.at),
+        eframe::egui::vec2(image.size[0], image.size[1]),
+    )
+}
+
+/// The rectangle of a picture with `handle` dragged to `pointer`. The opposite edges stay where
 /// they are. When the picture keeps its shape, a corner takes the larger of the two moves and the
 /// other side follows from the shape, and an edge takes its own move and the other side follows
-/// about its middle. Worked in screen space, so it is right on a log scale too, and written back
-/// to whichever stored corner each end is nearest, so the order they were stored in survives.
+/// about its middle. Worked in screen space; the caller stores its corner as a chart point and its
+/// size in pixels.
 pub(super) fn resize_image(
     image: &crate::model::image_content::ImageData,
     handle: BoxHandle,
     pointer: Pos2,
     proj: &Projection,
-) -> (Anchor, Anchor) {
-    let (pa, pb) = (proj.point(image.a), proj.point(image.b));
-    let rect = eframe::egui::Rect::from_two_pos(pa, pb);
+) -> eframe::egui::Rect {
+    let rect = picture_rect(image, proj);
     let aspect = image.aspect();
     let (left, right) = (
         handle.horizontal() == Some(true),
@@ -326,33 +340,7 @@ pub(super) fn resize_image(
             max.y = y.max(fixed_y);
         }
     }
-    corners_for(image, eframe::egui::Rect::from_min_max(min, max), proj)
-}
-
-/// The two corner anchors of `image` once it fills `rect` on screen. Each end goes back to the
-/// corner it was at, so the order they were stored in survives.
-pub(super) fn corners_for(
-    image: &crate::model::image_content::ImageData,
-    rect: eframe::egui::Rect,
-    proj: &Projection,
-) -> (Anchor, Anchor) {
-    let (pa, pb) = (proj.point(image.a), proj.point(image.b));
-    let before = eframe::egui::Rect::from_two_pos(pa, pb);
-    let corner = |original: Pos2| {
-        Pos2::new(
-            if original.x <= before.center().x {
-                rect.left()
-            } else {
-                rect.right()
-            },
-            if original.y <= before.center().y {
-                rect.top()
-            } else {
-                rect.bottom()
-            },
-        )
-    };
-    (proj.anchor(corner(pa)), proj.anchor(corner(pb)))
+    eframe::egui::Rect::from_min_max(min, max)
 }
 
 /// A parallel channel keeps the price distance between its edges when an end of the first edge

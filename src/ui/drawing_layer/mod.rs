@@ -649,7 +649,7 @@ impl DrawingLayer {
                 .data_mut(|data| data.insert_temp(egui::Id::new(TABLE_CELL_FLAG), true));
         }
         self.place_waiting_content(frame, proj);
-        self.replace_picture(frame, proj);
+        self.replace_picture(frame);
         self.handle_table_keys(ui, frame, proj);
         self.handle_keys(ui, response, frame, proj);
 
@@ -1228,20 +1228,25 @@ impl DrawingLayer {
             let Some(first) = anchors.first().map(|anchor| proj.point(*anchor)) else {
                 return;
             };
-            let corners = match &content {
-                crate::model::image_content::Content::Image(picture) => {
-                    let rect = placed_rect(picture, first, proj.plot);
-                    vec![
+            // Where its top-left corner goes, and (for a picture) the size the plot allows it.
+            let (corner, content) = match content {
+                crate::model::image_content::Content::Image(mut picture) => {
+                    let rect = placed_rect(&picture, first, proj.plot);
+                    picture.size = [rect.width(), rect.height()];
+                    (
                         proj.anchor(rect.left_top()),
-                        proj.anchor(rect.right_bottom()),
-                    ]
+                        crate::model::image_content::Content::Image(picture),
+                    )
                 }
                 crate::model::image_content::Content::Link(card) => {
-                    let rect = placed_card_rect(card, first, proj.plot);
-                    vec![card_anchor(card, proj.anchor(rect.left_top()), proj)]
+                    let rect = placed_card_rect(&card, first, proj.plot);
+                    (
+                        card_anchor(&card, proj.anchor(rect.left_top()), proj),
+                        crate::model::image_content::Content::Link(card),
+                    )
                 }
             };
-            Drawing::build_with(tool, id, &corners, frame.style_for(tool), &content)
+            Drawing::build_with(tool, id, &[corner], frame.style_for(tool), &content)
         } else {
             Drawing::build(tool, id, &anchors, frame.style_for(tool))
         };
@@ -1619,7 +1624,7 @@ impl DrawingLayer {
     /// Swaps the picture of a drawing for the one the user chose: the same place, the same
     /// width and the same opacity, one undo step. A picture of another shape takes the shape
     /// that suits it, from the same top-left corner, unless the drawing was told not to keep it.
-    fn replace_picture(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+    fn replace_picture(&mut self, frame: &mut DrawingFrame) {
         let Some((id, content)) = frame.replace_with.take() else {
             return;
         };
@@ -1634,17 +1639,8 @@ impl DrawingLayer {
         let Some(Geometry::Image(image)) = changed.geometry_mut() else {
             return;
         };
-        let before = Rect::from_two_pos(proj.point(image.a), proj.point(image.b));
-        image.asset = content.asset;
-        image.name = content.name;
-        image.pixels = content.pixels;
-        if image.keep_aspect {
-            let rect = Rect::from_min_size(
-                before.min,
-                egui::vec2(before.width(), before.width() / image.aspect()),
-            );
-            (image.a, image.b) = edit::corners_for(image, rect, proj);
-        }
+        image.name.clone_from(&content.name);
+        image.swap_picture(&content);
         frame.commands.push(DrawingCommand::Replace {
             id,
             drawing: changed,
@@ -1652,14 +1648,11 @@ impl DrawingLayer {
     }
 }
 
-/// The rectangle a picture takes when it is dropped with its top-left corner at `at`: its own size
-/// in logical pixels, scaled down to at most 40 % of the plot's width and half its height, and
-/// moved back onto the plot if that would put it over an edge.
+/// The rectangle a picture takes when it is dropped with its top-left corner at `at`: the size it
+/// starts at, scaled down to at most 40 % of the plot's width and half its height, and moved back
+/// onto the plot if that would put it over an edge.
 fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, plot: Rect) -> Rect {
-    let (width, height) = (
-        picture.pixels[0].max(1) as f32,
-        picture.pixels[1].max(1) as f32,
-    );
+    let (width, height) = (picture.size[0].max(1.0), picture.size[1].max(1.0));
     let scale = (plot.width() * 0.4 / width)
         .min(plot.height() * 0.5 / height)
         .min(1.0);

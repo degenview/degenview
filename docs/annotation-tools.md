@@ -26,7 +26,7 @@ compared pixel for pixel with TradingView.
 | Callout | 2 points, then type | a speech bubble: the first point is what it points at, the second where the box sits | `rgba(0,151,167,.7)`, border `#0097A7` 2 px, white 14 px, wrap 200 px (**lib**) |
 | Signpost | 2 points | a marker at the anchor with a plate on the same bar, joined by a stem | plate `#2962FF`, 12 px, symbol off (**lib**) |
 | Table | 1 click | a grid of text cells, 3 × 3 to start; chart-anchored or pinned to the screen | slate card, grey border, light 13 px text (**inferred**) |
-| Image | choose, then 1 click | a stored picture between two corners | none |
+| Image | choose, then 1 click | a stored picture at a size of its own, top-left corner at the click | none |
 | Post | paste a link, then 1 click | a card for an X post | theme colours (**inferred**) |
 
 Text, Comment, Note and Callout open their editor as soon as they are placed and leave nothing
@@ -115,10 +115,13 @@ into cells within the limits and never grows the grid past them.
 * **Store** (`store/asset_store.rs`): table `drawing_asset`, key = sha256 of the stored bytes, so the
   same picture is one row however many drawings use it. The hash is verified on read; a damaged row is
   kept and shown as damaged, never replaced.
-* **Drawing**: `ImageData { a, b, asset, name, pixels, opacity, keep_aspect }`. It names its picture
-  and never carries it, so layouts, undo steps and synced drawing records stay small. Two corner
-  anchors, so the picture zooms with the chart as TradingView's does; the eight box handles resize
-  it (keeping its shape by default), opacity is 5 to 100 %.
+* **Drawing**: `ImageData { at, size, asset, name, pixels, opacity, keep_aspect }`. It names its
+  picture and never carries it, so layouts, undo steps and synced drawing records stay small. The
+  picture's top-left corner is a chart point, so it moves with the chart; its `size` is in logical
+  pixels, so zooming, scrolling or stretching an axis never resizes it. It starts at its own size
+  (at most 480 × 360, and at most 40 % of the plot's width and half its height where it is placed).
+  The eight box handles resize it (keeping its shape by default; the corner stays a chart point and
+  the new size is stored in pixels), opacity is 5 to 100 %.
 * **Painting** (`service/asset_host.rs`): decoded once on a worker, uploaded as a texture once and
   dropped when nothing shows it. A picture that is loading, not in the store (it may be on its way from
   another Mac, and is asked for again every two seconds while it is visible) or damaged is painted as

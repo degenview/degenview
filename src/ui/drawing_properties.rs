@@ -249,8 +249,7 @@ impl DrawingProperties {
     /// drawing's own size, opacity and name when the user has set one.
     pub fn replace_picture(&mut self, content: &crate::model::image_content::ImageContent) {
         if let Some(Geometry::Image(image)) = self.draft.geometry_mut() {
-            image.asset = content.asset.clone();
-            image.pixels = content.pixels;
+            image.swap_picture(content);
         }
     }
 
@@ -1970,21 +1969,19 @@ mod tests {
         let Some(Geometry::Image(before)) = dialog.draft().geometry().cloned() else {
             panic!("an image");
         };
-        let replacement = ImageContent {
-            asset: "b".repeat(64),
-            name: "other.png".into(),
-            pixels: [64, 64],
-        };
+        let replacement = ImageContent::new("b".repeat(64), "other.png", [64, 64]);
         dialog.replace_picture(&replacement);
         let Some(Geometry::Image(after)) = dialog.draft().geometry() else {
             panic!("an image");
         };
         assert_eq!(after.asset, replacement.asset);
         assert_eq!(after.pixels, [64, 64]);
-        assert_eq!(
-            (after.a, after.b),
-            (before.a, before.b),
-            "it stays where it was"
+        assert_eq!(after.at, before.at, "it stays where it was");
+        assert_eq!(after.size[0], before.size[0], "and as wide");
+        assert!(
+            (after.size[1] - after.size[0]).abs() < 0.01,
+            "the square picture has a square shape: {:?}",
+            after.size
         );
         assert_eq!(after.name, before.name, "the user's name for it is kept");
         assert!(!dialog.take_replace_request());
