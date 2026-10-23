@@ -104,12 +104,14 @@ impl PositionOptions {
 
 // MARK: Ghost feed
 
-/// A ghost feed's size and candles. The average range is a percentage of the starting price:
-/// TradingView sizes it in ticks, which this build has no real size for.
+/// A ghost feed's size and candles. The average range is a percentage of the starting price, or
+/// (at zero, the default) the average range of the chart's last bars: TradingView sizes it in
+/// ticks, which this build has no real size for.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct GhostOptions {
-    /// The average high-to-low of a candle, in percent of the first price.
+    /// The average high-to-low of a candle, in percent of the first price; zero takes the average
+    /// range of the bars just before the feed starts.
     pub average: f32,
     /// How much the range and the path wander, in percent (0 to 100).
     pub variance: f32,
@@ -126,7 +128,7 @@ impl Default for GhostOptions {
     fn default() -> Self {
         // The library's: 50 % transparent bodies in a pale green and red, solid borders.
         Self {
-            average: 0.5,
+            average: 0.0,
             variance: 50.0,
             up: [172, 229, 220, 128],
             down: [250, 161, 164, 128],
@@ -423,7 +425,10 @@ mod tests {
             ..GhostOptions::default()
         }
         .sanitized();
-        assert_eq!(ghost.average, 0.5);
+        assert_eq!(
+            ghost.average, 0.0,
+            "not a number: the default, which is automatic"
+        );
         assert_eq!(ghost.variance, 100.0);
         let mut vwap = VwapOptions::default();
         vwap.bands[1].multiplier = f32::NAN;

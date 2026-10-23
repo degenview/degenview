@@ -284,7 +284,9 @@ impl DrawingProperties {
             ui,
             Icon::Percent,
             "Average high-low",
-            Some("A candle's range, in percent of the first price."),
+            Some(
+                "A candle's range, in percent of the first price. Zero takes the average range of the chart's last 20 bars.",
+            ),
             "ghost-average",
             f64::from(options.average),
             0.1,

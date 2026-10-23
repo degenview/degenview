@@ -578,11 +578,22 @@ fn ghost_feed(
     } else {
         later.price.abs()
     };
+    // The size of a candle: what was asked for, or what the bars before it were.
+    let average = if options.average > 0.0 {
+        f64::from(options.average) / 100.0 * base
+    } else {
+        ghost::recent_range(
+            proj.times.bars(),
+            from.max(0.0) as usize,
+            ghost::RANGE_WINDOW,
+        )
+        .unwrap_or(0.005 * base)
+    };
     let candles = ghost::candles(
         earlier.price,
         later.price,
         count,
-        f64::from(options.average) / 100.0 * base,
+        average,
         f64::from(options.variance) / 100.0,
         seed,
     );
@@ -742,7 +753,12 @@ fn measurement(
         if options.ticks
             && let Some(ticks) = measure::ticks_between(a.price, b.price, tick)
         {
-            parts.push(group_thousands(&format!("{:+.0}", ticks.round())));
+            let ticks = ticks.round();
+            parts.push(format!(
+                "{}{}",
+                if ticks > 0.0 { "+" } else { "" },
+                group_thousands(&format!("{ticks:.0}"))
+            ));
         }
         if !parts.is_empty() {
             lines.push(parts.join(" "));

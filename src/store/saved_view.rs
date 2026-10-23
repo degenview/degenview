@@ -105,6 +105,48 @@ mod tests {
     }
 
     #[test]
+    fn every_forecast_volume_and_measurement_tool_survives_the_database_exactly() {
+        use crate::model::{Anchor, Drawing, Placement, Tool};
+        let anchors: Vec<Anchor> = (0..7)
+            .map(|index| Anchor {
+                time_ms: 1_700_000_000_000 + index * 3_600_000,
+                price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+            })
+            .collect();
+        let stored: Vec<serde_json::Value> = Tool::forecast_tools()
+            .enumerate()
+            .map(|(index, tool)| {
+                let count = match tool.spec().placement {
+                    Placement::Points(count) => usize::from(count),
+                    _ => 1,
+                };
+                let mut style = tool.default_style();
+                style.position.account = 5_000.0;
+                style.profile.rows = 12;
+                let drawing =
+                    Drawing::sample(tool, index as u64 + 1, &anchors[..count], style).unwrap();
+                serde_json::to_value(&drawing).unwrap()
+            })
+            .collect();
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_saved_views(&[view_with(stored.clone())])
+            .expect("write");
+        let loaded = store.saved_views();
+        let drawings = &loaded[0].charts[0].drawings;
+        assert_eq!(drawings.len(), 12);
+        assert!(drawings.iter().all(|drawing| drawing.tool().is_some()));
+        store.replace_saved_views(&loaded).expect("rewrite");
+        let again = store.saved_views();
+        let back: Vec<serde_json::Value> = again[0].charts[0]
+            .drawings
+            .iter()
+            .map(|drawing| serde_json::to_value(drawing).unwrap())
+            .collect();
+        assert_eq!(back, stored);
+    }
+
+    #[test]
     fn every_pattern_wave_and_cycle_survives_the_database_exactly() {
         use crate::model::elliott::Degree;
         use crate::model::{Anchor, Drawing, Placement, Tool};

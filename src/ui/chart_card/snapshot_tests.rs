@@ -200,6 +200,15 @@ fn every_pattern_wave_and_cycle_snapshots_as_it_draws() {
 }
 
 #[test]
+fn every_forecast_volume_and_measurement_tool_snapshots_as_it_draws() {
+    for (_, drawing) in forecast_drawings() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![drawing];
+        same_as_live(&mut harness, false);
+    }
+}
+
+#[test]
 fn hidden_drawings_stay_hidden_and_visible_ones_are_drawn() {
     let mut harness = Harness::new(ChartCanvas::default());
     settled(&mut harness);
@@ -858,6 +867,136 @@ fn gallery_of_the_patterns_waves_and_cycles() {
             let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("pattern-{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// One drawing of every forecasting, volume and measurement tool, in the last stretch of
+/// `series(300)` (bars 215..290, prices around 200..275; the chart ends at bar 299).
+fn forecast_drawings() -> Vec<(&'static str, Drawing)> {
+    use crate::model::bars_pattern::BarsPattern;
+    use crate::model::{Anchor, Geometry};
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let build = |tool: Tool, anchors: &[Anchor]| {
+        // A position shows its stats while it is selected; the picture shows them always.
+        let mut style = tool.default_style();
+        style.position.always_stats = true;
+        Drawing::build(tool, 1, anchors, style).expect("builds")
+    };
+    let candles = super::canvas_tests::series(300);
+    let pattern = BarsPattern::capture(&candles, 200, 236, at(255, 232.0)).expect("a pattern");
+    vec![
+        (
+            "long-position",
+            build(
+                Tool::LongPosition,
+                &[at(250, 235.0), at(278, 262.0), at(278, 222.0)],
+            ),
+        ),
+        (
+            "short-position",
+            build(
+                Tool::ShortPosition,
+                &[at(250, 245.0), at(278, 215.0), at(278, 258.0)],
+            ),
+        ),
+        (
+            "position-forecast",
+            build(Tool::PositionForecast, &[at(252, 230.0), at(284, 262.0)]),
+        ),
+        (
+            "bars-pattern",
+            Drawing::from_geometry(
+                1,
+                Geometry::Bars(pattern),
+                Tool::BarsPattern.default_style(),
+            )
+            .expect("a drawing"),
+        ),
+        (
+            "ghost-feed",
+            build(Tool::GhostFeed, &[at(299, 250.0), at(318, 268.0)]),
+        ),
+        (
+            "sector",
+            build(
+                Tool::Sector,
+                &[at(236, 212.0), at(262, 212.0), at(256, 250.0)],
+            ),
+        ),
+        (
+            "anchored-vwap",
+            build(Tool::AnchoredVwap, &[at(228, 230.0)]),
+        ),
+        (
+            "fixed-range-volume-profile",
+            build(
+                Tool::FixedRangeVolumeProfile,
+                &[at(225, 230.0), at(272, 230.0)],
+            ),
+        ),
+        (
+            "anchored-volume-profile",
+            build(Tool::AnchoredVolumeProfile, &[at(246, 230.0)]),
+        ),
+        (
+            "price-range",
+            build(Tool::PriceRange, &[at(250, 222.0), at(262, 246.0)]),
+        ),
+        (
+            "date-range",
+            build(Tool::DateRange, &[at(240, 230.0), at(272, 230.0)]),
+        ),
+        (
+            "date-and-price-range",
+            build(Tool::DateAndPriceRange, &[at(240, 226.0), at(268, 252.0)]),
+        ),
+    ]
+}
+
+/// The forecasting, volume and measurement tools on a chart, written as PNGs for a person to look
+/// at. Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_forecast -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_forecast_volume_and_measurement_tools() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawing) in forecast_drawings() {
+            if light
+                && !["long-position", "fixed-range-volume-profile", "price-range"].contains(&name)
+            {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = vec![drawing];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("forecast-{name}{suffix}.png")), png).expect("written");
         }
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);

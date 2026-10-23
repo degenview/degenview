@@ -1248,6 +1248,92 @@ fn every_pattern_tool() -> Vec<crate::model::Drawing> {
         .collect()
 }
 
+/// One drawing of every forecasting, volume and measurement tool, with options that are not the
+/// defaults.
+fn every_forecast_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..7)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::forecast_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.position.account = 25_000.0;
+            style.position.always_stats = true;
+            style.ghost.variance = 80.0;
+            style.vwap.bands[1].enabled = true;
+            style.profile.rows = 36;
+            style.measure.ticks = false;
+            Drawing::sample(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn every_forecast_volume_and_measurement_tool_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_forecast_tool();
+    assert_eq!(drawings.len(), 12);
+    put_layouts(&a, &[layout_of(10, "Forecast", &drawings)]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 12);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Moving a position's stop uploads that drawing and no other.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::LongPosition))
+        .unwrap()
+        .anchors_mut()[2]
+        .price -= 3.0;
+    put_layouts(&a, &[layout_of(10, "Forecast", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    // And so does another ghost feed run (a new seed).
+    let before = cloud.save_attempts();
+    let mut rerun = edited.clone();
+    if let Some(crate::model::Geometry::Ghost { seed, .. }) = rerun
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::GhostFeed))
+        .and_then(|drawing| drawing.geometry_mut())
+    {
+        *seed = seed.wrapping_add(1);
+    }
+    put_layouts(&a, &[layout_of(10, "Forecast", &rerun)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
 #[test]
 fn every_pattern_wave_and_cycle_reaches_the_other_mac_exactly_as_drawn() {
     let (cloud, mut a, mut b) = pair();

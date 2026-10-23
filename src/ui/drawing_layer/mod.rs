@@ -10,6 +10,8 @@
 mod draw;
 mod edit;
 mod forecast_shapes;
+#[cfg(test)]
+mod forecast_tests;
 mod line_shapes;
 #[cfg(test)]
 mod line_tests;

@@ -10,8 +10,12 @@
 //!
 //! Pure: no egui types, no clock, no global random number generator.
 
+use super::kline::Kline;
+
 /// The most candles one ghost feed makes.
 pub const MAX_CANDLES: usize = 500;
+/// How many of the bars before a ghost feed's start its automatic average range is taken from.
+pub const RANGE_WINDOW: usize = 20;
 
 /// One ghost candle.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -43,6 +47,20 @@ impl Random {
     fn signed(&mut self) -> f64 {
         self.unit() * 2.0 - 1.0
     }
+}
+
+/// The average high-to-low of the (at most) `window` bars just before bar `before`, the range a
+/// ghost feed's candles take when nothing else says how big they are: "previous data", as
+/// TradingView puts it. `None` when there are no such bars or none has a range.
+pub fn recent_range(bars: &[Kline], before: usize, window: usize) -> Option<f64> {
+    let end = before.min(bars.len());
+    let start = end.saturating_sub(window);
+    let ranges: Vec<f64> = bars[start..end]
+        .iter()
+        .map(|bar| bar.high - bar.low)
+        .filter(|range| range.is_finite() && *range >= 0.0)
+        .collect();
+    (!ranges.is_empty()).then(|| ranges.iter().sum::<f64>() / ranges.len() as f64)
 }
 
 /// `count` candles from `start` to `end` (a price each), with an average high-to-low range of
@@ -221,5 +239,35 @@ mod tests {
             run.iter()
                 .all(|candle| (candle.close - 100.0).abs() <= 40.0 * 1.0)
         );
+    }
+
+    #[test]
+    fn the_automatic_range_is_the_average_of_the_bars_just_before() {
+        let bar = |high: f64, low: f64| Kline {
+            open_time: 0,
+            close_time: 0,
+            open: low,
+            high,
+            low,
+            close: high,
+            volume: 1.0,
+        };
+        let bars = [
+            bar(110.0, 100.0),
+            bar(112.0, 100.0),
+            bar(120.0, 100.0),
+            bar(999.0, 1.0),
+        ];
+        // The three bars before bar 3: ranges 10, 12 and 20.
+        assert_eq!(recent_range(&bars, 3, 20), Some(14.0));
+        // A window of two takes the nearest two: 12 and 20.
+        assert_eq!(recent_range(&bars, 3, 2), Some(16.0));
+        // Nothing before the first bar, and a start past the data is the data there is.
+        assert_eq!(recent_range(&bars, 0, 20), None);
+        assert_eq!(recent_range(&bars, 99, 1), Some(998.0));
+        assert_eq!(recent_range(&[], 3, 20), None);
+        // A bar that is not a number is left out rather than poisoning the average.
+        let broken = [bar(110.0, 100.0), bar(f64::NAN, 100.0)];
+        assert_eq!(recent_range(&broken, 2, 20), Some(10.0));
     }
 }

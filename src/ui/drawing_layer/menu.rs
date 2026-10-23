@@ -1165,6 +1165,9 @@ pub(super) fn has_style_controls(drawing: &Drawing) -> bool {
         Caps::AUTO_TEXT,
         Caps::WIDTH,
         Caps::DASH,
+        Caps::VWAP,
+        Caps::PROFILE,
+        Caps::BARS,
     ]
     .into_iter()
     .any(|cap| caps.has(cap))
@@ -1311,9 +1314,76 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             next.pattern.ratios = !style.pattern.ratios;
         }
     }
-    (next != style).then(|| {
+    if caps.has(Caps::POSITION) {
+        if kit::value_chip(ui, "Compact", style.position.compact).clicked() {
+            next.position.compact = !style.position.compact;
+        }
+        if kit::value_chip(ui, "Always stats", style.position.always_stats).clicked() {
+            next.position.always_stats = !style.position.always_stats;
+        }
+    }
+    if caps.has(Caps::VWAP) {
+        use crate::model::chart_type::PriceSource;
+        let labels: Vec<String> = PriceSource::ALL
+            .iter()
+            .map(|source| source.label().to_owned())
+            .collect();
+        let selected = PriceSource::ALL
+            .iter()
+            .position(|source| *source == style.vwap.source)
+            .unwrap_or(0);
+        if let Some(index) = kit::menu_picker(ui, 84.0, &labels, selected, true) {
+            next.vwap.source = PriceSource::ALL[index];
+        }
+    }
+    if caps.has(Caps::PROFILE) {
+        use crate::model::forecast_style::ProfileVolume;
+        let labels: Vec<String> = ProfileVolume::ALL
+            .iter()
+            .map(|volume| volume.label().to_owned())
+            .collect();
+        let selected = ProfileVolume::ALL
+            .iter()
+            .position(|volume| *volume == style.profile.volume)
+            .unwrap_or(0);
+        if let Some(index) = kit::menu_picker(ui, 92.0, &labels, selected, true) {
+            next.profile.volume = ProfileVolume::ALL[index];
+        }
+    }
+    // A bars pattern's mode and reflections are its geometry's, not its style's.
+    let mut pattern = None;
+    if caps.has(Caps::BARS)
+        && let Some(Geometry::Bars(current)) = drawing.geometry()
+    {
+        use crate::model::bars_pattern::BarsMode;
+        let mut edited = current.clone();
+        let labels: Vec<String> = BarsMode::ALL
+            .iter()
+            .map(|mode| mode.label().to_owned())
+            .collect();
+        let selected = BarsMode::ALL
+            .iter()
+            .position(|mode| *mode == current.mode)
+            .unwrap_or(0);
+        if let Some(index) = kit::menu_picker(ui, 112.0, &labels, selected, true) {
+            edited.mode = BarsMode::ALL[index];
+        }
+        if kit::value_chip(ui, "Mirrored", current.mirrored).clicked() {
+            edited.mirrored = !current.mirrored;
+        }
+        if kit::value_chip(ui, "Flipped", current.flipped).clicked() {
+            edited.flipped = !current.flipped;
+        }
+        pattern = (edited != *current).then_some(edited);
+    }
+    (next != style || pattern.is_some()).then(|| {
         let mut changed = drawing.clone();
         changed.set_style(next);
+        if let Some(pattern) = pattern
+            && let Some(geometry) = changed.geometry_mut()
+        {
+            *geometry = Geometry::Bars(pattern);
+        }
         changed
     })
 }

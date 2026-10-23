@@ -1043,6 +1043,14 @@ impl Tool {
         }
     }
 
+    /// The tools of the Forecast tile's menu, in order.
+    #[cfg(test)]
+    pub fn forecast_tools() -> impl Iterator<Item = Self> {
+        Self::GROUPED
+            .into_iter()
+            .filter(|tool| ToolGroup::FORECAST_MENU.contains(&tool.spec().group))
+    }
+
     /// The tools of the Patterns tile's menu, in order.
     #[cfg(test)]
     pub fn pattern_tools() -> impl Iterator<Item = Self> {
@@ -1096,6 +1104,7 @@ mod tests {
         assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
+        assert_eq!(Tool::forecast_tools().count(), 12);
         // The Fibonacci tile and the crosshair are in neither menu.
         assert!(!Tool::GROUPED.contains(&Tool::Fib));
         assert_eq!(Tool::Fib.spec().group, ToolGroup::Lines);

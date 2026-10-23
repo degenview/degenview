@@ -2006,6 +2006,18 @@ mod tests {
         style.pattern.ratios = false;
         style.pattern.precision = 5;
         style.pattern.degree = crate::model::elliott::Degree::Minute;
+        style.position.account = 25_000.0;
+        style.position.risk_percent = false;
+        style.position.risk = 125.5;
+        style.position.compact = true;
+        style.ghost.average = 1.25;
+        style.ghost.draw_wick = false;
+        style.vwap.source = crate::model::chart_type::PriceSource::Ohlc4;
+        style.vwap.bands[2].enabled = true;
+        style.profile.rows = 48;
+        style.profile.volume = crate::model::forecast_style::ProfileVolume::Delta;
+        style.profile.right = true;
+        style.measure.volume = false;
         style
     }
 
@@ -2050,6 +2062,11 @@ mod tests {
             "wrap",
             "box_width",
             "pattern",
+            "position",
+            "ghost",
+            "vwap",
+            "profile",
+            "measure",
         ] {
             assert!(!keys.contains(&new), "{new} would rewrite stored drawings");
         }
@@ -2074,6 +2091,35 @@ mod tests {
             DrawingStyle::default().pitchfork_levels
         );
         assert_eq!(bare.regression, DrawingStyle::default().regression);
+    }
+
+    #[test]
+    fn every_forecast_volume_and_measurement_tool_says_which_it_is_and_round_trips() {
+        let anchors: Vec<Anchor> = (0..7)
+            .map(|i| anchor(i * 60_000, 100.0 + (i % 3) as f64 * 7.5 + i as f64))
+            .collect();
+        for tool in Tool::forecast_tools() {
+            let count = match tool.spec().placement {
+                super::super::drawing_tool::Placement::Points(count) => count as usize,
+                super::super::drawing_tool::Placement::Single => 1,
+                other => panic!("{tool:?} is placed by {other:?}"),
+            };
+            let drawing = Drawing::sample(tool, 7, &anchors[..count], rich_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            assert_eq!(drawing.tool(), Some(tool));
+            let written = serde_json::to_value(&drawing).unwrap();
+            let back: Drawing = serde_json::from_value(written.clone()).unwrap();
+            assert_eq!(back, drawing, "{tool:?}: {written}");
+            // A default style leaves every new option out of the row.
+            let plain = Drawing::sample(tool, 7, &anchors[..count], tool.default_style()).unwrap();
+            let plain = serde_json::to_value(&plain).unwrap();
+            for key in ["position", "ghost", "vwap", "profile", "measure", "pattern"] {
+                assert!(
+                    plain["Shape"]["style"].get(key).is_none(),
+                    "{tool:?} writes {key}"
+                );
+            }
+        }
     }
 
     #[test]
