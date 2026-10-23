@@ -42,6 +42,15 @@ pub fn intersection(a1: Pos2, a2: Pos2, b1: Pos2, b2: Pos2) -> Option<Pos2> {
     (point.x.is_finite() && point.y.is_finite()).then_some(point)
 }
 
+/// Where the segment from `p` to `q` crosses the line through `a` and `b`, or `None` when it
+/// stops short of it (or runs along it).
+pub fn segment_crossing(p: Pos2, q: Pos2, a: Pos2, b: Pos2) -> Option<Pos2> {
+    let point = intersection(p, q, a, b)?;
+    let along = q - p;
+    let t = (point - p).dot(along) / along.length_sq();
+    (0.0..=1.0).contains(&t).then_some(point)
+}
+
 /// The two sides of a triangle pattern, run on from the pivots they pass through.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TriangleSides {
@@ -208,6 +217,39 @@ mod tests {
                 pos2(0.0, 0.0),
                 pos2(0.0, 1.0),
                 pos2(1.0, 1.0)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_segment_crosses_a_line_only_where_it_reaches_it() {
+        // From (0, 10) down to (10, 0), across the level line y = 5, at (5, 5).
+        let at = segment_crossing(
+            pos2(0.0, 10.0),
+            pos2(10.0, 0.0),
+            pos2(-100.0, 5.0),
+            pos2(100.0, 5.0),
+        )
+        .unwrap();
+        assert!(near(at.x, 5.0) && near(at.y, 5.0));
+        // A segment that stops short of the line does not cross it, even where its line would.
+        assert_eq!(
+            segment_crossing(
+                pos2(0.0, 10.0),
+                pos2(10.0, 8.0),
+                pos2(-100.0, 5.0),
+                pos2(100.0, 5.0)
+            ),
+            None
+        );
+        // Nor does one that runs along it.
+        assert_eq!(
+            segment_crossing(
+                pos2(0.0, 5.0),
+                pos2(10.0, 5.0),
+                pos2(-100.0, 5.0),
+                pos2(100.0, 5.0)
             ),
             None
         );

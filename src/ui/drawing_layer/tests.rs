@@ -1109,6 +1109,49 @@ fn backspace_takes_back_the_last_vertex() {
 }
 
 #[test]
+fn backspace_takes_back_the_last_pivot_of_a_pattern_and_a_right_click_abandons_it() {
+    // Five pivots of an XABCD: two taken back leave the draft waiting for the fourth.
+    let mut rig = Rig::with_tool(Tool::XabcdPattern);
+    for point in &POINTS[..4] {
+        rig.click(*point);
+    }
+    let placed = |rig: &Rig| match &rig.layer.gesture {
+        Some(Gesture::Draft(draft)) => draft.placed.len(),
+        _ => 0,
+    };
+    assert_eq!(placed(&rig), 4);
+    rig.key(Key::Backspace);
+    rig.key(Key::Backspace);
+    assert_eq!(placed(&rig), 2);
+    // Placing again carries on from there and still makes one drawing, in one undo step.
+    for point in &POINTS[2..5] {
+        rig.click(*point);
+    }
+    assert_eq!(rig.drawings.len(), 1);
+    assert_eq!(rig.drawings[0].anchors().len(), 5);
+    assert_eq!(rig.undo_steps, 1);
+    // Taking back the only pivot leaves nothing to draw.
+    let mut lone = Rig::with_tool(Tool::HeadAndShoulders);
+    lone.click(POINTS[0]);
+    lone.key(Key::Backspace);
+    assert!(lone.layer.gesture.is_none());
+
+    // A right-click abandons a half-placed pattern: no drawing, no undo step, no menu.
+    let mut abandoned = Rig::with_tool(Tool::ThreeDrivesPattern);
+    for point in &POINTS[..3] {
+        abandoned.click(*point);
+    }
+    abandoned.right_click(POINTS[4]);
+    assert!(abandoned.layer.gesture.is_none());
+    assert!(abandoned.drawings.is_empty());
+    assert_eq!(abandoned.undo_steps, 0);
+    assert!(abandoned.layer.menu.is_none());
+    // And it is a fresh start: the next click is a first pivot again.
+    abandoned.click(POINTS[0]);
+    assert_eq!(placed(&abandoned), 1);
+}
+
+#[test]
 fn a_polyline_closes_on_its_first_vertex_and_a_right_click_leaves_it_open() {
     let mut closed = Rig::with_tool(Tool::Polyline);
     for point in &POINTS[..3] {

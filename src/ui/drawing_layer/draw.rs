@@ -891,7 +891,7 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
         let galley = text_galley(painter, &label.text, &style.text, 400.0);
         let size = galley.size();
         let padding = match label.look {
-            LabelLook::Pill => vec2(6.0, 2.5),
+            LabelLook::Pill | LabelLook::Ratio => vec2(6.0, 2.5),
             LabelLook::Plain => vec2(1.0, 0.0),
         };
         let outer = size + padding * 2.0;
@@ -922,6 +922,15 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
             LabelLook::Pill => {
                 painter.rect_filled(rect, 4.0, plate);
             }
+            LabelLook::Ratio => {
+                painter.rect(
+                    rect,
+                    4.0,
+                    with_alpha(theme::surface(), 235),
+                    Stroke::new(1.0, plate),
+                    StrokeKind::Inside,
+                );
+            }
             LabelLook::Plain => {
                 for offset in [
                     vec2(-1.0, 0.0),
@@ -936,7 +945,16 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
                 }
             }
         }
-        painter.galley(origin, galley, ink);
+        if label.look == LabelLook::Ratio {
+            // The plate is the chart's own surface, so the text is the theme's, not the
+            // drawing's (which is written for the plate of a pivot's name).
+            painter.add(
+                TextShape::new(origin, galley, theme::text_primary())
+                    .with_override_text_color(theme::text_primary()),
+            );
+        } else {
+            painter.galley(origin, galley, ink);
+        }
     }
 }
 

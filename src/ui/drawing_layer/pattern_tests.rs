@@ -97,6 +97,12 @@ fn a_ratio_sits_on_the_middle_of_the_line_it_measures() {
 fn a_pivots_name_goes_above_a_high_and_below_a_low() {
     let screen = built(Tool::XabcdPattern, &gartley());
     let pivots = &screen.labels[4..];
+    assert!(
+        screen.labels[..4]
+            .iter()
+            .all(|label| label.look == LabelLook::Ratio),
+        "a ratio is not dressed as the name of a pivot"
+    );
     let pushes: Vec<f32> = pivots.iter().map(|label| label.push.y).collect();
     // X low, A high, B low, C high, D low.
     assert_eq!(pushes, [1.0, -1.0, 1.0, -1.0, 1.0]);

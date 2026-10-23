@@ -161,6 +161,9 @@ pub(super) enum LabelLook {
     Pill,
     /// The text alone, in the text colour, with a halo so it reads over the candles: a wave's.
     Plain,
+    /// On a plate of the chart's own surface, ringed and written in the drawing's line colour: a
+    /// ratio, which must not be mistaken for the name of a pivot (a drive of 2 is not wave 2).
+    Ratio,
 }
 
 /// Where a [`PivotLabel`] sits against its point.

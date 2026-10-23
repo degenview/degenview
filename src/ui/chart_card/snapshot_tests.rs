@@ -656,6 +656,196 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
 
+/// The chart patterns, Elliott waves and cycles on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_patterns_waves_and_cycles() {
+    use crate::model::Anchor;
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    // Pivots in the last stretch of `series(300)`: bars 215..290, prices around 200..275.
+    let sets: Vec<(&str, Tool, Vec<Anchor>)> = vec![
+        (
+            "xabcd",
+            Tool::XabcdPattern,
+            // A bullish Gartley: B at 0.618 of XA, C half of AB back, D at 0.786 of XA.
+            vec![
+                at(220, 215.0),
+                at(236, 262.0),
+                at(246, 232.95),
+                at(258, 247.5),
+                at(272, 225.06),
+            ],
+        ),
+        (
+            "cypher",
+            Tool::CypherPattern,
+            vec![
+                at(222, 215.0),
+                at(236, 258.0),
+                at(245, 236.5),
+                at(258, 269.7),
+                at(275, 226.7),
+            ],
+        ),
+        (
+            "head-and-shoulders",
+            Tool::HeadAndShoulders,
+            vec![
+                at(218, 222.0),
+                at(228, 244.0),
+                at(238, 232.0),
+                at(250, 262.0),
+                at(262, 233.0),
+                at(272, 246.0),
+                at(282, 228.0),
+            ],
+        ),
+        (
+            "abcd",
+            Tool::AbcdPattern,
+            vec![
+                at(225, 222.0),
+                at(242, 256.0),
+                at(256, 238.4),
+                at(275, 272.4),
+            ],
+        ),
+        (
+            "triangle",
+            Tool::TrianglePattern,
+            vec![
+                at(224, 262.0),
+                at(234, 222.0),
+                at(252, 252.0),
+                at(262, 232.0),
+            ],
+        ),
+        (
+            "three-drives",
+            Tool::ThreeDrivesPattern,
+            vec![
+                at(220, 215.0),
+                at(234, 240.0),
+                at(242, 228.0),
+                at(254, 252.0),
+                at(262, 240.0),
+                at(276, 265.0),
+            ],
+        ),
+        (
+            "elliott-impulse",
+            Tool::ElliottImpulse,
+            vec![
+                at(220, 215.0),
+                at(232, 240.0),
+                at(240, 226.0),
+                at(258, 268.0),
+                at(268, 252.0),
+                at(282, 275.0),
+            ],
+        ),
+        (
+            "elliott-correction",
+            Tool::ElliottCorrection,
+            vec![
+                at(222, 265.0),
+                at(236, 240.0),
+                at(250, 255.0),
+                at(266, 225.0),
+            ],
+        ),
+        (
+            "elliott-triangle",
+            Tool::ElliottTriangle,
+            vec![
+                at(220, 245.0),
+                at(230, 270.0),
+                at(238, 235.0),
+                at(248, 262.0),
+                at(258, 242.0),
+                at(270, 255.0),
+            ],
+        ),
+        (
+            "elliott-double",
+            Tool::ElliottDoubleCombo,
+            vec![
+                at(222, 262.0),
+                at(236, 236.0),
+                at(248, 252.0),
+                at(266, 226.0),
+            ],
+        ),
+        (
+            "elliott-triple",
+            Tool::ElliottTripleCombo,
+            vec![
+                at(220, 262.0),
+                at(232, 238.0),
+                at(242, 252.0),
+                at(254, 230.0),
+                at(264, 246.0),
+                at(280, 222.0),
+            ],
+        ),
+        (
+            "cyclic-lines",
+            Tool::CyclicLines,
+            vec![at(230, 240.0), at(242, 240.0)],
+        ),
+        (
+            "time-cycles",
+            Tool::TimeCycles,
+            vec![at(226, 225.0), at(240, 250.0)],
+        ),
+        (
+            "sine-line",
+            Tool::SineLine,
+            vec![at(232, 265.0), at(250, 215.0)],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, tool, anchors) in &sets {
+            if light && !["xabcd", "elliott-impulse", "time-cycles"].contains(name) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings =
+                vec![Drawing::build(*tool, 1, anchors, tool.default_style()).expect("builds")];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("pattern-{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
 /// The text and note tools on a chart, written as PNGs for a person to look at.
 /// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
 #[test]

@@ -1191,6 +1191,10 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         if !caps.has(Caps::WIDTH) && !caps.has(Caps::BOX) {
             next.text.color = next.stroke.color;
         }
+        // A wave's labels are in its line's colour until they are given one of their own.
+        if caps.has(Caps::WAVE) && style.text.color == style.stroke.color {
+            next.text.color = next.stroke.color;
+        }
     }
     if caps.has(Caps::FILL)
         && let Some(picked) = kit::color_well(
@@ -1280,6 +1284,31 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
             .unwrap_or(0);
         if let Some(index) = kit::menu_picker(ui, 78.0, &labels, selected, true) {
             next.stroke.dash = LineDash::ALL[index];
+        }
+    }
+    if caps.has(Caps::WAVE) {
+        use crate::model::elliott::Degree;
+        let labels: Vec<String> = Degree::ALL
+            .iter()
+            .map(|degree| format!("{}  {}", degree.label(), degree.sample()))
+            .collect();
+        let selected = Degree::ALL
+            .iter()
+            .position(|degree| *degree == style.pattern.degree)
+            .unwrap_or(0);
+        if let Some(index) = kit::menu_picker(ui, 176.0, &labels, selected, true) {
+            next.pattern.degree = Degree::ALL[index];
+        }
+        if kit::value_chip(ui, "Labels", style.pattern.labels).clicked() {
+            next.pattern.labels = !style.pattern.labels;
+        }
+    }
+    if caps.has(Caps::PATTERN) {
+        if kit::value_chip(ui, "Names", style.pattern.labels).clicked() {
+            next.pattern.labels = !style.pattern.labels;
+        }
+        if kit::value_chip(ui, "Ratios", style.pattern.ratios).clicked() {
+            next.pattern.ratios = !style.pattern.ratios;
         }
     }
     (next != style).then(|| {

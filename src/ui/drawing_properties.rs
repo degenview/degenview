@@ -799,9 +799,11 @@ impl DrawingProperties {
             } else {
                 "Color"
             };
+            // A wave's labels are in its line's colour until they are given one of their own.
+            let labels_follow = caps.has(Caps::WAVE) && style.text.color == style.stroke.color;
             color_card(ui, Icon::Palette, title, None, &mut style.stroke.color);
             // The marks and the marker carry their text in the same colour; a box has its own.
-            if !caps.has(Caps::WIDTH) && !boxed {
+            if !caps.has(Caps::WIDTH) && !boxed || labels_follow {
                 style.text.color = style.stroke.color;
             }
         }

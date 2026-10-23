@@ -1724,6 +1724,10 @@ mod tests {
         style.border.color = [10, 20, 30, 200];
         style.wrap = true;
         style.box_width = 180.0;
+        style.pattern.labels = false;
+        style.pattern.ratios = false;
+        style.pattern.precision = 5;
+        style.pattern.degree = crate::model::elliott::Degree::Minute;
         style
     }
 
@@ -1767,6 +1771,7 @@ mod tests {
             "border",
             "wrap",
             "box_width",
+            "pattern",
         ] {
             assert!(!keys.contains(&new), "{new} would rewrite stored drawings");
         }
@@ -1791,6 +1796,98 @@ mod tests {
             DrawingStyle::default().pitchfork_levels
         );
         assert_eq!(bare.regression, DrawingStyle::default().regression);
+    }
+
+    #[test]
+    fn every_pattern_wave_and_cycle_is_one_shape_that_says_which_and_round_trips() {
+        let anchors: Vec<Anchor> = (0..7)
+            .map(|i| anchor(i * 60_000, 100.0 + (i % 3) as f64 * 7.5 + i as f64))
+            .collect();
+        for tool in Tool::pattern_tools() {
+            let count = match tool.spec().placement {
+                super::super::drawing_tool::Placement::Points(count) => count as usize,
+                other => panic!("{tool:?} is placed by {other:?}"),
+            };
+            let drawing = Drawing::build(tool, 7, &anchors[..count], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            assert_eq!(drawing.tool(), Some(tool));
+            assert_eq!(drawing.anchors(), anchors[..count]);
+            let written = serde_json::to_value(&drawing).unwrap();
+            let geometry = &written["Shape"]["geometry"];
+            let key = geometry
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .as_str();
+            assert!(
+                matches!(key, "pattern" | "wave" | "cycle"),
+                "{tool:?} is stored as {key}"
+            );
+            // The default options are not written into every drawing.
+            assert!(
+                written["Shape"]["style"].get("pattern").is_none(),
+                "{tool:?}"
+            );
+            let back: Drawing = serde_json::from_value(written).unwrap();
+            assert_eq!(back, drawing);
+        }
+    }
+
+    #[test]
+    fn a_pattern_with_the_wrong_number_of_pivots_is_unreadable_not_drawn() {
+        // A stored pattern whose pivots do not match its kind is a damaged row: kept, never drawn.
+        let stored = r#"{"drawings":[
+            {"Shape":{"id":1,"geometry":{"pattern":{"kind":"xabcd","points":[
+                {"time_ms":0,"price":1.0},{"time_ms":1,"price":2.0}]}}}},
+            {"Shape":{"id":2,"geometry":{"wave":{"kind":"impulse","points":[
+                {"time_ms":0,"price":1.0}]}}}},
+            {"Shape":{"id":3,"geometry":{"cycle":{"kind":"sine_line",
+                "a":{"time_ms":0,"price":1.0},"b":{"time_ms":9,"price":2.0}}}}}
+        ]}"#;
+        let holder: Holder = serde_json::from_str(stored).unwrap();
+        assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
+        assert!(matches!(holder.drawings[1], Drawing::Unreadable(_)));
+        assert_eq!(holder.drawings[2].tool(), Some(Tool::SineLine));
+        // And a pattern kind this version does not know stays as it was.
+        let future = r#"{"drawings":[{"Shape":{"id":4,"geometry":{"pattern":{"kind":"wolfe_wave","points":[]}}}}]}"#;
+        let holder: Holder = serde_json::from_str(future).unwrap();
+        assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
+    }
+
+    #[test]
+    fn building_a_pattern_checks_the_pivot_count_and_that_they_are_not_all_one_point() {
+        let a = anchor(0, 1.0);
+        let style = DrawingStyle::default();
+        let spread: Vec<Anchor> = (0..9).map(|i| anchor(i * 10, i as f64)).collect();
+        for tool in Tool::pattern_tools()
+            .filter(|tool| tool.spec().group != super::super::ToolGroup::Cycles)
+        {
+            let count = match tool.spec().placement {
+                super::super::drawing_tool::Placement::Points(count) => count as usize,
+                _ => unreachable!(),
+            };
+            assert!(
+                Drawing::build(tool, 1, &spread[..count], style).is_some(),
+                "{tool:?}"
+            );
+            assert!(
+                Drawing::build(tool, 1, &spread[..count - 1], style).is_none(),
+                "{tool:?}"
+            );
+            assert!(
+                Drawing::build(tool, 1, &spread[..count + 1], style).is_none(),
+                "{tool:?}"
+            );
+            assert!(
+                Drawing::build(tool, 1, &vec![a; count], style).is_none(),
+                "{tool:?}"
+            );
+        }
+        // A cycle's two anchors must be at different times.
+        assert!(Drawing::build(Tool::CyclicLines, 1, &[a, anchor(0, 9.0)], style).is_none());
+        assert!(Drawing::build(Tool::CyclicLines, 1, &[a, anchor(1, 1.0)], style).is_some());
     }
 
     #[test]

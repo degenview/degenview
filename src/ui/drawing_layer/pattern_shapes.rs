@@ -95,11 +95,19 @@ fn chart_pattern(
             regions.push(vec![anchors[2], anchors[3], anchors[4]]);
         }
         PatternKind::HeadAndShoulders => {
-            // The head and the two shoulders, each a triangle on its own pivots; and the neckline
-            // through the two troughs, run from the start to the end of the pattern.
-            regions.push(vec![anchors[0], anchors[1], anchors[2]]);
-            regions.push(vec![anchors[2], anchors[3], anchors[4]]);
-            regions.push(vec![anchors[4], anchors[5], anchors[6]]);
+            // The head and the two shoulders, each the part of the zigzag above the neckline,
+            // closed by it: a shoulder's outer side starts where its rising (or falling) leg
+            // crosses the neckline. The neckline runs through the two troughs, from the start
+            // to the end of the pattern.
+            if let Some((left, right)) = kind.neckline() {
+                let neck = (anchors[left], anchors[right]);
+                let foot = |outer: Pos2, peak: Pos2| {
+                    curves::segment_crossing(outer, peak, neck.0, neck.1).unwrap_or(outer)
+                };
+                regions.push(vec![foot(anchors[0], anchors[1]), anchors[1], anchors[2]]);
+                regions.push(vec![anchors[2], anchors[3], anchors[4]]);
+                regions.push(vec![anchors[4], anchors[5], foot(anchors[6], anchors[5])]);
+            }
             if let Some((left, right)) = kind.neckline() {
                 let (from, to) = (anchors[0].x, anchors[kind.points() - 1].x);
                 if let (Some(start), Some(end)) = (
@@ -138,7 +146,7 @@ fn chart_pattern(
             screen.labels.push(PivotLabel {
                 at: middle(from, to),
                 text: pattern::format_ratio(ratio.value, options.precision),
-                look: LabelLook::Pill,
+                look: LabelLook::Ratio,
                 place: LabelPlace::On,
                 push: curves::normal_up(from, to),
             });

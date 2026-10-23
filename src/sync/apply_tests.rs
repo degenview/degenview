@@ -1220,6 +1220,122 @@ fn every_line_channel_and_pitchfork_reaches_the_other_mac_exactly_as_drawn() {
     );
 }
 
+/// One drawing of every pattern, Elliott wave and cycle tool, with a style that uses every option
+/// they have.
+fn every_pattern_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::elliott::Degree;
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..7)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::pattern_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.pattern.degree = Degree::Primary;
+            style.pattern.precision = 2;
+            style.pattern.ratios = index % 2 == 0;
+            style.text.size = 16.0;
+            Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn every_pattern_wave_and_cycle_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_pattern_tool();
+    assert_eq!(drawings.len(), 14);
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: the new tools needed no record kind of their own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 14);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Changing one wave's degree uploads that drawing and nothing else.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let wave = edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::ElliottTripleCombo))
+        .unwrap();
+    let mut style = *wave.style().unwrap();
+    style.pattern.degree = crate::model::elliott::Degree::Minute;
+    wave.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Patterns", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let triple = on_b[0]["charts"][0]["drawings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|drawing| drawing["Shape"]["geometry"]["wave"]["kind"] == "triple_combo")
+        .unwrap();
+    assert_eq!(triple["Shape"]["style"]["pattern"]["degree"], "minute");
+
+    // Moving a pivot of a pattern uploads that drawing too, and only it.
+    let before = cloud.save_attempts();
+    let mut moved = edited.clone();
+    moved
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::XabcdPattern))
+        .unwrap()
+        .anchors_mut()[3]
+        .price += 4.0;
+    put_layouts(&a, &[layout_of(10, "Patterns", &moved)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
+#[test]
+fn deleting_a_pattern_propagates_and_the_others_stay() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_pattern_tool();
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings)]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings[1..])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        13
+    );
+    assert_eq!(
+        rows(&a, "saved_view")[0]["charts"][0]["drawings"],
+        on_b[0]["charts"][0]["drawings"]
+    );
+}
+
 #[test]
 fn a_trend_line_gaining_and_losing_text_syncs_each_change_as_one_record() {
     use crate::model::{Anchor, Drawing, Tool};

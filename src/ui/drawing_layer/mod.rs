@@ -793,7 +793,8 @@ impl DrawingLayer {
         if backspace
             && !typing
             && let Some(Gesture::Draft(draft)) = &mut self.gesture
-            && is_open(draft.tool)
+            && (is_open(draft.tool)
+                || (matches!(draft.tool.spec().placement, Placement::Points(_)) && !draft.dragging))
         {
             draft.placed.pop();
             if draft.placed.is_empty() {
@@ -1160,11 +1161,12 @@ impl DrawingLayer {
 
     fn secondary_click(&mut self, point: Pos2, frame: &mut DrawingFrame, proj: &Projection) {
         // A right-click finishes an open shape (a polyline's documented alternative to a
-        // double-click); otherwise it opens the menu of what is under it.
+        // double-click) and abandons a drawing of a fixed number of points that is half placed;
+        // otherwise it opens the menu of what is under it.
         if let Some(Gesture::Draft(draft)) = self.gesture.take() {
             if is_open(draft.tool) && draft.placed.len() >= 2 {
                 self.finish_open(draft, false, frame, proj);
-            } else {
+            } else if !matches!(draft.tool.spec().placement, Placement::Points(_)) {
                 self.gesture = Some(Gesture::Draft(draft));
             }
             return;
