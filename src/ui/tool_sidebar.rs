@@ -172,7 +172,7 @@ const ROW_HEIGHT: f32 = 30.0;
 pub fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Cursor => Icon::Plus,
-        Tool::TrendLine => Icon::LineDiagonal,
+        Tool::TrendLine => Icon::LineTrend,
         Tool::Fib => Icon::FibPoints,
         Tool::Brush => Icon::Paintbrush,
         Tool::Ruler => Icon::Ruler,

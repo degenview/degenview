@@ -99,6 +99,7 @@ pub enum Icon {
     CheckCircle,
     ClockBadge,
     LineDiagonal,
+    LineTrend,
     FibPoints,
     Paintbrush,
     SunMaxFill,
@@ -876,6 +877,11 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(13.6, 8.4), 0.9, true);
         }
         Icon::LineDiagonal => line(&[p(2.5, 13.5), p(13.5, 2.5)]),
+        Icon::LineTrend => {
+            line(&[p(2.8, 13.2), p(13.2, 2.8)]);
+            circle(p(2.8, 13.2), 1.5, true);
+            circle(p(13.2, 2.8), 1.5, true);
+        }
         Icon::FibPoints => {
             // Three points joined by a dotted triangle, like `point.3.connected.trianglepath.dotted`.
             let dots = |a: Pos2, b: Pos2| {
@@ -1309,11 +1315,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             ]);
         }
         Icon::Magnet => {
-            line(&arc(8.0, 7.2, 5.4, 180.0, 360.0));
-            line(&[p(2.6, 7.2), p(2.6, 13.6)]);
-            line(&[p(13.4, 7.2), p(13.4, 13.6)]);
-            line(&[p(1.0, 13.6), p(4.2, 13.6)]);
-            line(&[p(11.8, 13.6), p(15.0, 13.6)]);
+            // A horseshoe: one thick outline, and its two poles struck solid below a gap so the
+            // tips read as the ends that pull.
+            let mut body = vec![p(1.4, 14.4)];
+            body.extend(arc(8.0, 7.8, 6.6, 180.0, 360.0));
+            body.extend([p(14.6, 14.4), p(10.4, 14.4)]);
+            body.extend(arc(8.0, 7.8, 2.4, 360.0, 180.0));
+            body.push(p(5.6, 14.4));
+            closed(&body);
+            for (left, right) in [(1.4, 5.6), (10.4, 14.6)] {
+                line(&[p(left, 9.9), p(right, 9.9)]);
+                painter.rect_filled(rect_of(p(left, 11.7), p(right, 14.4)), 0.0, color);
+            }
         }
         Icon::KeepDrawing => {
             closed(&[
@@ -1647,6 +1660,7 @@ mod tests {
             CheckCircle,
             ClockBadge,
             LineDiagonal,
+            LineTrend,
             FibPoints,
             Paintbrush,
             SunMaxFill,
@@ -1734,5 +1748,40 @@ mod tests {
             output.textures_delta.clear();
             assert!(!output.shapes.is_empty(), "{icon:?} drew nothing");
         }
+    }
+
+    /// The magnet at the sizes it is used, next to its neighbours, in both tints. Run by hand
+    /// with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_magnet() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let mut screen = Screen::new(egui::vec2(360.0, 150.0));
+        let muted = Color32::from_gray(150);
+        let accent = crate::ui::kit::ACCENT;
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(screen.run(Vec::new(), |ui| {
+                let painter = ui.painter();
+                let mut x = 12.0;
+                for (size, tint) in [(16.0, muted), (18.0, muted), (18.0, accent), (24.0, accent)] {
+                    let rect = Rect::from_min_size(pos2(x, 12.0), Vec2::splat(size));
+                    paint(painter, rect, Icon::Magnet, tint);
+                    x += size + 14.0;
+                }
+                for (k, icon) in [Icon::Magnet, Icon::KeepDrawing, Icon::LockOpen]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let rect =
+                        Rect::from_min_size(pos2(12.0 + k as f32 * 76.0, 56.0), Vec2::splat(64.0));
+                    paint(painter, rect, icon, accent);
+                }
+            }));
+        }
+        screen.save("magnet", last.expect("a frame"));
     }
 }
