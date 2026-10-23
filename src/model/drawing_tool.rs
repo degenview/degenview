@@ -78,6 +78,18 @@ pub enum Tool {
     CyclicLines,
     TimeCycles,
     SineLine,
+    LongPosition,
+    ShortPosition,
+    PositionForecast,
+    BarsPattern,
+    GhostFeed,
+    Sector,
+    AnchoredVwap,
+    FixedRangeVolumeProfile,
+    AnchoredVolumeProfile,
+    PriceRange,
+    DateRange,
+    DateAndPriceRange,
 }
 
 /// Where a tool sits in the toolbar's menus.
@@ -103,6 +115,10 @@ pub enum ToolGroup {
     ChartPatterns,
     ElliottWaves,
     Cycles,
+    /// Positions, forecasts and the sector: the first menu of the Forecast tile.
+    Forecasting,
+    VolumeBased,
+    Measurers,
 }
 
 impl ToolGroup {
@@ -114,6 +130,8 @@ impl ToolGroup {
     pub const NOTE_MENU: [Self; 2] = [Self::TextNotes, Self::Content];
     /// The groups listed in the patterns, waves and cycles tile's menu, in order.
     pub const PATTERN_MENU: [Self; 3] = [Self::ChartPatterns, Self::ElliottWaves, Self::Cycles];
+    /// The groups listed in the forecasting, volume and measurement tile's menu, in order.
+    pub const FORECAST_MENU: [Self; 3] = [Self::Forecasting, Self::VolumeBased, Self::Measurers];
 
     pub const fn title(self) -> &'static str {
         match self {
@@ -130,6 +148,9 @@ impl ToolGroup {
             Self::ChartPatterns => "Chart patterns",
             Self::ElliottWaves => "Elliott waves",
             Self::Cycles => "Cycles",
+            Self::Forecasting => "Forecasting and measurement",
+            Self::VolumeBased => "Volume-based",
+            Self::Measurers => "Measurers",
         }
     }
 }
@@ -195,6 +216,20 @@ impl Caps {
     pub const PATTERN: Self = Self(1 << 23);
     /// An Elliott wave's degree, which writes its labels.
     pub const WAVE: Self = Self(1 << 24);
+    /// A position's account, risk and quantity, its stats and its zone colours.
+    pub const POSITION: Self = Self(1 << 25);
+    /// A bars pattern's mode and reflections.
+    pub const BARS: Self = Self(1 << 26);
+    /// A ghost feed's average range, variance and candle colours.
+    pub const GHOST: Self = Self(1 << 27);
+    /// An anchored VWAP's source and bands.
+    pub const VWAP: Self = Self(1 << 28);
+    /// A volume profile's rows, value area and look.
+    pub const PROFILE: Self = Self(1 << 29);
+    /// What a measurer prints.
+    pub const MEASURE: Self = Self(1 << 30);
+    /// A position forecast's success and failure colours.
+    pub const FORECAST: Self = Self(1 << 31);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -284,7 +319,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 59] = [
+    pub const GROUPED: [Self; 71] = [
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -344,13 +379,26 @@ impl Tool {
         Self::CyclicLines,
         Self::TimeCycles,
         Self::SineLine,
+        Self::LongPosition,
+        Self::ShortPosition,
+        Self::PositionForecast,
+        Self::BarsPattern,
+        Self::GhostFeed,
+        Self::Sector,
+        Self::AnchoredVwap,
+        Self::FixedRangeVolumeProfile,
+        Self::AnchoredVolumeProfile,
+        Self::PriceRange,
+        Self::DateRange,
+        Self::DateAndPriceRange,
     ];
 
     pub const fn spec(self) -> ToolSpec {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
-            Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Lines,
-            Measure, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
+            Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Forecasting,
+            Lines, Measure, Measurers, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
+            VolumeBased,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
         // What every two-point line offers: text along it, ends, statistics and price tags.
@@ -388,6 +436,17 @@ impl Tool {
             .with(Caps::PATTERN);
         // An Elliott wave: its line, the font of its labels, and the degree that writes them.
         let wave = Caps::LINE.with(Caps::AUTO_TEXT).with(Caps::WAVE);
+        // A position: its line, the font of its stats, the prices on the axis and its account.
+        let position = Caps::COLOR
+            .with(Caps::WIDTH)
+            .with(Caps::AUTO_TEXT)
+            .with(Caps::PRICE_LABELS)
+            .with(Caps::POSITION);
+        // A measurer: its line and background, what it prints, and a note.
+        let measure = shape_line
+            .with(Caps::MEASURE)
+            .with(Caps::TEXT)
+            .with(Caps::AUTO_TEXT);
         match self {
             Self::Cursor => spec("Crosshair", Pointer, Single, Caps::NONE),
             Self::TrendLine => spec("Trend line", TrendLines, Points(2), line),
@@ -619,6 +678,43 @@ impl Tool {
                 Caps::LINE.with(Caps::FILL),
             ),
             Self::SineLine => spec("Sine line", Cycles, Points(2), Caps::LINE),
+            Self::LongPosition => spec("Long position", Forecasting, Single, position),
+            Self::ShortPosition => spec("Short position", Forecasting, Single, position),
+            Self::PositionForecast => spec(
+                "Position forecast",
+                Forecasting,
+                Points(2),
+                Caps::LINE.with(Caps::AUTO_TEXT).with(Caps::FORECAST),
+            ),
+            Self::BarsPattern => spec(
+                "Bars pattern",
+                Forecasting,
+                Points(3),
+                Caps::COLOR.with(Caps::BARS),
+            ),
+            Self::GhostFeed => spec("Ghost feed", Forecasting, Points(2), Caps::GHOST),
+            Self::Sector => spec("Sector", Forecasting, Points(3), shape_line),
+            Self::AnchoredVwap => spec(
+                "Anchored VWAP",
+                VolumeBased,
+                Single,
+                Caps::LINE.with(Caps::VWAP),
+            ),
+            Self::FixedRangeVolumeProfile => spec(
+                "Fixed range volume profile",
+                VolumeBased,
+                Points(2),
+                Caps::PROFILE,
+            ),
+            Self::AnchoredVolumeProfile => spec(
+                "Anchored volume profile",
+                VolumeBased,
+                Single,
+                Caps::PROFILE,
+            ),
+            Self::PriceRange => spec("Price range", Measurers, Points(2), measure),
+            Self::DateRange => spec("Date range", Measurers, Points(2), measure),
+            Self::DateAndPriceRange => spec("Date and price range", Measurers, Points(2), measure),
         }
     }
 
@@ -889,6 +985,41 @@ impl Tool {
                 style
             }
             Self::SineLine => tinted([21, 153, 128, 255], false),
+            Self::LongPosition | Self::ShortPosition => {
+                // The library's: a 1 px grey line, white 12 px stats, the prices on the axis.
+                let mut style = tinted([128, 128, 128, 255], false);
+                style.stroke.width = 1.0;
+                style.text.color = [255, 255, 255, 255];
+                style.text.size = 12.0;
+                style.price_labels = true;
+                style
+            }
+            Self::PositionForecast => {
+                let mut style = tinted([41, 98, 255, 255], false);
+                style.stroke.width = 2.0;
+                style.text.color = [255, 255, 255, 255];
+                style.text.size = 12.0;
+                style
+            }
+            Self::BarsPattern => tinted([41, 98, 255, 255], false),
+            Self::GhostFeed => DrawingStyle::default(),
+            // Not in the Charting Library: a blue border and background, as the other shapes.
+            Self::Sector => tinted([41, 98, 255, 255], true),
+            Self::AnchoredVwap => {
+                let mut style = tinted([30, 136, 229, 255], false);
+                style.stroke.width = 1.0;
+                style
+            }
+            Self::FixedRangeVolumeProfile | Self::AnchoredVolumeProfile => DrawingStyle::default(),
+            Self::PriceRange | Self::DateRange | Self::DateAndPriceRange => {
+                // The library's: a 2 px blue line, the background 60 % transparent, and 12 px
+                // custom text in the same blue (the label is white on its grey plate).
+                let mut style = tinted([41, 98, 255, 255], true);
+                style.stroke.width = 2.0;
+                style.fill.color = [41, 98, 255, 102];
+                style.text.size = 12.0;
+                style
+            }
             // A card takes its look from the theme, and a picture has none to style.
             Self::Cursor | Self::Fib | Self::Ruler | Self::Image | Self::Post => {
                 DrawingStyle::default()
@@ -935,7 +1066,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 59);
+        assert_eq!(Tool::GROUPED.len(), 71);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -944,6 +1075,7 @@ mod tests {
                 &ToolGroup::LINE_MENU,
                 &ToolGroup::NOTE_MENU,
                 &ToolGroup::PATTERN_MENU,
+                &ToolGroup::FORECAST_MENU,
             ];
             assert_eq!(
                 menus.iter().filter(|menu| menu.contains(&group)).count(),
@@ -961,6 +1093,7 @@ mod tests {
         assert_eq!(counts(&ToolGroup::LINE_MENU), [9, 4, 4]);
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
+        assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
         // The Fibonacci tile and the crosshair are in neither menu.

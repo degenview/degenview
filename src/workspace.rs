@@ -180,6 +180,8 @@ pub struct ChartWorkspace {
     note_tool: Tool,
     /// The tool the chart patterns, Elliott waves and cycles tile shows.
     pattern_tool: Tool,
+    /// The tool the forecasting, volume and measurement tile shows.
+    forecast_tool: Tool,
     /// How drawings snap to the bars' prices (the strip's magnet).
     magnet: MagnetMode,
     /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
@@ -342,6 +344,7 @@ impl ChartWorkspace {
             line_tool: Tool::TrendLine,
             note_tool: Tool::Text,
             pattern_tool: Tool::XabcdPattern,
+            forecast_tool: Tool::LongPosition,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all_drawings: false,

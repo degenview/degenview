@@ -8,6 +8,9 @@
 use super::Timeframe;
 use super::chart_type::{LineDash, PriceSource, Rgba};
 use super::elliott::Degree;
+use super::forecast_style::{
+    GhostOptions, MeasureOptions, PositionOptions, ProfileOptions, VwapOptions,
+};
 use serde::{Deserialize, Serialize};
 
 /// The thickest stroke a drawing may carry, in logical pixels.
@@ -530,6 +533,26 @@ fn is_default_pattern(options: &PatternOptions) -> bool {
     *options == PatternOptions::default()
 }
 
+fn is_default_position(options: &PositionOptions) -> bool {
+    *options == PositionOptions::default()
+}
+
+fn is_default_ghost(options: &GhostOptions) -> bool {
+    *options == GhostOptions::default()
+}
+
+fn is_default_vwap(options: &VwapOptions) -> bool {
+    *options == VwapOptions::default()
+}
+
+fn is_default_profile(options: &ProfileOptions) -> bool {
+    *options == ProfileOptions::default()
+}
+
+fn is_default_measure(options: &MeasureOptions) -> bool {
+    *options == MeasureOptions::default()
+}
+
 fn is_default_pitchfork_levels(levels: &[Level; PITCHFORK_LEVELS]) -> bool {
     *levels == default_pitchfork_levels()
 }
@@ -599,6 +622,17 @@ pub struct DrawingStyle {
     /// What a chart pattern or an Elliott wave prints on itself.
     #[serde(skip_serializing_if = "is_default_pattern")]
     pub pattern: PatternOptions,
+    /// A position's account and risk (and a forecast's result colours).
+    #[serde(skip_serializing_if = "is_default_position")]
+    pub position: PositionOptions,
+    #[serde(skip_serializing_if = "is_default_ghost")]
+    pub ghost: GhostOptions,
+    #[serde(skip_serializing_if = "is_default_vwap")]
+    pub vwap: VwapOptions,
+    #[serde(skip_serializing_if = "is_default_profile")]
+    pub profile: ProfileOptions,
+    #[serde(skip_serializing_if = "is_default_measure")]
+    pub measure: MeasureOptions,
     /// Draw every line of a pitchfork in the median's colour.
     #[serde(skip_serializing_if = "is_false")]
     pub use_one_color: bool,
@@ -647,6 +681,11 @@ impl Default for DrawingStyle {
             channel_levels: default_channel_levels(),
             regression: RegressionOptions::default(),
             pattern: PatternOptions::default(),
+            position: PositionOptions::default(),
+            ghost: GhostOptions::default(),
+            vwap: VwapOptions::default(),
+            profile: ProfileOptions::default(),
+            measure: MeasureOptions::default(),
             use_one_color: false,
             time_label: false,
             hide_text: false,
@@ -741,6 +780,10 @@ impl DrawingStyle {
         }
         self.border.width = width(self.border.width, 1.0);
         self.pattern.precision = self.pattern.precision.min(MAX_RATIO_PRECISION);
+        self.position = self.position.sanitized();
+        self.ghost = self.ghost.sanitized();
+        self.vwap = self.vwap.sanitized();
+        self.profile = self.profile.sanitized();
         self.box_width = if self.box_width.is_finite() {
             self.box_width.clamp(0.0, MAX_BOX_WIDTH)
         } else {

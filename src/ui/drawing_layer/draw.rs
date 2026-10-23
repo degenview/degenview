@@ -618,8 +618,14 @@ pub(super) fn paint(
         return None;
     }
 
-    for mesh in &screen.band_meshes {
+    for mesh in screen.band_meshes.iter().chain(&screen.shade_meshes) {
         painter.add(Shape::mesh(mesh.clone()));
+    }
+    for color_box in &screen.boxes {
+        painter.rect_filled(color_box.rect, 0.0, series_render::color(color_box.color));
+    }
+    for candle in &screen.candles {
+        paint_candle(painter, candle);
     }
     if let Some(mesh) = &screen.fill_mesh {
         painter.add(Shape::mesh(mesh.clone()));
@@ -819,7 +825,7 @@ pub(super) fn paint(
             accent,
         );
     }
-    draw_labels(painter, screen, style);
+    draw_labels(painter, screen, style, emphasis.selected);
     if screen.arrow.is_some() {
         draw_arrow_extras(painter, screen, drawing, style, proj, emphasis.selected);
     }
@@ -866,6 +872,55 @@ pub(super) fn paint(
     }
 }
 
+/// One candle or bar: a wick, and either ticks (a bar) or a body.
+fn paint_candle(painter: &Painter, candle: &super::shape::Candle) {
+    use super::shape::CandleLook;
+    let x = candle.x;
+    let (top, bottom) = (candle.high.min(candle.low), candle.high.max(candle.low));
+    match candle.look {
+        CandleLook::Stick { color } => {
+            let stroke = Stroke::new(1.0, series_render::color(color));
+            painter.line_segment([pos2(x, top), pos2(x, bottom)], stroke);
+            painter.line_segment(
+                [pos2(x - candle.half, candle.open), pos2(x, candle.open)],
+                stroke,
+            );
+            painter.line_segment(
+                [pos2(x, candle.close), pos2(x + candle.half, candle.close)],
+                stroke,
+            );
+        }
+        CandleLook::Body { fill, border, wick } => {
+            if let Some(wick) = wick {
+                painter.line_segment(
+                    [pos2(x, top), pos2(x, bottom)],
+                    Stroke::new(1.0, series_render::color(wick)),
+                );
+            }
+            let (body_top, body_bottom) = (
+                candle.open.min(candle.close),
+                candle
+                    .open
+                    .max(candle.close)
+                    .max(candle.open.min(candle.close) + 1.0),
+            );
+            let body = Rect::from_min_max(
+                pos2(x - candle.half, body_top),
+                pos2(x + candle.half, body_bottom),
+            );
+            painter.rect_filled(body, 0.0, series_render::color(fill));
+            if let Some(border) = border {
+                painter.rect_stroke(
+                    body,
+                    0.0,
+                    Stroke::new(1.0, series_render::color(border)),
+                    StrokeKind::Inside,
+                );
+            }
+        }
+    }
+}
+
 /// Space (px) between a pivot and the name beside it.
 const LABEL_GAP: f32 = 7.0;
 /// Space (px) kept between two labels that would meet.
@@ -877,7 +932,7 @@ const LABEL_TRIES: usize = 5;
 /// text colour; a wave's are the text alone with a halo. Each is laid out here, where text can be
 /// sized, and gives way along its push to the labels already placed, so a ratio never sits on a
 /// neighbour's.
-fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
+fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selected: bool) {
     if screen.labels.is_empty() {
         return;
     }
@@ -887,11 +942,15 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
     let ink = series_render::color(style.text.color);
     let halo = with_alpha(theme::surface(), 210);
     let mut placed: Vec<Rect> = Vec::with_capacity(screen.labels.len());
-    for label in &screen.labels {
-        let galley = text_galley(painter, &label.text, &style.text, 400.0);
+    for label in screen
+        .labels
+        .iter()
+        .filter(|label| selected || !label.on_select)
+    {
+        let galley = text_galley(painter, &label.text, &style.text, 600.0);
         let size = galley.size();
         let padding = match label.look {
-            LabelLook::Pill | LabelLook::Ratio => vec2(6.0, 2.5),
+            LabelLook::Pill | LabelLook::Ratio | LabelLook::Plate { .. } => vec2(6.0, 2.5),
             LabelLook::Plain => vec2(1.0, 0.0),
         };
         let outer = size + padding * 2.0;
@@ -921,6 +980,14 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle) {
         match label.look {
             LabelLook::Pill => {
                 painter.rect_filled(rect, 4.0, plate);
+            }
+            LabelLook::Plate { fill, ink } => {
+                painter.rect_filled(rect, 4.0, series_render::color(fill));
+                painter.add(
+                    TextShape::new(origin, galley, series_render::color(ink))
+                        .with_override_text_color(series_render::color(ink)),
+                );
+                continue;
             }
             LabelLook::Ratio => {
                 painter.rect(

@@ -7,13 +7,16 @@
 //! drawing never touch each other.
 
 use super::Timeframe;
+use super::bars_pattern::BarsPattern;
 use super::cycle::CycleKind;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
 use super::elliott::WaveKind;
 use super::image_content::{Content, ImageData};
 use super::link_card::LinkCard;
+use super::measure::MeasureKind;
 use super::pattern::PatternKind;
+use super::position::Side;
 use super::table::TableData;
 use serde::{Deserialize, Serialize};
 
@@ -311,6 +314,53 @@ pub enum Geometry {
         a: Anchor,
         b: Anchor,
     },
+    /// A hypothetical trade: its entry, its target and its stop. The target's and the stop's times
+    /// are the drawing's right edge, so they are always the same.
+    Position {
+        side: Side,
+        entry: Anchor,
+        target: Anchor,
+        stop: Anchor,
+    },
+    /// An entry (`source`) and an exit (`target`) for a trade, and the time between them.
+    Forecast {
+        source: Anchor,
+        target: Anchor,
+    },
+    /// A run of the chart's own bars, copied and set down.
+    Bars(BarsPattern),
+    /// Hypothetical candles from `start` to `end`, made from `seed` alone.
+    Ghost {
+        start: Anchor,
+        end: Anchor,
+        seed: u64,
+    },
+    /// The wedge of a circle: `radius` sets its centre-to-edge distance and where it starts, `tip`
+    /// where it ends.
+    Sector {
+        center: Anchor,
+        radius: Anchor,
+        tip: Anchor,
+    },
+    /// The VWAP from `at`'s bar to the latest. Only the time is read.
+    Vwap {
+        at: Anchor,
+    },
+    /// The volume profile of the bars between `a` and `b`. Only the times are read.
+    FixedProfile {
+        a: Anchor,
+        b: Anchor,
+    },
+    /// The volume profile from `at`'s bar to the latest. Only the time is read.
+    AnchoredProfile {
+        at: Anchor,
+    },
+    /// A measurer between two anchors.
+    Measure {
+        kind: MeasureKind,
+        a: Anchor,
+        b: Anchor,
+    },
 }
 
 /// Which Andrews pitchfork a [`Geometry::Pitchfork`] is.
@@ -377,7 +427,46 @@ fn disjoint_end(a: Anchor, b: Anchor, c: Anchor) -> Anchor {
     }
 }
 
+/// How far a position's target and stop are from its entry, as a fraction of the price, when only the
+/// entry is known (the layer sizes a new one from what is on screen instead).
+const DEFAULT_TARGET: f64 = 0.04;
+const DEFAULT_STOP: f64 = 0.02;
+/// How wide a position is, in milliseconds, when only the entry is known.
+const DEFAULT_WIDTH_MS: i64 = 24 * 60 * 60 * 1000;
+
 impl Geometry {
+    /// A position of `side` at `entry` with a target and a stop at the default distances and the
+    /// default width: for a preview and for a position made from its entry alone.
+    pub fn default_position(side: Side, entry: Anchor) -> Self {
+        let unit = (entry.price.abs() * DEFAULT_TARGET).max(f64::MIN_POSITIVE);
+        let (target, stop) = (
+            entry.price + side.sign() * unit,
+            entry.price - side.sign() * unit * (DEFAULT_STOP / DEFAULT_TARGET),
+        );
+        let time_ms = entry.time_ms.saturating_add(DEFAULT_WIDTH_MS);
+        Self::Position {
+            side,
+            entry,
+            target: Anchor {
+                time_ms,
+                price: target,
+            },
+            stop: Anchor {
+                time_ms,
+                price: stop,
+            },
+        }
+    }
+
+    /// The seed of a ghost feed that starts at `start`: the same start always draws the same
+    /// candles. (The dialog can change the seed to draw another run.)
+    pub fn ghost_seed(start: Anchor) -> u64 {
+        (start.time_ms as u64)
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .rotate_left(17)
+            ^ start.price.to_bits()
+    }
+
     /// The tool that draws this geometry.
     pub fn tool(&self) -> Tool {
         match self {
@@ -404,6 +493,20 @@ impl Geometry {
             Self::Pattern { kind, .. } => kind.tool(),
             Self::Wave { kind, .. } => kind.tool(),
             Self::Cycle { kind, .. } => kind.tool(),
+            Self::Position {
+                side: Side::Long, ..
+            } => Tool::LongPosition,
+            Self::Position {
+                side: Side::Short, ..
+            } => Tool::ShortPosition,
+            Self::Forecast { .. } => Tool::PositionForecast,
+            Self::Bars(_) => Tool::BarsPattern,
+            Self::Ghost { .. } => Tool::GhostFeed,
+            Self::Sector { .. } => Tool::Sector,
+            Self::Vwap { .. } => Tool::AnchoredVwap,
+            Self::FixedProfile { .. } => Tool::FixedRangeVolumeProfile,
+            Self::AnchoredProfile { .. } => Tool::AnchoredVolumeProfile,
+            Self::Measure { kind, .. } => kind.tool(),
             Self::Highlighter { .. } => Tool::Highlighter,
             Self::ArrowMarker { .. } => Tool::ArrowMarker,
             Self::Arrow { .. } => Tool::Arrow,
@@ -440,7 +543,29 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Cycle { a, b, .. }
+            | Self::FixedProfile { a, b }
+            | Self::Measure { a, b, .. }
+            | Self::Forecast {
+                source: a,
+                target: b,
+            }
+            | Self::Ghost {
+                start: a, end: b, ..
+            }
             | Self::Ellipse { a, b } => vec![*a, *b],
+            Self::Position {
+                entry,
+                target,
+                stop,
+                ..
+            } => vec![*entry, *target, *stop],
+            Self::Sector {
+                center,
+                radius,
+                tip,
+            } => vec![*center, *radius, *tip],
+            Self::Bars(pattern) => vec![pattern.at],
+            Self::Vwap { at } | Self::AnchoredProfile { at } => vec![*at],
             Self::Leader { at, label, .. }
             | Self::Signpost {
                 anchor: at, label, ..
@@ -491,7 +616,29 @@ impl Geometry {
             | Self::Arrow { a, b }
             | Self::Rectangle { a, b }
             | Self::Cycle { a, b, .. }
+            | Self::FixedProfile { a, b }
+            | Self::Measure { a, b, .. }
+            | Self::Forecast {
+                source: a,
+                target: b,
+            }
+            | Self::Ghost {
+                start: a, end: b, ..
+            }
             | Self::Ellipse { a, b } => vec![a, b],
+            Self::Position {
+                entry,
+                target,
+                stop,
+                ..
+            } => vec![entry, target, stop],
+            Self::Sector {
+                center,
+                radius,
+                tip,
+            } => vec![center, radius, tip],
+            Self::Bars(pattern) => vec![&mut pattern.at],
+            Self::Vwap { at } | Self::AnchoredProfile { at } => vec![at],
             Self::Leader { at, label, .. }
             | Self::Signpost {
                 anchor: at, label, ..
@@ -537,6 +684,19 @@ impl Geometry {
             | (Self::DisjointChannel { .. }, 3) => (true, false),
             // A signpost's plate stays on its anchor's bar: only its height is the user's.
             (Self::Signpost { .. }, 1) => (false, true),
+            // A position's stop is under its target: only its price is its own.
+            (Self::Position { .. }, 2) => (false, true),
+            // What a VWAP or a profile reads is the bar, not the price the handle was left at.
+            (Self::Vwap { .. } | Self::AnchoredProfile { .. } | Self::FixedProfile { .. }, _) => {
+                (true, false)
+            }
+            (
+                Self::Measure {
+                    kind: MeasureKind::Date,
+                    ..
+                },
+                _,
+            ) => (true, false),
             _ => (true, true),
         }
     }
@@ -556,6 +716,7 @@ impl Geometry {
                 c.time_ms = a.time_ms / 2 + b.time_ms / 2 + (a.time_ms % 2 + b.time_ms % 2) / 2;
             }
             (Self::Signpost { anchor, label }, _) => label.time_ms = anchor.time_ms,
+            (Self::Position { target, stop, .. }, _) => stop.time_ms = target.time_ms,
             _ => {}
         }
     }
@@ -574,6 +735,7 @@ impl Geometry {
             // A pattern or a wave has its tool's number of pivots and no other.
             Self::Pattern { kind, .. } => anchors.len() == kind.points(),
             Self::Wave { kind, .. } => anchors.len() == kind.points(),
+            Self::Bars(pattern) => pattern.is_valid(),
             _ => true,
         };
         enough && anchors.len() <= MAX_POINTS && anchors.iter().all(Anchor::is_finite)
@@ -772,8 +934,40 @@ impl Geometry {
                 a: first,
                 b: last,
             },
-            // A picture has to be chosen before it can be shown, so there is nothing to preview.
-            Tool::Cursor | Tool::Fib | Tool::Brush | Tool::Ruler | Tool::Image | Tool::Post => {
+            // The layer sizes a position from the view; this is its entry alone.
+            Tool::LongPosition => Self::default_position(Side::Long, last),
+            Tool::ShortPosition => Self::default_position(Side::Short, last),
+            Tool::PositionForecast => Self::Forecast {
+                source: first,
+                target: last,
+            },
+            Tool::GhostFeed => Self::Ghost {
+                start: first,
+                end: last,
+                seed: Self::ghost_seed(first),
+            },
+            Tool::Sector => Self::Sector {
+                center: first,
+                radius: at(1),
+                tip: last,
+            },
+            Tool::AnchoredVwap => Self::Vwap { at: last },
+            Tool::FixedRangeVolumeProfile => Self::FixedProfile { a: first, b: last },
+            Tool::AnchoredVolumeProfile => Self::AnchoredProfile { at: last },
+            Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange => Self::Measure {
+                kind: MeasureKind::of_tool(tool)?,
+                a: first,
+                b: last,
+            },
+            // A picture has to be chosen before it can be shown, and a bars pattern copies the bars
+            // the chart has, which a geometry alone does not hold: the layer previews them.
+            Tool::Cursor
+            | Tool::Fib
+            | Tool::Brush
+            | Tool::Ruler
+            | Tool::Image
+            | Tool::Post
+            | Tool::BarsPattern => {
                 return None;
             }
         })
@@ -907,6 +1101,52 @@ impl Geometry {
                     points: points.to_vec(),
                 }
             }
+            (Tool::LongPosition, [entry]) => Self::default_position(Side::Long, *entry),
+            (Tool::ShortPosition, [entry]) => Self::default_position(Side::Short, *entry),
+            (Tool::LongPosition | Tool::ShortPosition, [entry, target, stop]) => {
+                let side = if tool == Tool::LongPosition {
+                    Side::Long
+                } else {
+                    Side::Short
+                };
+                Self::Position {
+                    side,
+                    entry: *entry,
+                    target: *target,
+                    // The stop is under the target.
+                    stop: Anchor {
+                        time_ms: target.time_ms,
+                        price: stop.price,
+                    },
+                }
+            }
+            (Tool::PositionForecast, [source, target]) if source != target => Self::Forecast {
+                source: *source,
+                target: *target,
+            },
+            (Tool::GhostFeed, [start, end]) if start != end => Self::Ghost {
+                start: *start,
+                end: *end,
+                seed: Self::ghost_seed(*start),
+            },
+            (Tool::Sector, [center, radius, tip]) if center != radius => Self::Sector {
+                center: *center,
+                radius: *radius,
+                tip: *tip,
+            },
+            (Tool::AnchoredVwap, [at]) => Self::Vwap { at: *at },
+            (Tool::AnchoredVolumeProfile, [at]) => Self::AnchoredProfile { at: *at },
+            // A profile of a range needs a range: two different times.
+            (Tool::FixedRangeVolumeProfile, [a, b]) if a.time_ms != b.time_ms => {
+                Self::FixedProfile { a: *a, b: *b }
+            }
+            (Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange, [a, b]) if a != b => {
+                Self::Measure {
+                    kind: MeasureKind::of_tool(tool)?,
+                    a: *a,
+                    b: *b,
+                }
+            }
             // A cycle's period is the distance in time between its anchors.
             (tool, [a, b]) if CycleKind::of_tool(tool).is_some() && a.time_ms != b.time_ms => {
                 Self::Cycle {
@@ -1017,6 +1257,26 @@ impl Drawing {
     /// picture to show, the rest are built as usual. Not for the app: a real picture is chosen.
     #[cfg(test)]
     pub fn sample(tool: Tool, id: u64, anchors: &[Anchor], style: DrawingStyle) -> Option<Self> {
+        if tool == Tool::BarsPattern {
+            // The bars a person would have copied from a chart, set down at the last anchor.
+            let at = *anchors.last()?;
+            let bars = (0..5)
+                .map(|index| {
+                    let step = index as f64;
+                    [step, step + 2.0, step - 1.0, step + 1.0]
+                })
+                .collect();
+            let pattern = BarsPattern {
+                at,
+                from_ms: anchors[0].time_ms,
+                to_ms: anchors[0].time_ms + 4 * 60_000,
+                bars,
+                mode: Default::default(),
+                mirrored: false,
+                flipped: false,
+            };
+            return Self::from_geometry(id, Geometry::Bars(pattern), style);
+        }
         if tool == Tool::Post {
             let link = "https://x.com/degenview/status/1750000000000000000";
             let card = LinkCard::new(super::link_card::Link::parse(link).ok()?);
@@ -1055,6 +1315,20 @@ impl Drawing {
             _ => return None,
         };
         Some(Self::Shape {
+            id,
+            geometry,
+            style: style.sanitized(),
+            text: String::new(),
+            locked: false,
+            hidden: false,
+            visibility: Visibility::ALL,
+        })
+    }
+
+    /// A new drawing of a geometry made by something other than its anchors alone (a bars
+    /// pattern, which copies the chart's bars), in `style`. `None` when the geometry is not valid.
+    pub fn from_geometry(id: u64, geometry: Geometry, style: DrawingStyle) -> Option<Self> {
+        geometry.is_valid().then(|| Self::Shape {
             id,
             geometry,
             style: style.sanitized(),
@@ -1702,6 +1976,10 @@ mod tests {
             // of its second edge.
             let kept = match tool {
                 Tool::DisjointChannel => 4,
+                // A position keeps its entry, target and stop; a bars pattern the one anchor it is
+                // set down at.
+                Tool::LongPosition | Tool::ShortPosition => 3,
+                Tool::BarsPattern => 1,
                 _ => count,
             };
             assert_eq!(drawing.anchors().len(), kept.max(1), "{tool:?}");
@@ -1796,6 +2074,167 @@ mod tests {
             DrawingStyle::default().pitchfork_levels
         );
         assert_eq!(bare.regression, DrawingStyle::default().regression);
+    }
+
+    #[test]
+    fn a_position_is_a_box_whose_target_and_stop_share_its_right_edge() {
+        use super::super::position::Side;
+        let entry = anchor(1_000, 100.0);
+        let long = Geometry::from_anchors(
+            Tool::LongPosition,
+            &[entry, anchor(9_000, 110.0), anchor(4_000, 95.0)],
+        )
+        .unwrap();
+        // The stop is under the target whatever time the third click was at.
+        assert_eq!(
+            long.anchors(),
+            [entry, anchor(9_000, 110.0), anchor(9_000, 95.0)]
+        );
+        assert_eq!(long.tool(), Tool::LongPosition);
+        let short = Geometry::from_anchors(
+            Tool::ShortPosition,
+            &[entry, anchor(9_000, 90.0), anchor(9_000, 105.0)],
+        )
+        .unwrap();
+        assert!(matches!(
+            short,
+            Geometry::Position {
+                side: Side::Short,
+                ..
+            }
+        ));
+        assert_eq!(short.tool(), Tool::ShortPosition);
+        // Dragging the stop sideways changes nothing about when it is: only its price is its own.
+        let mut dragged = long.clone();
+        dragged.anchors_mut()[2].time_ms = 1;
+        dragged.anchors_mut()[2].price = 92.0;
+        dragged.constrain(&long);
+        assert_eq!(dragged.anchors()[2], anchor(9_000, 92.0));
+        assert_eq!(dragged.reads(2), (false, true));
+        assert_eq!(dragged.reads(1), (true, true));
+        // Dragging the target sideways takes the stop with it.
+        let mut wider = long.clone();
+        wider.anchors_mut()[1].time_ms = 20_000;
+        wider.constrain(&long);
+        assert_eq!(wider.anchors()[2].time_ms, 20_000);
+        // Every anchor must be a number.
+        assert!(
+            Geometry::from_anchors(
+                Tool::LongPosition,
+                &[entry, anchor(9_000, f64::NAN), anchor(9_000, 95.0)]
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn a_position_from_its_entry_alone_has_a_target_a_stop_and_a_width() {
+        use super::super::position::Side;
+        let entry = anchor(0, 100.0);
+        for (tool, side) in [
+            (Tool::LongPosition, Side::Long),
+            (Tool::ShortPosition, Side::Short),
+        ] {
+            let geometry = Geometry::from_anchors(tool, &[entry]).unwrap();
+            let [entry, target, stop] = geometry.anchors()[..] else {
+                panic!("three anchors");
+            };
+            // The profit is on the winning side and the stop on the losing one, with twice the
+            // reward as risk.
+            assert!(side.sign() * (target.price - entry.price) > 0.0, "{tool:?}");
+            assert!(side.sign() * (entry.price - stop.price) > 0.0, "{tool:?}");
+            let reward = (target.price - entry.price).abs();
+            let risk = (entry.price - stop.price).abs();
+            assert!((reward / risk - 2.0).abs() < 1e-9);
+            assert!(target.time_ms > entry.time_ms);
+            assert_eq!(target.time_ms, stop.time_ms);
+        }
+        // Even a price of nothing makes a position that can be drawn.
+        let free = Geometry::from_anchors(Tool::LongPosition, &[anchor(0, 0.0)]).unwrap();
+        assert!(free.is_valid());
+    }
+
+    #[test]
+    fn the_range_tools_read_what_they_measure() {
+        let (a, b) = (anchor(0, 1.0), anchor(60_000, 2.0));
+        let price = Geometry::from_anchors(Tool::PriceRange, &[a, b]).unwrap();
+        let date = Geometry::from_anchors(Tool::DateRange, &[a, b]).unwrap();
+        let both = Geometry::from_anchors(Tool::DateAndPriceRange, &[a, b]).unwrap();
+        assert_eq!(price.tool(), Tool::PriceRange);
+        assert_eq!(date.tool(), Tool::DateRange);
+        assert_eq!(both.tool(), Tool::DateAndPriceRange);
+        // A date range has no price to edit.
+        assert_eq!(
+            (date.reads(0), date.reads(1)),
+            ((true, false), (true, false))
+        );
+        assert_eq!(price.reads(0), (true, true));
+        assert_eq!(both.reads(1), (true, true));
+        // Two anchors on one point measure nothing.
+        assert!(Geometry::from_anchors(Tool::PriceRange, &[a, a]).is_none());
+    }
+
+    #[test]
+    fn the_volume_tools_read_the_bar_and_need_a_range_where_they_have_one() {
+        let (a, b) = (anchor(0, 1.0), anchor(60_000, 2.0));
+        let vwap = Geometry::from_anchors(Tool::AnchoredVwap, &[a]).unwrap();
+        let anchored = Geometry::from_anchors(Tool::AnchoredVolumeProfile, &[a]).unwrap();
+        let fixed = Geometry::from_anchors(Tool::FixedRangeVolumeProfile, &[a, b]).unwrap();
+        for geometry in [&vwap, &anchored, &fixed] {
+            assert_eq!(geometry.reads(0), (true, false));
+        }
+        assert_eq!(fixed.reads(1), (true, false));
+        // A range of one moment is no range, however far apart its prices are.
+        assert!(
+            Geometry::from_anchors(Tool::FixedRangeVolumeProfile, &[a, anchor(0, 9.0)]).is_none()
+        );
+        assert!(Geometry::from_anchors(Tool::AnchoredVwap, &[a, b]).is_none());
+    }
+
+    #[test]
+    fn a_ghost_feed_always_starts_with_the_same_seed_for_the_same_start() {
+        let (a, b) = (anchor(5, 1.0), anchor(60_000, 2.0));
+        let first = Geometry::from_anchors(Tool::GhostFeed, &[a, b]).unwrap();
+        let again = Geometry::from_anchors(Tool::GhostFeed, &[a, anchor(120_000, 3.0)]).unwrap();
+        let other = Geometry::from_anchors(Tool::GhostFeed, &[anchor(6, 1.0), b]).unwrap();
+        let seed = |geometry: &Geometry| match geometry {
+            Geometry::Ghost { seed, .. } => *seed,
+            _ => panic!("a ghost feed"),
+        };
+        assert_eq!(
+            seed(&first),
+            seed(&again),
+            "the end does not change the run's seed"
+        );
+        assert_ne!(seed(&first), seed(&other));
+        assert_eq!(Geometry::ghost_seed(a), seed(&first));
+        // A preview and the finished drawing agree.
+        assert_eq!(Geometry::preview(Tool::GhostFeed, &[a, b]), Some(first));
+    }
+
+    #[test]
+    fn a_sector_needs_a_radius_and_a_bars_pattern_needs_the_chart() {
+        let (c, r, t) = (anchor(0, 1.0), anchor(60_000, 1.0), anchor(60_000, 3.0));
+        assert!(Geometry::from_anchors(Tool::Sector, &[c, r, t]).is_some());
+        assert!(Geometry::from_anchors(Tool::Sector, &[c, c, t]).is_none());
+        // Copying bars needs bars: three clicks alone cannot make one, nor preview one.
+        assert!(Geometry::from_anchors(Tool::BarsPattern, &[c, r, t]).is_none());
+        assert!(Geometry::preview(Tool::BarsPattern, &[c, r]).is_none());
+        // The one a person made (the sample a test uses) is valid and has its one anchor.
+        let sample = Drawing::sample(Tool::BarsPattern, 1, &[c, r, t], DrawingStyle::default())
+            .expect("a pattern");
+        assert_eq!(sample.anchors(), [t]);
+        assert_eq!(sample.tool(), Some(Tool::BarsPattern));
+    }
+
+    #[test]
+    fn a_bars_pattern_with_no_bars_or_a_broken_number_is_unreadable() {
+        let good = r#"{"Shape":{"id":1,"geometry":{"bars":{"at":{"time_ms":1,"price":2.0},"from_ms":0,"to_ms":1,"bars":[[0.0,1.0,-1.0,0.5]]}}}}"#;
+        let empty = r#"{"Shape":{"id":2,"geometry":{"bars":{"at":{"time_ms":1,"price":2.0},"from_ms":0,"to_ms":1,"bars":[]}}}}"#;
+        let stored = format!(r#"{{"drawings":[{good},{empty}]}}"#);
+        let holder: Holder = serde_json::from_str(&stored).unwrap();
+        assert_eq!(holder.drawings[0].tool(), Some(Tool::BarsPattern));
+        assert!(matches!(holder.drawings[1], Drawing::Unreadable(_)));
     }
 
     #[test]
@@ -2026,10 +2465,12 @@ mod tests {
         let a = anchor(0, 1.0);
         let b = anchor(30, 4.0);
         // One anchor placed plus the pointer: every tool previews, even degenerate.
-        for tool in Tool::GROUPED
-            .into_iter()
-            .filter(|tool| !matches!(tool, Tool::Brush | Tool::Image | Tool::Post))
-        {
+        for tool in Tool::GROUPED.into_iter().filter(|tool| {
+            !matches!(
+                tool,
+                Tool::Brush | Tool::Image | Tool::Post | Tool::BarsPattern
+            )
+        }) {
             assert!(Geometry::preview(tool, &[a]).is_some(), "{tool:?}");
             assert!(Geometry::preview(tool, &[a, b]).is_some(), "{tool:?}");
         }

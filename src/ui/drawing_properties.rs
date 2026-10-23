@@ -44,6 +44,8 @@ const PLACES: [&str; 7] = [
 /// How many anchors the Coordinates tab lists; a long path keeps the rest on the chart.
 const MAX_LISTED: usize = 40;
 
+mod forecast_pages;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
     Style,
@@ -157,16 +159,37 @@ fn has_style_page(caps: Caps) -> bool {
     .any(|cap| caps.has(cap))
 }
 
-/// Whether the tool has inputs of its own: a regression's, a chart pattern's or a wave's.
+/// Whether the tool has inputs of its own: a regression's, a pattern's, a wave's, a position's, a
+/// forecast's, a bars pattern's, a ghost feed's, a VWAP's, a profile's or a measurer's.
 fn has_inputs_page(caps: Caps) -> bool {
-    [Caps::REGRESSION, Caps::PATTERN, Caps::WAVE]
-        .into_iter()
-        .any(|cap| caps.has(cap))
+    [
+        Caps::REGRESSION,
+        Caps::PATTERN,
+        Caps::WAVE,
+        Caps::POSITION,
+        Caps::FORECAST,
+        Caps::BARS,
+        Caps::GHOST,
+        Caps::VWAP,
+        Caps::PROFILE,
+        Caps::MEASURE,
+    ]
+    .into_iter()
+    .any(|cap| caps.has(cap))
 }
 
-/// Whether a tool writes its labels itself, so its text page is only their font.
+/// Whether a tool writes its labels itself, so its text page is only their font (and, for a
+/// measurer, a note): a pattern's names, a wave's, a position's stats, a forecast's, a measurement.
 fn labels_are_written_by_the_tool(caps: Caps) -> bool {
-    caps.has(Caps::PATTERN) || caps.has(Caps::WAVE)
+    [
+        Caps::PATTERN,
+        Caps::WAVE,
+        Caps::POSITION,
+        Caps::FORECAST,
+        Caps::MEASURE,
+    ]
+    .into_iter()
+    .any(|cap| caps.has(cap))
 }
 
 /// Whether a tool's text has a vertical alignment that means something: inside a shape (top,
@@ -247,6 +270,14 @@ fn anchor_label(tool: Tool, index: usize) -> String {
             "Second wave X",
             "Wave Z",
         ],
+        Tool::LongPosition | Tool::ShortPosition => &["Entry", "Target", "Stop"],
+        Tool::PositionForecast => &["Source", "Target"],
+        Tool::BarsPattern => &["First bar's close"],
+        Tool::GhostFeed => &["Start", "End"],
+        Tool::Sector => &["Center", "Radius point", "End of arc"],
+        Tool::AnchoredVwap | Tool::AnchoredVolumeProfile => &["Start bar"],
+        Tool::FixedRangeVolumeProfile => &["Left edge", "Right edge"],
+        Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange => &["Point 1", "Point 2"],
         Tool::CyclicLines => &["First line", "Second line"],
         Tool::TimeCycles => &["Start", "End of first cycle"],
         Tool::SineLine => &["First extreme", "Next extreme"],
@@ -1117,8 +1148,12 @@ impl DrawingProperties {
     /// The regression trend's source, the deviations its bands sit at, and its three lines.
     fn inputs_page(&mut self, ui: &mut Ui) {
         use crate::model::chart_type::PriceSource;
-        if labels_are_written_by_the_tool(self.tool.caps()) {
+        let caps = self.tool.caps();
+        if caps.has(Caps::PATTERN) || caps.has(Caps::WAVE) {
             return self.pattern_inputs_page(ui);
+        }
+        if !caps.has(Caps::REGRESSION) {
+            return self.forecast_inputs_page(ui);
         }
         let mut style = self.style();
         let before = style;

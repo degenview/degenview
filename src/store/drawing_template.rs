@@ -53,6 +53,9 @@ pub struct DrawingPrefs {
     /// The tool the chart patterns, Elliott waves and cycles tile shows.
     #[serde(deserialize_with = "pattern_tool_or_default")]
     pub pattern_tool: Tool,
+    /// The tool the forecasting, volume and measurement tile shows.
+    #[serde(deserialize_with = "forecast_tool_or_default")]
+    pub forecast_tool: Tool,
 }
 
 /// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
@@ -91,6 +94,10 @@ fn pattern_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result
     field_or(deserializer, DrawingPrefs::default().pattern_tool)
 }
 
+fn forecast_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().forecast_tool)
+}
+
 impl Default for DrawingPrefs {
     fn default() -> Self {
         Self {
@@ -100,6 +107,7 @@ impl Default for DrawingPrefs {
             line_tool: Tool::TrendLine,
             note_tool: Tool::Text,
             pattern_tool: Tool::XabcdPattern,
+            forecast_tool: Tool::LongPosition,
         }
     }
 }
@@ -121,6 +129,9 @@ impl DrawingPrefs {
         }
         if !ToolGroup::PATTERN_MENU.contains(&self.pattern_tool.spec().group) {
             self.pattern_tool = defaults.pattern_tool;
+        }
+        if !ToolGroup::FORECAST_MENU.contains(&self.forecast_tool.spec().group) {
+            self.forecast_tool = defaults.forecast_tool;
         }
         self
     }
@@ -483,6 +494,7 @@ mod tests {
             line_tool: Tool::SchiffPitchfork,
             note_tool: Tool::Pin,
             pattern_tool: Tool::SineLine,
+            forecast_tool: Tool::DateAndPriceRange,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
@@ -504,6 +516,7 @@ mod tests {
                     "line_tool": "AToolFromTheFuture",
                     "note_tool": "Callout",
                     "pattern_tool": "ElliottImpulse",
+                    "forecast_tool": "AnchoredVwap",
                 }),
             )
             .unwrap();
@@ -518,6 +531,7 @@ mod tests {
         );
         assert_eq!(prefs.note_tool, Tool::Callout);
         assert_eq!(prefs.pattern_tool, Tool::ElliottImpulse);
+        assert_eq!(prefs.forecast_tool, Tool::AnchoredVwap);
         // A value of the wrong kind altogether is the same.
         store
             .lock()
@@ -558,6 +572,7 @@ mod tests {
                     "line_tool": "Brush",
                     "note_tool": "Arc",
                     "pattern_tool": "Rectangle",
+                    "forecast_tool": "Rectangle",
                 }),
             )
             .unwrap();
@@ -566,5 +581,6 @@ mod tests {
         assert_eq!(prefs.line_tool, Tool::TrendLine);
         assert_eq!(prefs.note_tool, Tool::Text);
         assert_eq!(prefs.pattern_tool, Tool::XabcdPattern);
+        assert_eq!(prefs.forecast_tool, Tool::LongPosition);
     }
 }

@@ -4,10 +4,12 @@
 
 use super::Projection;
 use super::edit::{BoxHandle, Part};
+use super::forecast_shapes;
 use super::line_shapes;
 use super::note_shapes;
 use super::pattern_shapes;
 use super::table_shapes;
+use super::volume_shapes;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
 use crate::model::{ArrowDirection, Drawing, Geometry};
@@ -164,6 +166,8 @@ pub(super) enum LabelLook {
     /// On a plate of the chart's own surface, ringed and written in the drawing's line colour: a
     /// ratio, which must not be mistaken for the name of a pivot (a drive of 2 is not wave 2).
     Ratio,
+    /// On a plate of its own colour, in an ink of its own: a position's stats, a measurement.
+    Plate { fill: Rgba, ink: Rgba },
 }
 
 /// Where a [`PivotLabel`] sits against its point.
@@ -187,6 +191,9 @@ pub(super) struct PivotLabel {
     /// A unit vector: the way the label sits from its point (`Beside`) and the way it gives
     /// way to another label.
     pub push: Vec2,
+    /// Shown only while the drawing is selected (a position's stats, unless it is set to always
+    /// show them).
+    pub on_select: bool,
 }
 
 /// A line of text a shape prints at a point (Pearson's R).
@@ -194,6 +201,40 @@ pub(super) struct PivotLabel {
 pub(super) struct Readout {
     pub at: Pos2,
     pub text: String,
+}
+
+/// A solid rectangle in a colour of its own, painted whether or not the drawing has a fill: a
+/// position's zones, the bars of a volume profile. Clicking inside one is clicking the drawing.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ColorBox {
+    pub rect: Rect,
+    pub color: Rgba,
+}
+
+/// How a [`Candle`] is drawn.
+#[derive(Clone, Copy, Debug)]
+pub(super) enum CandleLook {
+    /// An open-high-low-close bar: its wick, a tick left for the open and one right for the close.
+    Stick { color: Rgba },
+    /// A body between the open and the close, a wick through it, and optionally a border.
+    Body {
+        fill: Rgba,
+        border: Option<Rgba>,
+        wick: Option<Rgba>,
+    },
+}
+
+/// One candle or bar of a ghost feed or a bars pattern, in screen coordinates (`y` grows down).
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Candle {
+    pub x: f32,
+    pub open: f32,
+    pub high: f32,
+    pub low: f32,
+    pub close: f32,
+    /// Half the width of the body, or of the ticks.
+    pub half: f32,
+    pub look: CandleLook,
 }
 
 pub(super) struct Screen {
@@ -212,6 +253,15 @@ pub(super) struct Screen {
     pub readout: Option<Readout>,
     /// Names and ratios pinned to points of the shape.
     pub labels: Vec<PivotLabel>,
+    /// Solid rectangles in their own colours (see [`ColorBox`]).
+    pub boxes: Vec<ColorBox>,
+    /// Candles and bars (see [`Candle`]).
+    pub candles: Vec<Candle>,
+    /// Filled regions that are painted whether or not the drawing has a fill (the shade between a
+    /// VWAP's bands), already cut to the plot.
+    pub shades: Vec<Band>,
+    /// The shades as meshes, made when the shape is built.
+    pub shade_meshes: Vec<Arc<Mesh>>,
     /// Closed outlines to stroke.
     pub outlines: Vec<Vec<Pos2>>,
     /// The containers of text (a note's box, a callout's bubble), stroked in the drawing's
@@ -282,6 +332,10 @@ impl Screen {
             angle: None,
             readout: None,
             labels: Vec::new(),
+            boxes: Vec::new(),
+            candles: Vec::new(),
+            shades: Vec::new(),
+            shade_meshes: Vec::new(),
             outlines: Vec::new(),
             frames: Vec::new(),
             hit: Vec::new(),
@@ -339,6 +393,18 @@ impl Screen {
         }
         all.extend(self.handles.iter().map(|handle| handle.pos));
         all.extend(self.labels.iter().map(|label| label.at));
+        for color_box in &self.boxes {
+            all.extend([color_box.rect.left_top(), color_box.rect.right_bottom()]);
+        }
+        for candle in &self.candles {
+            all.extend([
+                pos2(candle.x - candle.half, candle.high.min(candle.low)),
+                pos2(candle.x + candle.half, candle.high.max(candle.low)),
+            ]);
+        }
+        for shade in &self.shades {
+            all.extend(&shade.polygon);
+        }
         all.extend(self.middle.iter().flatten());
         all.extend(self.fill.iter());
         if !geo::all_finite(&all) {
@@ -378,6 +444,10 @@ impl Screen {
                 .hit
                 .iter()
                 .any(|rect| rect.expand(tolerance).contains(point))
+            || self
+                .boxes
+                .iter()
+                .any(|color_box| color_box.rect.expand(tolerance).contains(point))
             || self
                 .middle
                 .is_some_and(|line| geo::distance_to_segment(point, line[0], line[1]) <= tolerance)
@@ -507,6 +577,17 @@ fn finished(mut screen: Screen, style: &DrawingStyle) -> Option<Screen> {
         let mesh = geo::fill_mesh(&popup.outline, series_render::color(style.fill.color));
         screen.popup_mesh = Some(Arc::new(mesh));
     }
+    screen.shade_meshes = screen
+        .shades
+        .iter()
+        .filter(|shade| shade.polygon.len() >= 3)
+        .map(|shade| {
+            Arc::new(geo::fill_mesh(
+                &shade.polygon,
+                series_render::color(shade.color),
+            ))
+        })
+        .collect();
     if style.fill.enabled {
         screen.band_meshes = screen
             .bands
@@ -800,6 +881,19 @@ fn shape(
         }
         Geometry::Pattern { .. } | Geometry::Wave { .. } | Geometry::Cycle { .. } => {
             return pattern_shapes::project(geometry, style, proj, anchors);
+        }
+        Geometry::Position { .. }
+        | Geometry::Forecast { .. }
+        | Geometry::Bars(_)
+        | Geometry::Ghost { .. }
+        | Geometry::Sector { .. }
+        | Geometry::Measure { .. } => {
+            return forecast_shapes::project(geometry, style, proj, anchors);
+        }
+        Geometry::Vwap { .. }
+        | Geometry::FixedProfile { .. }
+        | Geometry::AnchoredProfile { .. } => {
+            return volume_shapes::project(geometry, style, proj, anchors);
         }
         _ => return line_shapes::project(geometry, style, proj, anchors),
     }

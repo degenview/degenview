@@ -174,6 +174,18 @@ pub enum Icon {
     CycleLines,
     CycleArcs,
     CycleSine,
+    PositionLong,
+    PositionShort,
+    PositionForecast,
+    BarsPatternTool,
+    GhostFeedTool,
+    SectorTool,
+    VwapTool,
+    ProfileFixed,
+    ProfileAnchored,
+    RangePrice,
+    RangeDate,
+    RangeDatePrice,
     Magnet,
     KeepDrawing,
     LockOpen,
@@ -1418,6 +1430,132 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 .collect();
             line(&wave);
         }
+        Icon::PositionLong => {
+            painter.rect_stroke(
+                rect_of(p(2.0, 2.6), p(14.0, 13.4)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(2.0, 9.6), p(14.0, 9.6)]);
+            line(&[p(8.0, 7.8), p(8.0, 4.2)]);
+            line(&[p(6.2, 5.9), p(8.0, 4.2), p(9.8, 5.9)]);
+        }
+        Icon::PositionShort => {
+            painter.rect_stroke(
+                rect_of(p(2.0, 2.6), p(14.0, 13.4)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(2.0, 6.4), p(14.0, 6.4)]);
+            line(&[p(8.0, 8.2), p(8.0, 11.8)]);
+            line(&[p(6.2, 10.1), p(8.0, 11.8), p(9.8, 10.1)]);
+        }
+        Icon::PositionForecast => {
+            line(&[p(2.6, 12.6), p(12.6, 4.6)]);
+            line(&[p(9.2, 4.2), p(13.0, 4.2), p(13.0, 8.0)]);
+            circle(p(2.6, 12.6), 1.4, true);
+            line(&[p(2.6, 14.4), p(13.4, 14.4)]);
+            line(&[p(13.4, 14.4), p(13.4, 11.0)]);
+        }
+        Icon::BarsPatternTool => {
+            for (x, top, bottom, open, close) in [
+                (3.6, 5.0, 12.0, 8.2, 6.4),
+                (8.0, 3.0, 10.0, 8.6, 4.6),
+                (12.4, 6.0, 13.4, 10.4, 8.0),
+            ] {
+                line(&[p(x, top), p(x, bottom)]);
+                line(&[p(x - 1.8, open), p(x, open)]);
+                line(&[p(x, close), p(x + 1.8, close)]);
+            }
+        }
+        Icon::GhostFeedTool => {
+            for (x, top, body_top, body_bottom, bottom) in [
+                (4.0, 6.0, 7.6, 11.0, 12.6),
+                (8.0, 4.0, 5.6, 9.4, 11.6),
+                (12.0, 2.8, 4.4, 8.0, 9.6),
+            ] {
+                painter.extend(Shape::dashed_line(
+                    &[p(x, top), p(x, bottom)],
+                    stroke,
+                    1.4 * scale,
+                    1.2 * scale,
+                ));
+                painter.rect_stroke(
+                    rect_of(p(x - 1.7, body_top), p(x + 1.7, body_bottom)),
+                    round(0.4),
+                    stroke,
+                    StrokeKind::Middle,
+                );
+            }
+        }
+        Icon::SectorTool => {
+            line(&[p(13.6, 12.6), p(2.6, 12.6), p(11.6, 3.8)]);
+            line(&arc(2.6, 12.6, 11.0, -45.0, 0.0));
+            circle(p(2.6, 12.6), 1.3, true);
+        }
+        Icon::VwapTool => {
+            line(&[
+                p(2.6, 11.4),
+                p(5.0, 9.0),
+                p(7.4, 10.0),
+                p(10.0, 6.8),
+                p(14.2, 5.8),
+            ]);
+            line(&[p(2.6, 3.0), p(2.6, 13.6)]);
+            circle(p(2.6, 11.4), 1.4, true);
+        }
+        Icon::ProfileFixed => {
+            line(&[p(2.4, 2.0), p(2.4, 14.0)]);
+            line(&[p(14.4, 2.0), p(14.4, 14.0)]);
+            for (y, width) in [(3.4, 5.0), (6.0, 8.6), (8.6, 10.8), (11.2, 6.4)] {
+                painter.rect_filled(
+                    rect_of(p(2.4, y - 0.8), p(2.4 + width, y + 0.8)),
+                    round(0.3),
+                    color,
+                );
+            }
+        }
+        Icon::ProfileAnchored => {
+            line(&[p(2.4, 2.0), p(2.4, 14.0)]);
+            for (y, width) in [(3.4, 5.0), (6.0, 8.6), (8.6, 10.8), (11.2, 6.4)] {
+                painter.rect_filled(
+                    rect_of(p(2.4, y - 0.8), p(2.4 + width, y + 0.8)),
+                    round(0.3),
+                    color,
+                );
+            }
+            circle(p(2.4, 2.4), 1.5, true);
+        }
+        Icon::RangePrice => {
+            line(&[p(3.0, 3.6), p(13.0, 3.6)]);
+            line(&[p(3.0, 12.4), p(13.0, 12.4)]);
+            line(&[p(8.0, 3.6), p(8.0, 12.4)]);
+            line(&[p(6.2, 5.4), p(8.0, 3.6), p(9.8, 5.4)]);
+            line(&[p(6.2, 10.6), p(8.0, 12.4), p(9.8, 10.6)]);
+        }
+        Icon::RangeDate => {
+            line(&[p(3.6, 3.0), p(3.6, 13.0)]);
+            line(&[p(12.4, 3.0), p(12.4, 13.0)]);
+            line(&[p(3.6, 8.0), p(12.4, 8.0)]);
+            line(&[p(5.4, 6.2), p(3.6, 8.0), p(5.4, 9.8)]);
+            line(&[p(10.6, 6.2), p(12.4, 8.0), p(10.6, 9.8)]);
+        }
+        Icon::RangeDatePrice => {
+            painter.rect_stroke(
+                rect_of(p(2.6, 2.6), p(13.4, 13.4)),
+                round(0.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.6, 8.0), p(11.4, 8.0)]);
+            line(&[p(6.2, 6.6), p(4.6, 8.0), p(6.2, 9.4)]);
+            line(&[p(9.8, 6.6), p(11.4, 8.0), p(9.8, 9.4)]);
+            line(&[p(8.0, 4.6), p(8.0, 11.4)]);
+            line(&[p(6.6, 6.2), p(8.0, 4.6), p(9.4, 6.2)]);
+            line(&[p(6.6, 9.8), p(8.0, 11.4), p(9.4, 9.8)]);
+        }
         Icon::TextTool => {
             // A capital T.
             line(&[p(2.8, 3.0), p(13.2, 3.0)]);
@@ -1958,6 +2096,18 @@ mod tests {
             CycleLines,
             CycleArcs,
             CycleSine,
+            PositionLong,
+            PositionShort,
+            PositionForecast,
+            BarsPatternTool,
+            GhostFeedTool,
+            SectorTool,
+            VwapTool,
+            ProfileFixed,
+            ProfileAnchored,
+            RangePrice,
+            RangeDate,
+            RangeDatePrice,
             Magnet,
             KeepDrawing,
             LockOpen,

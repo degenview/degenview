@@ -149,6 +149,7 @@ fn chart_pattern(
                 look: LabelLook::Ratio,
                 place: LabelPlace::On,
                 push: curves::normal_up(from, to),
+                on_select: false,
             });
         }
     }
@@ -176,6 +177,7 @@ fn pivot_label(at: Pos2, text: String, look: LabelLook, high: bool) -> PivotLabe
         look,
         place: LabelPlace::Beside,
         push: vec2(0.0, if high { -1.0 } else { 1.0 }),
+        on_select: false,
     }
 }
 

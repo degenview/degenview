@@ -9,6 +9,7 @@
 
 mod draw;
 mod edit;
+mod forecast_shapes;
 mod line_shapes;
 #[cfg(test)]
 mod line_tests;
@@ -24,6 +25,7 @@ mod table_shapes;
 mod tests;
 mod text;
 mod text_edit;
+mod volume_shapes;
 
 use super::chart_card::PriceScale;
 use super::drawing_geometry as geo;
@@ -275,9 +277,10 @@ struct ProjectionKey {
     lead: f32,
     price: (f64, f64, f32, f32, bool),
     data: (usize, i64, i64),
-    /// The newest bar's open, high, low and close: a regression is fitted to prices, and the
-    /// live bar changes them without changing the bars' count or times.
-    newest: [u64; 4],
+    /// The newest bar's open, high, low, close and volume: a regression is fitted to prices, a
+    /// VWAP and a profile to prices and volume, and the live bar changes them without changing the
+    /// bars' count or times.
+    newest: [u64; 5],
 }
 
 impl Projection<'_> {
@@ -340,8 +343,8 @@ impl Projection<'_> {
             newest: len
                 .checked_sub(1)
                 .and_then(|index| self.times.bar(index))
-                .map_or([0; 4], |bar| {
-                    [bar.open, bar.high, bar.low, bar.close].map(f64::to_bits)
+                .map_or([0; 5], |bar| {
+                    [bar.open, bar.high, bar.low, bar.close, bar.volume].map(f64::to_bits)
                 }),
         }
     }
@@ -1252,6 +1255,15 @@ impl DrawingLayer {
                 }
             };
             Drawing::build_with(tool, id, &[corner], frame.style_for(tool), &content)
+        } else if tool.caps().has(Caps::POSITION) && anchors.len() == 1 {
+            // A position is a click: its target, stop and width come from what is on screen.
+            forecast_shapes::sized_position(tool, anchors[0], proj)
+                .and_then(|sized| Drawing::build(tool, id, &sized, frame.style_for(tool)))
+        } else if tool.caps().has(Caps::BARS) {
+            // A bars pattern copies the bars the chart draws between its first two clicks and sets
+            // them down at the third.
+            forecast_shapes::captured_pattern(&anchors, proj)
+                .and_then(|geometry| Drawing::from_geometry(id, geometry, frame.style_for(tool)))
         } else {
             Drawing::build(tool, id, &anchors, frame.style_for(tool))
         };
@@ -1445,15 +1457,28 @@ impl DrawingLayer {
                 })
             }
             Tool::Brush => Drawing::build(Tool::Brush, 0, &anchors, frame.style_for(tool)),
-            _ => Geometry::preview(tool, &anchors).map(|geometry| Drawing::Shape {
-                id: 0,
-                geometry,
-                style: frame.style_for(tool),
-                text: String::new(),
-                locked: false,
-                hidden: false,
-                visibility: Default::default(),
-            }),
+            _ => {
+                let geometry = if tool.caps().has(Caps::POSITION) {
+                    // Sized from the view as it will be when placed.
+                    anchors
+                        .last()
+                        .and_then(|last| forecast_shapes::sized_position(tool, *last, proj))
+                        .and_then(|sized| Geometry::from_anchors(tool, &sized))
+                } else if tool.caps().has(Caps::BARS) {
+                    forecast_shapes::bars_preview(&anchors, proj)
+                } else {
+                    Geometry::preview(tool, &anchors)
+                };
+                geometry.map(|geometry| Drawing::Shape {
+                    id: 0,
+                    geometry,
+                    style: frame.style_for(tool),
+                    text: String::new(),
+                    locked: false,
+                    hidden: false,
+                    visibility: Default::default(),
+                })
+            }
         };
         let Some(preview) = preview else {
             return;

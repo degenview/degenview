@@ -109,6 +109,23 @@ impl PriceFormat {
         }
     }
 
+    /// One step of the last place this chart prints `price` to: `1` for 67,432, `0.01` for 12.34,
+    /// `0.001` for 0.056. It is not an exchange's tick (this build knows no market's real tick
+    /// size); measurements that count ticks count these, and say so.
+    pub fn tick_size(self, price: f64) -> f64 {
+        let magnitude = price.abs();
+        let places = match self.decimals {
+            Some(places) => usize::from(places.min(MAX_DECIMALS)),
+            None if !magnitude.is_finite() || magnitude == 0.0 => 2,
+            None if magnitude < SMALL_BELOW => {
+                let (_, exponent) = scientific(magnitude);
+                ((-exponent) as usize - 1 + SMALL_DIGITS).min(MAX_WRITTEN_DECIMALS)
+            }
+            None => auto_places(magnitude),
+        };
+        10f64.powi(-(places as i32))
+    }
+
     fn format_at(self, value: f64, at_least: usize) -> String {
         if !value.is_finite() {
             return "—".to_owned();
@@ -387,5 +404,34 @@ mod tests {
             let parsed: f64 = text.parse().expect("plain text parses");
             assert!((parsed - value).abs() <= value * 0.01, "{text}");
         }
+    }
+
+    #[test]
+    fn a_tick_is_one_step_of_the_last_place_the_chart_prints() {
+        let auto = PriceFormat::AUTO;
+        assert_eq!(auto.tick_size(67_432.0), 1.0);
+        assert_eq!(auto.tick_size(1_000.0), 1.0);
+        assert_eq!(auto.tick_size(12.34), 0.01);
+        assert_eq!(auto.tick_size(0.5), 0.01);
+        assert_eq!(auto.tick_size(0.056), 0.001);
+        assert_eq!(auto.tick_size(0.0031), 0.0001);
+        // Under 0.001 it is the place of the third digit after the zeros: 0.0000278 -> 7 places.
+        assert_eq!(auto.tick_size(0.0000278), 1e-7);
+        // A sign changes nothing; nothing to go on is a cent.
+        assert_eq!(auto.tick_size(-12.34), 0.01);
+        assert_eq!(auto.tick_size(0.0), 0.01);
+        assert_eq!(auto.tick_size(f64::NAN), 0.01);
+        // Pinned places are the places.
+        let pinned = PriceFormat {
+            decimals: Some(3),
+            small: SmallPrices::ZeroCount,
+        };
+        assert_eq!(pinned.tick_size(67_432.0), 0.001);
+        assert_eq!(pinned.tick_size(0.0000278), 0.001);
+        let none = PriceFormat {
+            decimals: Some(0),
+            small: SmallPrices::ZeroCount,
+        };
+        assert_eq!(none.tick_size(12.34), 1.0);
     }
 }

@@ -16,6 +16,7 @@ impl ChartWorkspace {
             line_tool: self.line_tool,
             note_tool: self.note_tool,
             pattern_tool: self.pattern_tool,
+            forecast_tool: self.forecast_tool,
             magnet: self.magnet,
             keep_drawing: self.keep_drawing,
             hide_all: self.hide_all_drawings,
@@ -81,6 +82,8 @@ impl ChartWorkspace {
             self.note_tool = tool;
         } else if ToolGroup::PATTERN_MENU.contains(&group) {
             self.pattern_tool = tool;
+        } else if ToolGroup::FORECAST_MENU.contains(&group) {
+            self.forecast_tool = tool;
         }
     }
 }

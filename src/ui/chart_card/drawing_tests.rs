@@ -158,12 +158,17 @@ fn gained(without: &[ClippedShape], with: &[ClippedShape]) -> Vec<Rect> {
 }
 
 /// What a tool paints beyond the plot-clipped drawing layer. Only the tags of the lines at a
-/// price or a time do: they sit on the axes, by design. Everything else a tool paints is held to
+/// price or a time, and of a position's three prices, do: they sit on the axes, by design. Everything else a tool paints is held to
 /// the plot.
 fn plot_gains(tool: Tool, gains: Vec<Rect>) -> Vec<Rect> {
     let tags = matches!(
         tool,
-        Tool::HorizontalLine | Tool::HorizontalRay | Tool::VerticalLine | Tool::Crossline
+        Tool::HorizontalLine
+            | Tool::HorizontalRay
+            | Tool::VerticalLine
+            | Tool::Crossline
+            | Tool::LongPosition
+            | Tool::ShortPosition
     );
     gains
         .into_iter()
