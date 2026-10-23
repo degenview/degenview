@@ -234,7 +234,7 @@ at the limit). `ui/pattern_geometry.rs` checks the apex, arcs and sine against t
 sampling error, and extreme sizes. `drawing_layer/pattern_tests.rs` projects every tool onto the
 100 px a bar, 10 px a price plot of the line tests and checks each position by hand, the preview
 against the finished drawing, the same labels on a logarithmic scale, and the off-plot and too-dense
-cases. The every-tool loops of the drawing layer (one gesture is one undo step, Escape cancels, select
+cases. A snapshot of each tool is compared shape for shape with the live frame. The every-tool loops of the drawing layer (one gesture is one undo step, Escape cancels, select
 move and delete, every handle reshapes, extreme anchors, save and reopen) run all fourteen, as do the
 model, store and mocked-sync round trips.
 

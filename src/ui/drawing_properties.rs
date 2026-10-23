@@ -2386,6 +2386,17 @@ mod tests {
                 Tool::FlatChannel,
                 Tab::Coordinates,
             ),
+            ("dialog-xabcd-style", Tool::XabcdPattern, Tab::Style),
+            ("dialog-xabcd-inputs", Tool::XabcdPattern, Tab::Inputs),
+            ("dialog-xabcd-text", Tool::XabcdPattern, Tab::Text),
+            ("dialog-impulse-inputs", Tool::ElliottImpulse, Tab::Inputs),
+            ("dialog-impulse-style", Tool::ElliottImpulse, Tab::Style),
+            (
+                "dialog-head-shoulders-coordinates",
+                Tool::HeadAndShoulders,
+                Tab::Coordinates,
+            ),
+            ("dialog-time-cycles-style", Tool::TimeCycles, Tab::Style),
         ] {
             let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
             dialog.tab = tab;

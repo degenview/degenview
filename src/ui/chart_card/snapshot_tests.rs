@@ -188,6 +188,18 @@ fn drawings_snapshot_as_they_draw() {
 }
 
 #[test]
+fn every_pattern_wave_and_cycle_snapshots_as_it_draws() {
+    for (_, tool, anchors) in pattern_sets() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings =
+            vec![Drawing::build(tool, 1, &anchors, tool.default_style()).expect("builds")];
+        // The same shapes, labels included, as the live frame: and not the handles of a
+        // selection, which a snapshot never carries.
+        same_as_live(&mut harness, false);
+    }
+}
+
+#[test]
 fn hidden_drawings_stay_hidden_and_visible_ones_are_drawn() {
     let mut harness = Harness::new(ChartCanvas::default());
     settled(&mut harness);
@@ -656,23 +668,15 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
 
-/// The chart patterns, Elliott waves and cycles on a chart, written as PNGs for a person to look at.
-/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
-#[test]
-#[ignore = "writes images for a person to look at"]
-fn gallery_of_the_patterns_waves_and_cycles() {
+/// One drawing's worth of pivots for every pattern, Elliott wave and cycle tool, in the last stretch
+/// of `series(300)` (bars 215..290, prices around 200..275).
+fn pattern_sets() -> Vec<(&'static str, Tool, Vec<crate::model::Anchor>)> {
     use crate::model::Anchor;
-    use crate::ui::theme::{self, AppTheme};
-    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
-        return;
-    };
-    let dir = std::path::PathBuf::from(dir);
     let at = |bar: i64, price: f64| Anchor {
         time_ms: bar * HOUR,
         price,
     };
-    // Pivots in the last stretch of `series(300)`: bars 215..290, prices around 200..275.
-    let sets: Vec<(&str, Tool, Vec<Anchor>)> = vec![
+    vec![
         (
             "xabcd",
             Tool::XabcdPattern,
@@ -812,7 +816,20 @@ fn gallery_of_the_patterns_waves_and_cycles() {
             Tool::SineLine,
             vec![at(232, 265.0), at(250, 215.0)],
         ),
-    ];
+    ]
+}
+
+/// The chart patterns, Elliott waves and cycles on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_patterns_waves_and_cycles() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let sets = pattern_sets();
     for light in [false, true] {
         theme::apply(
             &egui::Context::default(),

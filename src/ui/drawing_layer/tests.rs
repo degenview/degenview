@@ -2210,4 +2210,20 @@ fn gallery_of_the_selection_and_the_editor() {
     fork.tool = Tool::Cursor;
     fork.selected = vec![fork.last().id()];
     shoot(&mut fork, "selected-pitchfork", Vec::new());
+    for (tool, name) in [
+        (Tool::XabcdPattern, "selected-xabcd"),
+        (Tool::ElliottImpulse, "selected-impulse"),
+        (Tool::TimeCycles, "selected-time-cycles"),
+    ] {
+        let mut rig = Rig::with_tool(tool);
+        for point in &POINTS[..usize::from(match tool.spec().placement {
+            Placement::Points(count) => count,
+            _ => 1,
+        })] {
+            rig.click(*point);
+        }
+        rig.tool = Tool::Cursor;
+        rig.selected = vec![rig.last().id()];
+        shoot(&mut rig, name, Vec::new());
+    }
 }

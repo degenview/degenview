@@ -1252,7 +1252,11 @@ mod tests {
         if gallery_dir().is_none() {
             return;
         }
-        for (name, corner) in [("menu-lines", LINES_CORNER), ("menu-shapes", CORNER)] {
+        for (name, corner) in [
+            ("menu-lines", LINES_CORNER),
+            ("menu-patterns", PATTERNS_CORNER),
+            ("menu-shapes", CORNER),
+        ] {
             let mut screen = Screen::new(vec2(420.0, 700.0));
             let input = state();
             let run = |screen: &mut Screen, events: Vec<egui::Event>| {
