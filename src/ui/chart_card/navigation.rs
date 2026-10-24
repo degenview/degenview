@@ -151,14 +151,16 @@ impl ChartCard {
         escaped
     }
 
-    /// A bar that arrives while the chart is scrolled back (or into empty space) must not drag the
-    /// view along: the offset counts from the newest bar, so it grows by what arrived and the same
-    /// bars stay on screen. A chart held on its newest bar follows it instead. Older bars loading
-    /// need no such care: the offset never counted them.
+    /// TradingView's rule (Lightweight Charts' `shiftVisibleRangeOnNewBar`): a bar that arrives
+    /// while the previous newest bar is on screen keeps the offset, so the chart slides left by a
+    /// slot and the new bar appears where the newest one was, wherever the user has scrolled to.
+    /// Only a chart whose newest bar is already out of view is held on its bars: the offset counts
+    /// from the newest bar, so it grows by what arrived. Older bars loading need no such care: the
+    /// offset never counted them.
     pub(super) fn keep_view_on_its_bars(&mut self, bars: &[Kline]) {
         let newest = bars.last().map(|bar| bar.open_time);
         if let (Some(previous), Some(_)) = (self.newest_bar, newest)
-            && !self.viewport.horizontal.follows_latest()
+            && !self.viewport.horizontal.shows_newest(self.reserved_slots())
             && let Ok(index) = bars.binary_search_by_key(&previous, |bar| bar.open_time)
         {
             let arrived = (bars.len() - 1 - index) as f64;

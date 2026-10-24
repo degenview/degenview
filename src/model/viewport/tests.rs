@@ -95,6 +95,32 @@ fn follow_latest_is_the_unscrolled_state() {
 }
 
 #[test]
+fn the_newest_bar_is_shown_until_it_is_scrolled_out_on_the_right() {
+    let mut view = HorizontalViewport::default();
+    for offset in [
+        0.0,
+        -10.0,
+        -((DEFAULT_VISIBLE - MIN_VISIBLE) as f64),
+        3.0,
+        10.0,
+    ] {
+        view.right_offset = offset;
+        assert!(view.shows_newest(10), "{offset}");
+    }
+    view.right_offset = 10.4;
+    assert!(view.shows_newest(10), "its centre is still inside");
+    view.right_offset = 10.5;
+    assert!(!view.shows_newest(10), "its centre is on the edge");
+    view.right_offset = 11.0;
+    assert!(!view.shows_newest(10));
+    view.right_offset = 0.5;
+    assert!(
+        !view.shows_newest(0),
+        "with no margin it leaves at half a bar"
+    );
+}
+
+#[test]
 fn a_bad_offset_or_slot_width_cannot_poison_the_view() {
     let mut view = HorizontalViewport {
         right_offset: f64::NAN,

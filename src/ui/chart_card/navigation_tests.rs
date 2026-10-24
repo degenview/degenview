@@ -597,15 +597,53 @@ fn a_chart_held_on_the_newest_bar_follows_it() {
 }
 
 #[test]
-fn a_chart_scrolled_into_empty_space_keeps_its_bars_too() {
+fn a_chart_scrolled_into_empty_space_slides_left_with_a_new_bar() {
     let mut rig = Rig::new();
     rig.card.viewport.horizontal.right_offset = -10.0;
     rig.frames(&[]);
-    let before = x_at_time(&rig, 399);
+    let newest = x_at_time(&rig, 399);
+    let older = x_at_time(&rig, 390);
     rig.candles.push(kline_at(400));
     rig.frames(&[]);
-    assert_eq!(rig.offset(), -9.0, "one slot of the space became a bar");
-    assert!(close(f64::from(x_at_time(&rig, 399)), f64::from(before)));
+    assert_eq!(rig.offset(), -10.0, "the space it left is kept");
+    assert!(
+        close(f64::from(x_at_time(&rig, 400)), f64::from(newest)),
+        "the new bar takes the newest bar's place"
+    );
+    assert!(x_at_time(&rig, 390) < older, "the rest moved left");
+}
+
+#[test]
+fn a_chart_scrolled_back_with_its_newest_bar_on_screen_slides_left_with_a_new_bar() {
+    let mut rig = Rig::new();
+    rig.card.viewport.horizontal.right_offset = 4.0;
+    rig.frames(&[]);
+    let newest = x_at_time(&rig, 399);
+    for hour in 400..403 {
+        rig.candles.push(kline_at(hour));
+        rig.frames(&[]);
+    }
+    assert_eq!(rig.offset(), 4.0, "the new bars never leave the plot");
+    assert!(close(f64::from(x_at_time(&rig, 402)), f64::from(newest)));
+}
+
+#[test]
+fn a_chart_whose_newest_bar_is_off_screen_stays_put_until_it_is_scrolled_back_to_it() {
+    let mut rig = Rig::new();
+    rig.card.viewport.horizontal.right_offset = 11.0;
+    rig.frames(&[]);
+    rig.candles.push(kline_at(400));
+    rig.frames(&[]);
+    assert_eq!(
+        rig.offset(),
+        12.0,
+        "the default margin of 10 slots hides it past 10.5"
+    );
+    rig.card.viewport.horizontal.right_offset = 9.0;
+    rig.frames(&[]);
+    rig.candles.push(kline_at(401));
+    rig.frames(&[]);
+    assert_eq!(rig.offset(), 9.0, "in view again, it follows the bars");
 }
 
 #[test]
