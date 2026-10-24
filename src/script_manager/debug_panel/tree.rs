@@ -420,7 +420,10 @@ pub fn paint_variable(
         pos2(rect.right() - trailing - type_width - 10.0, rect.bottom()),
     );
     if value_clip.width() > 8.0 {
-        let painter = ui.painter().with_clip_rect(value_clip);
+        // The "changed" pill reaches 4 points left of the value; the name's clip ends 6 before it.
+        let painter = ui
+            .painter()
+            .with_clip_rect(value_clip.with_min_x(value_clip.left() - 4.0));
         let mut x = value_clip.left();
         if variable.type_name == "color"
             && let Some(color) = swatch(&variable.value)
