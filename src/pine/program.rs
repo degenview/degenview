@@ -240,8 +240,9 @@ impl VisualOutput {
 
     /// Splits a pane script's output in two: what stays in its pane, and what it forced onto the
     /// main chart. A forced plot stays in the pane output with its pane display cleared, so a
-    /// `fill()` between plots still finds it; each side keeps the script's own identities, so
-    /// style overrides and rows still match.
+    /// `fill()` between a forced plot and a pane plot still finds it; a `fill()` between two
+    /// forced plots goes to the main chart with them, where their prices are on scale. Each side
+    /// keeps the script's own identities, so style overrides and rows still match.
     pub fn split_forced_overlay(&self) -> (Self, Self) {
         let mut pane = self.clone();
         let mut forced = Self {
@@ -268,6 +269,13 @@ impl VisualOutput {
                 candle.display &= !DISPLAY_PANE;
             }
         }
+        let is_forced = |id: usize| forced.plots.iter().any(|plot| plot.id == id);
+        let (on_chart, in_pane) = pane
+            .fills
+            .into_iter()
+            .partition(|fill| is_forced(fill.plot_a) && is_forced(fill.plot_b));
+        pane.fills = in_pane;
+        forced.fills = on_chart;
         (pane, forced)
     }
 }
@@ -327,7 +335,7 @@ mod tests {
 
     #[test]
     fn forced_overlay_visuals_split_off_a_pane_script() {
-        use crate::pine::outputs::{CandleOutput, DISPLAY_ALL, PlotOutput, PlotStyle};
+        use crate::pine::outputs::{CandleOutput, DISPLAY_ALL, FillOutput, PlotOutput, PlotStyle};
         let plot = |id: usize, force_overlay: bool| PlotOutput {
             id,
             title: None,
@@ -340,6 +348,14 @@ mod tests {
             hist_base: 0.0,
             offset: 0,
             force_overlay,
+        };
+        let fill = |id: usize, plot_a: usize, plot_b: usize| FillOutput {
+            id,
+            plot_a,
+            plot_b,
+            colors: vec![Some(0)],
+            title: None,
+            gradients: Vec::new(),
         };
         let candle = CandleOutput {
             id: 2,
@@ -354,18 +370,23 @@ mod tests {
         let output = VisualOutput {
             overlay: false,
             bar_count: 1,
-            plots: vec![plot(0, false), plot(1, true)],
+            plots: vec![plot(0, false), plot(1, true), plot(3, true)],
+            fills: vec![fill(10, 1, 3), fill(11, 0, 1)],
             candles: vec![candle],
             ..VisualOutput::default()
         };
         assert!(output.has_forced_overlay());
         let (pane, forced) = output.split_forced_overlay();
         assert!(forced.overlay && !forced.behind_chart);
-        assert_eq!(forced.plots.len(), 1);
+        assert_eq!(forced.plots.len(), 2);
         assert_eq!(forced.plots[0].id, 1);
         assert_eq!(forced.candles.len(), 1);
         // The pane keeps every plot (a fill may still need the forced one) but no longer draws it.
-        assert_eq!(pane.plots.len(), 2);
+        assert_eq!(pane.plots.len(), 3);
+        // A fill between two forced plots is drawn with them on the main chart; one that reaches
+        // into the pane stays there.
+        assert_eq!(forced.fills.iter().map(|f| f.id).collect::<Vec<_>>(), [10]);
+        assert_eq!(pane.fills.iter().map(|f| f.id).collect::<Vec<_>>(), [11]);
         assert_ne!(pane.plots[0].display & DISPLAY_PANE, 0);
         assert_eq!(pane.plots[1].display & DISPLAY_PANE, 0);
         assert_eq!(pane.candles[0].display & DISPLAY_PANE, 0);
