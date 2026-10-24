@@ -163,7 +163,9 @@ claims identity:
   look. "Visual Order" in the script's context menu (Scripts tab) overrides either way and is saved
   per applied script. Strategy trade markers always stay in front.
 * `force_overlay` on `plot`, `plotshape`, `plotchar`, `plotcandle` and `plotbar` sends that visual to
-  the main chart from a script with its own pane; the main chart's scale includes it.
+  the main chart from a script with its own pane; the main chart's scale includes it. A `fill()`
+  between two forced plots goes with them; a `fill()` between a forced plot and a pane plot stays in
+  the pane, where the forced plot is not drawn.
 * Style overrides are scoped to one applied script's outputs; two instances of a script never
   share them.
 
