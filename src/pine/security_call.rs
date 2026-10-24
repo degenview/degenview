@@ -353,7 +353,7 @@ impl Session {
     }
 
     /// The provider's candles for `key`, asked once per run.
-    fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
+    pub(super) fn series(&mut self, key: SecurityKey) -> Option<Arc<Vec<Kline>>> {
         if let Some(known) = self.security_series.get(&key) {
             return known.clone();
         }

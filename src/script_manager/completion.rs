@@ -70,9 +70,23 @@ const KEYWORDS: [&str; 22] = [
     "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by",
 ];
 
-const TYPES: [&str; 14] = [
-    "int", "float", "bool", "string", "color", "line", "label", "box", "table", "series", "simple",
-    "const", "array", "map",
+const TYPES: [&str; 16] = [
+    "int",
+    "float",
+    "bool",
+    "string",
+    "color",
+    "line",
+    "label",
+    "box",
+    "table",
+    "series",
+    "simple",
+    "const",
+    "array",
+    "map",
+    "footprint",
+    "volume_row",
 ];
 
 /// Names beyond the engine tables, each verified by `every_listed_name_is_supported`.
@@ -93,7 +107,7 @@ const MORE_TA: [&str; 13] = [
 ];
 
 /// Scalar builtins, exercised end to end by `pine_host::call_site_tests`.
-const MORE_SCALAR: [&str; 22] = [
+const MORE_SCALAR: [&str; 40] = [
     "max_bars_back",
     "ticker.new",
     "ticker.standard",
@@ -116,6 +130,24 @@ const MORE_SCALAR: [&str; 22] = [
     "color.from_gradient",
     "fixnan",
     "timeframe.from_seconds",
+    "request.footprint",
+    "footprint.buy_volume",
+    "footprint.sell_volume",
+    "footprint.total_volume",
+    "footprint.delta",
+    "footprint.poc",
+    "footprint.vah",
+    "footprint.val",
+    "footprint.rows",
+    "footprint.get_row_by_price",
+    "volume_row.up_price",
+    "volume_row.down_price",
+    "volume_row.buy_volume",
+    "volume_row.sell_volume",
+    "volume_row.total_volume",
+    "volume_row.delta",
+    "volume_row.has_buy_imbalance",
+    "volume_row.has_sell_imbalance",
 ];
 
 /// Arrays of the drawings alive, read as variables.

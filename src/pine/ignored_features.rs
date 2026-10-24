@@ -262,6 +262,16 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
     table
 }
 
+/// Functions that work, with a limit the script's author should know: what is different, by exact
+/// name. The warning reads "only partly supported", as an argument with a limit does.
+fn partly_supported_functions() -> [(&'static str, &'static str); 1] {
+    [(
+        "request.footprint",
+        "It is built from the chart's candles cut into 1-minute or longer intrabars (no tick data), \
+         so its rows are coarser than TradingView's, and it is `na` on charts of 1 minute or less.",
+    )]
+}
+
 /// Argument values that make the engine draw something else, keyed function → argument → constant.
 fn ignored_values()
 -> HashMap<&'static str, HashMap<&'static str, HashMap<&'static str, &'static str>>> {
@@ -287,6 +297,7 @@ pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
     let values = ignored_values();
     let prefixes = function_prefixes();
     let stubbed = stubbed_functions();
+    let partly = partly_supported_functions();
 
     let mut diagnostics = Vec::new();
     for_each_call_with_args(statements, &mut |name, call_arguments, range| {
@@ -304,6 +315,13 @@ pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
             diagnostics.push(warning(
                 "PINE7005",
                 format!("{name}() is not supported. {explanation}"),
+                spanning(name, range),
+            ));
+        }
+        if let Some((_, limit)) = partly.iter().find(|(partial, _)| *partial == name) {
+            diagnostics.push(warning(
+                "PINE7001",
+                format!("{name}() is only partly supported. {limit}"),
                 spanning(name, range),
             ));
         }
