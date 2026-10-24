@@ -12,6 +12,7 @@ mod expression;
 mod frames;
 mod inspect;
 mod runtime;
+mod session;
 mod source_map;
 mod state;
 mod stepping;
@@ -22,6 +23,10 @@ mod breakpoint_tests;
 mod inspection_tests;
 #[cfg(test)]
 mod pine_tests;
+#[cfg(test)]
+mod realtime_tests;
+#[cfg(test)]
+mod session_tests;
 #[cfg(test)]
 mod tests;
 
@@ -38,6 +43,9 @@ pub use inspect::{
 pub use runtime::{
     BarBreak, BarContext, DebugControl, DebugOptions, DebugRuntime, Debugger, RequestContext, Stop,
     StopReason, StopView,
+};
+pub use session::{
+    DebugConfig, DebugEvent, DebugSession, Outcome, PausedSnapshot, Rejected, StartError, WatchRow,
 };
 pub use source_map::{
     DeclarationKind, Executable, LineResolution, NotExecutable, ScopeEntry, SourceMap,

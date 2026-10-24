@@ -209,6 +209,12 @@ impl StopView<'_> {
         }
     }
 
+    /// The `log.*()` calls and logpoints written since the last time this was asked, in order. A
+    /// reader that applies every batch it is given sees the run's messages without a gap.
+    pub fn take_logs(&mut self) -> crate::pine::logs::LogBatch {
+        self.session.logs.take()
+    }
+
     /// How many times each breakpoint has acted, by id.
     pub fn hit_counts(&self) -> &[(u64, u64)] {
         &self.hits
