@@ -40,7 +40,8 @@ Volume Footprint chart, and TradersPost's reference. Premium and Ultimate plans 
   intrabars, a short 5-minute chart gets 1-minute ones). TradingView's own rule for the older part
   of its history is the same idea; its newest bars use ticks or seconds, which this build cannot.
   A footprint here is therefore **coarser than TradingView's, not the exchange's order flow**; the
-  call warns once (`PINE7001`: "only partly supported") for that reason.
+  call warns (`PINE7001`: "only partly supported", once per call site) for that reason, and for the `na`
+  cases below.
 - **`na`.** `request.footprint()` is `na` for a bar with no usable intrabars (no provider, none for
   that bar, none with volume), on charts of 1 minute or less (nothing finer is fetched), on
   price-based charts (Renko and the like; their bars have no fixed length), and for a bar that
@@ -91,8 +92,11 @@ is ever observed.
   and the tests use hand-computed numbers on a fake provider.
 - Not exercised against live exchange candles in a window; the host's intrabar fetch is the one
   `request.security_lower_tf` already uses.
-- The footprint on a bar still forming is rebuilt when its chart candle changes, but the provider's
-  intrabars are fetched once per run, as for `request.security_lower_tf`.
+- Live bars: the session keeps the provider's answer for a run, so `request.footprint()` asks again
+  for the forming bar every 30 seconds (the provider's own cache is 30 seconds too), and once per
+  load for a historical bar missing from the answer (history prepended later). Its tests use a
+  growing fake provider; nothing was watched on a live chart. `request.security_lower_tf` shares the
+  session's cache and does not do this, so a live bar can still get no intrabars there.
 
 ## Follow-ups that would make it closer to TradingView
 

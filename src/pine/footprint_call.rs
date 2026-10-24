@@ -10,6 +10,7 @@
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use super::array_builtins;
 use super::ast::Argument;
@@ -36,6 +37,10 @@ const INTRABAR_SECONDS: [f64; 5] = [60.0, 300.0, 900.0, 1_800.0, 3_600.0];
 const DEFAULT_VALUE_AREA_PERCENT: f64 = 70.0;
 const DEFAULT_IMBALANCE_PERCENT: f64 = 300.0;
 
+/// How often the intrabars of the forming bar are asked of the provider again. The provider has its own
+/// short cache; this keeps a stream of ticks from cloning a long series on every one.
+const LIVE_REFRESH: Duration = Duration::from_secs(30);
+
 /// The arguments of the one `request.footprint()` a script may make, as the numbers' bits.
 type RequestKey = (i64, u64, u64);
 
@@ -45,12 +50,27 @@ type RequestKey = (i64, u64, u64);
 pub struct FootprintCache {
     request: Option<RequestKey>,
     bars: BTreeMap<i64, (Kline, Arc<Footprint>)>,
+    /// Whether this load has already asked the provider again because a bar had no intrabars in the
+    /// series it holds (history that grew since the series was fetched).
+    refetched: bool,
+    /// The forming bar and when its intrabars were last asked for.
+    live: Option<(i64, Instant)>,
 }
 
 impl FootprintCache {
     pub fn clear(&mut self) {
         self.request = None;
         self.bars.clear();
+        self.refetched = false;
+        self.live = None;
+    }
+
+    /// Whether the forming bar `open_time` is due its intrabars again.
+    fn live_is_due(&self, open_time: i64) -> bool {
+        match self.live {
+            Some((bar, asked)) => bar != open_time || asked.elapsed() >= LIVE_REFRESH,
+            None => true,
+        }
     }
 
     fn insert(&mut self, bar_index: i64, bar: Kline, footprint: Arc<Footprint>) {
@@ -171,7 +191,7 @@ impl Session {
         {
             return Ok(RuntimeValue::Ref(RefKind::Footprint, bar_index as usize));
         }
-        let Some((candles, inside)) = self.intrabars_of(&bar) else {
+        let Some((candles, inside)) = self.intrabars_of(&bar, context.flags.is_realtime) else {
             return Ok(RuntimeValue::Na);
         };
         let previous = inside.start.checked_sub(1).map(|index| &candles[index]);
@@ -190,7 +210,16 @@ impl Session {
     }
 
     /// The provider's finer candles, and which of them are inside the chart bar `bar`.
-    fn intrabars_of(&mut self, bar: &Kline) -> Option<(Arc<Vec<Kline>>, Range<usize>)> {
+    ///
+    /// The session keeps what the provider answered for the run, so a bar that opens after the answer
+    /// (a live chart's next bar) or before it (older history loaded since) would find nothing. The
+    /// series is asked for again, once per load for a historical bar that is missing and every
+    /// [`LIVE_REFRESH`] for the forming bar, whose intrabars keep arriving.
+    fn intrabars_of(
+        &mut self,
+        bar: &Kline,
+        realtime: bool,
+    ) -> Option<(Arc<Vec<Kline>>, Range<usize>)> {
         // A price-based chart's bars do not span fixed times.
         if self.fixed_bar_seconds.is_some() || self.bar_seconds <= 0.0 {
             return None;
@@ -202,14 +231,35 @@ impl Session {
                 && (self.bar_seconds / seconds).fract() == 0.0
                 && span_ms as f64 / (seconds * 1000.0) <= MAX_INTRABAR_CANDLES as f64
         })?;
-        let candles = self.series(SecurityKey {
+        let key = SecurityKey {
             symbol: self.symbol.ticker_id.clone(),
             interval: seconds,
             recent_bars: 0,
-        })?;
-        let first = candles.partition_point(|candle| candle.open_time < bar.open_time);
-        let end = candles.partition_point(|candle| candle.open_time < bar.open_time + bar_ms);
-        (first < end).then_some((candles, first..end))
+        };
+        let inside = |candles: &[Kline]| {
+            let first = candles.partition_point(|candle| candle.open_time < bar.open_time);
+            let end = candles.partition_point(|candle| candle.open_time < bar.open_time + bar_ms);
+            first..end
+        };
+        if let Some(held) = self.security_series.get(&key) {
+            let covered = held
+                .as_ref()
+                .is_some_and(|candles| !inside(candles).is_empty());
+            if realtime {
+                if self.footprints.live_is_due(bar.open_time) {
+                    self.security_series.remove(&key);
+                }
+            } else if !covered && !self.footprints.refetched {
+                self.footprints.refetched = true;
+                self.security_series.remove(&key);
+            }
+        }
+        if realtime && self.footprints.live_is_due(bar.open_time) {
+            self.footprints.live = Some((bar.open_time, Instant::now()));
+        }
+        let candles = self.series(key)?;
+        let found = inside(&candles);
+        (!found.is_empty()).then_some((candles, found))
     }
 
     /// The footprint a handle names, or None when the bar has left the cache.

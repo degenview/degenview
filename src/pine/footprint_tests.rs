@@ -433,3 +433,103 @@ fn scripts_in_the_documented_shapes_compile() {
         }
     }
 }
+
+/// A provider whose candles can grow after the first request, like a live market.
+#[derive(Clone)]
+struct Growing(std::sync::Arc<std::sync::Mutex<Vec<Kline>>>);
+
+impl SecurityDataProvider for Growing {
+    fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
+        (key.interval == 60.0).then(|| self.0.lock().unwrap().clone())
+    }
+}
+
+/// The last value of the plot of the footprint's total volume, `-1` where it is `na`.
+fn total_after(
+    controller: &mut crate::pine::execution::ExecutionController,
+    bars: &[Kline],
+    now_ms: i64,
+) -> Option<f64> {
+    let update = controller.update(bars, None, now_ms);
+    assert!(update.error.is_none(), "{:?}", update.error);
+    update.output.plots[0].values.last().copied().flatten()
+}
+
+fn controller(provider: Growing) -> crate::pine::execution::ExecutionController {
+    crate::pine::execution::ExecutionController::new(
+        "//@version=6\nindicator(\"T\")\n\
+         footprint fp = request.footprint(1)\n\
+         plot(na(fp) ? -1.0 : fp.total_volume())",
+        HashMap::new(),
+        SymbolInfo::default(),
+        None,
+        Limits::default(),
+        &NoLibraries,
+        Some(Box::new(provider)),
+        None,
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_bar_that_opens_after_the_first_request_gets_its_footprint() {
+    let candles = std::sync::Arc::new(std::sync::Mutex::new(intrabars(3)));
+    let mut controller = controller(Growing(candles.clone()));
+    let closed = i64::MAX / 2;
+    assert_eq!(
+        total_after(&mut controller, &chart(3, 5), closed),
+        Some(50.0)
+    );
+    // A fourth bar closes, and its candles arrive with it.
+    *candles.lock().unwrap() = intrabars(4);
+    assert_eq!(
+        total_after(&mut controller, &chart(4, 5), closed),
+        Some(50.0)
+    );
+}
+
+#[test]
+fn the_forming_bar_gets_the_intrabars_so_far() {
+    let candles = std::sync::Arc::new(std::sync::Mutex::new(intrabars(3)));
+    let mut controller = controller(Growing(candles.clone()));
+    assert_eq!(
+        total_after(&mut controller, &chart(3, 5), i64::MAX / 2),
+        Some(50.0)
+    );
+    // The fourth bar has run for three minutes of five: three of its intrabars are in.
+    *candles.lock().unwrap() = intrabars(4)[..18].to_vec();
+    let three_minutes_in = (15 + 3) * MINUTE;
+    assert_eq!(
+        total_after(&mut controller, &chart(4, 5), three_minutes_in),
+        Some(30.0)
+    );
+}
+
+#[test]
+fn older_history_loaded_later_gets_footprints_too() {
+    // The chart first holds bars 1 and 2; then bar 0 is prepended.
+    let candles = std::sync::Arc::new(std::sync::Mutex::new(intrabars(3)[5..].to_vec()));
+    let mut controller = crate::pine::execution::ExecutionController::new(
+        "//@version=6\nindicator(\"T\")\n\
+         footprint fp = request.footprint(1)\n\
+         plot(na(fp) ? -1.0 : fp.total_volume())",
+        HashMap::new(),
+        SymbolInfo::default(),
+        None,
+        Limits::default(),
+        &NoLibraries,
+        Some(Box::new(Growing(candles.clone()))),
+        None,
+    )
+    .unwrap();
+    let closed = i64::MAX / 2;
+    let bars = chart(3, 5);
+    let update = controller.update(&bars[1..], None, closed);
+    assert_eq!(update.output.plots[0].values, [Some(50.0), Some(50.0)]);
+    *candles.lock().unwrap() = intrabars(3);
+    let update = controller.update(&bars, None, closed);
+    assert_eq!(
+        update.output.plots[0].values,
+        [Some(50.0), Some(50.0), Some(50.0)]
+    );
+}

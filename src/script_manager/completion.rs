@@ -106,7 +106,8 @@ const MORE_TA: [&str; 13] = [
     "ta.linreg",
 ];
 
-/// Scalar builtins, exercised end to end by `pine_host::call_site_tests`.
+/// Scalar builtins, exercised end to end by `pine_host::call_site_tests` (the footprint ones by
+/// `pine::footprint_tests`).
 const MORE_SCALAR: [&str; 40] = [
     "max_bars_back",
     "ticker.new",
