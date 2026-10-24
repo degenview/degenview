@@ -169,6 +169,44 @@ fn an_empty_history_shows_how_to_work_with_logs() {
     assert!(text.contains("Enable logging."), "{text}");
 }
 
+impl Rig {
+    /// The vertical middle of everything drawn under the toolbar, and of the room it has.
+    fn content_and_room_middles(&self) -> (f32, f32) {
+        let below = 106.0;
+        let mut top = f32::MAX;
+        let mut bottom = f32::MIN;
+        for clipped in &self.shapes {
+            let bounds = clipped.shape.visual_bounding_rect();
+            if bounds.is_positive() && bounds.min.y >= below && bounds.max.y < HEIGHT {
+                top = top.min(bounds.min.y);
+                bottom = bottom.max(bounds.max.y);
+            }
+        }
+        ((top + bottom) / 2.0, (below + HEIGHT) / 2.0)
+    }
+}
+
+#[test]
+fn the_empty_states_sit_in_the_middle_of_the_pane() {
+    for logging in [true, false] {
+        let mut rig = Rig::new(history(Vec::new()));
+        rig.logging = logging;
+        rig.settle();
+        rig.settle();
+        let (content, room) = rig.content_and_room_middles();
+        assert!(
+            (content - room).abs() < 12.0,
+            "logging {logging}: content centred on {content}, room on {room}"
+        );
+    }
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.filter.query = "zzz".to_owned();
+    rig.settle();
+    rig.settle();
+    let (content, room) = rig.content_and_room_middles();
+    assert!((content - room).abs() < 12.0, "{content} vs {room}");
+}
+
 #[test]
 fn an_empty_history_with_logging_off_offers_to_turn_it_on() {
     let mut rig = Rig::new(history(Vec::new()));
@@ -551,6 +589,8 @@ fn gallery_of_the_pane() {
     }
     let scenes: Vec<(&str, f32, Setup)> = vec![
         ("empty", 320.0, |_, _, _| {}),
+        ("empty-narrow", 240.0, |_, _, _| {}),
+        ("empty-wide", 520.0, |_, _, _| {}),
         ("populated", 320.0, |_, history, _| {
             *history = history_of(mixed_messages())
         }),

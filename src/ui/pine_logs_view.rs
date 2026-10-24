@@ -882,51 +882,104 @@ fn logging_off(ui: &mut Ui, script: u64, actions: &mut Vec<LogsAction>) {
 
 fn onboarding(ui: &mut Ui) {
     centered(ui, |ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(64.0, 76.0), Sense::hover());
+        let width = ui.available_width().min(268.0);
+        let (rect, _) = ui.allocate_exact_size(vec2(96.0, 84.0), Sense::hover());
         illustration(ui, rect);
-        ui.add_space(14.0);
-        heading(ui, "How to work with logs");
-        ui.add_space(8.0);
-        let width = ui.available_width().min(260.0);
+        ui.add_space(16.0);
+        ui.label(kit::text(
+            "How to work with logs",
+            14.0,
+            kit::SEMIBOLD,
+            theme::text_primary(),
+        ));
+        ui.add_space(3.0);
+        ui.label(muted("See what your script does, bar by bar."));
+        ui.add_space(16.0);
         ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
-            ui.spacing_mut().item_spacing = vec2(0.0, 6.0);
-            step(ui, "1.", |ui| {
-                ui.label(muted("Add the indicator to the chart."));
-            });
-            step(ui, "2.", |ui| {
-                ui.label(muted("Use the "));
-                let link = ui.add(
-                    egui::Label::new(
-                        kit::text(
-                            "log functions",
-                            kit::size::SUBHEADLINE,
-                            kit::REGULAR,
-                            kit::ACCENT,
-                        )
-                        .underline(),
-                    )
-                    .sense(Sense::click()),
-                );
-                if link
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .clicked()
-                {
-                    ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
-                }
-                ui.label(muted("."));
-            });
-            step(ui, "3.", |ui| {
-                ui.label(muted("Enable logging."));
-            });
+            egui::Frame::new()
+                .fill(theme::ink(7))
+                .stroke(egui::Stroke::new(1.0, theme::ink(14)))
+                .corner_radius(10.0)
+                .inner_margin(egui::Margin::symmetric(12, 11))
+                .show(ui, |ui| {
+                    ui.set_width(width - 26.0);
+                    ui.spacing_mut().item_spacing = vec2(0.0, 10.0);
+                    step(ui, 1, |ui| {
+                        ui.label(muted("Add the indicator to the chart."));
+                    });
+                    step(ui, 2, |ui| {
+                        ui.label(muted("Use the "));
+                        let link = ui.add(
+                            egui::Label::new(
+                                kit::text(
+                                    "log functions",
+                                    kit::size::SUBHEADLINE,
+                                    kit::MEDIUM,
+                                    kit::ACCENT,
+                                )
+                                .underline(),
+                            )
+                            .sense(Sense::click()),
+                        );
+                        if link
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .clicked()
+                        {
+                            ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
+                        }
+                        ui.label(muted("."));
+                    });
+                    step(ui, 3, |ui| {
+                        ui.label(muted("Enable logging."));
+                    });
+                });
+            if width >= 220.0 {
+                ui.add_space(10.0);
+                example(ui, width);
+            }
         });
     });
 }
 
-fn step(ui: &mut Ui, number: &str, content: impl FnOnce(&mut Ui)) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label(muted(number));
-        ui.add_space(6.0);
+/// A call as a script writes it, in the editor's colours.
+fn example(ui: &mut Ui, width: f32) {
+    let mono = |color: Color32| TextFormat {
+        font_id: FontId::monospace(11.0),
+        color,
+        ..Default::default()
+    };
+    let mut job = LayoutJob::default();
+    job.append("log.info", 0.0, mono(theme::syntax::function()));
+    job.append("(", 0.0, mono(theme::text_secondary()));
+    job.append("\"close {0}\"", 0.0, mono(theme::syntax::string()));
+    job.append(", ", 0.0, mono(theme::text_secondary()));
+    job.append("close", 0.0, mono(theme::syntax::variable()));
+    job.append(")", 0.0, mono(theme::text_secondary()));
+    let galley = ui.painter().layout_job(job);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, galley.size().y + 18.0), Sense::hover());
+    ui.painter().rect_filled(rect, 8.0, theme::well_fill());
+    ui.painter().galley(
+        pos2(rect.center().x - galley.size().x / 2.0, rect.top() + 9.0),
+        galley,
+        Color32::PLACEHOLDER,
+    );
+}
+
+/// One numbered line of the instructions.
+fn step(ui: &mut Ui, number: usize, content: impl FnOnce(&mut Ui)) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        let (badge, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+        ui.painter()
+            .circle_filled(badge.center(), 10.0, kit::ACCENT.gamma_multiply(0.16));
+        ui.painter().text(
+            badge.center(),
+            egui::Align2::CENTER_CENTER,
+            number.to_string(),
+            FontId::proportional(10.5),
+            kit::ACCENT,
+        );
+        ui.add_space(10.0);
         content(ui);
     });
 }
@@ -959,33 +1012,49 @@ fn detail(ui: &mut Ui, text: &str) {
     ));
 }
 
+/// Content in the middle of what is left of the pane, both ways. Its height is measured as it is
+/// laid out and used the next frame, as the first frame cannot know it.
 fn centered(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    let height = ui.available_height();
-    ui.add_space((height * 0.22).min(120.0));
+    let id = ui.id().with("centered-height");
+    let known = ui.data(|data| data.get_temp::<f32>(id)).unwrap_or(0.0);
+    ui.add_space(((ui.available_height() - known) / 2.0).max(12.0));
+    let top = ui.cursor().top();
     ui.vertical_centered(|ui| {
-        ui.set_max_width((ui.available_width() - MARGIN * 4.0).max(120.0));
+        ui.set_max_width((ui.available_width() - MARGIN * 3.0).max(120.0));
         content(ui);
     });
+    let used = ui.cursor().top() - top;
+    if (used - known).abs() > 0.5 {
+        ui.data_mut(|data| data.insert_temp(id, used));
+        ui.ctx().request_repaint();
+    }
 }
 
-/// A page of log lines: gray, orange and red, the three levels.
+/// A page of log lines on a soft disc: a gray, an orange and a red message, the three levels.
 fn illustration(ui: &Ui, rect: Rect) {
     let painter = ui.painter();
-    let ink = theme::text_tertiary();
+    let centre = rect.center();
+    painter.circle_filled(centre, 40.0, kit::ACCENT.gamma_multiply(0.10));
+    let card = Rect::from_center_size(centre, vec2(64.0, 54.0));
+    painter.rect_filled(card, 9.0, theme::chrome());
     painter.rect_stroke(
-        rect,
-        8.0,
-        egui::Stroke::new(1.5, ink),
+        card,
+        9.0,
+        egui::Stroke::new(1.5, theme::text_tertiary()),
         egui::StrokeKind::Inside,
     );
-    let colors = [ink, kit::ORANGE, kit::RED, ink, ink];
-    let lengths = [0.62, 0.5, 0.7, 0.42, 0.56];
-    for (index, (color, length)) in colors.iter().zip(lengths).enumerate() {
-        let y = rect.top() + 14.0 + index as f32 * 11.0;
+    let rows = [
+        (theme::text_tertiary(), 0.62),
+        (kit::ORANGE, 0.46),
+        (kit::RED, 0.70),
+    ];
+    for (index, (color, length)) in rows.into_iter().enumerate() {
+        let y = card.top() + 14.0 + index as f32 * 13.0;
+        painter.circle_filled(pos2(card.left() + 12.0, y), 2.6, color);
         painter.hline(
-            rect.left() + 10.0..=rect.left() + 10.0 + (rect.width() - 20.0) * length,
+            card.left() + 20.0..=card.left() + 20.0 + (card.width() - 32.0) * length,
             y,
-            egui::Stroke::new(2.0, *color),
+            egui::Stroke::new(2.2, color.gamma_multiply(0.75)),
         );
     }
 }
