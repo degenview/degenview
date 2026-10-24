@@ -68,7 +68,10 @@ pub struct LogsState {
     filtered: FilteredLogs,
     heights: RowHeights,
     /// What the rows were laid out for: the script, its run, the list, and how many rows.
-    layout_key: Option<(u64, u64, u64)>,
+    /// The panel's own id, which the ids of its fields hang from.
+    base: Option<egui::Id>,
+    layout_key: Option<(u64, u64)>,
+    layout_revision: u64,
     listed: usize,
     jump_to_latest: bool,
 }
@@ -108,6 +111,7 @@ pub fn show(
 ) -> Vec<LogsAction> {
     let mut actions = Vec::new();
     ui.set_min_height(ui.available_height());
+    state.base = Some(ui.id());
     title(ui, &mut actions);
     divider(ui);
     toolbar(ui, state, scripts, feed.as_ref(), &mut actions);
@@ -244,7 +248,8 @@ fn toolbar(
             if search.clicked() {
                 state.search_open = !state.search_open;
                 if state.search_open {
-                    ui.memory_mut(|memory| memory.request_focus(search_field_id()));
+                    let id = search_field_id(state);
+                    ui.memory_mut(|memory| memory.request_focus(id));
                 }
             }
 
@@ -308,8 +313,13 @@ fn levels_menu(button: &egui::Response, state: &mut LogsState) {
 
 // MARK: Search and date
 
-fn search_field_id() -> egui::Id {
-    egui::Id::new("pine-logs-search")
+/// The ids are derived from the panel's own, so the same pane in two tabs or windows (one
+/// context) never shares a field's focus or a calendar's open flag.
+fn search_field_id(state: &LogsState) -> egui::Id {
+    state
+        .base
+        .unwrap_or_else(|| egui::Id::new("pine-logs"))
+        .with("search")
 }
 
 fn search_bar(ui: &mut Ui, state: &mut LogsState) {
@@ -323,7 +333,7 @@ fn search_bar(ui: &mut Ui, state: &mut LogsState) {
         pos2(rect.left() + MARGIN, rect.top()),
         pos2(rect.right() - MARGIN, rect.bottom()),
     );
-    let id = search_field_id();
+    let id = search_field_id(state);
     let focused = ui.memory(|memory| memory.has_focus(id));
     ui.painter().rect_filled(well, 8.0, theme::ink(10));
     let (stroke_color, stroke_width) = if invalid {
@@ -442,7 +452,10 @@ fn date_bar(ui: &mut Ui, state: &mut LogsState) {
     ui.horizontal(|ui| {
         ui.add_space(MARGIN);
         ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
-        let id = egui::Id::new("pine-logs-start-date");
+        let id = state
+            .base
+            .unwrap_or_else(|| egui::Id::new("pine-logs"))
+            .with("start-date");
         let apply_width = 54.0;
         date_picker::show(
             ui,
@@ -557,23 +570,23 @@ fn list(ui: &mut Ui, state: &mut LogsState, feed: &Feed, script: u64) {
             )
         })
     };
-    let key = (script, feed.epoch, 0);
+    let key = (script, feed.epoch);
     let count = state.filtered.indices().len();
     let resized = (text_width - state.heights.width()).abs() > 0.5;
-    if state.layout_key != Some(key) || state.filtered.rebuilt() && state.listed != count || resized
-    {
-        let fresh = state.layout_key != Some(key);
+    let revision = state.filtered.revision();
+    // Rows are known by position, so a list that was rebuilt (a filter, the oldest message
+    // evicted) puts other messages at the same positions even when it is as long as before.
+    let rebuilt = revision != state.layout_revision && state.filtered.rebuilt();
+    let fresh = state.layout_key != Some(key);
+    if fresh || rebuilt || resized || state.listed > count {
         state.heights.reset(text_width, (0..count).map(&estimate));
         state.layout_key = Some(key);
-        state.listed = count;
         state.jump_to_latest |= fresh;
     } else if state.listed < count {
         state.heights.extend((state.listed..count).map(&estimate));
-        state.listed = count;
-    } else if state.listed > count {
-        state.heights.reset(text_width, (0..count).map(&estimate));
-        state.listed = count;
     }
+    state.listed = count;
+    state.layout_revision = revision;
 
     let area = egui::ScrollArea::vertical()
         .id_salt("pine-logs-rows")

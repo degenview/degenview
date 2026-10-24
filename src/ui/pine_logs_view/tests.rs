@@ -375,6 +375,27 @@ fn new_messages_appear_without_rebuilding_the_list() {
     assert!(!rig.state.filtered.rebuilt());
 }
 
+#[test]
+fn a_filter_that_keeps_the_row_count_still_relays_the_rows_out() {
+    let mut events = Vec::new();
+    for n in 0..100 {
+        events.push(event(n, LogLevel::Info, "one line"));
+    }
+    for n in 100..200 {
+        events.push(event(n, LogLevel::Error, "three\nlines\nhere"));
+    }
+    let mut rig = Rig::new(history(events));
+    rig.state.filter.levels.error = false;
+    rig.settle();
+    let single = rig.state.heights.total();
+    // Same number of rows, other messages: the heights must follow the messages.
+    rig.state.filter.levels.error = true;
+    rig.state.filter.levels.info = false;
+    rig.settle();
+    let triple = rig.state.heights.total();
+    assert!(triple > single * 1.5, "{single} then {triple}");
+}
+
 // MARK: Gallery
 
 fn mixed_messages() -> Vec<LogEvent> {
