@@ -111,7 +111,8 @@ and nothing else changes it.
 
 A docked panel on the right (beside the Object tree, `workspace/pine_logs.rs`, `ui/pine_logs_view`),
 opened from a script's chip menu or pane menu, "Pine logs". It reads the messages the chart card
-keeps for each script's run and owns none of them. See [Pine Logs](pine-logs.md).
+keeps for each script's run and owns none of them. Hovering a row offers Source code and Scroll to
+bar. See [Pine Logs](pine-logs.md).
 
 ## Undo
 

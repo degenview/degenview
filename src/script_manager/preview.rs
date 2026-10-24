@@ -20,7 +20,7 @@ use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
-use crate::ui::{ChartCard, DrawingFrame, ReplayChartFrame};
+use crate::ui::{ChartCard, DrawingFrame, PREVIEW_INSTANCE, ReplayChartFrame};
 use crate::ui::{add_chart_sheet, kit, source_logo};
 use eframe::egui::{
     self, Align, Align2, Color32, CursorIcon, FontId, Id, Layout, Margin, Rect, RichText, Sense,
@@ -407,6 +407,24 @@ impl PreviewState {
     /// The runtime failure of the script on the chart, if its last run stopped early.
     pub(super) fn runtime_error(&self) -> Option<&crate::pine::token::Diagnostic> {
         self.card.pine_error()
+    }
+
+    /// The messages the preview's script wrote with `log.*()` in its current run.
+    pub(super) fn logs(&self) -> Option<crate::ui::PineLogs<'_>> {
+        self.card.pine_logs(PREVIEW_INSTANCE)
+    }
+
+    pub(super) fn logging(&self) -> bool {
+        self.card.pine_logging(PREVIEW_INSTANCE)
+    }
+
+    pub(super) fn set_logging(&mut self, enabled: bool) {
+        self.card.set_pine_logging(PREVIEW_INSTANCE, enabled);
+    }
+
+    /// Scrolls the preview chart to the bar holding `time_ms`.
+    pub(super) fn scroll_to_time(&mut self, time_ms: i64) -> crate::ui::Scrolled {
+        self.card.scroll_to_time(time_ms, &self.candles)
     }
 
     /// The last run's output, for the Report tab.

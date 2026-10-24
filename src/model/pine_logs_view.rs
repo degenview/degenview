@@ -15,6 +15,19 @@ use std::ops::Range;
 /// The most matches one message highlights.
 pub const MAX_HIGHLIGHTS: usize = 200;
 
+/// Where a message's call is, for the Script Manager to open.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SourceTarget {
+    /// The saved script the chart's instance came from.
+    pub script_id: Option<String>,
+    /// The library (by name) whose code made the call, instead.
+    pub library: Option<String>,
+    /// The call's position in that source, in UTF-16 units.
+    pub offset: usize,
+    /// The text the script ran, to tell when the saved script has changed since.
+    pub ran_source: Option<String>,
+}
+
 // MARK: Search
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]

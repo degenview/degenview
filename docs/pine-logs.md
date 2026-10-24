@@ -104,6 +104,31 @@ logging switch, search, start date and level filter.
 - The level and search options are remembered per machine (`pineLogs.prefs`, never synced). The
   messages, the selected script and the pane's size and openness are not saved.
 
+### Source code and Scroll to bar
+
+Hovering a row shows two buttons (the same two are in its right-click menu): **Source code**
+(`</>`) and **Scroll to bar**.
+
+- **Source code** opens the Script Manager (the tab there already is, or a new one) on the saved
+  script the chart's instance came from, with the caret on the `log.*()` call: the call's
+  `SourceRange` start, which is already the UTF-16 offset the editor takes, never a search for the
+  message text. A message written by library code opens the library (found by the name in its
+  import path). A script edited since the message was written still opens, with a note that the
+  line may have moved; a script that is gone, or an instance not added from a saved script, says so
+  and changes nothing.
+- **Scroll to bar** scrolls the chart to `bar_time_ms` (not the message's time: a realtime
+  message's time is the wall clock, and a message from `request.security` carries the requested
+  bar's open time, which lands on the chart bar containing it). See
+  [Chart navigation](chart-navigation.md#scrolling-to-a-bar).
+
+### In the Script Manager
+
+The editor's toolbar has a More menu with "Pine logs": the same pane beside the editor, over the
+preview chart's run of the script being edited. There "Source code" moves the caret in the editor
+you are in, and "Scroll to bar" moves the preview chart, which only holds the candles it fetched.
+TradingView opens the pane from the editor's More menu; DegenView's Script Manager had no More menu,
+so this one only holds this entry. The placement beside the editor is ours.
+
 Pane regexes use the engine's `regex_lite` subset (the one behind `str.match`), not TradingView's:
 no `\xhh`/`\uhhhh` escapes, lookarounds or named groups, and a step budget bounds the search.
 
@@ -115,7 +140,8 @@ no `\xhh`/`\uhhhh` escapes, lookarounds or named groups, and a step budget bound
   the rebuild triggers listed under Historical and realtime, and the extra limits.
 - The editor's signature help shows one `formatString, arg0, …` row for all three functions, not
   the two overloads.
-- Source code and Scroll to bar, the editor's More menu, and the Script Manager preview's logs
-  are not built yet. The pane was checked through headless egui frames and rendered pictures, not
-  in a real window.
+- The pane, Source code and Scroll to bar were checked through headless egui frames, unit tests and
+  rendered pictures, not in a real window.
+- Source code in the Script Manager offers a script edited since as a note rather than showing a
+  diff, and an offset into text that changed may land on a different line.
 - A formatted message whose first argument is `na` is the text `NaN`.

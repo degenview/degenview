@@ -16,6 +16,7 @@ pub mod edit_ops;
 pub mod editor;
 mod find;
 pub mod inputs;
+mod logs;
 pub mod model;
 pub mod name;
 pub mod prefs;
@@ -116,6 +117,8 @@ pub(crate) enum Cmd {
     SetChartPosition(ChartPosition),
     SetDrawerTab(DrawerTab),
     ToggleDrawer,
+    /// Open or close the Pine logs pane.
+    ToggleLogs,
     OpenAlpacaSettings,
 }
 
@@ -177,6 +180,8 @@ pub struct ScriptManager {
     pub(crate) error: Option<String>,
     pub(crate) cmds: Vec<Cmd>,
     pub(crate) preview: workspace::PreviewState,
+    /// The Pine logs pane beside the editor, when open.
+    logs: logs::LogsPane,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<ScriptManagerAction>,
     export_rx: Option<Receiver<(ScriptId, Option<PathBuf>)>>,
@@ -196,6 +201,7 @@ impl ScriptManager {
         Self {
             id,
             preview: workspace::PreviewState::load(&shared),
+            logs: logs::LogsPane::default(),
             shared,
             script_store,
             scripts: Vec::new(),
@@ -419,6 +425,15 @@ impl ScriptManager {
             )
             .show(ui, |ui| self.toolbar(ui));
 
+        if self.logs.open {
+            egui::Panel::right("script-manager-logs")
+                .resizable(true)
+                .default_size(320.0)
+                .min_size(240.0)
+                .max_size(640.0)
+                .frame(Self::logs_panel_frame())
+                .show(ui, |ui| self.show_logs_panel(ui));
+        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::background()))
             .show(ui, |ui| self.root(ui));
@@ -506,6 +521,8 @@ impl ScriptManager {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
+                let more = icons::button(ui, Icon::Ellipsis, 28.0, theme::text_primary(), "More");
+                self.more_menu(&more);
                 let (icon, tip) = if self.prefs.chart_visible {
                     (Icon::ChartLine, "Hide the preview chart")
                 } else {
@@ -681,6 +698,46 @@ impl ScriptManager {
         {
             open.name = script.name.clone();
             open.script_type = script.script_type;
+        }
+    }
+
+    /// Opens the script (or library) a Pine logs message was written by and puts the caret on the
+    /// call. A script that was edited since the message was written is opened all the same, with a
+    /// note that the line may have moved; one that is gone is told so and nothing else changes.
+    pub(crate) fn reveal_source(&mut self, target: &crate::model::pine_logs_view::SourceTarget) {
+        let Some(scripts) = self.with_store(|store| store.all_scripts()) else {
+            return;
+        };
+        let found = match (&target.script_id, &target.library) {
+            (Some(id), _) => scripts.iter().find(|script| &script.id == id),
+            (None, Some(name)) => scripts.iter().find(|script| {
+                script.script_type == ScriptType::Library
+                    && (&script.name == name
+                        || registry::title_of(&script.source).as_ref() == Some(name))
+            }),
+            (None, None) => None,
+        };
+        let Some(script) = found else {
+            self.error = Some(match &target.library {
+                Some(name) => format!("The library “{name}” is not in the Script Manager."),
+                None => "That script is no longer in the Script Manager.".to_owned(),
+            });
+            return;
+        };
+        let changed = target
+            .ran_source
+            .as_ref()
+            .is_some_and(|ran| *ran != script.source);
+        let id = script.id.clone();
+        self.open_script(&id);
+        if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+            open.editor.reveal_offset(target.offset);
+        }
+        if changed {
+            self.error = Some(
+                "This script was edited after that message was written, so the line may have moved."
+                    .to_owned(),
+            );
         }
     }
 
@@ -880,6 +937,7 @@ impl ScriptManager {
                 self.prefs.drawer_open = true;
             }
             Cmd::ToggleDrawer => self.prefs.drawer_open = !self.prefs.drawer_open,
+            Cmd::ToggleLogs => self.toggle_logs(),
             Cmd::OpenAlpacaSettings => self.actions.push(ScriptManagerAction::OpenAlpacaSettings),
         }
         let _ = ctx;
@@ -1391,6 +1449,94 @@ mod tests {
         manager.sheet = None;
         manager.error = Some("boom".into());
         frame(&mut manager);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn target(
+        script_id: Option<&str>,
+        library: Option<&str>,
+        ran_source: Option<&str>,
+    ) -> crate::model::pine_logs_view::SourceTarget {
+        crate::model::pine_logs_view::SourceTarget {
+            script_id: script_id.map(str::to_owned),
+            library: library.map(str::to_owned),
+            offset: 17,
+            ran_source: ran_source.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn a_logged_call_opens_its_script_with_the_caret_on_it() {
+        let (mut manager, root) = manager("reveal");
+        manager.first_load();
+        let script = manager.scripts[1].clone();
+        manager.reveal_source(&target(Some(&script.id), None, Some(&script.source)));
+        let open = manager.open.as_ref().expect("the script is open");
+        assert_eq!(open.id, script.id);
+        assert_eq!(open.editor.pending_jump(), Some(17));
+        assert!(manager.error.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_edited_since_the_message_still_opens_with_a_note() {
+        let (mut manager, root) = manager("reveal-changed");
+        manager.first_load();
+        let script = manager.scripts[1].clone();
+        manager.reveal_source(&target(Some(&script.id), None, Some("// what ran then\n")));
+        assert_eq!(manager.open.as_ref().map(|o| o.id.clone()), Some(script.id));
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("edited"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_that_is_gone_changes_nothing_and_says_so() {
+        let (mut manager, root) = manager("reveal-gone");
+        manager.first_load();
+        let before = manager.open.as_ref().map(|o| o.id.clone());
+        manager.reveal_source(&target(Some("no-such-script"), None, None));
+        assert_eq!(manager.open.as_ref().map(|o| o.id.clone()), before);
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("no longer"))
+        );
+        manager.error = None;
+        manager.reveal_source(&target(None, Some("Nope"), None));
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("library “Nope”"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_library_call_opens_the_library_by_name() {
+        let (mut manager, root) = manager("reveal-library");
+        manager.first_load();
+        let library = manager
+            .with_store(|store| {
+                store.create(
+                    "Dbg",
+                    ScriptType::Library,
+                    Some("//@version=6\nlibrary(\"Dbg\")\nexport f(float x) => x\n"),
+                    false,
+                )
+            })
+            .expect("a library");
+        manager.reveal_source(&target(None, Some("Dbg"), None));
+        let open = manager.open.as_ref().expect("the library is open");
+        assert_eq!(open.id, library.id);
+        assert_eq!(open.editor.pending_jump(), Some(17));
+        assert!(manager.error.is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

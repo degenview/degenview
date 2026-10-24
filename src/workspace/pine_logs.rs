@@ -7,8 +7,9 @@
 
 use super::*;
 use crate::model::pine_instance::PineInstance;
-use crate::model::pine_logs_view::LogsPrefs;
-use crate::pine::logs::LogHistory;
+use crate::model::pine_logs_view::{LogsPrefs, SourceTarget};
+use crate::pine::logs::{LogEvent, LogHistory};
+use crate::ui::Scrolled;
 use crate::ui::pine_logs_view::{self as logs_view, Feed, LogsAction, ScriptEntry};
 
 const PREFS_KEY: &str = "pineLogs.prefs";
@@ -21,7 +22,21 @@ pub(super) struct PineLogsPane {
     pub(super) view: logs_view::LogsState,
     prefs_loaded: bool,
     prefs_saved: LogsPrefs,
+    /// What the pane asks of the app (open the Script Manager), handed on with the frame's actions.
+    outbox: Vec<WorkspaceAction>,
+    /// A "Scroll to bar" waiting for older history to arrive.
+    pending_jump: Option<PendingJump>,
 }
+
+/// A bar the chart is on its way to, further back than the candles it holds.
+struct PendingJump {
+    chart_id: u64,
+    time_ms: i64,
+    since: Instant,
+}
+
+/// How long a jump waits for older history before it settles for the oldest bar.
+const JUMP_PATIENCE: Duration = Duration::from_secs(30);
 
 /// The scripts the pane can pick: each instance by name, the later ones of a repeated name
 /// numbered so two copies of one script can be told apart.
@@ -42,6 +57,34 @@ pub(super) fn script_entries(instances: &[PineInstance]) -> Vec<ScriptEntry> {
             }
         })
         .collect()
+}
+
+/// Where a message's call is: in the saved script the instance came from, or in the library whose
+/// code made it. An instance that did not come from a saved script has no source to open.
+fn source_target(instance: &PineInstance, event: &LogEvent) -> Result<SourceTarget, &'static str> {
+    let offset = event.range.start.offset;
+    match (&event.library, &instance.script_id) {
+        (Some(path), _) => Ok(SourceTarget {
+            script_id: None,
+            // `user/Name/version`: a library is found by its name.
+            library: path
+                .split('/')
+                .filter(|part| !part.is_empty())
+                .nth(1)
+                .map(str::to_owned),
+            offset,
+            ran_source: None,
+        }),
+        (None, Some(script_id)) => Ok(SourceTarget {
+            script_id: Some(script_id.clone()),
+            library: None,
+            offset,
+            ran_source: Some(instance.source.clone()),
+        }),
+        (None, None) => {
+            Err("This script was not added from a saved script, so there is no source to open.")
+        }
+    }
 }
 
 impl ChartWorkspace {
@@ -124,7 +167,95 @@ impl ChartWorkspace {
                     self.charts[index].chart.set_pine_logging(id, enabled);
                 }
             }
+            LogsAction::Source(sequence) => self.open_log_source(chart_id, sequence),
+            LogsAction::ScrollToBar(sequence) => self.scroll_to_log_bar(chart_id, sequence),
         }
+    }
+
+    /// The message with `sequence` in the selected script's history, with the instance it is from.
+    fn selected_log(&self, chart_id: u64, sequence: u64) -> Option<(PineInstance, LogEvent)> {
+        let card = &self.charts[self.chart_index(chart_id)?].chart;
+        let id = self.context.logs.view.selected?;
+        let instance = card.pine_instances().iter().find(|i| i.id == id)?.clone();
+        let event = card
+            .pine_logs(id)?
+            .history
+            .buffer()
+            .iter()
+            .find(|event| event.sequence == sequence)?
+            .clone();
+        Some((instance, event))
+    }
+
+    /// "Source code": the Script Manager on the call that wrote the message.
+    fn open_log_source(&mut self, chart_id: u64, sequence: u64) {
+        let Some((instance, event)) = self.selected_log(chart_id, sequence) else {
+            return;
+        };
+        match source_target(&instance, &event) {
+            Ok(target) => self
+                .context
+                .logs
+                .outbox
+                .push(WorkspaceAction::OpenPineSource(target)),
+            Err(reason) => self.say(reason, true),
+        }
+    }
+
+    /// "Scroll to bar": the chart goes to the bar the message was written on.
+    fn scroll_to_log_bar(&mut self, chart_id: u64, sequence: u64) {
+        let Some((_, event)) = self.selected_log(chart_id, sequence) else {
+            return;
+        };
+        self.begin_bar_jump(chart_id, event.bar_time_ms);
+    }
+
+    /// Takes the chart to the bar holding `time_ms`. A bar older than the candles held waits for
+    /// older history, as far as the provider has it.
+    fn begin_bar_jump(&mut self, chart_id: u64, time_ms: i64) {
+        self.context.logs.pending_jump = Some(PendingJump {
+            chart_id,
+            time_ms,
+            since: Instant::now(),
+        });
+        self.focus_chart(chart_id);
+        self.resolve_log_bar_jump();
+    }
+
+    /// Takes the pending jump as far as the candles allow; called every frame while one waits.
+    pub(super) fn resolve_log_bar_jump(&mut self) {
+        let Some(jump) = self.context.logs.pending_jump.as_ref() else {
+            return;
+        };
+        let (chart_id, time_ms, since) = (jump.chart_id, jump.time_ms, jump.since);
+        let Some(index) = self.chart_index(chart_id) else {
+            self.context.logs.pending_jump = None;
+            return;
+        };
+        let replay_ms = self.replay_cut();
+        let timeframe = self.timeframe;
+        let chart = &mut self.charts[index];
+        let candles = displayed_candles(&chart.candles, replay_ms);
+        let outcome = chart.chart.scroll_to_time(time_ms, candles);
+        let waiting = outcome == Scrolled::BeforeHistory
+            && chart.can_load_older(timeframe)
+            && since.elapsed() < JUMP_PATIENCE;
+        if waiting {
+            return;
+        }
+        self.context.logs.pending_jump = None;
+        match outcome {
+            Scrolled::Done => {}
+            Scrolled::BeforeHistory => self.say(
+                "That bar is older than the history this chart can load, so the chart is at its oldest bar.",
+                false,
+            ),
+            Scrolled::NoBars => self.say("The chart has no bars to scroll to.", true),
+        }
+    }
+
+    pub(super) fn take_logs_actions(&mut self) -> Vec<WorkspaceAction> {
+        std::mem::take(&mut self.context.logs.outbox)
     }
 }
 

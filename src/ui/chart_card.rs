@@ -346,6 +346,8 @@ pub struct ChartCard {
     /// The time a vertical cursor line is locked at (context menu). View state, not saved: it is
     /// not a drawing, and it follows neither templates nor linked charts.
     time_lock: Option<i64>,
+    /// The bar "Scroll to bar" went to and when: a marker shown for a few seconds. View state.
+    bar_marker: Option<(i64, std::time::Instant)>,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
     table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
@@ -380,7 +382,7 @@ struct ConstructedSeries {
 }
 
 /// The instance the Script Manager's single-script preview chart runs.
-const PREVIEW_INSTANCE: u64 = 0;
+pub const PREVIEW_INSTANCE: u64 = 0;
 
 /// One instance's last run, cached so the card does not recompile every frame.
 struct Run {
@@ -652,6 +654,7 @@ impl Default for ChartCard {
             maximized_pane: None,
             pane_ids: Vec::new(),
             time_lock: None,
+            bar_marker: None,
             table_wanted: false,
             table_feed: None,
             table_stamp: 0,
@@ -3065,6 +3068,7 @@ fn translucent(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
+mod bar_marker;
 mod body;
 mod context;
 mod frame;
@@ -3073,6 +3077,7 @@ mod navigation;
 mod snapshot;
 mod sync;
 mod table;
+pub use bar_marker::Scrolled;
 mod time_lock;
 
 #[cfg(test)]

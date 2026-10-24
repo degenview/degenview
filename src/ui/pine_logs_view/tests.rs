@@ -375,6 +375,54 @@ fn new_messages_appear_without_rebuilding_the_list() {
     assert!(!rig.state.filtered.rebuilt());
 }
 
+impl Rig {
+    /// The top left of the row whose text holds `needle`.
+    fn row_top(&self, needle: &str) -> egui::Pos2 {
+        self.shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(needle) => {
+                    Some(text.pos - vec2(ROW_PAD_X, ROW_PAD_Y))
+                }
+                _ => None,
+            })
+            .expect("the row is drawn")
+    }
+
+    fn press_at(&mut self, at: egui::Pos2) {
+        let button = |pressed| Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.frame(vec![Event::PointerMoved(at)]);
+        self.frame(vec![button(true)]);
+        self.frame(vec![button(false)]);
+    }
+}
+
+#[test]
+fn hovering_a_row_offers_source_code_and_scroll_to_bar() {
+    let mut rig = Rig::new(history(vec![
+        event(0, LogLevel::Info, "first"),
+        event(1, LogLevel::Info, "second"),
+    ]));
+    rig.settle();
+    let top = rig.row_top("second");
+    // Not hovered: the actions are not there to click.
+    assert!(!rig.text().contains("Source code"));
+    rig.frame(vec![Event::PointerMoved(pos2(60.0, top.y + 20.0))]);
+    rig.frame(Vec::new());
+    // Source code is the left of the two buttons, Scroll to bar the right.
+    rig.press_at(pos2(WIDTH - 54.0 + 11.0, top.y + 2.0 + 11.0));
+    assert_eq!(rig.actions, [LogsAction::Source(1)]);
+    rig.actions.clear();
+    rig.frame(vec![Event::PointerMoved(pos2(60.0, top.y + 20.0))]);
+    rig.press_at(pos2(WIDTH - 30.0 + 11.0, top.y + 2.0 + 11.0));
+    assert_eq!(rig.actions, [LogsAction::ScrollToBar(1)]);
+}
+
 #[test]
 fn a_filter_that_keeps_the_row_count_still_relays_the_rows_out() {
     let mut events = Vec::new();
@@ -510,6 +558,47 @@ fn gallery_of_the_pane() {
                 last.expect("a frame"),
             );
         }
+        // A hovered row, with its two actions.
+        let mut screen = Screen::new(vec2(320.0, 560.0));
+        theme::apply(&screen.ctx, app_theme);
+        let mut state = LogsState::default();
+        let history = history_of(mixed_messages());
+        let scripts = scripts();
+        let mut hover = Vec::new();
+        let mut last = None;
+        for _ in 0..5 {
+            theme::sync(&screen.ctx);
+            let output = screen.run(std::mem::take(&mut hover), |ui| {
+                state.select_valid(&scripts);
+                let feed = Feed {
+                    epoch: 1,
+                    history: &history,
+                    logging: true,
+                };
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::new().fill(theme::chrome()))
+                    .show(ui, |ui| {
+                        show(ui, &mut state, &scripts, Some(feed));
+                    });
+            });
+            let row = output
+                .shapes
+                .iter()
+                .find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.job.text.contains("Unexpected") => {
+                        Some(text.pos)
+                    }
+                    _ => None,
+                });
+            if let Some(pos) = row {
+                hover = vec![Event::PointerMoved(pos2(60.0, pos.y + 6.0))];
+            }
+            last = Some(output);
+        }
+        screen.save(
+            &format!("pine-logs-hover-{theme_name}"),
+            last.expect("a frame"),
+        );
     }
 }
 

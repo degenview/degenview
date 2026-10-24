@@ -75,6 +75,8 @@ pub enum WorkspaceAction {
     OpenPortfolio,
     /// Open the Script Manager tab.
     OpenPineScripts,
+    /// Open the Script Manager on the source of a Pine logs message.
+    OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     OpenAlerts,
     /// The price-alert sheet's Save: queue the alert for the runtime. `baseline` is the price
     /// the sheet last showed.
@@ -738,6 +740,7 @@ impl ChartWorkspace {
         }
         actions.extend(self.show_alert_editor(&ctx));
         actions.extend(self.show_context_ui(&ctx, paper_host));
+        actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();
             if let Some(replay_date_sheet::ReplayDateSheetResult::Start(ms)) =

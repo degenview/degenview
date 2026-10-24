@@ -43,6 +43,12 @@ impl OlderHistory {
             && self.retry_at.is_none_or(|at| now >= at)
     }
 
+    /// Whether more history may still come: the provider has not said it has nothing older and
+    /// the chart is under its cap.
+    pub fn may_have_more(&self, held: usize) -> bool {
+        !self.exhausted && held < MAX_CANDLES
+    }
+
     /// Whether nothing has been asked of the provider yet for the candles held: the first page is
     /// worth fetching ahead of the user, so scrolling back finds it already there.
     pub fn untouched(&self) -> bool {

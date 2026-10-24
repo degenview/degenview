@@ -181,7 +181,7 @@ impl ChartWorkspace {
         self.charts.iter().position(|chart| chart.id == chart_id)
     }
 
-    fn replay_cut(&self) -> Option<i64> {
+    pub(super) fn replay_cut(&self) -> Option<i64> {
         if self.replay.is_active() {
             self.replay.current_ms()
         } else {
@@ -780,6 +780,7 @@ impl ChartWorkspace {
         {
             self.context.logs.chart = None;
         }
+        self.resolve_log_bar_jump();
         let table = self.context.table_chart;
         let replay_ms = self.replay_cut();
         let replaying =

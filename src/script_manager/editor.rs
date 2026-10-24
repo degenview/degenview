@@ -217,6 +217,18 @@ impl EditorState {
         self.compile_requested = None;
     }
 
+    /// Moves the caret to `offset` (UTF-16 units) and flashes the spot, next frame. An offset past
+    /// the end of the text lands at the end.
+    pub fn reveal_offset(&mut self, offset: usize) {
+        self.jump_to = Some(offset);
+    }
+
+    /// The offset the caret is waiting to be moved to.
+    #[cfg(test)]
+    pub fn pending_jump(&self) -> Option<usize> {
+        self.jump_to
+    }
+
     /// Moves the caret to a diagnostic's start and flashes it, next frame.
     pub fn reveal(&mut self, diagnostic: &Diagnostic) {
         self.jump_to = Some(diagnostic.range.start.offset);

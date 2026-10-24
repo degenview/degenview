@@ -197,6 +197,8 @@ enum AppAction {
     },
     OpenPortfolio,
     OpenPine,
+    /// Open the Script Manager on the source of a Pine logs message.
+    OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
     OpenAlerts,
@@ -576,6 +578,7 @@ fn show_tab(
                 pending.extend(actions.into_iter().map(|action| match action {
                     WorkspaceAction::OpenPortfolio => AppAction::OpenPortfolio,
                     WorkspaceAction::OpenPineScripts => AppAction::OpenPine,
+                    WorkspaceAction::OpenPineSource(target) => AppAction::OpenPineSource(target),
                     WorkspaceAction::OpenAlerts => AppAction::OpenAlerts,
                     WorkspaceAction::SavePriceAlert { alert, baseline } => {
                         AppAction::SavePriceAlert { alert, baseline }
@@ -985,6 +988,7 @@ impl DegenViewApp {
                 }
                 AppAction::OpenPortfolio => self.open_portfolio(ctx),
                 AppAction::OpenPine => self.open_pine(ctx),
+                AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
                     if let Ok(mut host) = self.webhook_host.lock() {
                         host.open_alpaca();
@@ -1225,6 +1229,23 @@ impl DegenViewApp {
             self.store.clone(),
         ))));
         self.register(slot, None);
+    }
+
+    /// Opens the Script Manager (the tab there already is, or a new one) on a log message's call.
+    fn open_pine_source(
+        &mut self,
+        ctx: &egui::Context,
+        target: &crate::model::pine_logs_view::SourceTarget,
+    ) {
+        self.open_pine(ctx);
+        for tab in &self.tabs {
+            if let Ok(mut content) = tab.content.lock()
+                && let TabContent::Pine(pine) = &mut *content
+            {
+                pine.reveal_source(target);
+                break;
+            }
+        }
     }
 
     fn viewport_id(window: WindowId) -> egui::ViewportId {

@@ -53,6 +53,10 @@ pub enum LogsAction {
     Select(u64),
     /// Turn the keeping of realtime messages on or off for a script.
     SetLogging(u64, bool),
+    /// Show the source of the call that wrote the message with this sequence number.
+    Source(u64),
+    /// Bring the chart to the bar the message with this sequence number was written on.
+    ScrollToBar(u64),
 }
 
 #[derive(Default)]
@@ -553,10 +557,16 @@ fn body(
     if state.filtered.indices().is_empty() {
         return no_results(ui, state);
     }
-    list(ui, state, feed, script);
+    list(ui, state, feed, script, actions);
 }
 
-fn list(ui: &mut Ui, state: &mut LogsState, feed: &Feed, script: u64) {
+fn list(
+    ui: &mut Ui,
+    state: &mut LogsState,
+    feed: &Feed,
+    script: u64,
+    actions: &mut Vec<LogsAction>,
+) {
     let buffer = feed.history.buffer();
     let width = ui.available_width();
     let text_width = (width - ROW_PAD_X * 2.0).max(40.0);
@@ -631,7 +641,10 @@ fn list(ui: &mut Ui, state: &mut LogsState, feed: &Feed, script: u64) {
                 rect.bottom() - 0.5,
                 egui::Stroke::new(1.0, theme::ink(10)),
             );
-            row_menu(&response, event);
+            row_menu(&response, event, actions);
+            if ui.rect_contains_pointer(rect) {
+                row_buttons(ui, rect, event.sequence, actions);
+            }
             if (height - heights.height_of(position)).abs() > 0.01 {
                 heights.measure(position, event.sequence, height);
                 remeasured = true;
@@ -745,9 +758,65 @@ fn row_galley(ui: &Ui, event: &LogEvent, filtered: &FilteredLogs, width: f32) ->
     ui.painter().layout_job(job)
 }
 
-fn row_menu(response: &egui::Response, event: &LogEvent) {
+/// The two actions a hovered row offers, at the right end of its time line.
+fn row_buttons(ui: &mut Ui, row: Rect, sequence: u64, actions: &mut Vec<LogsAction>) {
+    let size = 22.0;
+    for (slot, (icon, tip, action)) in [
+        (Icon::Code, "Source code", LogsAction::Source(sequence)),
+        (
+            Icon::ScrollToBar,
+            "Scroll to bar",
+            LogsAction::ScrollToBar(sequence),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let rect = Rect::from_min_size(
+            pos2(
+                row.right() - 8.0 - size * (2 - slot) as f32 - 2.0 * (1 - slot) as f32,
+                row.top() + 2.0,
+            ),
+            vec2(size, size),
+        );
+        let response = ui.interact(
+            rect,
+            ui.id().with(("log-action", sequence, slot)),
+            Sense::click(),
+        );
+        let response = accessibility::label(response, tip).on_hover_text(tip);
+        let fill = if response.is_pointer_button_down_on() {
+            theme::ink(34)
+        } else if response.hovered() {
+            theme::ink(22)
+        } else {
+            theme::chrome()
+        };
+        ui.painter().rect_filled(rect, 5.0, fill);
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), vec2(13.0, 13.0)),
+            icon,
+            theme::text_secondary(),
+        );
+        if response.clicked() {
+            actions.push(action);
+        }
+    }
+}
+
+fn row_menu(response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsAction>) {
     kit::context_popup(response).show(|ui| {
         kit::menu_scope(ui, 170.0);
+        if kit::menu_item(ui, Icon::Code, "Source code", true, false) {
+            actions.push(LogsAction::Source(event.sequence));
+            ui.close();
+        }
+        if kit::menu_item(ui, Icon::ScrollToBar, "Scroll to bar", true, false) {
+            actions.push(LogsAction::ScrollToBar(event.sequence));
+            ui.close();
+        }
+        kit::menu_separator(ui);
         if kit::menu_item(ui, Icon::CopyDoc, "Copy message", true, false) {
             ui.ctx().copy_text(event.message.clone());
             ui.close();

@@ -172,3 +172,136 @@ fn the_options_are_never_synced() {
         crate::sync::policy::SettingPolicy::Local
     );
 }
+
+// MARK: Navigation
+
+fn written_at(range_offset: usize, library: Option<&str>, bar_time_ms: i64) -> LogEvent {
+    let mut range = crate::pine::SourceRange::ZERO;
+    range.start.offset = range_offset;
+    LogEvent {
+        sequence: 1,
+        level: LogLevel::Info,
+        message: "m".to_owned(),
+        time_ms: 0,
+        bar_time_ms,
+        bar_index: Some(0),
+        realtime: false,
+        confirmed: true,
+        library: library.map(str::to_owned),
+        range,
+        request: None,
+    }
+}
+
+fn saved_instance(script_id: Option<&str>) -> PineInstance {
+    PineInstance::new(
+        3,
+        script_id.map(str::to_owned),
+        "Probe",
+        "//@version=6\nindicator(\"A\")\n",
+    )
+}
+
+#[test]
+fn a_message_from_a_saved_script_points_at_it_and_the_text_it_ran() {
+    let target = source_target(&saved_instance(Some("abc")), &written_at(42, None, 0)).unwrap();
+    assert_eq!(target.script_id.as_deref(), Some("abc"));
+    assert_eq!(target.library, None);
+    assert_eq!(target.offset, 42);
+    assert_eq!(
+        target.ran_source.as_deref(),
+        Some("//@version=6\nindicator(\"A\")\n")
+    );
+}
+
+#[test]
+fn a_message_from_a_library_points_at_the_library_by_name() {
+    let target = source_target(
+        &saved_instance(Some("abc")),
+        &written_at(7, Some("user/Dbg/1"), 0),
+    )
+    .unwrap();
+    assert_eq!(target.script_id, None);
+    assert_eq!(target.library.as_deref(), Some("Dbg"));
+    assert_eq!(target.offset, 7);
+    assert_eq!(target.ran_source, None);
+}
+
+#[test]
+fn a_script_that_did_not_come_from_a_saved_one_says_so() {
+    assert!(source_target(&saved_instance(None), &written_at(0, None, 0)).is_err());
+}
+
+fn hourly(count: i64) -> Vec<crate::model::Kline> {
+    (0..count)
+        .map(|index| crate::model::Kline {
+            open_time: (1_000 + index) * 3_600_000,
+            close_time: (1_001 + index) * 3_600_000 - 1,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.5,
+            volume: 1.0,
+        })
+        .collect()
+}
+
+fn chart_with_bars(workspace: &mut ChartWorkspace, chart: u64) {
+    workspace
+        .charts
+        .iter_mut()
+        .find(|candidate| candidate.id == chart)
+        .expect("chart")
+        .candles = hourly(400);
+}
+
+#[test]
+fn scrolling_to_a_bar_moves_the_view_and_marks_it_without_touching_anything_else() {
+    let (mut workspace, chart, _) = rig();
+    chart_with_bars(&mut workspace, chart);
+    let instances = card(&mut workspace, chart).pine_instances().len();
+    workspace.begin_bar_jump(chart, (1_000 + 120) * 3_600_000 + 5);
+    assert!(workspace.context.logs.pending_jump.is_none());
+    let card = card(&mut workspace, chart);
+    assert_eq!(card.bar_marker(), Some((1_000 + 120) * 3_600_000));
+    assert!(card.scrolled_back() > 100.0);
+    assert_eq!(card.pine_instances().len(), instances);
+    assert!(card.time_lock().is_none());
+}
+
+#[test]
+fn a_bar_older_than_the_history_waits_while_the_provider_may_have_more() {
+    let (mut workspace, chart, _) = rig();
+    chart_with_bars(&mut workspace, chart);
+    workspace.begin_bar_jump(chart, 5 * 3_600_000);
+    assert!(workspace.context.logs.pending_jump.is_some());
+    assert!(card(&mut workspace, chart).bar_marker().is_none());
+    assert!(workspace.context.notice.is_none());
+}
+
+#[test]
+fn a_bar_before_the_start_of_history_settles_for_the_oldest_and_says_so() {
+    let (mut workspace, chart, _) = rig();
+    chart_with_bars(&mut workspace, chart);
+    workspace
+        .charts
+        .iter_mut()
+        .find(|candidate| candidate.id == chart)
+        .expect("chart")
+        .older
+        .arrived(0);
+    workspace.begin_bar_jump(chart, 5 * 3_600_000);
+    assert!(workspace.context.logs.pending_jump.is_none());
+    let notice = workspace.context.notice.as_ref().expect("a note");
+    assert!(notice.text.contains("oldest bar") && !notice.error);
+}
+
+#[test]
+fn a_pending_jump_ends_with_its_chart() {
+    let (mut workspace, chart, _) = rig();
+    chart_with_bars(&mut workspace, chart);
+    workspace.begin_bar_jump(chart, 5 * 3_600_000);
+    workspace.charts.retain(|candidate| candidate.id != chart);
+    workspace.resolve_log_bar_jump();
+    assert!(workspace.context.logs.pending_jump.is_none());
+}
