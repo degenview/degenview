@@ -15,7 +15,9 @@ inside per-bar state, so realtime rollback restores orders, positions, and trade
 `pine_host::run_script` runs applied chart instances and returns renderer-neutral output.
 `pine_subscription_host` runs active subscriptions and returns fired `alert()` events.
 `request.*` uses `KlineSecurityDataProvider` with a short REST cache; imports use the Script
-Manager's `LibraryRegistry`. `run_script_alerts` replays the last bar as a realtime close.
+Manager's `LibraryRegistry`. `request.footprint()` builds a bar's volume footprint from the same
+provider's finer candles ([Pine volume footprints](../pine-footprint.md)). `run_script_alerts`
+replays the last bar as a realtime close.
 
 `pine/debug/` adds an opt-in debugger without a second interpreter: a `Session` may carry a
 `DebugRuntime` that its statement loop, user-function calls, bar start and `request.security`

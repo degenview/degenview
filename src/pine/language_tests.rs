@@ -286,9 +286,9 @@ fn what_cannot_be_honoured_is_warned_about() {
     // `log.*()` writes messages the Pine logs pane shows, so nothing about it is ignored.
     assert!(!codes.contains(&"PINE7002".to_owned()), "{codes:?}");
     assert!(!codes.contains(&"PINE9003".to_owned()), "{codes:?}");
-    // A feed that returns an object has no stand-in and stays a compile error.
-    let footprint = diagnostic_codes("f = request.footprint(1)\nplot(close)");
-    assert!(footprint.contains(&"PINE9003".to_owned()), "{footprint:?}");
+    // A request the app has no feed for and no stand-in stays a compile error.
+    let unknown = diagnostic_codes("f = request.volume_flow(1)\nplot(close)");
+    assert!(unknown.contains(&"PINE9003".to_owned()), "{unknown:?}");
 }
 
 #[test]

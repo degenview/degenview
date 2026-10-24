@@ -16,6 +16,7 @@ scenario matches the work:
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
 | Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Pine language/runtime, Script Manager, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
+| `request.footprint()`, `footprint` or `volume_row` | [Pine volume footprints](docs/pine-footprint.md) |
 | The Pine debugger: breakpoints, stepping, watches, the interpreter's debug hooks, `pine/debug/` | [Pine debugger](docs/pine-debugger.md) |
 | The Pine profiler: the recorder, regions, profile sessions, the profile column and tab | [Pine profiler](docs/pine-profiler.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
@@ -74,6 +75,7 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 - [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
 - [Pine debugger](docs/pine-debugger.md) — the opt-in interpreter hooks, sessions on their own thread, source map and stepping, breakpoints, the read-only expression service, what is measured.
 - [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.
+- [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.

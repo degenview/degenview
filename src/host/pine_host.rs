@@ -7,7 +7,9 @@ use crate::model::synthetic::ticker;
 use crate::model::{DataSource, Kline};
 use crate::pine::compiler;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
-use crate::pine::runtime_support::{ChartSpan, SecurityDataProvider, SecurityKey};
+use crate::pine::runtime_support::{
+    ChartSpan, MAX_INTRABAR_CANDLES, SecurityDataProvider, SecurityKey,
+};
 use crate::pine::session::{RunError, Session};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity, Limits};
 use crate::script_manager::registry::LibraryRegistry;
@@ -37,10 +39,6 @@ const INTRABAR_BASES: [(i64, &str); 6] = [
     (300, "5m"),
     (60, "1m"),
 ];
-
-/// The most base candles fetched for one intrabar series; the newest are kept, so a long chart gets
-/// intrabars for its recent part.
-const MAX_INTRABAR_CANDLES: usize = 60_000;
 
 impl KlineSecurityDataProvider {
     fn cached(key: &(SecurityKey, Option<ChartSpan>)) -> Option<Vec<Kline>> {

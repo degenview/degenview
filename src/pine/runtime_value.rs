@@ -14,6 +14,10 @@ pub enum RefKind {
     Map,
     Polyline,
     Matrix,
+    /// A `request.footprint()` result; the handle is the chart bar's index (`pine::footprint_call`).
+    Footprint,
+    /// A row of a footprint; the handle is the bar's index and the row's number.
+    VolumeRow,
 }
 
 #[derive(Clone, Debug, PartialEq)]
