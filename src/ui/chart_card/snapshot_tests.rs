@@ -981,7 +981,13 @@ fn gallery_of_the_fibonacci_and_gann_tools() {
         return;
     };
     let dir = std::path::PathBuf::from(dir);
-    for light in [false, true] {
+    // Every tool in both themes, and a few of them on a logarithmic and a percent axis.
+    for (light, mode) in [
+        (false, PriceScaleMode::Regular),
+        (true, PriceScaleMode::Regular),
+        (false, PriceScaleMode::Logarithmic),
+        (false, PriceScaleMode::Percent),
+    ] {
         theme::apply(
             &egui::Context::default(),
             if light {
@@ -991,7 +997,8 @@ fn gallery_of_the_fibonacci_and_gann_tools() {
             },
         );
         for (name, drawing) in fib_drawings() {
-            if light && !["fib-retracement"].contains(&name) {
+            let scaled = ["fib-retracement", "fib-extension", "gann-box", "gann-fan"];
+            if mode != PriceScaleMode::Regular && !scaled.contains(&name) {
                 continue;
             }
             let mut harness = Harness::new(ChartCanvas::default());
@@ -1000,13 +1007,20 @@ fn gallery_of_the_fibonacci_and_gann_tools() {
             let size = harness.card.snapshot_size();
             let dimensions =
                 SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let mut snapshot = input(&harness, false);
+            snapshot.scale_mode = mode;
             let scene = harness
                 .card
-                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
                 .expect("a scene");
             let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
             let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
-            let suffix = if light { "-light" } else { "" };
+            let suffix = match (light, mode) {
+                (true, _) => "-light",
+                (_, PriceScaleMode::Logarithmic) => "-log",
+                (_, PriceScaleMode::Percent) => "-percent",
+                _ => "",
+            };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
     }
