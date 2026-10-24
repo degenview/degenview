@@ -67,15 +67,17 @@ pub fn candle_look(
         .filter(|_| up)
         .or(settings.down_body.filter(|_| !up))
         .unwrap_or_else(|| palette.pick(up));
-    // A script's `barcolor()` recolours the whole bar, whatever the user chose for its parts.
+    // A script's `barcolor()` recolours the body and the wick, whatever the user chose for them.
+    // The border keeps the chart's own colour: TradingView draws a recoloured candle with its
+    // usual outline (seen on a script that dims bodies toward the background), so the candle
+    // stays visible. This is inferred from that, not documented.
+    let border = if up {
+        settings.up_border
+    } else {
+        settings.down_border
+    }
+    .unwrap_or(body);
     let body = recolor.unwrap_or(body);
-    let border = recolor
-        .or(if up {
-            settings.up_border
-        } else {
-            settings.down_border
-        })
-        .unwrap_or(body);
     let wick = recolor
         .or(if up {
             settings.up_wick
@@ -328,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn a_script_recolour_wins_over_every_part() {
+    fn a_script_recolour_wins_over_body_and_wick_but_not_the_border() {
         let settings = CandleSettings {
             up_border: Some([1, 2, 3, 255]),
             ..CandleSettings::default()
@@ -336,8 +338,12 @@ mod tests {
         let purple = [128, 0, 128, 200];
         let look = candle_look(&settings, PALETTE, &bar(10.0, 11.0), None, Some(purple));
         assert_eq!(look.body, Fill::Solid(purple));
-        assert_eq!(look.border, Some(purple));
+        assert_eq!(look.border, Some([1, 2, 3, 255]));
         assert_eq!(look.wick, Some(purple));
+        // With no border colour of its own the outline is the chart's colour for the bar.
+        let look = candle_look(&settings, PALETTE, &bar(11.0, 10.0), None, Some(purple));
+        assert_eq!(look.border, Some(RED));
+        // A hollow candle's outline is its body, so it follows the script.
         let look = hollow_look(
             &settings,
             PALETTE,

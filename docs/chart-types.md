@@ -156,7 +156,10 @@ claims identity:
   changes values, and `na` leaves the bar alone. Within one script the last call that sets a bar's
   colour wins; between scripts the first in the chart's list wins (the order scripts are applied
   and listed in Scripts). `offset` and `show_last` are applied. The script's colour wins over the
-  chart type's own colours for the whole bar and never overwrites the saved palette.
+  chart type's own colours for a candle's body and wick (a hollow candle's outline too, and bars)
+  and never overwrites the saved palette. A filled candle keeps its usual border colour: this is
+  inferred from a TradingView chart where a script dims the bodies and the outlines stay, not from
+  documentation.
 * Layering: background → scripts behind the chart (`behind_chart = true` or "Send to Back") → main
   series → scripts in front → drawings → crosshair. A script that does not declare `behind_chart`
   draws in front, as before; the Pine reference's default is true, but this app kept the existing
