@@ -14,6 +14,7 @@ scenario matches the work:
 | Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
 | Chart patterns, Elliott waves or cycle drawings | [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) |
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
+| Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Pine language/runtime, Script Manager, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
@@ -68,6 +69,7 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 - [Annotation tools](docs/annotation-tools.md) — text, notes, tables, images and posts; assets and previews.
 - [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) — the Patterns tile: ratios, labels and degrees, cycles counted in bars, provenance.
 - [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
+- [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).

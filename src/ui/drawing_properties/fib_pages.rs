@@ -263,10 +263,7 @@ impl DrawingProperties {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
             if kit::push_button(ui, Some(Icon::Undo), "Restore defaults", true).clicked() {
-                let defaults = FibStyle::for_tool(self.tool).unwrap_or_default();
-                fib.levels = defaults.levels;
-                fib.second = defaults.second;
-                fib.third = defaults.third;
+                fib.restore_levels(self.tool);
             }
         });
         style.fib = Some(fib);
@@ -308,17 +305,7 @@ fn edit_list<const N: usize>(
     ui.horizontal(|ui| {
         let add = kit::push_button(ui, Some(Icon::Plus), "Add level", !levels.is_full());
         if add.clicked() && !levels.is_full() {
-            // A new level continues the list: one step past the last ratio, in the last colour.
-            let next = if levels.is_empty() {
-                FibLevel::default()
-            } else {
-                let last = levels.as_slice()[levels.len() - 1];
-                FibLevel {
-                    ratio: (last.ratio + 1.0).min(MAX_LEVEL_RATIO),
-                    ..last
-                }
-            };
-            levels.push(next);
+            levels.push(levels.next_level());
         }
     });
 }

@@ -147,6 +147,19 @@ impl<const N: usize> LevelSet<N> {
         self.items.swap(index, target as usize);
     }
 
+    /// The level a new row starts as: one step past the last ratio, in the last one's look, or a
+    /// plain level for an empty list.
+    pub fn next_level(&self) -> FibLevel {
+        if self.is_empty() {
+            return FibLevel::default();
+        }
+        let last = self.items[self.len() - 1];
+        FibLevel {
+            ratio: (last.ratio + 1.0).min(MAX_LEVEL_RATIO),
+            ..last
+        }
+    }
+
     /// The enabled levels with a usable ratio, in the list's order.
     pub fn active(&self) -> impl Iterator<Item = &FibLevel> {
         self.as_slice()
@@ -359,6 +372,16 @@ impl FibStyle {
             _ => return None,
         }
         Some(style)
+    }
+
+    /// The three lists of levels set back to what `tool` starts with; the switches stay as they
+    /// are.
+    pub fn restore_levels(&mut self, tool: Tool) {
+        if let Some(defaults) = Self::for_tool(tool) {
+            self.levels = defaults.levels;
+            self.second = defaults.second;
+            self.third = defaults.third;
+        }
     }
 
     /// The lists and switches in range.
@@ -594,6 +617,47 @@ mod tests {
         set.shift(1, 1);
         set.shift(0, -1);
         assert_eq!(set.len(), 2, "moves past either end do nothing");
+    }
+
+    #[test]
+    fn a_new_level_continues_the_list() {
+        let mut set = SmallLevels::default();
+        assert_eq!(
+            set.next_level(),
+            FibLevel::default(),
+            "a plain level for no list"
+        );
+        set.push(level(0.5, GREEN, false));
+        let next = set.next_level();
+        assert_eq!(next.ratio, 1.5);
+        assert_eq!(next.color, GREEN);
+        assert!(!next.enabled, "it carries the last level's look");
+        // It never goes past the largest ratio a level may have.
+        set.push(level(MAX_LEVEL_RATIO, GREEN, true));
+        assert_eq!(set.next_level().ratio, MAX_LEVEL_RATIO);
+    }
+
+    #[test]
+    fn restoring_puts_every_list_back_and_leaves_the_switches() {
+        let mut style = FibStyle::for_tool(Tool::GannSquare).unwrap();
+        let defaults = style;
+        style.levels.remove(0);
+        style.second.push(level(9.0, RED, true));
+        style.third.remove(3);
+        style.reverse = true;
+        style.show_labels = false;
+        style.restore_levels(Tool::GannSquare);
+        assert_eq!(style.levels, defaults.levels);
+        assert_eq!(style.second, defaults.second);
+        assert_eq!(style.third, defaults.third);
+        assert!(
+            style.reverse && !style.show_labels,
+            "the switches are the user's"
+        );
+        // A tool with no levels of its own is left alone.
+        let mut other = style;
+        other.restore_levels(Tool::Rectangle);
+        assert_eq!(other, style);
     }
 
     #[test]

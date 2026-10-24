@@ -1,6 +1,6 @@
 # Drawing tools
 
-Thirty-three drawing tools beyond Fibonacci retracement and the ruler, in two flyout menus off the
+Thirty-three drawing tools beyond the Fibonacci and Gann tools and the ruler, in two flyout menus off the
 strip: lines, channels and pitchforks (the trend line and sixteen more), and brushes, arrows and
 shapes. They have the lifecycle TradingView users expect (place, preview, select, move, reshape,
 restyle, label, edit coordinates, hide by timeframe, lock, undo, save). One interaction layer,
@@ -15,7 +15,10 @@ pattern, Three drives; five Elliott waves; Cyclic lines, Time cycles, Sine line)
 Patterns tile, and are documented in [Chart patterns, Elliott waves and cycles](pattern-tools.md). The forecasting,
 volume and measurement tools (Long and Short position, Position forecast, Bars pattern, Ghost feed,
 Sector; Anchored VWAP and two volume profiles; Price, Date and Date and price range) are in a fifth,
-the Forecast tile, documented in [Forecasting, volume and measurement tools](forecast-tools.md).
+the Forecast tile, documented in [Forecasting, volume and measurement tools](forecast-tools.md). The
+Fibonacci and Gann tools (retracement, extension, channel, time zone, speed resistance fan, trend-based
+time, circles, spiral, speed resistance arcs, wedge, Pitchfan; Gann box, square fixed, square and fan) are
+in a sixth, the Fibonacci and Gann tile, documented in [Fibonacci and Gann tools](fibonacci-gann-tools.md).
 
 TradingView's own documentation and its Charting Library defaults are the reference. What they
 state is marked **doc** or **lib**; what they do not state, and was chosen here, is marked
@@ -25,8 +28,8 @@ parity checklist at the end is a manual test matrix, not a result.
 ## Lines, channels and pitchforks
 
 The Lines tile (second on the strip) shows the last tool used from its menu and opens
-LINES / CHANNELS / PITCHFORKS from its corner, a right-click or the Right arrow. Fibonacci keeps
-its own tile and is in neither menu. Alt (Option on a Mac) with **T**, **H**, **V** and **C** arms
+LINES / CHANNELS / PITCHFORKS from its corner, a right-click or the Right arrow. The Fibonacci and
+Gann tools have the tile below it and are in neither menu. Alt (Option on a Mac) with **T**, **H**, **V** and **C** arms
 the trend line, horizontal line, vertical line and crossline (**doc**, community posts); **J** arms
 the horizontal ray (TradingView's default, which no help page states: **inferred**). Hotkeys leave
 a focused text field alone.

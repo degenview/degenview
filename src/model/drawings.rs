@@ -1,7 +1,7 @@
 //! Drawings on a chart: pinned to market coordinates (time and price), never to pixels, so a
 //! drawing survives zoom, scroll, a resize and a timeframe switch.
 //!
-//! Fibonacci, the brush and the ruler have variants of their own;
+//! The brush and the ruler have variants of their own;
 //! every other tool is one [`Drawing::Shape`] whose typed [`Geometry`] owns its anchors. Styling,
 //! text and per-timeframe visibility live beside the geometry, so moving, restyling and hiding a
 //! drawing never touch each other.
@@ -1230,7 +1230,7 @@ impl Geometry {
 
 /// A drawing on a chart, keyed by a stable id.
 ///
-/// Fibonacci, the brush and the ruler have variants of their own; every other tool, the trend
+/// The brush and the ruler have variants of their own; every other tool, the trend
 /// line included, is one [`Drawing::Shape`] whose geometry says which.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum Drawing {

@@ -66,8 +66,8 @@ behavior.
 
 ## Drawings
 
-- A drawing is pinned to time+price. Fibonacci, the brush and the ruler have variants of their
-  own; every other tool, the trend line included, is
+- A drawing is pinned to time+price. The brush and the ruler have variants of their
+  own; every other tool, the trend line and the Fibonacci tools included, is
   `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New fields
   need `#[serde(default)]`. Nothing stores a pixel or a derived corner. The app has not shipped
   an older stored form that must keep reading, so do not add compatibility readers.
@@ -79,9 +79,17 @@ behavior.
   the lines, channels and pitchforks, or `pattern_shapes::project` for the patterns, Elliott waves
   and cycles) and an icon; the controller, toolbar, dialog and tests
   (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
-  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU` and `FORECAST_MENU`;
-  Fibonacci is in none. A tool of more than four anchors needs the test fixtures' seven: the
+  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU`, `FORECAST_MENU`
+  and `FIB_MENU`. A tool of more than four anchors needs the test fixtures' seven: the
   every-tool loops slice a seven-point array by `Placement::Points(n)`.
+- The Fibonacci and Gann tools (`fib_shapes`, `gann_shapes`; maths in `model::{fib, gann, fib_style}`
+  and `ui::fib_geometry`) keep their levels in `DrawingStyle.fib: Option<FibStyle>` (`None` is the
+  tool's defaults, so every projection reads `fib_style(tool, style)`), as fixed-size lists the one
+  level editor edits. Levels are worked from stored prices and bar indexes; curves are sampled only
+  where they cross the plot with a hard budget (`fib_geometry::sample`), and a fill is convex pieces
+  cut to the plot (`Screen.backdrop`: seen, never picked). A Gann angle is a ratio of price to time
+  taken from the second anchor, never a fixed screen angle. A control a tool does not honour is not in
+  `Features`, so it is not offered. See [Fibonacci and Gann tools](../fibonacci-gann-tools.md).
 - A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
   painted, not text drawn in the projection. Ratios are worked from stored prices
   (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is

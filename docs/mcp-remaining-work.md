@@ -78,7 +78,8 @@ permission alone: no confirmation step (item 3 would add one for all high-impact
 
 Reading candles and drawing trend lines and rectangles are done (phase 7).
 
-- Only trend lines and rectangles can be created or edited. Fib, arrows, text, brushes, circles and
+- Only trend lines and rectangles can be created or edited. The Fibonacci and Gann tools
+  (`fib_retracement` … `gann_fan`), arrows, text, brushes, circles and
   the rest are listed read-only (`editable: false`), including the app's horizontal and vertical
   lines, rays, channels, regression trend and pitchforks (they can be deleted over MCP). Creating
   them needs an argument shape with one to four anchors and per-tool settings; until then a

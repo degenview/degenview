@@ -63,14 +63,15 @@ axis is as wide as the widest of the tick and tag labels, measured in the mode's
 
 On the axis column the **tags** read as the axis does: the last-price tag, the constructed-bar tag,
 the crosshair pill and a drawing's price tag. **Everything else keeps real prices**: the header and
-the OHLC legend, alert tags and paper order/position pills (trading semantics), Fibonacci, ruler,
+the OHLC legend, alert tags and paper order/position pills (trading semantics), Fibonacci and Gann labels, ruler,
 arrow and price-label text, high/low markers, "Copy price", the order and alert entries, indicator
 panes (they have a scale of their own that the mode never touches) and Pine labels.
 
 ## Logarithmic
 
 Logarithmic keeps its existing behaviour (margins in log space, drag and zoom by ratio, decade
-ticks, regression and Fibonacci in logs). What is new is the rule for a price a logarithm cannot
+ticks, regression in logs; a retracement's and an extension's levels by the ratio of the prices when
+their "levels based on log scale" switch is on). What is new is the rule for a price a logarithm cannot
 take. If the visible range holds a price at or below zero (an oscillator crossing zero, a negative
 series) the frame is **drawn linear**, consistently: the range, the ticks and the map all agree, no
 price is clamped to a tiny positive one, and nothing is NaN. The mode stays Logarithmic, so the log

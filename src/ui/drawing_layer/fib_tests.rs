@@ -3,12 +3,13 @@
 //! (y = (120 − price) × 10). Every expected number below is worked out by hand, not read back from
 //! the code under test.
 
+use super::edit::{self, Part};
 use super::line_tests::{PLOT, at, bars, near, projection, scale};
 use super::shape::{LabelLook, Screen};
 use super::*;
 use crate::model::DrawingStyle;
 use crate::model::fib_style::FibStyle;
-use eframe::egui::pos2;
+use eframe::egui::{pos2, vec2};
 
 fn built_on(tool: Tool, anchors: &[Anchor], style: DrawingStyle, logarithmic: bool) -> Screen {
     let drawing = Drawing::build(tool, 1, anchors, style).expect("built");
@@ -1062,4 +1063,78 @@ fn a_pitchfans_rays_all_meet_at_its_first_pivot_which_a_pitchforks_do_not() {
 fn a_pitchfan_with_its_pivots_on_one_point_draws_only_what_it_can() {
     let screen = built(Tool::Pitchfan, &[at(1, 100.0), at(3, 100.0), at(3, 100.0)]);
     assert_eq!(screen.handles.len(), 3);
+}
+
+// MARK: Picking
+
+#[test]
+fn curves_and_rays_are_picked_on_the_line_and_their_fills_never_are() {
+    // The ring at ratio 1 passes through the right end of its horizontal radius.
+    let circles = built(Tool::FibCircles, &[at(1, 100.0), at(5, 110.0)]);
+    let right = pos2(350.0 + 200.0 * 2f32.sqrt(), 150.0);
+    assert!(circles.hits_body(right, 6.0, true, false));
+    // Between the rings, in the fill, it is not (the middle is the trend line's, which is).
+    assert!(!circles.hits_body(pos2(350.0, 142.0), 6.0, true, false));
+    assert!(!circles.hits_body(
+        pos2(350.0 + 0.8 * 200.0 * 2f32.sqrt(), 150.0 + 2.0),
+        3.0,
+        true,
+        false
+    ));
+    // A ray of a fan is, and a point in the wedge between two is not.
+    let fan = built(Tool::GannFan, &[at(1, 100.0), at(3, 110.0)]);
+    assert!(
+        fan.hits_body(pos2(350.0, 100.0), 6.0, true, false),
+        "the 1x1 at its anchor"
+    );
+    assert!(
+        !fan.hits_body(pos2(900.0, 50.0), 3.0, true, false),
+        "in the fill"
+    );
+    // The spiral is picked on the curve only.
+    let spiral = built(Tool::FibSpiral, &[at(3, 100.0), at(4, 100.0)]);
+    assert!(spiral.hits_body(pos2(450.0, 200.0), 6.0, true, false));
+    assert!(
+        !spiral.hits_body(pos2(350.0, 230.0), 6.0, true, false),
+        "inside the first turn"
+    );
+    // A time line is picked on the line; the strips between the lines are not.
+    let zone = built(Tool::FibTimeZone, &[at(1, 100.0), at(2, 100.0)]);
+    assert!(zone.hits_body(pos2(350.0, 300.0), 6.0, true, false));
+    assert!(!zone.hits_body(pos2(550.0, 300.0), 6.0, true, false));
+}
+
+#[test]
+fn every_fib_and_gann_drawing_moves_as_one_with_its_anchors() {
+    // Whole-object movement is the layer's translate of every anchor, so a drawing's levels keep
+    // their structure: shifted by the same prices and times, they are the same ratios.
+    let data = bars(&[100.0; 10]);
+    let scale = scale(false);
+    let projection = projection(&data, &scale);
+    for tool in Tool::fib_tools() {
+        let Placement::Points(count) = tool.spec().placement else {
+            panic!("{tool:?}");
+        };
+        let anchors: Vec<Anchor> =
+            [at(1, 100.0), at(4, 110.0), at(3, 104.0)][..usize::from(count)].to_vec();
+        let drawing = Drawing::build(tool, 1, &anchors, tool.default_style()).unwrap();
+        let press = pos2(300.0, 200.0);
+        let moved = edit::edited(
+            &drawing,
+            Part::Body,
+            press,
+            press + vec2(100.0, 30.0),
+            projection.anchor(press),
+            &projection,
+        );
+        for (before, after) in drawing.anchors().iter().zip(moved.anchors()) {
+            let (a, b) = (projection.point(*before), projection.point(after));
+            assert!(
+                ((b.x - a.x) - 100.0).abs() < 0.2 && ((b.y - a.y) - 30.0).abs() < 0.2,
+                "{tool:?}"
+            );
+        }
+        // And what it draws is the same shape, moved, not a different one.
+        assert_eq!(moved.style(), drawing.style(), "{tool:?}");
+    }
 }
