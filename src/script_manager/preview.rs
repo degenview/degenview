@@ -237,6 +237,26 @@ impl PreviewState {
         }
     }
 
+    /// The bars the preview chart shows, as a debugging session receives them: frozen, with the
+    /// symbol and inputs the script runs on now. `None` until the chart has candles.
+    pub fn debug_feed(&self, now_ms: i64, light: bool) -> Option<super::debug::DebugFeed> {
+        if self.candles.is_empty() {
+            return None;
+        }
+        Some(super::debug::DebugFeed {
+            bars: self.candles.clone(),
+            symbol: ChartCard::pine_symbol_info(&self.market.ticker, self.market.source),
+            inputs: self.input_values.clone(),
+            now_ms,
+            theme: if light {
+                crate::pine::program::ChartTheme::LIGHT
+            } else {
+                crate::pine::program::ChartTheme::DARK
+            },
+            label: format!("{} · {}", self.market.ticker, self.timeframe.label()),
+        })
+    }
+
     /// Points the preview at another script; its source arrives through `source_changed`.
     pub fn script_changed(&mut self, id: &str) {
         if self.script_id.as_deref() == Some(id) {

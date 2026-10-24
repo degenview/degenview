@@ -8,6 +8,11 @@
 
 mod bottom_bar;
 mod completion;
+pub mod debug;
+mod debug_host;
+pub mod debug_marks;
+mod debug_panel;
+pub mod debug_state;
 pub mod demo;
 pub mod diff;
 mod diff_view;
@@ -119,6 +124,13 @@ pub(crate) enum Cmd {
     ToggleDrawer,
     /// Something chosen in the Logs tab.
     Logs(crate::ui::pine_logs_view::LogsAction),
+    /// A debugger command from the toolbar or the keyboard.
+    Debug(crate::pine::debug::DebugCommand),
+    /// Something the debug panel asked for.
+    DebugPanel(debug::PanelAction),
+    /// A click or menu choice in the editor's breakpoint column.
+    Gutter(debug_marks::GutterEvent),
+    ToggleDebugPanel,
     OpenAlpacaSettings,
 }
 
@@ -182,6 +194,8 @@ pub struct ScriptManager {
     pub(crate) preview: workspace::PreviewState,
     /// The Logs tab's state.
     logs: logs::LogsPane,
+    /// Breakpoints, watches and the debugging session of the open script.
+    pub(crate) debug: debug::DebugPanel,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<ScriptManagerAction>,
     export_rx: Option<Receiver<(ScriptId, Option<PathBuf>)>>,
@@ -202,6 +216,7 @@ impl ScriptManager {
             id,
             preview: workspace::PreviewState::load(&shared),
             logs: logs::LogsPane::load(&shared),
+            debug: debug::DebugPanel::load(&shared),
             shared,
             script_store,
             scripts: Vec::new(),
@@ -414,6 +429,8 @@ impl ScriptManager {
         let ctx = ui.ctx().clone();
         self.begin_frame(&ctx);
         self.shortcuts(&ctx);
+        self.debug_shortcuts(&ctx);
+        self.debug_frame(&ctx);
 
         egui::Panel::top("script-manager-toolbar")
             .exact_size(38.0)
@@ -511,6 +528,12 @@ impl ScriptManager {
             if icons::button(ui, Icon::SidebarLeft, 28.0, theme::text_primary(), &tip).clicked() {
                 self.cmds.push(Cmd::ToggleSidebar);
             }
+            if self.open.is_some() {
+                ui.add_space(10.0);
+                for command in debug_panel::transport(ui, &self.debug) {
+                    self.cmds.push(Cmd::Debug(command));
+                }
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 let (icon, tip) = if self.prefs.chart_visible {
@@ -521,6 +544,9 @@ impl ScriptManager {
                 let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
                 if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
                     self.cmds.push(Cmd::ToggleChart);
+                }
+                if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
+                    self.cmds.push(Cmd::ToggleDebugPanel);
                 }
                 let position_icon = match self.prefs.chart_position {
                     ChartPosition::Left => Icon::RectLeft,
@@ -768,6 +794,7 @@ impl ScriptManager {
             None => compile_into(&mut editor),
         }
         self.preview.script_changed(&script.id);
+        self.debug.script_changed(&script.id);
         self.open = Some(OpenScript {
             id: script.id.clone(),
             name: script.name.clone(),
@@ -776,6 +803,7 @@ impl ScriptManager {
             has_alerts: false,
         });
         self.prefs.selected_script_id = Some(script.id);
+        self.refresh_debug_map();
     }
 
     fn close_script(&mut self) {
@@ -833,6 +861,11 @@ impl ScriptManager {
                 compiler::compile(&open.editor.source, Limits::default(), &LibraryRegistry);
             open.has_alerts = program.is_valid()
                 && !crate::pine::alert_call::call_sites(&program.statements).is_empty();
+            self.debug.set_map(
+                program
+                    .is_valid()
+                    .then(|| crate::pine::debug::SourceMap::build(&program.statements)),
+            );
         }
     }
 
@@ -936,6 +969,10 @@ impl ScriptManager {
             }
             Cmd::ToggleDrawer => self.prefs.drawer_open = !self.prefs.drawer_open,
             Cmd::Logs(action) => self.apply_logs_action(action),
+            Cmd::Debug(command) => self.debug_command(command, ctx),
+            Cmd::DebugPanel(action) => self.debug_action(action, ctx),
+            Cmd::Gutter(event) => self.debug_gutter(event),
+            Cmd::ToggleDebugPanel => self.prefs.debug_open = !self.prefs.debug_open,
             Cmd::OpenAlpacaSettings => self.actions.push(ScriptManagerAction::OpenAlpacaSettings),
         }
         let _ = ctx;
@@ -1058,6 +1095,7 @@ impl ScriptManager {
         if self.open.as_ref().map(|o| o.id.as_str()) == Some(id) {
             self.close_script();
         }
+        self.debug.script_deleted(id);
         self.with_store(|store| store.delete(id));
         self.refresh();
     }

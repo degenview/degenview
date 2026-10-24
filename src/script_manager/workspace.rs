@@ -2,6 +2,8 @@
 //! editor and the preview pane. Ported from `ScriptWorkspaceView` and the detail part of
 //! `ScriptManagerView`.
 
+use super::debug::DebugPanel;
+use super::debug_panel;
 use super::drawer;
 use super::editor;
 use super::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
@@ -163,16 +165,18 @@ impl ScriptManager {
         {
             let open = &mut self.open;
             let preview = &mut self.preview;
-            let prefs = &mut self.prefs;
             let copied_at = &mut self.problems_copied;
             let logs = &mut self.logs.view;
+            // The editor draws the debugger's panel and the drawer shows its logs, so both reach the
+            // layout preferences and the debugger through one cell.
+            let shared = RefCell::new((&mut self.prefs, &mut self.debug));
             split::show(
                 ui,
                 Id::new(("script-workspace", horizontal)),
                 spec,
                 &mut state,
-                |ui| editor_pane(ui, open, &cmds, &changed),
-                |ui| preview_pane(ui, preview, prefs, copied_at, &input, logs, &cmds),
+                |ui| editor_pane(ui, open, &shared, &cmds, &changed),
+                |ui| preview_pane(ui, preview, &shared, copied_at, &input, logs, &cmds),
             );
         }
         if horizontal {
@@ -190,29 +194,78 @@ impl ScriptManager {
     }
 }
 
+type Shared<'a> = RefCell<(&'a mut LayoutPrefs, &'a mut DebugPanel)>;
+
+/// The editor, and under it the debugger's panel when that is shown.
 fn editor_pane(
     ui: &mut Ui,
     open: &mut Option<OpenScript>,
+    shared: &Shared<'_>,
     cmds: &RefCell<Vec<Cmd>>,
     changed: &Cell<bool>,
 ) {
     let Some(open) = open.as_mut() else {
         return;
     };
-    let output = editor::show(ui, &mut open.editor);
-    if output.changed {
-        changed.set(true);
+    let marks = shared.borrow_mut().1.marks();
+    open.editor.set_debug_marks(marks);
+    let (shown, height) = {
+        let guard = shared.borrow();
+        (guard.0.debug_open, guard.0.debug_height)
+    };
+    let open = RefCell::new(open);
+    let draw_editor = |ui: &mut Ui| {
+        let output = editor::show(ui, &mut open.borrow_mut().editor);
+        if output.changed {
+            changed.set(true);
+        }
+        if output.save {
+            cmds.borrow_mut().push(Cmd::Save);
+        }
+        for event in output.gutter {
+            cmds.borrow_mut().push(Cmd::Gutter(event));
+        }
+    };
+    if !shown {
+        draw_editor(ui);
+        return;
     }
-    if output.save {
-        cmds.borrow_mut().push(Cmd::Save);
-    }
+    let spec = SplitSpec {
+        axis: Axis::Vertical,
+        secondary_first: false,
+        min_primary: 140.0,
+        min_secondary: 150.0,
+        max_secondary: f32::MAX,
+        default: DefaultLength::Fraction(0.42),
+    };
+    let mut state = SplitState {
+        length: height,
+        visible: true,
+    };
+    split::show(
+        ui,
+        Id::new("script-debug-split"),
+        spec,
+        &mut state,
+        draw_editor,
+        |ui| {
+            let source = open.borrow().editor.source.clone();
+            let mut guard = shared.borrow_mut();
+            let (prefs, debug) = &mut *guard;
+            let out_of_date = debug.is_out_of_date(&source);
+            for action in debug_panel::show(ui, debug, prefs, &source, out_of_date) {
+                cmds.borrow_mut().push(Cmd::DebugPanel(action));
+            }
+        },
+    );
+    shared.borrow_mut().0.debug_height = state.length;
 }
 
 /// The preview header, the chart, and the drawer with its tab bar.
 fn preview_pane(
     ui: &mut Ui,
     preview: &mut PreviewState,
-    prefs: &mut LayoutPrefs,
+    shared: &Shared<'_>,
     copied_at: &mut Option<Instant>,
     input: &PreviewInput,
     logs: &mut crate::ui::pine_logs_view::LogsState,
@@ -224,9 +277,17 @@ fn preview_pane(
     let top = super::preview::header(ui, preview, full);
     let middle = egui::Rect::from_min_max(pos2(full.min.x, top), pos2(full.max.x, bar_rect.min.y));
 
+    let (drawer_height, drawer_open, drawer_tab) = {
+        let guard = shared.borrow();
+        (
+            guard.0.drawer_height,
+            guard.0.drawer_open,
+            guard.0.drawer_tab,
+        )
+    };
     let mut drawer_state = SplitState {
-        length: prefs.drawer_height,
-        visible: prefs.drawer_open,
+        length: drawer_height,
+        visible: drawer_open,
     };
     let spec = SplitSpec {
         axis: Axis::Vertical,
@@ -240,7 +301,7 @@ fn preview_pane(
     let mut middle_ui = ui.new_child(egui::UiBuilder::new().max_rect(middle));
     middle_ui.set_clip_rect(middle.intersect(ui.clip_rect()));
     let copied = RefCell::new(*copied_at);
-    let tab = prefs.drawer_tab;
+    let tab = drawer_tab;
     // The Problems tab lists the editor's diagnostics, plus the chart's runtime failure once
     // the text compiles.
     let problems = {
@@ -281,20 +342,21 @@ fn preview_pane(
                 }
                 DrawerTab::Logs => {
                     let preview = preview.borrow();
-                    super::logs::tab(ui, &preview, logs, &input.name, cmds);
+                    let guard = shared.borrow();
+                    super::logs::tab(ui, &preview, guard.1, logs, &input.name, cmds);
                 }
             }
         },
     );
-    prefs.drawer_height = drawer_state.length;
+    shared.borrow_mut().0.drawer_height = drawer_state.length;
     *copied_at = copied.into_inner();
 
     let status = preview.borrow().status_text();
     let output = drawer::bar(
         ui,
         bar_rect,
-        prefs.drawer_tab,
-        prefs.drawer_open,
+        drawer_tab,
+        drawer_open,
         &input.diagnostics,
         &status,
     );

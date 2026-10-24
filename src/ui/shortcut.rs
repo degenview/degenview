@@ -104,6 +104,8 @@ fn key_name(key: Key) -> &'static str {
         Key::Slash => "/",
         Key::Space => "Space",
         Key::Escape => "Esc",
+        Key::Period => ".",
+        Key::R => "R",
         Key::B => "B",
         Key::C => "C",
         Key::D => "D",
@@ -122,6 +124,12 @@ fn key_name(key: Key) -> &'static str {
         Key::Z => "Z",
         Key::F3 => "F3",
         Key::F5 => "F5",
+        Key::F6 => "F6",
+        Key::F7 => "F7",
+        Key::F8 => "F8",
+        Key::F9 => "F9",
+        Key::F10 => "F10",
+        Key::F11 => "F11",
         _ => "?",
     }
 }
@@ -279,14 +287,50 @@ pub const DUPLICATE_LINE_DOWN: Shortcut = Shortcut::new(
 );
 
 /// Open the completion list on demand. Alt+Esc is the Windows window switcher, so it is Mac-only.
+/// F5 was an alias until the debugger took it: it starts and continues a debugging session.
 pub const COMPLETE: Shortcut = Shortcut::new(
     &[
         Chord::new(Key::Space).control(),
-        Chord::new(Key::F5),
         Chord::new(Key::Escape).alt(),
     ],
-    &[Chord::new(Key::Space).control(), Chord::new(Key::F5)],
+    &[Chord::new(Key::Space).control()],
 );
+
+// The debugger. Off the Mac the keys are Visual Studio Code's; on the Mac, Xcode's, because F5 and
+// F10/F11 belong to the system there (and F11 to Show Desktop). F9 sets a breakpoint on both.
+
+/// Starts debugging, or continues a stopped script.
+pub const DEBUG_CONTINUE: Shortcut = Shortcut::new(
+    &[Chord::new(Key::Y).control().primary()],
+    &[Chord::new(Key::F5)],
+);
+/// Stops a running script at its next statement.
+pub const DEBUG_PAUSE: Shortcut = Shortcut::new(
+    &[Chord::new(Key::P).control().primary()],
+    &[Chord::new(Key::F6)],
+);
+pub const DEBUG_STEP_OVER: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F6)], &[Chord::new(Key::F10)]);
+pub const DEBUG_STEP_INTO: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F7)], &[Chord::new(Key::F11)]);
+pub const DEBUG_STEP_OUT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F8)], &[Chord::new(Key::F11).shift()]);
+/// Runs to the first statement of the next bar.
+pub const DEBUG_STEP_BAR: Shortcut = Shortcut::new(
+    &[Chord::new(Key::B).control().primary()],
+    &[Chord::new(Key::F7)],
+);
+pub const DEBUG_STOP: Shortcut = Shortcut::new(
+    &[Chord::new(Key::Period).primary()],
+    &[Chord::new(Key::F5).shift()],
+);
+pub const DEBUG_RESTART: Shortcut = Shortcut::new(
+    &[Chord::new(Key::R).primary().shift()],
+    &[Chord::new(Key::F5).primary().shift()],
+);
+/// Sets or clears a breakpoint on the caret's line.
+pub const DEBUG_TOGGLE_BREAKPOINT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F9)], &[Chord::new(Key::F9)]);
 
 /// Duplicates the selected drawings.
 pub const DUPLICATE_DRAWING: Shortcut = Shortcut::new(
@@ -406,7 +450,16 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 33] = [
+    const ALL: [(&str, Shortcut); 42] = [
+        ("debug continue", DEBUG_CONTINUE),
+        ("debug pause", DEBUG_PAUSE),
+        ("debug step over", DEBUG_STEP_OVER),
+        ("debug step into", DEBUG_STEP_INTO),
+        ("debug step out", DEBUG_STEP_OUT),
+        ("debug step bar", DEBUG_STEP_BAR),
+        ("debug stop", DEBUG_STOP),
+        ("debug restart", DEBUG_RESTART),
+        ("debug breakpoint", DEBUG_TOGGLE_BREAKPOINT),
         ("save", SAVE),
         ("new tab", NEW_TAB),
         ("close tab", CLOSE_TAB),
@@ -642,7 +695,37 @@ mod tests {
         };
         assert!(COMPLETE.matches_for(true, Key::Escape, alt));
         assert!(!COMPLETE.matches_for(false, Key::Escape, alt));
-        assert!(COMPLETE.matches_for(false, Key::F5, Modifiers::default()));
+        // F5 now continues a debugging session, so it no longer opens the list.
+        assert!(!COMPLETE.matches_for(false, Key::F5, Modifiers::default()));
+        assert!(!COMPLETE.matches_for(true, Key::F5, Modifiers::default()));
+        assert!(COMPLETE.matches_for(false, Key::Space, ctrl()));
+    }
+
+    #[test]
+    fn the_debugger_uses_vs_code_keys_off_the_mac_and_xcode_keys_on_it() {
+        let none = Modifiers::default();
+        let shift = Modifiers {
+            shift: true,
+            ..none
+        };
+        assert!(DEBUG_CONTINUE.matches_for(false, Key::F5, none));
+        assert!(DEBUG_STOP.matches_for(false, Key::F5, shift));
+        assert!(DEBUG_STEP_OVER.matches_for(false, Key::F10, none));
+        assert!(DEBUG_STEP_INTO.matches_for(false, Key::F11, none));
+        assert!(DEBUG_STEP_OUT.matches_for(false, Key::F11, shift));
+        assert!(DEBUG_TOGGLE_BREAKPOINT.matches_for(false, Key::F9, none));
+        assert!(DEBUG_TOGGLE_BREAKPOINT.matches_for(true, Key::F9, none));
+        assert!(DEBUG_STEP_OVER.matches_for(true, Key::F6, none));
+        assert!(DEBUG_STEP_INTO.matches_for(true, Key::F7, none));
+        assert!(DEBUG_STEP_OUT.matches_for(true, Key::F8, none));
+        assert_eq!(DEBUG_CONTINUE.label_for(true), "⌃⌘Y");
+        assert_eq!(DEBUG_CONTINUE.label_for(false), "F5");
+        assert_eq!(DEBUG_STOP.label_for(true), "⌘.");
+        assert_eq!(DEBUG_STOP.label_for(false), "Shift+F5");
+        assert_eq!(DEBUG_RESTART.label_for(false), "Ctrl+Shift+F5");
+        assert_eq!(DEBUG_STEP_OUT.label_for(false), "Shift+F11");
+        // F11 is the system's on a Mac: Step Into is F7 there.
+        assert!(!DEBUG_STEP_INTO.matches_for(true, Key::F11, none));
     }
 
     #[test]

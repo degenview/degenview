@@ -762,6 +762,14 @@ impl ChartCard {
         self.appearance.style.effective_type(source)
     }
 
+    /// The `syminfo` a script reads on a chart of plain candles for `symbol`.
+    pub(crate) fn pine_symbol_info(
+        symbol: &str,
+        source: DataSource,
+    ) -> crate::pine::program::SymbolInfo {
+        body::symbol_info(symbol, source, ChartType::Candles)
+    }
+
     /// What a script alert on this chart runs over: the bars of a price-based type, the market's
     /// candles otherwise, and how the bars were made.
     pub fn pine_feed(

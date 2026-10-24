@@ -6,6 +6,7 @@
 //! change (`EditorOutput::changed`).
 
 use super::completion::{self, Completion};
+use super::debug_marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
 use super::diff::{self, ChangeKind, DiffHunk, DiffSnapshot};
 use super::diff_view::{self, PreviewEvent};
 use super::edit_ops::{self, Context, Edit};
@@ -30,7 +31,11 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-const GUTTER_WIDTH: f32 = 46.0;
+const GUTTER_WIDTH: f32 = 64.0;
+/// Where a breakpoint marker sits in the gutter, from its left edge: right of the change strip,
+/// left of the line numbers.
+const MARKER_X: f32 = 21.0;
+const MARKER_RADIUS: f32 = 5.0;
 /// The change column at the gutter's left edge: the bar's inset and width, and the (much wider,
 /// so no one has to aim at three points) strip that takes the click.
 const CHANGE_INSET: f32 = 2.0;
@@ -84,6 +89,10 @@ pub struct EditorState {
     caret_seen: Option<usize>,
     /// A match to select (char range) on the next frame.
     select_to: Option<std::ops::Range<usize>>,
+    /// What a debugging session shows in the text and the gutter, set by the host each frame.
+    debug: DebugMarks,
+    /// The line whose breakpoint menu is open.
+    menu_line: Option<usize>,
 }
 
 /// The open suggestion list and its highlighted row.
@@ -97,6 +106,8 @@ pub struct EditorOutput {
     /// The text changed this frame: compile it.
     pub changed: bool,
     pub save: bool,
+    /// Clicks in the breakpoint column.
+    pub gutter: Vec<GutterEvent>,
 }
 
 fn text_hash(text: &str) -> u64 {
@@ -130,6 +141,8 @@ impl EditorState {
             caret_rect: None,
             caret_seen: None,
             select_to: None,
+            debug: DebugMarks::default(),
+            menu_line: None,
         }
     }
 
@@ -223,6 +236,37 @@ impl EditorState {
         self.jump_to = Some(offset);
     }
 
+    /// Hands the editor the debugger's marks to draw this frame.
+    pub fn set_debug_marks(&mut self, marks: DebugMarks) {
+        self.debug = marks;
+    }
+
+    /// The one-based line the caret is on, once the editor has shown the text.
+    pub fn caret_line(&self) -> Option<usize> {
+        let index = self.caret_seen?;
+        Some(
+            1 + self
+                .source
+                .chars()
+                .take(index)
+                .filter(|c| *c == '\n')
+                .count(),
+        )
+    }
+
+    /// Scrolls to a one-based line and flashes its start, next frame.
+    pub fn show_line(&mut self, line: usize) {
+        let line = line.max(1);
+        let start: usize = self
+            .source
+            .split_inclusive('\n')
+            .take(line - 1)
+            .map(|text| text.chars().count())
+            .sum();
+        self.scroll_to_line = Some(line - 1);
+        self.flash = Some((start, Instant::now()));
+    }
+
     /// The offset the caret is waiting to be moved to.
     #[cfg(test)]
     pub fn pending_jump(&self) -> Option<usize> {
@@ -310,9 +354,10 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     let rows = text_view(ui, state, text_area, &mut edited);
     edited |= update_completion(ui, state, edited);
     draw_signature(ui, state);
-    paint_gutter(ui, gutter, &rows);
+    paint_gutter(ui, gutter, &rows, &state.debug);
     let changes = state.changes();
     edited |= change_gutter(ui, gutter, &rows, state, &changes);
+    output.gutter = breakpoint_gutter(ui, gutter, &rows, state);
     output.changed = edited;
     if edited {
         state.last_edit = Some(Instant::now());
@@ -827,6 +872,23 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             let band_x = clip.x_range();
             // Current-line band (caret only) and indent guides, behind the text.
             let mut behind_shapes = Vec::new();
+            if let Some(stop) = state.debug.stop
+                && let Some(row) = galley.rows.get(stop.line.saturating_sub(1))
+            {
+                let top = origin.y + row.pos.y;
+                let color = if stop.error {
+                    theme::editor_debug_error_background()
+                } else if stop.innermost {
+                    theme::editor_debug_line_background()
+                } else {
+                    theme::editor_debug_caller_background()
+                };
+                behind_shapes.push(Shape::rect_filled(
+                    Rect::from_x_y_ranges(band_x, top..=top + row.row.size.y),
+                    0.0,
+                    color,
+                ));
+            }
             if let Some(range) = caret
                 && range.primary == range.secondary
                 && let Some(row) = galley
@@ -937,6 +999,54 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                 }
             }
 
+            // A name under the pointer shows its value while the script is stopped.
+            if !state.debug.values.is_empty()
+                && under.is_empty()
+                && let Some(pointer) = ui.input(|i| i.pointer.hover_pos())
+                && text_edit.response.response.hovered()
+            {
+                let index = galley
+                    .cursor_from_pos(pointer.to_vec2() - origin.to_vec2())
+                    .index
+                    .0;
+                if let Some(word) = word_at(&state.source, index)
+                    && let Some((value, type_name)) = state.debug.values.get(&word.text)
+                {
+                    let a = galley.pos_from_cursor(CCursor::new(word.range.start));
+                    let b = galley.pos_from_cursor(CCursor::new(word.range.end));
+                    if (a.min.y - b.min.y).abs() < 1.0 {
+                        let anchor = Rect::from_min_max(a.min, egui::pos2(b.min.x, a.max.y))
+                            .translate(origin.to_vec2());
+                        if anchor.expand2(Vec2::new(0.0, 1.0)).contains(pointer) {
+                            let mut at_text = text_edit.response.response.clone();
+                            at_text.interact_rect = anchor;
+                            at_text
+                                .on_hover_text(format!("{} = {value}  ({type_name})", word.text));
+                        }
+                    }
+                }
+            }
+            // The values of the stopped line's names, after its text.
+            if let Some(stop) = state.debug.stop
+                && !state.debug.values.is_empty()
+                && let Some(row) = galley.rows.get(stop.line.saturating_sub(1))
+                && let Some(text) = state.source.split('\n').nth(stop.line.saturating_sub(1))
+            {
+                let inline = inline_values(text, &state.debug.values);
+                if !inline.is_empty() {
+                    ui.painter().text(
+                        egui::pos2(
+                            origin.x + row.pos.x + row.row.size.x + 3.0 * char_width,
+                            origin.y + row.pos.y + row.row.size.y / 2.0,
+                        ),
+                        Align2::LEFT_CENTER,
+                        inline,
+                        FontId::monospace(FONT_SIZE - 1.5),
+                        theme::text_tertiary(),
+                    );
+                }
+            }
+
             // Flash the revealed position, and bring it into view.
             if let Some((index, started)) = flash {
                 let age = started.elapsed();
@@ -967,21 +1077,275 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     rows
 }
 
-fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows) {
+/// An identifier in the text, with its place as character offsets.
+struct Word {
+    text: String,
+    range: std::ops::Range<usize>,
+}
+
+fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// The identifier the character at `index` is part of (or ends), if any.
+fn word_at(source: &str, index: usize) -> Option<Word> {
+    let chars: Vec<char> = source.chars().collect();
+    let at = if chars.get(index).is_some_and(|c| is_word(*c)) {
+        index
+    } else if index > 0 && chars.get(index - 1).is_some_and(|c| is_word(*c)) {
+        index - 1
+    } else {
+        return None;
+    };
+    let mut start = at;
+    while start > 0 && is_word(chars[start - 1]) {
+        start -= 1;
+    }
+    let mut end = at + 1;
+    while end < chars.len() && is_word(chars[end]) {
+        end += 1;
+    }
+    let text: String = chars[start..end].iter().collect();
+    // A number, or the field of a dotted name, is not a variable.
+    if text.chars().next().is_some_and(|c| c.is_ascii_digit())
+        || (start > 0 && chars[start - 1] == '.')
+    {
+        return None;
+    }
+    Some(Word {
+        text,
+        range: start..end,
+    })
+}
+
+type Values = std::collections::HashMap<String, (String, String)>;
+
+/// `name = value` for each distinct variable named on the line, in order of appearance.
+fn inline_values(line: &str, values: &Values) -> String {
+    let code = line.split("//").next().unwrap_or(line);
+    let mut seen: Vec<&str> = Vec::new();
+    let mut parts = Vec::new();
+    let mut start: Option<usize> = None;
+    for (offset, c) in code
+        .char_indices()
+        .chain(std::iter::once((code.len(), ' ')))
+    {
+        match (start, is_word(c)) {
+            (None, true) => start = Some(offset),
+            (Some(begin), false) => {
+                let word = &code[begin..offset];
+                let field = code[..begin].ends_with('.');
+                if !field
+                    && !seen.contains(&word)
+                    && let Some((value, _)) = values.get(word)
+                {
+                    seen.push(word);
+                    parts.push(format!("{word} = {value}"));
+                }
+                start = None;
+            }
+            _ => {}
+        }
+    }
+    parts.join("   ")
+}
+
+fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks) {
     let painter = ui.painter().with_clip_rect(gutter);
     let font = FontId::monospace(LINE_NUMBER_SIZE);
     for (index, (top, height)) in rows.rows.iter().enumerate() {
         if top + height < gutter.min.y || *top > gutter.max.y {
             continue;
         }
+        let line = index + 1;
+        let stopped = marks.stop.is_some_and(|stop| stop.line == line);
         painter.text(
             egui::pos2(gutter.max.x - 8.0, top + height / 2.0),
             Align2::RIGHT_CENTER,
-            (index + 1).to_string(),
+            line.to_string(),
             font.clone(),
-            theme::text_secondary(),
+            if stopped {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
         );
+        let center = egui::pos2(gutter.min.x + MARKER_X, top + height / 2.0);
+        if let Some(mark) = marks.breakpoint_at(line) {
+            paint_breakpoint(&painter, center, mark);
+        }
+        if let Some(stop) = marks.stop.filter(|stop| stop.line == line) {
+            paint_stop_arrow(&painter, center, stop);
+        }
     }
+}
+
+fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &BreakpointMark) {
+    let live = mark.enabled && !mark.unverified;
+    let color = if live {
+        theme::editor_breakpoint()
+    } else {
+        theme::editor_breakpoint_muted()
+    };
+    let r = MARKER_RADIUS;
+    match mark.kind {
+        MarkKind::Logpoint => {
+            let points = vec![
+                center + Vec2::new(0.0, -r - 0.8),
+                center + Vec2::new(r + 0.8, 0.0),
+                center + Vec2::new(0.0, r + 0.8),
+                center + Vec2::new(-r - 0.8, 0.0),
+            ];
+            if live {
+                painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+            } else {
+                painter.add(Shape::closed_line(points, Stroke::new(1.4, color)));
+            }
+        }
+        MarkKind::Line | MarkKind::Conditional => {
+            if live {
+                painter.circle_filled(center, r, color);
+            } else {
+                painter.circle_stroke(center, r - 0.6, Stroke::new(1.4, color));
+            }
+            if mark.kind == MarkKind::Conditional {
+                // An equals sign cut into the dot: it stops only when something holds.
+                let ink = if live { Color32::WHITE } else { color };
+                for dy in [-1.4, 1.4] {
+                    painter.line_segment(
+                        [center + Vec2::new(-2.4, dy), center + Vec2::new(2.4, dy)],
+                        Stroke::new(1.3, ink),
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// The marker for the line a stopped script is at; it covers a breakpoint on the same line.
+fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark) {
+    let color = if stop.error {
+        theme::editor_breakpoint()
+    } else if stop.innermost {
+        theme::editor_debug_line()
+    } else {
+        theme::with_alpha(theme::editor_debug_line(), 0.65)
+    };
+    let points = vec![
+        center + Vec2::new(-5.6, -3.8),
+        center + Vec2::new(0.6, -3.8),
+        center + Vec2::new(5.8, 0.0),
+        center + Vec2::new(0.6, 3.8),
+        center + Vec2::new(-5.6, 3.8),
+    ];
+    painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+}
+
+/// The breakpoint column: a click on a line (its number or the marker beside it) sets or clears its
+/// breakpoint, and a right-click opens that breakpoint's menu. Painted over by `paint_gutter`.
+fn breakpoint_gutter(
+    ui: &mut Ui,
+    gutter: Rect,
+    rows: &GutterRows,
+    state: &mut EditorState,
+) -> Vec<GutterEvent> {
+    let hit = Rect::from_min_max(
+        egui::pos2(gutter.min.x + CHANGE_HIT, gutter.min.y),
+        gutter.max,
+    );
+    let response = ui.interact(hit, state.id.with("breakpoints"), Sense::click());
+    let response = accessibility::label(
+        response,
+        "Breakpoint gutter: click a line to set a breakpoint",
+    );
+    let row_at = |y: f32| {
+        let index = rows.rows.partition_point(|(top, height)| top + height <= y);
+        rows.rows
+            .get(index)
+            .filter(|(top, _)| *top <= y)
+            .map(|_| index + 1)
+    };
+    let mut events = Vec::new();
+    if let Some(pointer) = response.hover_pos()
+        && let Some(line) = row_at(pointer.y)
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        if state.debug.breakpoint_at(line).is_none() {
+            let (top, height) = rows.rows[line - 1];
+            // A faint dot where a click would put one.
+            ui.painter().with_clip_rect(gutter).circle_filled(
+                egui::pos2(gutter.min.x + MARKER_X, top + height / 2.0),
+                MARKER_RADIUS,
+                theme::with_alpha(theme::editor_breakpoint(), 0.32),
+            );
+        }
+    }
+    let clicked_line = |position: Option<egui::Pos2>| position.and_then(|p| row_at(p.y));
+    if response.clicked()
+        && let Some(line) = clicked_line(response.interact_pointer_pos())
+    {
+        events.push(GutterEvent::Toggle { line });
+    }
+    if response.secondary_clicked()
+        && let Some(line) = clicked_line(response.interact_pointer_pos())
+    {
+        state.menu_line = Some(line);
+    }
+    if let Some(line) = state.menu_line {
+        let mark = state.debug.breakpoint_at(line).copied();
+        egui::Popup::context_menu(&response)
+            .frame(kit::menu_frame())
+            .show(|ui| {
+                ui.set_width(220.0);
+                ui.spacing_mut().item_spacing.y = 0.0;
+                kit::menu_heading(ui, &format!("Line {line}"));
+                match mark {
+                    Some(mark) => {
+                        if kit::menu_item(ui, Icon::Pencil, "Edit Breakpoint…", true, false) {
+                            events.push(GutterEvent::Edit { line });
+                            ui.close();
+                        }
+                        let (icon, label) = if mark.enabled {
+                            (Icon::EyeSlash, "Disable Breakpoint")
+                        } else {
+                            (Icon::Eye, "Enable Breakpoint")
+                        };
+                        if kit::menu_item(ui, icon, label, true, false) {
+                            events.push(GutterEvent::SetEnabled {
+                                line,
+                                enabled: !mark.enabled,
+                            });
+                            ui.close();
+                        }
+                        if kit::menu_item(ui, Icon::Trash, "Remove Breakpoint", true, true) {
+                            events.push(GutterEvent::Toggle { line });
+                            ui.close();
+                        }
+                    }
+                    None => {
+                        if kit::menu_item(ui, Icon::Plus, "Add Breakpoint", true, false) {
+                            events.push(GutterEvent::Toggle { line });
+                            ui.close();
+                        }
+                        if kit::menu_item(
+                            ui,
+                            Icon::Pencil,
+                            "Add Conditional Breakpoint…",
+                            true,
+                            false,
+                        ) {
+                            events.push(GutterEvent::Edit { line });
+                            ui.close();
+                        }
+                        if kit::menu_item(ui, Icon::Code, "Add Logpoint…", true, false) {
+                            events.push(GutterEvent::AddLogpoint { line });
+                            ui.close();
+                        }
+                    }
+                }
+            });
+    }
+    events
 }
 
 // MARK: Change gutter

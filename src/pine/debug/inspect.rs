@@ -40,7 +40,7 @@ const BUILTINS: &[&str] = &[
     "bar_index",
 ];
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 enum Step {
     /// A variable or builtin by name, as the frame sees it.
     Variable(String),
@@ -61,7 +61,7 @@ enum Step {
 
 /// A handle to something that can be expanded. Cheap to hold and to compare; useless once the
 /// script resumes.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct ValueRef {
     generation: u64,
     frame: usize,

@@ -44,27 +44,43 @@ impl LogsPane {
 pub(super) fn tab(
     ui: &mut Ui,
     preview: &super::workspace::PreviewState,
+    debug: &super::debug::DebugPanel,
     state: &mut LogsState,
     name: &str,
     cmds: &RefCell<Vec<Cmd>>,
 ) {
+    // While there is a debugging session its messages are shown: the script's own `log.*()` calls,
+    // and the logpoints. The pane is the same; only what feeds it changes.
+    let debugging = debug.has_logs();
     let scripts = vec![ScriptEntry {
         id: PREVIEW_INSTANCE,
-        label: name.to_owned(),
+        label: if debugging {
+            format!("{name} (debugger)")
+        } else {
+            name.to_owned()
+        },
     }];
     state.select_valid(&scripts);
     let nothing = LogHistory::default();
-    let feed = match preview.logs() {
-        Some(logs) => Feed {
-            epoch: logs.epoch,
-            history: logs.history,
-            logging: preview.logging(),
-        },
-        None => Feed {
-            epoch: 0,
-            history: &nothing,
-            logging: preview.logging(),
-        },
+    let feed = if debugging {
+        Feed {
+            epoch: debug.log_epoch,
+            history: &debug.logs,
+            logging: true,
+        }
+    } else {
+        match preview.logs() {
+            Some(logs) => Feed {
+                epoch: logs.epoch,
+                history: logs.history,
+                logging: preview.logging(),
+            },
+            None => Feed {
+                epoch: 0,
+                history: &nothing,
+                logging: preview.logging(),
+            },
+        }
     };
     for action in view::show(ui, state, &scripts, Some(feed)) {
         cmds.borrow_mut().push(Cmd::Logs(action));
@@ -85,6 +101,7 @@ impl ScriptManager {
     pub(super) fn apply_logs_action(&mut self, action: LogsAction) {
         match action {
             LogsAction::Close | LogsAction::Select(_) => {}
+            LogsAction::Clear if self.debug.has_logs() => self.debug.logs.clear(),
             LogsAction::Clear => self.preview.clear_logs(),
             LogsAction::SetLogging(_, enabled) => self.preview.set_logging(enabled),
             LogsAction::Source(sequence) => {
@@ -129,6 +146,15 @@ impl ScriptManager {
     }
 
     fn logged(&self, sequence: u64) -> Option<crate::pine::logs::LogEvent> {
+        if self.debug.has_logs() {
+            return self
+                .debug
+                .logs
+                .buffer()
+                .iter()
+                .find(|event| event.sequence == sequence)
+                .cloned();
+        }
         self.preview
             .logs()?
             .history

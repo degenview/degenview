@@ -36,7 +36,7 @@ pub use breakpoints::{
 };
 pub use commands::{DebugCommand, Resume};
 pub use expression::{DebugExpression, ExpressionError, parse as parse_expression};
-pub use frames::{FrameInfo, FrameKind, Location};
+pub use frames::{FrameInfo, FrameKind, Location, timeframe_label};
 pub use inspect::{
     Group, InspectError, PAGE_LIMIT, Page, ValueRef, Variable, VariableGroup, Watched,
 };

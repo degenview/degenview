@@ -52,6 +52,14 @@ pub struct LayoutPrefs {
     pub drawer_tab: DrawerTab,
     pub drawer_height: f32,
     pub selected_script_id: Option<String>,
+    /// The debug panel under the editor is shown.
+    pub debug_open: bool,
+    /// 0 means the default height.
+    pub debug_height: f32,
+    /// The width of the debug panel's second column; 0 means the default.
+    pub debug_side_width: f32,
+    /// Which sections of the debug panel's second column are open (see `debug::Section`).
+    pub debug_sections: u8,
 }
 
 impl Default for LayoutPrefs {
@@ -67,6 +75,10 @@ impl Default for LayoutPrefs {
             drawer_tab: DrawerTab::Inputs,
             drawer_height: 0.0,
             selected_script_id: None,
+            debug_open: false,
+            debug_height: 0.0,
+            debug_side_width: 0.0,
+            debug_sections: 0b0111,
         }
     }
 }
