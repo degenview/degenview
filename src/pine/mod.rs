@@ -18,6 +18,7 @@ pub mod compiler;
 pub mod containers;
 #[cfg(feature = "corpus")]
 mod corpus_tests;
+pub mod debug;
 pub mod drawings;
 pub mod execution;
 pub mod fast_hash;

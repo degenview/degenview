@@ -112,6 +112,8 @@ pub struct Session {
     supplied_mintick: Option<f64>,
     pub(crate) deadline_at: Option<Instant>,
     cancellation: Option<Arc<AtomicBool>>,
+    /// Present only in a debugging session; every hook below tests it and does nothing otherwise.
+    debug: Option<Box<super::debug::DebugRuntime>>,
 }
 
 struct Step {
@@ -284,6 +286,7 @@ impl Session {
             supplied_mintick,
             deadline_at: None,
             cancellation: None,
+            debug: None,
         };
         session.committed = session.fresh_state();
         session.working = session.committed.clone();
@@ -330,6 +333,12 @@ impl Session {
     /// check it without requiring an async runtime.
     pub fn set_cancellation(&mut self, cancellation: Arc<AtomicBool>) {
         self.cancellation = Some(cancellation);
+    }
+
+    /// Makes this session a debugging session: the script stops where the debugger says. A session
+    /// is never debugged by accident; nothing but this call installs the hooks.
+    pub fn attach_debugger(&mut self, debug: super::debug::DebugRuntime) {
+        self.debug = Some(Box::new(debug));
     }
 
     // MARK: Running
@@ -494,6 +503,9 @@ impl Session {
         self.working.instructions = 0;
         self.logs
             .begin_bar(open_time, self.working.bar_index, realtime, confirmed);
+        if let Some(debug) = self.debug.as_mut() {
+            debug.begin_bar();
+        }
         if !is_new {
             for (key, value) in self.intrabar.clone() {
                 self.working.variables.insert(key, value);
@@ -1074,8 +1086,14 @@ impl Session {
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
-            self.budget()?;
-            let step = self.run_statement(statement, context)?;
+            self.budget()
+                .map_err(|error| self.debug_failed(statement, error))?;
+            if self.debug.is_some() {
+                self.debug_before(statement, context)?;
+            }
+            let step = self
+                .run_statement(statement, context)
+                .map_err(|error| self.debug_failed(statement, error))?;
             if step.value != RuntimeValue::Void {
                 last = step.value;
             }
@@ -1084,6 +1102,60 @@ impl Session {
             }
         }
         Ok((Flow::Normal, last))
+    }
+
+    // MARK: Debugging hooks
+    //
+    // Each takes the debugger out of the session while it runs, so it can be handed `&mut self`.
+    // They are cold and never inlined: a session without a debugger must not carry their code in the
+    // statement loop.
+
+    #[cold]
+    #[inline(never)]
+    fn debug_before(
+        &mut self,
+        statement: &Statement,
+        context: &RuntimeContext,
+    ) -> Result<(), Diagnostic> {
+        let Some(mut debug) = self.debug.take() else {
+            return Ok(());
+        };
+        let outcome = debug.before_statement(self, statement, context);
+        self.debug = Some(debug);
+        outcome
+    }
+
+    /// Passes a failure of `statement` through the debugger on its way up, and hands it back.
+    #[cold]
+    #[inline(never)]
+    fn debug_failed(&mut self, statement: &Statement, error: Diagnostic) -> Diagnostic {
+        if let Some(mut debug) = self.debug.take() {
+            debug.failed(self, statement, &error);
+            self.debug = Some(debug);
+        }
+        error
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn debug_enter(
+        &mut self,
+        call_name: &str,
+        range: SourceRange,
+        scope: Option<&str>,
+        shadowed: &[(String, Option<RuntimeValue>)],
+    ) {
+        if let Some(debug) = self.debug.as_mut() {
+            debug.enter_function(call_name, range, scope, shadowed.to_vec());
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn debug_leave(&mut self) {
+        if let Some(debug) = self.debug.as_mut() {
+            debug.leave_function();
+        }
     }
 
     fn run_statement(
@@ -2590,7 +2662,13 @@ impl Session {
         } else {
             Some(function.locals.clone())
         };
+        if self.debug.is_some() {
+            self.debug_enter(call_name, range, function.scope.as_deref(), &saved);
+        }
         let result = self.run(&function.body, context);
+        if self.debug.is_some() {
+            self.debug_leave();
+        }
         context.site_prefix = caller_prefix;
         context.depth -= 1;
         context.scope = caller_scope;

@@ -170,6 +170,30 @@ pub enum Statement {
     },
 }
 
+impl Statement {
+    /// Where the statement starts, as the parser ranged it. Ranges are start-anchored: a
+    /// declaration is ranged at its name, a block statement at its keyword, an expression
+    /// statement at its first token.
+    pub fn range(&self) -> SourceRange {
+        match self {
+            Self::Declaration { range, .. }
+            | Self::Assignment { range, .. }
+            | Self::FieldAssignment { range, .. }
+            | Self::Conditional { range, .. }
+            | Self::ForRange { range, .. }
+            | Self::ForIn { range, .. }
+            | Self::WhileLoop { range, .. }
+            | Self::Switch { range, .. }
+            | Self::TupleDeclaration { range, .. }
+            | Self::TypeDeclaration { range, .. }
+            | Self::EnumDeclaration { range, .. }
+            | Self::Function { range, .. }
+            | Self::LoopControl(_, range) => *range,
+            Self::Expression(expression) => expression.range(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnaryOperator {
     Negate,

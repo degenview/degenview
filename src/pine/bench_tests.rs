@@ -27,10 +27,10 @@ use crate::pine::session::Session;
 use crate::pine::token::Limits;
 
 const START_MS: i64 = 1_700_000_000_000;
-const MINUTE_MS: i64 = 60_000;
+pub(crate) const MINUTE_MS: i64 = 60_000;
 
 /// A fixed-seed random walk, so every build runs the same data.
-fn bars(count: usize, spacing_ms: i64) -> Vec<Kline> {
+pub(crate) fn bars(count: usize, spacing_ms: i64) -> Vec<Kline> {
     let mut state = 0x2545_F491_4F6C_DD1Du64;
     let mut next = move || {
         state = state
@@ -121,7 +121,14 @@ fn compile(source: &str) -> crate::pine::program::CompiledProgram {
     program
 }
 
-fn evaluate(source: &str, bars: &[Kline], security: bool) -> u64 {
+/// Runs `source` over `bars` on a session that `configure` may adjust first (a test attaches a
+/// debugger there), and returns the session so its output can be read.
+pub(crate) fn run_script(
+    source: &str,
+    bars: &[Kline],
+    security: bool,
+    configure: impl FnOnce(&mut Session),
+) -> Session {
     let provider = security.then(|| {
         Box::new(WalkData {
             start_ms: bars[0].open_time,
@@ -137,11 +144,16 @@ fn evaluate(source: &str, bars: &[Kline], security: bool) -> u64 {
         provider,
         None,
     );
+    configure(&mut session);
     session.evaluate(bars).expect("script runs");
-    checksum(&session.output())
+    session
 }
 
-const SIMPLE: &str = "//@version=6
+fn evaluate(source: &str, bars: &[Kline], security: bool) -> u64 {
+    checksum(&run_script(source, bars, security, |_| {}).output())
+}
+
+pub(crate) const SIMPLE: &str = "//@version=6
 indicator(\"Simple\")
 fast = ta.ema(close, 9)
 slow = ta.ema(close, 21)
@@ -152,7 +164,7 @@ plot(signal ? 1 : 0)
 ";
 
 /// A long straight-line script: statements dominate, so the per-statement cost shows.
-fn straight_line(statements: usize) -> String {
+pub(crate) fn straight_line(statements: usize) -> String {
     let mut source = String::from("//@version=6\nindicator(\"Straight\")\nv0 = close\n");
     for index in 1..statements {
         source.push_str(&format!(
@@ -165,7 +177,7 @@ fn straight_line(statements: usize) -> String {
     source
 }
 
-const MANY_TA: &str = "//@version=6
+pub(crate) const MANY_TA: &str = "//@version=6
 indicator(\"Many ta\")
 a = ta.sma(close, 20)
 b = ta.ema(close, 12)
@@ -182,7 +194,7 @@ l = ta.ema(c, 9)
 plot(a + b + c + d + e + f + g + h + i + k + l + (j ? 1 : 0))
 ";
 
-const LONG_HISTORY: &str = "//@version=6
+pub(crate) const LONG_HISTORY: &str = "//@version=6
 indicator(\"History\")
 s = close - close[1]
 t = ta.sma(s, 50)
@@ -190,7 +202,7 @@ u = nz(t[100]) + nz(close[500])
 plot(u)
 ";
 
-const CONTAINERS: &str = "//@version=6
+pub(crate) const CONTAINERS: &str = "//@version=6
 indicator(\"Containers\")
 var arr = array.new_float(0)
 var counts = map.new<string, float>()
@@ -206,7 +218,7 @@ matrix.set(grid, 1, 1, close)
 plot(total / array.size(arr) + map.get(counts, \"last\") + matrix.get(grid, 1, 1))
 ";
 
-const NESTED_FUNCTIONS: &str = "//@version=6
+pub(crate) const NESTED_FUNCTIONS: &str = "//@version=6
 indicator(\"Functions\")
 leaf(x) =>
     y = x * 2
@@ -221,13 +233,13 @@ v = top(close)
 plot(v)
 ";
 
-const SECURITY: &str = "//@version=6
+pub(crate) const SECURITY: &str = "//@version=6
 indicator(\"Security\")
 htf = request.security(syminfo.tickerid, \"5\", ta.sma(close, 10))
 plot(htf)
 ";
 
-const STRATEGY: &str = "//@version=6
+pub(crate) const STRATEGY: &str = "//@version=6
 strategy(\"Cross\", overlay = true)
 fast = ta.sma(close, 10)
 slow = ta.sma(close, 30)
@@ -266,9 +278,9 @@ fn realtime(history: usize, steps: usize) -> u64 {
     )
     .expect("valid script");
     let mut last = controller.update(&candles, None, candles[history - 1].close_time);
-    for step in 0..steps {
+    for (step, next) in future.iter().enumerate().take(steps) {
         let open = START_MS + (history + step) as i64 * MINUTE_MS;
-        let mut bar = future[step].clone();
+        let mut bar = next.clone();
         let mut snapshot = candles.clone();
         snapshot.push(bar.clone());
         controller.update(&snapshot, None, open + 10_000);
