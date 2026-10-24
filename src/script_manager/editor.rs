@@ -1304,7 +1304,22 @@ fn breakpoint_gutter(
         egui::Popup::context_menu(&response)
             .frame(kit::menu_frame())
             .show(|ui| {
-                ui.set_width(220.0);
+                kit::menu_fit(
+                    ui,
+                    if mark.is_some() {
+                        &[
+                            "Edit Breakpoint…",
+                            "Disable Breakpoint",
+                            "Remove Breakpoint",
+                        ]
+                    } else {
+                        &[
+                            "Add Breakpoint",
+                            "Add Conditional Breakpoint…",
+                            "Add Logpoint…",
+                        ]
+                    },
+                );
                 ui.spacing_mut().item_spacing.y = 0.0;
                 kit::menu_heading(ui, &format!("Line {line}"));
                 match mark {

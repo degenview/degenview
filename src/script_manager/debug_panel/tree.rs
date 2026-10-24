@@ -364,6 +364,7 @@ pub fn paint_variable(
     variable: &Variable,
     open: bool,
     hovered: bool,
+    trailing: f32,
 ) {
     if hovered {
         ui.painter().rect_filled(rect, 0.0, theme::ink(8));
@@ -416,7 +417,7 @@ pub fn paint_variable(
     let value_left = (rect.left() + name_width).max(name_clip.right() + 6.0);
     let value_clip = Rect::from_min_max(
         pos2(value_left, rect.top()),
-        pos2(rect.right() - type_width - 10.0, rect.bottom()),
+        pos2(rect.right() - trailing - type_width - 10.0, rect.bottom()),
     );
     if value_clip.width() > 8.0 {
         let painter = ui.painter().with_clip_rect(value_clip);
@@ -464,7 +465,7 @@ pub fn paint_variable(
     }
     if show_type {
         ui.painter().with_clip_rect(rect).text(
-            pos2(rect.right() - 10.0, rect.center().y),
+            pos2(rect.right() - trailing - 10.0, rect.center().y),
             Align2::RIGHT_CENTER,
             type_text,
             FontId::proportional(kit::size::SUBHEADLINE),
@@ -503,7 +504,7 @@ fn variable_row(
         ui.painter()
             .rect_filled(rect, 0.0, theme::with_alpha(kit::ACCENT, 0.16));
     }
-    paint_variable(ui, rect, depth, variable, open, response.hovered());
+    paint_variable(ui, rect, depth, variable, open, response.hovered(), 0.0);
     let tip = if variable.assigned {
         format!(
             "{} = {}  ({})",
@@ -534,7 +535,7 @@ fn variable_row(
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            ui.set_width(190.0);
+            kit::menu_fit(ui, &["Copy Name", "Copy Value", "Add to Watches"]);
             ui.spacing_mut().item_spacing.y = 0.0;
             if kit::menu_item(ui, Icon::CopyDoc, "Copy Name", true, false) {
                 ui.ctx().copy_text(variable.name.clone());

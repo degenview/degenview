@@ -130,11 +130,12 @@ pub fn watches(
         let result = results.get(index).filter(|row| row.text == *text);
         watch_row(ui, panel, index, text, result, state, actions);
     }
-    // The line that adds one.
+    // The line that adds one: the field, and the button that adds what it holds (Enter does too).
     ui.add_space(4.0);
     ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_space(8.0);
-        let width = ui.available_width() - 8.0;
+        let width = ui.available_width() - ADD_BUTTON - 6.0 - 8.0;
         let id = ui.id().with("add-watch");
         let response = text_field(
             ui,
@@ -144,10 +145,13 @@ pub fn watches(
             width,
             true,
         );
-        if response.lost_focus()
-            && ui.input(|input| input.key_pressed(egui::Key::Enter))
-            && !state.watch_input.trim().is_empty()
-        {
+        let ready = !state.watch_input.trim().is_empty();
+        let entered =
+            response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) && ready;
+        let clicked = kit::push_button(ui, None, "Add", ready)
+            .on_hover_text("Watch this expression")
+            .clicked();
+        if (entered || clicked) && ready {
             actions.push(PanelAction::AddWatch(std::mem::take(
                 &mut state.watch_input,
             )));
@@ -156,6 +160,9 @@ pub fn watches(
     });
     ui.add_space(6.0);
 }
+
+/// The width kept beside the add-expression field for its button.
+const ADD_BUTTON: f32 = 50.0;
 
 fn watch_editor(ui: &mut Ui, index: usize, state: &mut PanelUi, actions: &mut Vec<PanelAction>) {
     let Some((_, text)) = state.editing_watch.as_mut() else {
@@ -183,6 +190,10 @@ fn watch_editor(ui: &mut Ui, index: usize, state: &mut PanelUi, actions: &mut Ve
         }
     }
 }
+
+/// The room at a watch row's right edge kept for its edit and remove buttons, so they sit beside
+/// the type rather than over it, and the row does not shift when they appear.
+const WATCH_ACTIONS: f32 = 50.0;
 
 fn watch_row(
     ui: &mut Ui,
@@ -231,7 +242,15 @@ fn watch_row(
                 .is_some_and(|shown| shown.open.contains(&key));
             let mut shown_variable = variable.clone();
             shown_variable.name = text.to_owned();
-            tree::paint_variable(ui, rect, 0, &shown_variable, open, response.hovered());
+            tree::paint_variable(
+                ui,
+                rect,
+                0,
+                &shown_variable,
+                open,
+                response.hovered(),
+                WATCH_ACTIONS,
+            );
             if failed {
                 // The reason is the value; draw it in the error colour over the faint one.
                 let value_left = rect.left() + (rect.width() * 0.4).clamp(96.0, 240.0);
@@ -243,7 +262,7 @@ fn watch_row(
                 ui.painter()
                     .with_clip_rect(Rect::from_min_max(
                         pos2(value_left, rect.top()),
-                        pos2(rect.right() - 54.0, rect.bottom()),
+                        pos2(rect.right() - WATCH_ACTIONS - 6.0, rect.bottom()),
                     ))
                     .text(
                         pos2(value_left, rect.center().y),
@@ -284,7 +303,7 @@ fn watch_row(
                 theme::text_primary(),
             );
             ui.painter().text(
-                pos2(rect.right() - 12.0, rect.center().y),
+                pos2(rect.right() - WATCH_ACTIONS - 12.0, rect.center().y),
                 Align2::RIGHT_CENTER,
                 "—",
                 FontId::proportional(kit::size::BODY),
@@ -296,7 +315,10 @@ fn watch_row(
     if response.hovered() || ui.rect_contains_pointer(rect) {
         let mut buttons = ui.new_child(
             egui::UiBuilder::new()
-                .max_rect(rect.shrink2(vec2(4.0, 0.0)))
+                .max_rect(Rect::from_min_max(
+                    pos2(rect.right() - WATCH_ACTIONS, rect.top()),
+                    pos2(rect.right() - 4.0, rect.bottom()),
+                ))
                 .layout(Layout::right_to_left(Align::Center)),
         );
         buttons.spacing_mut().item_spacing.x = 0.0;
@@ -326,7 +348,15 @@ fn watch_row(
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            ui.set_width(190.0);
+            kit::menu_fit(
+                ui,
+                &[
+                    "Edit Expression",
+                    "Copy Expression",
+                    "Copy Value",
+                    "Remove Watch",
+                ],
+            );
             ui.spacing_mut().item_spacing.y = 0.0;
             if kit::menu_item(ui, Icon::Pencil, "Edit Expression", true, false) {
                 state.editing_watch = Some((index, text.to_owned()));
@@ -586,7 +616,15 @@ fn breakpoint_row(
     egui::Popup::context_menu(&response)
         .frame(kit::menu_frame())
         .show(|ui| {
-            ui.set_width(210.0);
+            kit::menu_fit(
+                ui,
+                &[
+                    "Edit Breakpoint…",
+                    "Disable Breakpoint",
+                    "Remove Breakpoint",
+                    "Remove All Breakpoints",
+                ],
+            );
             ui.spacing_mut().item_spacing.y = 0.0;
             if kit::menu_item(ui, Icon::Pencil, "Edit Breakpoint…", true, false) {
                 state.toggle_editor(stored);

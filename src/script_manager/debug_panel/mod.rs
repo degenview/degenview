@@ -514,8 +514,11 @@ fn variables_pane(ui: &mut Ui, context: &mut Context<'_>, with_header: bool) {
     let cursor = context.state.cursor.clone();
     let output = ui
         .add_enabled_ui(!stale, |ui| {
+            // `show_rows` sizes the content from this ui's row spacing; the rows are laid out with
+            // none, so the spacing left on would add a blank strip below the last row that the
+            // scroll bar counts but no row ever reaches.
+            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             area.show_rows(ui, ROW, lines.len(), |ui, range| {
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
                 tree::show_rows(
                     ui,
                     &lines[range],
@@ -527,6 +530,7 @@ fn variables_pane(ui: &mut Ui, context: &mut Context<'_>, with_header: bool) {
             })
         })
         .inner;
+    context.state.list_extent = output.content_size.y;
     if context.actions[before..]
         .iter()
         .any(|action| matches!(action, PanelAction::Cursor(_)))

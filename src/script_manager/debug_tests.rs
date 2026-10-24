@@ -673,6 +673,25 @@ fn the_arrow_keys_walk_the_variables_and_open_and_close_rows() {
 }
 
 #[test]
+fn the_variables_list_scrolls_over_exactly_its_rows() {
+    let mut rig = Rig::new("extent");
+    rig.manager.prefs.debug_open = true;
+    rig.gutter(GutterEvent::Toggle { line: 10 });
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    rig.frame();
+    // Rows are laid out edge to edge; a list that counted spacing between them would reach below
+    // its last row, and a scroll bar would end on blank space.
+    let extent = rig.manager.debug.ui.list_extent;
+    let rows = extent / 22.0; // a variables row is 22 points
+    assert!(rows >= 1.0, "the list measured {extent}");
+    assert!(
+        (rows - rows.round()).abs() < 0.01,
+        "{extent} is not a whole number of rows"
+    );
+}
+
+#[test]
 fn select_bar_waits_for_a_candle_and_arms_the_stop_at_it() {
     let mut rig = Rig::new("pick");
     rig.manager.prefs.chart_visible = false;

@@ -171,6 +171,9 @@ script's) and accepted only if every part is a read:
   collide with the script's own), user functions, mutators and allocators (`push`, `put`, `slice`,
   `copy`, `keys`), `plot*`, drawings, `strategy.*`, `alert*`, `log.*`, `request.*`, blocks.
 
+A watch is added with Enter or the **Add** button beside the field. Its edit and remove buttons appear
+on hover in a strip kept at the row's right edge, beside the type rather than over it.
+
 Evaluation also restores the instruction counter, any handle it allocated, and the variables it put
 back for a caller frame. Tests evaluate watches, take variables and expand values at every statement
 of six workloads and of a script with requests and compare plots and strategy reports with a clean

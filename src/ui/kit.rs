@@ -1125,6 +1125,27 @@ pub fn menu_scope(ui: &mut Ui, min_width: f32) {
     style.visuals.popup_shadow = menu_shadow();
 }
 
+/// Fits a context menu to its rows: as wide as the longest of `labels` needs (icon gutter and
+/// trailing padding included), so a short menu is not padded out to a guessed width.
+pub fn menu_fit(ui: &mut Ui, labels: &[&str]) {
+    let widest = labels
+        .iter()
+        .map(|label| {
+            galley(
+                ui,
+                label,
+                size::BODY,
+                REGULAR,
+                Color32::PLACEHOLDER,
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0, f32::max);
+    ui.set_width((widest + MENU_ROW_INSET).ceil());
+}
+
 /// A menu row that opens a submenu holding `content`, lit while that submenu is open. Rows of the
 /// submenu are placed like the main menu's (`menu_scope`, at least `min_width` wide).
 pub fn menu_submenu<R>(

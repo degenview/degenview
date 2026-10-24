@@ -194,6 +194,8 @@ pub struct PanelUi {
     pub reveal: Option<usize>,
     /// A scroll offset to apply to the variables list next frame, to bring the cursor into view.
     pub scroll_to: Option<f32>,
+    /// The height the variables list scrolls over, as the scroll area measured it last frame.
+    pub list_extent: f32,
     pub editor: Option<BreakpointEditor>,
     /// A line whose breakpoint menu was asked for in the gutter, and where.
     pub menu_line: Option<usize>,
