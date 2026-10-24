@@ -125,14 +125,15 @@ parse or is not allowed is reported on the breakpoint, and a line with no code i
   session's messages (the script's own `log.*()` calls too) while a session exists.
 * **Breakpoints are consulted on every visit**, so a logpoint still writes and a hit still counts when
   a pause or bar break stops on the same statement.
-* **Stop at bar** stops at the first statement of one bar, once. It is not a line breakpoint. The bar
-  is chosen three ways, and each shows the others: an **index** typed in its field (0 to the last
-  bar; Enter or leaving the field arms it, emptying it disarms); **Select bar**, which waits for a
-  click on a candle of the preview chart (the chart's "click a candle" mode, as the replay uses it;
-  Esc or the button again cancels); or a **date** and a **time of day** (UTC) picked from drop-downs
-  that list only the days and times the chart has a bar for. A chart of one bar a day has no time
-  picker. Choosing another date keeps the time of day when that date has a bar at it. The armed stop
-  is shown as "Stops at bar 31 · 2026-10-24 12:00 UTC" with a button to take it back, or says why it
+* **Stop at bar** stops at the first statement of one bar, once. It is not a line breakpoint. One
+  line of controls chooses the bar, and each shows what the others chose: **Select bar**, which waits
+  for a click on a candle of the preview chart (the chart's "click a candle" mode, as the replay uses
+  it; Esc or the button again cancels); a small field for the bar's **index** (0 to the last bar;
+  Enter or leaving the field arms it, emptying it disarms); and a **date** and a **time of day**
+  (UTC) picked from drop-downs that list only the days and times the chart has a bar for. A chart of
+  one bar a day has no time picker. Choosing another date keeps the time of day when that date has a
+  bar at it. The armed stop is shown as "Stops at bar 31 · 2026-10-24 12:00 UTC" with a button to
+  take it back, or says why it
   cannot happen (a bar past the end, or a time after the last bar). The stop is kept as a UTC time
   or an index; a time stops at the first bar opening at or after it. The lists are the preview's
   bars, and a session runs on a copy taken when it started, so a candle newer than the copy never

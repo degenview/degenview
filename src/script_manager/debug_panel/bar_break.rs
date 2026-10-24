@@ -13,9 +13,6 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme;
 
-/// The width of the labels in front of the fields.
-const LABEL: f32 = 46.0;
-
 /// Where the armed stop lands among the chart's bars.
 enum Armed {
     /// The bar it stops at.
@@ -80,8 +77,7 @@ pub(super) fn show(ui: &mut Ui, context: &mut Context<'_>) {
                 theme::text_tertiary(),
             ));
             ui.add_space(2.0);
-            index_row(ui, context, bars, armed_bar);
-            time_row(ui, context, armed_bar);
+            controls(ui, context, bars, armed_bar);
             if let Some(armed) = &armed {
                 ui.add_space(2.0);
                 status(ui, context, armed);
@@ -90,76 +86,60 @@ pub(super) fn show(ui: &mut Ui, context: &mut Context<'_>) {
     ui.add_space(12.0);
 }
 
-/// A label in front of a row of controls.
-fn row_label(ui: &mut Ui, text: &str) {
-    ui.allocate_ui_with_layout(
-        vec2(LABEL, 24.0),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.label(kit::text(
-                text,
-                kit::size::BODY,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-        },
-    );
-}
-
-/// The bar's index, typed or taken from a click on the chart.
-fn index_row(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: Option<usize>) {
-    let ready = bars > 0;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        row_label(ui, "Index");
-        let id = ui.id().with("bar-index");
-        let editing = ui.memory(|memory| memory.has_focus(id));
-        if !editing {
-            // Not being typed in, the field shows the bar the stop is on.
-            context.state.bar_input = armed_bar.map_or_else(String::new, |index| index.to_string());
-        }
-        let hint = match bars {
-            0 => "No bars yet".to_owned(),
-            1 => "0".to_owned(),
-            _ => format!("0 – {}", bars - 1),
-        };
-        let response = ui
-            .add_enabled_ui(ready, |ui| {
-                text_field(ui, id, &mut context.state.bar_input, &hint, 96.0, true)
-            })
-            .inner;
-        context.state.bar_input.retain(|c| c.is_ascii_digit());
-        if response.lost_focus() && !ui.input(|input| input.key_pressed(egui::Key::Escape)) {
-            let text = context.state.bar_input.trim();
-            if text.is_empty() {
-                if armed_bar.is_some() {
-                    context.actions.push(PanelAction::ClearBarBreak);
-                }
-            } else if let Some(index) = text.parse::<usize>().ok().filter(|i| *i < bars)
-                && armed_bar != Some(index)
-            {
-                context
-                    .actions
-                    .push(PanelAction::BreakOnBar(index.to_string()));
-            }
-        }
+/// One line: pick a candle on the chart, type the bar's index, or choose its date and time.
+fn controls(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: Option<usize>) {
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         select_button(ui, context);
+        index_field(ui, context, bars, armed_bar);
+        pickers(ui, context, armed_bar);
     });
     let typed = context.state.bar_input.trim();
-    if ready
-        && !typed.is_empty()
+    if bars > 0
         && typed.parse::<usize>().is_ok_and(|index| index >= bars)
         && ui.memory(|memory| memory.has_focus(ui.id().with("bar-index")))
     {
-        ui.horizontal(|ui| {
-            ui.add_space(LABEL + 6.0);
-            ui.label(kit::text(
-                format!("The bars are numbered 0 to {}.", bars - 1),
-                kit::size::SUBHEADLINE,
-                kit::REGULAR,
-                theme::syntax::string(),
-            ));
+        ui.label(kit::text(
+            format!("The bars are numbered 0 to {}.", bars - 1),
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::syntax::string(),
+        ));
+    }
+}
+
+/// The bar's index, typed or taken from a click on the chart.
+fn index_field(ui: &mut Ui, context: &mut Context<'_>, bars: usize, armed_bar: Option<usize>) {
+    let id = ui.id().with("bar-index");
+    let editing = ui.memory(|memory| memory.has_focus(id));
+    if !editing {
+        // Not being typed in, the field shows the bar the stop is on.
+        context.state.bar_input = armed_bar.map_or_else(String::new, |index| index.to_string());
+    }
+    let response = ui
+        .add_enabled_ui(bars > 0, |ui| {
+            text_field(ui, id, &mut context.state.bar_input, "Index", 58.0, true)
+        })
+        .inner
+        .on_hover_text(match bars {
+            0 => "No bars on the chart yet".to_owned(),
+            1 => "The bar's index: 0".to_owned(),
+            _ => format!("The bar's index, 0 to {}", bars - 1),
         });
+    context.state.bar_input.retain(|c| c.is_ascii_digit());
+    if response.lost_focus() && !ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+        let text = context.state.bar_input.trim();
+        if text.is_empty() {
+            if armed_bar.is_some() {
+                context.actions.push(PanelAction::ClearBarBreak);
+            }
+        } else if let Some(index) = text.parse::<usize>().ok().filter(|i| *i < bars)
+            && armed_bar != Some(index)
+        {
+            context
+                .actions
+                .push(PanelAction::BreakOnBar(index.to_string()));
+        }
     }
 }
 
@@ -199,7 +179,7 @@ fn select_button(ui: &mut Ui, context: &mut Context<'_>) {
 }
 
 /// The date and the time of day, each a list of the ones that have a bar.
-fn time_row(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
+fn pickers(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
     let panel = context.panel;
     let times = &panel.bar_times;
     let days = &panel.bar_days;
@@ -209,12 +189,10 @@ fn time_row(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
     });
     // A chart of daily bars has one a day; the time of day would only ever say 00:00.
     let intraday = days.iter().any(|day| day.end - day.first > 1);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        row_label(ui, if intraday { "Time" } else { "Date" });
+    {
         let chosen = kit::menu_picker_hinted(
             ui,
-            if intraday { 118.0 } else { 150.0 },
+            if intraday { 112.0 } else { 150.0 },
             &panel.day_labels,
             day.unwrap_or(usize::MAX),
             !days.is_empty(),
@@ -255,7 +233,7 @@ fn time_row(ui: &mut Ui, context: &mut Context<'_>, armed_bar: Option<usize>) {
                 )));
             }
         }
-    });
+    }
 }
 
 /// What is armed, in words, and a way to take it back.
