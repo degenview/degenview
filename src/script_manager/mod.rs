@@ -532,12 +532,6 @@ impl ScriptManager {
             if icons::button(ui, Icon::SidebarLeft, 28.0, theme::text_primary(), &tip).clicked() {
                 self.cmds.push(Cmd::ToggleSidebar);
             }
-            if self.open.is_some() {
-                ui.add_space(10.0);
-                for command in debug_panel::transport(ui, &self.debug) {
-                    self.cmds.push(Cmd::Debug(command));
-                }
-            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 let (icon, tip) = if self.prefs.chart_visible {

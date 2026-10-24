@@ -338,7 +338,7 @@ plot(array.size(big))
 
 #[test]
 fn a_series_expands_to_the_bars_it_took_earlier_values_on() {
-    let body = "gap = close - open
+    let body = "gap = close + bar_index
 plot(gap + close)
 ";
     let seen: Arc<Mutex<Vec<Rows2>>> = Arc::default();
@@ -375,7 +375,77 @@ plot(gap + close)
     at_lines(body, 5, &[4], probe);
     let seen = seen.lock().unwrap();
     assert_eq!(seen[0].0, ["[0]=104", "[1]=103", "[2]=102", "[3]=101"]);
-    assert_eq!(seen[0].1, ["[0]=1", "[1]=1", "[2]=1"]);
+    assert_eq!(seen[0].1, ["[0]=107", "[1]=105", "[2]=103"]);
+}
+
+#[test]
+fn an_input_has_no_history_and_a_constant_series_says_so_once() {
+    let body = "length = input.int(3, \"Length\")
+konst = 5.0
+plot(length + konst + close)
+";
+    let seen: Arc<Mutex<Vec<String>>> = Arc::default();
+    let sink = Arc::clone(&seen);
+    let probe: Probe = Box::new(move |stop, view| {
+        if stop.bar_index != 3 {
+            return;
+        }
+        let frame = view.stack()[0].index;
+        let groups = view.variables(frame);
+        let find = |name: &str| {
+            groups
+                .iter()
+                .flat_map(|group| &group.variables)
+                .find(|variable| variable.name == name)
+                .cloned()
+                .unwrap_or_else(|| panic!("no {name}"))
+        };
+        let mut out = sink.lock().unwrap();
+        out.push(format!(
+            "length expandable: {}",
+            find("length").expand.is_some()
+        ));
+        let konst = view
+            .expand(find("konst").expand.as_ref().unwrap(), 0, 10)
+            .unwrap();
+        out.push(format!(
+            "konst: {} rows {:?}",
+            konst.total,
+            konst
+                .items
+                .iter()
+                .map(|v| (
+                    v.name.clone(),
+                    v.value.clone(),
+                    v.age.clone().unwrap_or_default()
+                ))
+                .collect::<Vec<_>>()
+        ));
+        let close = view
+            .expand(find("close").expand.as_ref().unwrap(), 0, 10)
+            .unwrap();
+        out.push(format!(
+            "close ages: {:?}",
+            close
+                .items
+                .iter()
+                .map(|v| v.age.clone().unwrap_or_default())
+                .collect::<Vec<_>>()
+        ));
+        out.push(format!("close type kept: {}", close.items[1].type_name));
+    });
+    at_lines(body, 5, &[5], probe);
+    let seen = seen.lock().unwrap();
+    assert_eq!(seen[0], "length expandable: false");
+    assert_eq!(
+        seen[1],
+        "konst: 2 rows [(\"[0]\", \"5\", \"this bar\"), (\"[1…3]\", \"same value\", \"3 bars ago\")]"
+    );
+    assert_eq!(
+        seen[2],
+        "close ages: [\"this bar\", \"1 bar ago\", \"2 bars ago\", \"3 bars ago\"]"
+    );
+    assert_eq!(seen[3], "close type kept: float");
 }
 
 #[test]

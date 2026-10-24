@@ -112,4 +112,4 @@ pub use chart_card::{
     ChartCard, ChartCardAction, CrosshairInfo, PineLogs, Scrolled, SeriesLine, WatchlistMembership,
 };
 pub use drawing_layer::{DrawingFrame, LinkRequest};
-pub use replay_overlay::ReplayChartFrame;
+pub use replay_overlay::{PickKind, ReplayChartFrame};

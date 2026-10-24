@@ -104,6 +104,9 @@ pub struct Variable {
     pub declaration: Option<DeclarationKind>,
     /// Press to see the parts or the earlier bars.
     pub expand: Option<ValueRef>,
+    /// For a row of a series: how far back it is ("this bar", "3 bars ago"). Shown where the type
+    /// would be; `type_name` still says what the value is.
+    pub age: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -214,6 +217,15 @@ impl Env<'_> {
     }
 
     fn has_history(&self, name: &str) -> bool {
+        // An input is the same on every bar: there is no series to look back through.
+        if self
+            .session
+            .input_variables
+            .values()
+            .any(|input| input == name)
+        {
+            return false;
+        }
         self.session
             .working
             .histories
@@ -327,6 +339,7 @@ fn unassigned(name: &str) -> Variable {
         changed: false,
         declaration: None,
         expand: None,
+        age: None,
     }
 }
 
@@ -364,6 +377,7 @@ fn row(
         changed: false,
         declaration: None,
         expand,
+        age: None,
     }
 }
 
@@ -648,6 +662,18 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
     Ok(node)
 }
 
+/// How many earlier bars are compared when deciding a series never changed.
+const UNCHANGED_WINDOW: usize = 5_000;
+
+/// "this bar", "1 bar ago", "7 bars ago".
+fn age_label(back: usize) -> String {
+    match back {
+        0 => "this bar".to_owned(),
+        1 => "1 bar ago".to_owned(),
+        n => format!("{n} bars ago"),
+    }
+}
+
 fn series_value(env: &Env<'_>, frame: usize, name: &str, back: usize) -> Option<RuntimeValue> {
     if back == 0 {
         return env
@@ -689,13 +715,58 @@ pub(crate) fn expand(
                 .histories
                 .get(&name)
                 .map_or(0, |history| history.len());
-            total = depth + 1;
-            for back in (start..total).take(limit) {
-                let Some(value) = series_value(env, reference.frame, &name, back) else {
-                    break;
-                };
-                let (full, type_name) = summarize(env, &value);
-                items.push(row(format!("[{back}]"), full, type_name, &value, None));
+            // A series that has held one value on every bar says so once, instead of repeating it.
+            let unchanged = depth > 0
+                && series_value(env, reference.frame, &name, 0).is_some_and(|now| {
+                    env.session
+                        .working
+                        .histories
+                        .get(&name)
+                        .is_some_and(|history| {
+                            history[history.len().saturating_sub(UNCHANGED_WINDOW)..]
+                                .iter()
+                                .all(|earlier| *earlier == now)
+                        })
+                });
+            if unchanged {
+                total = 2;
+                let checked = depth.min(UNCHANGED_WINDOW);
+                if let Some(value) = series_value(env, reference.frame, &name, 0)
+                    && start == 0
+                {
+                    let (full, type_name) = summarize(env, &value);
+                    let mut now = row("[0]".to_owned(), full, type_name, &value, None);
+                    now.age = Some(age_label(0));
+                    items.push(now);
+                    let which = if checked == depth {
+                        format!("all {depth} earlier bars")
+                    } else {
+                        format!("the last {checked} earlier bars")
+                    };
+                    items.push(Variable {
+                        name: format!("[1…{checked}]"),
+                        value: "same value".to_owned(),
+                        full: format!("the same value on {which}"),
+                        type_name: String::new(),
+                        is_na: false,
+                        assigned: false,
+                        changed: false,
+                        declaration: None,
+                        expand: None,
+                        age: Some(format!("{checked} bars ago")),
+                    });
+                }
+            } else {
+                total = depth + 1;
+                for back in (start..total).take(limit) {
+                    let Some(value) = series_value(env, reference.frame, &name, back) else {
+                        break;
+                    };
+                    let (full, type_name) = summarize(env, &value);
+                    let mut item = row(format!("[{back}]"), full, type_name, &value, None);
+                    item.age = Some(age_label(back));
+                    items.push(item);
+                }
             }
         }
         Node::MatrixRow { matrix, row: index } => {
@@ -785,6 +856,7 @@ pub(crate) fn expand(
                         assigned: true,
                         changed: false,
                         declaration: None,
+                        age: None,
                         expand: Some(child(Step::Row(index))),
                     });
                 }

@@ -97,6 +97,53 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, enabled: bool, tooltip: &str) -> boo
     false
 }
 
+/// The filter of the watchlist, for a list in the panel: a magnifier, a bare field with hint text,
+/// and a clear button once there is text. No well and no border.
+pub fn flat_filter(ui: &mut Ui, id: Id, value: &mut String, hint: &str, width: f32) {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 24.0), Sense::hover());
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(rect.left() + 9.0, rect.center().y), vec2(13.0, 13.0)),
+        Icon::Magnifier,
+        theme::text_secondary(),
+    );
+    let clear_width = if value.is_empty() { 0.0 } else { 24.0 };
+    let field = Rect::from_min_max(
+        pos2(rect.left() + 22.0, rect.top()),
+        pos2(rect.right() - clear_width, rect.bottom()),
+    );
+    let response = ui.put(
+        field,
+        egui::TextEdit::singleline(value)
+            .id(id)
+            .hint_text(hint)
+            .frame(egui::Frame::NONE)
+            .margin(Margin::ZERO)
+            .vertical_align(Align::Center),
+    );
+    if response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+        value.clear();
+    }
+    if !value.is_empty() {
+        let clear =
+            Rect::from_center_size(pos2(rect.right() - 11.0, rect.center().y), vec2(20.0, 20.0));
+        if kit::hover_button(
+            ui,
+            clear,
+            id.with("clear"),
+            Icon::XmarkCircleFill,
+            "Clear filter",
+            true,
+            true,
+        )
+        .clicked()
+        {
+            value.clear();
+            response.request_focus();
+        }
+    }
+}
+
 /// A quiet single-line field on a faint well, ringed in the accent while it has focus.
 pub fn text_field(
     ui: &mut Ui,

@@ -673,6 +673,44 @@ fn the_arrow_keys_walk_the_variables_and_open_and_close_rows() {
 }
 
 #[test]
+fn select_bar_waits_for_a_candle_and_arms_the_stop_at_it() {
+    let mut rig = Rig::new("pick");
+    rig.manager.prefs.chart_visible = false;
+    rig.manager.cmds.push(Cmd::DebugPanel(PanelAction::PickBar));
+    rig.frame();
+    assert!(rig.manager.preview.is_picking_bar());
+    assert!(rig.manager.debug.picking_bar, "the panel is told");
+    assert!(
+        rig.manager.prefs.chart_visible,
+        "the chart has to be there to click"
+    );
+    // The same button again cancels.
+    rig.manager
+        .cmds
+        .push(Cmd::DebugPanel(PanelAction::CancelPickBar));
+    rig.frame();
+    assert!(!rig.manager.preview.is_picking_bar() && !rig.manager.debug.picking_bar);
+    assert!(rig.manager.debug.bar_break.is_none());
+
+    // A click on the sixth candle of the preview.
+    let sixth = 1_700_000_000_000 + 5 * 3_600_000;
+    rig.manager.cmds.push(Cmd::DebugPanel(PanelAction::PickBar));
+    rig.frame();
+    rig.manager.preview.pick_for_test(sixth);
+    rig.frame();
+    assert!(!rig.manager.preview.is_picking_bar());
+    assert_eq!(
+        rig.manager.debug.bar_break.as_deref(),
+        Some(debug_panel::bar_time_text(sixth).as_str())
+    );
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    let stop = &rig.manager.debug.shown.as_ref().unwrap().snapshot.stop;
+    assert_eq!(stop.bar_index, 5);
+    assert_eq!(stop.reason, crate::pine::debug::StopReason::Bar);
+}
+
+#[test]
 fn the_debug_panel_draws_in_every_state_without_panicking() {
     let mut rig = Rig::new("draw");
     rig.manager.prefs.debug_open = true;

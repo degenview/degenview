@@ -4,6 +4,16 @@
 use crate::ui::{replay_bar, theme};
 use eframe::egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 
+/// What a click on a candle while selecting is for: it decides the marker's words and colour.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PickKind {
+    /// "Start here": where a replay begins.
+    #[default]
+    Replay,
+    /// "Stop here": the bar the debugger should stop at.
+    StopAtBar,
+}
+
 /// Per-frame exchange between the workspace and one chart card's replay overlay.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReplayChartFrame {
@@ -33,7 +43,17 @@ pub(super) fn candle_at(
 }
 
 /// Marker at `x`: a line, a "Start here" tag, and the hidden future dimmed.
-pub(super) fn paint_selection(painter: &Painter, plot: Rect, x: f32, open_time_ms: i64) {
+pub(super) fn paint_selection(
+    painter: &Painter,
+    plot: Rect,
+    x: f32,
+    open_time_ms: i64,
+    kind: PickKind,
+) {
+    let (words, accent) = match kind {
+        PickKind::Replay => ("Start here", theme::REPLAY),
+        PickKind::StopAtBar => ("Stop here", theme::editor_debug_line()),
+    };
     let clipped = painter.with_clip_rect(plot);
     clipped.rect_filled(
         Rect::from_min_max(Pos2::new(x, plot.top()), plot.right_bottom()),
@@ -42,21 +62,27 @@ pub(super) fn paint_selection(painter: &Painter, plot: Rect, x: f32, open_time_m
     );
     clipped.line_segment(
         [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
-        Stroke::new(1.5, theme::REPLAY),
+        Stroke::new(1.5, accent),
     );
-    let text = format!("Start here · {}", replay_bar::compact_text(open_time_ms));
+    let text = format!("{words} · {}", replay_bar::compact_text(open_time_ms));
     let font = FontId::monospace(10.5);
     let galley = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
     let size = galley.size() + Vec2::new(16.0, 6.0);
     let centre_x = x.clamp(plot.left() + size.x / 2.0, plot.right() - size.x / 2.0);
     let tag = Rect::from_center_size(Pos2::new(centre_x, plot.top() + 12.0), size);
-    painter.rect_filled(tag, 999.0, theme::REPLAY);
+    painter.rect_filled(tag, 999.0, accent);
     painter.text(
         tag.center(),
         Align2::CENTER_CENTER,
         text,
         font,
-        Color32::WHITE,
+        if kind == PickKind::StopAtBar && theme::is_light() {
+            Color32::WHITE
+        } else if kind == PickKind::StopAtBar {
+            Color32::BLACK
+        } else {
+            Color32::WHITE
+        },
     );
 }
 

@@ -27,6 +27,13 @@ impl ScriptManager {
         if self.debug.poll() {
             ctx.request_repaint();
         }
+        self.debug.picking_bar = self.preview.is_picking_bar();
+        if let Some(picked) = self.preview.take_picked_bar() {
+            self.debug
+                .apply(PanelAction::BreakOnBar(super::debug_panel::bar_time_text(
+                    picked,
+                )));
+        }
         if let Some(wait) = self.debug.wants_frames() {
             ctx.request_repaint_after(wait);
         }
@@ -137,6 +144,17 @@ impl ScriptManager {
         match action {
             PanelAction::Command(command) => self.debug_command(command, ctx),
             PanelAction::Close => self.prefs.debug_open = false,
+            PanelAction::PickBar => {
+                // The chart has to be there to be clicked.
+                self.prefs.chart_visible = true;
+                self.preview.begin_bar_pick();
+                self.debug.picking_bar = true;
+                ctx.request_repaint();
+            }
+            PanelAction::CancelPickBar => {
+                self.preview.cancel_bar_pick();
+                self.debug.picking_bar = false;
+            }
             other => {
                 if let Some(line) = self.debug.apply(other)
                     && let Some(open) = self.open.as_mut()

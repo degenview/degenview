@@ -331,6 +331,8 @@ pub struct ChartCard {
     /// The instances whose realtime messages are not kept (the pane's Disable logging). The script
     /// keeps running; only what it writes from now on is left out.
     logging_paused: HashSet<u64>,
+    /// What a click on a candle is for while the chart is in "click a candle" mode.
+    pick_kind: replay_overlay::PickKind,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
     /// the construction change. Restyling never rebuilds it.
     constructed: Option<Arc<ConstructedSeries>>,
@@ -651,6 +653,7 @@ impl Default for ChartCard {
             runs: HashMap::new(),
             run_epochs: 0,
             logging_paused: HashSet::new(),
+            pick_kind: replay_overlay::PickKind::default(),
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
@@ -760,6 +763,11 @@ impl ChartCard {
     /// show it.
     pub fn effective_chart_type(&self, source: DataSource) -> ChartType {
         self.appearance.style.effective_type(source)
+    }
+
+    /// Says what the next click on a candle is for, while the chart is picking one.
+    pub fn set_pick_kind(&mut self, kind: replay_overlay::PickKind) {
+        self.pick_kind = kind;
     }
 
     /// The `syminfo` a script reads on a chart of plain candles for `symbol`.
@@ -2250,7 +2258,7 @@ impl ChartCard {
         let x = plot.left()
             + view.slot_width * ((index - view.start) as f32 + 0.5)
             + view.slot_width * view.lead;
-        replay_overlay::paint_selection(painter, plot, x, open_time);
+        replay_overlay::paint_selection(painter, plot, x, open_time, self.pick_kind);
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         if response.clicked() {
             replay.picked_ms = Some(open_time);

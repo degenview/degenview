@@ -410,7 +410,8 @@ pub fn paint_variable(
         },
     );
 
-    let show_type = rect.width() > 380.0 && !variable.type_name.is_empty();
+    let type_text = variable.age.as_deref().unwrap_or(&variable.type_name);
+    let show_type = rect.width() > 380.0 && !type_text.is_empty();
     let type_width = if show_type { 92.0 } else { 0.0 };
     let value_left = (rect.left() + name_width).max(name_clip.right() + 6.0);
     let value_clip = Rect::from_min_max(
@@ -465,7 +466,7 @@ pub fn paint_variable(
         ui.painter().with_clip_rect(rect).text(
             pos2(rect.right() - 10.0, rect.center().y),
             Align2::RIGHT_CENTER,
-            &variable.type_name,
+            type_text,
             FontId::proportional(kit::size::SUBHEADLINE),
             theme::text_tertiary(),
         );

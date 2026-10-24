@@ -207,6 +207,7 @@ fn watch_row(
                 changed: false,
                 declaration: None,
                 expand: None,
+                age: None,
             };
             error.assigned = false;
             Some(error)

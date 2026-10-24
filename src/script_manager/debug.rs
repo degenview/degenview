@@ -106,6 +106,9 @@ pub enum PanelAction {
     /// Stop at the start of a bar: `text` is a bar index, or a time `YYYY-MM-DD HH:MM` in UTC.
     BreakOnBar(String),
     ClearBarBreak,
+    /// Wait for a click on a candle of the preview chart, and stop at its bar.
+    PickBar,
+    CancelPickBar,
     Evaluate(String),
     ClearConsole,
     Close,
@@ -273,6 +276,8 @@ pub struct DebugPanel {
     pub hits: Vec<(u64, u64)>,
     pub label: String,
     pub bar_break: Option<String>,
+    /// The preview chart is waiting for a click on a candle (set by the host each frame).
+    pub picking_bar: bool,
     pub console: Vec<ConsoleLine>,
     /// Rows of the variables tree that stay open across stops.
     open_rows: HashSet<String>,
@@ -318,6 +323,7 @@ impl DebugPanel {
             hits: Vec::new(),
             label: String::new(),
             bar_break: None,
+            picking_bar: false,
             console: Vec::new(),
             open_rows: HashSet::new(),
             pending: HashMap::new(),
@@ -779,7 +785,10 @@ impl DebugPanel {
     /// Applies what a panel asked for. Returns a source line to show, if any.
     pub fn apply(&mut self, action: PanelAction) -> Option<usize> {
         match action {
-            PanelAction::Command(_) | PanelAction::Close => None,
+            PanelAction::Command(_)
+            | PanelAction::Close
+            | PanelAction::PickBar
+            | PanelAction::CancelPickBar => None,
             PanelAction::SelectFrame(frame) => {
                 self.select_frame(frame);
                 self.shown

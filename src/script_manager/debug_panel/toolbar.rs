@@ -2,7 +2,7 @@
 
 use eframe::egui::{Color32, Sense, Ui, vec2};
 
-use crate::pine::debug::{DebugCommand, DebugState};
+use crate::pine::debug::DebugCommand;
 use crate::script_manager::debug::DebugPanel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
@@ -30,7 +30,7 @@ pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
     let tip = if panel_open {
         "Hide the debugger"
     } else {
-        "Show the debugger: breakpoints, variables, watches"
+        "Show the debugger: controls, breakpoints, variables, watches"
     };
     let color = if panel_open {
         kit::ACCENT
@@ -43,7 +43,6 @@ pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
 /// The transport buttons and what the session is doing. Returns the commands pressed.
 pub fn transport(ui: &mut Ui, panel: &DebugPanel) -> Vec<DebugCommand> {
     let mut commands = Vec::new();
-    let active = panel.state_of_session().is_active();
     let (continue_tip, continue_icon) = if panel.would_start() {
         (
             shortcut::DEBUG_CONTINUE.hint("Start debugging"),
@@ -111,23 +110,6 @@ pub fn transport(ui: &mut Ui, panel: &DebugPanel) -> Vec<DebugCommand> {
         if command == DebugCommand::Pause {
             ui.add_space(4.0);
         }
-    }
-    ui.add_space(6.0);
-    let state_text = match panel.state_of_session() {
-        DebugState::Idle => None,
-        DebugState::Preparing => Some(("Starting…", theme::text_secondary())),
-        DebugState::Running => Some(("Running", kit::GREEN)),
-        DebugState::Pausing => Some(("Pausing…", theme::text_secondary())),
-        DebugState::Paused if panel.paused_on_error() => Some(("Stopped on an error", kit::RED)),
-        DebugState::Paused => Some(("Paused", theme::editor_debug_line())),
-        DebugState::Stopping => Some(("Stopping…", theme::text_secondary())),
-        DebugState::Completed => Some(("Finished", theme::text_secondary())),
-        DebugState::Failed => Some(("Failed", kit::RED)),
-    };
-    if let Some((text, color)) = state_text
-        && (active || panel.has_session())
-    {
-        ui.label(kit::text(text, kit::size::SUBHEADLINE, kit::MEDIUM, color));
     }
     commands
 }

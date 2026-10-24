@@ -26,11 +26,12 @@ use crate::ui::kit;
 use crate::ui::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
 
-pub use toolbar::{panel_button, transport};
+pub use toolbar::panel_button;
 
-use widgets::{ROW, icon_button, mono, placeholder, section_header, text_field};
+use widgets::{ROW, flat_filter, icon_button, mono, placeholder, section_header, text_field};
 
-const STATUS_HEIGHT: f32 = 30.0;
+const CONTROLS_HEIGHT: f32 = 36.0;
+const STATUS_HEIGHT: f32 = 26.0;
 const STRIP_HEIGHT: f32 = 24.0;
 /// Below this width the two columns stack.
 const WIDE: f32 = 640.0;
@@ -89,8 +90,10 @@ fn draw(
     let full = ui.available_rect_before_wrap();
     ui.allocate_rect(full, Sense::hover());
     ui.painter().rect_filled(full, 0.0, theme::background());
-    let status = Rect::from_min_size(full.min, vec2(full.width(), STATUS_HEIGHT));
-    status_bar(ui, status, panel, out_of_date, &mut actions);
+    let controls = Rect::from_min_size(full.min, vec2(full.width(), CONTROLS_HEIGHT));
+    controls_bar(ui, controls, panel, out_of_date, &mut actions);
+    let status = Rect::from_min_size(controls.left_bottom(), vec2(full.width(), STATUS_HEIGHT));
+    status_bar(ui, status, panel, &mut actions);
     let mut top = status.bottom();
     if let Some(bar) = panel.bar() {
         let strip = Rect::from_min_max(
@@ -143,7 +146,8 @@ fn draw(
 
 // MARK: Status
 
-fn status_bar(
+/// The transport buttons, and at the right what ends or renews the session.
+fn controls_bar(
     ui: &mut Ui,
     rect: Rect,
     panel: &DebugPanel,
@@ -155,25 +159,16 @@ fn status_bar(
         [rect.left_bottom(), rect.right_bottom()],
         Stroke::new(1.0, kit::hairline()),
     );
-    let (color, text) = headline(panel);
-    let dot = pos2(rect.left() + 16.0, rect.center().y);
-    ui.painter().circle_filled(dot, 4.0, color);
-    let mut content = ui.new_child(
+    let mut row = ui.new_child(
         UiBuilder::new()
-            .max_rect(Rect::from_min_max(
-                pos2(rect.left() + 30.0, rect.top()),
-                pos2(rect.right() - 6.0, rect.bottom()),
-            ))
+            .max_rect(rect.shrink2(vec2(8.0, 0.0)))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    content.spacing_mut().item_spacing.x = 8.0;
-    content.label(kit::text(
-        text,
-        kit::size::BODY - 0.5,
-        kit::MEDIUM,
-        theme::text_primary(),
-    ));
-    content.with_layout(Layout::right_to_left(Align::Center), |ui| {
+    row.spacing_mut().item_spacing.x = 4.0;
+    for command in toolbar::transport(&mut row, panel) {
+        actions.push(PanelAction::Command(command));
+    }
+    row.with_layout(Layout::right_to_left(Align::Center), |ui| {
         if icons::button(
             ui,
             Icon::Xmark,
@@ -199,7 +194,36 @@ fn status_bar(
                 actions.push(PanelAction::Command(DebugCommand::Restart));
             }
         }
-        if let Some(notice) = &panel.notice {
+    });
+}
+
+/// What the session is doing, in words, and what could not be done.
+fn status_bar(ui: &mut Ui, rect: Rect, panel: &DebugPanel, _actions: &mut Vec<PanelAction>) {
+    ui.painter().rect_filled(rect, 0.0, theme::chrome());
+    ui.painter().line_segment(
+        [rect.left_bottom(), rect.right_bottom()],
+        Stroke::new(1.0, kit::hairline()),
+    );
+    let (color, text) = headline(panel);
+    let dot = pos2(rect.left() + 16.0, rect.center().y);
+    ui.painter().circle_filled(dot, 4.0, color);
+    let mut content = ui.new_child(
+        UiBuilder::new()
+            .max_rect(Rect::from_min_max(
+                pos2(rect.left() + 30.0, rect.top()),
+                pos2(rect.right() - 8.0, rect.bottom()),
+            ))
+            .layout(Layout::left_to_right(Align::Center)),
+    );
+    content.spacing_mut().item_spacing.x = 8.0;
+    content.label(kit::text(
+        text,
+        kit::size::BODY - 0.5,
+        kit::MEDIUM,
+        theme::text_primary(),
+    ));
+    if let Some(notice) = &panel.notice {
+        content.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.label(kit::text(
                 notice.text.clone(),
                 kit::size::SUBHEADLINE,
@@ -210,8 +234,8 @@ fn status_bar(
                     theme::text_secondary()
                 },
             ));
-        }
-    });
+        });
+    }
 }
 
 fn headline(panel: &DebugPanel) -> (eframe::egui::Color32, String) {
@@ -428,7 +452,7 @@ fn variables_pane(ui: &mut Ui, context: &mut Context<'_>, with_header: bool) {
         }
         row.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let id = egui::Id::new("script-debug-filter");
-            kit::search_field(ui, id, &mut context.state.filter, "Filter", 150.0);
+            flat_filter(ui, id, &mut context.state.filter, "Filter variables", 190.0);
         });
     }
     let Some(shown) = panel.shown.as_ref() else {
@@ -640,23 +664,23 @@ fn section(ui: &mut Ui, context: &mut Context<'_>, which: Section) {
 
 /// The Pine-aware breakpoint: stop at the start of a bar, whatever runs in it.
 fn bar_break(ui: &mut Ui, context: &mut Context<'_>) {
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
         ui.add_space(12.0);
+        ui.spacing_mut().item_spacing = vec2(10.0, 6.0);
         ui.label(kit::text(
             "Stop at bar",
             kit::size::SUBHEADLINE,
             kit::SEMIBOLD,
             theme::text_secondary(),
         ));
-        let width = (ui.available_width() - 90.0).max(80.0);
         let id = ui.id().with("bar-break");
         let response = text_field(
             ui,
             id,
             &mut context.state.bar_input,
-            "index or 2026-10-24 12:00",
-            width,
+            "index or time",
+            140.0,
             true,
         );
         let enter = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
@@ -664,6 +688,37 @@ fn bar_break(ui: &mut Ui, context: &mut Context<'_>) {
             context.actions.push(PanelAction::BreakOnBar(std::mem::take(
                 &mut context.state.bar_input,
             )));
+        }
+        let picking = context.panel.picking_bar;
+        let button = kit::push_button(
+            ui,
+            Some(Icon::ScrollToBar),
+            if picking {
+                "Click a candle…"
+            } else {
+                "Select bar"
+            },
+            true,
+        )
+        .on_hover_text(if picking {
+            "Click a candle on the preview chart, or press Esc to cancel"
+        } else {
+            "Click a candle on the preview chart to stop at its bar"
+        });
+        if picking {
+            ui.painter().rect_stroke(
+                button.rect,
+                6.0,
+                Stroke::new(1.5, kit::ACCENT),
+                egui::StrokeKind::Inside,
+            );
+        }
+        if button.clicked() {
+            context.actions.push(if picking {
+                PanelAction::CancelPickBar
+            } else {
+                PanelAction::PickBar
+            });
         }
         if context.panel.bar_break.is_some()
             && icon_button(ui, Icon::Xmark, true, "Cancel the stop at a bar")
@@ -685,6 +740,15 @@ fn bar_break(ui: &mut Ui, context: &mut Context<'_>) {
     ui.add_space(8.0);
 }
 
+/// A bar's open time as a person types it: `2026-10-24 12:00`, with seconds only when it has them.
+pub(super) fn bar_time_text(ms: i64) -> String {
+    let base = format_time(ms);
+    match ms.div_euclid(1000).rem_euclid(60) {
+        0 => base,
+        seconds => format!("{base}:{seconds:02}"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -698,5 +762,23 @@ mod tests {
             "2000-03-01 05:07"
         );
         assert_eq!(format_time(-1000), "1969-12-31 23:59");
+    }
+
+    #[test]
+    fn a_picked_bar_round_trips_through_the_text_the_break_parses() {
+        use crate::pine::debug::BarBreak;
+        for ms in [
+            0,
+            1_792_843_200_000,
+            1_792_843_230_000,
+            951_868_800_000 + 60_000 * 7,
+        ] {
+            let text = bar_time_text(ms);
+            assert_eq!(
+                crate::script_manager::debug::parse_bar_break(&text),
+                Some(BarBreak::Time(ms)),
+                "{text}"
+            );
+        }
     }
 }

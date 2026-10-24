@@ -13,9 +13,12 @@ an expression. Everything below follows from that.
 1. Click a line number, or press the breakpoint key with the caret on a line, to set a breakpoint.
    A line with no code (a blank, a comment, the rest of a multi-line statement, `indicator()`, a
    function header, a `type`) is refused with the reason.
-2. Press ▶ (or the continue key). The script runs on the preview chart's bars to the first
-   breakpoint. Stepping when nothing is running starts a session stopped at the first statement.
-3. The panel under the editor shows the stop; ⏸ stops a running script at its next statement.
+2. Open the debugger panel under the editor (the bug button at the top right; starting a session
+   from the keyboard opens it too). Its top row holds the controls: ▶ continue or start, ⏸ pause,
+   step over, into, out, step bar, restart and stop. ▶ runs the script on the preview chart's bars to
+   the first breakpoint; stepping when nothing is running starts a session stopped at the first
+   statement.
+3. The panel shows the stop; ⏸ stops a running script at its next statement.
 
 A session runs on a **frozen copy of the preview chart's bars**, as the preview has them at the
 moment it starts (up to 500 candles). Later fetches and ticks do not reach it. Edit the script while
@@ -121,7 +124,11 @@ parse or is not allowed is reported on the breakpoint, and a line with no code i
 * **Breakpoints are consulted on every visit**, so a logpoint still writes and a hit still counts when
   a pause or bar break stops on the same statement.
 * **Break on bar** stops at the first statement of a bar chosen by index or by UTC time (the first
-  bar opening at or after it), once. It is not a line breakpoint.
+  bar opening at or after it), once. It is not a line breakpoint. Next to the field, **Select bar**
+  waits for a click on a candle of the preview chart (the chart's "click a candle" mode, as the replay
+  uses it; Esc or the button again cancels) and arms the stop at that candle's open time. The chart
+  is the preview's, a session runs on a copy taken when it started, so a candle newer than the copy
+  never stops it.
 * Breakpoints can be added, removed and edited while the script runs.
 
 Persistence: per script, on this Mac only (`scriptDebug.state`, a local setting). They follow edits
@@ -143,7 +150,12 @@ to 200 rows at a time, through references that name a path (frame → name → e
 stop they belong to: a reference outlives nothing, and a collection that shrank answers "no longer
 available". Nothing is copied wholesale; formatting never recurses. Open rows stay open from stop to
 stop by their path of names. A row whose value changed since the last inspected stop is marked.
-The history of a function's local is not offered (its series is keyed by call site).
+A scalar variable expands into its **series history**, one row per earlier bar, named `[n]` as in
+Pine (`close[1]`) and labelled "this bar", "1 bar ago", "n bars ago" where the type would be: they
+are bars, not elements of an array. An **input** has no history (it is the same on every bar), and
+a series that held one value on all of the last 5,000 earlier bars is shown as that value once with a
+"same value" row instead of a column of identical ones. The history of a function's local is not
+offered (its series is keyed by call site).
 
 ## Watches, conditions, logpoints, hover and the console
 
@@ -185,8 +197,9 @@ that), and anything stateful.
 
 ## The panel
 
-Status line and bar context (bar index, symbol, timeframe, historical/realtime, confirmed, OHLCV, the
-request when inside one); Variables with a filter; Watches (add, edit in place, remove, expand);
+The controls row; the status line and bar context (bar index, symbol, timeframe,
+historical/realtime, confirmed, OHLCV, the request when inside one); Variables with a filter (the
+same flat field as the watchlist's); Watches (add, edit in place, remove, expand);
 Call Stack (click a frame to show its variables and watches and mark its line); Breakpoints (switch,
 condition, hit rule, logpoint message, hit count, why one is unresolved or invalid, remove, enable or
 disable all, stop at a bar); Console (evaluate, history). Wide windows put the variables left and

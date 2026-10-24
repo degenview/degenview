@@ -169,3 +169,76 @@ fn gallery_of_the_debugger() {
         }
     }
 }
+
+/// The lists under the variables, in a window tall enough to show them: an input with no history,
+/// a series read by how far back it is, and Select bar waiting for a candle.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_series_and_select_bar() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        let mut rig = Rig::new(&format!("gallery-series-{theme_name}"));
+        rig.manager.prefs.chart_visible = false;
+        let screen = Screen::new(egui::vec2(1100.0, 1100.0));
+        theme::apply(&screen.ctx, app_theme);
+        let mut scene = Scene {
+            rig: &mut rig,
+            screen,
+            last: None,
+            name: format!("tall-{theme_name}"),
+        };
+        scene.frames(3);
+        scene.rig.manager.prefs.debug_open = true;
+        scene.rig.manager.prefs.debug_height = 640.0;
+        // Inputs have no history; a series is read by how far back it is; Select bar is armed.
+        scene.rig.manager.debug.end_session();
+        scene.rig.set_source(
+            "//@version=6\nindicator(\"MACD Histogram\", overlay = false)\nfastLength = input.int(12, \"Fast length\")\nslowLength = input.int(26, \"Slow length\")\nsignalLength = input.int(9, \"Signal length\")\nrisingUp = input.color(color.new(color.teal, 0), \"Above zero, rising\")\nfadingUp = input.color(color.new(color.teal, 60), \"Above zero, fading\")\n[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, signalLength)\ngrowing = histogram > histogram[1]\nhistogramColor = histogram >= 0 ? (growing ? risingUp : fadingUp) : risingUp\nplot(histogram, \"Histogram\", color = histogramColor)\n",
+        );
+        scene.rig.manager.debug.state.remove_all();
+        scene.push(Cmd::Gutter(GutterEvent::Toggle { line: 10 }));
+        scene.frames(2);
+        let id = scene.rig.manager.debug.state.breakpoints[0].spec.id;
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::Condition("bar_index > 30".into()),
+        }));
+        scene.push(Cmd::DebugPanel(PanelAction::BreakOnBar(
+            "2023-11-20 08:00".into(),
+        )));
+        scene.frames(2);
+        scene.push(Cmd::Debug(DebugCommand::Continue));
+        scene.until_paused();
+        scene.frames(2);
+        for name in ["histogram", "risingUp"] {
+            let reference = scene
+                .rig
+                .manager
+                .debug
+                .shown
+                .as_ref()
+                .and_then(|shown| {
+                    shown
+                        .variables
+                        .iter()
+                        .flat_map(|group| &group.variables)
+                        .find(|variable| variable.name == name)
+                })
+                .and_then(|variable| variable.expand.clone());
+            if let Some(reference) = reference {
+                scene.push(Cmd::DebugPanel(PanelAction::ToggleRow {
+                    key: name.into(),
+                    reference,
+                }));
+            }
+        }
+        scene.push(Cmd::DebugPanel(PanelAction::PickBar));
+        // A tall panel, so the lists under the variables are in the picture.
+        scene.frames(8);
+        scene.save("series-and-select-bar");
+        scene.push(Cmd::DebugPanel(PanelAction::CancelPickBar));
+        scene.frames(2);
+    }
+}
