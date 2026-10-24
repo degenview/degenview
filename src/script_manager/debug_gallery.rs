@@ -1,0 +1,263 @@
+//! Pictures of the debugger in the whole window, in both themes, for a person to look at. Run by
+//! hand: `DEGENVIEW_GALLERY_DIR=… cargo test --lib script_manager::debug_gallery -- --ignored`.
+
+use std::time::Duration;
+
+use eframe::egui;
+
+use super::debug::{BreakpointEdit, PanelAction};
+use super::debug_marks::GutterEvent;
+use super::debug_tests::Rig;
+use super::*;
+use crate::pine::debug::{DebugCommand, HitRule};
+use crate::ui::render_tests::{Screen, gallery_dir};
+use crate::ui::theme::AppTheme;
+
+struct Scene<'a> {
+    rig: &'a mut Rig,
+    screen: Screen,
+    last: Option<egui::FullOutput>,
+    name: String,
+}
+
+impl Scene<'_> {
+    fn frames(&mut self, count: usize) {
+        for _ in 0..count {
+            theme::sync(&self.screen.ctx);
+            let manager = &mut self.rig.manager;
+            self.last = Some(self.screen.run(Vec::new(), |ui| {
+                manager.ui(ui, None);
+            }));
+            std::thread::sleep(Duration::from_millis(15));
+        }
+    }
+
+    fn until_paused(&mut self) {
+        for _ in 0..600 {
+            if self.rig.manager.debug.is_paused() {
+                break;
+            }
+            self.frames(1);
+        }
+        assert!(self.rig.manager.debug.is_paused(), "never stopped");
+    }
+
+    fn push(&mut self, cmd: Cmd) {
+        self.rig.manager.cmds.push(cmd);
+    }
+
+    fn save(&mut self, label: &str) {
+        let output = self.last.take().expect("a frame");
+        self.screen
+            .save(&format!("debugger-{label}-{}", self.name), output);
+    }
+}
+
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_debugger() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (layout, width) in [("wide", 1360.0), ("full", 1360.0), ("narrow", 760.0)] {
+            let mut rig = Rig::new(&format!("gallery-{layout}-{theme_name}"));
+            if layout == "full" {
+                rig.manager.prefs.chart_position = prefs::ChartPosition::Bottom;
+            }
+            let screen = Screen::new(egui::vec2(width, 860.0));
+            theme::apply(&screen.ctx, app_theme);
+            let mut scene = Scene {
+                rig: &mut rig,
+                screen,
+                last: None,
+                name: format!("{layout}-{theme_name}"),
+            };
+            scene.frames(3);
+            // Breakpoints of every kind, before any session.
+            for line in [5, 9] {
+                scene.push(Cmd::Gutter(GutterEvent::Toggle { line }));
+            }
+            scene.push(Cmd::Gutter(GutterEvent::AddLogpoint { line: 10 }));
+            scene.frames(3);
+            let ids: Vec<u64> = scene
+                .rig
+                .manager
+                .debug
+                .state
+                .breakpoints
+                .iter()
+                .map(|b| b.spec.id)
+                .collect();
+            scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+                id: ids[1],
+                edit: BreakpointEdit::Condition("bar_index > 20".into()),
+            }));
+            scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+                id: ids[2],
+                edit: BreakpointEdit::LogMessage(Some("Bar {bar_index}: close={close}".into())),
+            }));
+            scene.push(Cmd::DebugPanel(PanelAction::SetBreakpointEnabled {
+                id: ids[0],
+                enabled: false,
+            }));
+            for watch in ["close - open", "levels", "ta.sma(close, 5)"] {
+                scene.push(Cmd::DebugPanel(PanelAction::AddWatch(watch.into())));
+            }
+            scene.rig.manager.prefs.debug_open = true;
+            scene.frames(4);
+            scene.save("idle");
+
+            // Stopped inside the function, an array open.
+            scene.push(Cmd::DebugPanel(PanelAction::SetBreakpointEnabled {
+                id: ids[0],
+                enabled: true,
+            }));
+            scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+                id: ids[0],
+                edit: BreakpointEdit::Hit(HitRule::GreaterThan(6)),
+            }));
+            scene.frames(2);
+            scene.push(Cmd::Debug(DebugCommand::Continue));
+            scene.until_paused();
+            scene.frames(2);
+            let levels = scene
+                .rig
+                .manager
+                .debug
+                .shown
+                .as_ref()
+                .and_then(|shown| {
+                    shown
+                        .variables
+                        .iter()
+                        .flat_map(|group| &group.variables)
+                        .find(|variable| variable.name == "levels")
+                })
+                .and_then(|variable| variable.expand.clone());
+            if let Some(reference) = levels {
+                scene.push(Cmd::DebugPanel(PanelAction::ToggleRow {
+                    key: "levels".into(),
+                    reference,
+                }));
+            }
+            scene.frames(6);
+            scene.save("paused-function");
+
+            // The caller's frame selected.
+            let caller = scene
+                .rig
+                .manager
+                .debug
+                .stack()
+                .last()
+                .map_or(0, |frame| frame.index);
+            scene.push(Cmd::DebugPanel(PanelAction::SelectFrame(caller)));
+            scene.frames(8);
+            scene.save("caller-frame");
+
+            // A script that fails.
+            scene.rig.manager.debug.end_session();
+            scene.rig.set_source(
+                "//@version=6\nindicator(\"Fails\")\nvalues = array.new_float(3)\nindex = bar_index + 2\npicked = array.get(values, index)\nplot(picked)\n",
+            );
+            scene.push(Cmd::Debug(DebugCommand::Continue));
+            scene.until_paused();
+            scene.frames(6);
+            scene.save("error");
+            scene.rig.manager.debug.end_session();
+        }
+    }
+}
+
+/// The lists under the variables, in a window tall enough to show them: an input with no history,
+/// a series read by how far back it is, and Select bar waiting for a candle.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_series_and_select_bar() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        let mut rig = Rig::new(&format!("gallery-series-{theme_name}"));
+        rig.manager.prefs.chart_visible = false;
+        let screen = Screen::new(egui::vec2(1100.0, 1350.0));
+        theme::apply(&screen.ctx, app_theme);
+        let mut scene = Scene {
+            rig: &mut rig,
+            screen,
+            last: None,
+            name: format!("tall-{theme_name}"),
+        };
+        scene.frames(3);
+        scene.rig.manager.prefs.debug_open = true;
+        scene.rig.manager.prefs.debug_height = 900.0;
+        // Inputs have no history; a series is read by how far back it is; Select bar is armed.
+        scene.rig.manager.debug.end_session();
+        scene.rig.set_source(
+            "//@version=6\nindicator(\"MACD Histogram\", overlay = false)\nfastLength = input.int(12, \"Fast length\")\nslowLength = input.int(26, \"Slow length\")\nsignalLength = input.int(9, \"Signal length\")\nrisingUp = input.color(color.new(color.teal, 0), \"Above zero, rising\")\nfadingUp = input.color(color.new(color.teal, 60), \"Above zero, fading\")\n[macdLine, signalLine, histogram] = ta.macd(close, fastLength, slowLength, signalLength)\ngrowing = histogram > histogram[1]\nhistogramColor = histogram >= 0 ? (growing ? risingUp : fadingUp) : risingUp\nplot(histogram, \"Histogram\", color = histogramColor)\n",
+        );
+        scene.rig.manager.debug.state.remove_all();
+        scene.push(Cmd::Gutter(GutterEvent::Toggle { line: 10 }));
+        scene.frames(2);
+        let id = scene.rig.manager.debug.state.breakpoints[0].spec.id;
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::Condition("bar_index > 30".into()),
+        }));
+        scene.push(Cmd::DebugPanel(PanelAction::BreakOnBar(
+            "2023-11-20 08:00".into(),
+        )));
+        scene.frames(2);
+        scene.push(Cmd::Debug(DebugCommand::Continue));
+        scene.until_paused();
+        scene.frames(2);
+        for name in ["histogram", "risingUp"] {
+            let reference = scene
+                .rig
+                .manager
+                .debug
+                .shown
+                .as_ref()
+                .and_then(|shown| {
+                    shown
+                        .variables
+                        .iter()
+                        .flat_map(|group| &group.variables)
+                        .find(|variable| variable.name == name)
+                })
+                .and_then(|variable| variable.expand.clone());
+            if let Some(reference) = reference {
+                scene.push(Cmd::DebugPanel(PanelAction::ToggleRow {
+                    key: name.into(),
+                    reference,
+                }));
+            }
+        }
+        scene.push(Cmd::DebugPanel(PanelAction::PickBar));
+        // A tall panel, so the lists under the variables are in the picture.
+        scene.frames(8);
+        scene.save("series-and-select-bar");
+        scene.push(Cmd::DebugPanel(PanelAction::CancelPickBar));
+        scene.frames(2);
+        // The breakpoint's editor: a hit rule with its number, and a logpoint.
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::Hit(crate::pine::debug::HitRule::EveryNth(3)),
+        }));
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::LogMessage(Some("Bar {bar_index}: close={close}".into())),
+        }));
+        scene.frames(2);
+        let stored = scene.rig.manager.debug.state.breakpoints[0].clone();
+        scene.rig.manager.debug.ui.open_editor(&stored, false);
+        scene.frames(3);
+        scene.save("breakpoint-editor");
+        // Stop at bar: the picture above shows a time the chart has no bar for; this one, bar 12.
+        scene.rig.manager.debug.ui.editor = None;
+        scene.push(Cmd::DebugPanel(PanelAction::BreakOnBar("12".into())));
+        scene.frames(3);
+        scene.save("stop-at-bar");
+    }
+}

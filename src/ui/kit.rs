@@ -1125,6 +1125,27 @@ pub fn menu_scope(ui: &mut Ui, min_width: f32) {
     style.visuals.popup_shadow = menu_shadow();
 }
 
+/// Fits a context menu to its rows: as wide as the longest of `labels` needs (icon gutter and
+/// trailing padding included), so a short menu is not padded out to a guessed width.
+pub fn menu_fit(ui: &mut Ui, labels: &[&str]) {
+    let widest = labels
+        .iter()
+        .map(|label| {
+            galley(
+                ui,
+                label,
+                size::BODY,
+                REGULAR,
+                Color32::PLACEHOLDER,
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0, f32::max);
+    ui.set_width((widest + MENU_ROW_INSET).ceil());
+}
+
 /// A menu row that opens a submenu holding `content`, lit while that submenu is open. Rows of the
 /// submenu are placed like the main menu's (`menu_scope`, at least `min_width` wide).
 pub fn menu_submenu<R>(
@@ -1754,12 +1775,25 @@ pub fn menu_picker(
     selected: usize,
     enabled: bool,
 ) -> Option<usize> {
-    let color = if enabled {
+    menu_picker_hinted(ui, width, labels, selected, enabled, "")
+}
+
+/// `menu_picker` that shows `hint`, quietly, while `selected` is not one of `labels`.
+pub fn menu_picker_hinted(
+    ui: &mut Ui,
+    width: f32,
+    labels: &[String],
+    selected: usize,
+    enabled: bool,
+    hint: &str,
+) -> Option<usize> {
+    let chosen_label = labels.get(selected).map(String::as_str);
+    let color = if enabled && chosen_label.is_some() {
         theme::text_primary()
     } else {
         theme::text_tertiary()
     };
-    let current = labels.get(selected).map_or("", String::as_str);
+    let current = chosen_label.unwrap_or(hint);
     let text = galley(ui, current, size::BODY, REGULAR, color, width - 30.0);
     let truncated = galley(ui, current, size::BODY, REGULAR, color, f32::INFINITY)
         .size()
@@ -1819,7 +1853,12 @@ pub fn menu_picker(
     if !open {
         ui.data_mut(|data| data.remove::<bool>(scrolled));
     }
-    let menu_width = menu_width_for(ui, labels, width);
+    // Measuring every label is for the open menu; a long list is not laid out every frame.
+    let menu_width = if open {
+        menu_width_for(ui, labels, width)
+    } else {
+        width
+    };
     let mut chosen = None;
     egui::Popup::menu(&response)
         .frame(menu_frame())

@@ -166,6 +166,10 @@ pub struct PreviewState {
     pub(super) input_values: InputValues,
     inputs_store: InputsStore,
     inputs_dirty_at: Option<Instant>,
+    /// The chart is waiting for a click on a candle, to stop the debugger at its bar.
+    picking_bar: bool,
+    /// The candle that was clicked (its open time, ms), until the debugger takes it.
+    picked_bar: Option<i64>,
     /// The picker asked to open Settings (Stocks need Alpaca keys).
     pending_settings: bool,
 }
@@ -233,8 +237,78 @@ impl PreviewState {
             input_values: InputValues::new(),
             inputs_store: InputsStore::open(inputs_path()),
             inputs_dirty_at: None,
+            picking_bar: false,
+            picked_bar: None,
             pending_settings: false,
         }
+    }
+
+    /// Waits for a click on a candle of the chart, in the debugger's colours.
+    pub fn begin_bar_pick(&mut self) {
+        self.picking_bar = true;
+        self.picked_bar = None;
+        self.card.set_pick_kind(crate::ui::PickKind::StopAtBar);
+    }
+
+    /// What a click on a candle does, without the chart: the same end state.
+    #[cfg(test)]
+    pub(crate) fn pick_for_test(&mut self, open_time_ms: i64) {
+        self.picked_bar = Some(open_time_ms);
+        self.cancel_bar_pick();
+    }
+
+    pub fn cancel_bar_pick(&mut self) {
+        self.picking_bar = false;
+        self.card.set_pick_kind(crate::ui::PickKind::default());
+    }
+
+    pub fn is_picking_bar(&self) -> bool {
+        self.picking_bar
+    }
+
+    /// The candle clicked since the last call, as its open time in milliseconds.
+    pub fn take_picked_bar(&mut self) -> Option<i64> {
+        self.picked_bar.take()
+    }
+
+    /// Stands in for the candles the preview would fetch.
+    #[cfg(test)]
+    pub(crate) fn set_candles_for_test(&mut self, candles: Vec<Kline>) {
+        self.candles = candles;
+    }
+
+    /// What the chart's bars are, cheaply: how many, and the first and last open times.
+    pub fn bar_key(&self) -> Option<(usize, i64, i64)> {
+        Some((
+            self.candles.len(),
+            self.candles.first()?.open_time,
+            self.candles.last()?.open_time,
+        ))
+    }
+
+    /// The open times of the chart's bars, oldest first.
+    pub fn bar_open_times(&self) -> Vec<i64> {
+        self.candles.iter().map(|bar| bar.open_time).collect()
+    }
+
+    /// The bars the preview chart shows, as a debugging session receives them: frozen, with the
+    /// symbol and inputs the script runs on now. `None` until the chart has candles.
+    pub fn debug_feed(&self, now_ms: i64, light: bool) -> Option<super::debug::DebugFeed> {
+        if self.candles.is_empty() {
+            return None;
+        }
+        Some(super::debug::DebugFeed {
+            bars: self.candles.clone(),
+            symbol: ChartCard::pine_symbol_info(&self.market.ticker, self.market.source),
+            inputs: self.input_values.clone(),
+            now_ms,
+            theme: if light {
+                crate::pine::program::ChartTheme::LIGHT
+            } else {
+                crate::pine::program::ChartTheme::DARK
+            },
+            label: format!("{} · {}", self.market.ticker, self.timeframe.label()),
+        })
     }
 
     /// Points the preview at another script; its source arrives through `source_changed`.
@@ -803,7 +877,7 @@ pub fn chart(
     let drawings: Vec<crate::model::Drawing> = Vec::new();
     let mut frame = DrawingFrame::new(&drawings, crate::model::Tool::default(), None, 1);
     let mut replay = ReplayChartFrame {
-        selecting: false,
+        selecting: preview.picking_bar,
         active: false,
         picked_ms: None,
     };
@@ -831,6 +905,14 @@ pub fn chart(
         &mut replay,
     );
     preview.candles = candles;
+    if preview.picking_bar {
+        if let Some(picked) = replay.picked_ms {
+            preview.picked_bar = Some(picked);
+            preview.cancel_bar_pick();
+        } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            preview.cancel_bar_pick();
+        }
+    }
 
     // The stale banner, over the top of the chart.
     if preview.stale {

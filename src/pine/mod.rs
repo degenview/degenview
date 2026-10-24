@@ -6,6 +6,8 @@ pub mod alert_call;
 pub mod alert_frequency;
 pub mod array_builtins;
 pub mod ast;
+#[cfg(test)]
+mod bench_tests;
 pub mod broker;
 pub mod builtin_types;
 pub mod builtins;
@@ -16,6 +18,7 @@ pub mod compiler;
 pub mod containers;
 #[cfg(feature = "corpus")]
 mod corpus_tests;
+pub mod debug;
 pub mod drawings;
 pub mod execution;
 pub mod fast_hash;

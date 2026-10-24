@@ -55,6 +55,13 @@ impl Parser {
         }
     }
 
+    /// Numbers this parser's call sites from `base` instead of 1, so expressions parsed apart from
+    /// the script (the debugger's watches) never share a call-site key with one of its calls.
+    pub fn with_call_site_base(mut self, base: usize) -> Self {
+        self.call_site = base;
+        self
+    }
+
     pub fn parse(&mut self) -> (Vec<Statement>, Vec<Diagnostic>) {
         let result = self.block(false);
         (result, std::mem::take(&mut self.diagnostics))

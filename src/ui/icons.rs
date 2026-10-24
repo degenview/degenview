@@ -221,6 +221,14 @@ pub enum Icon {
     SignpostTool,
     FlagTool,
     ImageTool,
+    /// The debugger's step commands, and the rest of its toolbar.
+    StepInto,
+    StepOver,
+    StepOut,
+    StepBar,
+    StopFill,
+    Restart,
+    Bug,
 }
 
 /// Stroke width on the 16 grid.
@@ -1916,6 +1924,47 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 p(13.6, 12.2),
             ]);
         }
+        Icon::StepInto => {
+            line(&[p(8.0, 2.2), p(8.0, 9.2)]);
+            line(&[p(4.8, 6.2), p(8.0, 9.4), p(11.2, 6.2)]);
+            circle(p(8.0, 13.0), 1.55, true);
+        }
+        Icon::StepOut => {
+            line(&[p(8.0, 9.4), p(8.0, 2.4)]);
+            line(&[p(4.8, 5.6), p(8.0, 2.4), p(11.2, 5.6)]);
+            circle(p(8.0, 13.0), 1.55, true);
+        }
+        Icon::StepOver => {
+            // An arc across the top to the far side, over a dot it does not stop at.
+            line(&arc(8.0, 9.0, 5.6, 180.0, 360.0));
+            line(&[p(11.8, 9.0), p(13.6, 10.9), p(15.4, 9.0)]);
+            circle(p(8.0, 13.0), 1.55, true);
+        }
+        Icon::StepBar => {
+            line(&[p(2.0, 8.0), p(9.4, 8.0)]);
+            line(&[p(6.6, 4.9), p(9.7, 8.0), p(6.6, 11.1)]);
+            painter.rect_filled(rect_of(p(11.8, 3.0), p(13.6, 13.0)), round(0.9), color);
+        }
+        Icon::StopFill => {
+            painter.rect_filled(rect_of(p(3.4, 3.4), p(12.6, 12.6)), round(1.6), color);
+        }
+        Icon::Restart => {
+            line(&arc(8.0, 8.0, 5.4, 30.0, 330.0));
+            line(&[p(13.5, 1.9), p(13.2, 5.0), p(10.0, 4.7)]);
+        }
+        Icon::Bug => {
+            // The classic: a round body with a head, six legs and two feelers.
+            circle(p(8.0, 9.4), 3.3, false);
+            line(&[p(8.0, 6.2), p(8.0, 12.7)]);
+            circle(p(8.0, 5.0), 1.5, false);
+            line(&[p(6.6, 3.6), p(5.2, 2.2)]);
+            line(&[p(9.4, 3.6), p(10.8, 2.2)]);
+            for (side, sign) in [(4.7, -1.0), (11.3, 1.0)] {
+                line(&[p(side, 8.2), p(8.0 + sign * 6.4, 6.8)]);
+                line(&[p(side - sign * 0.2, 9.8), p(8.0 + sign * 7.0, 9.8)]);
+                line(&[p(side, 11.4), p(8.0 + sign * 6.4, 13.0)]);
+            }
+        }
         Icon::Magnet => {
             // A horseshoe: one thick outline, and its two poles struck solid below a gap so the
             // tips read as the ends that pull.
@@ -2387,6 +2436,13 @@ mod tests {
             SignpostTool,
             FlagTool,
             ImageTool,
+            StepInto,
+            StepOver,
+            StepOut,
+            StepBar,
+            StopFill,
+            Restart,
+            Bug,
         ];
         for icon in all {
             let ctx = egui::Context::default();

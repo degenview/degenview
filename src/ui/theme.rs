@@ -201,6 +201,36 @@ pub fn editor_diff_added_background() -> Color32 {
 pub fn editor_diff_deleted_background() -> Color32 {
     with_alpha(editor_diff_deleted(), pick_alpha(0.16, 0.12))
 }
+/// The debugger's marks in the editor. A breakpoint is red, as everywhere; one that is switched off
+/// or cannot resolve is muted. The line the script is stopped on is amber, a caller's line (picked in
+/// the call stack) the same at a lower strength, and a failure red.
+pub fn editor_breakpoint() -> Color32 {
+    pick(
+        Color32::from_rgb(236, 90, 82),
+        Color32::from_rgb(207, 34, 46),
+    )
+}
+pub fn editor_breakpoint_muted() -> Color32 {
+    pick(
+        Color32::from_rgb(132, 134, 142),
+        Color32::from_rgb(150, 152, 160),
+    )
+}
+pub fn editor_debug_line() -> Color32 {
+    pick(
+        Color32::from_rgb(255, 196, 41),
+        Color32::from_rgb(184, 124, 0),
+    )
+}
+pub fn editor_debug_line_background() -> Color32 {
+    with_alpha(editor_debug_line(), pick_alpha(0.17, 0.2))
+}
+pub fn editor_debug_caller_background() -> Color32 {
+    with_alpha(editor_debug_line(), pick_alpha(0.08, 0.1))
+}
+pub fn editor_debug_error_background() -> Color32 {
+    with_alpha(editor_breakpoint(), pick_alpha(0.2, 0.14))
+}
 fn pick_alpha(dark: f32, light: f32) -> f32 {
     if is_light() { light } else { dark }
 }

@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod alloc_count;
 mod app;
 mod format;
 mod host;

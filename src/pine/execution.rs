@@ -99,6 +99,13 @@ impl ExecutionController {
         self
     }
 
+    /// Makes the run a debugging session: the script stops where the debugger says. Nothing else
+    /// installs the hooks, so a controller built without this runs the code it always did.
+    pub fn with_debugger(mut self, debug: super::debug::DebugRuntime) -> Self {
+        self.session.attach_debugger(debug);
+        self
+    }
+
     /// Fixes the bar length scripts read as `timeframe.in_seconds()`. A price-based chart's bars
     /// follow price, so it cannot be told from their times; the chart passes its source
     /// candles' length.
