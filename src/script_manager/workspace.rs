@@ -165,13 +165,14 @@ impl ScriptManager {
             let preview = &mut self.preview;
             let prefs = &mut self.prefs;
             let copied_at = &mut self.problems_copied;
+            let logs = &mut self.logs.view;
             split::show(
                 ui,
                 Id::new(("script-workspace", horizontal)),
                 spec,
                 &mut state,
                 |ui| editor_pane(ui, open, &cmds, &changed),
-                |ui| preview_pane(ui, preview, prefs, copied_at, &input, &cmds),
+                |ui| preview_pane(ui, preview, prefs, copied_at, &input, logs, &cmds),
             );
         }
         if horizontal {
@@ -214,6 +215,7 @@ fn preview_pane(
     prefs: &mut LayoutPrefs,
     copied_at: &mut Option<Instant>,
     input: &PreviewInput,
+    logs: &mut crate::ui::pine_logs_view::LogsState,
     cmds: &RefCell<Vec<Cmd>>,
 ) {
     let full = ui.max_rect();
@@ -276,6 +278,10 @@ fn preview_pane(
                     if let Some(diagnostic) = drawer::problems(ui, &problems, &mut at) {
                         cmds.borrow_mut().push(Cmd::Reveal(diagnostic));
                     }
+                }
+                DrawerTab::Logs => {
+                    let preview = preview.borrow();
+                    super::logs::tab(ui, &preview, logs, &input.name, cmds);
                 }
             }
         },

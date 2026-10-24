@@ -53,6 +53,8 @@ pub(super) struct ContextState {
     /// The chart a Table view or Object Tree shows, when open.
     pub(super) table_chart: Option<u64>,
     pub(super) tree_chart: Option<u64>,
+    /// The Pine logs pane: the chart it shows and what it keeps between frames.
+    pub(super) logs: super::pine_logs::PineLogsPane,
     /// A bulk indicator removal waiting for its confirmation.
     confirm_remove_indicators: Option<u64>,
     /// The template dialogs opened from the menu, and the chart they act on.
@@ -179,7 +181,7 @@ impl ChartWorkspace {
         self.charts.iter().position(|chart| chart.id == chart_id)
     }
 
-    fn replay_cut(&self) -> Option<i64> {
+    pub(super) fn replay_cut(&self) -> Option<i64> {
         if self.replay.is_active() {
             self.replay.current_ms()
         } else {
@@ -490,6 +492,7 @@ impl ChartWorkspace {
                     .set_pine_visual_order(instance, order);
             }
             Command::OpenScriptManager => actions.push(WorkspaceAction::OpenPineScripts),
+            Command::PineLogs(instance) => self.open_pine_logs(chart_id, Some(instance)),
             Command::EditAlert(id) => {
                 if let Some(alert) = self.context.alerts.iter().find(|alert| alert.id == id) {
                     self.alert_editor = Some(PriceAlertEditorState::new(
@@ -768,6 +771,14 @@ impl ChartWorkspace {
             if panel.is_some_and(|id| !self.charts.iter().any(|chart| chart.id == id)) {
                 *panel = None;
             }
+        }
+        if self
+            .context
+            .logs
+            .chart
+            .is_some_and(|id| !self.charts.iter().any(|chart| chart.id == id))
+        {
+            self.context.logs.chart = None;
         }
         let table = self.context.table_chart;
         let replay_ms = self.replay_cut();

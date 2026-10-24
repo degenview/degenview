@@ -9,6 +9,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use crate::model::Kline;
 
 use super::compiler::{self, LibraryResolver};
+use super::logs::LogBatch;
 use super::program::{BarEvent, BarPhase, InputValue, ScriptType, SymbolInfo, VisualOutput};
 use super::runtime_support::SecurityDataProvider;
 use super::session::{RunError, Session};
@@ -25,6 +26,9 @@ pub struct ExecutionUpdate {
     pub rebuilt: bool,
     /// False when the snapshot and visible range were identical to the prior update.
     pub changed: bool,
+    /// The `log.*()` messages written during this update; empty unless
+    /// [`ExecutionController::with_logs`] was asked for.
+    pub logs: LogBatch,
 }
 
 pub struct ExecutionController {
@@ -88,6 +92,13 @@ impl ExecutionController {
         self
     }
 
+    /// Keeps the messages of `log.*()` calls and hands them over with each update. Off by default:
+    /// a run nobody reads formats and keeps nothing.
+    pub fn with_logs(mut self) -> Self {
+        self.session.logs.enable();
+        self
+    }
+
     /// Fixes the bar length scripts read as `timeframe.in_seconds()`. A price-based chart's bars
     /// follow price, so it cannot be told from their times; the chart passes its source
     /// candles' length.
@@ -102,6 +113,7 @@ impl ExecutionController {
         visible_range: Option<(i64, i64)>,
         now_ms: i64,
     ) -> ExecutionUpdate {
+        self.session.logs.set_clock(now_ms);
         let live_bar_has_closed =
             self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
@@ -240,7 +252,7 @@ impl ExecutionController {
     }
 
     fn result(
-        &self,
+        &mut self,
         alerts: Vec<AlertEvent>,
         error: Option<Diagnostic>,
         rebuilt: bool,
@@ -252,6 +264,7 @@ impl ExecutionController {
             error,
             rebuilt,
             changed,
+            logs: self.session.logs.take(),
         }
     }
 }

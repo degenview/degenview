@@ -528,6 +528,17 @@ impl ChartCard {
                 main_visible,
             );
         }
+        if decor.time_lock {
+            self.draw_bar_marker(
+                painter,
+                &projection,
+                plot,
+                rect,
+                &layout.pane_rects,
+                style,
+                main_visible,
+            );
+        }
         if let Some(crosshair) = decor.crosshair {
             self.draw_crosshair(
                 painter,

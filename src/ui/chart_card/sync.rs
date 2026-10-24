@@ -44,7 +44,7 @@ impl ChartCard {
     /// Remembers the viewport as the frame's input starts from, once live bars have been
     /// accounted for: a bar arriving is not navigation.
     pub(super) fn begin_sync_frame(&mut self) {
-        self.sync_baseline = Some(self.viewport.horizontal);
+        self.sync_baseline = Some(self.scroll_from.take().unwrap_or(self.viewport.horizontal));
     }
 
     /// What the user's navigation did to the horizontal viewport this frame, if anything the

@@ -153,6 +153,9 @@ behavior.
 - Cursor time lock, the Table view feed and the alert lines are card state that is never saved and
   never part of a template or linked navigation. Table and Object Tree read the bars and state the
   chart already draws; the tree is a view over the drawings, indicators and scripts, not a store.
+- The Pine logs pane is the same kind of view: it reads `ChartCard::pine_logs` (the run's messages,
+  never saved, never in a template) and is dropped with its chart. Only its level and search
+  options persist, as the local `pineLogs.prefs` setting.
 - Undo is one typed stack (`Snapshot`): drawings, or indicators and scripts. Bulk changes are one
   `apply_drawing_commands` batch or one `remember_indicators` entry. See
   [chart context menus](../chart-context-menu.md).

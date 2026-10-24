@@ -7,6 +7,10 @@
 - Unsupported behavior is never silent. Stand-ins emit `ignored_features` warnings
   (`PINE7001`–`PINE7006`) and live in `misc_builtins`; object results or feeds without a stand-in
   remain `PINE9003` errors.
+- `log.*()` messages go to `Session.logs`, never into `RuntimeState` (rollback would discard them).
+  Capture is opt-in (`ExecutionController::with_logs`); a reader applies `LogBatch`es in order
+  through `LogHistory`. Keep the limits in `pine::logs` and read [Pine Logs](../pine-logs.md) before
+  changing them.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

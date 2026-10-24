@@ -110,6 +110,30 @@ page was cut by the request, so a bar is never split across two pages.
 
 There is no loading indicator; the view does not move while a page loads.
 
+## Scrolling to a bar
+
+`ChartCard::scroll_to_time(time_ms, candles)` puts the bar holding a time in the middle of the view
+(`right_offset = bars after it - visible / 2`, clamped like any pan) and marks it. A time past the
+newest bar means the newest; a time before the oldest bar held goes to the oldest bar and reports
+`Scrolled::BeforeHistory`. It only moves the viewport: no script reruns, no drawing changes, and
+linked charts follow through the usual time-range sync. The Pine logs pane's "Scroll to bar" calls
+it with the bar the message was written on (`LogEvent::bar_time_ms`), over the replay-cut candles
+while a replay runs.
+
+A bar older than the candles held is not paged for: loading older history makes the script run
+from scratch, which would clear the very messages being browsed. The chart goes to its oldest bar
+and says so; scrolling back from there loads history as usual.
+
+On a price-based type (Renko, Kagi, Line break, Point & figure) the bars are the constructed ones,
+which is also where scripts run and write their messages, so the scroll is over those. The scroll is
+made outside a frame, so the card remembers where the view was (`scroll_from`) and the next frame
+measures the change from there: that is how linked charts follow it.
+
+The marker (`chart_card/bar_marker.rs`) is a vertical line with a tag at the time axis, in the accent
+colour, for five seconds. Its label is the date for a daily or longer timeframe and the date and
+time below. Like the locked cursor line it is view state, drawn by `paint_frame` and never saved,
+never a drawing, never in a template. Not verified in a real window.
+
 ## Pine and indicators
 
 Panning re-projects cached output; indicators are computed over the full series and sliced to the

@@ -12,6 +12,7 @@ use std::sync::Arc;
 use super::array_builtins;
 use super::ast::{Argument, Expression, Statement};
 use super::calendar;
+use super::logs::LogRequest;
 use super::runtime_support::{ChartSpan, SecurityDataProvider, SecurityKey};
 use super::runtime_types::{BarFlags, RuntimeContext};
 use super::runtime_value::{RefKind, RuntimeValue};
@@ -29,6 +30,8 @@ const SECURITY_NESTING_LIMIT: usize = 3;
 /// One `request.security` call's resolved arguments. `foreign` holds another symbol's series; it is
 /// None for the chart's own symbol.
 struct SecurityRequest {
+    /// The symbol asked for, as the script wrote it (empty for the chart's own).
+    symbol: String,
     interval: f64,
     expression: Expression,
     lookahead_on: bool,
@@ -216,6 +219,7 @@ impl Session {
         {
             intrabars = Some(self.serve_security(
                 &SecurityRequest {
+                    symbol: String::new(),
                     interval: seconds,
                     expression: expression.clone(),
                     lookahead_on: false,
@@ -333,6 +337,11 @@ impl Session {
             None
         };
         Ok(Some(SecurityRequest {
+            symbol: if is_chart_symbol {
+                String::new()
+            } else {
+                symbol_name
+            },
             interval,
             expression,
             lookahead_on: values.get("lookahead").and_then(RuntimeValue::text_value)
@@ -636,6 +645,7 @@ impl Session {
             }
         }
         let request = SecurityRequest {
+            symbol: String::new(),
             interval,
             expression: expression.clone(),
             lookahead_on: false,
@@ -725,7 +735,17 @@ impl Session {
             is_last_confirmed_history: false,
         };
         let mut security_context = RuntimeContext::new(candle.clone(), flags);
+        let requested = LogRequest {
+            symbol: if request.symbol.is_empty() {
+                self.symbol.ticker_id.clone()
+            } else {
+                request.symbol.clone()
+            },
+            interval_seconds: request.interval,
+        };
+        self.logs.enter_request(requested, candle.open_time, commit);
         let evaluated = self.eval(&request.expression, &mut security_context);
+        self.logs.leave_request();
         // A returned collection or object lives in the site's state; the chart gets a copy of its own.
         let value = evaluated
             .map(|evaluated| ReferenceExport::new(&self.working).export(evaluated, &mut chart));

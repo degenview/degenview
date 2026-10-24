@@ -180,6 +180,7 @@ fn icon_for(item: &Item) -> Option<Icon> {
         | Command::DeleteAlert(_) => Icon::Trash,
         Command::OpenSettings | Command::PaneSettings(_) => Icon::Sliders,
         Command::EditAlert(_) => Icon::Pencil,
+        Command::PineLogs(_) => Icon::DocText,
         Command::CancelOrder(_) | Command::ClosePosition(_) => Icon::Xmark,
         _ => return None,
     })

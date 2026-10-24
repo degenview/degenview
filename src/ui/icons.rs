@@ -96,6 +96,11 @@ pub enum Icon {
     Trash,
     BellSlash,
     PauseCircle,
+    PlayCircle,
+    /// `</>`: the source of something.
+    Code,
+    /// An arrow into a vertical bar: bring that bar into view.
+    ScrollToBar,
     CheckCircle,
     ClockBadge,
     LineDiagonal,
@@ -957,6 +962,20 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(8.0, 8.0), 6.6, false);
             line(&[p(6.4, 5.4), p(6.4, 10.6)]);
             line(&[p(9.6, 5.4), p(9.6, 10.6)]);
+        }
+        Icon::PlayCircle => {
+            circle(p(8.0, 8.0), 6.6, false);
+            fill_poly(vec![p(6.5, 5.2), p(11.2, 8.0), p(6.5, 10.8)]);
+        }
+        Icon::Code => {
+            line(&[p(5.6, 3.8), p(1.8, 8.0), p(5.6, 12.2)]);
+            line(&[p(10.4, 3.8), p(14.2, 8.0), p(10.4, 12.2)]);
+            line(&[p(9.2, 2.8), p(6.8, 13.2)]);
+        }
+        Icon::ScrollToBar => {
+            line(&[p(13.2, 2.6), p(13.2, 13.4)]);
+            line(&[p(2.0, 8.0), p(10.4, 8.0)]);
+            line(&[p(7.4, 5.0), p(10.4, 8.0), p(7.4, 11.0)]);
         }
         Icon::CheckCircle => {
             circle(p(8.0, 8.0), 6.6, false);
@@ -2247,6 +2266,9 @@ mod tests {
             Trash,
             BellSlash,
             PauseCircle,
+            PlayCircle,
+            Code,
+            ScrollToBar,
             CheckCircle,
             ClockBadge,
             LineDiagonal,

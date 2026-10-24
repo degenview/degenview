@@ -13,6 +13,7 @@ use crate::model::{
     PmSeries, PriceFormat, Timeframe,
 };
 use crate::pine::execution::ExecutionController;
+use crate::pine::logs::{LogBatch, LogHistory};
 use crate::pine::program::ChartTheme;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
@@ -324,6 +325,12 @@ pub struct ChartCard {
     preview_inputs: HashMap<String, InputValue>,
     /// What each instance's last run produced, by instance id.
     runs: HashMap<u64, Run>,
+    /// Counts the runs this card started, so each gets an epoch of its own: an instance id is
+    /// reused once its script is removed, a run is never.
+    run_epochs: u64,
+    /// The instances whose realtime messages are not kept (the pane's Disable logging). The script
+    /// keeps running; only what it writes from now on is left out.
+    logging_paused: HashSet<u64>,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
     /// the construction change. Restyling never rebuilds it.
     constructed: Option<Arc<ConstructedSeries>>,
@@ -339,6 +346,11 @@ pub struct ChartCard {
     /// The time a vertical cursor line is locked at (context menu). View state, not saved: it is
     /// not a drawing, and it follows neither templates nor linked charts.
     time_lock: Option<i64>,
+    /// The bar "Scroll to bar" went to and when: a marker shown for a few seconds. View state.
+    bar_marker: Option<(i64, std::time::Instant)>,
+    /// Where the view was before a scroll the workspace made outside a frame, until the next frame
+    /// measures the change for linked charts.
+    scroll_from: Option<crate::model::viewport::HorizontalViewport>,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
     table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
@@ -373,7 +385,7 @@ struct ConstructedSeries {
 }
 
 /// The instance the Script Manager's single-script preview chart runs.
-const PREVIEW_INSTANCE: u64 = 0;
+pub const PREVIEW_INSTANCE: u64 = 0;
 
 /// One instance's last run, cached so the card does not recompile every frame.
 struct Run {
@@ -386,6 +398,11 @@ struct Run {
     worker: PineWorker,
     requested: Option<RunRevision>,
     generation: u64,
+    /// Which run of this card this is; a restart (new source, inputs, symbol) is a new epoch.
+    epoch: u64,
+    /// The `log.*()` messages the run wrote. They belong to the run, not to an output generation:
+    /// a result whose output went stale still carries messages nothing else will deliver.
+    logs: LogHistory,
     /// Whether `output.overlay` came from a compiled script (or from a previous valid run). Until
     /// then the default output must not claim a pane: `VisualOutput::default()` is non-overlay.
     placement_known: bool,
@@ -419,6 +436,7 @@ struct WorkerResult {
     generation: u64,
     output: VisualOutput,
     error: Option<Diagnostic>,
+    logs: LogBatch,
     /// The controller compiled the declaration, so `output.overlay` is authoritative even when
     /// execution stopped with a runtime error.
     placement_known: bool,
@@ -538,7 +556,7 @@ impl PineWorker {
                         Some(Arc::clone(&cancellation)),
                     ) {
                         Ok(controller) => {
-                            let controller = controller.with_theme(config.theme);
+                            let controller = controller.with_theme(config.theme).with_logs();
                             WorkerEngine::Ready(Box::new(match config.bar_seconds {
                                 Some(seconds) => controller.with_bar_seconds(seconds),
                                 None => controller,
@@ -556,6 +574,7 @@ impl PineWorker {
                             generation: request.generation,
                             output: update.output,
                             error: update.error,
+                            logs: update.logs,
                             placement_known: true,
                         }
                     }
@@ -563,6 +582,7 @@ impl PineWorker {
                         generation: request.generation,
                         output: VisualOutput::default(),
                         error: Some(error.clone()),
+                        logs: LogBatch::default(),
                         placement_known: false,
                     },
                     WorkerEngine::Uninitialized(_) => unreachable!(),
@@ -594,6 +614,13 @@ impl Drop for PineWorker {
     }
 }
 
+/// One run's `log.*()` messages. The epoch tells a restarted run from the one before it, which
+/// the instance id cannot.
+pub struct PineLogs<'a> {
+    pub epoch: u64,
+    pub history: &'a LogHistory,
+}
+
 /// How one instance is doing, for the chart settings' Scripts tab.
 pub struct InstanceStatus<'a> {
     pub output: &'a VisualOutput,
@@ -622,12 +649,16 @@ impl Default for ChartCard {
             instances: Vec::new(),
             preview_inputs: HashMap::new(),
             runs: HashMap::new(),
+            run_epochs: 0,
+            logging_paused: HashSet::new(),
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
             maximized_pane: None,
             pane_ids: Vec::new(),
             time_lock: None,
+            bar_marker: None,
+            scroll_from: None,
             table_wanted: false,
             table_feed: None,
             table_stamp: 0,
@@ -914,6 +945,7 @@ impl ChartCard {
     pub fn set_pine_instances(&mut self, instances: Vec<PineInstance>) {
         self.instances = instances;
         self.runs.clear();
+        self.logging_paused.clear();
     }
 
     /// Applies a script to the chart, after the ones already there. Returns the new instance's id.
@@ -937,6 +969,7 @@ impl ChartCard {
     pub fn remove_pine_instance(&mut self, id: u64) {
         self.instances.retain(|instance| instance.id != id);
         self.runs.remove(&id);
+        self.logging_paused.remove(&id);
     }
 
     /// Moves an instance to `index` (clamped); draw order follows list order.
@@ -983,6 +1016,35 @@ impl ChartCard {
     pub fn set_pine_instance_inputs(&mut self, id: u64, inputs: &HashMap<String, InputValue>) {
         if let Some(instance) = self.instances.iter_mut().find(|i| i.id == id) {
             instance.set_input_values(inputs);
+        }
+    }
+
+    /// The messages an instance's script wrote with `log.*()` in its current run.
+    pub fn pine_logs(&self, id: u64) -> Option<PineLogs<'_>> {
+        self.runs.get(&id).map(|run| PineLogs {
+            epoch: run.epoch,
+            history: &run.logs,
+        })
+    }
+
+    /// Forgets the messages kept for an instance's run. The run goes on and writes more.
+    pub fn clear_pine_logs(&mut self, id: u64) {
+        if let Some(run) = self.runs.get_mut(&id) {
+            run.logs.clear();
+        }
+    }
+
+    /// Whether an instance keeps the messages it writes in realtime.
+    pub fn pine_logging(&self, id: u64) -> bool {
+        !self.logging_paused.contains(&id)
+    }
+
+    /// Turns the keeping of an instance's realtime messages on or off. Messages already kept stay.
+    pub fn set_pine_logging(&mut self, id: u64, enabled: bool) {
+        if enabled {
+            self.logging_paused.remove(&id);
+        } else {
+            self.logging_paused.insert(id);
         }
     }
 
@@ -1090,6 +1152,8 @@ impl ChartCard {
                     && run.theme == chart_theme
             });
             if !configured {
+                self.run_epochs += 1;
+                let epoch = self.run_epochs;
                 let previous_valid = self
                     .runs
                     .remove(&instance.id)
@@ -1116,6 +1180,8 @@ impl ChartCard {
                         ),
                         requested: None,
                         generation: 0,
+                        epoch,
+                        logs: LogHistory::default(),
                         placement_known,
                         styled: Arc::clone(&shown),
                         styled_with: None,
@@ -1127,6 +1193,11 @@ impl ChartCard {
             }
             if let Some(run) = self.runs.get_mut(&instance.id) {
                 while let Ok(result) = run.worker.results.try_recv() {
+                    let mut batch = result.logs;
+                    if self.logging_paused.contains(&instance.id) {
+                        batch.events.retain(|event| !event.realtime);
+                    }
+                    run.logs.apply(batch);
                     if result.generation != run.generation {
                         continue;
                     }
@@ -3008,6 +3079,7 @@ fn translucent(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
+mod bar_marker;
 mod body;
 mod context;
 mod frame;
@@ -3016,6 +3088,7 @@ mod navigation;
 mod snapshot;
 mod sync;
 mod table;
+pub use bar_marker::Scrolled;
 mod time_lock;
 
 #[cfg(test)]

@@ -410,6 +410,10 @@ fn a_script_pane_menu_acts_on_its_instance() {
     });
     let menu = menu(&pane, &facts);
     assert!(find(&menu, &Command::PaneSettings(4)).is_some());
+    assert_eq!(
+        find(&menu, &Command::PineLogs(4)).unwrap().label,
+        "Pine logs"
+    );
     assert_eq!(find(&menu, &Command::PaneToggle(4)).unwrap().label, "Hide");
     let remove = find(&menu, &Command::PaneRemove(4)).unwrap();
     assert!(remove.destructive);

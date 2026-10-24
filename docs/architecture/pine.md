@@ -4,7 +4,8 @@
 source → Lexer → Parser → Compiler → CompiledProgram → Session
                            ▲                         ├→ VisualOutput
                     LibraryRegistry                ├→ strategy Broker
-                                                   └→ alert events
+                                                   ├→ alert events
+                                                   └→ log messages (LogBatch)
 ```
 
 The compiler folds constants, collects inputs, validates structure/types, and links libraries.

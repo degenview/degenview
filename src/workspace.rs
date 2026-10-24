@@ -53,6 +53,7 @@ mod links;
 mod live;
 mod paper;
 mod pine;
+mod pine_logs;
 mod replay;
 mod settings;
 mod snapshot;
@@ -74,6 +75,8 @@ pub enum WorkspaceAction {
     OpenPortfolio,
     /// Open the Script Manager tab.
     OpenPineScripts,
+    /// Open the Script Manager on the source of a Pine logs message.
+    OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     OpenAlerts,
     /// The price-alert sheet's Save: queue the alert for the runtime. `baseline` is the price
     /// the sheet last showed.
@@ -638,6 +641,19 @@ impl ChartWorkspace {
                 )
                 .show(ui, |ui| self.show_tree_panel(ui));
         }
+        if self.context.logs.chart.is_some() {
+            egui::Panel::right(egui::Id::new(("pine_logs", self.id)))
+                .resizable(true)
+                .default_size(320.0)
+                .min_size(240.0)
+                .max_size(640.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui::theme::chrome())
+                        .inner_margin(egui::Margin::ZERO),
+                )
+                .show(ui, |ui| self.show_logs_panel(ui));
+        }
         if self.context.table_chart.is_some() {
             egui::Panel::bottom(egui::Id::new(("chart_table", self.id)))
                 .resizable(true)
@@ -724,6 +740,7 @@ impl ChartWorkspace {
         }
         actions.extend(self.show_alert_editor(&ctx));
         actions.extend(self.show_context_ui(&ctx, paper_host));
+        actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();
             if let Some(replay_date_sheet::ReplayDateSheetResult::Start(ms)) =

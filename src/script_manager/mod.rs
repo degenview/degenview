@@ -16,6 +16,7 @@ pub mod edit_ops;
 pub mod editor;
 mod find;
 pub mod inputs;
+mod logs;
 pub mod model;
 pub mod name;
 pub mod prefs;
@@ -116,6 +117,8 @@ pub(crate) enum Cmd {
     SetChartPosition(ChartPosition),
     SetDrawerTab(DrawerTab),
     ToggleDrawer,
+    /// Something chosen in the Logs tab.
+    Logs(crate::ui::pine_logs_view::LogsAction),
     OpenAlpacaSettings,
 }
 
@@ -177,6 +180,8 @@ pub struct ScriptManager {
     pub(crate) error: Option<String>,
     pub(crate) cmds: Vec<Cmd>,
     pub(crate) preview: workspace::PreviewState,
+    /// The Logs tab's state.
+    logs: logs::LogsPane,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<ScriptManagerAction>,
     export_rx: Option<Receiver<(ScriptId, Option<PathBuf>)>>,
@@ -196,6 +201,7 @@ impl ScriptManager {
         Self {
             id,
             preview: workspace::PreviewState::load(&shared),
+            logs: logs::LogsPane::load(&shared),
             shared,
             script_store,
             scripts: Vec::new(),
@@ -425,6 +431,7 @@ impl ScriptManager {
 
         self.sheets_ui(&ctx);
         self.apply_cmds(&ctx);
+        self.save_logs_prefs();
         self.end_frame(&ctx);
         std::mem::take(&mut self.actions)
     }
@@ -684,6 +691,54 @@ impl ScriptManager {
         }
     }
 
+    /// Opens the script (or library) a Pine logs message was written by and puts the caret on the
+    /// call. A script that was edited since the message was written is opened all the same, with a
+    /// note that the line may have moved; one that is gone is told so and nothing else changes.
+    pub(crate) fn reveal_source(&mut self, target: &crate::model::pine_logs_view::SourceTarget) {
+        let Some(scripts) = self.with_store(|store| store.all_scripts()) else {
+            return;
+        };
+        let found = match (&target.script_id, &target.library) {
+            (Some(id), _) => scripts.iter().find(|script| &script.id == id),
+            (None, Some(name)) => scripts.iter().find(|script| {
+                script.script_type == ScriptType::Library
+                    && (&script.name == name
+                        || registry::title_of(&script.source).as_ref() == Some(name))
+            }),
+            (None, None) => None,
+        };
+        let Some(script) = found else {
+            self.error = Some(match &target.library {
+                Some(name) => format!("The library “{name}” is not in the Script Manager."),
+                None => "That script is no longer in the Script Manager.".to_owned(),
+            });
+            return;
+        };
+        let changed = target
+            .ran_source
+            .as_ref()
+            .is_some_and(|ran| *ran != script.source);
+        let id = script.id.clone();
+        self.renaming = None;
+        self.selected_row = Some(RowKey {
+            group: group_of(script),
+            id: id.clone(),
+        });
+        // A script already in the editor stays as it is, with its caret and undo history.
+        if self.open.as_ref().map(|open| open.id.as_str()) != Some(id.as_str()) {
+            self.open_script(&id);
+        }
+        if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+            open.editor.reveal_offset(target.offset);
+        }
+        if changed {
+            self.error = Some(
+                "This script was edited after that message was written, so the line may have moved."
+                    .to_owned(),
+            );
+        }
+    }
+
     pub(crate) fn open_script(&mut self, id: &str) {
         self.flush_draft();
         let Some((script, draft)) = self.with_store(|store| {
@@ -880,6 +935,7 @@ impl ScriptManager {
                 self.prefs.drawer_open = true;
             }
             Cmd::ToggleDrawer => self.prefs.drawer_open = !self.prefs.drawer_open,
+            Cmd::Logs(action) => self.apply_logs_action(action),
             Cmd::OpenAlpacaSettings => self.actions.push(ScriptManagerAction::OpenAlpacaSettings),
         }
         let _ = ctx;
@@ -1378,7 +1434,7 @@ mod tests {
             manager.prefs.chart_position = position;
             frame(&mut manager);
         }
-        for tab in [DrawerTab::Inputs, DrawerTab::Report, DrawerTab::Problems] {
+        for tab in DrawerTab::ALL {
             manager.cmds.push(Cmd::SetDrawerTab(tab));
             frame(&mut manager);
         }
@@ -1391,6 +1447,173 @@ mod tests {
         manager.sheet = None;
         manager.error = Some("boom".into());
         frame(&mut manager);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn target(
+        script_id: Option<&str>,
+        library: Option<&str>,
+        ran_source: Option<&str>,
+    ) -> crate::model::pine_logs_view::SourceTarget {
+        crate::model::pine_logs_view::SourceTarget {
+            script_id: script_id.map(str::to_owned),
+            library: library.map(str::to_owned),
+            offset: 17,
+            ran_source: ran_source.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn an_unknown_log_function_fails_the_editors_compile_not_just_the_run() {
+        let source = "//@version=6\r\nindicator(\"T\")\r\n\r\nlog.hi(\"hiii\")\r\n";
+        let mut editor = EditorState::new("id", source, source);
+        compile_into(&mut editor);
+        assert_eq!(editor.status, CompileStatus::Error);
+        let problem = editor
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "PINE3051")
+            .expect("log.hi is not a function")
+            .clone();
+        assert_eq!(
+            (problem.range.start.line, problem.range.start.column),
+            (4, 1)
+        );
+        // Revealing it puts the caret on the call, though the editor's text holds the CRs.
+        editor.reveal(&problem);
+        let index = syntax::compiled_utf16_to_char_index(
+            &editor.source,
+            editor.pending_jump().expect("a jump"),
+        );
+        assert!(
+            editor
+                .source
+                .chars()
+                .skip(index)
+                .collect::<String>()
+                .starts_with("log.hi")
+        );
+    }
+
+    #[test]
+    fn a_logged_call_opens_its_script_with_the_caret_on_it() {
+        let (mut manager, root) = manager("reveal");
+        manager.first_load();
+        let script = manager.scripts[1].clone();
+        manager.reveal_source(&target(Some(&script.id), None, Some(&script.source)));
+        let open = manager.open.as_ref().expect("the script is open");
+        assert_eq!(open.id, script.id);
+        assert_eq!(open.editor.pending_jump(), Some(17));
+        assert!(manager.error.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_fresh_manager_survives_its_first_load_with_the_script_open_and_selected() {
+        // The scripts are on disk from an earlier session; the Script Manager tab does not exist
+        // yet when "Source code" is chosen, so the app opens it and asks before its first frame.
+        let (mut seeded, root) = manager("reveal-fresh");
+        seeded.first_load();
+        let script = seeded.scripts[1].clone();
+        let shared: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let store = ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"));
+        let mut fresh = ScriptManager::with_script_store(2, shared, Some(store));
+        assert!(!fresh.loaded);
+        fresh.reveal_source(&target(Some(&script.id), None, Some(&script.source)));
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                fresh.ui(ui, None);
+            });
+            output.textures_delta.clear();
+        }
+        assert!(fresh.loaded);
+        assert_eq!(
+            fresh.open.as_ref().map(|o| o.id.clone()),
+            Some(script.id.clone())
+        );
+        assert_eq!(
+            fresh.selected_row.as_ref().map(|row| row.id.clone()),
+            Some(script.id)
+        );
+        assert!(fresh.error.is_none());
+        // The editor took the caret request when it drew.
+        assert_eq!(fresh.open.as_ref().unwrap().editor.pending_jump(), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_already_in_the_editor_keeps_its_unsaved_text_and_history() {
+        let (mut manager, root, id) = edited("reveal-open");
+        let before = manager.open.as_ref().unwrap().editor.source.clone();
+        assert!(before.ends_with("// edited\n"));
+        manager.reveal_source(&target(Some(&id), None, None));
+        let open = manager.open.as_ref().unwrap();
+        assert_eq!(open.editor.source, before);
+        assert_eq!(open.editor.pending_jump(), Some(17));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_edited_since_the_message_still_opens_with_a_note() {
+        let (mut manager, root) = manager("reveal-changed");
+        manager.first_load();
+        let script = manager.scripts[1].clone();
+        manager.reveal_source(&target(Some(&script.id), None, Some("// what ran then\n")));
+        assert_eq!(manager.open.as_ref().map(|o| o.id.clone()), Some(script.id));
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("edited"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_that_is_gone_changes_nothing_and_says_so() {
+        let (mut manager, root) = manager("reveal-gone");
+        manager.first_load();
+        let before = manager.open.as_ref().map(|o| o.id.clone());
+        manager.reveal_source(&target(Some("no-such-script"), None, None));
+        assert_eq!(manager.open.as_ref().map(|o| o.id.clone()), before);
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("no longer"))
+        );
+        manager.error = None;
+        manager.reveal_source(&target(None, Some("Nope"), None));
+        assert!(
+            manager
+                .error
+                .as_deref()
+                .is_some_and(|note| note.contains("library “Nope”"))
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_library_call_opens_the_library_by_name() {
+        let (mut manager, root) = manager("reveal-library");
+        manager.first_load();
+        let library = manager
+            .with_store(|store| {
+                store.create(
+                    "Dbg",
+                    ScriptType::Library,
+                    Some("//@version=6\nlibrary(\"Dbg\")\nexport f(float x) => x\n"),
+                    false,
+                )
+            })
+            .expect("a library");
+        manager.reveal_source(&target(None, Some("Dbg"), None));
+        let open = manager.open.as_ref().expect("the library is open");
+        assert_eq!(open.id, library.id);
+        assert_eq!(open.editor.pending_jump(), Some(17));
+        assert!(manager.error.is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

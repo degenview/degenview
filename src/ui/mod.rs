@@ -48,6 +48,7 @@ mod pattern_geometry;
 pub mod pine_alert_editor;
 pub mod pine_chart_render;
 pub mod pine_geometry;
+pub mod pine_logs_view;
 pub mod pine_report;
 pub mod pine_settings_popover;
 pub mod pine_style_view;
@@ -103,9 +104,12 @@ pub mod workspace_toolbar;
 
 pub use alert_lines::AlertMove;
 pub use chart_card::ContextRequest;
+pub use chart_card::PREVIEW_INSTANCE;
 pub use chart_card::SnapshotInput;
 pub use chart_card::supports_alerts;
 pub use chart_card::take_table_cell_selected;
-pub use chart_card::{ChartCard, ChartCardAction, CrosshairInfo, SeriesLine, WatchlistMembership};
+pub use chart_card::{
+    ChartCard, ChartCardAction, CrosshairInfo, PineLogs, Scrolled, SeriesLine, WatchlistMembership,
+};
 pub use drawing_layer::{DrawingFrame, LinkRequest};
 pub use replay_overlay::ReplayChartFrame;

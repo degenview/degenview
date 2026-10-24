@@ -1,4 +1,4 @@
-//! The preview pane's drawer: the always-visible tab bar (Inputs / Report / Problems) and the
+//! The preview pane's drawer: the always-visible tab bar (Inputs / Report / Problems / Logs) and the
 //! tab content. Ported from `ScriptPreviewDrawer`, `ScriptPreviewDrawerBar` and
 //! `PineDiagnosticsListView`.
 
@@ -18,13 +18,14 @@ use std::time::{Duration, Instant};
 pub const BAR_HEIGHT: f32 = super::bottom_bar::HEIGHT;
 
 impl DrawerTab {
-    pub const ALL: [Self; 3] = [Self::Inputs, Self::Report, Self::Problems];
+    pub const ALL: [Self; 4] = [Self::Inputs, Self::Report, Self::Problems, Self::Logs];
 
     pub fn title(self) -> &'static str {
         match self {
             Self::Inputs => "Inputs",
             Self::Report => "Report",
             Self::Problems => "Problems",
+            Self::Logs => "Logs",
         }
     }
 
@@ -33,6 +34,7 @@ impl DrawerTab {
             Self::Inputs => Icon::Sliders,
             Self::Report => Icon::ChartUptrend,
             Self::Problems => Icon::Triangle,
+            Self::Logs => Icon::DocText,
         }
     }
 }

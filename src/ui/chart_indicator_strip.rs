@@ -26,6 +26,8 @@ pub enum Action {
     ConfigureScript(u64, Rect),
     OpenIndicatorSettings,
     OpenScriptSettings,
+    /// Open the Pine logs pane on a script.
+    OpenPineLogs(u64),
 }
 
 struct Item {
@@ -637,6 +639,10 @@ fn item_menu(
         Kind::Script(id) => {
             if kit::menu_item(ui, Icon::Sliders, "Settings…", true, false) {
                 *action = Some(Action::ConfigureScript(id, chip));
+                ui.close();
+            }
+            if kit::menu_item(ui, Icon::DocText, "Pine logs", true, false) {
+                *action = Some(Action::OpenPineLogs(id));
                 ui.close();
             }
         }
