@@ -23,7 +23,13 @@ pub enum Tool {
     FibExtension,
     FibChannel,
     FibTimeZone,
+    FibSpeedFan,
     FibTrendTime,
+    FibCircles,
+    FibSpiral,
+    FibSpeedArcs,
+    FibWedge,
+    Pitchfan,
     Brush,
     Ruler,
     Highlighter,
@@ -331,12 +337,18 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 76] = [
+    pub const GROUPED: [Self; 82] = [
         Self::FibRetracement,
         Self::FibExtension,
         Self::FibChannel,
         Self::FibTimeZone,
+        Self::FibSpeedFan,
         Self::FibTrendTime,
+        Self::FibCircles,
+        Self::FibSpiral,
+        Self::FibSpeedArcs,
+        Self::FibWedge,
+        Self::Pitchfan,
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -599,7 +611,28 @@ impl Tool {
                 fib_levels.with(Caps::EXTEND),
             ),
             Self::FibTimeZone => spec("Fib time zone", Fibonacci, Points(2), fib_levels),
+            Self::FibSpeedFan => spec(
+                "Fib speed resistance fan",
+                Fibonacci,
+                Points(2),
+                Caps::FILL.with(Caps::FIB),
+            ),
             Self::FibTrendTime => spec("Trend-based fib time", Fibonacci, Points(3), fib_levels),
+            Self::FibCircles => spec("Fib circles", Fibonacci, Points(2), fib_levels),
+            Self::FibSpiral => spec(
+                "Fib spiral",
+                Fibonacci,
+                Points(2),
+                Caps::LINE.with(Caps::FIB),
+            ),
+            Self::FibSpeedArcs => spec(
+                "Fib speed resistance arcs",
+                Fibonacci,
+                Points(2),
+                fib_levels,
+            ),
+            Self::FibWedge => spec("Fib wedge", Fibonacci, Points(3), fib_levels),
+            Self::Pitchfan => spec("Pitchfan", Fibonacci, Points(3), fib_levels),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
             Self::Highlighter => spec("Highlighter", Brushes, Freehand, Caps::STROKE),
@@ -1067,9 +1100,23 @@ impl Tool {
                 style.text.size = 12.0;
                 style
             }
-            Self::FibRetracement | Self::FibExtension | Self::FibTrendTime => {
-                fib_style(self, [120, 123, 134, 255], LineDash::Dashed)
+            Self::FibRetracement
+            | Self::FibExtension
+            | Self::FibTrendTime
+            | Self::FibCircles
+            | Self::FibSpeedArcs => fib_style(self, [120, 123, 134, 255], LineDash::Dashed),
+            // The fan draws no line of its own: each ray has the look of its level.
+            Self::FibSpeedFan => fib_style(self, [120, 123, 134, 255], LineDash::Solid),
+            Self::FibSpiral => {
+                // The library's spiral: a 1 px turquoise line and nothing else.
+                let mut style = fib_style(self, [0, 188, 212, 255], LineDash::Solid);
+                style.stroke.width = 1.0;
+                style.fill.enabled = false;
+                style
             }
+            Self::FibWedge => fib_style(self, [128, 128, 128, 255], LineDash::Solid),
+            // The median of a pitchfan is the line itself.
+            Self::Pitchfan => fib_style(self, [242, 54, 69, 255], LineDash::Solid),
             // A channel has no line of its own: its base line is its first level.
             Self::FibChannel => fib_style(self, [120, 123, 134, 255], LineDash::Solid),
             Self::FibTimeZone => {
@@ -1140,7 +1187,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 76);
+        assert_eq!(Tool::GROUPED.len(), 82);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -1169,11 +1216,11 @@ mod tests {
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
         assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
-        assert_eq!(counts(&ToolGroup::FIB_MENU), [5, 0]);
+        assert_eq!(counts(&ToolGroup::FIB_MENU), [11, 0]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
         assert_eq!(Tool::forecast_tools().count(), 12);
-        assert_eq!(Tool::fib_tools().count(), 5);
+        assert_eq!(Tool::fib_tools().count(), 11);
         // The crosshair, the brush's own tile and the ruler are in no menu of theirs.
         assert!(!Tool::GROUPED.contains(&Tool::Ruler));
     }

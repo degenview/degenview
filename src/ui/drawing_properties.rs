@@ -143,6 +143,11 @@ pub struct DrawingProperties {
     replace_requested: bool,
 }
 
+/// Whether a Fibonacci or Gann tool has a list of levels to edit (the spiral has none).
+fn has_fib_levels(tool: Tool) -> bool {
+    crate::model::fib::features_of(tool).is_some_and(|features| !features.lists[0].is_empty())
+}
+
 /// Whether the style page has anything to show for these capabilities.
 fn has_style_page(caps: Caps) -> bool {
     [
@@ -225,7 +230,11 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::FibRetracement => &["Point 1", "Point 2"],
         Tool::FibExtension => &["Start of move", "End of move", "End of retracement"],
         Tool::FibChannel => &["Point 1", "Point 2", "Channel width"],
-        Tool::FibTimeZone => &["Point 1", "Point 2"],
+        Tool::FibTimeZone | Tool::FibSpeedFan | Tool::FibSpeedArcs => &["Point 1", "Point 2"],
+        Tool::FibCircles => &["Point 1", "Point 2"],
+        Tool::FibSpiral => &["Center", "Point on the spiral"],
+        Tool::FibWedge => &["Apex", "Radius and first arm", "Second arm"],
+        Tool::Pitchfan => &["Point 1", "Point 2", "Point 3"],
         Tool::FibTrendTime => &["Point 1", "Point 2", "Point 3"],
         Tool::HorizontalLine => &["Price level"],
         Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
@@ -356,7 +365,7 @@ impl DrawingProperties {
         if has_inputs_page(caps) {
             tabs.push(Tab::Inputs);
         }
-        if caps.has(Caps::LEVELS) || caps.has(Caps::FIB) {
+        if caps.has(Caps::LEVELS) || has_fib_levels(self.tool) {
             tabs.push(Tab::Levels);
         }
         if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
@@ -2107,7 +2116,7 @@ mod tests {
             );
             assert_eq!(
                 tabs.contains(&Tab::Levels),
-                caps.has(Caps::LEVELS) || caps.has(Caps::FIB),
+                caps.has(Caps::LEVELS) || has_fib_levels(tool),
                 "{tool:?} levels"
             );
             assert_eq!(

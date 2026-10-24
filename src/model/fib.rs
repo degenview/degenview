@@ -25,6 +25,18 @@ pub enum FibKind {
     TimeZone,
     /// Vertical lines at ratios of the time between two anchors, from a third.
     TrendTime,
+    /// Rays from the first anchor through ratios of the box the two anchors make.
+    SpeedFan,
+    /// Ellipses about the middle of the two anchors, at ratios of the way to either.
+    Circles,
+    /// The golden spiral through the second anchor, about the first.
+    Spiral,
+    /// Arcs about the second anchor at ratios of its distance to the first.
+    SpeedArcs,
+    /// Arcs about an apex between two arms, at ratios of the first arm's length.
+    Wedge,
+    /// Rays from the first anchor through ratios of the span between the other two.
+    Pitchfan,
 }
 
 /// The controls a Fibonacci or Gann tool really has. A control a tool lacks is neither in its
@@ -62,12 +74,18 @@ pub struct Features {
 
 impl FibKind {
     #[cfg(test)]
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 11] = [
         Self::Retracement,
         Self::Extension,
         Self::Channel,
         Self::TimeZone,
+        Self::SpeedFan,
         Self::TrendTime,
+        Self::Circles,
+        Self::Spiral,
+        Self::SpeedArcs,
+        Self::Wedge,
+        Self::Pitchfan,
     ];
 
     pub const fn tool(self) -> Tool {
@@ -77,6 +95,12 @@ impl FibKind {
             Self::Channel => Tool::FibChannel,
             Self::TimeZone => Tool::FibTimeZone,
             Self::TrendTime => Tool::FibTrendTime,
+            Self::SpeedFan => Tool::FibSpeedFan,
+            Self::Circles => Tool::FibCircles,
+            Self::Spiral => Tool::FibSpiral,
+            Self::SpeedArcs => Tool::FibSpeedArcs,
+            Self::Wedge => Tool::FibWedge,
+            Self::Pitchfan => Tool::Pitchfan,
         }
     }
 
@@ -87,6 +111,12 @@ impl FibKind {
             Tool::FibChannel => Some(Self::Channel),
             Tool::FibTimeZone => Some(Self::TimeZone),
             Tool::FibTrendTime => Some(Self::TrendTime),
+            Tool::FibSpeedFan => Some(Self::SpeedFan),
+            Tool::FibCircles => Some(Self::Circles),
+            Tool::FibSpiral => Some(Self::Spiral),
+            Tool::FibSpeedArcs => Some(Self::SpeedArcs),
+            Tool::FibWedge => Some(Self::Wedge),
+            Tool::Pitchfan => Some(Self::Pitchfan),
             _ => None,
         }
     }
@@ -94,8 +124,13 @@ impl FibKind {
     /// How many anchors the tool takes.
     pub const fn points(self) -> usize {
         match self {
-            Self::Retracement | Self::TimeZone => 2,
-            Self::Extension | Self::Channel | Self::TrendTime => 3,
+            Self::Retracement
+            | Self::TimeZone
+            | Self::SpeedFan
+            | Self::Circles
+            | Self::Spiral
+            | Self::SpeedArcs => 2,
+            Self::Extension | Self::Channel | Self::TrendTime | Self::Wedge | Self::Pitchfan => 3,
         }
     }
 
@@ -153,6 +188,34 @@ impl FibKind {
             Self::TimeZone | Self::TrendTime => Features {
                 trend_line: true,
                 align: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
+            Self::SpeedFan => Features {
+                reverse: true,
+                sides: true,
+                grid: true,
+                lists: ["Price levels", "Time levels", ""],
+                ..none
+            },
+            Self::Circles | Self::Wedge => Features {
+                trend_line: true,
+                percent: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
+            Self::Spiral => Features {
+                counterclockwise: true,
+                ..none
+            },
+            Self::SpeedArcs => Features {
+                trend_line: true,
+                percent: true,
+                full_circles: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
+            Self::Pitchfan => Features {
                 lists: ["Levels", "", ""],
                 ..none
             },
@@ -321,14 +384,19 @@ mod tests {
     fn every_kind_has_the_levels_its_tool_draws_and_only_the_controls_it_honours() {
         for kind in FibKind::ALL {
             let features = kind.features();
-            assert!(
-                !features.lists[0].is_empty(),
-                "{kind:?} has a list of levels"
+            // Every tool but the spiral has levels to edit.
+            assert_eq!(
+                features.lists[0].is_empty(),
+                kind == FibKind::Spiral,
+                "{kind:?}"
             );
             // A tool that cannot show prices or percentages on its lines offers neither.
-            let vertical = matches!(kind, FibKind::TimeZone | FibKind::TrendTime);
-            assert_eq!(features.prices, !vertical, "{kind:?}");
-            assert_eq!(features.extend, !vertical, "{kind:?}");
+            let on_the_price_axis = matches!(
+                kind,
+                FibKind::Retracement | FibKind::Extension | FibKind::Channel
+            );
+            assert_eq!(features.prices, on_the_price_axis, "{kind:?}");
+            assert_eq!(features.extend, on_the_price_axis, "{kind:?}");
         }
     }
 

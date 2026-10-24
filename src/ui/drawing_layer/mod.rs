@@ -465,7 +465,10 @@ fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> P
         return pointer;
     };
     match tool {
-        Tool::Rectangle | Tool::Ellipse => geo::constrained_corner(first, pointer, true),
+        // The trend line of circles at 45 degrees is the one that makes them round.
+        Tool::Rectangle | Tool::Ellipse | Tool::FibCircles => {
+            geo::constrained_corner(first, pointer, true)
+        }
         Tool::TrendLine
         | Tool::Ray
         | Tool::InfoLine

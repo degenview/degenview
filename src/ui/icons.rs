@@ -104,7 +104,13 @@ pub enum Icon {
     FibExtension,
     FibChannel,
     FibTimeZone,
+    FibSpeedFan,
     FibTrendTime,
+    FibCircles,
+    FibSpiral,
+    FibSpeedArcs,
+    FibWedge,
+    Pitchfan,
     Paintbrush,
     SunMaxFill,
     MoonFill,
@@ -1029,6 +1035,91 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(2.4, 12.6), p(6.0, 5.2)]);
             circle(p(2.4, 12.6), 1.4, true);
             circle(p(6.0, 5.2), 1.4, true);
+        }
+        Icon::FibSpeedFan => {
+            // Rays from one corner through ratios of the box they fill.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.0, 6.2, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(13.6, y)],
+                    faint,
+                )));
+            }
+            for x in [6.2, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(x, 2.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.4), p(13.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.6, 2.6)]);
+            circle(p(2.6, 13.4), 1.4, true);
+        }
+        Icon::FibCircles => {
+            // Rings about the middle of a diagonal, which passes through them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.circle_stroke(p(8.0, 8.0), 6.4 * scale, faint);
+            painter.circle_stroke(p(8.0, 8.0), 4.2 * scale, faint);
+            circle(p(8.0, 8.0), 2.0, false);
+            line(&[p(3.4, 12.6), p(12.6, 3.4)]);
+            circle(p(3.4, 12.6), 1.3, true);
+            circle(p(12.6, 3.4), 1.3, true);
+        }
+        Icon::FibSpiral => {
+            // The golden spiral, from its middle out.
+            let turns = 3.6_f32;
+            let points: Vec<Pos2> = (0..=72)
+                .map(|k| {
+                    let t = turns * k as f32 / 72.0;
+                    let r = 0.55 * 1.618_f32.powf(t);
+                    let a = (t * 90.0 + 200.0).to_radians();
+                    p(7.2 + r * a.cos(), 8.4 + r * a.sin())
+                })
+                .collect();
+            line(&points);
+        }
+        Icon::FibSpeedArcs => {
+            // Arcs about the far end of a trend line, facing its start.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for r in [4.0, 7.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    arc(13.2, 13.2, r, 180.0, 270.0),
+                    faint,
+                )));
+            }
+            line(&arc(13.2, 13.2, 10.0, 180.0, 270.0));
+            line(&[p(3.2, 3.2), p(13.2, 13.2)]);
+            circle(p(3.2, 3.2), 1.3, true);
+            circle(p(13.2, 13.2), 1.3, true);
+        }
+        Icon::FibWedge => {
+            // Two arms from an apex, and arcs between them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for r in [5.0, 8.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    arc(2.8, 13.2, r, -62.0, -8.0),
+                    faint,
+                )));
+            }
+            line(&arc(2.8, 13.2, 11.0, -62.0, -8.0));
+            line(&[p(2.8, 13.2), p(2.8 + 11.0 * 0.469, 13.2 - 11.0 * 0.883)]);
+            line(&[p(2.8, 13.2), p(2.8 + 11.0 * 0.990, 13.2 - 11.0 * 0.139)]);
+            circle(p(2.8, 13.2), 1.3, true);
+        }
+        Icon::Pitchfan => {
+            // Rays from one pivot through the span between two others.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [4.4, 9.6, 12.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.0), p(13.6, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.0), p(13.6, 7.0)]);
+            line(&[p(11.2, 3.6), p(12.6, 11.4)]);
+            circle(p(2.6, 13.0), 1.4, true);
+            circle(p(11.2, 3.6), 1.2, true);
+            circle(p(12.6, 11.4), 1.2, true);
         }
         Icon::Paintbrush => {
             closed(&[p(13.8, 1.8), p(14.4, 2.4), p(8.4, 9.6), p(6.6, 8.0)]);
@@ -2082,7 +2173,13 @@ mod tests {
             FibExtension,
             FibChannel,
             FibTimeZone,
+            FibSpeedFan,
             FibTrendTime,
+            FibCircles,
+            FibSpiral,
+            FibSpeedArcs,
+            FibWedge,
+            Pitchfan,
             Paintbrush,
             SunMaxFill,
             MoonFill,

@@ -32,6 +32,8 @@ const PURPLE: Rgba = [156, 39, 176, 255];
 const PINK: Rgba = [233, 30, 99, 255];
 const VIOLET: Rgba = [103, 58, 183, 255];
 const LIGHT_GREEN: Rgba = [129, 199, 132, 255];
+const LIGHT_ORANGE: Rgba = [255, 183, 77, 255];
+const SALMON: Rgba = [247, 124, 128, 255];
 const NAVY: Rgba = [21, 56, 153, 204];
 
 /// One line of a level list: where it sits as a ratio of the construction, and how it is drawn.
@@ -316,6 +318,22 @@ impl FibStyle {
                 style.label_h = HorizontalAlign::Right;
                 style.show_prices = false;
             }
+            Tool::FibSpeedFan => {
+                style.levels = fan_levels();
+                style.second = fan_levels();
+                style.sides = LabelSides::default();
+            }
+            Tool::FibCircles | Tool::FibSpeedArcs => {
+                style.levels = circle_levels();
+            }
+            Tool::FibWedge => {
+                style.levels = wedge_levels();
+            }
+            Tool::Pitchfan => {
+                style.levels = pitchfan_levels();
+            }
+            // The spiral has no levels, only a line.
+            Tool::FibSpiral => {}
             _ => return None,
         }
         Some(style)
@@ -378,6 +396,68 @@ pub fn retracement_levels() -> Levels {
         level(4.414, PINK, false),
         level(4.618, ORANGE, false),
         level(4.764, TEAL, false),
+    ])
+}
+
+/// The speed fan's seven ratios of the box, for each of its two families of rays.
+pub fn fan_levels<const N: usize>() -> LevelSet<N> {
+    LevelSet::from_levels(&[
+        level(0.0, GRAY, true),
+        level(0.25, ORANGE, true),
+        level(0.382, CYAN, true),
+        level(0.5, GREEN, true),
+        level(0.618, TEAL, true),
+        level(0.75, BLUE, true),
+        level(1.0, GRAY, true),
+    ])
+}
+
+/// The circles' and the speed arcs' eleven radii, all drawn.
+pub fn circle_levels() -> Levels {
+    Levels::from_levels(&[
+        level(0.236, RED, true),
+        level(0.382, ORANGE, true),
+        level(0.5, TEAL, true),
+        level(0.618, GREEN, true),
+        level(0.786, CYAN, true),
+        level(1.0, GRAY, true),
+        level(1.618, BLUE, true),
+        level(2.618, PINK, true),
+        level(3.618, BLUE, true),
+        level(4.236, PINK, true),
+        level(4.618, RED, true),
+    ])
+}
+
+/// The wedge's eleven radii, the first six drawn.
+pub fn wedge_levels() -> Levels {
+    Levels::from_levels(&[
+        level(0.236, RED, true),
+        level(0.382, ORANGE, true),
+        level(0.5, GREEN, true),
+        level(0.618, TEAL, true),
+        level(0.786, CYAN, true),
+        level(1.0, GRAY, true),
+        level(1.618, BLUE, false),
+        level(2.618, RED, false),
+        level(3.618, VIOLET, false),
+        level(4.236, PINK, false),
+        level(4.618, PINK, false),
+    ])
+}
+
+/// The pitchfan's nine rays on either side of its median, two drawn.
+pub fn pitchfan_levels() -> Levels {
+    Levels::from_levels(&[
+        level(0.25, LIGHT_ORANGE, false),
+        level(0.382, LIGHT_GREEN, false),
+        level(0.5, CYAN, true),
+        level(0.618, TEAL, false),
+        level(0.75, CYAN, false),
+        level(1.0, BLUE, true),
+        level(1.5, PURPLE, false),
+        level(1.75, PINK, false),
+        level(2.0, SALMON, false),
     ])
 }
 
@@ -503,6 +583,33 @@ mod tests {
             VerticalAlign::Middle
         );
         assert!(FibStyle::for_tool(Tool::Rectangle).is_none());
+    }
+
+    #[test]
+    fn the_other_tools_default_to_the_librarys_levels() {
+        let ratios = |levels: &[FibLevel]| -> Vec<f32> { levels.iter().map(|l| l.ratio).collect() };
+        assert_eq!(
+            ratios(fan_levels::<12>().as_slice()),
+            [0.0, 0.25, 0.382, 0.5, 0.618, 0.75, 1.0]
+        );
+        let circles = circle_levels();
+        assert_eq!(circles.len(), 11);
+        assert_eq!(circles.active().count(), 11);
+        assert_eq!(wedge_levels().active().count(), 6);
+        let fan = pitchfan_levels();
+        assert_eq!(fan.len(), 9);
+        let on: Vec<f32> = fan.active().map(|l| l.ratio).collect();
+        assert_eq!(on, [0.5, 1.0]);
+        // The fan has both its families, and the spiral none.
+        let speed = FibStyle::for_tool(Tool::FibSpeedFan).unwrap();
+        assert_eq!(speed.levels.len(), 7);
+        assert_eq!(speed.second.len(), 7);
+        assert!(
+            FibStyle::for_tool(Tool::FibSpiral)
+                .unwrap()
+                .levels
+                .is_empty()
+        );
     }
 
     #[test]

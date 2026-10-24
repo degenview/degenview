@@ -9,11 +9,13 @@
 use super::Projection;
 use super::line_shapes;
 use super::shape::{Band, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles};
+use crate::model::PitchforkVariant;
 use crate::model::chart_type::Rgba;
 use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, VerticalAlign};
 use crate::model::fib::{self, FibKind};
 use crate::model::fib_style::{FibLevel, FibStyle};
 use crate::model::{Anchor, Geometry};
+use crate::ui::fib_geometry;
 use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Rect, Vec2, pos2, vec2};
 
@@ -59,6 +61,12 @@ pub(super) fn project(
             let interval = bars_between(proj, points[0], points[1]);
             time_tool(style, &fib, proj, &anchors, origin, interval)
         }
+        FibKind::SpeedFan => speed_fan(style, &fib, proj, &anchors),
+        FibKind::Circles => circles(style, &fib, proj, &anchors),
+        FibKind::Spiral => spiral(&fib, proj, &anchors),
+        FibKind::SpeedArcs => speed_arcs(style, &fib, proj, &anchors),
+        FibKind::Wedge => wedge(style, &fib, proj, &anchors),
+        FibKind::Pitchfan => pitchfan(style, &fib, proj, &anchors),
     };
     let mut screen = screen;
     screen.backdrop = true;
@@ -478,6 +486,427 @@ fn time_tool(
             )
         {
             screen.labels.push(label);
+        }
+    }
+    screen
+}
+
+// MARK: Rings
+
+/// The levels that make a ring (a ratio of zero is a point, a negative one has no radius), by
+/// growing ratio.
+fn ring_levels(fib: &FibStyle) -> Vec<FibLevel> {
+    let mut rows: Vec<FibLevel> = fib
+        .levels
+        .active()
+        .filter(|level| level.ratio > 0.0)
+        .copied()
+        .collect();
+    rows.sort_by(|a, b| a.ratio.total_cmp(&b.ratio));
+    rows
+}
+
+/// One ring of a set of concentric rings: the ellipse, the stretch of it that is drawn (a whole
+/// turn or an arc), the point the pie it bounds comes to (for an arc, its centre) and where its
+/// label sits.
+struct Ring {
+    center: Pos2,
+    rx: f32,
+    ry: f32,
+    range: (f64, f64),
+    apex: Option<Pos2>,
+    label: Pos2,
+}
+
+/// Draws the rings `ring_of` makes for each level: the curve in the level's look, the fill
+/// between it and the ring before it (in the colour of the outer), and its label.
+fn rings(
+    screen: &mut Screen,
+    style: &DrawingStyle,
+    fib: &FibStyle,
+    proj: &Projection,
+    levels: &[FibLevel],
+    ring_of: impl Fn(f32) -> Ring,
+) {
+    let plot = proj.plot;
+    let alpha = style.fill.color[3];
+    let mut inner: Vec<Pos2> = Vec::new();
+    for (index, level) in levels.iter().enumerate() {
+        let ring = ring_of(level.ratio);
+        let color = look(level, style);
+        if let Some(runs) = fib_geometry::arc(ring.center, ring.rx, ring.ry, ring.range, plot) {
+            for run in runs.into_iter().filter(|run| run.len() >= 2) {
+                screen.styled.push(styled(run, level, color));
+            }
+        }
+        let disc = fib_geometry::disc(ring.center, ring.rx, ring.ry, ring.range, ring.apex, plot);
+        if index > 0 {
+            let polygon = fib_geometry::annulus(&disc, &inner);
+            if polygon.len() >= 3 {
+                screen.bands.push(Band {
+                    polygon,
+                    color: [color[0], color[1], color[2], alpha],
+                });
+            }
+        }
+        inner = disc;
+        if fib.show_labels && plot.expand(OFF_PLOT).contains(ring.label) {
+            screen.labels.push(PivotLabel {
+                at: ring.label,
+                text: fib::level_label(f64::from(level.ratio), fib.as_percent),
+                look: LabelLook::Ink(color),
+                place: LabelPlace::On,
+                push: vec2(0.0, -1.0),
+                edge: vec2(0.0, 0.0),
+                on_select: false,
+            });
+        }
+    }
+}
+
+// MARK: Circles
+
+/// Ellipses about the middle of the two anchors: the ratio 1 one passes through both of them and
+/// has the box they make for its bounding box scaled by the square root of two, so the trend
+/// line at 45 degrees (Shift) makes true circles.
+fn circles(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (a, b) = (anchors[0], anchors[1]);
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    if fib.trend_line {
+        screen.lines.push(vec![a, b]);
+    }
+    let center = a.lerp(b, 0.5);
+    let half = (b - a) * 0.5;
+    let (rx, ry) = (
+        half.x.abs() * std::f32::consts::SQRT_2,
+        half.y.abs() * std::f32::consts::SQRT_2,
+    );
+    let levels = ring_levels(fib);
+    rings(&mut screen, style, fib, proj, &levels, |ratio| Ring {
+        center,
+        rx: rx * ratio,
+        ry: ry * ratio,
+        range: (0.0, std::f64::consts::TAU),
+        apex: None,
+        label: pos2(center.x, center.y - ry * ratio),
+    });
+    screen
+}
+
+// MARK: Speed resistance arcs
+
+/// Arcs about the second anchor at ratios of its distance from the first, the half facing the
+/// first (or whole circles).
+fn speed_arcs(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (start, center) = (anchors[0], anchors[1]);
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    if fib.trend_line {
+        screen.lines.push(vec![start, center]);
+    }
+    let base = start - center;
+    let length = base.length();
+    if length <= 1e-3 {
+        return screen;
+    }
+    let facing = f64::from(base.y).atan2(f64::from(base.x));
+    let range = if fib.full_circles {
+        (0.0, std::f64::consts::TAU)
+    } else {
+        (
+            facing - std::f64::consts::FRAC_PI_2,
+            facing + std::f64::consts::FRAC_PI_2,
+        )
+    };
+    let levels = ring_levels(fib);
+    rings(&mut screen, style, fib, proj, &levels, |ratio| {
+        let radius = length * ratio;
+        // The end of the half facing the first anchor, where the label sits.
+        let end = fib_geometry::direction((facing - std::f64::consts::FRAC_PI_2) as f32);
+        Ring {
+            center,
+            rx: radius,
+            ry: radius,
+            range,
+            apex: (!fib.full_circles).then_some(center),
+            label: center + end * radius,
+        }
+    });
+    screen
+}
+
+// MARK: Wedge
+
+/// Arcs about an apex between two arms: the second anchor sets the first arm and the radius, the
+/// third the direction of the second arm; the arcs run the short way between them.
+fn wedge(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (apex, first, second) = (anchors[0], anchors[1], anchors[2]);
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    let arm = first - apex;
+    let radius = arm.length();
+    let span_to = second - apex;
+    if radius <= 1e-3 || span_to.length() <= 1e-3 {
+        screen.lines.push(vec![apex, first]);
+        return screen;
+    }
+    let start = f64::from(arm.y).atan2(f64::from(arm.x));
+    let end = f64::from(span_to.y).atan2(f64::from(span_to.x));
+    let sweep = fib_geometry::sweep(start, end);
+    let range = (start, start + sweep);
+    let levels = ring_levels(fib);
+    if fib.trend_line {
+        // The arms run out to the furthest ring drawn (or the anchor, if that is nearer).
+        let furthest = levels.last().map_or(1.0, |level| level.ratio.max(1.0));
+        for angle in [start, end] {
+            let tip = apex + fib_geometry::direction(angle as f32) * (radius * furthest);
+            if let Some((from, to)) = lines::line_in_rect(apex, tip, proj.plot, false, false) {
+                screen.lines.push(vec![from, to]);
+            }
+        }
+    }
+    rings(&mut screen, style, fib, proj, &levels, |ratio| {
+        let radius = radius * ratio;
+        let middle = fib_geometry::direction((start + sweep / 2.0) as f32);
+        Ring {
+            center: apex,
+            rx: radius,
+            ry: radius,
+            range,
+            apex: Some(apex),
+            label: apex + middle * radius,
+        }
+    });
+    screen
+}
+
+// MARK: Spiral
+
+/// The golden spiral about the first anchor through the second.
+fn spiral(fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (center, through) = (anchors[0], anchors[1]);
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    let arm = through - center;
+    let angle = f64::from(arm.y).atan2(f64::from(arm.x));
+    match fib_geometry::golden_spiral(
+        center,
+        arm.length(),
+        angle,
+        !fib.counterclockwise,
+        proj.plot,
+    ) {
+        Some(runs) => screen.lines = runs.into_iter().filter(|run| run.len() >= 2).collect(),
+        None => screen.lines.push(vec![center, through]),
+    }
+    screen
+}
+
+// MARK: Speed resistance fan
+
+/// Rays from the first anchor through each ratio of the box the anchors make: those through the
+/// far vertical side (price levels, below the trend line when it rises), and through the far
+/// horizontal one (time levels, above it); a grid of the same ratios fills the box.
+fn speed_fan(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let plot = proj.plot;
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    // Reversed, the fan opens from the second anchor back towards the first.
+    let (origin, far) = if fib.reverse {
+        (anchors[1], anchors[0])
+    } else {
+        (anchors[0], anchors[1])
+    };
+    let delta = far - origin;
+    if delta.length() <= 1e-3 {
+        return screen;
+    }
+    let boxed = Rect::from_two_pos(origin, far);
+    let alpha = style.fill.color[3];
+    let sorted = |levels: &mut dyn Iterator<Item = &FibLevel>| {
+        let mut rows: Vec<FibLevel> = levels.copied().collect();
+        rows.sort_by(|a, b| a.ratio.total_cmp(&b.ratio));
+        rows
+    };
+    let families = [
+        (true, sorted(&mut fib.levels.active())),
+        (false, sorted(&mut fib.second.active())),
+    ];
+    let mut grid: Vec<Styled> = Vec::new();
+    let mut rays: Vec<Styled> = Vec::new();
+    for (price, levels) in &families {
+        let mut previous: Option<Vec2> = None;
+        for level in levels {
+            let ratio = level.ratio;
+            let (through, along) = if *price {
+                let y = origin.y + delta.y * ratio;
+                (pos2(far.x, y), [pos2(origin.x, y), pos2(far.x, y)])
+            } else {
+                let x = origin.x + delta.x * ratio;
+                (pos2(x, far.y), [pos2(x, origin.y), pos2(x, far.y)])
+            };
+            let color = look(level, style);
+            if fib.grid.enabled {
+                grid.push(Styled::new(along.to_vec(), &fib.grid));
+            }
+            let direction = through - origin;
+            if direction.length() > 1e-3 {
+                let direction = direction.normalized();
+                if let Some((from, to)) = lines::line_in_rect(origin, through, plot, false, true) {
+                    rays.push(styled(vec![from, to], level, color));
+                }
+                if let Some(before) = previous {
+                    let polygon = fib_geometry::fan_band(origin, before, direction, plot);
+                    if polygon.len() >= 3 {
+                        screen.bands.push(Band {
+                            polygon,
+                            color: [color[0], color[1], color[2], alpha],
+                        });
+                    }
+                }
+                previous = Some(direction);
+            }
+            if fib.show_labels {
+                fan_labels(&mut screen, fib, plot, boxed, *price, level, color, through);
+            }
+        }
+    }
+    screen.styled.extend(grid);
+    screen.styled.extend(rays);
+    screen
+}
+
+/// The labels of one level of a fan, on the sides of the box the style asks for: price levels on
+/// its left and right, time levels above and below.
+#[allow(clippy::too_many_arguments)]
+fn fan_labels(
+    screen: &mut Screen,
+    fib: &FibStyle,
+    plot: Rect,
+    boxed: Rect,
+    price: bool,
+    level: &FibLevel,
+    color: Rgba,
+    through: Pos2,
+) {
+    let text = fib::level_label(f64::from(level.ratio), false);
+    let sides: [(bool, Pos2, Vec2); 2] = if price {
+        [
+            (
+                fib.sides.left,
+                pos2(boxed.left() - LABEL_GAP, through.y),
+                vec2(1.0, 0.0),
+            ),
+            (
+                fib.sides.right,
+                pos2(boxed.right() + LABEL_GAP, through.y),
+                vec2(-1.0, 0.0),
+            ),
+        ]
+    } else {
+        [
+            (
+                fib.sides.top,
+                pos2(through.x, boxed.top() - LABEL_GAP),
+                vec2(0.0, 1.0),
+            ),
+            (
+                fib.sides.bottom,
+                pos2(through.x, boxed.bottom() + LABEL_GAP),
+                vec2(0.0, -1.0),
+            ),
+        ]
+    };
+    for (shown, at, edge) in sides {
+        if shown && plot.expand(OFF_PLOT).contains(at) {
+            screen.labels.push(PivotLabel {
+                at,
+                text: text.clone(),
+                look: LabelLook::Ink(color),
+                place: LabelPlace::On,
+                push: vec2(0.0, -1.0),
+                edge,
+                on_select: false,
+            });
+        }
+    }
+}
+
+// MARK: Pitchfan
+
+/// Rays from the first anchor through the middle of the other two (the median) and through the
+/// points either side of it at each ratio of half the span between them: the pitchfork's levels,
+/// all meeting at its first pivot instead of running parallel.
+fn pitchfan(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (p1, p2, p3) = (anchors[0], anchors[1], anchors[2]);
+    let plot = proj.plot;
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    screen.guides = vec![[p1, p2], [p2, p3]];
+    let Some(fork) = lines::fork(PitchforkVariant::Standard, p1, p2, p3) else {
+        screen.lines.push(vec![p1, p2]);
+        return screen;
+    };
+    // Every ray of the fan, with where it sits across it: the median is 0, a level its ratio on
+    // either side.
+    struct Ray {
+        key: f32,
+        direction: Vec2,
+        through: Pos2,
+        color: Rgba,
+        level: Option<FibLevel>,
+    }
+    let mut fan: Vec<Ray> = Vec::new();
+    let mut push = |key: f32, through: Pos2, color: Rgba, level: Option<FibLevel>| {
+        let direction = through - p1;
+        if direction.length() > 1e-3 {
+            fan.push(Ray {
+                key,
+                direction: direction.normalized(),
+                through,
+                color,
+                level,
+            });
+        }
+    };
+    push(0.0, fork.middle, style.stroke.color, None);
+    for level in fib.levels.active().filter(|level| level.ratio > 0.0) {
+        let color = look(level, style);
+        for side in [-1.0_f32, 1.0] {
+            push(
+                level.ratio * side,
+                fork.level_start(level.ratio, side),
+                color,
+                Some(*level),
+            );
+        }
+    }
+    fan.sort_by(|a, b| a.key.total_cmp(&b.key));
+    let alpha = style.fill.color[3];
+    for pair in fan.windows(2) {
+        // The region between two neighbours, in the colour of the one further from the median.
+        let outer = if pair[0].key.abs() >= pair[1].key.abs() {
+            &pair[0]
+        } else {
+            &pair[1]
+        };
+        let polygon = fib_geometry::fan_band(p1, pair[0].direction, pair[1].direction, plot);
+        if polygon.len() >= 3 {
+            let color = outer.color;
+            screen.bands.push(Band {
+                polygon,
+                color: [color[0], color[1], color[2], alpha],
+            });
+        }
+    }
+    for ray in &fan {
+        let Some((from, to)) = lines::line_in_rect(p1, ray.through, plot, false, true) else {
+            continue;
+        };
+        match &ray.level {
+            Some(level) => screen.styled.push(styled(vec![from, to], level, ray.color)),
+            None => screen.lines.push(vec![from, to]),
         }
     }
     screen

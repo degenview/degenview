@@ -920,7 +920,13 @@ impl Geometry {
             | Tool::FibExtension
             | Tool::FibChannel
             | Tool::FibTimeZone
-            | Tool::FibTrendTime => {
+            | Tool::FibSpeedFan
+            | Tool::FibTrendTime
+            | Tool::FibCircles
+            | Tool::FibSpiral
+            | Tool::FibSpeedArcs
+            | Tool::FibWedge
+            | Tool::Pitchfan => {
                 let kind = FibKind::of_tool(tool)?;
                 Self::Fib {
                     kind,

@@ -1228,7 +1228,13 @@ mod tests {
             (Tool::FibExtension, "fib_extension"),
             (Tool::FibChannel, "fib_channel"),
             (Tool::FibTimeZone, "fib_time_zone"),
+            (Tool::FibSpeedFan, "fib_speed_fan"),
             (Tool::FibTrendTime, "fib_trend_time"),
+            (Tool::FibCircles, "fib_circles"),
+            (Tool::FibSpiral, "fib_spiral"),
+            (Tool::FibSpeedArcs, "fib_speed_arcs"),
+            (Tool::FibWedge, "fib_wedge"),
+            (Tool::Pitchfan, "pitchfan"),
         ];
         assert_eq!(
             names.len(),

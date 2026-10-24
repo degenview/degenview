@@ -907,6 +907,36 @@ fn fib_drawings() -> Vec<(&'static str, Drawing)> {
             build(Tool::FibTimeZone, &[at(226, 226.0), at(232, 226.0)]),
         ),
         (
+            "fib-speed-fan",
+            build(Tool::FibSpeedFan, &[at(224, 212.0), at(262, 252.0)]),
+        ),
+        (
+            "fib-circles",
+            build(Tool::FibCircles, &[at(236, 214.0), at(262, 252.0)]),
+        ),
+        (
+            "fib-spiral",
+            build(Tool::FibSpiral, &[at(252, 236.0), at(262, 246.0)]),
+        ),
+        (
+            "fib-speed-arcs",
+            build(Tool::FibSpeedArcs, &[at(224, 214.0), at(262, 250.0)]),
+        ),
+        (
+            "fib-wedge",
+            build(
+                Tool::FibWedge,
+                &[at(230, 214.0), at(256, 250.0), at(270, 232.0)],
+            ),
+        ),
+        (
+            "pitchfan",
+            build(
+                Tool::Pitchfan,
+                &[at(226, 214.0), at(250, 258.0), at(262, 226.0)],
+            ),
+        ),
+        (
             "fib-trend-time",
             build(
                 Tool::FibTrendTime,
