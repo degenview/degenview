@@ -99,7 +99,22 @@ pub enum Icon {
     CheckCircle,
     ClockBadge,
     LineDiagonal,
-    FibPoints,
+    LineTrend,
+    FibRetracement,
+    FibExtension,
+    FibChannel,
+    FibTimeZone,
+    FibSpeedFan,
+    FibTrendTime,
+    FibCircles,
+    FibSpiral,
+    FibSpeedArcs,
+    FibWedge,
+    Pitchfan,
+    GannBox,
+    GannSquareFixed,
+    GannSquare,
+    GannFan,
     Paintbrush,
     SunMaxFill,
     MoonFill,
@@ -116,6 +131,8 @@ pub enum Icon {
     BoltSlash,
     Link,
     Camera,
+    /// A price axis: its line and the ticks along it.
+    PriceScale,
     /// The X (formerly Twitter) mark.
     XLogo,
     ChainLinked,
@@ -141,11 +158,64 @@ pub enum Icon {
     ShapeArc,
     ShapeCurve,
     ShapeDoubleCurve,
+    LineRay,
+    LineInfo,
+    LineExtended,
+    LineAngle,
+    LineHorizontal,
+    LineHorizontalRay,
+    LineVertical,
+    LineCross,
+    ChannelParallel,
+    ChannelRegression,
+    ChannelFlat,
+    ChannelDisjoint,
+    ForkAndrews,
+    ForkSchiff,
+    ForkModifiedSchiff,
+    ForkInside,
+    PatternXabcd,
+    PatternCypher,
+    PatternHeadShoulders,
+    PatternAbcd,
+    PatternTriangle,
+    PatternThreeDrives,
+    WaveImpulse,
+    WaveCorrection,
+    WaveTriangle,
+    WaveDouble,
+    WaveTriple,
+    CycleLines,
+    CycleArcs,
+    CycleSine,
+    PositionLong,
+    PositionShort,
+    PositionForecast,
+    BarsPatternTool,
+    GhostFeedTool,
+    SectorTool,
+    VwapTool,
+    ProfileFixed,
+    ProfileAnchored,
+    RangePrice,
+    RangeDate,
+    RangeDatePrice,
     Magnet,
     KeepDrawing,
     LockOpen,
     BringForward,
     SendBackward,
+    TextTool,
+    NoteTool,
+    PriceNoteTool,
+    PinTool,
+    TableTool,
+    CalloutTool,
+    CommentTool,
+    PriceLabelTool,
+    SignpostTool,
+    FlagTool,
+    ImageTool,
 }
 
 /// Stroke width on the 16 grid.
@@ -226,6 +296,56 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             })
             .collect();
         fill_poly(points);
+    };
+    // A character of a wave's name, drawn as strokes in a box `h` tall with its top-left at
+    // (`x`, `y`): crisp at any size, with no font to load.
+    let glyph = |ch: char, x: f32, y: f32, h: f32| {
+        let k = h / 5.0;
+        let strokes: &[&[(f32, f32)]] = match ch {
+            '1' => &[&[(0.4, 1.2), (1.6, 0.0), (1.6, 5.0)]],
+            '5' => &[&[
+                (2.7, 0.0),
+                (0.5, 0.0),
+                (0.3, 2.3),
+                (1.5, 2.0),
+                (2.5, 2.8),
+                (2.7, 4.2),
+                (1.6, 5.0),
+                (0.0, 4.5),
+            ]],
+            'A' => &[
+                &[(0.0, 5.0), (1.4, 0.0), (2.8, 5.0)],
+                &[(0.5, 3.4), (2.3, 3.4)],
+            ],
+            'C' => &[&[
+                (2.7, 0.9),
+                (1.7, 0.0),
+                (0.7, 0.3),
+                (0.0, 2.5),
+                (0.7, 4.7),
+                (1.7, 5.0),
+                (2.7, 4.1),
+            ]],
+            'E' => &[
+                &[(2.7, 0.0), (0.0, 0.0), (0.0, 5.0), (2.7, 5.0)],
+                &[(0.0, 2.5), (2.1, 2.5)],
+            ],
+            'W' => &[&[(0.0, 0.0), (0.8, 5.0), (1.6, 1.8), (2.4, 5.0), (3.2, 0.0)]],
+            'Y' => &[
+                &[(0.0, 0.0), (1.5, 2.6), (3.0, 0.0)],
+                &[(1.5, 2.6), (1.5, 5.0)],
+            ],
+            'Z' => &[&[(0.0, 0.0), (2.8, 0.0), (0.0, 5.0), (2.8, 5.0)]],
+            _ => &[],
+        };
+        let thin = Stroke::new((W * 0.8 * scale).max(1.0), color);
+        for points in strokes {
+            let path: Vec<Pos2> = points
+                .iter()
+                .map(|(dx, dy)| p(x + dx * k, y + dy * k))
+                .collect();
+            painter.add(Shape::Path(PathShape::line(path, thin)));
+        }
     };
 
     match icon {
@@ -849,21 +969,239 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(13.6, 8.4), 0.9, true);
         }
         Icon::LineDiagonal => line(&[p(2.5, 13.5), p(13.5, 2.5)]),
-        Icon::FibPoints => {
-            // Three points joined by a dotted triangle, like `point.3.connected.trianglepath.dotted`.
-            let dots = |a: Pos2, b: Pos2| {
-                for k in 1..5 {
-                    let t = k as f32 / 5.0;
-                    painter.circle_filled(a + (b - a) * t, 0.55 * scale, color);
-                }
-            };
-            let (top, left, right) = (p(8.0, 2.6), p(2.6, 13.0), p(13.4, 13.0));
-            dots(top, left);
-            dots(left, right);
-            dots(top, right);
-            for point in [top, left, right] {
-                painter.circle_stroke(point, 1.7 * scale, stroke);
+        Icon::LineTrend => {
+            line(&[p(2.8, 13.2), p(13.2, 2.8)]);
+            circle(p(2.8, 13.2), 1.5, true);
+            circle(p(13.2, 2.8), 1.5, true);
+        }
+        Icon::FibRetracement => {
+            // Four levels crossed by the swing they are measured from.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.2, 6.4, 9.6, 12.8] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.5, y), p(13.5, y)],
+                    faint,
+                )));
             }
+            line(&[p(3.4, 12.8), p(12.6, 3.2)]);
+            circle(p(3.4, 12.8), 1.5, true);
+            circle(p(12.6, 3.2), 1.5, true);
+        }
+        Icon::FibExtension => {
+            // A swing and its pullback, with the levels projected from the pullback's end.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.0, 6.0, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(8.5, y), p(14.0, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.4, 13.0), p(6.0, 5.0), p(8.5, 9.4)]);
+            for point in [p(2.4, 13.0), p(6.0, 5.0), p(8.5, 9.4)] {
+                painter.circle_filled(point, 1.4 * scale, color);
+            }
+        }
+        Icon::FibChannel => {
+            // Three parallel lines, the middle one drawn from its two anchors.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for shift in [-3.4, 3.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.4, 12.2 + shift), p(13.6, 5.6 + shift)],
+                    faint,
+                )));
+            }
+            line(&[p(3.4, 11.6), p(12.6, 6.2)]);
+            circle(p(3.4, 11.6), 1.4, true);
+            circle(p(12.6, 6.2), 1.4, true);
+        }
+        Icon::FibTimeZone => {
+            // Vertical lines further apart as they go: 0, 1, 2, 3, 5, 8.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for x in [5.0, 6.6, 8.2, 10.6, 14.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(x, 2.4), p(x, 13.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.8, 2.4), p(2.8, 13.6)]);
+            circle(p(2.8, 13.0), 1.4, true);
+            circle(p(5.0, 13.0), 1.4, true);
+        }
+        Icon::FibTrendTime => {
+            // A swing, then vertical lines at ratios of its length.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for x in [8.6, 11.0, 14.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(x, 2.4), p(x, 13.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.4, 12.6), p(6.0, 5.2)]);
+            circle(p(2.4, 12.6), 1.4, true);
+            circle(p(6.0, 5.2), 1.4, true);
+        }
+        Icon::FibSpeedFan => {
+            // Rays from one corner through ratios of the box they fill.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.0, 6.2, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(13.6, y)],
+                    faint,
+                )));
+            }
+            for x in [6.2, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(x, 2.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.4), p(13.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.6, 2.6)]);
+            circle(p(2.6, 13.4), 1.4, true);
+        }
+        Icon::FibCircles => {
+            // Rings about the middle of a diagonal, which passes through them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.circle_stroke(p(8.0, 8.0), 6.4 * scale, faint);
+            painter.circle_stroke(p(8.0, 8.0), 4.2 * scale, faint);
+            circle(p(8.0, 8.0), 2.0, false);
+            line(&[p(3.4, 12.6), p(12.6, 3.4)]);
+            circle(p(3.4, 12.6), 1.3, true);
+            circle(p(12.6, 3.4), 1.3, true);
+        }
+        Icon::FibSpiral => {
+            // The golden spiral, from its middle out.
+            // Sampled from the curve itself, then fitted to the icon's box.
+            let raw: Vec<(f32, f32)> = (0..=120)
+                .map(|k| {
+                    let t = -2.0 + 6.2 * k as f32 / 120.0;
+                    let r = 1.618_f32.powf(t);
+                    let a = (t * 90.0 + 180.0).to_radians();
+                    (r * a.cos(), r * a.sin())
+                })
+                .collect();
+            let low = raw
+                .iter()
+                .fold((f32::MAX, f32::MAX), |m, v| (m.0.min(v.0), m.1.min(v.1)));
+            let high = raw
+                .iter()
+                .fold((f32::MIN, f32::MIN), |m, v| (m.0.max(v.0), m.1.max(v.1)));
+            let fit = 11.4 / (high.0 - low.0).max(high.1 - low.1);
+            let mid = ((low.0 + high.0) / 2.0, (low.1 + high.1) / 2.0);
+            let points: Vec<Pos2> = raw
+                .iter()
+                .map(|(x, y)| p(8.0 + (x - mid.0) * fit, 8.0 + (y - mid.1) * fit))
+                .collect();
+            line(&points);
+        }
+        Icon::FibSpeedArcs => {
+            // Arcs about the far end of a trend line, facing its start.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for r in [4.0, 7.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    arc(13.2, 13.2, r, 180.0, 270.0),
+                    faint,
+                )));
+            }
+            line(&arc(13.2, 13.2, 10.0, 180.0, 270.0));
+            line(&[p(3.2, 3.2), p(13.2, 13.2)]);
+            circle(p(3.2, 3.2), 1.3, true);
+            circle(p(13.2, 13.2), 1.3, true);
+        }
+        Icon::FibWedge => {
+            // Two arms from an apex, and arcs between them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for r in [5.0, 8.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    arc(2.8, 13.2, r, -62.0, -8.0),
+                    faint,
+                )));
+            }
+            line(&arc(2.8, 13.2, 11.0, -62.0, -8.0));
+            line(&[p(2.8, 13.2), p(2.8 + 11.0 * 0.469, 13.2 - 11.0 * 0.883)]);
+            line(&[p(2.8, 13.2), p(2.8 + 11.0 * 0.990, 13.2 - 11.0 * 0.139)]);
+            circle(p(2.8, 13.2), 1.3, true);
+        }
+        Icon::Pitchfan => {
+            // Rays from one pivot through the span between two others.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [4.4, 9.6, 12.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.0), p(13.6, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.0), p(13.6, 7.0)]);
+            line(&[p(11.2, 3.6), p(12.6, 11.4)]);
+            circle(p(2.6, 13.0), 1.4, true);
+            circle(p(11.2, 3.6), 1.2, true);
+            circle(p(12.6, 11.4), 1.2, true);
+        }
+        Icon::GannBox => {
+            // A box divided in both directions, with a corner ray.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for t in [5.8, 8.0, 10.2] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, t), p(13.4, t)],
+                    faint,
+                )));
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(t - 3.4 + 2.6, 2.6), p(t - 3.4 + 2.6, 13.4)],
+                    faint,
+                )));
+            }
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+        }
+        Icon::GannSquareFixed => {
+            // A square with its diagonal and an arc about a corner.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.add(Shape::Path(PathShape::line(
+                arc(2.6, 13.4, 7.0, -90.0, 0.0),
+                faint,
+            )));
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+            circle(p(2.6, 13.4), 1.3, true);
+        }
+        Icon::GannSquare => {
+            // A square with its grid, its diagonals and a ray between them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(2.6, 8.0), p(13.4, 8.0)],
+                faint,
+            )));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(8.0, 2.6), p(8.0, 13.4)],
+                faint,
+            )));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(2.6, 2.6), p(13.4, 13.4)],
+                faint,
+            )));
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+            line(&[p(2.6, 13.4), p(13.4, 8.0)]);
+        }
+        Icon::GannFan => {
+            // Rays from one corner at 1x1 and the angles on either side of it.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for (x, y) in [
+                (13.6, 3.6),
+                (13.6, 6.0),
+                (13.6, 10.6),
+                (13.6, 12.2),
+                (9.6, 2.6),
+                (6.0, 2.6),
+            ] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(x, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.4), p(13.4, 8.4)]);
+            circle(p(2.6, 13.4), 1.4, true);
+            circle(p(13.4, 8.4), 1.2, true);
         }
         Icon::Paintbrush => {
             closed(&[p(13.8, 1.8), p(14.4, 2.4), p(8.4, 9.6), p(6.6, 8.0)]);
@@ -1048,12 +1386,530 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 .collect();
             line(&points);
         }
+        Icon::LineRay => {
+            line(&[p(3.4, 12.6), p(13.6, 2.4)]);
+            line(&[p(9.4, 2.4), p(13.6, 2.4), p(13.6, 6.6)]);
+            circle(p(2.8, 13.2), 1.5, true);
+        }
+        Icon::LineInfo => {
+            line(&[p(2.4, 13.6), p(9.6, 6.4)]);
+            circle(p(2.4, 13.6), 1.3, true);
+            circle(p(9.6, 6.4), 1.3, true);
+            painter.rect_stroke(
+                rect_of(p(7.4, 1.8), p(14.6, 6.6)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(9.0, 3.4), p(13.0, 3.4)]);
+            line(&[p(9.0, 5.0), p(12.0, 5.0)]);
+        }
+        Icon::LineExtended => {
+            line(&[p(1.6, 14.4), p(14.4, 1.6)]);
+            line(&[p(1.6, 10.4), p(1.6, 14.4), p(5.6, 14.4)]);
+            line(&[p(10.4, 1.6), p(14.4, 1.6), p(14.4, 5.6)]);
+            circle(p(6.0, 10.0), 1.3, true);
+            circle(p(10.0, 6.0), 1.3, true);
+        }
+        Icon::LineAngle => {
+            line(&[p(2.6, 13.4), p(13.4, 4.6)]);
+            line(&[p(2.6, 13.4), p(13.6, 13.4)]);
+            line(&arc(2.6, 13.4, 6.4, -39.0, 0.0));
+            circle(p(2.6, 13.4), 1.3, true);
+        }
+        Icon::LineHorizontal => {
+            line(&[p(1.4, 8.0), p(14.6, 8.0)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::LineHorizontalRay => {
+            line(&[p(3.0, 8.0), p(14.6, 8.0)]);
+            line(&[p(11.4, 5.4), p(14.6, 8.0), p(11.4, 10.6)]);
+            circle(p(2.8, 8.0), 1.6, true);
+        }
+        Icon::LineVertical => {
+            line(&[p(8.0, 1.4), p(8.0, 14.6)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::LineCross => {
+            line(&[p(1.4, 8.0), p(14.6, 8.0)]);
+            line(&[p(8.0, 1.4), p(8.0, 14.6)]);
+            circle(p(8.0, 8.0), 1.6, true);
+        }
+        Icon::ChannelParallel => {
+            line(&[p(1.8, 9.2), p(14.2, 3.0)]);
+            line(&[p(1.8, 14.0), p(14.2, 7.8)]);
+            circle(p(1.8, 9.2), 1.2, true);
+            circle(p(14.2, 7.8), 1.2, true);
+        }
+        Icon::ChannelRegression => {
+            line(&[p(1.8, 11.4), p(14.2, 4.6)]);
+            line(&[p(1.8, 7.8), p(14.2, 1.4)]);
+            line(&[p(1.8, 14.8), p(14.2, 8.2)]);
+            for (x, y) in [(4.6, 11.6), (7.8, 6.6), (11.2, 6.4)] {
+                circle(p(x, y), 0.9, true);
+            }
+        }
+        Icon::ChannelFlat => {
+            line(&[p(1.8, 3.4), p(14.2, 3.4)]);
+            line(&[p(1.8, 13.4), p(14.2, 6.0)]);
+            circle(p(1.8, 13.4), 1.2, true);
+            circle(p(14.2, 3.4), 1.2, true);
+        }
+        Icon::ChannelDisjoint => {
+            line(&[p(1.4, 8.6), p(9.4, 3.8)]);
+            line(&[p(6.6, 13.8), p(14.6, 9.0)]);
+            circle(p(1.4, 8.6), 1.2, true);
+            circle(p(14.6, 9.0), 1.2, true);
+        }
+        Icon::ForkAndrews => {
+            // Three prongs from a base, the median starting at the first pivot.
+            line(&[p(2.0, 8.0), p(14.4, 8.0)]);
+            line(&[p(7.0, 2.6), p(14.4, 2.6)]);
+            line(&[p(7.0, 13.4), p(14.4, 13.4)]);
+            line(&[p(7.0, 2.6), p(7.0, 13.4)]);
+            circle(p(2.0, 8.0), 1.4, true);
+        }
+        Icon::ForkSchiff => {
+            // The median starts level with the first pivot's time, halfway down to the second.
+            line(&[p(2.0, 9.4), p(14.4, 9.4)]);
+            line(&[p(7.0, 4.0), p(14.4, 4.0)]);
+            line(&[p(7.0, 14.8), p(14.4, 14.8)]);
+            line(&[p(7.0, 4.0), p(7.0, 14.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(2.0, 9.4), p(2.0, 2.8)],
+                stroke,
+                1.6 * scale,
+                1.4 * scale,
+            ));
+            circle(p(2.0, 2.8), 1.4, false);
+        }
+        Icon::ForkModifiedSchiff => {
+            // The median starts halfway between the first two pivots in time as well.
+            line(&[p(4.6, 9.4), p(14.4, 9.4)]);
+            line(&[p(7.6, 4.0), p(14.4, 4.0)]);
+            line(&[p(7.6, 14.8), p(14.4, 14.8)]);
+            line(&[p(7.6, 4.0), p(7.6, 14.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(4.6, 9.4), p(2.0, 2.8)],
+                stroke,
+                1.6 * scale,
+                1.4 * scale,
+            ));
+            circle(p(2.0, 2.8), 1.4, false);
+        }
+        Icon::ForkInside => {
+            // The prongs start on the base and the median runs on to the third pivot.
+            line(&[p(2.0, 2.6), p(13.0, 2.6)]);
+            line(&[p(2.0, 13.4), p(13.0, 13.4)]);
+            line(&[p(2.0, 2.6), p(2.0, 13.4)]);
+            line(&[p(2.0, 8.0), p(12.0, 8.0)]);
+            circle(p(12.0, 8.0), 1.6, true);
+        }
+        Icon::PatternXabcd => {
+            line(&[
+                p(1.6, 12.6),
+                p(4.8, 2.8),
+                p(8.0, 10.4),
+                p(11.0, 5.0),
+                p(14.4, 12.8),
+            ]);
+            painter.extend(Shape::dashed_line(
+                &[p(1.6, 12.6), p(8.0, 10.4)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            painter.extend(Shape::dashed_line(
+                &[p(4.8, 2.8), p(11.0, 5.0)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(1.6, 12.6), 1.2, true);
+            circle(p(14.4, 12.8), 1.2, true);
+        }
+        Icon::PatternCypher => {
+            line(&[
+                p(1.6, 11.4),
+                p(4.6, 4.4),
+                p(7.2, 9.4),
+                p(11.4, 2.2),
+                p(14.4, 10.6),
+            ]);
+            painter.extend(Shape::dashed_line(
+                &[p(1.6, 11.4), p(11.4, 2.2)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(1.6, 11.4), 1.2, true);
+            circle(p(14.4, 10.6), 1.2, true);
+        }
+        Icon::PatternHeadShoulders => {
+            line(&[
+                p(1.2, 12.4),
+                p(3.6, 6.8),
+                p(5.6, 11.2),
+                p(8.0, 2.6),
+                p(10.4, 11.2),
+                p(12.4, 6.8),
+                p(14.8, 12.4),
+            ]);
+            line(&[p(1.6, 11.2), p(14.4, 11.2)]);
+        }
+        Icon::PatternAbcd => {
+            line(&[p(2.0, 13.0), p(6.0, 3.4), p(10.0, 10.8), p(14.0, 1.8)]);
+            painter.extend(Shape::dashed_line(
+                &[p(2.0, 13.0), p(10.0, 10.8)],
+                stroke,
+                1.4 * scale,
+                1.2 * scale,
+            ));
+            circle(p(2.0, 13.0), 1.2, true);
+            circle(p(14.0, 1.8), 1.2, true);
+        }
+        Icon::PatternTriangle => {
+            line(&[p(1.8, 3.0), p(4.4, 12.8), p(8.0, 5.4), p(10.4, 10.6)]);
+            line(&[p(1.8, 3.0), p(14.4, 7.6)]);
+            line(&[p(4.4, 12.8), p(14.4, 8.4)]);
+            circle(p(1.8, 3.0), 1.2, true);
+            circle(p(10.4, 10.6), 1.2, true);
+        }
+        Icon::PatternThreeDrives => {
+            line(&[
+                p(1.4, 13.6),
+                p(3.8, 8.0),
+                p(5.2, 10.4),
+                p(8.2, 4.8),
+                p(9.6, 7.2),
+                p(13.0, 1.8),
+            ]);
+            circle(p(1.4, 13.6), 1.2, true);
+            circle(p(13.0, 1.8), 1.2, true);
+        }
+        Icon::WaveImpulse => {
+            line(&[
+                p(1.4, 13.6),
+                p(4.4, 7.0),
+                p(6.2, 10.6),
+                p(10.4, 3.6),
+                p(11.8, 7.4),
+                p(14.6, 2.8),
+            ]);
+            glyph('1', 2.4, 1.2, 4.2);
+            glyph('5', 12.0, 8.6, 4.2);
+        }
+        Icon::WaveCorrection => {
+            line(&[p(1.6, 3.4), p(6.4, 12.4), p(9.2, 7.6), p(14.4, 13.4)]);
+            glyph('A', 1.2, 6.6, 4.2);
+            glyph('C', 11.6, 6.0, 4.2);
+        }
+        Icon::WaveTriangle => {
+            line(&[
+                p(1.4, 12.0),
+                p(4.0, 3.2),
+                p(6.4, 10.8),
+                p(8.8, 5.4),
+                p(10.8, 9.6),
+                p(13.2, 6.4),
+            ]);
+            glyph('A', 2.4, 12.4, 3.4);
+            glyph('E', 11.8, 10.0, 3.4);
+        }
+        Icon::WaveDouble => {
+            line(&[p(1.4, 4.0), p(5.0, 12.6), p(8.6, 7.4), p(14.6, 13.2)]);
+            glyph('W', 1.2, 7.6, 3.8);
+            glyph('Y', 11.6, 6.0, 3.8);
+        }
+        Icon::WaveTriple => {
+            line(&[
+                p(1.4, 4.2),
+                p(4.2, 11.6),
+                p(6.4, 6.8),
+                p(9.2, 12.6),
+                p(11.4, 8.0),
+                p(14.4, 13.4),
+            ]);
+            glyph('W', 1.0, 7.0, 3.6);
+            glyph('Z', 12.0, 4.6, 3.6);
+        }
+        Icon::CycleLines => {
+            for x in [2.4, 6.1, 9.8, 13.5] {
+                line(&[p(x, 2.0), p(x, 14.0)]);
+            }
+            circle(p(2.4, 8.0), 1.3, true);
+            circle(p(6.1, 8.0), 1.3, true);
+        }
+        Icon::CycleArcs => {
+            line(&[p(1.2, 12.4), p(14.8, 12.4)]);
+            line(&arc(4.8, 12.4, 3.2, 180.0, 360.0));
+            line(&arc(11.2, 12.4, 3.2, 180.0, 360.0));
+        }
+        Icon::CycleSine => {
+            let wave: Vec<Pos2> = (0..=28)
+                .map(|k| {
+                    let t = k as f32 / 28.0;
+                    p(
+                        1.4 + 13.2 * t,
+                        8.0 - 4.6 * (std::f32::consts::TAU * t).sin(),
+                    )
+                })
+                .collect();
+            line(&wave);
+        }
+        Icon::PositionLong => {
+            painter.rect_stroke(
+                rect_of(p(2.0, 2.6), p(14.0, 13.4)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(2.0, 9.6), p(14.0, 9.6)]);
+            line(&[p(8.0, 7.8), p(8.0, 4.2)]);
+            line(&[p(6.2, 5.9), p(8.0, 4.2), p(9.8, 5.9)]);
+        }
+        Icon::PositionShort => {
+            painter.rect_stroke(
+                rect_of(p(2.0, 2.6), p(14.0, 13.4)),
+                round(1.2),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(2.0, 6.4), p(14.0, 6.4)]);
+            line(&[p(8.0, 8.2), p(8.0, 11.8)]);
+            line(&[p(6.2, 10.1), p(8.0, 11.8), p(9.8, 10.1)]);
+        }
+        Icon::PositionForecast => {
+            line(&[p(2.6, 12.6), p(12.6, 4.6)]);
+            line(&[p(9.2, 4.2), p(13.0, 4.2), p(13.0, 8.0)]);
+            circle(p(2.6, 12.6), 1.4, true);
+            line(&[p(2.6, 14.4), p(13.4, 14.4)]);
+            line(&[p(13.4, 14.4), p(13.4, 11.0)]);
+        }
+        Icon::BarsPatternTool => {
+            for (x, top, bottom, open, close) in [
+                (3.6, 5.0, 12.0, 8.2, 6.4),
+                (8.0, 3.0, 10.0, 8.6, 4.6),
+                (12.4, 6.0, 13.4, 10.4, 8.0),
+            ] {
+                line(&[p(x, top), p(x, bottom)]);
+                line(&[p(x - 1.8, open), p(x, open)]);
+                line(&[p(x, close), p(x + 1.8, close)]);
+            }
+        }
+        Icon::GhostFeedTool => {
+            for (x, top, body_top, body_bottom, bottom) in [
+                (4.0, 6.0, 7.6, 11.0, 12.6),
+                (8.0, 4.0, 5.6, 9.4, 11.6),
+                (12.0, 2.8, 4.4, 8.0, 9.6),
+            ] {
+                painter.extend(Shape::dashed_line(
+                    &[p(x, top), p(x, bottom)],
+                    stroke,
+                    1.4 * scale,
+                    1.2 * scale,
+                ));
+                painter.rect_stroke(
+                    rect_of(p(x - 1.7, body_top), p(x + 1.7, body_bottom)),
+                    round(0.4),
+                    stroke,
+                    StrokeKind::Middle,
+                );
+            }
+        }
+        Icon::SectorTool => {
+            line(&[p(13.6, 12.6), p(2.6, 12.6), p(11.6, 3.8)]);
+            line(&arc(2.6, 12.6, 11.0, -45.0, 0.0));
+            circle(p(2.6, 12.6), 1.3, true);
+        }
+        Icon::VwapTool => {
+            line(&[
+                p(2.6, 11.4),
+                p(5.0, 9.0),
+                p(7.4, 10.0),
+                p(10.0, 6.8),
+                p(14.2, 5.8),
+            ]);
+            line(&[p(2.6, 3.0), p(2.6, 13.6)]);
+            circle(p(2.6, 11.4), 1.4, true);
+        }
+        Icon::ProfileFixed => {
+            line(&[p(2.4, 2.0), p(2.4, 14.0)]);
+            line(&[p(14.4, 2.0), p(14.4, 14.0)]);
+            for (y, width) in [(3.4, 5.0), (6.0, 8.6), (8.6, 10.8), (11.2, 6.4)] {
+                painter.rect_filled(
+                    rect_of(p(2.4, y - 0.8), p(2.4 + width, y + 0.8)),
+                    round(0.3),
+                    color,
+                );
+            }
+        }
+        Icon::ProfileAnchored => {
+            line(&[p(2.4, 2.0), p(2.4, 14.0)]);
+            for (y, width) in [(3.4, 5.0), (6.0, 8.6), (8.6, 10.8), (11.2, 6.4)] {
+                painter.rect_filled(
+                    rect_of(p(2.4, y - 0.8), p(2.4 + width, y + 0.8)),
+                    round(0.3),
+                    color,
+                );
+            }
+            circle(p(2.4, 2.4), 1.5, true);
+        }
+        Icon::RangePrice => {
+            line(&[p(3.0, 3.6), p(13.0, 3.6)]);
+            line(&[p(3.0, 12.4), p(13.0, 12.4)]);
+            line(&[p(8.0, 3.6), p(8.0, 12.4)]);
+            line(&[p(6.2, 5.4), p(8.0, 3.6), p(9.8, 5.4)]);
+            line(&[p(6.2, 10.6), p(8.0, 12.4), p(9.8, 10.6)]);
+        }
+        Icon::RangeDate => {
+            line(&[p(3.6, 3.0), p(3.6, 13.0)]);
+            line(&[p(12.4, 3.0), p(12.4, 13.0)]);
+            line(&[p(3.6, 8.0), p(12.4, 8.0)]);
+            line(&[p(5.4, 6.2), p(3.6, 8.0), p(5.4, 9.8)]);
+            line(&[p(10.6, 6.2), p(12.4, 8.0), p(10.6, 9.8)]);
+        }
+        Icon::RangeDatePrice => {
+            painter.rect_stroke(
+                rect_of(p(2.6, 2.6), p(13.4, 13.4)),
+                round(0.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.6, 8.0), p(11.4, 8.0)]);
+            line(&[p(6.2, 6.6), p(4.6, 8.0), p(6.2, 9.4)]);
+            line(&[p(9.8, 6.6), p(11.4, 8.0), p(9.8, 9.4)]);
+            line(&[p(8.0, 4.6), p(8.0, 11.4)]);
+            line(&[p(6.6, 6.2), p(8.0, 4.6), p(9.4, 6.2)]);
+            line(&[p(6.6, 9.8), p(8.0, 11.4), p(9.4, 9.8)]);
+        }
+        Icon::TextTool => {
+            // A capital T.
+            line(&[p(2.8, 3.0), p(13.2, 3.0)]);
+            line(&[p(8.0, 3.0), p(8.0, 13.4)]);
+            line(&[p(5.8, 13.4), p(10.2, 13.4)]);
+        }
+        Icon::NoteTool => {
+            // A text box with a thin leader down to its dot.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.2), p(14.2, 9.2)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.4, 4.9), p(11.6, 4.9)]);
+            line(&[p(4.4, 6.9), p(9.0, 6.9)]);
+            line(&[p(8.0, 9.2), p(8.0, 12.6)]);
+            circle(p(8.0, 13.3), 1.3, true);
+        }
+        Icon::PriceNoteTool => {
+            // A note over a price level, its leader meeting the level at a dot.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.0), p(14.2, 7.6)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.4, 4.8), p(8.6, 4.8)]);
+            line(&[p(5.5, 7.6), p(5.5, 11.8)]);
+            line(&[p(1.8, 12.2), p(14.2, 12.2)]);
+            circle(p(5.5, 12.2), 1.3, true);
+        }
+        Icon::PinTool => {
+            // A map pin: the head is a circle, the point is where it is pinned.
+            let mut pin = arc(8.0, 6.2, 4.4, 140.0, 400.0);
+            pin.push(p(8.0, 14.6));
+            closed(&pin);
+            circle(p(8.0, 6.2), 1.5, false);
+        }
+        Icon::TableTool => {
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.6), p(14.2, 13.4)),
+                round(1.6),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(1.8, 6.2), p(14.2, 6.2)]);
+            line(&[p(1.8, 9.8), p(14.2, 9.8)]);
+            line(&[p(6.0, 2.6), p(6.0, 13.4)]);
+            line(&[p(10.0, 2.6), p(10.0, 13.4)]);
+        }
+        Icon::CalloutTool => {
+            // A speech box whose tail points at the thing it is about.
+            closed(&[
+                p(1.8, 2.4),
+                p(14.2, 2.4),
+                p(14.2, 9.6),
+                p(7.6, 9.6),
+                p(4.0, 13.6),
+                p(4.4, 9.6),
+                p(1.8, 9.6),
+            ]);
+            line(&[p(4.4, 5.0), p(11.6, 5.0)]);
+            line(&[p(4.4, 7.0), p(8.8, 7.0)]);
+        }
+        Icon::CommentTool => {
+            // A small round bubble with three dots.
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.4), p(14.2, 10.6)),
+                round(4.0),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(4.6, 10.6), p(3.6, 13.6), p(7.8, 10.6)]);
+            for x in [5.0, 8.0, 11.0] {
+                circle(p(x, 6.5), 0.8, true);
+            }
+        }
+        Icon::PriceLabelTool => {
+            // A tag pointing left at the price it names.
+            closed(&[
+                p(1.6, 8.0),
+                p(4.8, 4.0),
+                p(14.4, 4.0),
+                p(14.4, 12.0),
+                p(4.8, 12.0),
+            ]);
+            line(&[p(7.2, 8.0), p(12.0, 8.0)]);
+        }
+        Icon::SignpostTool => {
+            // A star in a circle: the marker on the pole.
+            circle(p(8.0, 8.0), 6.3, false);
+            fill_poly(star_points(3.7, 1.6));
+        }
+        Icon::FlagTool => {
+            line(&[p(4.0, 1.8), p(4.0, 14.6)]);
+            fill_poly(vec![p(4.0, 2.2), p(13.6, 5.0), p(4.0, 8.2)]);
+        }
+        Icon::ImageTool => {
+            painter.rect_stroke(
+                rect_of(p(1.8, 2.8), p(14.2, 13.2)),
+                round(1.8),
+                stroke,
+                StrokeKind::Middle,
+            );
+            circle(p(5.4, 6.4), 1.3, true);
+            line(&[
+                p(2.4, 12.2),
+                p(6.2, 8.6),
+                p(8.8, 11.0),
+                p(10.8, 9.0),
+                p(13.6, 12.2),
+            ]);
+        }
         Icon::Magnet => {
-            line(&arc(8.0, 7.2, 5.4, 180.0, 360.0));
-            line(&[p(2.6, 7.2), p(2.6, 13.6)]);
-            line(&[p(13.4, 7.2), p(13.4, 13.6)]);
-            line(&[p(1.0, 13.6), p(4.2, 13.6)]);
-            line(&[p(11.8, 13.6), p(15.0, 13.6)]);
+            // A horseshoe: one thick outline, and its two poles struck solid below a gap so the
+            // tips read as the ends that pull.
+            let mut body = vec![p(1.4, 14.4)];
+            body.extend(arc(8.0, 7.8, 6.6, 180.0, 360.0));
+            body.extend([p(14.6, 14.4), p(10.4, 14.4)]);
+            body.extend(arc(8.0, 7.8, 2.4, 360.0, 180.0));
+            body.push(p(5.6, 14.4));
+            closed(&body);
+            for (left, right) in [(1.4, 5.6), (10.4, 14.6)] {
+                line(&[p(left, 9.9), p(right, 9.9)]);
+                painter.rect_filled(rect_of(p(left, 11.7), p(right, 14.4)), 0.0, color);
+            }
         }
         Icon::KeepDrawing => {
             closed(&[
@@ -1200,6 +2056,13 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 StrokeKind::Middle,
             );
             circle(p(8.0, 8.9), 2.5, false);
+        }
+        // A price axis: the line with three ticks of different lengths running in from it.
+        Icon::PriceScale => {
+            line(&[p(12.0, 2.0), p(12.0, 14.0)]);
+            line(&[p(12.0, 3.6), p(6.4, 3.6)]);
+            line(&[p(12.0, 8.0), p(3.6, 8.0)]);
+            line(&[p(12.0, 12.4), p(7.6, 12.4)]);
         }
         // The X mark: a heavy stroke down to the right, a light one up to the right.
         Icon::XLogo => {
@@ -1387,7 +2250,22 @@ mod tests {
             CheckCircle,
             ClockBadge,
             LineDiagonal,
-            FibPoints,
+            LineTrend,
+            FibRetracement,
+            FibExtension,
+            FibChannel,
+            FibTimeZone,
+            FibSpeedFan,
+            FibTrendTime,
+            FibCircles,
+            FibSpiral,
+            FibSpeedArcs,
+            FibWedge,
+            Pitchfan,
+            GannBox,
+            GannSquareFixed,
+            GannSquare,
+            GannFan,
             Paintbrush,
             SunMaxFill,
             MoonFill,
@@ -1404,6 +2282,7 @@ mod tests {
             BoltSlash,
             Link,
             Camera,
+            PriceScale,
             XLogo,
             ChainLinked,
             ChainBroken,
@@ -1428,11 +2307,64 @@ mod tests {
             ShapeArc,
             ShapeCurve,
             ShapeDoubleCurve,
+            LineRay,
+            LineInfo,
+            LineExtended,
+            LineAngle,
+            LineHorizontal,
+            LineHorizontalRay,
+            LineVertical,
+            LineCross,
+            ChannelParallel,
+            ChannelRegression,
+            ChannelFlat,
+            ChannelDisjoint,
+            ForkAndrews,
+            ForkSchiff,
+            ForkModifiedSchiff,
+            ForkInside,
+            PatternXabcd,
+            PatternCypher,
+            PatternHeadShoulders,
+            PatternAbcd,
+            PatternTriangle,
+            PatternThreeDrives,
+            WaveImpulse,
+            WaveCorrection,
+            WaveTriangle,
+            WaveDouble,
+            WaveTriple,
+            CycleLines,
+            CycleArcs,
+            CycleSine,
+            PositionLong,
+            PositionShort,
+            PositionForecast,
+            BarsPatternTool,
+            GhostFeedTool,
+            SectorTool,
+            VwapTool,
+            ProfileFixed,
+            ProfileAnchored,
+            RangePrice,
+            RangeDate,
+            RangeDatePrice,
             Magnet,
             KeepDrawing,
             LockOpen,
             BringForward,
             SendBackward,
+            TextTool,
+            NoteTool,
+            PriceNoteTool,
+            PinTool,
+            TableTool,
+            CalloutTool,
+            CommentTool,
+            PriceLabelTool,
+            SignpostTool,
+            FlagTool,
+            ImageTool,
         ];
         for icon in all {
             let ctx = egui::Context::default();
@@ -1447,5 +2379,40 @@ mod tests {
             output.textures_delta.clear();
             assert!(!output.shapes.is_empty(), "{icon:?} drew nothing");
         }
+    }
+
+    /// The magnet at the sizes it is used, next to its neighbours, in both tints. Run by hand
+    /// with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_magnet() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let mut screen = Screen::new(egui::vec2(360.0, 150.0));
+        let muted = Color32::from_gray(150);
+        let accent = crate::ui::kit::ACCENT;
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(screen.run(Vec::new(), |ui| {
+                let painter = ui.painter();
+                let mut x = 12.0;
+                for (size, tint) in [(16.0, muted), (18.0, muted), (18.0, accent), (24.0, accent)] {
+                    let rect = Rect::from_min_size(pos2(x, 12.0), Vec2::splat(size));
+                    paint(painter, rect, Icon::Magnet, tint);
+                    x += size + 14.0;
+                }
+                for (k, icon) in [Icon::Magnet, Icon::KeepDrawing, Icon::LockOpen]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let rect =
+                        Rect::from_min_size(pos2(12.0 + k as f32 * 76.0, 56.0), Vec2::splat(64.0));
+                    paint(painter, rect, icon, accent);
+                }
+            }));
+        }
+        screen.save("magnet", last.expect("a frame"));
     }
 }

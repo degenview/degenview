@@ -10,8 +10,8 @@ use super::transport::{
     AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, SentDeleted, SentSaved,
     StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent, ZoneEvent,
 };
+use crate::host::sync_host::{EventSink, TransportFactory};
 use crate::service::entitlements::{icloud_environment, read_self};
-use crate::sync_host::{EventSink, TransportFactory};
 use serde_json::{Value, json};
 use std::ffi::c_void;
 use std::sync::Arc;

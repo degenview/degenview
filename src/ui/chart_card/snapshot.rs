@@ -20,9 +20,13 @@ pub struct SnapshotInput<'a> {
     pub source: DataSource,
     /// The market's candles as the chart shows them (cut at the replay's time while it runs).
     pub candles: &'a [Kline],
-    pub log_scale: bool,
+    pub scale_mode: PriceScaleMode,
     pub indicators: &'a IndicatorConfig,
     pub drawings: &'a [Drawing],
+    /// The drawings whose note is open on the chart (a pin's).
+    pub open_notes: &'a [u64],
+    /// The pictures the drawings show, decoded: a snapshot has no store to ask for them.
+    pub images: Option<&'a std::collections::HashMap<String, Arc<egui::ColorImage>>>,
     pub hide_all_drawings: bool,
     pub replay_active: bool,
     /// Draw the paper-trading orders and positions, if the chart shows them.
@@ -164,7 +168,7 @@ impl ChartCard {
             source,
             line,
             chart_type,
-            log_scale: input.log_scale,
+            scale_mode: input.scale_mode,
             candles,
             bars,
             constructed: constructed.as_deref(),
@@ -172,10 +176,11 @@ impl ChartCard {
             indicators: input.indicators,
         };
         let layout = self.frame_layout(&data, rect, painter, &style);
-        let Some(view) = self.view(bars, layout.plot, input.log_scale, chart_type) else {
+        let Some(view) = self.view(bars, layout.plot, input.scale_mode, chart_type) else {
             return Err(SnapshotError::Empty);
         };
         let mut layer = DrawingLayer::default();
+        layer.set_open_notes(input.open_notes);
         let mut drawing = DrawingFrame::new(input.drawings, Tool::Cursor, None, 1).with_view(
             self.timeframe.unwrap_or(Timeframe::Day),
             input.hide_all_drawings,
@@ -197,7 +202,6 @@ impl ChartCard {
                 replay_active: input.replay_active,
                 time_lock: false,
                 crosshair: None,
-                pixels_per_point: painter.ctx().pixels_per_point(),
             },
             &mut overlays,
         );
@@ -219,6 +223,12 @@ impl ChartCard {
         );
         let ctx = egui::Context::default();
         theme::install_offscreen(&ctx);
+        if let Some(images) = input.images {
+            crate::service::asset_host::freeze(
+                &ctx,
+                crate::service::asset_host::FrozenAssets(Arc::new(images.clone())),
+            );
+        }
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             viewports: std::iter::once((

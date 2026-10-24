@@ -11,6 +11,7 @@ use super::model::ScriptType;
 use super::registry::LibraryRegistry;
 use super::workspace::PreviewInput;
 use crate::format;
+use crate::model::price_scale::PriceScaleMode;
 use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::program::{InputSchema, VisualOutput};
@@ -196,6 +197,8 @@ impl PreviewState {
             })
             .unwrap_or_else(|_| (Vec::new(), Timeframe::Day, None, None));
         let mut card = ChartCard::default();
+        // A script preview has no price-scale menu: its scale is always plain.
+        card.set_scale_menu(false);
         if let Some(count) = candles {
             card.set_visible_candles(count);
         }
@@ -797,7 +800,7 @@ pub fn chart(
         } else {
             None
         },
-        false,
+        PriceScaleMode::Regular,
         source,
         &IndicatorConfig::default(),
         None,

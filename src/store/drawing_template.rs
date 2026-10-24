@@ -12,7 +12,7 @@ use crate::model::drawing_template::{DrawingTemplate, TemplateBook};
 use crate::model::watchlist::now_ms;
 use crate::model::{DrawingStyle, Tool};
 use crate::store::{Document, SharedStore, Store};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
@@ -30,13 +30,79 @@ impl Document for DrawingTemplate {
 }
 
 /// The strip's drawing options, remembered between launches.
+///
+/// This setting syncs, so a newer build may have written a value this one does not know (a tool it
+/// has not got, a magnet mode it lacks). Each field is read on its own: one it cannot read falls
+/// back to its default and the others are kept, instead of every option resetting.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(default)]
 pub struct DrawingPrefs {
+    #[serde(deserialize_with = "magnet_or_default")]
     pub magnet: crate::model::MagnetMode,
+    #[serde(deserialize_with = "keep_drawing_or_default")]
     pub keep_drawing: bool,
     /// The tool the grouped brushes, arrows and shapes tile shows.
+    #[serde(deserialize_with = "group_tool_or_default")]
     pub group_tool: Tool,
+    /// The tool the Lines tile shows.
+    #[serde(deserialize_with = "line_tool_or_default")]
+    pub line_tool: Tool,
+    /// The tool the text and notes tile shows.
+    #[serde(deserialize_with = "note_tool_or_default")]
+    pub note_tool: Tool,
+    /// The tool the chart patterns, Elliott waves and cycles tile shows.
+    #[serde(deserialize_with = "pattern_tool_or_default")]
+    pub pattern_tool: Tool,
+    /// The tool the forecasting, volume and measurement tile shows.
+    #[serde(deserialize_with = "forecast_tool_or_default")]
+    pub forecast_tool: Tool,
+    /// The tool the Fibonacci and Gann tile shows.
+    #[serde(deserialize_with = "fib_tool_or_default")]
+    pub fib_tool: Tool,
+}
+
+/// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
+fn field_or<'de, D, T>(deserializer: D, fallback: T) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).unwrap_or(fallback))
+}
+
+fn magnet_or_default<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<crate::model::MagnetMode, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().magnet)
+}
+
+fn keep_drawing_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().keep_drawing)
+}
+
+fn group_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().group_tool)
+}
+
+fn line_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().line_tool)
+}
+
+fn note_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().note_tool)
+}
+
+fn pattern_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().pattern_tool)
+}
+
+fn forecast_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().forecast_tool)
+}
+
+fn fib_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().fib_tool)
 }
 
 impl Default for DrawingPrefs {
@@ -45,7 +111,40 @@ impl Default for DrawingPrefs {
             magnet: crate::model::MagnetMode::Off,
             keep_drawing: true,
             group_tool: Tool::Brush,
+            line_tool: Tool::TrendLine,
+            note_tool: Tool::Text,
+            pattern_tool: Tool::XabcdPattern,
+            forecast_tool: Tool::LongPosition,
+            fib_tool: Tool::FibRetracement,
         }
+    }
+}
+
+impl DrawingPrefs {
+    /// The prefs with each tile's tool brought back to one its menu holds, so a stored value
+    /// that names something else (a hand-edited row) cannot leave a tile with the wrong glyph.
+    pub fn sanitized(mut self) -> Self {
+        use crate::model::ToolGroup;
+        let defaults = Self::default();
+        if !ToolGroup::MENU.contains(&self.group_tool.spec().group) {
+            self.group_tool = defaults.group_tool;
+        }
+        if !ToolGroup::LINE_MENU.contains(&self.line_tool.spec().group) {
+            self.line_tool = defaults.line_tool;
+        }
+        if !ToolGroup::NOTE_MENU.contains(&self.note_tool.spec().group) {
+            self.note_tool = defaults.note_tool;
+        }
+        if !ToolGroup::PATTERN_MENU.contains(&self.pattern_tool.spec().group) {
+            self.pattern_tool = defaults.pattern_tool;
+        }
+        if !ToolGroup::FORECAST_MENU.contains(&self.forecast_tool.spec().group) {
+            self.forecast_tool = defaults.forecast_tool;
+        }
+        if !ToolGroup::FIB_MENU.contains(&self.fib_tool.spec().group) {
+            self.fib_tool = defaults.fib_tool;
+        }
+        self
     }
 }
 
@@ -227,8 +326,9 @@ impl DrawingTemplateStore {
         self.store
             .lock()
             .expect("store lock poisoned")
-            .setting(PREFS_KEY)
+            .setting::<DrawingPrefs>(PREFS_KEY)
             .unwrap_or_default()
+            .sanitized()
     }
 
     pub fn set_prefs(&self, prefs: &DrawingPrefs) {
@@ -254,6 +354,41 @@ mod tests {
         let mut style = Tool::Rectangle.default_style();
         style.stroke.width = width;
         style
+    }
+
+    #[test]
+    fn every_tools_template_and_default_keep_its_levels_and_settings() {
+        let store = shared();
+        let mut templates = DrawingTemplateStore::new(store.clone());
+        for tool in Tool::GROUPED {
+            let mut custom = tool.default_style();
+            custom.pitchfork_levels[2].ratio = 0.45;
+            custom.pitchfork_levels[2].line.enabled = true;
+            custom.channel_levels[1].line.enabled = true;
+            custom.regression.upper_dev = 1.25;
+            custom.regression.pearson = false;
+            custom.use_one_color = true;
+            custom.text.size = 20.0;
+            templates
+                .save("Mine", tool, &custom)
+                .unwrap_or_else(|error| panic!("{tool:?}: {error}"));
+            templates.set_default(tool, &custom).unwrap();
+        }
+        // A new session reads every one back, for the tool it was saved for.
+        let mut again = DrawingTemplateStore::new(store);
+        again.refresh(Instant::now() + REFRESH_AFTER);
+        for tool in Tool::GROUPED {
+            let saved = again.book().for_tool(tool);
+            assert_eq!(saved.len(), 1, "{tool:?}");
+            let style = saved[0].style;
+            assert_eq!(style.pitchfork_levels[2].ratio, 0.45, "{tool:?}");
+            assert!(style.channel_levels[1].line.enabled && style.use_one_color);
+            assert_eq!(style.regression.upper_dev, 1.25);
+            assert!(!style.regression.pearson);
+            assert_eq!(again.defaults()[&tool], style, "{tool:?}");
+        }
+        // And a new Ray starts from what its default says, not the built-in look.
+        assert_eq!(again.defaults()[&Tool::Ray].text.size, 20.0);
     }
 
     #[test]
@@ -367,8 +502,101 @@ mod tests {
             magnet: MagnetMode::Strong,
             keep_drawing: false,
             group_tool: Tool::Curve,
+            line_tool: Tool::SchiffPitchfork,
+            note_tool: Tool::Pin,
+            pattern_tool: Tool::SineLine,
+            forecast_tool: Tool::DateAndPriceRange,
+            fib_tool: Tool::FibRetracement,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
+    }
+
+    #[test]
+    fn a_value_this_version_does_not_know_resets_only_its_own_option() {
+        let store = shared();
+        // A newer build's tile tool, and a magnet mode this one lacks, beside options it reads.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({
+                    "magnet": "a_future_mode",
+                    "keep_drawing": false,
+                    "group_tool": "Arc",
+                    "line_tool": "AToolFromTheFuture",
+                    "note_tool": "Callout",
+                    "pattern_tool": "ElliottImpulse",
+                    "forecast_tool": "AnchoredVwap",
+                    "fib_tool": "AToolFromTheFuture",
+                }),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store.clone()).prefs();
+        assert_eq!(prefs.magnet, MagnetMode::Off, "the unknown mode falls back");
+        assert!(!prefs.keep_drawing, "what it can read is kept");
+        assert_eq!(prefs.group_tool, Tool::Arc);
+        assert_eq!(
+            prefs.line_tool,
+            Tool::TrendLine,
+            "the unknown tool falls back"
+        );
+        assert_eq!(prefs.note_tool, Tool::Callout);
+        assert_eq!(prefs.pattern_tool, Tool::ElliottImpulse);
+        assert_eq!(prefs.forecast_tool, Tool::AnchoredVwap);
+        assert_eq!(prefs.fib_tool, Tool::FibRetracement);
+        // A value of the wrong kind altogether is the same.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({"keep_drawing": "yes", "note_tool": 7, "group_tool": "Arc"}),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store).prefs();
+        assert!(prefs.keep_drawing, "the default");
+        assert_eq!(prefs.note_tool, Tool::Text);
+        assert_eq!(prefs.group_tool, Tool::Arc);
+    }
+
+    #[test]
+    fn prefs_saved_before_a_tile_open_on_its_first_tool_and_odd_tools_are_replaced() {
+        let store = shared();
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({"magnet": "weak", "keep_drawing": false, "group_tool": "Arc"}),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store.clone()).prefs();
+        assert_eq!(prefs.line_tool, Tool::TrendLine);
+        assert_eq!(prefs.group_tool, Tool::Arc);
+        // A tile can only show a tool its own menu holds.
+        store
+            .lock()
+            .unwrap()
+            .set_setting(
+                PREFS_KEY,
+                &serde_json::json!({
+                    "group_tool": "Ray",
+                    "line_tool": "Brush",
+                    "note_tool": "Arc",
+                    "pattern_tool": "Rectangle",
+                    "forecast_tool": "Rectangle",
+                    "fib_tool": "Rectangle",
+                }),
+            )
+            .unwrap();
+        let prefs = DrawingTemplateStore::new(store).prefs();
+        assert_eq!(prefs.group_tool, Tool::Brush);
+        assert_eq!(prefs.line_tool, Tool::TrendLine);
+        assert_eq!(prefs.note_tool, Tool::Text);
+        assert_eq!(prefs.pattern_tool, Tool::XabcdPattern);
+        assert_eq!(prefs.forecast_tool, Tool::LongPosition);
+        assert_eq!(prefs.fib_tool, Tool::FibRetracement);
     }
 }

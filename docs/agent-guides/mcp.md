@@ -1,14 +1,14 @@
 # MCP guidance
 
 - `src/mcp/` alone may use async: one current-thread Tokio runtime on the `mcp-server` thread for
-  rmcp/axum. Keep it egui-free; `mcp_host.rs` bridges stateful workspace access.
+  rmcp/axum. Keep it egui-free; `host/mcp_host.rs` bridges stateful workspace access.
 - Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` executes through
   workspace methods on the app thread. Tool/HTTP threads never lock `TabSlot`/`ChartWorkspace` or
   write SQLite.
 - Authorization is per call from fresh `McpShared` state. Add a `Permission`, map it in
   `tools::required_permission`, and test direct-call denial. Persist before publishing shared state.
   Store/log only SHA-256 token verifiers, never tokens.
-- Price-alert tools plan against `AlertHost` in `mcp_host.rs`, then enqueue
+- Price-alert tools plan against `AlertHost` in `host/mcp_host.rs`, then enqueue
   `AlertRuntimeCommand`; they never write alert tables or reimplement `PriceAlertEditorState`.
 - Read-only script tools use `mcp/pine.rs` with `ScriptStore` and compiler on a worker. Chart-private
   Pine state goes through `ChartWorkspace::pine_instance_views` on the app thread. Do not invent

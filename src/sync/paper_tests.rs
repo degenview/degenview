@@ -2,11 +2,11 @@
 
 use super::core_tests::{Mac, mac};
 use super::mock::MockCloud;
+use crate::host::paper_host::PaperHost;
 use crate::model::paper::{
     PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide,
     PaperOrderStatus, PaperOrderType, PaperQuote, PaperTimeInForce,
 };
-use crate::paper_host::PaperHost;
 use crate::store::sync::OutboxState;
 
 fn pair() -> (MockCloud, Mac, Mac) {

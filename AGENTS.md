@@ -11,6 +11,10 @@ scenario matches the work:
 | --- | --- |
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
+| Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
+| Chart patterns, Elliott waves or cycle drawings | [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) |
+| Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
+| Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Pine language/runtime, Script Manager, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
@@ -57,10 +61,15 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 - [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
+- [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.
 - [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, and templates.
 - [Chart context menus](docs/chart-context-menu.md) — right-click menus, Table view, Object tree, what is verified.
 - [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified versus inferred behavior, limits.
+- [Annotation tools](docs/annotation-tools.md) — text, notes, tables, images and posts; assets and previews.
+- [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) — the Patterns tile: ratios, labels and degrees, cycles counted in bars, provenance.
+- [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
+- [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).

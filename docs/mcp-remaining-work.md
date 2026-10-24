@@ -1,6 +1,6 @@
 # MCP server — remaining work
 
-Status of the local MCP server (`src/mcp/`, `src/mcp_host.rs`; design in
+Status of the local MCP server (`src/mcp/`, `src/host/mcp_host.rs`; design in
 [architecture/mcp.md](architecture/mcp.md)) and what is still planned. Ordered by what I would do
 next. Nothing here is started.
 
@@ -78,9 +78,16 @@ permission alone: no confirmation step (item 3 would add one for all high-impact
 
 Reading candles and drawing trend lines and rectangles are done (phase 7).
 
-- Only trend lines and rectangles can be created or edited. Fib, arrows, text, brushes, circles and
-  the rest are listed read-only (`editable: false`). There is no horizontal-line or ray tool in the
-  app; a horizontal level is a trend line with equal prices.
+- Only trend lines and rectangles can be created or edited. The Fibonacci and Gann tools
+  (`fib_retracement` … `gann_fan`), arrows, text, brushes, circles and
+  the rest are listed read-only (`editable: false`), including the app's horizontal and vertical
+  lines, rays, channels, regression trend and pitchforks (they can be deleted over MCP). Creating
+  them needs an argument shape with one to four anchors and per-tool settings; until then a
+  horizontal level made over MCP is a trend line with equal prices. The text, note and content tools
+  (text, note, price note, pin, table, callout, comment, price label, signpost, flag mark, image, post)
+  are the same: listed read-only by their snake-case names and deletable, never created. A
+  picture's bytes and a card's preview are not exposed; a table's cells and a pinned table's place are
+  not in `anchors` (it has none).
 - `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).
   DegenView fetches older history only as the chart is scrolled back, so an agent cannot ask for
   more; `has_older_loaded` and `older_history_available` say what is possible.
@@ -155,7 +162,7 @@ bypass.
 
 ## 12. Cleanup
 
-- `src/mcp_host.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
+- `src/host/mcp_host.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
   projections into `mcp/projection/{charts,alerts,pine}.rs` and keep the host to lifecycle and
   credentials.
 - `mcp/tools.rs` (~1,500 lines) could split per domain the same way.

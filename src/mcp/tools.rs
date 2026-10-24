@@ -1721,7 +1721,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_drawings",
-        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (trend lines and rectangles that are not locked).",
+        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (trend lines and rectangles that are not locked).",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

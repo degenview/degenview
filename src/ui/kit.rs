@@ -444,6 +444,16 @@ pub fn tab_bar_regular<T: Copy + PartialEq>(
     tab_bar_with(ui, id, items, selected, false, Density::Regular);
 }
 
+/// How wide `tab_bar_regular` is for these items whichever one is selected: every title is
+/// measured as the selected (heavier) one, so the width does not change with the tab.
+pub fn tab_bar_regular_width<T: Copy + PartialEq>(ui: &Ui, items: &[TabItem<T>]) -> f32 {
+    let widest: f32 = items
+        .iter()
+        .map(|item| segment_width(ui, item, true, Density::Regular))
+        .sum();
+    widest + 2.0 * items.len().saturating_sub(1) as f32 + 6.0
+}
+
 /// The two `IconTabBar` sizes: Swift's `isCompact` flag.
 #[derive(Clone, Copy, PartialEq)]
 enum Density {

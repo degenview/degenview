@@ -3,7 +3,7 @@
 
 use super::icons::{self, Icon};
 use super::{kit, theme};
-use crate::update_host::{Phase, UpdateView};
+use crate::host::update_host::{Phase, UpdateView};
 use eframe::egui::{self, Color32, Galley, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 

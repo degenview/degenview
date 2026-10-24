@@ -10,6 +10,7 @@
 use super::alert::{AlertId, AlertState};
 use super::paper::{PaperOrderSide, PaperOrderType};
 use super::pine_instance::VisualOrder;
+use super::price_scale::PriceScaleMode;
 use super::{DataSource, PriceFormat};
 
 /// What the right-click landed on. Drawings keep their own menu (`drawing_layer`), which opens
@@ -120,7 +121,8 @@ pub struct Facts {
     pub time_locked: bool,
     pub table_open: bool,
     pub tree_open: bool,
-    pub log_scale: bool,
+    /// The chart's price-scale mode, which the price-axis menu marks.
+    pub scale_mode: PriceScaleMode,
     pub templates: Vec<TemplateRow>,
     pub pane: Option<PaneFacts>,
     pub alert: Option<AlertState>,
@@ -143,7 +145,7 @@ impl Default for Facts {
             time_locked: false,
             table_open: false,
             tree_open: false,
-            log_scale: false,
+            scale_mode: PriceScaleMode::Regular,
             templates: Vec::new(),
             pane: None,
             alert: None,
@@ -178,7 +180,7 @@ pub enum Command {
     RemoveIndicators,
     OpenSettings,
     ResetPriceScale,
-    ToggleLogScale,
+    SetScaleMode(PriceScaleMode),
     ResetChartView,
     PaneSettings(u64),
     PaneToggle(u64),
@@ -198,6 +200,8 @@ pub enum Command {
 pub enum Glyph {
     Template,
     Layers,
+    Pause,
+    Play,
 }
 
 /// One row of a menu.
@@ -610,10 +614,16 @@ fn template_submenu(facts: &Facts) -> Item {
 }
 
 fn price_axis(facts: &Facts) -> Vec<Entry> {
-    grouped(vec![vec![
-        Item::new(Command::ResetPriceScale, "Reset price scale"),
-        Item::new(Command::ToggleLogScale, "Logarithmic scale").checked(facts.log_scale),
-    ]])
+    grouped(vec![
+        vec![Item::new(Command::ResetPriceScale, "Reset price scale")],
+        PriceScaleMode::ALL
+            .into_iter()
+            .map(|mode| {
+                Item::new(Command::SetScaleMode(mode), mode.label())
+                    .checked(facts.scale_mode == mode)
+            })
+            .collect(),
+    ])
 }
 
 fn time_axis() -> Vec<Entry> {
@@ -662,13 +672,13 @@ fn alert(id: AlertId, facts: &Facts) -> Vec<Entry> {
         return Vec::new();
     };
     let toggle = match state {
-        AlertState::Paused => Some("Resume alert"),
-        AlertState::Active => Some("Pause alert"),
+        AlertState::Paused => Some(("Resume alert", Glyph::Play)),
+        AlertState::Active => Some(("Pause alert", Glyph::Pause)),
         AlertState::Triggered | AlertState::Unsupported => None,
     };
     let mut first = vec![Item::new(Command::EditAlert(id), "Edit alert…")];
-    if let Some(label) = toggle {
-        first.push(Item::new(Command::ToggleAlert(id), label));
+    if let Some((label, glyph)) = toggle {
+        first.push(Item::new(Command::ToggleAlert(id), label).glyph(glyph));
     }
     grouped(vec![
         first,

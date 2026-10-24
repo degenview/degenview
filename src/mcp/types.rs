@@ -683,12 +683,12 @@ pub struct DrawingStyleInfo {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct DrawingInfo {
     pub drawing_id: String,
-    /// `trend_line`, `rectangle`, `fib`, `brush`, … (the app's own tool names).
+    /// `trend_line`, `rectangle`, `fib_retracement`, `brush`, … (the app's own tool names).
     pub tool: String,
     /// The first 20 points, in placement order.
     pub anchors: Vec<DrawingAnchorInfo>,
     pub anchor_count: usize,
-    /// Null for drawings that carry no style (a fib retracement).
+    /// Null for drawings that carry no style (the ruler).
     pub style: Option<DrawingStyleInfo>,
     pub text: Option<String>,
     pub locked: bool,

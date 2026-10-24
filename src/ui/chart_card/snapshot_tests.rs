@@ -13,9 +13,11 @@ fn input(harness: &Harness, include_trading: bool) -> SnapshotInput<'_> {
         symbol: "BTCUSDT",
         source: DataSource::Binance,
         candles: &harness.candles,
-        log_scale: false,
+        scale_mode: PriceScaleMode::Regular,
         indicators: &harness.indicators,
         drawings: &harness.drawings,
+        open_notes: &[],
+        images: None,
         hide_all_drawings: false,
         replay_active: harness.replay_active,
         include_trading,
@@ -71,8 +73,11 @@ fn gist(dump: &str) -> String {
     dump.chars().take(160).collect()
 }
 
-/// The live chart's last frame with nothing pointing at it, and its plot's rectangle.
+/// The live chart's last frame with nothing pointing at it, and its plot's rectangle. The
+/// scale button of the corner is the live chart's alone and has a test of its own below, so the
+/// comparisons of everything else leave it out.
 fn settled(harness: &mut Harness) -> (Vec<ClippedShape>, Rect) {
+    harness.card.set_scale_menu(false);
     let mut last = harness.frame();
     for _ in 0..4 {
         last = harness.frame();
@@ -183,6 +188,27 @@ fn drawings_snapshot_as_they_draw() {
 }
 
 #[test]
+fn every_pattern_wave_and_cycle_snapshots_as_it_draws() {
+    for (_, tool, anchors) in pattern_sets() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings =
+            vec![Drawing::build(tool, 1, &anchors, tool.default_style()).expect("builds")];
+        // The same shapes, labels included, as the live frame: and not the handles of a
+        // selection, which a snapshot never carries.
+        same_as_live(&mut harness, false);
+    }
+}
+
+#[test]
+fn every_forecast_volume_and_measurement_tool_snapshots_as_it_draws() {
+    for (_, drawing) in forecast_drawings() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![drawing];
+        same_as_live(&mut harness, false);
+    }
+}
+
+#[test]
 fn hidden_drawings_stay_hidden_and_visible_ones_are_drawn() {
     let mut harness = Harness::new(ChartCanvas::default());
     settled(&mut harness);
@@ -284,6 +310,7 @@ fn with_account(harness: &mut Harness) {
             price: 230.0,
             paused: false,
             above: true,
+            editable: true,
         }]);
 }
 
@@ -350,6 +377,33 @@ fn the_crosshair_a_hover_and_the_replay_badge_never_reach_a_snapshot() {
     assert!(only_snapshot.is_empty());
     // (The plot's own replay badge only shows on a narrow chart; this one is wide.)
     assert!(only_live.is_empty(), "{only_live:?}");
+}
+
+#[test]
+fn the_scale_button_is_the_live_chart_alone_and_never_reaches_a_snapshot() {
+    let mut with_button = Harness::new(ChartCanvas::default());
+    for _ in 0..5 {
+        with_button.frame();
+    }
+    let (live, rect) = {
+        let last = with_button.frame();
+        (last.0, last.1.rect.expect("the chart's rectangle"))
+    };
+    let mut without_button = Harness::new(ChartCanvas::default());
+    let (quiet, _) = settled(&mut without_button);
+    let (drawn_only_with_it, lost) = differences(&live, &quiet);
+    assert!(lost.is_empty(), "nothing is taken away: {lost:?}");
+    assert!(
+        !drawn_only_with_it.is_empty(),
+        "the live chart draws the button in the corner"
+    );
+    // The snapshot is the same image whether the live chart carries the button or not.
+    let image = |harness: &Harness| {
+        let mut shapes = dumped(&snapshot_shapes(harness, rect, false));
+        shapes.sort();
+        shapes
+    };
+    assert_eq!(image(&with_button), image(&without_button));
 }
 
 #[test]
@@ -501,4 +555,1114 @@ fn snapshot_cost() {
             image.pixels.len() * 4 / (1024 * 1024),
         );
     }
+}
+
+// MARK: A look at the new tools
+
+/// The lines, channels and pitchforks on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_lines_channels_and_pitchforks() {
+    use crate::model::{Anchor, Placement};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    // Anchors in the last stretch of `series(300)`: bars 215..290, prices around 200..270.
+    let anchors = [
+        at(236, 230.0),
+        at(262, 262.0),
+        at(250, 218.0),
+        at(285, 240.0),
+    ];
+    let make = |tool: Tool, id: u64, text: &str| {
+        let count = match tool.spec().placement {
+            Placement::Points(count) => usize::from(count),
+            _ => 1,
+        };
+        let mut drawing =
+            Drawing::build(tool, id, &anchors[..count], tool.default_style()).expect("builds");
+        drawing.set_text(text);
+        drawing
+    };
+    let sets: [(&str, Vec<(Tool, &str)>); 5] = [
+        (
+            "lines-1",
+            vec![
+                (Tool::TrendLine, "support"),
+                (Tool::Ray, ""),
+                (Tool::InfoLine, ""),
+            ],
+        ),
+        (
+            "lines-2",
+            vec![
+                (Tool::ExtendedLine, "extended"),
+                (Tool::TrendAngle, ""),
+                (Tool::HorizontalLine, "level"),
+                (Tool::VerticalLine, "event"),
+            ],
+        ),
+        (
+            "lines-3",
+            vec![(Tool::HorizontalRay, "ray"), (Tool::Crossline, "")],
+        ),
+        (
+            "channels",
+            vec![
+                (Tool::ParallelChannel, "channel"),
+                (Tool::RegressionTrend, ""),
+            ],
+        ),
+        (
+            "channels-2",
+            vec![(Tool::FlatChannel, "flat"), (Tool::DisjointChannel, "")],
+        ),
+    ];
+    let forks: Vec<(String, Vec<(Tool, &str)>)> = [
+        Tool::Pitchfork,
+        Tool::SchiffPitchfork,
+        Tool::ModifiedSchiffPitchfork,
+        Tool::InsidePitchfork,
+    ]
+    .into_iter()
+    .map(|tool| (format!("fork-{tool:?}"), vec![(tool, "")]))
+    .collect();
+    let all: Vec<(String, Vec<(Tool, &str)>)> = sets
+        .into_iter()
+        .map(|(name, tools)| (name.to_owned(), tools))
+        .chain(forks)
+        .collect();
+    use crate::ui::theme::{self, AppTheme};
+    // Dark first, then a few again in the light theme (the faint invitation and the white-on-colour
+    // tags are what a light chart puts at risk).
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, tools) in &all {
+            if light && !["lines-2", "channels", "fork-Pitchfork"].contains(&name.as_str()) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = tools
+                .iter()
+                .enumerate()
+                .map(|(index, (tool, text))| make(*tool, index as u64 + 1, text))
+                .collect();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// One drawing's worth of pivots for every pattern, Elliott wave and cycle tool, in the last stretch
+/// of `series(300)` (bars 215..290, prices around 200..275).
+fn pattern_sets() -> Vec<(&'static str, Tool, Vec<crate::model::Anchor>)> {
+    use crate::model::Anchor;
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    vec![
+        (
+            "xabcd",
+            Tool::XabcdPattern,
+            // A bullish Gartley: B at 0.618 of XA, C half of AB back, D at 0.786 of XA.
+            vec![
+                at(220, 215.0),
+                at(236, 262.0),
+                at(246, 232.95),
+                at(258, 247.5),
+                at(272, 225.06),
+            ],
+        ),
+        (
+            "cypher",
+            Tool::CypherPattern,
+            vec![
+                at(222, 215.0),
+                at(236, 258.0),
+                at(245, 236.5),
+                at(258, 269.7),
+                at(275, 226.7),
+            ],
+        ),
+        (
+            "head-and-shoulders",
+            Tool::HeadAndShoulders,
+            vec![
+                at(218, 222.0),
+                at(228, 244.0),
+                at(238, 232.0),
+                at(250, 262.0),
+                at(262, 233.0),
+                at(272, 246.0),
+                at(282, 228.0),
+            ],
+        ),
+        (
+            "abcd",
+            Tool::AbcdPattern,
+            vec![
+                at(225, 222.0),
+                at(242, 256.0),
+                at(256, 238.4),
+                at(275, 272.4),
+            ],
+        ),
+        (
+            "triangle",
+            Tool::TrianglePattern,
+            vec![
+                at(224, 262.0),
+                at(234, 222.0),
+                at(252, 252.0),
+                at(262, 232.0),
+            ],
+        ),
+        (
+            "three-drives",
+            Tool::ThreeDrivesPattern,
+            vec![
+                at(220, 215.0),
+                at(234, 240.0),
+                at(242, 228.0),
+                at(254, 252.0),
+                at(262, 240.0),
+                at(276, 265.0),
+            ],
+        ),
+        (
+            "elliott-impulse",
+            Tool::ElliottImpulse,
+            vec![
+                at(220, 215.0),
+                at(232, 240.0),
+                at(240, 226.0),
+                at(258, 268.0),
+                at(268, 252.0),
+                at(282, 275.0),
+            ],
+        ),
+        (
+            "elliott-correction",
+            Tool::ElliottCorrection,
+            vec![
+                at(222, 265.0),
+                at(236, 240.0),
+                at(250, 255.0),
+                at(266, 225.0),
+            ],
+        ),
+        (
+            "elliott-triangle",
+            Tool::ElliottTriangle,
+            vec![
+                at(220, 245.0),
+                at(230, 270.0),
+                at(238, 235.0),
+                at(248, 262.0),
+                at(258, 242.0),
+                at(270, 255.0),
+            ],
+        ),
+        (
+            "elliott-double",
+            Tool::ElliottDoubleCombo,
+            vec![
+                at(222, 262.0),
+                at(236, 236.0),
+                at(248, 252.0),
+                at(266, 226.0),
+            ],
+        ),
+        (
+            "elliott-triple",
+            Tool::ElliottTripleCombo,
+            vec![
+                at(220, 262.0),
+                at(232, 238.0),
+                at(242, 252.0),
+                at(254, 230.0),
+                at(264, 246.0),
+                at(280, 222.0),
+            ],
+        ),
+        (
+            "cyclic-lines",
+            Tool::CyclicLines,
+            vec![at(230, 240.0), at(242, 240.0)],
+        ),
+        (
+            "time-cycles",
+            Tool::TimeCycles,
+            vec![at(226, 225.0), at(240, 250.0)],
+        ),
+        (
+            "sine-line",
+            Tool::SineLine,
+            vec![at(232, 265.0), at(250, 215.0)],
+        ),
+    ]
+}
+
+/// The chart patterns, Elliott waves and cycles on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_patterns_waves_and_cycles() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let sets = pattern_sets();
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, tool, anchors) in &sets {
+            if light && !["xabcd", "elliott-impulse", "time-cycles"].contains(name) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings =
+                vec![Drawing::build(*tool, 1, anchors, tool.default_style()).expect("builds")];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("pattern-{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// One drawing of every Fibonacci and Gann tool, in the last stretch of `series(300)` (bars
+/// 215..290, prices around 200..275; the chart ends at bar 299).
+fn fib_drawings() -> Vec<(&'static str, Drawing)> {
+    use crate::model::Anchor;
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let build = |tool: Tool, anchors: &[Anchor]| {
+        Drawing::build(tool, 1, anchors, tool.default_style()).expect("builds")
+    };
+    vec![
+        (
+            "fib-retracement",
+            build(Tool::FibRetracement, &[at(228, 214.0), at(268, 262.0)]),
+        ),
+        (
+            "fib-extension",
+            build(
+                Tool::FibExtension,
+                &[at(222, 214.0), at(244, 262.0), at(258, 236.0)],
+            ),
+        ),
+        (
+            "fib-channel",
+            build(
+                Tool::FibChannel,
+                &[at(226, 212.0), at(280, 248.0), at(250, 246.0)],
+            ),
+        ),
+        (
+            "fib-time-zone",
+            build(Tool::FibTimeZone, &[at(226, 226.0), at(232, 226.0)]),
+        ),
+        (
+            "fib-speed-fan",
+            build(Tool::FibSpeedFan, &[at(224, 212.0), at(262, 252.0)]),
+        ),
+        (
+            "fib-circles",
+            build(Tool::FibCircles, &[at(236, 214.0), at(262, 252.0)]),
+        ),
+        (
+            "fib-spiral",
+            build(Tool::FibSpiral, &[at(252, 236.0), at(262, 246.0)]),
+        ),
+        (
+            "fib-speed-arcs",
+            build(Tool::FibSpeedArcs, &[at(224, 214.0), at(262, 250.0)]),
+        ),
+        (
+            "fib-wedge",
+            build(
+                Tool::FibWedge,
+                &[at(230, 214.0), at(256, 250.0), at(270, 232.0)],
+            ),
+        ),
+        (
+            "pitchfan",
+            build(
+                Tool::Pitchfan,
+                &[at(226, 214.0), at(250, 258.0), at(262, 226.0)],
+            ),
+        ),
+        (
+            "gann-box",
+            build(Tool::GannBox, &[at(226, 214.0), at(262, 250.0)]),
+        ),
+        (
+            "gann-square-fixed",
+            build(Tool::GannSquareFixed, &[at(226, 212.0), at(256, 244.0)]),
+        ),
+        (
+            "gann-square",
+            build(Tool::GannSquare, &[at(224, 212.0), at(266, 254.0)]),
+        ),
+        (
+            "gann-fan",
+            build(Tool::GannFan, &[at(220, 214.0), at(236, 226.0)]),
+        ),
+        (
+            "fib-trend-time",
+            build(
+                Tool::FibTrendTime,
+                &[at(218, 214.0), at(228, 250.0), at(240, 228.0)],
+            ),
+        ),
+    ]
+}
+
+#[test]
+fn every_fibonacci_and_gann_tool_snapshots_as_it_draws() {
+    for (_, drawing) in fib_drawings() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![drawing];
+        same_as_live(&mut harness, false);
+    }
+}
+
+/// The Fibonacci and Gann tools on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_fib -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_fibonacci_and_gann_tools() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    // Every tool in both themes, and a few of them on a logarithmic and a percent axis.
+    for (light, mode) in [
+        (false, PriceScaleMode::Regular),
+        (true, PriceScaleMode::Regular),
+        (false, PriceScaleMode::Logarithmic),
+        (false, PriceScaleMode::Percent),
+    ] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawing) in fib_drawings() {
+            let scaled = ["fib-retracement", "fib-extension", "gann-box", "gann-fan"];
+            if mode != PriceScaleMode::Regular && !scaled.contains(&name) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = vec![drawing];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let mut snapshot = input(&harness, false);
+            snapshot.scale_mode = mode;
+            let scene = harness
+                .card
+                .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = match (light, mode) {
+                (true, _) => "-light",
+                (_, PriceScaleMode::Logarithmic) => "-log",
+                (_, PriceScaleMode::Percent) => "-percent",
+                _ => "",
+            };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// One drawing of every forecasting, volume and measurement tool, in the last stretch of
+/// `series(300)` (bars 215..290, prices around 200..275; the chart ends at bar 299).
+fn forecast_drawings() -> Vec<(&'static str, Drawing)> {
+    use crate::model::bars_pattern::BarsPattern;
+    use crate::model::{Anchor, Geometry};
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let build = |tool: Tool, anchors: &[Anchor]| {
+        // A position shows its stats while it is selected; the picture shows them always.
+        let mut style = tool.default_style();
+        style.position.always_stats = true;
+        Drawing::build(tool, 1, anchors, style).expect("builds")
+    };
+    let candles = super::canvas_tests::series(300);
+    let pattern = BarsPattern::capture(&candles, 200, 236, at(255, 232.0)).expect("a pattern");
+    vec![
+        (
+            "long-position",
+            build(
+                Tool::LongPosition,
+                &[at(250, 235.0), at(278, 262.0), at(278, 222.0)],
+            ),
+        ),
+        (
+            "short-position",
+            build(
+                Tool::ShortPosition,
+                &[at(250, 245.0), at(278, 215.0), at(278, 258.0)],
+            ),
+        ),
+        (
+            "position-forecast",
+            build(Tool::PositionForecast, &[at(252, 230.0), at(284, 262.0)]),
+        ),
+        (
+            "bars-pattern",
+            Drawing::from_geometry(
+                1,
+                Geometry::Bars(pattern),
+                Tool::BarsPattern.default_style(),
+            )
+            .expect("a drawing"),
+        ),
+        (
+            "ghost-feed",
+            build(Tool::GhostFeed, &[at(299, 250.0), at(318, 268.0)]),
+        ),
+        (
+            "sector",
+            build(
+                Tool::Sector,
+                &[at(236, 212.0), at(262, 212.0), at(256, 250.0)],
+            ),
+        ),
+        (
+            "anchored-vwap",
+            build(Tool::AnchoredVwap, &[at(228, 230.0)]),
+        ),
+        (
+            "fixed-range-volume-profile",
+            build(
+                Tool::FixedRangeVolumeProfile,
+                &[at(225, 230.0), at(272, 230.0)],
+            ),
+        ),
+        (
+            "anchored-volume-profile",
+            build(Tool::AnchoredVolumeProfile, &[at(246, 230.0)]),
+        ),
+        (
+            "price-range",
+            build(Tool::PriceRange, &[at(250, 222.0), at(262, 246.0)]),
+        ),
+        (
+            "date-range",
+            build(Tool::DateRange, &[at(240, 230.0), at(272, 230.0)]),
+        ),
+        (
+            "date-and-price-range",
+            build(Tool::DateAndPriceRange, &[at(240, 226.0), at(268, 252.0)]),
+        ),
+    ]
+}
+
+/// The forecasting, volume and measurement tools on a chart, written as PNGs for a person to look
+/// at. Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_forecast -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_forecast_volume_and_measurement_tools() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawing) in forecast_drawings() {
+            if light
+                && !["long-position", "fixed-range-volume-profile", "price-range"].contains(&name)
+            {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = vec![drawing];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("forecast-{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// The text and note tools on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_text_and_note_tools() {
+    use crate::model::{Anchor, DrawingStyle};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let make = |tool: Tool, id: u64, anchor: Anchor, text: &str, tweak: fn(&mut DrawingStyle)| {
+        let mut style = tool.default_style();
+        tweak(&mut style);
+        let mut drawing = Drawing::build(tool, id, &[anchor], style).expect("builds");
+        drawing.set_text(text);
+        drawing
+    };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let sets: Vec<(&str, Vec<Drawing>, Vec<u64>)> = vec![
+        (
+            "notes-1",
+            vec![
+                make(Tool::Text, 1, at(222, 258.0), "Breakout above 250", plain),
+                make(Tool::Comment, 2, at(262, 244.0), "Retest", plain),
+                make(Tool::PriceLabel, 3, at(252, 206.0), "", plain),
+                make(Tool::FlagMark, 4, at(276, 236.0), "", plain),
+                make(
+                    Tool::Pin,
+                    5,
+                    at(236, 214.0),
+                    "Earnings gap: watch the close above the prior high",
+                    plain,
+                ),
+            ],
+            vec![5],
+        ),
+        (
+            "notes-2",
+            vec![
+                make(
+                    Tool::Text,
+                    1,
+                    at(224, 262.0),
+                    "A boxed note that wraps its long text inside a fixed width",
+                    |style| {
+                        style.fill.enabled = true;
+                        style.border.enabled = true;
+                        style.wrap = true;
+                        style.box_width = 150.0;
+                        style.text.bold = true;
+                    },
+                ),
+                make(Tool::Comment, 2, at(262, 244.0), "Two\nlines", plain),
+                make(Tool::Pin, 3, at(240, 218.0), "closed pin", plain),
+                make(Tool::Pin, 4, at(268, 222.0), "open pin", plain),
+            ],
+            vec![4],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings, open) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let mut snapshot = input(&harness, false);
+            snapshot.open_notes = open;
+            let scene = harness
+                .card
+                .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// The notes with a leader or a tail, and the signposts, on a chart.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_two_point_notes() {
+    use crate::model::drawing_style::Emoji;
+    use crate::model::{Anchor, DrawingStyle};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let make =
+        |tool: Tool, id: u64, anchors: [Anchor; 2], text: &str, tweak: fn(&mut DrawingStyle)| {
+            let mut style = tool.default_style();
+            tweak(&mut style);
+            let mut drawing = Drawing::build(tool, id, &anchors, style).expect("builds");
+            drawing.set_text(text);
+            drawing
+        };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let sets: Vec<(&str, Vec<Drawing>)> = vec![
+        (
+            "notes-3",
+            vec![
+                make(
+                    Tool::Note,
+                    1,
+                    [at(236, 226.0), at(250, 258.0)],
+                    "Note on a level",
+                    plain,
+                ),
+                make(
+                    Tool::PriceNote,
+                    2,
+                    [at(262, 244.0), at(272, 210.0)],
+                    "",
+                    plain,
+                ),
+                make(
+                    Tool::PriceNote,
+                    3,
+                    [at(226, 204.0), at(240, 192.0)],
+                    "support",
+                    plain,
+                ),
+                make(
+                    Tool::Callout,
+                    4,
+                    [at(280, 238.0), at(268, 262.0)],
+                    "Callout",
+                    plain,
+                ),
+            ],
+        ),
+        (
+            "notes-4",
+            vec![
+                make(
+                    Tool::Signpost,
+                    1,
+                    [at(240, 222.0), at(240, 252.0)],
+                    "Earnings",
+                    plain,
+                ),
+                make(
+                    Tool::Signpost,
+                    2,
+                    [at(262, 250.0), at(262, 214.0)],
+                    "FOMC",
+                    |style| {
+                        style.emoji_shown = true;
+                        style.emoji = Emoji::Crown;
+                    },
+                ),
+                make(
+                    Tool::Signpost,
+                    3,
+                    [at(280, 240.0), at(280, 266.0)],
+                    "Halving",
+                    |style| {
+                        style.emoji_shown = true;
+                        style.emoji = Emoji::Skull;
+                        style.emoji_fill = [242, 54, 69, 255];
+                        style.fill.color = [242, 54, 69, 255];
+                    },
+                ),
+            ],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// Tables on a chart, written as PNGs for a person to look at.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_table() {
+    use crate::model::table::ScreenAnchor;
+    use crate::model::{Anchor, DrawingStyle, Geometry};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let table = |id: u64, anchor: Anchor, cells: &[&str], tweak: fn(&mut DrawingStyle)| {
+        let mut style = Tool::Table.default_style();
+        tweak(&mut style);
+        let mut drawing = Drawing::build(Tool::Table, id, &[anchor], style).expect("builds");
+        for (index, text) in cells.iter().enumerate() {
+            drawing.set_table_cell(index / 3, index % 3, text);
+        }
+        drawing
+    };
+    let plain: fn(&mut DrawingStyle) = |_| {};
+    let mut pinned = table(
+        2,
+        at(250, 200.0),
+        &["Pinned", "to the", "screen"],
+        |style| {
+            style.text.bold = true;
+            style.text.align = crate::model::drawing_style::HorizontalAlign::Center;
+        },
+    );
+    if let Some(Geometry::Table(data)) = pinned.geometry_mut() {
+        data.screen = Some(ScreenAnchor { x: 0.62, y: 0.08 });
+    }
+    let sets: Vec<(&str, Vec<Drawing>)> = vec![
+        (
+            "table-1",
+            vec![
+                table(
+                    1,
+                    at(224, 262.0),
+                    &[
+                        "Level",
+                        "Price",
+                        "Note",
+                        "Entry",
+                        "238.50",
+                        "Break of range",
+                        "Stop",
+                        "226.00",
+                        "A longer note that has to wrap inside its narrow column and make the row taller",
+                    ],
+                    plain,
+                ),
+                pinned,
+            ],
+        ),
+        (
+            "table-2",
+            vec![table(
+                1,
+                at(236, 250.0),
+                &["", "", "", "", "no border", "", "", "", ""],
+                |style| {
+                    style.border.enabled = false;
+                    style.fill.enabled = false;
+                },
+            )],
+        ),
+    ];
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawings) in &sets {
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = drawings.clone();
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// Pictures on a chart, written as PNGs for a person to look at: one loaded, one faded, one that
+/// is not in the store (a placeholder).
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_image() {
+    use crate::model::image_content::{Content, ImageContent};
+    use crate::model::{Anchor, Geometry};
+    use crate::ui::theme::{self, AppTheme};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let picture = |asset: &str, name: &str| {
+        Content::Image(ImageContent::new(asset.repeat(64), name, [160, 100]))
+    };
+    let image = |id: u64, at: Anchor, content: &Content| {
+        Drawing::build_with(Tool::Image, id, &[at], Tool::Image.default_style(), content)
+            .expect("builds")
+    };
+    let loaded = image(1, at(205, 275.0), &picture("a", "gradient.png"));
+    let mut faded = image(2, at(232, 262.0), &picture("a", "gradient.png"));
+    if let Some(Geometry::Image(data)) = faded.geometry_mut() {
+        data.opacity = 0.35;
+    }
+    let missing = image(3, at(215, 235.0), &picture("b", "still-syncing.png"));
+    let gradient = egui::ColorImage::from_rgba_unmultiplied(
+        [160, 100],
+        &(0..160 * 100)
+            .flat_map(|index| {
+                let (x, y) = (index % 160, index / 160);
+                [(x * 255 / 159) as u8, (y * 255 / 99) as u8, 180, 255]
+            })
+            .collect::<Vec<u8>>(),
+    );
+    let images: HashMap<String, Arc<egui::ColorImage>> =
+        HashMap::from([("a".repeat(64), Arc::new(gradient))]);
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![loaded.clone(), faded.clone(), missing.clone()];
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let mut snapshot = input(&harness, false);
+        snapshot.images = Some(&images);
+        let scene = harness
+            .card
+            .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let suffix = if light { "-light" } else { "" };
+        std::fs::write(dir.join(format!("image-1{suffix}.png")), png).expect("written");
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
+/// Post cards on a chart, written as PNGs for a person to look at: a bare link, a card with a
+/// fetched preview, one with a long preview, and a small one that has to cut its words.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_cards() {
+    use crate::model::Anchor;
+    use crate::model::image_content::Content;
+    use crate::model::link_card::{Link, LinkCard, LinkMeta};
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let card = |tool: Tool, id: u64, anchor: Anchor, link: &str, meta: Option<LinkMeta>, size| {
+        let mut card = LinkCard::new(Link::parse(link).expect("a link"));
+        card.meta = meta;
+        if let Some(size) = size {
+            card.size = size;
+        }
+        Drawing::build_with(
+            tool,
+            id,
+            &[anchor],
+            tool.default_style(),
+            &Content::Link(card),
+        )
+        .expect("builds")
+    };
+    let picture = "c".repeat(64);
+    let post_meta = LinkMeta {
+        title: "Developers".into(),
+        avatar: Some(picture.clone()),
+        author: "@XDevelopers".into(),
+        excerpt: "Fish & chips for everyone: the range held three times, and the third retest was the one to buy. Stops under the low.".into(),
+        fetched_at_ms: 1,
+    };
+    let long_meta = LinkMeta {
+        title: "BTC range break: what to watch next".into(),
+        author: "@degenview".into(),
+        excerpt: "Price reclaimed the range high on rising volume. A retest of that level would confirm the move.".into(),
+        fetched_at_ms: 1,
+        avatar: Some(picture.clone()),
+    };
+    let bare = card(
+        Tool::Post,
+        1,
+        at(186, 276.0),
+        "https://x.com/degenview/status/1750000000000000000",
+        None,
+        Some([260.0, 110.0]),
+    );
+    let fetched = card(
+        Tool::Post,
+        2,
+        at(240, 276.0),
+        "https://x.com/XDevelopers/status/1750000000000000001",
+        Some(post_meta),
+        Some([320.0, 150.0]),
+    );
+    let long = card(
+        Tool::Post,
+        3,
+        at(196, 226.0),
+        "https://x.com/degenview/status/1750000000000000002",
+        Some(long_meta),
+        Some([300.0, 130.0]),
+    );
+    let small = card(
+        Tool::Post,
+        4,
+        at(262, 226.0),
+        "https://x.com/i/status/1750000000000000003",
+        None,
+        Some([180.0, 96.0]),
+    );
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![bare.clone(), fetched.clone(), long.clone(), small.clone()];
+        settled(&mut harness);
+        let size = harness.card.snapshot_size();
+        let dimensions =
+            SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+        let mut snapshot = input(&harness, false);
+        let pictures = std::collections::HashMap::from([(
+            picture.clone(),
+            std::sync::Arc::new(egui::ColorImage::from_rgba_unmultiplied(
+                [48, 48],
+                &(0..48 * 48)
+                    .flat_map(|index| {
+                        let (x, y) = (index % 48, index / 48);
+                        [(x * 5) as u8, 90, (y * 5) as u8, 255]
+                    })
+                    .collect::<Vec<u8>>(),
+            )),
+        )]);
+        snapshot.images = Some(&pictures);
+        let scene = harness
+            .card
+            .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
+            .expect("a scene");
+        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let suffix = if light { "-light" } else { "" };
+        std::fs::write(dir.join(format!("cards-1{suffix}.png")), png).expect("written");
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
 }

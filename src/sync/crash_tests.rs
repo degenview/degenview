@@ -325,7 +325,7 @@ fn applying_a_portfolio_batch_twice_changes_nothing_the_second_time() {
 fn a_crash_after_the_cloud_accepted_a_paper_account_does_not_duplicate_it() {
     use crate::model::paper::{PaperAccountSettings, PaperCurrency};
     let (cloud, mut a, mut b) = pair();
-    let mut host = crate::paper_host::PaperHost::load(a.store.clone());
+    let mut host = crate::host::paper_host::PaperHost::load(a.store.clone());
     host.create_account(
         "Main",
         PaperCurrency::Usd,

@@ -1,8 +1,9 @@
 //! A date-and-time field with a calendar pop-over, in the macOS compact `DatePicker` style:
 //! a field showing the moment, and a month grid with a time stepper under it.
 //!
-//! The moment is held as the editor's `YYYY-MM-DD HH:MM` text (local time), so a field nobody
-//! touched keeps whatever exact instant it opened with. The calendar arithmetic is pure and
+//! The moment is held as the editor's `YYYY-MM-DD HH:MM` text in the zone the caller names (the
+//! portfolio editor's local time, a drawing's UTC), so a field nobody touched keeps whatever
+//! exact instant it opened with. The calendar arithmetic is pure and
 //! tested; only `show` paints.
 
 use crate::format::{civil_from_days, days_from_civil};
@@ -102,6 +103,15 @@ pub fn step(value: i64, delta: i64, modulus: i64) -> i64 {
 
 // MARK: Field
 
+/// How tall the closed field is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Look {
+    /// The roomy 41 pt field of a form.
+    Roomy,
+    /// 24 pt with the corner and border of the settings sheets' text fields and menu pickers.
+    Compact,
+}
+
 fn popup_id(id: Id) -> Id {
     id.with("popup")
 }
@@ -124,7 +134,7 @@ pub fn close(ctx: &egui::Context, id: Id) {
     ctx.data_mut(|data| data.insert_temp(open_key(id), false));
 }
 
-/// The field and its pop-over. `text` is `YYYY-MM-DD HH:MM` in local time; returns whether the
+/// The field and its pop-over. `text` is `YYYY-MM-DD HH:MM` in the zone `utc_offset_secs`; returns whether the
 /// picker changed it. `error` outlines the field in red.
 pub fn show(
     ui: &mut Ui,
@@ -132,30 +142,42 @@ pub fn show(
     text: &mut String,
     utc_offset_secs: i64,
     width: f32,
+    look: Look,
     error: bool,
 ) -> bool {
     let parsed = parse_date_text(text, utc_offset_secs);
     let popup_id = popup_id(id);
     let mut open = is_open(ui.ctx(), id);
 
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 41.0), Sense::click());
+    let compact = look == Look::Compact;
+    let height = if compact { 24.0 } else { 41.0 };
+    let (radius, text_size, icon_size, inset) = if compact {
+        (6.0, 12.0, 12.0, 8.0)
+    } else {
+        (8.0, kit::size::BODY, 14.0, 10.0)
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::click());
     let response = response.on_hover_cursor(CursorIcon::PointingHand);
     let (stroke_width, stroke_color) = if error {
         (1.5, theme::DOWN)
     } else if open {
         (1.5, theme::SYSTEM_ACCENT)
+    } else if compact {
+        (1.0, kit::field_frame(false).stroke.color)
     } else {
         (1.0, theme::separator().gamma_multiply(0.6))
     };
-    let fill = if response.hovered() {
+    let fill = if compact {
+        kit::field_frame(false).fill
+    } else if response.hovered() {
         theme::quaternary(0.75)
     } else {
         theme::quaternary(0.5)
     };
-    ui.painter().rect_filled(rect, 8.0, fill);
+    ui.painter().rect_filled(rect, radius, fill);
     ui.painter().rect_stroke(
         rect,
-        8.0,
+        radius,
         Stroke::new(stroke_width, stroke_color),
         StrokeKind::Inside,
     );
@@ -166,21 +188,21 @@ pub fn show(
     let galley = kit::galley(
         ui,
         &label,
-        kit::size::BODY,
+        text_size,
         REGULAR,
         theme::text_primary(),
-        width - 44.0,
+        width - inset - icon_size - 16.0,
     );
     ui.painter().galley(
-        pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0),
+        pos2(rect.left() + inset, rect.center().y - galley.size().y / 2.0),
         galley,
         Color32::PLACEHOLDER,
     );
     icons::paint(
         ui.painter(),
         Rect::from_center_size(
-            pos2(rect.right() - 18.0, rect.center().y),
-            Vec2::splat(14.0),
+            pos2(rect.right() - inset - icon_size / 2.0, rect.center().y),
+            Vec2::splat(icon_size),
         ),
         Icon::Calendar,
         theme::text_secondary(),
@@ -412,7 +434,9 @@ fn popover(
     let new_hour = stepper(ui, month_key.with("hour"), hour_rect, hour, 24);
     let new_minute = stepper(ui, month_key.with("minute"), minute_rect, minute, 60);
     if new_hour != hour || new_minute != minute {
-        picked = Some(instant(selected, new_hour, new_minute, utc_offset_secs));
+        // A day picked in this same frame (a click that also ended a typed hour) is kept.
+        let day = picked.map_or(selected, |moment| fields(moment, utc_offset_secs).0);
+        picked = Some(instant(day, new_hour, new_minute, utc_offset_secs));
     }
     let now_button = Rect::from_min_max(
         pos2(time_row.right() - 44.0, time_row.top()),
@@ -450,29 +474,79 @@ fn popover(
     picked
 }
 
-/// A two-digit number with up and down arrows at its right edge, like a macOS stepper. The
-/// scroll wheel and the arrow keys (while hovered) step it too. Returns the new value.
+/// A two-digit number you can type, with up and down arrows at its right edge, like a macOS
+/// stepper. Typed digits are read when the field loses focus or on Return; the scroll wheel and
+/// the arrow keys (while hovered) step it too. Returns the new value.
 fn stepper(ui: &mut Ui, id: Id, rect: Rect, value: i64, modulus: i64) -> i64 {
     ui.painter().rect_filled(rect, 7.0, theme::quaternary(0.5));
+    let edit_id = id.with("edit");
+    let text_key = id.with("text");
+    let focused = ui.memory(|memory| memory.has_focus(edit_id));
     ui.painter().rect_stroke(
         rect,
         7.0,
-        Stroke::new(1.0, theme::separator().gamma_multiply(0.6)),
+        if focused {
+            Stroke::new(1.5, theme::SYSTEM_ACCENT)
+        } else {
+            Stroke::new(1.0, theme::separator().gamma_multiply(0.6))
+        },
         StrokeKind::Inside,
     );
-    let number = kit::galley(
-        ui,
-        &format!("{value:02}"),
-        kit::size::BODY,
-        REGULAR,
-        theme::text_primary(),
-        40.0,
+    let shown = format!("{value:02}");
+    let mut text = if focused {
+        ui.data(|data| data.get_temp::<String>(text_key))
+            .unwrap_or_else(|| shown.clone())
+    } else {
+        shown.clone()
+    };
+    let field = Rect::from_min_max(
+        pos2(rect.left() + 11.0, rect.top()),
+        pos2(rect.right() - 22.0, rect.bottom()),
     );
-    ui.painter().galley(
-        pos2(rect.left() + 11.0, rect.center().y - number.size().y / 2.0),
-        number,
-        Color32::PLACEHOLDER,
-    );
+    let response = ui
+        .scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(field)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            |ui| {
+                kit::plain_field(
+                    ui,
+                    edit_id,
+                    &mut text,
+                    "",
+                    kit::size::BODY,
+                    REGULAR,
+                    field.width(),
+                )
+            },
+        )
+        .inner;
+    text.retain(|c| c.is_ascii_digit());
+    text.truncate(2);
+    if response.gained_focus()
+        && let Some(mut edit) = egui::TextEdit::load_state(ui.ctx(), edit_id)
+    {
+        // Select the number so typing replaces it.
+        edit.cursor
+            .set_char_range(Some(egui::text::CCursorRange::two(
+                egui::text::CCursor::new(0),
+                egui::text::CCursor::new(text.chars().count()),
+            )));
+        edit.store(ui.ctx(), edit_id);
+    }
+    let mut typed = None;
+    if response.lost_focus() && text != shown {
+        typed = text
+            .parse::<i64>()
+            .ok()
+            .filter(|number| (0..modulus).contains(number));
+    }
+    if response.has_focus() {
+        ui.data_mut(|data| data.insert_temp(text_key, text));
+    } else {
+        ui.data_mut(|data| data.remove::<String>(text_key));
+    }
+    let value = typed.unwrap_or(value);
     let mut value = value;
     let arrows = Rect::from_min_max(pos2(rect.right() - 22.0, rect.top()), rect.max);
     for (direction, half) in [(1_i64, 0.0_f32), (-1, 1.0)] {

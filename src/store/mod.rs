@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 pub mod alert;
+pub mod asset_store;
 pub mod chart_template;
 pub mod drawing_template;
 pub mod mcp;
@@ -99,7 +100,7 @@ pub trait Document {
     fn document_id(&self) -> String;
 }
 
-pub(crate) const DOCUMENT_TABLES: [&str; 12] = [
+pub(crate) const DOCUMENT_TABLES: [&str; 13] = [
     "saved_view",
     "chart_template",
     "drawing_template",
@@ -112,6 +113,7 @@ pub(crate) const DOCUMENT_TABLES: [&str; 12] = [
     "webhook_endpoint",
     "pine_alert_subscription",
     "mcp_client",
+    "drawing_asset",
 ];
 
 pub struct Store {

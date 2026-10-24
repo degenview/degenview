@@ -797,9 +797,10 @@ mod tests {
         zone.patch.text = Some("Supply".into());
         let planned = plan_add(&[], &data, 7, &[line, zone]).unwrap();
         assert_eq!(planned.iter().map(Drawing::id).collect::<Vec<_>>(), [7, 8]);
-        let Drawing::TrendLine { a, b, style, .. } = &planned[0] else {
+        let Some(crate::model::Geometry::TrendLine { a, b }) = planned[0].geometry() else {
             panic!("trend line expected: {:?}", planned[0]);
         };
+        let style = planned[0].style().unwrap();
         assert_eq!((a.time_ms, a.price), (T0 + DAY, 99.0));
         assert_eq!((b.time_ms, b.price), (T0 + 6 * DAY, 104.0));
         assert_eq!(style.stroke.color, [255, 193, 7, 255]);
@@ -1013,7 +1014,7 @@ mod tests {
     fn editing_respects_locks_unknown_ids_and_unsupported_tools() {
         let data = bars(10);
         let fib = Drawing::build(
-            Tool::Fib,
+            Tool::FibRetracement,
             4,
             &[
                 Anchor {
@@ -1144,5 +1145,154 @@ mod tests {
         assert!(!listed.drawings[1].editable);
         assert!(listed.drawings[1].locked);
         assert_eq!(snake("DoubleCurve"), "double_curve");
+    }
+
+    #[test]
+    fn every_pattern_wave_and_cycle_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
+        };
+        let anchors: Vec<Anchor> = (0..7).map(at).collect();
+        for (tool, name) in [
+            (Tool::XabcdPattern, "xabcd_pattern"),
+            (Tool::CypherPattern, "cypher_pattern"),
+            (Tool::HeadAndShoulders, "head_and_shoulders"),
+            (Tool::AbcdPattern, "abcd_pattern"),
+            (Tool::TrianglePattern, "triangle_pattern"),
+            (Tool::ThreeDrivesPattern, "three_drives_pattern"),
+            (Tool::ElliottImpulse, "elliott_impulse"),
+            (Tool::ElliottCorrection, "elliott_correction"),
+            (Tool::ElliottTriangle, "elliott_triangle"),
+            (Tool::ElliottDoubleCombo, "elliott_double_combo"),
+            (Tool::ElliottTripleCombo, "elliott_triple_combo"),
+            (Tool::CyclicLines, "cyclic_lines"),
+            (Tool::TimeCycles, "time_cycles"),
+            (Tool::SineLine, "sine_line"),
+        ] {
+            let count = match tool.spec().placement {
+                crate::model::Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let drawing = Drawing::build(tool, 1, &anchors[..count], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+            assert_eq!(info.anchors.len(), count.min(MAX_ANCHORS_SHOWN), "{name}");
+        }
+    }
+
+    #[test]
+    fn every_forecast_volume_and_measurement_tool_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
+        };
+        let anchors: Vec<Anchor> = (0..3).map(at).collect();
+        for (tool, name) in [
+            (Tool::LongPosition, "long_position"),
+            (Tool::ShortPosition, "short_position"),
+            (Tool::PositionForecast, "position_forecast"),
+            (Tool::BarsPattern, "bars_pattern"),
+            (Tool::GhostFeed, "ghost_feed"),
+            (Tool::Sector, "sector"),
+            (Tool::AnchoredVwap, "anchored_vwap"),
+            (Tool::FixedRangeVolumeProfile, "fixed_range_volume_profile"),
+            (Tool::AnchoredVolumeProfile, "anchored_volume_profile"),
+            (Tool::PriceRange, "price_range"),
+            (Tool::DateRange, "date_range"),
+            (Tool::DateAndPriceRange, "date_and_price_range"),
+        ] {
+            let count = match tool.spec().placement {
+                crate::model::Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let drawing = Drawing::sample(tool, 1, &anchors[..count.min(3)], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+        }
+    }
+
+    #[test]
+    fn every_fibonacci_and_gann_tool_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
+        };
+        let anchors: Vec<Anchor> = (0..4).map(at).collect();
+        let names = [
+            (Tool::FibRetracement, "fib_retracement"),
+            (Tool::FibExtension, "fib_extension"),
+            (Tool::FibChannel, "fib_channel"),
+            (Tool::FibTimeZone, "fib_time_zone"),
+            (Tool::FibSpeedFan, "fib_speed_fan"),
+            (Tool::FibTrendTime, "fib_trend_time"),
+            (Tool::FibCircles, "fib_circles"),
+            (Tool::FibSpiral, "fib_spiral"),
+            (Tool::FibSpeedArcs, "fib_speed_arcs"),
+            (Tool::FibWedge, "fib_wedge"),
+            (Tool::Pitchfan, "pitchfan"),
+            (Tool::GannBox, "gann_box"),
+            (Tool::GannSquareFixed, "gann_square_fixed"),
+            (Tool::GannSquare, "gann_square"),
+            (Tool::GannFan, "gann_fan"),
+        ];
+        assert_eq!(
+            names.len(),
+            Tool::fib_tools().count(),
+            "every tool is named"
+        );
+        for (tool, name) in names {
+            let crate::model::Placement::Points(count) = tool.spec().placement else {
+                panic!("{tool:?} is placed by points");
+            };
+            let drawing = Drawing::sample(
+                tool,
+                1,
+                &anchors[..usize::from(count)],
+                tool.default_style(),
+            )
+            .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert_eq!(info.anchor_count, usize::from(count));
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+        }
+    }
+
+    #[test]
+    fn every_text_note_and_content_tool_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + index as f64,
+        };
+        let anchors = [at(0), at(1), at(2)];
+        for (tool, name) in [
+            (Tool::Text, "text"),
+            (Tool::Note, "note"),
+            (Tool::PriceNote, "price_note"),
+            (Tool::Pin, "pin"),
+            (Tool::Table, "table"),
+            (Tool::Callout, "callout"),
+            (Tool::Comment, "comment"),
+            (Tool::PriceLabel, "price_label"),
+            (Tool::Signpost, "signpost"),
+            (Tool::FlagMark, "flag_mark"),
+            (Tool::Image, "image"),
+            (Tool::Post, "post"),
+        ] {
+            let count = match tool.spec().placement {
+                crate::model::Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let drawing = Drawing::sample(tool, 1, &anchors[..count], tool.default_style())
+                .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+        }
     }
 }

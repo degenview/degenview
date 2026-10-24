@@ -1,7 +1,7 @@
 use super::*;
 use crate::model::chart_context::{self, QuickOrder, Target};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
-use crate::model::{Anchor, Tool};
+use crate::model::{Anchor, Kline, Tool};
 use eframe::egui::{OutputCommand, pos2};
 
 struct Rig {
@@ -751,6 +751,157 @@ fn pausing_and_deleting_an_alert_go_out_as_app_actions() {
     );
 }
 
+fn alert_at(id: u64, symbol: &str, condition: crate::model::alert::AlertCondition) -> PriceAlert {
+    use crate::model::alert::AlertAsset;
+    let mut alert = PriceAlert::new(
+        AlertAsset::new(
+            InstrumentId::new(DataSource::Binance, symbol),
+            symbol.to_owned(),
+            symbol.to_owned(),
+        ),
+        condition,
+        0,
+    );
+    alert.id = id;
+    alert
+}
+
+/// Drops alert `id`'s tag on `price` and returns what the workspace queues.
+fn drop_alert(rig: &mut Rig, chart: u64, id: u64, price: f64) -> Vec<WorkspaceAction> {
+    rig.chart_mut(chart).chart.queue_alert_move(id, price);
+    rig.workspace.apply_alert_moves()
+}
+
+fn moved(action: &WorkspaceAction) -> (&PriceAlert, Option<f64>) {
+    match action {
+        WorkspaceAction::MoveAlert { alert, baseline } => (alert, *baseline),
+        other => panic!("not a move: {other:?}"),
+    }
+}
+
+#[test]
+fn dropping_an_alert_tag_saves_it_at_the_new_level_on_the_side_it_now_watches() {
+    use crate::model::alert::{AlertCondition, AlertState};
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut paused = alert_at(2, "BTCUSDT", AlertCondition::CrossesAbove { target: 130.0 });
+    paused.state = AlertState::Paused;
+    paused.note = "keep".to_owned();
+    rig.workspace.set_price_alerts(&[
+        alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 120.0 }),
+        paused,
+    ]);
+
+    // Dragged below the market, an alert that waited for a rise now waits for a fall, and is
+    // armed from where the market is.
+    let actions = drop_alert(&mut rig, chart, 1, 90.0);
+    let [action] = actions.as_slice() else {
+        panic!("{actions:?}")
+    };
+    let (alert, baseline) = moved(action);
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesBelow { target: 90.0 }
+    );
+    assert_eq!(baseline, Some(100.0));
+
+    // A paused alert stays paused, and nothing else about it changes.
+    let actions = drop_alert(&mut rig, chart, 2, 140.0);
+    let (alert, _) = moved(&actions[0]);
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesAbove { target: 140.0 }
+    );
+    assert_eq!(alert.state, AlertState::Paused);
+    assert_eq!(alert.note, "keep");
+}
+
+#[test]
+fn a_drop_on_the_same_level_or_on_a_percentage_alert_saves_nothing() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[
+        alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 120.0 }),
+        alert_at(2, "BTCUSDT", AlertCondition::rises_by(10.0, 100.0)),
+        alert_at(3, "ETHUSDT", AlertCondition::CrossesAbove { target: 5.0 }),
+    ]);
+    assert!(drop_alert(&mut rig, chart, 1, 120.0).is_empty());
+    assert!(drop_alert(&mut rig, chart, 2, 130.0).is_empty());
+    // Another market's alert is not this chart's to move.
+    assert!(drop_alert(&mut rig, chart, 3, 6.0).is_empty());
+    assert!(drop_alert(&mut rig, chart, 99, 6.0).is_empty());
+}
+
+#[test]
+fn an_alert_in_another_currency_is_saved_in_that_currency() {
+    use crate::model::alert::{AlertCondition, AlertCurrency};
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut euro = alert_at(1, "BTCUSDT", AlertCondition::CrossesAbove { target: 108.0 });
+    euro.currency = AlertCurrency::Eur;
+    rig.workspace.set_price_alerts(&[euro]);
+
+    // Without a rate there is no level to save, and the user is told.
+    assert!(drop_alert(&mut rig, chart, 1, 120.0).is_empty());
+    assert_eq!(rig.message().map(|(_, error)| error), Some(true));
+
+    rig.workspace
+        .set_alert_fx_rates(&std::collections::HashMap::from([(
+            AlertCurrency::Eur,
+            0.9,
+        )]));
+    let actions = drop_alert(&mut rig, chart, 1, 130.0);
+    let (alert, baseline) = moved(&actions[0]);
+    // 130 USD at 0.9 is 117 EUR without the float noise 130 * 0.9 carries.
+    assert_eq!(
+        alert.condition,
+        AlertCondition::CrossesAbove { target: 117.0 }
+    );
+    assert_eq!(alert.currency, AlertCurrency::Eur);
+    assert_eq!(baseline, Some(90.0));
+}
+
+#[test]
+fn an_alert_cannot_be_moved_during_replay() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[alert_at(
+        1,
+        "BTCUSDT",
+        AlertCondition::CrossesAbove { target: 120.0 },
+    )]);
+    rig.workspace.replay.start(
+        3 * 86_400_000,
+        "BTCUSDT",
+        (0..10).map(|i| i * 86_400_000).collect(),
+    );
+    assert!(drop_alert(&mut rig, chart, 1, 90.0).is_empty());
+    assert_eq!(rig.message().map(|(_, error)| error), Some(true));
+}
+
+#[test]
+fn the_tags_of_a_replayed_chart_are_not_draggable() {
+    use crate::model::alert::AlertCondition;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.workspace.set_price_alerts(&[alert_at(
+        1,
+        "BTCUSDT",
+        AlertCondition::CrossesAbove { target: 120.0 },
+    )]);
+    rig.workspace.sync_context_panels();
+    assert!(rig.chart_mut(chart).chart.alert_lines_editable());
+    rig.workspace.replay.start(
+        3 * 86_400_000,
+        "BTCUSDT",
+        (0..10).map(|i| i * 86_400_000).collect(),
+    );
+    rig.workspace.sync_context_panels();
+    assert!(!rig.chart_mut(chart).chart.alert_lines_editable());
+}
+
 #[test]
 fn the_menu_built_for_a_snapshot_matches_its_chart() {
     let mut rig = Rig::new().with_account();
@@ -938,6 +1089,45 @@ fn the_tree_hides_and_removes_indicators_and_scripts() {
 }
 
 #[test]
+fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_it() {
+    use crate::model::object_tree::Key as TreeKey;
+    use crate::ui::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 40, "blob": [1, 2]}}));
+    rig.chart_mut(chart).drawings.push(future.clone());
+    let stored = |rig: &mut Rig| -> Vec<u64> {
+        rig.chart_mut(chart)
+            .drawings
+            .iter()
+            .map(Drawing::stored_id)
+            .collect()
+    };
+    assert_eq!(stored(&mut rig), [1, 2, 40]);
+    // Hiding, locking and restyling find nothing to change in it, and it stays exactly as it was.
+    for action in [
+        TreeAction::ToggleShown(TreeKey::Drawing(40)),
+        TreeAction::ToggleLocked(40),
+        TreeAction::Settings(TreeKey::Drawing(40)),
+        TreeAction::Reorder(40, 1),
+    ] {
+        rig.workspace.apply_tree_action(chart, action);
+    }
+    assert_eq!(rig.chart_mut(chart).drawings[2], future);
+    assert!(rig.workspace.undo.is_empty(), "no change, no undo step");
+    // Deleting it works, and undoes.
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(40)));
+    assert_eq!(stored(&mut rig), [1, 2]);
+    rig.workspace.undo();
+    assert_eq!(stored(&mut rig), [1, 2, 40]);
+    assert_eq!(
+        rig.chart_mut(chart).drawings[2],
+        future,
+        "restored untouched"
+    );
+}
+
+#[test]
 fn a_tree_action_for_a_closed_chart_does_nothing() {
     use crate::model::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
@@ -1064,4 +1254,317 @@ fn the_template_the_chart_wears_is_marked_current_in_the_menu() {
         1,
         "{after:?}"
     );
+}
+
+// MARK: Post cards
+
+const POST_LINK: &str = "https://x.com/degenview/status/1750000000000000000";
+const OTHER_LINK: &str = "https://x.com/other/status/1750000000000000001";
+const TRADINGVIEW_LINK: &str = "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/";
+
+fn card(tool: Tool, id: u64, link: &str) -> Drawing {
+    let card = crate::model::link_card::LinkCard::new(
+        crate::model::link_card::Link::parse(link).expect("a link"),
+    );
+    Drawing::build_with(
+        tool,
+        id,
+        &[Anchor {
+            time_ms: 1_000,
+            price: 100.0,
+        }],
+        tool.default_style(),
+        &crate::model::image_content::Content::Link(card),
+    )
+    .expect("a card")
+}
+
+fn card_of(rig: &mut Rig, chart: u64, id: u64) -> crate::model::link_card::LinkCard {
+    match rig
+        .chart_mut(chart)
+        .drawings
+        .iter()
+        .find(|drawing| drawing.id() == id)
+        .and_then(|drawing| drawing.geometry())
+    {
+        Some(crate::model::Geometry::Card { card, .. }) => card.clone(),
+        other => panic!("not a card: {other:?}"),
+    }
+}
+
+fn fetched_meta(title: &str) -> crate::model::link_card::LinkMeta {
+    crate::model::link_card::LinkMeta {
+        title: title.into(),
+        author: "@degenview".into(),
+        excerpt: "words".into(),
+        fetched_at_ms: 5,
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
+    use crate::model::image_content::Content;
+    let mut rig = Rig::new();
+    rig.chart("BTCUSDT", 100.0);
+    rig.workspace.paste_text(&rig.ctx, "just some words");
+    assert!(rig.workspace.content.pending.is_none(), "text is not ours");
+    rig.workspace.paste_text(&rig.ctx, POST_LINK);
+    assert!(matches!(
+        &rig.workspace.content.pending,
+        Some(Content::Link(card)) if card.link.url() == POST_LINK
+    ));
+    assert!(rig.workspace.content.place_now);
+    assert_eq!(rig.workspace.active_tool, Tool::Post);
+    rig.workspace.content.pending = None;
+    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace.paste_text(&rig.ctx, TRADINGVIEW_LINK);
+    assert!(
+        rig.workspace.content.pending.is_none() && rig.workspace.active_tool == Tool::Cursor,
+        "only X links become cards"
+    );
+    assert!(
+        rig.workspace.undo.is_empty(),
+        "nothing is created until it is placed"
+    );
+}
+
+#[test]
+fn a_card_opens_and_copies_its_link_only_when_asked() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    assert!(rig.copied().is_empty());
+    rig.workspace
+        .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Copy);
+    assert_eq!(rig.copied(), [POST_LINK]);
+    assert_eq!(rig.message(), Some(("Copied the link.".to_owned(), false)));
+    rig.workspace
+        .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Open);
+    let opened: Vec<String> = rig.ctx.output(|output| {
+        output
+            .commands
+            .iter()
+            .filter_map(|command| match command {
+                OutputCommand::OpenUrl(open) => Some(open.url.clone()),
+                _ => None,
+            })
+            .collect()
+    });
+    assert_eq!(opened, [POST_LINK]);
+}
+
+#[test]
+fn the_replace_sheet_survives_the_frame_that_follows_while_the_tool_is_the_cursor() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    rig.workspace.active_tool = Tool::Cursor;
+    rig.workspace
+        .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Replace);
+    assert!(rig.workspace.content.links.sheet.is_some());
+    let mut output = rig.ctx.run_ui(egui::RawInput::default(), |ui| {
+        rig.workspace.tick_content(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert!(
+        rig.workspace.content.links.sheet.is_some(),
+        "the sheet is still there"
+    );
+    // A sheet for a new post belongs to the Post tool and goes when it is put down.
+    rig.workspace.content.links.start();
+    let mut output = rig.ctx.run_ui(egui::RawInput::default(), |ui| {
+        rig.workspace.tick_content(ui.ctx());
+    });
+    output.textures_delta.clear();
+    assert!(rig.workspace.content.links.sheet.is_none());
+}
+
+#[test]
+fn a_replaced_link_clears_the_old_preview_and_keeps_the_card() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut fetched = card(Tool::Post, 1, POST_LINK);
+    if let Some(crate::model::Geometry::Card { card, .. }) = fetched.geometry_mut() {
+        card.meta = Some(fetched_meta("Old"));
+    }
+    rig.chart_mut(chart).drawings = vec![fetched];
+    let other =
+        crate::model::link_card::Link::parse("https://x.com/other/status/1750000000000000001")
+            .unwrap();
+    rig.workspace.link_chosen(other.clone(), Some((chart, 1)));
+    let after = card_of(&mut rig, chart, 1);
+    assert_eq!(after.link, other);
+    assert_eq!(after.meta, None);
+}
+
+#[test]
+fn a_preview_is_not_fetched_until_the_service_is_allowed() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    rig.workspace
+        .link_requested(&rig.ctx, chart, 1, crate::ui::LinkRequest::Fetch);
+    assert!(
+        rig.workspace.content.links.consent.is_some(),
+        "it asks first"
+    );
+    assert!(
+        rig.workspace.content.links.inbox.is_none(),
+        "and contacts nobody"
+    );
+    assert!(!rig.workspace.previews_allowed());
+    rig.workspace.allow_previews();
+    assert!(rig.workspace.previews_allowed());
+}
+
+#[test]
+fn a_placed_post_card_asks_for_its_preview_without_being_pressed() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    rig.workspace.selected_drawing = Some((chart, vec![1]));
+    rig.workspace.preview_placed_card(&rig.ctx);
+    // Not allowed yet: the one-time question comes first, and nothing is contacted.
+    assert!(rig.workspace.content.links.consent.is_some());
+    assert!(rig.workspace.content.links.inbox.is_none());
+}
+
+#[test]
+fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut fetched = card(Tool::Post, 1, POST_LINK);
+    if let Some(crate::model::Geometry::Card { card, .. }) = fetched.geometry_mut() {
+        card.meta = Some(fetched_meta("Already"));
+    }
+    rig.chart_mut(chart).drawings = vec![fetched, rectangle(2, 5_000)];
+    for ids in [vec![1], vec![2], vec![1, 2], vec![]] {
+        rig.workspace.selected_drawing = Some((chart, ids));
+        rig.workspace.preview_placed_card(&rig.ctx);
+        assert!(rig.workspace.content.links.consent.is_none());
+        assert!(rig.workspace.content.links.inbox.is_none());
+    }
+    rig.workspace.selected_drawing = None;
+    rig.workspace.preview_placed_card(&rig.ctx);
+    assert!(rig.workspace.content.links.consent.is_none());
+}
+
+#[test]
+fn the_choice_to_allow_previews_stays_on_this_mac() {
+    use crate::sync::policy::{SettingPolicy, setting_policy};
+    assert_eq!(
+        setting_policy(crate::model::link_card::ContentPrefs::KEY),
+        SettingPolicy::Local
+    );
+}
+
+#[test]
+fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    let (sender, receiver) = std::sync::mpsc::channel();
+    rig.workspace.content.links.inbox = Some(receiver);
+    sender
+        .send(links::Fetched {
+            chart_id: chart,
+            drawing_id: 1,
+            link: crate::model::link_card::Link::parse(POST_LINK).unwrap(),
+            result: Ok(fetched_meta("Developers")),
+        })
+        .unwrap();
+    rig.workspace.take_fetched();
+    assert_eq!(
+        card_of(&mut rig, chart, 1).meta,
+        Some(fetched_meta("Developers"))
+    );
+    assert_eq!(rig.workspace.undo.len(), 1);
+    assert!(rig.workspace.content.links.inbox.is_none());
+    rig.workspace.undo();
+    assert_eq!(card_of(&mut rig, chart, 1).meta, None);
+}
+
+#[test]
+fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    let (sender, receiver) = std::sync::mpsc::channel();
+    rig.workspace.content.links.inbox = Some(receiver);
+    sender
+        .send(links::Fetched {
+            chart_id: chart,
+            drawing_id: 1,
+            link: crate::model::link_card::Link::parse(
+                "https://x.com/other/status/1750000000000000001",
+            )
+            .unwrap(),
+            result: Ok(fetched_meta("Not this one")),
+        })
+        .unwrap();
+    rig.workspace.take_fetched();
+    assert_eq!(card_of(&mut rig, chart, 1).meta, None);
+    assert!(rig.workspace.undo.is_empty());
+}
+
+#[test]
+fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
+    use crate::service::link_fetch::FetchError;
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];
+    let (sender, receiver) = std::sync::mpsc::channel();
+    rig.workspace.content.links.inbox = Some(receiver);
+    sender
+        .send(links::Fetched {
+            chart_id: chart,
+            drawing_id: 1,
+            link: crate::model::link_card::Link::parse(POST_LINK).unwrap(),
+            result: Err(FetchError::Unavailable),
+        })
+        .unwrap();
+    rig.workspace.take_fetched();
+    assert_eq!(
+        rig.message(),
+        Some((FetchError::Unavailable.message(), true))
+    );
+    assert_eq!(card_of(&mut rig, chart, 1).meta, None);
+    assert!(rig.workspace.undo.is_empty());
+}
+
+#[test]
+fn replacing_the_link_of_a_card_drops_the_preview_of_the_old_one() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let mut drawing = card(Tool::Post, 1, POST_LINK);
+    if let Some(crate::model::Geometry::Card { card, .. }) = drawing.geometry_mut() {
+        card.meta = Some(fetched_meta("Old"));
+        card.size = [400.0, 200.0];
+    }
+    rig.chart_mut(chart).drawings = vec![drawing];
+    let other =
+        crate::model::link_card::Link::parse("https://x.com/other/status/1750000000000000001")
+            .unwrap();
+    rig.workspace.link_chosen(other.clone(), Some((chart, 1)));
+    let replaced = card_of(&mut rig, chart, 1);
+    assert_eq!(replaced.link, other);
+    assert_eq!(replaced.meta, None);
+    assert_eq!(replaced.size, [400.0, 200.0], "its size is kept");
+    assert_eq!(rig.workspace.undo.len(), 1);
+}
+
+#[test]
+fn a_new_link_waits_for_a_click_and_arms_its_tool() {
+    use crate::model::image_content::Content;
+    let mut rig = Rig::new();
+    rig.chart("BTCUSDT", 100.0);
+    let link = crate::model::link_card::Link::parse(OTHER_LINK).unwrap();
+    rig.workspace.link_chosen(link, None);
+    assert!(matches!(
+        rig.workspace.content.pending,
+        Some(Content::Link(_))
+    ));
+    assert!(!rig.workspace.content.place_now, "a click places it");
+    assert_eq!(rig.workspace.active_tool, Tool::Post);
 }

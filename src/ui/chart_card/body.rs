@@ -11,7 +11,7 @@ pub(super) struct BodyArgs<'a> {
     pub symbol: &'a str,
     pub candles: &'a [Kline],
     pub error: Option<&'a str>,
-    pub log_scale: bool,
+    pub scale_mode: PriceScaleMode,
     pub source: DataSource,
     pub indicators: &'a IndicatorConfig,
     pub crosshair: Option<&'a CrosshairInfo>,
@@ -22,8 +22,10 @@ pub(super) struct BodyArgs<'a> {
 pub(super) struct OverlayResults {
     pub pane_actions: Vec<(u64, PaneAction)>,
     pub alert_menu: Option<alert_lines::LineMenu>,
+    pub alert_moves: Vec<alert_lines::AlertMove>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
+    pub scale_mode: Option<PriceScaleMode>,
 }
 
 /// What a script's `syminfo.*` and `chart.is_*` read for this market and chart type.
@@ -145,8 +147,9 @@ impl ChartCard {
     ) -> navigation::Regions {
         let (bars, plot) = (data.bars, layout.plot);
         replay.picked_ms = None;
+        let view = self.view(bars, plot, data.scale_mode, data.chart_type);
         if layout.main_visible
-            && let Some(view) = self.view(bars, plot, data.log_scale, data.chart_type)
+            && let Some(view) = &view
         {
             if replay.selecting {
                 self.layer.clear_hover();
@@ -154,12 +157,7 @@ impl ChartCard {
                 self.layer.update(
                     ui,
                     response,
-                    &view.projection(
-                        plot,
-                        bars,
-                        self.appearance.price_format(),
-                        ui.ctx().pixels_per_point(),
-                    ),
+                    &view.projection(plot, bars, self.appearance.price_format(), ui.ctx()),
                     drawing,
                 );
             }
@@ -171,12 +169,12 @@ impl ChartCard {
         };
         let navigation = navigation::Navigation {
             regions,
-            shown: self
-                .view(bars, plot, data.log_scale, data.chart_type)
+            shown: view
+                .as_ref()
                 .map(|view| PriceRange::new(view.scale.minimum, view.scale.maximum)),
             total: bars.len(),
             slot_width: self.slot_width(plot),
-            log_scale: data.log_scale,
+            logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
             drawing_claims: self.layer.claims_drag(),
             response,
         };
@@ -190,8 +188,10 @@ impl ChartCard {
         let OverlayResults {
             pane_actions,
             alert_menu,
+            alert_moves,
             paper,
             navigation,
+            scale_mode,
         } = results;
         for (id, action) in pane_actions {
             self.apply_pane_action(id, action);
@@ -199,10 +199,14 @@ impl ChartCard {
         if alert_menu.is_some() {
             self.alert_menu = alert_menu;
         }
+        self.alert_moves.extend(alert_moves);
         self.paper.actions.extend(paper.0);
         self.paper.menu = paper.1.or(self.paper.menu.take());
         if let Some(action) = navigation {
             self.apply_navigation(action, bars);
+        }
+        if scale_mode.is_some() {
+            self.scale_request = scale_mode;
         }
     }
 }

@@ -55,7 +55,7 @@ impl Default for StorageEvents {
 #[derive(Default)]
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
-    snapshots: crate::snapshot_host::SnapshotHost,
+    snapshots: crate::host::snapshot_host::SnapshotHost,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -67,7 +67,7 @@ pub struct WebhookHost {
 }
 
 impl WebhookHost {
-    pub fn new(snapshots: crate::snapshot_host::SnapshotHost) -> Self {
+    pub fn new(snapshots: crate::host::snapshot_host::SnapshotHost) -> Self {
         Self {
             snapshots,
             ..Self::default()
@@ -105,8 +105,8 @@ impl WebhookHost {
         notifications: &AlertNotificationSettings,
         health: &AlertRuntimeHealth,
         mcp: crate::ui::settings_mcp::McpSettingsInput,
-        updates: &crate::update_host::UpdateHost,
-        sync: &crate::sync_host::SyncHost,
+        updates: &crate::host::update_host::UpdateHost,
+        sync: &crate::host::sync_host::SyncHost,
         now_ms: i64,
         reference_count: &dyn Fn(EndpointId) -> usize,
     ) -> Vec<WebhookHostAction> {
@@ -481,7 +481,7 @@ mod tests {
         let shared: crate::store::SharedStore = Arc::new(std::sync::Mutex::new(
             Store::open_in_memory().expect("a store"),
         ));
-        let snapshots = crate::snapshot_host::SnapshotHost::load(shared.clone());
+        let snapshots = crate::host::snapshot_host::SnapshotHost::load(shared.clone());
         let mut host = WebhookHost::new(snapshots.clone());
         let (done, finished) = mpsc::channel();
         let worker_store = shared.clone();

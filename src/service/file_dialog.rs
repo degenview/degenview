@@ -77,6 +77,11 @@ pub fn choose_csv(prompt: &str) -> Result<Option<PathBuf>, String> {
     ))
 }
 
+/// Asks for a PNG or JPEG picture to read.
+pub fn choose_image(prompt: &str) -> Result<Option<PathBuf>, String> {
+    run(&open_script(prompt, &["public.png", "public.jpeg"]))
+}
+
 /// Asks where to save a file.
 pub fn choose_save_path(prompt: &str, default_name: &str) -> Result<Option<PathBuf>, String> {
     run(&save_script(prompt, default_name))
@@ -104,6 +109,13 @@ mod tests {
         assert_eq!(applescript_string("say \"hi\""), "\"say \\\"hi\\\"\"");
         assert_eq!(applescript_string("a\\b"), "\"a\\\\b\"");
         assert_eq!(applescript_string("two\nlines"), "\"two lines\"");
+    }
+
+    #[test]
+    fn the_picture_panel_asks_for_png_and_jpeg_only() {
+        let script = open_script("Choose a picture", &["public.png", "public.jpeg"]);
+        assert!(script.contains("\"public.png\", \"public.jpeg\""));
+        assert!(!script.contains("text"));
     }
 
     #[test]

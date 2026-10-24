@@ -10,6 +10,7 @@
 //! message.
 
 use super::*;
+use crate::model::alert::AlertCondition;
 use crate::model::chart_clipboard::DrawingClip;
 use crate::model::chart_context::{
     self, ChartContext, Command, Facts, Live, OrderFacts, PaneFacts, PaperAccess, TemplateRow,
@@ -17,6 +18,7 @@ use crate::model::chart_context::{
 use crate::model::chart_template::ApplyScope;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
+use crate::model::price_scale::PriceScaleMode;
 use crate::ui::ContextRequest;
 use crate::ui::chart_context_menu::{self, MenuState, Outcome};
 use crate::ui::chart_table_view::{self, TableAction, TableViewState};
@@ -237,7 +239,7 @@ impl ChartWorkspace {
             time_locked: chart.chart.time_lock().is_some(),
             table_open: self.context.table_chart == Some(chart.id),
             tree_open: self.context.tree_chart == Some(chart.id),
-            log_scale: chart.log_scale,
+            scale_mode: chart.scale_mode,
             ..Facts::default()
         };
         match &context.target {
@@ -314,7 +316,8 @@ impl ChartWorkspace {
         ctx: &Context,
         host: &mut PaperHost,
     ) -> Vec<WorkspaceAction> {
-        let mut actions = Vec::new();
+        let mut actions = self.apply_alert_moves();
+        self.apply_scale_requests();
         if let Some(mut open) = self.context.menu.take() {
             match self.context_facts(ctx, &open.context, &open.templates) {
                 // The chart closed while the menu was up: it goes with it.
@@ -461,7 +464,7 @@ impl ChartWorkspace {
                 self.settings_chart = Some(chart_id);
             }
             Command::ResetPriceScale => self.charts[index].chart.reset_price_scale(),
-            Command::ToggleLogScale => self.charts[index].log_scale ^= true,
+            Command::SetScaleMode(mode) => self.set_scale_mode(chart_id, mode),
             Command::ResetChartView => self.charts[index].chart.reset_view(),
             Command::PaneSettings(_) => {
                 self.settings_state = ChartSettingsState::default();
@@ -540,7 +543,13 @@ impl ChartWorkspace {
     /// Starts a price alert at the clicked price. The editor opens for the user to review; it
     /// saves nothing by itself.
     fn start_alert(&mut self, context: &ChartContext, _host: &PaperHost) {
-        let Some(index) = self.chart_index(context.chart_id) else {
+        self.start_alert_at(context.chart_id, context.price());
+    }
+
+    /// Starts a price alert on `chart_id` at `price`: the click's price, or a horizontal line's.
+    /// The editor opens for the user to review; it saves nothing by itself.
+    pub(crate) fn start_alert_at(&mut self, chart_id: u64, price: Option<f64>) {
+        let Some(index) = self.chart_index(chart_id) else {
             return;
         };
         let chart = &self.charts[index];
@@ -552,7 +561,7 @@ impl ChartWorkspace {
             self.say("Alerts are not available during replay.", true);
             return;
         }
-        let Some(price) = context.price() else {
+        let Some(price) = price.filter(|price| price.is_finite()) else {
             self.say("There is no price at that point.", true);
             return;
         };
@@ -606,7 +615,10 @@ impl ChartWorkspace {
     /// Copy and Paste from the keyboard: the platform reports them as events, not keys.
     pub(super) fn handle_clipboard(&mut self, ui: &egui::Ui) {
         let ctx = ui.ctx();
-        if self.add_chart.is_open() || ctx.egui_wants_keyboard_input() {
+        // A selected table cell takes the clipboard keys for itself; the chart's draw this frame
+        // handles them.
+        let cell_selected = crate::ui::take_table_cell_selected(ctx);
+        if self.add_chart.is_open() || ctx.egui_wants_keyboard_input() || cell_selected {
             return;
         }
         let (copy, paste) = ui.input(|input| {
@@ -661,7 +673,14 @@ impl ChartWorkspace {
         use crate::model::chart_clipboard::ClipError;
         let clip = match DrawingClip::decode(text) {
             Ok(clip) => clip,
-            Err(ClipError::NotDrawings) => return,
+            // Not DegenView's own copy: a link to an X post becomes a card;
+            // anything else on the clipboard is not ours.
+            Err(ClipError::NotDrawings) => {
+                if let Ok(link) = crate::model::link_card::Link::parse(text) {
+                    self.place_pasted_link(link);
+                }
+                return;
+            }
             Err(error) => {
                 self.say(error.to_string(), true);
                 return;
@@ -712,7 +731,11 @@ impl ChartWorkspace {
             return;
         };
         let target = at.unwrap_or(origin);
-        let drawings = match clip.placed(target, chart.log_scale, chart.next_drawing_id) {
+        let drawings = match clip.placed(
+            target,
+            chart.scale_mode.is_logarithmic(),
+            chart.next_drawing_id,
+        ) {
             Ok(drawings) => drawings,
             Err(error) => {
                 self.say(error.to_string(), true);
@@ -747,9 +770,12 @@ impl ChartWorkspace {
             }
         }
         let table = self.context.table_chart;
+        let replay_ms = self.replay_cut();
+        let replaying =
+            self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart;
         for chart in &mut self.charts {
             chart.chart.set_table_wanted(table == Some(chart.id));
-            let lines = if chart.is_market() {
+            let mut lines = if chart.is_market() {
                 crate::model::alert_line::lines_for(
                     &self.context.alerts,
                     &InstrumentId::new(chart.source, &chart.symbol),
@@ -758,8 +784,110 @@ impl ChartWorkspace {
             } else {
                 Vec::new()
             };
+            if !lines.is_empty() {
+                // A level moved while the replay rewinds the market would be judged against a
+                // price that is not the market's.
+                for line in &mut lines {
+                    line.editable &= !replaying;
+                }
+                let last = displayed_candles(&chart.candles, replay_ms)
+                    .last()
+                    .map(|candle| candle.close);
+                chart
+                    .chart
+                    .set_alert_market(last, Self::paper_instrument(chart).tick_size);
+            }
             chart.chart.set_alert_lines(lines);
         }
+    }
+
+    /// Applies the modes picked from the charts' corner menus since the last frame. The chart
+    /// picked from is the focused one from then on, as after any click on it.
+    fn apply_scale_requests(&mut self) {
+        let picks: Vec<(u64, PriceScaleMode)> = self
+            .charts
+            .iter_mut()
+            .filter_map(|chart| Some((chart.id, chart.chart.take_scale_request()?)))
+            .collect();
+        for (chart_id, mode) in picks {
+            self.set_scale_mode(chart_id, mode);
+            self.focused = Some(chart_id);
+        }
+    }
+
+    /// Turns the alert tags dropped on a new level since the last frame into saves.
+    fn apply_alert_moves(&mut self) -> Vec<WorkspaceAction> {
+        let mut actions = Vec::new();
+        for index in 0..self.charts.len() {
+            for moved in self.charts[index].chart.take_alert_moves() {
+                actions.extend(self.move_alert(index, moved));
+            }
+        }
+        actions
+    }
+
+    /// The save for alert `moved.id` dragged to `moved.price` on chart `index`. The level is the
+    /// drop's, in the alert's currency; the side is the one the level is on from the market's
+    /// last price, as for "Add alert at this price". State, frequency, note and webhooks stay.
+    fn move_alert(&mut self, index: usize, moved: ui::AlertMove) -> Option<WorkspaceAction> {
+        if self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart {
+            self.say("Alerts are not available during replay.", true);
+            return None;
+        }
+        let chart = &self.charts[index];
+        let market = InstrumentId::new(chart.source, &chart.symbol);
+        let last = displayed_candles(&chart.candles, self.replay_cut())
+            .last()
+            .map(|candle| candle.close);
+        let alert = self
+            .context
+            .alerts
+            .iter()
+            .find(|alert| alert.id == moved.id && alert.asset.instrument == market)?;
+        let rate = if alert.currency == AlertCurrency::Usd {
+            Some(1.0)
+        } else {
+            self.alert_fx_rates
+                .get(&alert.currency)
+                .copied()
+                .filter(|rate| *rate > 0.0)
+        };
+        let Some(rate) = rate else {
+            self.say(
+                "The exchange rate for this alert is not available yet.",
+                true,
+            );
+            return None;
+        };
+        let above = crate::model::alert_line::above_after_drag(
+            alert.condition.crosses_above(),
+            moved.price,
+            last,
+        );
+        // The rate leaves float noise (`90.00000000000001`) the alert would show.
+        let target: f64 = format!("{:.9e}", moved.price * rate)
+            .parse()
+            .unwrap_or(moved.price * rate);
+        let condition = match alert.condition {
+            AlertCondition::CrossesAbove { .. } | AlertCondition::CrossesBelow { .. } => {
+                if above {
+                    AlertCondition::CrossesAbove { target }
+                } else {
+                    AlertCondition::CrossesBelow { target }
+                }
+            }
+            // A percentage alert has no level of its own to move.
+            _ => return None,
+        };
+        if condition == alert.condition {
+            return None;
+        }
+        let mut alert = alert.clone();
+        alert.condition = condition;
+        Some(WorkspaceAction::MoveAlert {
+            alert: Box::new(alert),
+            baseline: last.map(|last| last * rate),
+        })
     }
 
     pub(super) fn show_table_panel(&mut self, ui: &mut egui::Ui) {
@@ -820,7 +948,7 @@ impl ChartWorkspace {
             workspace.charts[index]
                 .drawings
                 .iter()
-                .find(|candidate| candidate.id() == id)
+                .find(|candidate| candidate.stored_id() == id)
                 .cloned()
         };
         match action {

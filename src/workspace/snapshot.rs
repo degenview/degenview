@@ -8,13 +8,14 @@
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
 
+use super::content::snapshot_images;
 use super::*;
+use crate::host::snapshot_host::{Hosting, SnapshotHost};
 use crate::model::snapshot::{
     self, SnapshotAction, SnapshotDimensions, SnapshotHost as HostAddress, SnapshotRequest,
 };
 use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
 use crate::service::{keychain_snapshot_token, timezone, work_queue};
-use crate::snapshot_host::{Hosting, SnapshotHost};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -148,13 +149,17 @@ impl ChartWorkspace {
             self.say("There is no chart to take a picture of yet.", true);
             return;
         };
+        let open_notes = chart.chart.open_notes();
+        let images = snapshot_images(ctx, &chart.drawings);
         let input = SnapshotInput {
             symbol: &chart.symbol,
             source: chart.source,
             candles: displayed_candles(&chart.candles, replay_ms),
-            log_scale: chart.log_scale,
+            scale_mode: chart.scale_mode,
             indicators: &chart.indicators,
             drawings: &chart.drawings,
+            open_notes: &open_notes,
+            images: Some(&images),
             hide_all_drawings: self.hide_all_drawings,
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
@@ -368,6 +373,7 @@ fn system_backend(host: Option<HostAddress>) -> Arc<dyn snapshot_job::Backend> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Kline;
     use crate::model::snapshot::{SharedSnapshot, UploadError};
     use crate::service::snapshot_export::ExportError;
     use crate::store::SharedStore;

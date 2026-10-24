@@ -144,8 +144,8 @@ pub struct SettingsInput<'a> {
     pub webhooks: WebhookSettingsInput<'a>,
     pub mcp: McpSettingsInput<'a>,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsInput<'a>,
-    pub updates: &'a crate::update_host::UpdateHost,
-    pub sync: &'a crate::sync_host::SyncHost,
+    pub updates: &'a crate::host::update_host::UpdateHost,
+    pub sync: &'a crate::host::sync_host::SyncHost,
     pub now_ms: i64,
 }
 

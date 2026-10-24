@@ -33,7 +33,7 @@ struct Rig {
     card: ChartCard,
     candles: Vec<Kline>,
     drawings: Vec<Drawing>,
-    log_scale: bool,
+    scale_mode: PriceScaleMode,
     tool: Tool,
     selected: Vec<u64>,
     time: f64,
@@ -52,7 +52,7 @@ impl Rig {
             card,
             candles: series(400),
             drawings: Vec::new(),
-            log_scale: false,
+            scale_mode: PriceScaleMode::Regular,
             tool: Tool::Cursor,
             selected: Vec::new(),
             time: 0.0,
@@ -72,11 +72,11 @@ impl Rig {
             events,
             ..Default::default()
         };
-        let (card, candles, drawings, log_scale) = (
+        let (card, candles, drawings, scale_mode) = (
             &mut self.card,
             &self.candles,
             &self.drawings,
-            self.log_scale,
+            self.scale_mode,
         );
         let (tool, selected) = (self.tool, self.selected.clone());
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
@@ -94,7 +94,7 @@ impl Rig {
                 candles,
                 false,
                 None,
-                log_scale,
+                scale_mode,
                 DataSource::Binance,
                 &IndicatorConfig::default(),
                 None,

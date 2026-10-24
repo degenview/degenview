@@ -110,7 +110,7 @@ mod run_tests {
             if demo.name == "Higher Timeframe Trend" {
                 continue; // needs request.security (network)
             }
-            let (output, failure) = crate::pine_host::run_script_checked(
+            let (output, failure) = crate::host::pine_host::run_script_checked(
                 demo.source,
                 &bars(200),
                 &symbol,

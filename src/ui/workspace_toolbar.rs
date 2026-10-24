@@ -17,8 +17,6 @@ const NAME_MAX_WIDTH: f32 = 180.0;
 
 pub struct ToolbarInput<'a> {
     pub timeframe: Timeframe,
-    /// The focused chart's log scale, when a chart is focused.
-    pub log_scale: Option<bool>,
     pub layout_name: &'a str,
     pub unsaved: bool,
     pub autosave: AutosaveState,
@@ -47,7 +45,6 @@ pub struct AutosaveState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolbarAction {
     SetTimeframe(Timeframe),
-    ToggleLogScale,
     SaveLayout,
     ToggleAutosave,
     CopyLayout,
@@ -67,42 +64,11 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
     ui.painter().rect_filled(bar, 0.0, theme::chrome());
     let y = bar.center().y - BUBBLE / 2.0;
 
-    // Left: the timeframe, then the focused chart's log scale.
+    // Left: the timeframe.
     let mut x = bar.left() + 12.0;
     if let Some(timeframe) = timeframes(ui, pos2(x, y), input.timeframe, &mut x) {
         actions.push(ToolbarAction::SetTimeframe(timeframe));
     }
-    if let Some(on) = input.log_scale {
-        x += GAP;
-        let rect = Rect::from_min_size(pos2(x, y), vec2(46.0, BUBBLE));
-        let response = bubble_button(ui, rect, Id::new("toolbar-log"), on).on_hover_text(if on {
-            "Logarithmic price scale (click for linear)"
-        } else {
-            "Linear price scale (click for logarithmic)"
-        });
-        let response = crate::ui::accessibility::label(response, "Logarithmic scale");
-        let label = kit::galley(
-            ui,
-            "Log",
-            12.5,
-            if on { SEMIBOLD } else { MEDIUM },
-            if on {
-                kit::ACCENT
-            } else {
-                theme::text_primary()
-            },
-            40.0,
-        );
-        ui.painter().galley(
-            rect.center() - label.size() / 2.0,
-            label,
-            theme::text_primary(),
-        );
-        if response.clicked() {
-            actions.push(ToolbarAction::ToggleLogScale);
-        }
-    }
-
     // Right, from the edge inwards: Add Chart, the watchlist, the app buttons, the layout.
     let mut right = bar.right() - 12.0;
     let add_label = kit::galley(
@@ -681,10 +647,9 @@ mod tests {
     fn the_toolbar_draws_headlessly_with_and_without_a_focused_chart() {
         let layouts = vec![(1, "Morning".to_owned()), (2, "Swing trades".to_owned())];
         let ctx = egui::Context::default();
-        for (log, unsaved, active) in [(None, false, None), (Some(true), true, Some(2))] {
+        for (unsaved, active) in [(false, None), (true, Some(2))] {
             let input = ToolbarInput {
                 timeframe: Timeframe::Day,
-                log_scale: log,
                 layout_name: "Morning",
                 unsaved,
                 autosave: AutosaveState {

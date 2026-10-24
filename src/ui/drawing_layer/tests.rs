@@ -7,6 +7,11 @@ use crate::model::{DrawingStyle, Kline, Visibility};
 use eframe::egui::{Event, Key, Modifiers, RawInput, Sense, pos2, vec2};
 use menu::Action;
 
+mod card_tests;
+mod image_tests;
+mod note_tests;
+mod table_tests;
+
 const PLOT: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1000.0, 400.0));
 
 fn candles() -> Vec<Kline> {
@@ -25,11 +30,8 @@ fn candles() -> Vec<Kline> {
 
 fn scale(logarithmic: bool) -> PriceScale {
     PriceScale {
-        minimum: 80.0,
-        maximum: 120.0,
-        top: 0.0,
-        height: 400.0,
         logarithmic,
+        ..PriceScale::linear(80.0, 120.0, 0.0, 400.0)
     }
 }
 
@@ -43,6 +45,7 @@ fn projection<'a>(data: &'a [Kline], scale: &'a PriceScale) -> Projection<'a> {
         start: 0,
         slot_width: 100.0,
         lead: 0.0,
+        measure: super::TextMeasure::for_tests(),
     }
 }
 
@@ -50,12 +53,16 @@ fn anchor(time_ms: i64, price: f64) -> Anchor {
     Anchor { time_ms, price }
 }
 
-/// Four well-separated points inside the plot.
-const POINTS: [Pos2; 4] = [
+/// Seven well-separated points inside the plot: the longest tool takes seven, and the first four
+/// are what the tools of three or four points have always been placed with.
+const POINTS: [Pos2; 7] = [
     pos2(200.0, 200.0),
     pos2(420.0, 110.0),
     pos2(640.0, 270.0),
     pos2(520.0, 340.0),
+    pos2(720.0, 150.0),
+    pos2(800.0, 300.0),
+    pos2(880.0, 120.0),
 ];
 
 // MARK: Projection and editing
@@ -88,16 +95,21 @@ fn candle_centres_land_mid_slot_and_a_lead_shifts_right() {
     assert_eq!(proj.x(3 * 60_000), 50.0);
 }
 
+/// A trend line from `a` to `b` in `style`.
+fn line_in(id: u64, a: Anchor, b: Anchor, style: DrawingStyle, locked: bool) -> Drawing {
+    let mut line = Drawing::build(Tool::TrendLine, id, &[a, b], style).expect("a trend line");
+    line.set_locked(locked);
+    line
+}
+
 fn trend_line(id: u64, locked: bool) -> Drawing {
-    Drawing::TrendLine {
+    line_in(
         id,
-        a: anchor(60_000, 90.0),
-        b: anchor(180_000, 110.0),
+        anchor(60_000, 90.0),
+        anchor(180_000, 110.0),
+        Tool::TrendLine.default_style(),
         locked,
-        hidden: false,
-        visibility: Visibility::ALL,
-        style: crate::model::drawing_style::DrawingStyle::trend_line(),
-    }
+    )
 }
 
 #[test]
@@ -113,10 +125,9 @@ fn dragging_the_body_moves_every_anchor_and_keeps_the_id() {
         anchor(0, 0.0),
         &proj,
     );
-    let Drawing::TrendLine { id, a, b, .. } = moved else {
-        panic!("variant changed");
-    };
-    assert_eq!(id, 7);
+    assert_eq!(moved.tool(), Some(Tool::TrendLine), "still a trend line");
+    assert_eq!(moved.id(), 7);
+    let (a, b) = (moved.anchors()[0], moved.anchors()[1]);
     assert_eq!(a.time_ms, 120_000);
     assert_eq!(b.time_ms, 240_000);
     assert!((a.price - 90.0).abs() < 1e-3 && (b.price - 110.0).abs() < 1e-3);
@@ -292,6 +303,31 @@ struct Rig {
     background_click: Option<Pos2>,
     keys_blocked: bool,
     reveal_all: bool,
+    /// What is waiting to be placed by a click (a picture).
+    pending: Option<crate::model::image_content::Content>,
+    /// The picture that waits arrived by a drop or a paste: place it without a click.
+    place_now: bool,
+    /// A picture to put in place of a drawing's.
+    replace: Option<(u64, crate::model::image_content::ImageContent)>,
+}
+
+/// A picture to place, as the Image tool would have it once one is chosen.
+/// What a content tool is waiting to place: a card for the link tools, a picture for the rest.
+fn sample_content(tool: Tool) -> crate::model::image_content::Content {
+    use crate::model::link_card::{Link, LinkCard};
+    let link = match tool {
+        Tool::Post => "https://x.com/degenview/status/1750000000000000000",
+        _ => return sample_picture(),
+    };
+    crate::model::image_content::Content::Link(LinkCard::new(Link::parse(link).unwrap()))
+}
+
+fn sample_picture() -> crate::model::image_content::Content {
+    crate::model::image_content::Content::Image(crate::model::image_content::ImageContent::new(
+        "a".repeat(64),
+        "levels.png",
+        [320, 200],
+    ))
 }
 
 impl Rig {
@@ -321,6 +357,9 @@ impl Rig {
             background_click: None,
             keys_blocked: false,
             reveal_all: false,
+            pending: None,
+            place_now: false,
+            replace: None,
         };
         // egui hit-tests against the previous frame's widgets.
         rig.settle();
@@ -359,6 +398,8 @@ impl Rig {
             .with_view(self.timeframe, self.hide_all)
             .with_behavior(self.magnet, self.keep_drawing)
             .with_style_clipboard(self.style_clipboard)
+            .with_pending_content(self.pending.clone())
+            .with_picture_work(std::mem::take(&mut self.place_now), self.replace.take())
             .with_keys_blocked(self.keys_blocked);
         let (layer, data, scale) = (&mut self.layer, &self.data, &self.scale);
         let mut output = self.ctx.run_ui(input, |ui| {
@@ -376,6 +417,9 @@ impl Rig {
         self.escape_consumed |= frame.escape_consumed;
         if frame.disarm {
             self.tool = Tool::Cursor;
+        }
+        if frame.content_used {
+            self.pending = None;
         }
         if frame.open_properties.is_some() {
             self.opened = frame.open_properties;
@@ -500,7 +544,11 @@ impl Rig {
 
     /// The gesture that places `tool` with `POINTS`, by clicks.
     fn place(&mut self, tool: Tool) {
+        let before = self.drawings.len();
         self.tool = tool;
+        if tool.caps().has(Caps::CONTENT) {
+            self.pending = Some(sample_content(tool));
+        }
         match tool.spec().placement {
             Placement::Freehand => {
                 let path = [POINTS[0], pos2(260.0, 150.0), pos2(330.0, 190.0), POINTS[1]];
@@ -518,6 +566,29 @@ impl Rig {
                 }
                 self.double_click(POINTS[3]);
             }
+        }
+        // A tool that is nothing without its text is added once its text is typed and kept.
+        if tool.caps().has(Caps::TEXT_FIRST) {
+            assert!(self.layer.is_editing_text(), "{tool:?} opens its editor");
+            assert_eq!(self.drawings.len(), before, "{tool:?} waits for its text");
+            self.settle();
+            self.frame(vec![Event::Text("a note".to_owned())]);
+            self.key(Key::Enter);
+            self.settle();
+        }
+        // A table starts editing its first cell: leave it, and let go of the cell, so the table
+        // is a plain selected drawing like the rest.
+        if tool.caps().has(Caps::TABLE) {
+            self.settle();
+            assert!(
+                self.layer.is_editing_text(),
+                "{tool:?} edits its first cell"
+            );
+            self.key(Key::Escape);
+            self.settle();
+            self.key(Key::Escape);
+            self.settle();
+            assert!(!self.layer.is_editing_text() && self.layer.table_cell.is_none());
         }
     }
 }
@@ -545,16 +616,38 @@ fn body_point(screen: &Screen, avoid: Option<Rect>) -> Pos2 {
     if let Some(point) = screen
         .lines
         .iter()
+        .chain(screen.styled.iter().map(|styled| &styled.path))
         .filter(|path| path.len() >= 2)
         .find_map(along)
     {
         return point;
     }
-    for path in &screen.outlines {
+    // A table's borders resize its rows and columns: its body is the inside of a cell.
+    if !screen.dividers.is_empty() {
+        let rect = screen.hit[0];
+        for (fx, fy) in [(0.3, 0.3), (0.5, 0.5), (0.7, 0.3), (0.3, 0.7), (0.7, 0.7)] {
+            let point = rect.min + rect.size() * vec2(fx, fy);
+            if usable(point) && screen.divider_at(point, 8.0).is_none() {
+                return point;
+            }
+        }
+    }
+    for path in screen.outlines.iter().chain(&screen.frames) {
         let mut closed = path.clone();
         closed.push(path[0]);
         if let Some(point) = along(&closed) {
             return point;
+        }
+    }
+    // A picture has nothing but its rectangle: a point inside it, off its handles.
+    if screen.solids.is_empty()
+        && let Some(rect) = screen.hit.first()
+    {
+        for (fx, fy) in [(0.5, 0.5), (0.3, 0.3), (0.7, 0.7), (0.3, 0.7), (0.7, 0.3)] {
+            let point = rect.min + rect.size() * vec2(fx, fy);
+            if usable(point) {
+                return point;
+            }
         }
     }
     let solid = &screen.solids[0];
@@ -589,13 +682,19 @@ fn every_tool_is_placed_with_one_gesture_and_one_undo_step() {
             "{tool:?} left a gesture behind"
         );
         assert!(!rig.layer.claims_drag());
-        assert_eq!(rig.tool, tool, "keep drawing stays on the tool");
+        // A picture is chosen each time, so its tool does not stay armed.
+        let expected = if tool.caps().has(Caps::CONTENT) {
+            Tool::Cursor
+        } else {
+            tool
+        };
+        assert_eq!(rig.tool, expected, "keep drawing stays on the tool");
     }
 }
 
 #[test]
 fn the_legacy_tools_still_place_as_before() {
-    for tool in [Tool::TrendLine, Tool::Fib, Tool::Ruler] {
+    for tool in [Tool::TrendLine, Tool::FibRetracement, Tool::Ruler] {
         let mut rig = Rig::with_tool(tool);
         rig.click(POINTS[0]);
         assert!(
@@ -767,9 +866,25 @@ fn every_placed_tool_can_be_selected_moved_and_deleted() {
             vec![id],
             "{tool:?} is not selectable at {at:?}"
         );
-        // Clicking empty space clears the selection.
-        rig.click(pos2(900.0, 380.0));
-        assert!(rig.selected.is_empty(), "{tool:?}");
+        // Clicking empty space clears the selection. The top right corner is empty for most
+        // tools (a pitchfork's bands run on to the bottom right); a time zone's lines cross the
+        // whole plot, so another corner is tried when a line is there.
+        let cleared = [
+            pos2(940.0, 30.0),
+            pos2(930.0, 385.0),
+            pos2(60.0, 385.0),
+            pos2(60.0, 30.0),
+        ]
+        .into_iter()
+        .any(|empty| {
+            rig.click(empty);
+            let cleared = rig.selected.is_empty();
+            if !cleared {
+                rig.click(at);
+            }
+            cleared
+        });
+        assert!(cleared, "{tool:?}");
         rig.click(at);
         // Selecting floats the toolbar over the shape: grab it where the toolbar is not.
         let at = rig.body(id);
@@ -787,7 +902,11 @@ fn every_placed_tool_can_be_selected_moved_and_deleted() {
             );
         }
 
-        // Delete removes it, in one step.
+        // Delete removes it, in one step. (With a table's cell selected it clears the cell, so the
+        // cell is let go of first.)
+        if rig.layer.table_cell.is_some() {
+            rig.key(Key::Escape);
+        }
         rig.key(Key::Delete);
         assert!(rig.drawings.is_empty(), "{tool:?}");
         assert_eq!(rig.undo_steps, steps + 2);
@@ -826,6 +945,11 @@ fn every_handle_of_every_tool_reshapes_it() {
                 .map(|spot| (spot.part, spot.pos))
                 .nth(index)
                 .unwrap();
+            // A handle that sits off the plot (a channel's second edge, with this test's wide
+            // third click) cannot be pressed.
+            if !PLOT.contains(pos) {
+                continue;
+            }
             let before = rig.last().clone();
             let steps = rig.undo_steps;
             // Away from the other handles, inside the plot.
@@ -997,6 +1121,49 @@ fn backspace_takes_back_the_last_vertex() {
     empty.click(POINTS[0]);
     empty.key(Key::Backspace);
     assert!(empty.layer.gesture.is_none());
+}
+
+#[test]
+fn backspace_takes_back_the_last_pivot_of_a_pattern_and_a_right_click_abandons_it() {
+    // Five pivots of an XABCD: two taken back leave the draft waiting for the fourth.
+    let mut rig = Rig::with_tool(Tool::XabcdPattern);
+    for point in &POINTS[..4] {
+        rig.click(*point);
+    }
+    let placed = |rig: &Rig| match &rig.layer.gesture {
+        Some(Gesture::Draft(draft)) => draft.placed.len(),
+        _ => 0,
+    };
+    assert_eq!(placed(&rig), 4);
+    rig.key(Key::Backspace);
+    rig.key(Key::Backspace);
+    assert_eq!(placed(&rig), 2);
+    // Placing again carries on from there and still makes one drawing, in one undo step.
+    for point in &POINTS[2..5] {
+        rig.click(*point);
+    }
+    assert_eq!(rig.drawings.len(), 1);
+    assert_eq!(rig.drawings[0].anchors().len(), 5);
+    assert_eq!(rig.undo_steps, 1);
+    // Taking back the only pivot leaves nothing to draw.
+    let mut lone = Rig::with_tool(Tool::HeadAndShoulders);
+    lone.click(POINTS[0]);
+    lone.key(Key::Backspace);
+    assert!(lone.layer.gesture.is_none());
+
+    // A right-click abandons a half-placed pattern: no drawing, no undo step, no menu.
+    let mut abandoned = Rig::with_tool(Tool::ThreeDrivesPattern);
+    for point in &POINTS[..3] {
+        abandoned.click(*point);
+    }
+    abandoned.right_click(POINTS[4]);
+    assert!(abandoned.layer.gesture.is_none());
+    assert!(abandoned.drawings.is_empty());
+    assert_eq!(abandoned.undo_steps, 0);
+    assert!(abandoned.layer.menu.is_none());
+    // And it is a fresh start: the next click is a first pivot again.
+    abandoned.click(POINTS[0]);
+    assert_eq!(placed(&abandoned), 1);
 }
 
 #[test]
@@ -1191,6 +1358,9 @@ fn shapes_survive_extreme_and_broken_anchors() {
         anchor(-i64::MAX / 4, -1e300),
         anchor(0, 0.0),
         anchor(0, 0.0),
+        anchor(1, 1.0),
+        anchor(2, 2.0),
+        anchor(3, 3.0),
     ];
     for tool in Tool::GROUPED {
         let count = match tool.spec().placement {
@@ -1237,15 +1407,13 @@ fn locked_drawings_report_locked_hits() {
     let data = candles();
     let scale = scale(false);
     let proj = projection(&data, &scale);
-    let line = Drawing::TrendLine {
-        id: 3,
-        a: anchor(0, 100.0),
-        b: anchor(540_000, 100.0),
-        locked: true,
-        hidden: false,
-        visibility: Visibility::ALL,
-        style: crate::model::drawing_style::DrawingStyle::trend_line(),
-    };
+    let line = line_in(
+        3,
+        anchor(0, 100.0),
+        anchor(540_000, 100.0),
+        Tool::TrendLine.default_style(),
+        true,
+    );
     let y = scale.y(100.0);
     let frame = DrawingFrame::new(std::slice::from_ref(&line), Tool::Cursor, None, 1);
     let mut layer = DrawingLayer::default();
@@ -1268,17 +1436,9 @@ fn an_extended_trend_line_is_hit_beyond_its_anchors_and_a_plain_one_is_not() {
     let proj = projection(&data, &scale);
     let y = scale.y(100.0);
     let at = |extend_right: bool| {
-        let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+        let mut style = Tool::TrendLine.default_style();
         style.extend_right = extend_right;
-        Drawing::TrendLine {
-            id: 3,
-            a: anchor(0, 100.0),
-            b: anchor(180_000, 100.0),
-            locked: false,
-            hidden: false,
-            visibility: Visibility::ALL,
-            style,
-        }
+        line_in(3, anchor(0, 100.0), anchor(180_000, 100.0), style, false)
     };
     let beyond = pos2(proj.plot.right() - 40.0, y + 1.0);
     let mut layer = DrawingLayer::default();
@@ -1302,20 +1462,18 @@ fn styled_trend_lines_paint_in_every_dash_and_extension() {
     let proj = projection(&data, &scale);
     for dash in LineDash::ALL {
         for (left, right) in [(false, false), (true, false), (false, true), (true, true)] {
-            let mut style = crate::model::drawing_style::DrawingStyle::trend_line();
+            let mut style = Tool::TrendLine.default_style();
             style.stroke.dash = dash;
             style.stroke.color = [255, 193, 7, 200];
             style.extend_left = left;
             style.extend_right = right;
-            let line = Drawing::TrendLine {
-                id: 1,
-                a: anchor(60_000, 99.0),
-                b: anchor(240_000, 101.0),
-                locked: false,
-                hidden: false,
-                visibility: Visibility::ALL,
+            let line = line_in(
+                1,
+                anchor(60_000, 99.0),
+                anchor(240_000, 101.0),
                 style,
-            };
+                false,
+            );
             let mut layer = DrawingLayer::default();
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 let painter = ui.painter().clone();
@@ -1710,4 +1868,389 @@ fn placing_a_drawing_while_everything_is_hidden_shows_everything_again() {
     shown.click(POINTS[0]);
     shown.click(POINTS[1]);
     assert!(!shown.reveal_all);
+}
+
+#[test]
+fn an_end_of_an_unselected_trend_line_reshapes_it_without_selecting_it_first() {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    rig.click(POINTS[0]);
+    rig.click(POINTS[1]);
+    rig.tool = Tool::Cursor;
+    rig.selected.clear();
+    rig.settle();
+    let before = rig.last().anchors();
+    rig.drag(POINTS[1], POINTS[1] + vec2(60.0, 40.0));
+    let after = rig.last().anchors();
+    assert_eq!(after[0], before[0], "the other end stays");
+    assert_ne!(after[1], before[1], "the end under the pointer moved");
+    // A line with text behaves the same.
+    let mut texted = rig.last().clone();
+    texted.set_text("note");
+    rig.drawings[0] = texted;
+    rig.selected.clear();
+    rig.settle();
+    let end = rig.px(rig.last().anchors()[1]);
+    let before = rig.last().anchors();
+    rig.drag(end, end + vec2(-50.0, 30.0));
+    assert_eq!(rig.last().anchors()[0], before[0]);
+    assert_ne!(rig.last().anchors()[1], before[1]);
+    assert_eq!(rig.last().text(), "note");
+}
+
+#[test]
+fn the_text_of_a_shape_is_still_edited_in_the_dialog_not_in_place() {
+    for tool in [
+        Tool::Rectangle,
+        Tool::Circle,
+        Tool::Arrow,
+        Tool::ArrowMarkUp,
+    ] {
+        let mut rig = Rig::new();
+        rig.place(tool);
+        rig.tool = Tool::Cursor;
+        rig.selected = vec![rig.last().id()];
+        rig.settle();
+        assert!(!rig.last().edits_text_in_place(), "{tool:?}");
+        assert!(
+            rig.layer.text_boxes.is_empty(),
+            "{tool:?} offers no invitation"
+        );
+        let id = rig.last().id();
+        let middle = rig
+            .px(rig.last().anchors()[0])
+            .lerp(rig.px(*rig.last().anchors().last().unwrap()), 0.5);
+        rig.click(middle);
+        assert!(!rig.layer.is_editing_text(), "{tool:?}");
+        assert_eq!(rig.selected, vec![id]);
+    }
+}
+
+#[test]
+fn a_double_click_on_a_selected_line_still_opens_its_properties() {
+    let (mut rig, id) = line_awaiting_text();
+    let middle = POINTS[0].lerp(POINTS[1], 0.5);
+    rig.opened = None;
+    rig.double_click(middle);
+    assert_eq!(rig.opened, Some(id));
+    assert!(
+        !rig.layer.is_editing_text(),
+        "the text sits beside the line"
+    );
+}
+
+#[test]
+fn text_that_scrolled_out_of_the_plot_is_not_clickable_where_it_was() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    // Scroll the price axis so the line is far above the plot.
+    rig.scale.minimum += 400.0;
+    rig.scale.maximum += 400.0;
+    rig.settle();
+    assert!(!rig.layer.text_boxes.contains_key(&id));
+    rig.click(place);
+    assert!(!rig.layer.is_editing_text());
+}
+
+#[test]
+fn a_line_at_one_price_offers_an_alert_there_and_a_sloped_line_none() {
+    for tool in [Tool::HorizontalLine, Tool::HorizontalRay, Tool::Crossline] {
+        let mut rig = Rig::with_tool(tool);
+        rig.click(POINTS[0]);
+        let drawing = rig.last().clone();
+        assert!(menu::is_price_line(&drawing), "{tool:?}");
+        let mut frame = DrawingFrame::new(&rig.drawings, Tool::Cursor, None, 10);
+        let proj = projection(&rig.data, &rig.scale);
+        rig.layer
+            .run(Action::Alert, &[drawing.id()], None, &mut frame, &proj);
+        assert_eq!(
+            frame.alert_price,
+            Some(drawing.anchors()[0].price),
+            "{tool:?}"
+        );
+        assert!(
+            frame.commands.is_empty(),
+            "asking for an alert edits nothing"
+        );
+    }
+    for tool in [
+        Tool::TrendLine,
+        Tool::Ray,
+        Tool::VerticalLine,
+        Tool::Pitchfork,
+    ] {
+        let mut rig = Rig::new();
+        rig.place(tool);
+        assert!(!menu::is_price_line(rig.last()), "{tool:?}");
+    }
+}
+
+// MARK: Text on a line
+
+/// A trend line, placed and selected, with the crosshair back and its text place painted.
+fn line_awaiting_text() -> (Rig, u64) {
+    let mut rig = Rig::with_tool(Tool::TrendLine);
+    rig.click(POINTS[0]);
+    rig.click(POINTS[1]);
+    rig.tool = Tool::Cursor;
+    let id = rig.last().id();
+    rig.selected = vec![id];
+    rig.settle();
+    (rig, id)
+}
+
+/// Where the text place of drawing `id` is, as the painter last laid it out.
+fn text_place(rig: &Rig, id: u64) -> Pos2 {
+    rig.layer.text_boxes.get(&id).expect("a text place").center
+}
+
+/// Types `text` into the editor that is open and presses Return.
+fn type_and_keep(rig: &mut Rig, text: &str) {
+    rig.settle();
+    rig.frame(vec![Event::Text(text.to_owned())]);
+    rig.settle();
+    rig.key(Key::Enter);
+    rig.settle();
+}
+
+#[test]
+fn a_selected_line_invites_text_and_a_click_on_the_invitation_opens_the_editor() {
+    let (mut rig, id) = line_awaiting_text();
+    assert!(!rig.layer.is_editing_text());
+    let place = text_place(&rig, id);
+    rig.click(place);
+    assert!(rig.layer.is_editing_text());
+    assert_eq!(
+        rig.selected,
+        vec![id],
+        "the line stays selected while it is typed on"
+    );
+    assert_eq!(rig.drawings.len(), 1);
+}
+
+#[test]
+fn typed_text_is_kept_by_return_as_one_undo_step() {
+    let (mut rig, id) = line_awaiting_text();
+    let steps = rig.undo_steps;
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("sup".to_owned())]);
+    rig.frame(vec![Event::Text("port".to_owned())]);
+    assert_eq!(rig.undo_steps, steps, "nothing is written while typing");
+    assert_eq!(rig.last().text(), "");
+    rig.key(Key::Enter);
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+    assert_eq!(rig.last().text(), "support");
+    assert_eq!(rig.undo_steps, steps + 1, "one edit, one step");
+    assert_eq!(rig.last().id(), id);
+    assert_eq!(rig.last().tool(), Some(Tool::TrendLine));
+    // The text now shows where it was invited, and a click on it edits it again.
+    let place = text_place(&rig, id);
+    rig.click(place);
+    assert!(rig.layer.is_editing_text());
+}
+
+#[test]
+fn escape_drops_the_edit_and_is_spent_on_it() {
+    let (mut rig, id) = line_awaiting_text();
+    let steps = rig.undo_steps;
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("never".to_owned())]);
+    rig.escape_consumed = false;
+    rig.key(Key::Escape);
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+    assert_eq!(rig.last().text(), "");
+    assert_eq!(rig.undo_steps, steps);
+    assert!(rig.escape_consumed, "so it does not also deselect the line");
+    assert_eq!(rig.selected, vec![id]);
+}
+
+#[test]
+fn keys_typed_into_the_editor_do_not_reach_the_chart() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("x".to_owned())]);
+    rig.key(Key::Backspace);
+    rig.key(Key::Delete);
+    assert_eq!(
+        rig.drawings.len(),
+        1,
+        "Delete and Backspace edit the text, not the chart"
+    );
+    assert!(rig.layer.is_editing_text());
+    // Return with the line selected and no editor open opens the properties; with it open it
+    // keeps the text instead.
+    rig.opened = None;
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.opened, None);
+}
+
+#[test]
+fn shift_return_adds_a_line_and_return_keeps_both() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.frame(vec![Event::Text("one".to_owned())]);
+    rig.modifiers = Modifiers::SHIFT;
+    rig.key(Key::Enter);
+    rig.modifiers = Modifiers::NONE;
+    rig.settle();
+    assert!(
+        rig.layer.is_editing_text(),
+        "Shift+Return does not end the edit"
+    );
+    rig.frame(vec![Event::Text("two".to_owned())]);
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.last().text(), "one\ntwo");
+}
+
+#[test]
+fn clearing_the_text_leaves_the_line_without_any() {
+    let (mut rig, id) = line_awaiting_text();
+    let plain = serde_json::to_value(rig.last()).unwrap();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    type_and_keep(&mut rig, "hi");
+    assert_eq!(rig.last().text(), "hi");
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    for _ in 0..2 {
+        rig.key(Key::Backspace);
+    }
+    rig.key(Key::Enter);
+    rig.settle();
+    assert_eq!(rig.last().text(), "");
+    assert_eq!(serde_json::to_value(rig.last()).unwrap(), plain);
+}
+
+#[test]
+fn a_locked_line_offers_no_text_and_a_drawing_that_cannot_hold_text_none() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    let mut locked = rig.last().clone();
+    locked.set_locked(true);
+    rig.drawings[0] = locked;
+    rig.settle();
+    rig.click(place);
+    assert!(!rig.layer.is_editing_text());
+    // A triangle has no text.
+    let mut rig = Rig::with_tool(Tool::Triangle);
+    for point in &POINTS[..3] {
+        rig.click(*point);
+    }
+    rig.tool = Tool::Cursor;
+    rig.selected = vec![rig.last().id()];
+    rig.settle();
+    assert!(rig.layer.text_boxes.is_empty());
+    assert!(!rig.last().edits_text_in_place());
+}
+
+#[test]
+fn the_edit_ends_when_the_line_is_deleted_under_it() {
+    let (mut rig, id) = line_awaiting_text();
+    let place = text_place(&rig, id);
+    rig.click(place);
+    rig.settle();
+    rig.drawings.clear();
+    rig.settle();
+    assert!(!rig.layer.is_editing_text());
+}
+
+/// The selected line with its toolbar and invitation, the same with its text being edited, and
+/// a selected pitchfork, as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_selection_and_the_editor() {
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    if gallery_dir().is_none() {
+        return;
+    }
+    let size = vec2(1000.0, 400.0);
+    let shoot = |rig: &mut Rig, name: &str, events: Vec<Vec<Event>>| {
+        let mut screen = Screen::new(size);
+        let mut last = None;
+        let mut script = events.into_iter();
+        for _ in 0..6 {
+            let events = script.next().unwrap_or_default();
+            last = Some(screen.run(events, |ui| {
+                let response = ui.allocate_rect(PLOT, Sense::click_and_drag());
+                let proj = projection(&rig.data, &rig.scale);
+                let mut frame = DrawingFrame::new(&rig.drawings, Tool::Cursor, None, 99)
+                    .with_selection(rig.selected.clone())
+                    .with_view(Timeframe::Day, false);
+                rig.layer.update(ui, &response, &proj, &mut frame);
+                rig.layer.paint(&ui.painter().clone(), &proj, &frame);
+                rig.layer.overlay(ui, &proj, &mut frame);
+                if let Some(select) = frame.select.take() {
+                    rig.selected = select;
+                }
+            }));
+        }
+        screen.save(name, last.expect("a frame"));
+    };
+    let (mut rig, id) = line_awaiting_text();
+    shoot(&mut rig, "selected-line-invites-text", Vec::new());
+    let place = text_place(&rig, id);
+    let button = |pressed| Event::PointerButton {
+        pos: place,
+        button: PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    shoot(
+        &mut rig,
+        "text-editor-open",
+        vec![
+            vec![Event::PointerMoved(place)],
+            vec![button(true)],
+            vec![button(false)],
+            Vec::new(),
+            vec![Event::Text("support".to_owned())],
+        ],
+    );
+    let mut fork = Rig::with_tool(Tool::Pitchfork);
+    for point in &POINTS[..3] {
+        fork.click(*point);
+    }
+    fork.tool = Tool::Cursor;
+    fork.selected = vec![fork.last().id()];
+    shoot(&mut fork, "selected-pitchfork", Vec::new());
+    for (tool, name) in [
+        (Tool::XabcdPattern, "selected-xabcd"),
+        (Tool::ElliottImpulse, "selected-impulse"),
+        (Tool::TimeCycles, "selected-time-cycles"),
+        (Tool::LongPosition, "selected-long-position"),
+        (Tool::PositionForecast, "selected-position-forecast"),
+        (Tool::AnchoredVwap, "selected-anchored-vwap"),
+        (Tool::FixedRangeVolumeProfile, "selected-volume-profile"),
+        (Tool::DateAndPriceRange, "selected-date-price-range"),
+        (Tool::FibRetracement, "selected-fib-retracement"),
+        (Tool::FibChannel, "selected-fib-channel"),
+        (Tool::FibCircles, "selected-fib-circles"),
+        (Tool::FibWedge, "selected-fib-wedge"),
+        (Tool::Pitchfan, "selected-pitchfan"),
+        (Tool::GannSquare, "selected-gann-square"),
+        (Tool::GannFan, "selected-gann-fan"),
+    ] {
+        let mut rig = Rig::with_tool(tool);
+        for point in &POINTS[..usize::from(match tool.spec().placement {
+            Placement::Points(count) => count,
+            _ => 1,
+        })] {
+            rig.click(*point);
+        }
+        rig.tool = Tool::Cursor;
+        rig.selected = vec![rig.last().id()];
+        shoot(&mut rig, name, Vec::new());
+    }
 }

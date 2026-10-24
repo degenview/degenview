@@ -7,14 +7,14 @@ architecture index; use the topic documents for detail.
 
 | Layer | Responsibility |
 | --- | --- |
-| `app.rs`, `workspace.rs`, `*_host.rs` | Stateful coordination and feature ownership |
+| `app.rs`, `workspace.rs`, `host/` | Stateful coordination and feature ownership |
 | `model/` | Pure domain values and engines |
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |
 | `ui/` | Immediate-mode egui rendering |
 | `pine/` | Pure Pine compiler, interpreter, broker, and outputs |
 | `script_manager/` | Script library, editor, preview, and drafts |
-| `mcp/`, `mcp_host.rs` | Local MCP transport and app-thread bridge |
+| `mcp/`, `host/mcp_host.rs` | Local MCP transport and app-thread bridge |
 
 ## Topic map
 

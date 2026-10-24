@@ -21,7 +21,9 @@ use super::project::{
 };
 use super::record::{FAVORITES_ID, RecordName, sha256_hex};
 use super::scripts::ScriptSink;
+use super::validate::{Verdict, validate};
 use crate::store::Store;
+use crate::store::asset_store::StoredAsset;
 use crate::store::sync::{
     ConflictRecord, EntityLink, EntityMeta, InboxRecord, OutboxOp, row_decodes,
 };
@@ -30,6 +32,10 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 mod paper;
 mod portfolio;
+
+/// Why a fetched record was kept in the inbox, for the two reasons an update can fix.
+pub const UNKNOWN_TYPE: &str = "unknown_type";
+pub const NEWER_SCHEMA: &str = "newer_schema";
 
 /// Who is applying, and when. Passed in so applying is deterministic under test.
 #[derive(Debug, Clone)]
@@ -107,6 +113,7 @@ pub fn apply_batch(
         for name in deletions {
             work.apply_deletion(name)?;
         }
+        work.retry_set_aside()?;
         work.retry_category_off()?;
         work.retry_orphans()?;
         work.retry_orphan_transactions()?;
@@ -149,6 +156,7 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
         EntityKind::ChartTemplate => Some("chart_template"),
         EntityKind::DrawingTemplate => Some("drawing_template"),
         EntityKind::Layout | EntityKind::LayoutDrawing => Some("saved_view"),
+        EntityKind::DrawingAsset => Some("drawing_asset"),
         EntityKind::Alert => Some("price_alert"),
         EntityKind::Portfolio => Some("portfolio"),
         EntityKind::PortfolioTransaction => Some(portfolio::TRANSACTIONS),
@@ -348,10 +356,54 @@ impl<'a> Work<'a> {
             EntityKind::PortfolioTransaction => self.apply_transaction(record),
             EntityKind::Layout => self.apply_layout(record),
             EntityKind::LayoutDrawing => self.apply_drawing(record),
+            EntityKind::DrawingAsset => self.apply_asset(record),
             EntityKind::Alert => self.apply_alert(record),
             EntityKind::Script => self.apply_script(record),
             EntityKind::PaperAccount => self.apply_paper(record),
         }
+    }
+
+    /// A picture from the cloud. It is stored on its own (never through the table's working copy,
+    /// which would read every picture), and only when it is what its name says.
+    fn apply_asset(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
+        let id = record.record.name.id.clone();
+        let Ok(asset) = serde_json::from_value::<StoredAsset>(record.value.clone()) else {
+            return self.keep(record, "invalid");
+        };
+        if asset.id != id || asset.verified_bytes().is_none() {
+            return self.keep(record, "invalid");
+        }
+        if self.store.put_asset_from_cloud(&asset)? {
+            self.report.tables.insert("drawing_asset".to_string());
+            self.report.applied += 1;
+        }
+        self.store.link_entity(&EntityLink {
+            kind: EntityKind::DrawingAsset,
+            sync_id: id.clone(),
+            local_id: id,
+            synced_hash: sha256_hex(&canonical_json(&record.value)),
+            system_fields: record.system_fields.clone(),
+            base_payload: None,
+            revision: record.record.revision as i64,
+            origin_device: record.record.origin_device.clone(),
+            now_ms: self.ctx.now_ms,
+        })?;
+        Ok(())
+    }
+
+    /// Another Mac deleted a picture. Nothing here ever deletes one: a drawing on some Mac, in a
+    /// layout not synced yet or on an undo stack may still show it. A picture this Mac holds goes
+    /// back up (an edit beats a delete); one it does not hold is only noted as gone.
+    fn keep_asset(&mut self, id: &str) -> rusqlite::Result<()> {
+        let kind = EntityKind::DrawingAsset;
+        if self.store.has_asset(id)? {
+            self.store.forget_synced(kind, id)?;
+            self.store.queue_entity_upsert(kind, id, id)?;
+            self.report.kept_local += 1;
+        } else {
+            self.store.tombstone_entity(kind, id, id, self.ctx.now_ms)?;
+        }
+        Ok(())
     }
 
     fn apply_simple(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
@@ -1342,6 +1394,43 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
+    /// Records this version could not read when they arrived (a kind it did not know, a schema
+    /// newer than it) are looked at again: an update may have taught it to read them. Whatever it
+    /// still cannot read stays where it is, untouched.
+    fn retry_set_aside(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|entry| matches!(entry.reason.as_str(), UNKNOWN_TYPE | NEWER_SCHEMA))
+            .collect();
+        for entry in waiting {
+            let Some(name) = RecordName::parse(&entry.record_name) else {
+                continue;
+            };
+            let Some(payload) = super::record::from_wire(entry.payload.clone()) else {
+                continue;
+            };
+            let record = super::record::SyncRecord {
+                name,
+                schema_version: entry.schema_version,
+                revision: entry.revision,
+                origin_device: entry.origin_device.clone(),
+                modified_ms: entry.modified_ms,
+                payload,
+            };
+            if let Verdict::Accept(value) = validate(&record) {
+                self.store.remove_inbox(&entry.record_name)?;
+                self.apply_record(&RemoteRecord {
+                    record,
+                    value,
+                    system_fields: entry.system_fields.clone().unwrap_or_default(),
+                })?;
+            }
+        }
+        Ok(())
+    }
+
     /// Records held back because their category was off are applied once it is switched on.
     fn retry_category_off(&mut self) -> rusqlite::Result<()> {
         let waiting: Vec<InboxRecord> = self
@@ -1410,6 +1499,8 @@ impl<'a> Work<'a> {
 
     fn apply_deletion(&mut self, name: &RecordName) -> rusqlite::Result<()> {
         let (kind, id) = (name.kind, name.id.as_str());
+        // A copy set aside is for a record that still exists: it must not come back later.
+        self.store.remove_inbox(&name.render())?;
         if self.disabled.contains(&category_of(kind, id)) {
             // Not applied; if the category returns, a reconcile re-uploads anything still here.
             return Ok(());
@@ -1421,6 +1512,7 @@ impl<'a> Work<'a> {
             EntityKind::Script => return self.delete_script(id),
             EntityKind::PortfolioTransaction => return self.delete_transaction(name),
             EntityKind::PaperAccount => return self.delete_paper(name),
+            EntityKind::DrawingAsset => return self.keep_asset(id),
             _ => {}
         }
         if let Some(table) = table_of(kind)

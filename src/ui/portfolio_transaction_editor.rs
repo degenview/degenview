@@ -454,6 +454,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
                 &mut state.draft.date_text,
                 zone,
                 date_width,
+                date_picker::Look::Roomy,
                 issues.contains_key(&EditorField::Date),
             );
             footnote(ui, issues.get(&EditorField::Date), None);

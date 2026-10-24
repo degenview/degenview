@@ -8,12 +8,14 @@ use crate::model::Timeframe;
 use crate::model::chart_template::TemplateId;
 use crate::model::chart_type::{LineDash, Rgba};
 use crate::model::drawing_style::{
-    DrawingStyle, HorizontalAlign, LineEnd, StatsPosition, VerticalAlign,
+    DrawingStyle, Emoji, HorizontalAlign, Level, LineEnd, MiddleLine, StatsPosition,
+    TextOrientation, VerticalAlign,
 };
 use crate::model::drawing_template::style_for;
-use crate::model::{Anchor, Caps, Drawing, MAX_TEXT_CHARS, Tool, Visibility};
+use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool, Visibility};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
+use crate::ui::date_picker;
 use crate::ui::icons::Icon;
 use crate::ui::tool_sidebar::tool_icon;
 use crate::ui::{kit, series_render, settings_card, sheet, theme};
@@ -23,6 +25,8 @@ use eframe::egui::{
 
 const WIDTH: f32 = 440.0;
 const PAGE_HEIGHT: f32 = 380.0;
+/// Room kept either side of the tab bar.
+const TAB_BAR_MARGIN: f32 = 12.0;
 /// The page's inset on every side, as the other sheets.
 const PAGE_MARGIN: f32 = sheet::INSET as f32;
 /// The vertical rhythm between the cards of a page, as on the chart settings pages.
@@ -31,18 +35,32 @@ const CARD_SPACING: f32 = 8.0;
 const SECTION_GAP: f32 = 10.0;
 /// The outer width of a menu picker, which the other right-hand inputs match.
 const CONTROL_WIDTH: f32 = 130.0;
-/// A framed text area's inner width so its outer width is `CONTROL_WIDTH`: the 1 pt border and
-/// 8 pt margin on each side are 18 pt.
-const TIME_FIELD_WIDTH: f32 = CONTROL_WIDTH - 18.0;
+/// The time picker's width: room for "Oct 9, 2026 14:03" and the calendar glyph.
+const TIME_FIELD_WIDTH: f32 = 150.0;
 /// The price field has the stepper beside it, and the card's 14 pt gap, so it is narrower.
 const PRICE_FIELD_WIDTH: f32 = CONTROL_WIDTH - 18.0 - 16.0 - 14.0;
+/// The names of the precisions a ratio can be printed at.
+const PLACES: [&str; 7] = [
+    "0 places", "1 place", "2 places", "3 places", "4 places", "5 places", "6 places",
+];
 /// How many anchors the Coordinates tab lists; a long path keeps the rest on the chart.
 const MAX_LISTED: usize = 40;
+
+mod fib_pages;
+mod forecast_pages;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Tab {
     Style,
+    /// The regression trend's source, deviations and lines.
+    Inputs,
+    /// The extra lines of a channel or a pitchfork.
+    Levels,
     Text,
+    /// What a content tool shows: an image's picture, name and opacity.
+    Content,
+    /// A Post card's link, preview and size.
+    Link,
     Coordinates,
     Visibility,
 }
@@ -51,7 +69,11 @@ impl Tab {
     fn title(self) -> &'static str {
         match self {
             Self::Style => "Style",
+            Self::Inputs => "Inputs",
+            Self::Levels => "Levels",
             Self::Text => "Text",
+            Self::Content => "Image",
+            Self::Link => "Link",
             Self::Coordinates => "Coordinates",
             Self::Visibility => "Visibility",
         }
@@ -60,7 +82,11 @@ impl Tab {
     fn icon(self) -> Icon {
         match self {
             Self::Style => Icon::Palette,
+            Self::Inputs => Icon::ChartLine,
+            Self::Levels => Icon::Layers,
             Self::Text => Icon::TextFormat,
+            Self::Content => Icon::ImageTool,
+            Self::Link => Icon::Link,
             Self::Coordinates => Icon::Hash,
             Self::Visibility => Icon::Eye,
         }
@@ -72,15 +98,15 @@ impl Tab {
 pub enum Outcome {
     Open,
     /// OK: replace the drawing with this one.
-    Apply(Drawing),
+    Apply(Box<Drawing>),
     Cancel,
 }
 
-/// The text a coordinate field is being edited as.
+/// The text a coordinate field is being edited as: the time as the date picker reads and
+/// writes it, UTC `YYYY-MM-DD HH:MM`.
 #[derive(Clone, Default)]
 struct CoordinateText {
     time: String,
-    time_invalid: bool,
 }
 
 /// A name being asked for: a new template's, or a template's new name.
@@ -103,10 +129,23 @@ pub struct DrawingProperties {
     tool: Tool,
     tab: Tab,
     coordinates: Vec<CoordinateText>,
+    /// No frame has been drawn yet, so a calendar an earlier dialog left open is still to close.
+    fresh: bool,
     prompt: Option<Prompt>,
     notice: Option<Notice>,
     /// The tallest page content seen, so switching tabs does not resize the dialog.
     page_height: f32,
+    /// The sheet's width: `WIDTH`, or wider when the tab bar needs more.
+    width: f32,
+    /// The picture the Image tab previews, with the texture it was uploaded as.
+    preview: Option<(String, egui::TextureHandle)>,
+    /// A new picture was asked for; the workspace takes the request and runs the picker.
+    replace_requested: bool,
+}
+
+/// Whether a Fibonacci or Gann tool has a list of levels to edit (the spiral has none).
+fn has_fib_levels(tool: Tool) -> bool {
+    crate::model::fib::features_of(tool).is_some_and(|features| !features.lists[0].is_empty())
 }
 
 /// Whether the style page has anything to show for these capabilities.
@@ -121,15 +160,59 @@ fn has_style_page(caps: Caps) -> bool {
         Caps::ENDS,
         Caps::STATS,
         Caps::PRICE_LABELS,
+        Caps::TIME_LABEL,
         Caps::MIDDLE_POINT,
+        Caps::BOX,
+        Caps::EMOJI,
     ]
     .into_iter()
     .any(|cap| caps.has(cap))
 }
 
-/// Whether a tool's text sits inside its shape, so its vertical alignment means something.
-fn text_is_boxed(tool: Tool) -> bool {
-    matches!(tool, Tool::Rectangle | Tool::Circle | Tool::Ellipse)
+/// Whether the tool has inputs of its own: a regression's, a pattern's, a wave's, a position's, a
+/// forecast's, a bars pattern's, a ghost feed's, a VWAP's, a profile's or a measurer's.
+fn has_inputs_page(caps: Caps) -> bool {
+    [
+        Caps::REGRESSION,
+        Caps::PATTERN,
+        Caps::WAVE,
+        Caps::POSITION,
+        Caps::FORECAST,
+        Caps::BARS,
+        Caps::GHOST,
+        Caps::VWAP,
+        Caps::PROFILE,
+        Caps::MEASURE,
+    ]
+    .into_iter()
+    .any(|cap| caps.has(cap))
+}
+
+/// Whether a tool writes its labels itself, so its text page is only their font (and, for a
+/// measurer, a note): a pattern's names, a wave's, a position's stats, a forecast's, a measurement.
+fn labels_are_written_by_the_tool(caps: Caps) -> bool {
+    [
+        Caps::PATTERN,
+        Caps::WAVE,
+        Caps::POSITION,
+        Caps::FORECAST,
+        Caps::MEASURE,
+    ]
+    .into_iter()
+    .any(|cap| caps.has(cap))
+}
+
+/// Whether a tool's text has a vertical alignment that means something: inside a shape (top,
+/// middle or bottom of it), or on a line or channel (above it, on it or below it).
+fn text_has_position(tool: Tool) -> bool {
+    use crate::model::ToolGroup;
+    matches!(
+        tool,
+        Tool::Rectangle | Tool::Circle | Tool::Ellipse | Tool::Table
+    ) || matches!(
+        tool.spec().group,
+        ToolGroup::TrendLines | ToolGroup::Channels
+    )
 }
 
 /// The label of anchor `index` of a drawing by `tool`.
@@ -140,13 +223,84 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::Arrow
         | Tool::ArrowMarker
         | Tool::TrendLine
-        | Tool::Fib => &["Point 1", "Point 2"],
+        | Tool::Ray
+        | Tool::InfoLine
+        | Tool::ExtendedLine
+        | Tool::TrendAngle
+        | Tool::FibRetracement => &["Point 1", "Point 2"],
+        Tool::FibExtension => &["Start of move", "End of move", "End of retracement"],
+        Tool::FibChannel => &["Point 1", "Point 2", "Channel width"],
+        Tool::FibTimeZone | Tool::FibSpeedFan | Tool::FibSpeedArcs => &["Point 1", "Point 2"],
+        Tool::FibCircles => &["Point 1", "Point 2"],
+        Tool::FibSpiral => &["Center", "Point on the spiral"],
+        Tool::FibWedge => &["Apex", "Radius and first arm", "Second arm"],
+        Tool::Pitchfan => &["Point 1", "Point 2", "Point 3"],
+        Tool::GannBox | Tool::GannSquareFixed | Tool::GannSquare => &["Point 1", "Point 2"],
+        Tool::GannFan => &["Origin", "Point on the 1x1 angle"],
+        Tool::FibTrendTime => &["Point 1", "Point 2", "Point 3"],
+        Tool::HorizontalLine => &["Price level"],
+        Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
+        Tool::VerticalLine => &["Time"],
+        Tool::ParallelChannel => &["Point 1", "Point 2", "Offset point"],
+        Tool::FlatChannel => &["Point 1", "Point 2", "Level"],
+        Tool::DisjointChannel => &["Point 1", "Point 2", "Point 3", "End of second edge"],
+        Tool::RegressionTrend => &["Start bar", "End bar"],
+        Tool::Pitchfork
+        | Tool::SchiffPitchfork
+        | Tool::ModifiedSchiffPitchfork
+        | Tool::InsidePitchfork => &["Point 1", "Point 2", "Point 3"],
         Tool::RotatedRectangle => &["Point 1", "Point 2", "Width point"],
         Tool::Circle => &["Center", "Radius point"],
         Tool::Arc => &["Start", "End", "Curvature point"],
         Tool::Curve => &["Start", "End", "Control point"],
         Tool::DoubleCurve => &["Start", "End", "Control point 1", "Control point 2"],
         Tool::ArrowMarkUp | Tool::ArrowMarkDown => &["Anchor"],
+        Tool::Text => &["Top-left corner"],
+        Tool::Note | Tool::PriceNote | Tool::Callout => &["Anchor", "Label position"],
+        Tool::Signpost => &["Anchor", "Label height"],
+        Tool::Comment | Tool::PriceLabel | Tool::FlagMark | Tool::Pin => &["Anchor"],
+        Tool::XabcdPattern | Tool::CypherPattern => &["X", "A", "B", "C", "D"],
+        Tool::AbcdPattern | Tool::TrianglePattern => &["A", "B", "C", "D"],
+        Tool::HeadAndShoulders => &[
+            "Start",
+            "Left shoulder",
+            "Left neckline",
+            "Head",
+            "Right neckline",
+            "Right shoulder",
+            "End",
+        ],
+        Tool::ThreeDrivesPattern => &[
+            "Start",
+            "Drive 1",
+            "Retracement A",
+            "Drive 2",
+            "Retracement C",
+            "Drive 3",
+        ],
+        Tool::ElliottImpulse => &["Start", "Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5"],
+        Tool::ElliottCorrection => &["Start", "Wave A", "Wave B", "Wave C"],
+        Tool::ElliottTriangle => &["Start", "Wave A", "Wave B", "Wave C", "Wave D", "Wave E"],
+        Tool::ElliottDoubleCombo => &["Start", "Wave W", "Wave X", "Wave Y"],
+        Tool::ElliottTripleCombo => &[
+            "Start",
+            "Wave W",
+            "Wave X",
+            "Wave Y",
+            "Second wave X",
+            "Wave Z",
+        ],
+        Tool::LongPosition | Tool::ShortPosition => &["Entry", "Target", "Stop"],
+        Tool::PositionForecast => &["Source", "Target"],
+        Tool::BarsPattern => &["First bar's close"],
+        Tool::GhostFeed => &["Start", "End"],
+        Tool::Sector => &["Center", "Radius point", "End of arc"],
+        Tool::AnchoredVwap | Tool::AnchoredVolumeProfile => &["Start bar"],
+        Tool::FixedRangeVolumeProfile => &["Left edge", "Right edge"],
+        Tool::PriceRange | Tool::DateRange | Tool::DateAndPriceRange => &["Point 1", "Point 2"],
+        Tool::CyclicLines => &["First line", "Second line"],
+        Tool::TimeCycles => &["Start", "End of first cycle"],
+        Tool::SineLine => &["First extreme", "Next extreme"],
         _ => &[],
     };
     named
@@ -168,9 +322,13 @@ impl DrawingProperties {
             tool,
             tab: Tab::Style,
             coordinates: Vec::new(),
+            fresh: true,
             prompt: None,
             notice: None,
             page_height: 0.0,
+            width: WIDTH,
+            preview: None,
+            replace_requested: false,
         };
         dialog.tab = dialog.tabs()[0];
         dialog.reset_coordinate_text();
@@ -187,14 +345,38 @@ impl DrawingProperties {
         &self.draft
     }
 
+    /// Whether the user asked for another picture since this was last called.
+    pub fn take_replace_request(&mut self) -> bool {
+        std::mem::take(&mut self.replace_requested)
+    }
+
+    /// Hands the dialog the picture a replacement stored, so the draft shows it and keeps the
+    /// drawing's own size, opacity and name when the user has set one.
+    pub fn replace_picture(&mut self, content: &crate::model::image_content::ImageContent) {
+        if let Some(Geometry::Image(image)) = self.draft.geometry_mut() {
+            image.swap_picture(content);
+        }
+    }
+
     fn tabs(&self) -> Vec<Tab> {
         let caps = self.tool.caps();
         let mut tabs = Vec::new();
         if has_style_page(caps) {
             tabs.push(Tab::Style);
         }
-        if caps.has(Caps::TEXT) {
+        if has_inputs_page(caps) {
+            tabs.push(Tab::Inputs);
+        }
+        if caps.has(Caps::LEVELS) || has_fib_levels(self.tool) {
+            tabs.push(Tab::Levels);
+        }
+        if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
             tabs.push(Tab::Text);
+        }
+        match self.draft.geometry() {
+            Some(Geometry::Image(_)) => tabs.push(Tab::Content),
+            Some(Geometry::Card { .. }) => tabs.push(Tab::Link),
+            _ => {}
         }
         if !matches!(self.tool, Tool::Brush | Tool::Highlighter) {
             tabs.push(Tab::Coordinates);
@@ -210,7 +392,6 @@ impl DrawingProperties {
             .iter()
             .map(|anchor| CoordinateText {
                 time: format::timestamp(anchor.time_ms),
-                time_invalid: false,
             })
             .collect();
     }
@@ -220,6 +401,12 @@ impl DrawingProperties {
         let mut outcome = Outcome::Open;
         let content = ctx.content_rect();
         let typing = ctx.egui_wants_keyboard_input();
+        if self.fresh {
+            self.close_calendars(ctx);
+            self.fresh = false;
+        }
+        // Escape and Return belong to an open calendar before they reach the dialog.
+        let calendar_open = self.calendar_open(ctx);
         let window = egui::Window::new("Drawing properties")
             .id(Id::new(("drawing-properties", self.draft.id())))
             .title_bar(false)
@@ -244,18 +431,57 @@ impl DrawingProperties {
                     }),
             );
         window.show(ctx, |ui| {
-            ui.set_width(WIDTH);
+            self.width = self.sheet_width(ui);
+            ui.set_width(self.width);
             ui.spacing_mut().item_spacing.y = 0.0;
             outcome = self.body(ui, templates);
         });
-        if matches!(outcome, Outcome::Open) {
+        if matches!(outcome, Outcome::Open) && !calendar_open {
             if ctx.input(|input| input.key_pressed(Key::Escape)) {
                 outcome = Outcome::Cancel;
             } else if !typing && ctx.input(|input| input.key_pressed(Key::Enter)) {
-                outcome = Outcome::Apply(self.draft.clone());
+                outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
         }
+        if !matches!(outcome, Outcome::Open) {
+            self.close_calendars(ctx);
+        }
         outcome
+    }
+
+    /// The sheet is `WIDTH` wide, or wider when its tab bar (five tabs for most new tools) would
+    /// not fit: the bar, the pages and the footer then share one width, so nothing is cut.
+    fn sheet_width(&self, ui: &Ui) -> f32 {
+        let tabs = self.tabs();
+        if tabs.len() < 2 {
+            return WIDTH;
+        }
+        let items: Vec<kit::TabItem<Tab>> = tabs.iter().map(|&tab| self.tab_item(tab)).collect();
+        WIDTH.max(kit::tab_bar_regular_width(ui, &items) + 2.0 * TAB_BAR_MARGIN)
+    }
+
+    fn tab_item(&self, tab: Tab) -> kit::TabItem<Tab> {
+        kit::TabItem {
+            value: tab,
+            title: tab.title(),
+            icon: tab.icon(),
+            count: 0,
+        }
+    }
+
+    fn time_id(&self, index: usize) -> Id {
+        Id::new(("drawing-time", self.draft.id(), index))
+    }
+
+    fn calendar_open(&self, ctx: &Context) -> bool {
+        (0..self.coordinates.len().min(MAX_LISTED))
+            .any(|index| date_picker::is_open(ctx, self.time_id(index)))
+    }
+
+    fn close_calendars(&self, ctx: &Context) {
+        for index in 0..self.coordinates.len().min(MAX_LISTED) {
+            date_picker::close(ctx, self.time_id(index));
+        }
     }
 
     fn body(&mut self, ui: &mut Ui, templates: &mut DrawingTemplateStore) -> Outcome {
@@ -276,15 +502,8 @@ impl DrawingProperties {
             self.tab = tabs[0];
         }
         if tabs.len() > 1 {
-            let items: Vec<kit::TabItem<Tab>> = tabs
-                .iter()
-                .map(|&tab| kit::TabItem {
-                    value: tab,
-                    title: tab.title(),
-                    icon: tab.icon(),
-                    count: 0,
-                })
-                .collect();
+            let items: Vec<kit::TabItem<Tab>> =
+                tabs.iter().map(|&tab| self.tab_item(tab)).collect();
             ui.vertical_centered(|ui| {
                 kit::tab_bar_regular(
                     ui,
@@ -306,13 +525,17 @@ impl DrawingProperties {
                 let page = egui::Frame::new()
                     .inner_margin(egui::Margin::same(margin))
                     .show(ui, |ui| {
-                        ui.set_width(WIDTH - 2.0 * PAGE_MARGIN);
+                        ui.set_width(self.width - 2.0 * PAGE_MARGIN);
                         // The tallest page so far, so a tab switch does not resize the dialog.
                         ui.set_min_height((self.page_height - 2.0 * PAGE_MARGIN).max(0.0));
                         ui.spacing_mut().item_spacing.y = CARD_SPACING;
                         match self.tab {
                             Tab::Style => self.style_page(ui),
+                            Tab::Inputs => self.inputs_page(ui),
+                            Tab::Levels => self.levels_page(ui),
                             Tab::Text => self.text_page(ui),
+                            Tab::Content => self.content_page(ui),
+                            Tab::Link => self.link_page(ui),
                             Tab::Coordinates => self.coordinates_page(ui),
                             Tab::Visibility => self.visibility_page(ui),
                         }
@@ -328,7 +551,7 @@ impl DrawingProperties {
         let mut outcome = Outcome::Open;
         sheet::footer(ui, |ui| {
             if kit::sheet_button(ui, "OK", true, true).clicked() {
-                outcome = Outcome::Apply(self.draft.clone());
+                outcome = Outcome::Apply(Box::new(self.draft.clone()));
             }
             if kit::sheet_button(ui, "Cancel", false, true).clicked() {
                 outcome = Outcome::Cancel;
@@ -356,7 +579,7 @@ impl DrawingProperties {
         egui::Frame::new()
             .inner_margin(egui::Margin::symmetric(sheet::INSET, 10))
             .show(ui, |ui| {
-                ui.set_width(WIDTH - 2.0 * PAGE_MARGIN);
+                ui.set_width(self.width - 2.0 * PAGE_MARGIN);
                 if self.prompt.is_some() {
                     self.prompt_row(ui, templates);
                     return;
@@ -582,31 +805,74 @@ impl DrawingProperties {
         let mut style = self.style();
         let before = style;
         let line = caps.has(Caps::COLOR) || caps.has(Caps::WIDTH) || caps.has(Caps::DASH);
+        let boxed = caps.has(Caps::BOX);
         let shape = caps.has(Caps::FILL) || caps.has(Caps::MIDDLE_LINE);
-        let details = caps.has(Caps::MIDDLE_POINT) || caps.has(Caps::PRICE_LABELS);
+        let details = caps.has(Caps::MIDDLE_POINT)
+            || caps.has(Caps::PRICE_LABELS)
+            || caps.has(Caps::TIME_LABEL);
+        let variant = match self.draft.geometry() {
+            Some(Geometry::Pitchfork { variant, .. }) => Some(*variant),
+            _ => None,
+        };
         let groups = [
+            variant.is_some(),
             line,
             caps.has(Caps::ENDS),
             shape,
             caps.has(Caps::EXTEND),
             details,
             caps.has(Caps::STATS),
+            caps.has(Caps::FIB),
         ];
         // A page of one group needs no heading to say what it is.
         let mut page = Page::new(groups.into_iter().filter(|present| *present).count() > 1);
 
+        // The four pitchforks are one drawing in four constructions: switching keeps the three
+        // pivots, so a fork can be tried every way without redrawing it.
+        if let Some(current) = variant {
+            page.section(ui, "Pitchfork", None);
+            let options: Vec<(PitchforkVariant, &str)> = PitchforkVariant::ALL
+                .iter()
+                .map(|option| (*option, option.label()))
+                .collect();
+            let mut chosen = current;
+            picker_row(
+                ui,
+                Icon::ForkAndrews,
+                "Style",
+                Some("Where the median starts and ends."),
+                &options,
+                &mut chosen,
+            );
+            if chosen != current {
+                self.switch_variant(chosen);
+            }
+        }
         if line {
-            page.section(ui, "Line", None);
+            let title = if variant.is_some() {
+                "Median"
+            } else if caps.has(Caps::FIB) {
+                "Trend line"
+            } else if caps.has(Caps::WIDTH) || caps.has(Caps::DASH) {
+                "Line"
+            } else {
+                "Marker"
+            };
+            page.section(ui, title, None);
         }
         if caps.has(Caps::COLOR) {
-            let title = if caps.has(Caps::WIDTH) {
+            let title = if variant.is_some() {
+                "Median color"
+            } else if caps.has(Caps::WIDTH) {
                 "Line color"
             } else {
                 "Color"
             };
+            // A wave's labels are in its line's colour until they are given one of their own.
+            let labels_follow = caps.has(Caps::WAVE) && style.text.color == style.stroke.color;
             color_card(ui, Icon::Palette, title, None, &mut style.stroke.color);
-            // The marks and the marker carry their text in the same colour.
-            if !caps.has(Caps::WIDTH) {
+            // The marks and the marker carry their text in the same colour; a box has its own.
+            if !caps.has(Caps::WIDTH) && !boxed || labels_follow {
                 style.text.color = style.stroke.color;
             }
         }
@@ -650,13 +916,74 @@ impl DrawingProperties {
             );
         }
         if shape {
-            page.section(ui, "Shape", None);
+            page.section(ui, if boxed { "Box" } else { "Shape" }, None);
         }
         if caps.has(Caps::FILL) {
-            settings_card::card(ui, Icon::RectFill, "Fill", None, |ui| {
+            // A channel or a fork fills the space between its lines: a background.
+            let title = if self.tool.spec().group == crate::model::ToolGroup::Shapes {
+                "Fill"
+            } else if self.tool == Tool::Signpost {
+                "Plate"
+            } else {
+                "Background"
+            };
+            settings_card::card(ui, Icon::RectFill, title, None, |ui| {
                 color_well(ui, "Fill color", &mut style.fill.color);
                 settings_card::switch(ui, &mut style.fill.enabled);
             });
+        }
+        if boxed {
+            settings_card::card(ui, Icon::RectDashed, "Border", None, |ui| {
+                color_well(ui, "Border color", &mut style.border.color);
+                settings_card::switch(ui, &mut style.border.enabled);
+            });
+            if style.border.enabled {
+                let max = crate::model::drawing_style::MAX_STROKE_WIDTH as f64;
+                if let Some(width) =
+                    settings_card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-border-width"),
+                            f64::from(style.border.width),
+                            1.0,
+                            1.0..=max,
+                            0,
+                        )
+                    })
+                {
+                    style.border.width = width as f32;
+                }
+                dash_card(ui, "Border style", &mut style.border.dash);
+            }
+        }
+        if caps.has(Caps::EMOJI) {
+            page.section(ui, "Emoji pin", None);
+            toggle_row(
+                ui,
+                Icon::SignpostTool,
+                "Emoji pin",
+                "Show an emoji on the marker at the anchor.",
+                &mut style.emoji_shown,
+            );
+            if style.emoji_shown {
+                let names: Vec<String> = Emoji::ALL
+                    .iter()
+                    .map(|emoji| format!("{}  {}", emoji.glyph(), emoji.label()))
+                    .collect();
+                let options: Vec<(Emoji, &str)> = Emoji::ALL
+                    .iter()
+                    .zip(&names)
+                    .map(|(emoji, name)| (*emoji, name.as_str()))
+                    .collect();
+                picker_row(ui, Icon::Sliders, "Emoji", None, &options, &mut style.emoji);
+                color_card(
+                    ui,
+                    Icon::Palette,
+                    "Emoji background",
+                    None,
+                    &mut style.emoji_fill,
+                );
+            }
         }
         if caps.has(Caps::MIDDLE_LINE) {
             settings_card::card(ui, Icon::Minus, "Middle line", None, |ui| {
@@ -692,21 +1019,46 @@ impl DrawingProperties {
                 ui,
                 Icon::Circle,
                 "Middle point",
-                "A dot halfway along the arrow.",
+                "A dot halfway along the line.",
                 &mut style.middle_point,
             );
         }
         if caps.has(Caps::PRICE_LABELS) {
+            // A line at a price is tagged on the price axis; the others print their end prices.
+            let on_axis = matches!(
+                self.tool,
+                Tool::HorizontalLine | Tool::HorizontalRay | Tool::Crossline
+            );
             toggle_row(
                 ui,
                 Icon::Tag,
-                "Price labels",
-                "The price at each end.",
+                if on_axis {
+                    "Price label"
+                } else {
+                    "Price labels"
+                },
+                if on_axis {
+                    "A tag with the price on the price axis."
+                } else {
+                    "The price at each end."
+                },
                 &mut style.price_labels,
+            );
+        }
+        if caps.has(Caps::TIME_LABEL) {
+            toggle_row(
+                ui,
+                Icon::Clock,
+                "Time label",
+                "A tag with the time on the time axis.",
+                &mut style.time_label,
             );
         }
         if caps.has(Caps::STATS) {
             self.stats_section(ui, &mut page, &mut style);
+        }
+        if caps.has(Caps::FIB) {
+            self.fib_style_cards(ui, &mut page, &mut style);
         }
         if style != before {
             self.set_style(style);
@@ -715,10 +1067,15 @@ impl DrawingProperties {
 
     fn stats_section(&self, ui: &mut Ui, page: &mut Page, style: &mut DrawingStyle) {
         // Always titled: its subtitle says what the switches below it print.
+        let noun = if self.tool == Tool::Arrow {
+            "arrow"
+        } else {
+            "line"
+        };
         page.titled_section(
             ui,
             "Statistics",
-            Some("Measurements printed beside the arrow."),
+            Some(&format!("Measurements printed beside the {noun}.")),
         );
         let stats = &mut style.stats;
         toggle_row(
@@ -784,27 +1141,213 @@ impl DrawingProperties {
         );
     }
 
+    /// Draws the pitchfork as another variant: the same three pivots, another construction.
+    fn switch_variant(&mut self, variant: PitchforkVariant) {
+        if let Some(Geometry::Pitchfork {
+            variant: current, ..
+        }) = self.draft.geometry_mut()
+        {
+            *current = variant;
+            self.tool = variant.tool();
+        }
+    }
+
+    // MARK: Levels and inputs
+
+    /// The extra lines of a pitchfork (each on both sides of the median) or of a parallel channel.
+    fn levels_page(&mut self, ui: &mut Ui) {
+        if self.tool.caps().has(Caps::FIB) {
+            return self.fib_levels_page(ui);
+        }
+        let mut style = self.style();
+        let before = style;
+        let fork = matches!(self.draft.geometry(), Some(Geometry::Pitchfork { .. }));
+        let mut page = Page::new(true);
+        if fork {
+            page.titled_section(
+                ui,
+                "Colors",
+                Some("Each level is drawn on both sides of the median."),
+            );
+            toggle_row(
+                ui,
+                Icon::Palette,
+                "Use one color",
+                "Draw every line in the median's color.",
+                &mut style.use_one_color,
+            );
+            for (index, level) in style.pitchfork_levels.iter_mut().enumerate() {
+                level_cards(ui, &mut page, ("fork", index), level);
+            }
+        } else {
+            for (index, level) in style.channel_levels.iter_mut().enumerate() {
+                level_cards(ui, &mut page, ("channel", index), level);
+            }
+        }
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
+    /// The regression trend's source, the deviations its bands sit at, and its three lines.
+    fn inputs_page(&mut self, ui: &mut Ui) {
+        use crate::model::chart_type::PriceSource;
+        let caps = self.tool.caps();
+        if caps.has(Caps::PATTERN) || caps.has(Caps::WAVE) {
+            return self.pattern_inputs_page(ui);
+        }
+        if !caps.has(Caps::REGRESSION) {
+            return self.forecast_inputs_page(ui);
+        }
+        let mut style = self.style();
+        let before = style;
+        let mut page = Page::new(true);
+        page.section(ui, "Inputs", None);
+        let options: Vec<(PriceSource, &str)> = PriceSource::ALL
+            .iter()
+            .map(|source| (*source, source.label()))
+            .collect();
+        picker_row(
+            ui,
+            Icon::ChartLine,
+            "Source",
+            Some("The price the line is fitted to."),
+            &options,
+            &mut style.regression.source,
+        );
+        let max = f64::from(crate::model::drawing_style::MAX_DEVIATION);
+        let regression = &mut style.regression;
+        for (title, hint, id, value) in [
+            (
+                "Upper deviation",
+                "Standard deviations above the line.",
+                "regression-upper",
+                &mut regression.upper_dev,
+            ),
+            (
+                "Lower deviation",
+                "Standard deviations from the line, negative for below.",
+                "regression-lower",
+                &mut regression.lower_dev,
+            ),
+        ] {
+            if let Some(picked) = settings_card::card(ui, Icon::Hash, title, Some(hint), |ui| {
+                number_field(ui, Id::new(id), f64::from(*value), 0.1, -max..=max, 2)
+            }) {
+                *value = picked as f32;
+            }
+        }
+        toggle_row(
+            ui,
+            Icon::Percent,
+            "Pearson's R",
+            "Print how closely the price follows the line (-1 to 1).",
+            &mut regression.pearson,
+        );
+        page.titled_section(ui, "Base line", None);
+        line_cards(ui, "regression-base", &mut regression.base);
+        page.titled_section(ui, "Upper line", None);
+        line_cards(ui, "regression-upper-line", &mut regression.upper);
+        page.titled_section(ui, "Lower line", None);
+        line_cards(ui, "regression-lower-line", &mut regression.lower);
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
+    /// What a chart pattern or an Elliott wave prints on itself: the names of its pivots, the
+    /// ratios between a pattern's legs and how many places they have, a wave's degree.
+    fn pattern_inputs_page(&mut self, ui: &mut Ui) {
+        use crate::model::drawing_style::MAX_RATIO_PRECISION;
+        use crate::model::elliott::Degree;
+        let caps = self.tool.caps();
+        let mut style = self.style();
+        let before = style;
+        let mut page = Page::new(true);
+        if caps.has(Caps::WAVE) {
+            page.section(ui, "Wave", None);
+            let options: Vec<(Degree, String)> = Degree::ALL
+                .iter()
+                .map(|degree| (*degree, format!("{}  {}", degree.label(), degree.sample())))
+                .collect();
+            let shown: Vec<(Degree, &str)> = options
+                .iter()
+                .map(|(degree, label)| (*degree, label.as_str()))
+                .collect();
+            picker_row(
+                ui,
+                Icon::Hash,
+                "Degree",
+                Some("The scale of the move: it sets how the waves are written."),
+                &shown,
+                &mut style.pattern.degree,
+            );
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Labels",
+                "Print the name of each wave at its end.",
+                &mut style.pattern.labels,
+            );
+        } else {
+            page.section(ui, "Labels", None);
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Pivot names",
+                "Print the name of each pivot beside it.",
+                &mut style.pattern.labels,
+            );
+            toggle_row(
+                ui,
+                Icon::Percent,
+                "Ratios",
+                "Print the Fibonacci ratio of each leg on the dashed line it is measured along.",
+                &mut style.pattern.ratios,
+            );
+            if style.pattern.ratios {
+                let places: Vec<(u8, &str)> = (0..=MAX_RATIO_PRECISION)
+                    .map(|places| (places, PLACES[usize::from(places)]))
+                    .collect();
+                picker_row(
+                    ui,
+                    Icon::Hash,
+                    "Precision",
+                    Some("Decimal places of a ratio."),
+                    &places,
+                    &mut style.pattern.precision,
+                );
+            }
+        }
+        if style != before {
+            self.set_style(style);
+        }
+    }
+
     // MARK: Text
 
     fn text_page(&mut self, ui: &mut Ui) {
         let mut page = Page::new(true);
-        page.section(ui, "Text", None);
-        let mut text = self.draft.text().to_owned();
-        let focused_id = Id::new("drawing-text");
-        let focused = ui.memory(|memory| memory.has_focus(focused_id));
-        kit::field_frame(focused).show(ui, |ui| {
-            ui.add(
-                egui::TextEdit::multiline(&mut text)
-                    .id(focused_id)
-                    .frame(egui::Frame::NONE)
-                    .hint_text("Add text to this drawing")
-                    .char_limit(MAX_TEXT_CHARS)
-                    .desired_rows(3)
-                    .desired_width(f32::INFINITY),
-            );
-        });
-        if text != self.draft.text() {
-            self.draft.set_text(&text);
+        // A price label's text is its price: there is nothing to type.
+        if self.tool.caps().has(Caps::TEXT) {
+            page.section(ui, "Text", None);
+            let mut text = self.draft.text().to_owned();
+            let focused_id = Id::new("drawing-text");
+            let focused = ui.memory(|memory| memory.has_focus(focused_id));
+            kit::field_frame(focused).show(ui, |ui| {
+                ui.add(
+                    egui::TextEdit::multiline(&mut text)
+                        .id(focused_id)
+                        .frame(egui::Frame::NONE)
+                        .hint_text("Add text to this drawing")
+                        .char_limit(self.draft.max_text())
+                        .desired_rows(3)
+                        .desired_width(f32::INFINITY),
+                );
+            });
+            if text != self.draft.text() {
+                self.draft.set_text(&text);
+            }
         }
 
         let mut style = self.style();
@@ -826,6 +1369,12 @@ impl DrawingProperties {
         }
         toggle_row(ui, Icon::TextFormat, "Bold", "", &mut style.text.bold);
         toggle_row(ui, Icon::TextFormat, "Italic", "", &mut style.text.italic);
+        if labels_are_written_by_the_tool(self.tool.caps()) {
+            if style != before {
+                self.set_style(style);
+            }
+            return;
+        }
         page.section(ui, "Alignment", None);
         let horizontal: Vec<(HorizontalAlign, &str)> = HorizontalAlign::ALL
             .iter()
@@ -839,7 +1388,7 @@ impl DrawingProperties {
             &horizontal,
             &mut style.text.align,
         );
-        if text_is_boxed(self.tool) {
+        if text_has_position(self.tool) {
             let vertical: Vec<(VerticalAlign, &str)> = VerticalAlign::ALL
                 .iter()
                 .map(|align| (*align, align.label()))
@@ -853,6 +1402,63 @@ impl DrawingProperties {
                 &mut style.text.valign,
             );
         }
+        if self.tool.caps().has(Caps::ORIENTATION) {
+            // A vertical line's text reads up the line or across it.
+            let options = [
+                (TextOrientation::Vertical, "Vertical"),
+                (TextOrientation::Horizontal, "Horizontal"),
+            ];
+            let mut shown = if style.text.orientation == TextOrientation::Horizontal {
+                TextOrientation::Horizontal
+            } else {
+                TextOrientation::Vertical
+            };
+            picker_row(
+                ui,
+                Icon::TextFormat,
+                "Orientation",
+                None,
+                &options,
+                &mut shown,
+            );
+            style.text.orientation = shown;
+        }
+        if self.tool.caps().has(Caps::BOX) && !self.tool.caps().has(Caps::AUTO_TEXT) {
+            page.section(ui, "Box", None);
+            toggle_row(
+                ui,
+                Icon::TextFormat,
+                "Wrap text",
+                "Break long lines to fit a box of the width below.",
+                &mut style.wrap,
+            );
+            if style.wrap {
+                use crate::model::drawing_style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
+                if let Some(width) =
+                    settings_card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
+                        number_field(
+                            ui,
+                            Id::new("drawing-box-width"),
+                            f64::from(style.wrapped_width()),
+                            10.0,
+                            f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
+                            0,
+                        )
+                    })
+                {
+                    style.box_width = width as f32;
+                }
+            }
+        }
+        let mut visible = !style.hide_text;
+        toggle_row(
+            ui,
+            Icon::Eye,
+            "Show text",
+            "Off keeps the text but does not draw it.",
+            &mut visible,
+        );
+        style.hide_text = !visible;
         if style != before {
             self.set_style(style);
         }
@@ -860,36 +1466,87 @@ impl DrawingProperties {
 
     // MARK: Coordinates
 
+    /// Where a table pinned to the screen is, as percentages of the plot. A table at a chart point
+    /// is placed by its anchor like any other drawing; pinning and unpinning are on the chart,
+    /// which knows where the corner is.
+    fn pinned_table_position(&mut self, ui: &mut Ui, page: &mut Page) {
+        let Some(Geometry::Table(table)) = self.draft.geometry() else {
+            return;
+        };
+        let Some(place) = table.screen else {
+            return;
+        };
+        page.section(
+            ui,
+            "Position on screen",
+            Some("The table stays here however the chart is scrolled."),
+        );
+        let mut edited = place;
+        for (title, id, value) in [
+            ("Horizontal", "table-pin-x", &mut edited.x),
+            ("Vertical", "table-pin-y", &mut edited.y),
+        ] {
+            if let Some(percent) = settings_card::card(
+                ui,
+                Icon::ArrowLeftRight,
+                title,
+                Some("Percent of the chart's width or height, from its top-left corner."),
+                |ui| {
+                    number_field(
+                        ui,
+                        Id::new((id, self.draft.id())),
+                        f64::from(*value) * 100.0,
+                        1.0,
+                        0.0..=100.0,
+                        1,
+                    )
+                },
+            ) {
+                *value = (percent / 100.0) as f32;
+            }
+        }
+        if edited != place
+            && let Some(Geometry::Table(table)) = self.draft.geometry_mut()
+        {
+            table.screen = Some(edited.clamped());
+        }
+    }
+
     fn coordinates_page(&mut self, ui: &mut Ui) {
         let mut page = Page::new(true);
+        self.pinned_table_position(ui, &mut page);
         let anchors = self.draft.anchors();
         let shown = anchors.len().min(MAX_LISTED);
         for (index, &anchor) in anchors.iter().enumerate().take(shown) {
             page.section(ui, &anchor_label(self.tool, index), None);
             let mut edited = anchor;
+            // Some anchors are read for one of their two numbers only (a level has no time, a
+            // regression no price): the other is where a handle was left and is not offered.
+            let (reads_time, reads_price) = self
+                .draft
+                .geometry()
+                .map_or((true, true), |geometry| geometry.reads(index));
             let decimals = price_decimals(anchor.price);
             let step = 10f64.powi(-(decimals as i32));
             let price_id = Id::new(("drawing-price", self.draft.id(), index));
-            if let Some(price) = settings_card::card(ui, Icon::Tag, "Price", None, |ui| {
-                number_field_sized(
-                    ui,
-                    price_id,
-                    anchor.price,
-                    step,
-                    -1e12..=1e12,
-                    decimals,
-                    PRICE_FIELD_WIDTH,
-                )
-            }) {
+            if reads_price
+                && let Some(price) = settings_card::card(ui, Icon::Tag, "Price", None, |ui| {
+                    number_field_sized(
+                        ui,
+                        price_id,
+                        anchor.price,
+                        step,
+                        -1e12..=1e12,
+                        decimals,
+                        PRICE_FIELD_WIDTH,
+                    )
+                })
+            {
                 edited.price = price;
             }
+            let time_id = self.time_id(index);
             let state = &mut self.coordinates[index];
-            if let Some(time) = time_row(
-                ui,
-                Id::new(("drawing-time", self.draft.id(), index)),
-                state,
-                anchor.time_ms,
-            ) {
+            if reads_time && let Some(time) = time_row(ui, time_id, state) {
                 edited.time_ms = time;
             }
             if edited.time_ms != anchor.time_ms || edited.price != anchor.price {
@@ -917,11 +1574,198 @@ impl DrawingProperties {
         self.draft = candidate;
         if let Some(text) = self.coordinates.get_mut(index) {
             text.time = format::timestamp(anchor.time_ms);
-            text.time_invalid = false;
         }
     }
 
     // MARK: Visibility
+
+    // MARK: Content
+
+    fn content_page(&mut self, ui: &mut Ui) {
+        let Some(Geometry::Image(image)) = self.draft.geometry().cloned() else {
+            return;
+        };
+        let mut page = Page::new(true);
+        page.section(ui, "Picture", None);
+        self.preview_picture(ui, &image.asset, image.aspect(), image.clamped_opacity());
+        ui.label(kit::text(
+            format!("{} × {} pixels", image.pixels[0], image.pixels[1]),
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        if kit::push_button(ui, Some(Icon::ImageTool), "Replace image…", true).clicked() {
+            self.replace_requested = true;
+        }
+
+        page.section(ui, "Name", None);
+        let mut name = image.name.clone();
+        let focused_id = Id::new("drawing-image-name");
+        let focused = ui.memory(|memory| memory.has_focus(focused_id));
+        kit::field_frame(focused).show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::singleline(&mut name)
+                    .id(focused_id)
+                    .frame(egui::Frame::NONE)
+                    .hint_text("Name this image")
+                    .char_limit(crate::model::image_content::MAX_NAME_CHARS)
+                    .desired_width(f32::INFINITY),
+            );
+        });
+
+        page.section(ui, "Appearance", None);
+        let mut opacity = image.opacity;
+        let mut keep_aspect = image.keep_aspect;
+        let (low, high) = crate::model::image_content::OPACITY_RANGE;
+        if let Some(percent) = settings_card::card(ui, Icon::Sliders, "Opacity (%)", None, |ui| {
+            number_field(
+                ui,
+                Id::new("drawing-image-opacity"),
+                f64::from(image.clamped_opacity() * 100.0),
+                5.0,
+                f64::from(low * 100.0)..=f64::from(high * 100.0),
+                0,
+            )
+        }) {
+            opacity = percent as f32 / 100.0;
+        }
+        toggle_row(
+            ui,
+            Icon::ImageTool,
+            "Keep shape",
+            "Resizing keeps the picture's proportions.",
+            &mut keep_aspect,
+        );
+        let changed =
+            name != image.name || opacity != image.opacity || keep_aspect != image.keep_aspect;
+        if changed && let Some(Geometry::Image(draft)) = self.draft.geometry_mut() {
+            draft.name = name;
+            draft.opacity = opacity;
+            draft.keep_aspect = keep_aspect;
+        }
+    }
+
+    fn link_page(&mut self, ui: &mut Ui) {
+        let Some(Geometry::Card { card, .. }) = self.draft.geometry().cloned() else {
+            return;
+        };
+        let words = crate::ui::content_card::CardText::of(&card);
+        let mut page = Page::new(true);
+        page.section(
+            ui,
+            crate::model::link_card::SERVICE,
+            Some("The card shows what the link says, and a preview only when you fetch one."),
+        );
+        let url = card.link.url();
+        ui.label(kit::text(
+            &url,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            if kit::push_button(ui, Some(Icon::ArrowUpRightSquare), "Open link", true).clicked() {
+                ui.ctx().open_url(egui::OpenUrl::new_tab(url.clone()));
+            }
+            if kit::push_button(ui, Some(Icon::CopyDoc), "Copy link", true).clicked() {
+                ui.ctx().copy_text(url.clone());
+            }
+        });
+
+        page.section(ui, "Preview", None);
+        let preview = match &card.meta {
+            Some(_) => [
+                words.title.as_str(),
+                words.excerpt.as_str(),
+                words.footer.as_str(),
+            ]
+            .into_iter()
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n"),
+            None => "No preview fetched. Choose Preview on the card's toolbar to ask for one."
+                .to_owned(),
+        };
+        ui.label(kit::text(
+            &preview,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+
+        page.section(ui, "Size", None);
+        let (low, high) = crate::model::link_card::CARD_SIZE_RANGE;
+        let mut size = card.size;
+        for (axis, title, id) in [
+            (0, "Width", "drawing-card-width"),
+            (1, "Height", "drawing-card-height"),
+        ] {
+            if let Some(value) = settings_card::card(ui, Icon::Sliders, title, None, |ui| {
+                number_field(
+                    ui,
+                    Id::new(id),
+                    f64::from(card.size[axis]),
+                    10.0,
+                    f64::from(low[axis])..=f64::from(high[axis]),
+                    0,
+                )
+            }) {
+                size[axis] = value as f32;
+            }
+        }
+        if size != card.size
+            && let Some(Geometry::Card { card, .. }) = self.draft.geometry_mut()
+        {
+            card.size = size;
+        }
+    }
+
+    /// The picture, fitted in a box as wide as the page, or what stands in for it.
+    fn preview_picture(&mut self, ui: &mut Ui, asset: &str, aspect: f32, opacity: f32) {
+        use crate::service::asset_host::{AssetImage, lookup};
+        const BOX_HEIGHT: f32 = 150.0;
+        let width = ui.available_width();
+        let (rect, _) = ui.allocate_exact_size(vec2(width, BOX_HEIGHT), Sense::hover());
+        ui.painter().rect_filled(rect, 8.0, theme::surface());
+        if self.preview.as_ref().is_none_or(|(held, _)| held != asset) {
+            self.preview = match lookup(ui.ctx(), asset) {
+                AssetImage::Ready(pixels) => Some((
+                    asset.to_owned(),
+                    ui.ctx().load_texture(
+                        format!("drawing-picture-preview-{asset}"),
+                        (*pixels).clone(),
+                        egui::TextureOptions::LINEAR,
+                    ),
+                )),
+                _ => None,
+            };
+        }
+        let Some((_, texture)) = &self.preview else {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "The picture is not available yet",
+                egui::FontId::proportional(13.0),
+                theme::text_secondary(),
+            );
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+            return;
+        };
+        let inner = rect.shrink(8.0);
+        let fitted = if inner.width() / inner.height() > aspect {
+            vec2(inner.height() * aspect, inner.height())
+        } else {
+            vec2(inner.width(), inner.width() / aspect)
+        };
+        ui.painter().image(
+            texture.id(),
+            egui::Rect::from_center_size(inner.center(), fitted),
+            egui::Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)),
+            Color32::WHITE.gamma_multiply(opacity),
+        );
+    }
 
     fn visibility_page(&mut self, ui: &mut Ui) {
         let mut visibility = self.draft.visibility();
@@ -987,6 +1831,64 @@ impl Page {
         settings_card::section_title(ui, title, subtitle);
         ui.spacing_mut().item_spacing.y = CARD_SPACING;
     }
+}
+
+/// A ratio as a short number: `0.382`, `1`, `-0.25`.
+fn ratio_text(ratio: f32) -> String {
+    let text = format!("{ratio:.3}");
+    text.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
+/// The cards of one level: whether and in what colour it is drawn, and, once it is, where it
+/// sits and how it looks.
+fn level_cards(ui: &mut Ui, page: &mut Page, id: (&'static str, usize), level: &mut Level) {
+    page.titled_section(ui, &format!("Level {}", ratio_text(level.ratio)), None);
+    line_cards_with_ratio(ui, id, level);
+}
+
+fn line_cards_with_ratio(ui: &mut Ui, id: (&'static str, usize), level: &mut Level) {
+    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+        color_well(ui, "Level color", &mut level.line.color);
+        settings_card::switch(ui, &mut level.line.enabled);
+    });
+    if !level.line.enabled {
+        return;
+    }
+    let max = f64::from(crate::model::drawing_style::MAX_LEVEL_RATIO);
+    if let Some(ratio) = settings_card::card(ui, Icon::Hash, "Ratio", None, |ui| {
+        number_field(
+            ui,
+            Id::new(("drawing-level-ratio", id)),
+            f64::from(level.ratio),
+            0.05,
+            -max..=max,
+            3,
+        )
+    }) {
+        level.ratio = ratio as f32;
+    }
+    thickness_and_style(ui, Id::new(("drawing-level-width", id)), &mut level.line);
+}
+
+/// The cards of a line with its own look: shown or not with its colour, then thickness and style.
+fn line_cards(ui: &mut Ui, id: &'static str, line: &mut MiddleLine) {
+    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+        color_well(ui, "Line color", &mut line.color);
+        settings_card::switch(ui, &mut line.enabled);
+    });
+    if line.enabled {
+        thickness_and_style(ui, Id::new(("drawing-line-width", id)), line);
+    }
+}
+
+fn thickness_and_style(ui: &mut Ui, id: Id, line: &mut MiddleLine) {
+    let max = f64::from(crate::model::drawing_style::MAX_STROKE_WIDTH);
+    if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
+        number_field(ui, id, f64::from(line.width), 1.0, 1.0..=max, 0)
+    }) {
+        line.width = width as f32;
+    }
+    dash_card(ui, "Line style", &mut line.dash);
 }
 
 /// A card with a switch; an empty `hint` is no hint at all, so the title centres on its badge.
@@ -1098,60 +2000,29 @@ fn price_decimals(price: f64) -> usize {
     }
 }
 
-/// The time field of one anchor: UTC `YYYY-MM-DD HH:MM`, committed on Return or when it loses
-/// focus, and marked invalid (and not applied) when it does not parse.
-fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText, original_ms: i64) -> Option<i64> {
-    let mut result = None;
-    settings_card::card(ui, Icon::Clock, "Time (UTC)", None, |ui| {
-        let focused = ui.memory(|memory| memory.has_focus(id));
-        let stroke = if state.time_invalid {
-            Stroke::new(1.5, kit::RED)
-        } else {
-            kit::field_frame(focused).stroke
-        };
-        let response = kit::field_frame(focused)
-            .stroke(stroke)
-            .corner_radius(6.0)
-            .inner_margin(egui::Margin::symmetric(8, 0))
-            .show(ui, |ui| {
-                ui.allocate_ui_with_layout(
-                    vec2(TIME_FIELD_WIDTH, 22.0),
-                    egui::Layout::left_to_right(egui::Align::Center),
-                    |ui| {
-                        kit::plain_field(
-                            ui,
-                            id,
-                            &mut state.time,
-                            "YYYY-MM-DD HH:MM",
-                            12.0,
-                            kit::REGULAR,
-                            TIME_FIELD_WIDTH,
-                        )
-                    },
-                )
-                .inner
-            })
-            .inner;
-        // The field shows the time to the minute, so only text the user changed is a new time.
-        if response.lost_focus() && state.time.trim() != format::timestamp(original_ms) {
-            match format::parse_timestamp(&state.time) {
-                Some(time) => {
-                    state.time_invalid = false;
-                    result = Some(time);
-                }
-                None => state.time_invalid = true,
-            }
-        }
-    });
-    if state.time_invalid {
-        ui.label(kit::text(
-            "Use a date and time like 2025-03-14 09:30.",
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            kit::RED,
-        ));
-    }
-    result
+/// The time of one anchor, UTC: a field that opens a calendar and a time stepper. The text only
+/// changes when the user picks, so an anchor nobody touched keeps its exact time.
+fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText) -> Option<i64> {
+    settings_card::card_reserving(
+        ui,
+        Icon::Clock,
+        "Time (UTC)",
+        None,
+        TIME_FIELD_WIDTH,
+        |ui| {
+            date_picker::show(
+                ui,
+                id,
+                &mut state.time,
+                0,
+                TIME_FIELD_WIDTH,
+                date_picker::Look::Compact,
+                false,
+            )
+            .then(|| format::parse_timestamp(&state.time))
+            .flatten()
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1168,7 +2039,7 @@ mod tests {
     }
 
     fn drawing(tool: Tool) -> Drawing {
-        let anchors: Vec<Anchor> = (0..4)
+        let anchors: Vec<Anchor> = (0..7)
             .map(|index| Anchor {
                 time_ms: 1_700_000_000_000 + index * 3_600_000,
                 price: 100.0 + index as f64 * 7.0,
@@ -1179,7 +2050,7 @@ mod tests {
             Placement::Single => 1,
             _ => 3,
         };
-        Drawing::build(tool, 1, &anchors[..count], tool.default_style()).expect("builds")
+        Drawing::sample(tool, 1, &anchors[..count], tool.default_style()).expect("builds")
     }
 
     fn frame(
@@ -1242,8 +2113,18 @@ mod tests {
             );
             assert_eq!(
                 tabs.contains(&Tab::Text),
-                caps.has(Caps::TEXT),
+                caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT),
                 "{tool:?} text"
+            );
+            assert_eq!(
+                tabs.contains(&Tab::Levels),
+                caps.has(Caps::LEVELS) || has_fib_levels(tool),
+                "{tool:?} levels"
+            );
+            assert_eq!(
+                tabs.contains(&Tab::Inputs),
+                has_inputs_page(caps),
+                "{tool:?} inputs"
             );
             assert_eq!(
                 tabs.contains(&Tab::Coordinates),
@@ -1277,11 +2158,41 @@ mod tests {
     }
 
     #[test]
+    fn an_image_has_a_picture_page_and_replacing_the_picture_changes_only_the_picture() {
+        use crate::model::image_content::ImageContent;
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::Image)).expect("dialog");
+        assert_eq!(dialog.tabs()[0], Tab::Content, "it opens on the picture");
+        assert!(!dialog.tabs().contains(&Tab::Text));
+        let Some(Geometry::Image(before)) = dialog.draft().geometry().cloned() else {
+            panic!("an image");
+        };
+        let replacement = ImageContent::new("b".repeat(64), "other.png", [64, 64]);
+        dialog.replace_picture(&replacement);
+        let Some(Geometry::Image(after)) = dialog.draft().geometry() else {
+            panic!("an image");
+        };
+        assert_eq!(after.asset, replacement.asset);
+        assert_eq!(after.pixels, [64, 64]);
+        assert_eq!(after.at, before.at, "it stays where it was");
+        assert_eq!(after.size[0], before.size[0], "and as wide");
+        assert!(
+            (after.size[1] - after.size[0]).abs() < 0.01,
+            "the square picture has a square shape: {:?}",
+            after.size
+        );
+        assert_eq!(after.name, before.name, "the user's name for it is kept");
+        assert!(!dialog.take_replace_request());
+        dialog.replace_requested = true;
+        assert!(dialog.take_replace_request());
+        assert!(!dialog.take_replace_request(), "a request is taken once");
+    }
+
+    #[test]
     fn every_page_leaves_the_card_spacing_as_it_found_it() {
         let ctx = egui::Context::default();
         let tools = Tool::GROUPED
             .into_iter()
-            .chain([Tool::TrendLine, Tool::Fib])
+            .chain([Tool::TrendLine, Tool::FibRetracement])
             .collect::<Vec<_>>();
         for tool in tools {
             let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
@@ -1291,7 +2202,11 @@ mod tests {
                     ui.spacing_mut().item_spacing.y = CARD_SPACING;
                     match tab {
                         Tab::Style => dialog.style_page(ui),
+                        Tab::Inputs => dialog.inputs_page(ui),
+                        Tab::Levels => dialog.levels_page(ui),
                         Tab::Text => dialog.text_page(ui),
+                        Tab::Content => dialog.content_page(ui),
+                        Tab::Link => dialog.link_page(ui),
                         Tab::Coordinates => dialog.coordinates_page(ui),
                         Tab::Visibility => dialog.visibility_page(ui),
                     }
@@ -1345,6 +2260,98 @@ mod tests {
     }
 
     #[test]
+    fn the_pitchfork_style_switches_the_construction_and_keeps_the_pivots_and_the_look() {
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::Pitchfork)).expect("dialog");
+        let pivots = dialog.draft().anchors();
+        let mut style = dialog.style();
+        style.pitchfork_levels[0].line.enabled = true;
+        style.stroke.color = [1, 2, 3, 255];
+        dialog.set_style(style);
+        for variant in PitchforkVariant::ALL {
+            dialog.switch_variant(variant);
+            assert_eq!(dialog.tool, variant.tool(), "the dialog follows the tool");
+            assert_eq!(dialog.draft().tool(), Some(variant.tool()));
+            assert_eq!(dialog.draft().anchors(), pivots);
+            assert_eq!(dialog.style(), style, "every level and colour is kept");
+        }
+        // The dialog still draws every page after the switch.
+        let ctx = egui::Context::default();
+        let mut store = templates();
+        for tab in dialog.tabs() {
+            dialog.tab = tab;
+            frame(&ctx, &mut dialog, &mut store, Vec::new());
+        }
+    }
+
+    #[test]
+    fn the_levels_and_inputs_pages_edit_the_style_the_drawing_keeps() {
+        let mut fork = DrawingProperties::new(1, &drawing(Tool::Pitchfork)).expect("dialog");
+        let mut style = fork.style();
+        style.pitchfork_levels[1].line.enabled = true;
+        style.pitchfork_levels[1].ratio = 0.7;
+        style.use_one_color = true;
+        fork.set_style(style);
+        let json = serde_json::to_string(fork.draft()).unwrap();
+        let back: Drawing = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.style().unwrap().pitchfork_levels[1].ratio, 0.7);
+        assert!(back.style().unwrap().use_one_color);
+        // Absurd ratios and deviations are brought into range, never stored.
+        let mut regression =
+            DrawingProperties::new(1, &drawing(Tool::RegressionTrend)).expect("dialog");
+        let mut style = regression.style();
+        style.regression.upper_dev = f32::NAN;
+        style.regression.lower_dev = -1.0e9;
+        style.pitchfork_levels[0].ratio = f32::INFINITY;
+        regression.set_style(style);
+        let kept = regression.style();
+        assert_eq!(kept.regression.upper_dev, 2.0);
+        assert_eq!(
+            kept.regression.lower_dev,
+            -crate::model::drawing_style::MAX_DEVIATION
+        );
+        assert!(kept.pitchfork_levels[0].ratio.is_finite());
+    }
+
+    #[test]
+    fn the_coordinates_tab_leaves_out_what_an_anchor_does_not_read() {
+        let ctx = egui::Context::default();
+        let mut store = templates();
+        // A horizontal line has a price and no time; a vertical line the opposite.
+        for (tool, price, time) in [
+            (Tool::HorizontalLine, true, false),
+            (Tool::VerticalLine, false, true),
+            (Tool::HorizontalRay, true, true),
+            (Tool::RegressionTrend, false, true),
+        ] {
+            let dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
+            let geometry = dialog.draft().geometry().expect("a geometry");
+            assert_eq!(geometry.reads(0), (time, price), "{tool:?}");
+            let mut dialog = dialog;
+            dialog.tab = Tab::Coordinates;
+            assert_eq!(
+                frame(&ctx, &mut dialog, &mut store, Vec::new()),
+                Outcome::Open
+            );
+        }
+        assert_eq!(anchor_label(Tool::HorizontalLine, 0), "Price level");
+        assert_eq!(anchor_label(Tool::DisjointChannel, 3), "End of second edge");
+        assert_eq!(anchor_label(Tool::ParallelChannel, 2), "Offset point");
+        assert_eq!(anchor_label(Tool::SchiffPitchfork, 2), "Point 3");
+    }
+
+    #[test]
+    fn a_trend_line_takes_text_in_the_dialog_like_any_other_line() {
+        let mut dialog = DrawingProperties::new(1, &drawing(Tool::TrendLine)).expect("dialog");
+        dialog.draft.set_text("support");
+        assert_eq!(dialog.draft().text(), "support");
+        assert_eq!(dialog.draft().tool(), Some(Tool::TrendLine));
+        assert_eq!(dialog.tool, Tool::TrendLine);
+        assert!(dialog.tabs().contains(&Tab::Text));
+        dialog.draft.set_text("");
+        assert_eq!(dialog.draft().text(), "");
+    }
+
+    #[test]
     fn editing_a_coordinate_moves_that_anchor_and_refreshes_its_text() {
         let mut dialog = DrawingProperties::new(1, &drawing(Tool::Triangle)).expect("dialog");
         let before = dialog.draft().anchors();
@@ -1358,7 +2365,14 @@ mod tests {
         assert_eq!(after[1], moved, "negative prices are allowed");
         assert_eq!(after[2], before[2]);
         assert_eq!(dialog.coordinates[1].time, format::timestamp(moved.time_ms));
-        assert!(!dialog.coordinates[1].time_invalid);
+    }
+
+    #[test]
+    fn a_picked_time_reads_back_as_the_same_utc_minute() {
+        use crate::model::portfolio_editor::date_text;
+        // The picker writes `date_text(.., 0)`; the dialog reads it with `parse_timestamp`.
+        let picked = 1_800_000_060_000;
+        assert_eq!(format::parse_timestamp(&date_text(picked, 0)), Some(picked));
     }
 
     #[test]
@@ -1373,7 +2387,7 @@ mod tests {
         assert!(kept.text.size.is_finite());
         // Text is capped, and a drawing without a text field refuses it.
         dialog.draft.set_text(&"x".repeat(10_000));
-        assert!(dialog.draft().text().chars().count() <= crate::model::MAX_TEXT_CHARS);
+        assert!(dialog.draft().text().chars().count() <= dialog.draft().max_text());
         let mut brush = DrawingProperties::new(1, &drawing(Tool::Brush)).expect("brush dialog");
         brush.draft.set_text("ignored");
         assert_eq!(brush.draft().text(), "");
@@ -1422,5 +2436,154 @@ mod tests {
             drawing(Tool::Rectangle).style().unwrap().stroke.width,
             Tool::Rectangle.default_style().stroke.width
         );
+    }
+
+    /// The window is exactly as wide as the sheet says on every tab of every tool, and the sheet is
+    /// wide enough for its tab bar: five tabs used to push the window past the page, cutting the bar
+    /// and the content off.
+    #[test]
+    fn every_tool_s_sheet_is_as_wide_as_its_tab_bar_and_its_window() {
+        use crate::ui::render_tests::Screen;
+        let mut widest = 0.0_f32;
+        let mut screen = Screen::new(vec2(1200.0, 900.0));
+        for tool in Tool::GROUPED {
+            let Some(mut dialog) = DrawingProperties::new(1, &drawing(tool)) else {
+                continue;
+            };
+            let mut store = templates();
+            let tabs = dialog.tabs();
+            for tab in tabs {
+                dialog.tab = tab;
+                for _ in 0..2 {
+                    screen.run(Vec::new(), |ui| {
+                        dialog.show(ui.ctx(), &mut store);
+                    });
+                }
+                let window = screen
+                    .ctx
+                    .memory(|memory| memory.area_rect(Id::new(("drawing-properties", 1_u64))))
+                    .expect("the dialog is shown");
+                assert!(
+                    // The frame's hairline is one point either side.
+                    (window.width() - dialog.width - 2.0).abs() < 1.0,
+                    "{tool:?} {tab:?}: the window is {} wide, the sheet {}",
+                    window.width(),
+                    dialog.width
+                );
+            }
+            let items: Vec<kit::TabItem<Tab>> = dialog
+                .tabs()
+                .iter()
+                .map(|&tab| dialog.tab_item(tab))
+                .collect();
+            if items.len() > 1 {
+                screen.run(Vec::new(), |ui| {
+                    let bar = kit::tab_bar_regular_width(ui, &items);
+                    assert!(
+                        bar + 2.0 * TAB_BAR_MARGIN <= dialog.width + 0.5,
+                        "{tool:?}: a {bar} wide tab bar in a {} wide sheet",
+                        dialog.width
+                    );
+                });
+            }
+            widest = widest.max(dialog.width);
+        }
+        assert!(
+            widest > WIDTH,
+            "no tool needed a wider sheet: is the check live?"
+        );
+    }
+
+    /// The new tools' pages as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_new_pages() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, tool, tab) in [
+            ("dialog-pitchfork-style", Tool::SchiffPitchfork, Tab::Style),
+            ("dialog-pitchfork-levels", Tool::Pitchfork, Tab::Levels),
+            (
+                "dialog-regression-inputs",
+                Tool::RegressionTrend,
+                Tab::Inputs,
+            ),
+            ("dialog-regression-style", Tool::RegressionTrend, Tab::Style),
+            ("dialog-channel-style", Tool::ParallelChannel, Tab::Style),
+            ("dialog-trend-line-text", Tool::TrendLine, Tab::Text),
+            ("dialog-vertical-text", Tool::VerticalLine, Tab::Text),
+            ("dialog-horizontal-style", Tool::HorizontalLine, Tab::Style),
+            ("dialog-info-style", Tool::InfoLine, Tab::Style),
+            (
+                "dialog-flat-coordinates",
+                Tool::FlatChannel,
+                Tab::Coordinates,
+            ),
+            ("dialog-fib-style", Tool::FibRetracement, Tab::Style),
+            ("dialog-fib-levels", Tool::FibRetracement, Tab::Levels),
+            ("dialog-fan-levels", Tool::FibSpeedFan, Tab::Levels),
+            ("dialog-fan-style", Tool::FibSpeedFan, Tab::Style),
+            ("dialog-circles-style", Tool::FibCircles, Tab::Style),
+            ("dialog-spiral-style", Tool::FibSpiral, Tab::Style),
+            ("dialog-gann-square-levels", Tool::GannSquare, Tab::Levels),
+            ("dialog-gann-square-style", Tool::GannSquare, Tab::Style),
+            ("dialog-gann-fan-levels", Tool::GannFan, Tab::Levels),
+            ("dialog-gann-box-style", Tool::GannBox, Tab::Style),
+            (
+                "dialog-fib-coordinates",
+                Tool::FibRetracement,
+                Tab::Coordinates,
+            ),
+            ("dialog-xabcd-style", Tool::XabcdPattern, Tab::Style),
+            ("dialog-xabcd-inputs", Tool::XabcdPattern, Tab::Inputs),
+            ("dialog-xabcd-text", Tool::XabcdPattern, Tab::Text),
+            ("dialog-impulse-inputs", Tool::ElliottImpulse, Tab::Inputs),
+            ("dialog-impulse-style", Tool::ElliottImpulse, Tab::Style),
+            (
+                "dialog-head-shoulders-coordinates",
+                Tool::HeadAndShoulders,
+                Tab::Coordinates,
+            ),
+            ("dialog-time-cycles-style", Tool::TimeCycles, Tab::Style),
+            ("dialog-long-inputs", Tool::LongPosition, Tab::Inputs),
+            ("dialog-long-style", Tool::LongPosition, Tab::Style),
+            (
+                "dialog-forecast-inputs",
+                Tool::PositionForecast,
+                Tab::Inputs,
+            ),
+            ("dialog-bars-inputs", Tool::BarsPattern, Tab::Inputs),
+            ("dialog-ghost-inputs", Tool::GhostFeed, Tab::Inputs),
+            ("dialog-vwap-inputs", Tool::AnchoredVwap, Tab::Inputs),
+            (
+                "dialog-profile-inputs",
+                Tool::FixedRangeVolumeProfile,
+                Tab::Inputs,
+            ),
+            (
+                "dialog-measure-inputs",
+                Tool::DateAndPriceRange,
+                Tab::Inputs,
+            ),
+            (
+                "dialog-price-range-coordinates",
+                Tool::PriceRange,
+                Tab::Coordinates,
+            ),
+        ] {
+            let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
+            dialog.tab = tab;
+            let mut store = templates();
+            let mut screen = Screen::new(vec2(640.0, 760.0));
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    dialog.show(ui.ctx(), &mut store);
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
     }
 }

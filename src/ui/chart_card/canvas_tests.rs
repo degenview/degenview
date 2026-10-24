@@ -35,7 +35,7 @@ pub(super) fn series(count: usize) -> Vec<Kline> {
 }
 
 #[derive(Default)]
-struct Drawn {
+pub(super) struct Drawn {
     segments: Vec<([Pos2; 2], Stroke)>,
     texts: Vec<(Pos2, String, f32)>,
     meshes: Vec<Arc<egui::epaint::Mesh>>,
@@ -86,6 +86,7 @@ pub(super) struct Harness {
     pub(super) indicators: IndicatorConfig,
     pub(super) drawings: Vec<crate::model::Drawing>,
     pub(super) error: Option<&'static str>,
+    pub(super) scale_mode: PriceScaleMode,
 }
 
 impl Harness {
@@ -103,6 +104,7 @@ impl Harness {
             indicators: IndicatorConfig::default(),
             drawings: Vec::new(),
             error: None,
+            scale_mode: PriceScaleMode::Regular,
         }
     }
 
@@ -117,12 +119,13 @@ impl Harness {
             ..Default::default()
         };
         let mut pointer = ChartPointer::default();
-        let (card, candles, replay_active, crosshair, error) = (
+        let (card, candles, replay_active, crosshair, error, scale_mode) = (
             &mut self.card,
             &self.candles,
             self.replay_active,
             self.crosshair,
             self.error,
+            self.scale_mode,
         );
         let (indicators, drawings) = (&self.indicators, &self.drawings);
         let mut output = self.ctx.run_ui(input, |ui| {
@@ -139,7 +142,7 @@ impl Harness {
                 candles,
                 false,
                 error,
-                false,
+                scale_mode,
                 DataSource::Binance,
                 indicators,
                 crosshair.as_ref(),
@@ -153,7 +156,7 @@ impl Harness {
     }
 
     /// Frames until the fades and the first layout have settled; the last frame's drawing.
-    fn draw(&mut self) -> (Drawn, ChartPointer) {
+    pub(super) fn draw(&mut self) -> (Drawn, ChartPointer) {
         let mut last = self.frame();
         for _ in 0..3 {
             last = self.frame();
@@ -188,7 +191,7 @@ fn price_labels(drawn: &Drawn) -> Vec<(f32, String)> {
 /// Every number on the price axis, tags included: what a chart prints at its right edge. A zero
 /// count is drawn as its own smaller piece of text, lowered under the line; it reads here as the
 /// subscript digits it stands for.
-fn axis_texts(drawn: &Drawn) -> Vec<String> {
+pub(super) fn axis_texts(drawn: &Drawn) -> Vec<String> {
     let mut pieces: Vec<&(Pos2, String, f32)> = drawn
         .texts
         .iter()
@@ -293,14 +296,18 @@ fn automatic_places_never_repeat_a_label_when_the_ticks_are_close() {
     let ticks = [67_432.0, 67_432.5, 67_433.0, 67_433.5];
     let step = tick_step(&ticks);
     assert_eq!(step, 0.5);
+    let (scale, format) = (
+        PriceScale::linear(67_432.0, 67_433.5, 0.0, 100.0),
+        card.appearance.price_format(),
+    );
     let labels: Vec<String> = ticks
         .iter()
-        .map(|tick| card.axis_tick(*tick, step))
+        .map(|tick| scale.tick_label(format, *tick, step))
         .collect();
     assert_eq!(labels, ["67,432.0", "67,432.5", "67,433.0", "67,433.5"]);
     // Ticks a unit apart need none; fewer than two ticks have no step to follow.
     assert_eq!(
-        card.axis_tick(67_432.0, tick_step(&[67_432.0, 67_433.0])),
+        scale.tick_label(format, 67_432.0, tick_step(&[67_432.0, 67_433.0])),
         "67,432"
     );
     assert_eq!(tick_step(&[67_432.0]), 0.0);
@@ -559,7 +566,7 @@ fn scale_lines_use_their_own_colour() {
 fn plot_of(card: &ChartCard, candles: &[Kline]) -> (Rect, View) {
     let plot = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0));
     let view = card
-        .view(candles, plot, false, ChartType::Candles)
+        .view(candles, plot, PriceScaleMode::Regular, ChartType::Candles)
         .expect("a view");
     (plot, view)
 }
@@ -598,7 +605,14 @@ fn the_margins_follow_the_chart_whatever_its_type_or_scale() {
             card.set_chart_type(chart_type);
             let candles = series(100);
             let plot = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0));
-            let view = card.view(&candles, plot, log, chart_type).expect("a view");
+            let view = card
+                .view(
+                    &candles,
+                    plot,
+                    PriceScaleMode::from_log_flag(log),
+                    chart_type,
+                )
+                .expect("a view");
             let (low, high) = card.value_range(&candles[view.start..view.end], chart_type);
             let (top, bottom) = (view.scale.y(high), view.scale.y(low));
             assert!(

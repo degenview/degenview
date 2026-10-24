@@ -67,6 +67,9 @@ pub struct Inputs<'a> {
     pub drawings: &'a [Drawing],
 }
 
+/// What a drawing this version cannot read is called.
+const NEWER: &str = "From a newer version";
+
 /// The rows for `filter` (empty lists everything; otherwise a case-insensitive match on the
 /// label or detail, with only the headings that still have rows).
 pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
@@ -128,26 +131,47 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
     }
     sections.push((Section::Indicators, indicators));
 
-    // Topmost first, numbered per tool from the bottom so a name stays with its drawing.
+    // Topmost first, numbered per tool from the bottom so a name stays with its drawing. A drawing
+    // this version cannot read (a tool, or a field, from a newer build) is listed too, so it is not
+    // just invisible: it can be deleted, nothing else.
     let mut counts: std::collections::HashMap<&'static str, usize> =
         std::collections::HashMap::new();
     let mut drawings: Vec<Row> = inputs
         .drawings
         .iter()
-        .filter(|drawing| drawing.tool().is_some() && !drawing.is_ruler())
-        .map(|drawing| {
+        .filter_map(|drawing| {
+            if let Drawing::Unreadable(_) = drawing {
+                // A row that is not even a drawing (no id) is not an object.
+                let id = drawing.stored_id();
+                let number = counts.entry(NEWER).or_insert(0);
+                *number += 1;
+                return (id != 0).then(|| Row {
+                    key: Key::Drawing(id),
+                    label: format!("{NEWER} {number}"),
+                    detail: "Update DegenView to see it".to_owned(),
+                    shown: None,
+                    locked: None,
+                    tool: None,
+                    count: 0,
+                });
+            }
+            if drawing.tool().is_none() || drawing.is_ruler() {
+                return None;
+            }
             let name = drawing.tool().map_or("Drawing", |tool| tool.label());
             let number = counts.entry(name).or_insert(0);
             *number += 1;
-            Row {
+            Some(Row {
                 key: Key::Drawing(drawing.id()),
                 label: format!("{name} {number}"),
-                detail: drawing.text().to_owned(),
+                detail: drawing
+                    .summary()
+                    .unwrap_or_else(|| drawing.text().to_owned()),
                 shown: Some(!drawing.hidden()),
                 locked: Some(drawing.locked()),
                 tool: drawing.tool(),
                 count: 0,
-            }
+            })
         })
         .collect();
     drawings.reverse();
@@ -170,24 +194,24 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
 mod tests {
     use super::*;
     use crate::model::Anchor;
-    use crate::model::drawing_style::Visibility;
 
     fn line(id: u64) -> Drawing {
-        Drawing::TrendLine {
+        Drawing::build(
+            crate::model::Tool::TrendLine,
             id,
-            a: Anchor {
-                time_ms: 0,
-                price: 1.0,
-            },
-            b: Anchor {
-                time_ms: 1,
-                price: 2.0,
-            },
-            locked: false,
-            hidden: false,
-            visibility: Visibility::default(),
-            style: crate::model::drawing_style::DrawingStyle::trend_line(),
-        }
+            &[
+                Anchor {
+                    time_ms: 0,
+                    price: 1.0,
+                },
+                Anchor {
+                    time_ms: 1,
+                    price: 2.0,
+                },
+            ],
+            crate::model::Tool::TrendLine.default_style(),
+        )
+        .expect("a trend line")
     }
 
     fn inputs<'a>(
@@ -279,7 +303,38 @@ mod tests {
     }
 
     #[test]
-    fn rulers_and_unreadable_rows_are_not_objects() {
+    fn a_drawing_from_a_newer_version_is_listed_by_the_id_it_was_saved_with_and_nothing_else() {
+        let config = IndicatorConfig::default();
+        let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 9}}));
+        let drawings = [line(1), future, line(2)];
+        let rows = rows(&inputs(&config, &[], &drawings), "");
+        let row = rows
+            .iter()
+            .find(|row| row.key == Key::Drawing(9))
+            .expect("listed");
+        assert_eq!(row.label, "From a newer version 1");
+        assert_eq!(row.detail, "Update DegenView to see it");
+        // It cannot be hidden, locked, restyled or given a tool's icon: only deleted.
+        assert_eq!((row.shown, row.locked, row.tool), (None, None, None));
+        // It sits where it was stacked, and the drawings around it are numbered as before.
+        let order: Vec<Key> = rows
+            .iter()
+            .filter(|row| matches!(row.key, Key::Drawing(_)))
+            .map(|row| row.key)
+            .collect();
+        assert_eq!(order, [Key::Drawing(2), Key::Drawing(9), Key::Drawing(1)]);
+        let heading = rows
+            .iter()
+            .find(|row| row.key == Key::Heading(Section::Drawings))
+            .unwrap();
+        assert_eq!(heading.count, 3);
+        // The filter finds it by what it says.
+        let found = super::rows(&inputs(&config, &[], &drawings), "newer version");
+        assert_eq!(labels(&found), ["Drawings", "From a newer version 1"]);
+    }
+
+    #[test]
+    fn rulers_and_rows_that_are_not_drawings_are_not_objects() {
         let config = IndicatorConfig::default();
         let ruler = Drawing::Ruler {
             id: 1,
@@ -292,8 +347,9 @@ mod tests {
                 price: 2.0,
             },
         };
-        let unreadable = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 2}}));
-        let drawings = [ruler, unreadable];
+        // No id: not a drawing a newer version made, just something stored.
+        let junk = Drawing::Unreadable(serde_json::json!("garbage"));
+        let drawings = [ruler, junk];
         let rows = rows(&inputs(&config, &[], &drawings), "");
         assert_eq!(labels(&rows), ["Symbol", "BTCUSDT"]);
     }

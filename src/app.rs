@@ -1,11 +1,18 @@
-use crate::alert_host::AlertHost;
-use crate::alert_runtime::{
+use crate::host::alert_host::AlertHost;
+use crate::host::alert_runtime::{
     AlertRuntimeLease, AlertRuntimeRunner, GuiRuntimeDecision, gui_runtime_decision,
 };
-use crate::background_service::BackgroundAlertService;
+use crate::host::mcp_host::{self, McpHost};
+use crate::host::paper_host::PaperHost;
+use crate::host::pine_subscription_host::PineSubscriptionHost;
+use crate::host::portfolio_card_host::PortfolioCardEnv;
+use crate::host::portfolio_host::{PortfolioHost, PortfolioTab};
+use crate::host::snapshot_host::SnapshotHost;
+use crate::host::tab_window_host::{TabRequest, TabWindowHost};
+use crate::host::update_host::{Phase, UpdateHost, UpdateView};
+use crate::host::webhook_host::{WebhookHost, WebhookHostAction};
 use crate::mcp::bridge::{McpCommand, McpError, McpReply};
 use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
-use crate::mcp_host::{self, McpHost};
 use crate::model::Timeframe;
 use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertRuntimeOwner,
@@ -17,20 +24,15 @@ use crate::model::watchlist::{WatchlistInstrument, new_id};
 use crate::model::watchlist_quote::Freshness;
 use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge::{self, NativeCommand};
-use crate::paper_host::PaperHost;
-use crate::pine_subscription_host::PineSubscriptionHost;
-use crate::portfolio_card_host::PortfolioCardEnv;
-use crate::portfolio_host::{PortfolioHost, PortfolioTab};
 use crate::script_manager::store::hash_source;
 use crate::script_manager::{ExitReason, ScriptManager, ScriptManagerAction};
+use crate::service::background_service::BackgroundAlertService;
 use crate::service::fx_rates::FxRateService;
 use crate::service::macos_notifications::{self, Notifier};
 use crate::service::portfolio_quotes::PortfolioQuoteFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
-use crate::snapshot_host::SnapshotHost;
 use crate::store::SharedStore;
 use crate::store::watchlist::WatchlistStore;
-use crate::tab_window_host::{TabRequest, TabWindowHost};
 use crate::ui::alert_banner::{self, AlertBannerState};
 use crate::ui::alert_center::{
     self, AlertCenterAction, AlertCenterInput, AlertCenterState, QuoteSummary,
@@ -44,8 +46,6 @@ use crate::ui::settings_mcp::McpSettingsInput;
 use crate::ui::settings_window;
 use crate::ui::shortcut;
 use crate::ui::tab_bar::{self, TabBar, TabView, WindowChoice};
-use crate::update_host::{Phase, UpdateHost, UpdateView};
-use crate::webhook_host::{WebhookHost, WebhookHostAction};
 use crate::workspace::{ChartWorkspace, PersistedWorkspace, WorkspaceAction};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -214,6 +214,11 @@ enum AppAction {
     },
     /// A chart's alert line was deleted.
     DeleteAlert(crate::model::alert::AlertId),
+    /// A chart's alert line was dragged to a new level.
+    MoveAlert {
+        alert: Box<crate::model::alert::PriceAlert>,
+        baseline: Option<f64>,
+    },
     OpenWatchlistInNewTab(WatchlistInstrument),
     /// Add a Pine script to the focused chart (the Script Manager's "Add to Chart").
     AddPineScript {
@@ -279,7 +284,7 @@ pub struct DegenViewApp {
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
     /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
-    sync: crate::sync_host::SyncHost,
+    sync: crate::host::sync_host::SyncHost,
     /// The Script Manager's library as last seen by sync, to notice a save.
     script_signature: u64,
     alert_editor: Arc<Mutex<Option<PriceAlertEditorState>>>,
@@ -584,6 +589,9 @@ fn show_tab(
                         AppAction::SetAlertState { id, state }
                     }
                     WorkspaceAction::DeleteAlert(id) => AppAction::DeleteAlert(id),
+                    WorkspaceAction::MoveAlert { alert, baseline } => {
+                        AppAction::MoveAlert { alert, baseline }
+                    }
                 }));
             }
         }
@@ -657,7 +665,7 @@ impl DegenViewApp {
     pub fn new(
         creation: &eframe::CreationContext<'_>,
         store: SharedStore,
-        sync_factory: Option<Arc<dyn crate::sync_host::TransportFactory>>,
+        sync_factory: Option<Arc<dyn crate::host::sync_host::TransportFactory>>,
     ) -> Self {
         let app_theme = store
             .lock()
@@ -666,6 +674,10 @@ impl DegenViewApp {
             .unwrap_or_default();
         crate::ui::theme::install(&creation.egui_ctx, app_theme);
         egui_extras::install_image_loaders(&creation.egui_ctx);
+        crate::service::asset_host::install(
+            &creation.egui_ctx,
+            crate::service::asset_host::AssetHost::new(store.clone()),
+        );
         crate::service::cache_control::launch(&creation.egui_ctx);
         native_bridge::install(&creation.egui_ctx);
 
@@ -712,7 +724,7 @@ impl DegenViewApp {
             let backups = crate::store::data_dir()
                 .map(|dir| dir.join("SyncBackups"))
                 .unwrap_or_else(|| std::env::temp_dir().join("DegenViewSyncBackups"));
-            crate::sync_host::SyncHost::new(
+            crate::host::sync_host::SyncHost::new(
                 store.clone(),
                 sync_factory,
                 crate::script_manager::store::ScriptStore::default_location(),
@@ -1000,6 +1012,14 @@ impl DegenViewApp {
                                 state,
                                 baseline: None,
                             },
+                            now_ms(),
+                        ));
+                    }
+                }
+                AppAction::MoveAlert { alert, baseline } => {
+                    if let Ok(store) = self.store.lock() {
+                        let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
+                            AlertRuntimeCommandPayload::Save { alert, baseline },
                             now_ms(),
                         ));
                     }
@@ -2595,6 +2615,7 @@ mod tests {
                     symbol: "ETHUSDT".into(),
                     source: DataSource::Binance,
                     log_scale: false,
+                    scale_mode: None,
                     y_zoom: 1.0,
                     indicators: crate::model::IndicatorConfig::default(),
                     appearance: crate::model::ChartAppearance::default(),

@@ -180,15 +180,17 @@ mod tests {
     }
 
     fn line(id: u64, a: Anchor, b: Anchor) -> Drawing {
-        Drawing::TrendLine {
+        let mut line = Drawing::build(
+            crate::model::Tool::TrendLine,
             id,
-            a,
-            b,
-            locked: true,
-            hidden: true,
-            visibility: Visibility::default(),
-            style: crate::model::drawing_style::DrawingStyle::trend_line(),
-        }
+            &[a, b],
+            crate::model::Tool::TrendLine.default_style(),
+        )
+        .expect("a trend line");
+        line.set_locked(true);
+        line.set_hidden(true);
+        line.set_visibility(Visibility::default());
+        line
     }
 
     fn clip() -> DrawingClip {
@@ -284,8 +286,17 @@ mod tests {
 
     #[test]
     fn too_many_drawings_are_refused() {
+        // Small ones, so it is their number that is refused and not their size.
         let many: Vec<Drawing> = (0..=MAX_DRAWINGS as u64)
-            .map(|id| line(id, anchor(0, 1.0), anchor(1, 2.0)))
+            .map(|id| {
+                Drawing::build(
+                    crate::model::Tool::Ruler,
+                    id,
+                    &[anchor(0, 1.0), anchor(1, 2.0)],
+                    Default::default(),
+                )
+                .expect("a ruler")
+            })
             .collect();
         let wire = Wire {
             version: VERSION,

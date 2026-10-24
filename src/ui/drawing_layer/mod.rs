@@ -9,28 +9,48 @@
 
 mod draw;
 mod edit;
+mod fib_shapes;
+#[cfg(test)]
+mod fib_tests;
+mod forecast_shapes;
+#[cfg(test)]
+mod forecast_tests;
+mod gann_shapes;
+#[cfg(test)]
+mod gann_tests;
+mod line_shapes;
+#[cfg(test)]
+mod line_tests;
 mod menu;
+mod note_shapes;
+mod pattern_shapes;
+#[cfg(test)]
+mod pattern_tests;
 mod shape;
 mod snap;
+mod table_shapes;
 #[cfg(test)]
 mod tests;
+mod text;
+mod text_edit;
+mod volume_shapes;
 
 use super::chart_card::PriceScale;
 use super::drawing_geometry as geo;
 use super::drawing_render::{
-    self, FIB_COLORS, FIB_RATIOS, FibLevelLine, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner,
-    RulerPart, RulerReadout, TimeIndex,
+    self, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner, RulerPart, RulerReadout, TimeIndex,
 };
 use crate::model::drawing_style::DrawingStyle;
 use crate::model::{
-    Anchor, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement, PriceFormat,
-    Timeframe, Tool,
+    Anchor, Caps, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
+    PriceFormat, Timeframe, Tool,
 };
 use edit::{BoxHandle, Part};
 use eframe::egui::{self, Color32, CursorIcon, Painter, PointerButton, Pos2, Rect, Response};
 use shape::Screen;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+pub(super) use text::TextMeasure;
 
 /// Brush samples closer than this (px) to the previous one are dropped.
 const BRUSH_MIN_STEP: f32 = 1.5;
@@ -44,6 +64,11 @@ const CLOSE_RADIUS: f32 = 9.0;
 const SIMPLIFY_EPSILON: f32 = 0.4;
 /// The reach (px) of a handle beyond its drawn radius.
 const HANDLE_REACH: f32 = HANDLE_RADIUS + 3.0;
+/// The note left in the context for the workspace: a table's cell is selected on some chart, so
+/// Copy, Cut and Paste are the cell's this frame and not the drawing's.
+pub(in crate::ui) const TABLE_CELL_FLAG: &str = "drawing-table-cell-selected";
+/// The reach (px) of a table's row or column border.
+const DIVIDER_REACH: f32 = 4.0;
 
 /// Per-frame exchange between the workspace and one chart card's drawing layer.
 /// The workspace fills the inputs and applies the outputs after the card draws.
@@ -90,6 +115,37 @@ pub struct DrawingFrame<'a> {
     pub background_click: Option<Pos2>,
     /// A drawing was placed while every drawing was hidden: show them again, or it would vanish.
     pub reveal_all: bool,
+    /// What was chosen and waits for a click to place it (a picture), while its tool is armed.
+    pub pending_content: Option<crate::model::image_content::Content>,
+    /// The content was placed: the workspace forgets it, and the tool disarms.
+    pub content_used: bool,
+    /// Place the waiting content now, in the middle of the plot, without a click: set on the
+    /// focused chart when a picture arrives by a drop or a paste.
+    pub place_pending: bool,
+    /// A picture to put in place of the one drawing `id` shows, from the workspace's pick.
+    pub replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+    /// The user asked to replace the picture of this drawing: the workspace asks for a new one.
+    pub replace_request: Option<u64>,
+    /// The user asked to copy the picture with this name.
+    pub copy_image: Option<String>,
+    /// The user asked for something of a link card: the workspace opens the link, copies it,
+    /// asks for another, or fetches the preview.
+    pub link_request: Option<(u64, LinkRequest)>,
+    /// The user asked for a price alert at this price (a horizontal line's); the workspace opens
+    /// the alert editor for them to review.
+    pub alert_price: Option<f64>,
+}
+
+/// What can be asked of a Post card that only the workspace can do.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LinkRequest {
+    /// Open the link in the browser: always a deliberate click.
+    Open,
+    Copy,
+    /// Choose another link for the card.
+    Replace,
+    /// Fetch the preview the service offers.
+    Fetch,
 }
 
 impl<'a> DrawingFrame<'a> {
@@ -116,6 +172,14 @@ impl<'a> DrawingFrame<'a> {
             copy_requested: false,
             background_click: None,
             reveal_all: false,
+            pending_content: None,
+            content_used: false,
+            place_pending: false,
+            replace_with: None,
+            replace_request: None,
+            copy_image: None,
+            link_request: None,
+            alert_price: None,
         }
     }
 
@@ -148,6 +212,24 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_keys_blocked(mut self, blocked: bool) -> Self {
         self.keys_blocked = blocked;
+        self
+    }
+
+    pub fn with_pending_content(
+        mut self,
+        content: Option<crate::model::image_content::Content>,
+    ) -> Self {
+        self.pending_content = content;
+        self
+    }
+
+    pub fn with_picture_work(
+        mut self,
+        place_pending: bool,
+        replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+    ) -> Self {
+        self.place_pending = place_pending;
+        self.replace_with = replace_with;
         self
     }
 
@@ -188,6 +270,8 @@ pub(super) struct Projection<'a> {
     pub start: usize,
     pub slot_width: f32,
     pub lead: f32,
+    /// Sizes text with the painting context, for the shapes sized to their text.
+    pub measure: TextMeasure,
 }
 
 /// Everything a projected shape depends on besides the drawing: when it changes, cached
@@ -200,12 +284,27 @@ struct ProjectionKey {
     lead: f32,
     price: (f64, f64, f32, f32, bool),
     data: (usize, i64, i64),
+    /// The newest bar's open, high, low, close and volume: a regression is fitted to prices, a
+    /// VWAP and a profile to prices and volume, and the live bar changes them without changing the
+    /// bars' count or times.
+    newest: [u64; 5],
 }
 
 impl Projection<'_> {
     pub(super) fn x(&self, time_ms: i64) -> f32 {
-        let index = self.times.index_of(time_ms) - self.start as f64;
+        self.x_at_index(self.times.index_of(time_ms))
+    }
+
+    /// Where the bar at (fractional) `index` of the bars the chart draws sits on screen.
+    pub(super) fn x_at_index(&self, index: f64) -> f32 {
+        let index = index - self.start as f64;
         self.plot.left() + self.slot_width * (index as f32 + 0.5) + self.slot_width * self.lead
+    }
+
+    /// The (fractional) bar index at screen position `x`.
+    pub(super) fn index_at(&self, x: f32) -> f64 {
+        let slots = (x - self.plot.left()) / self.slot_width - 0.5 - self.lead;
+        f64::from(slots) + self.start as f64
     }
 
     pub(super) fn time(&self, x: f32) -> i64 {
@@ -248,6 +347,12 @@ impl Projection<'_> {
                 time_at((len > 0).then_some(0)),
                 time_at(len.checked_sub(1)),
             ),
+            newest: len
+                .checked_sub(1)
+                .and_then(|index| self.times.bar(index))
+                .map_or([0; 5], |bar| {
+                    [bar.open, bar.high, bar.low, bar.close, bar.volume].map(f64::to_bits)
+                }),
         }
     }
 
@@ -307,6 +412,22 @@ pub(super) struct DrawingLayer {
     /// Escape cancelled a gesture mid-drag; keep the plot from panning until release.
     cancelled_drag: bool,
     cache: HashMap<u64, CacheEntry>,
+    /// Where each drawing's text was laid out last frame, for finding it with a click.
+    text_boxes: HashMap<u64, draw::TextBox>,
+    /// The axis tags of the drawings painted this frame, for the frame's label pass.
+    tags: Vec<shape::Tag>,
+    /// The text being edited in place.
+    text_edit: Option<text_edit::TextEditing>,
+    /// The drawings whose note is open (a pin's): view state, never saved or synced.
+    open_notes: HashSet<u64>,
+    /// The selected cell of the selected table, as `(drawing, row, column)`: view state too.
+    table_cell: Option<(u64, usize, usize)>,
+    /// A table just placed, to start editing its first cell once it is on the chart.
+    pending_cell: Option<(u64, u8)>,
+    /// The pictures painted, as textures.
+    textures: draw::Textures,
+    /// Where the pointer was on the plot last frame, for the picture waiting to be placed.
+    pointer: Option<Pos2>,
     /// The right-click menu, while it is open.
     menu: Option<menu::MenuState>,
     /// The frame the layer last ran on: a gap means the card was not shown, and a gesture
@@ -316,55 +437,13 @@ pub(super) struct DrawingLayer {
 
 // MARK: Original line drawings
 
-fn fib_levels(a: Anchor, b: Anchor, proj: &Projection) -> Vec<FibLevelLine> {
-    FIB_RATIOS
-        .iter()
-        .zip(FIB_COLORS)
-        .filter_map(|(ratio, color)| {
-            drawing_render::fib_price(a.price, b.price, *ratio, false, proj.scale.logarithmic).map(
-                |price| FibLevelLine {
-                    ratio: *ratio,
-                    y: proj.scale.y(price),
-                    label: proj.format.format(price),
-                    color,
-                },
-            )
-        })
-        .collect()
-}
-
 fn ruler_rect(a: Anchor, b: Anchor, proj: &Projection) -> Rect {
     Rect::from_two_pos(proj.point(a), proj.point(b))
 }
 
-fn end_hit(pointer: Pos2, a: Pos2, b: Pos2) -> Option<Part> {
-    if a.distance(pointer) <= HANDLE_REACH {
-        Some(Part::Anchor(0))
-    } else if b.distance(pointer) <= HANDLE_REACH {
-        Some(Part::Anchor(1))
-    } else {
-        None
-    }
-}
-
-/// The hit on the original line drawings, which paint themselves.
+/// The hit on the ruler, which paints itself.
 fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Part> {
     match drawing {
-        Drawing::TrendLine { a, b, style, .. } => {
-            let (pa, pb) = (proj.point(*a), proj.point(*b));
-            let (from, to) =
-                geo::extend_to_rect(pa, pb, proj.plot, style.extend_left, style.extend_right);
-            end_hit(pointer, pa, pb).or_else(|| {
-                (geo::distance_to_segment(pointer, from, to) <= HIT_TOLERANCE).then_some(Part::Body)
-            })
-        }
-        Drawing::Fib { a, b, .. } => {
-            let (pa, pb) = (proj.point(*a), proj.point(*b));
-            end_hit(pointer, pa, pb).or_else(|| {
-                drawing_render::hit_fibonacci(pa, pb, &fib_levels(*a, *b, proj), pointer)
-                    .then_some(Part::Body)
-            })
-        }
         Drawing::Ruler { a, b, .. } => drawing_render::hit_ruler(ruler_rect(*a, *b, proj), pointer)
             .map(|part| match part {
                 RulerPart::Corner(corner) => Part::Corner(corner),
@@ -379,12 +458,33 @@ fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Par
 /// `anchor`, kept from constructing a degenerate shape: the pointer for the second anchor of a
 /// box under Shift is held square, and a line under Shift to a multiple of 45 degrees.
 fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> Pos2 {
+    // A signpost's plate is straight above or below its anchor, whatever the modifiers.
+    if tool == Tool::Signpost
+        && let Some(first) = first
+    {
+        return Pos2::new(first.x, pointer.y);
+    }
+    // A fixed Gann square is always square on the screen, and is placed so.
+    if tool == Tool::GannSquareFixed
+        && let Some(first) = first
+    {
+        return geo::constrained_corner(first, pointer, true);
+    }
     let Some(first) = first.filter(|_| shift) else {
         return pointer;
     };
     match tool {
-        Tool::Rectangle | Tool::Ellipse => geo::constrained_corner(first, pointer, true),
-        Tool::TrendLine | Tool::Arrow | Tool::ArrowMarker => geo::snap_angle(first, pointer),
+        // The trend line of circles at 45 degrees is the one that makes them round.
+        Tool::Rectangle | Tool::Ellipse | Tool::FibCircles => {
+            geo::constrained_corner(first, pointer, true)
+        }
+        Tool::TrendLine
+        | Tool::Ray
+        | Tool::InfoLine
+        | Tool::ExtendedLine
+        | Tool::TrendAngle
+        | Tool::Arrow
+        | Tool::ArrowMarker => geo::snap_angle(first, pointer),
         _ => pointer,
     }
 }
@@ -393,6 +493,16 @@ impl DrawingLayer {
     /// Whether a gesture owns the plot drag, so the card must not pan.
     pub(super) fn claims_drag(&self) -> bool {
         self.gesture.is_some() || self.cancelled_drag
+    }
+
+    /// The drawings whose note is open, in no particular order.
+    pub(super) fn open_notes(&self) -> Vec<u64> {
+        self.open_notes.iter().copied().collect()
+    }
+
+    /// Opens the notes of these drawings: a snapshot shows a pin as it stands on the chart.
+    pub(super) fn set_open_notes(&mut self, ids: &[u64]) {
+        self.open_notes = ids.iter().copied().collect();
     }
 
     /// Forgets the hovered drawing (input is bypassed this frame).
@@ -441,7 +551,9 @@ impl DrawingLayer {
             && frame.shows(drawing)
             && !drawing.locked()
             && let Some(screen) = self.screen(drawing, proj)
-            && let Some(part) = screen.handle_at(pointer, HANDLE_REACH)
+            && let Some(part) = screen
+                .handle_at(pointer, HANDLE_REACH)
+                .or_else(|| screen.divider_at(pointer, DIVIDER_REACH))
         {
             return Some(Hit {
                 id: selected,
@@ -459,10 +571,18 @@ impl DrawingLayer {
                         continue;
                     };
                     let style = drawing.style().copied().unwrap_or_default();
+                    let open = self.open_notes.contains(&drawing.id());
                     let tolerance = HIT_TOLERANCE + style.stroke.width / 2.0;
-                    screen
-                        .hits_body(pointer, tolerance, style.fill.enabled)
-                        .then_some(Part::Body)
+                    // A trend line's ends can be grabbed without selecting it first, as they
+                    // always could, whether or not it has text.
+                    let end = (drawing.tool() == Some(Tool::TrendLine))
+                        .then(|| screen.handle_at(pointer, HANDLE_REACH))
+                        .flatten();
+                    end.or_else(|| {
+                        screen
+                            .hits_body(pointer, tolerance, style.fill.enabled, open)
+                            .then_some(Part::Body)
+                    })
                 }
                 _ => hit_legacy(drawing, pointer, proj),
             };
@@ -495,6 +615,7 @@ impl DrawingLayer {
             )
         });
 
+        self.pointer = pointer.filter(|point| plot.contains(*point));
         // A gesture must not outlive the conditions it began under: the card going unseen
         // (another tab), the window losing focus, or the tool being switched.
         let frame_nr = ui.ctx().cumulative_frame_nr();
@@ -505,6 +626,19 @@ impl DrawingLayer {
         if matches!(&self.gesture, Some(Gesture::Draft(draft)) if draft.tool != frame.tool) {
             self.abort();
         }
+        // A cell is selected only while its table is the one thing selected.
+        if let Some((id, ..)) = self.table_cell
+            && frame.selected != [id]
+        {
+            self.table_cell = None;
+        }
+        if self.table_cell.is_some() {
+            ui.ctx()
+                .data_mut(|data| data.insert_temp(egui::Id::new(TABLE_CELL_FLAG), true));
+        }
+        self.place_waiting_content(frame, proj);
+        self.replace_picture(frame);
+        self.handle_table_keys(ui, frame, proj);
         self.handle_keys(ui, response, frame, proj);
 
         self.hover = None;
@@ -603,6 +737,17 @@ impl DrawingLayer {
             )
         });
         let typing = ui.ctx().egui_wants_keyboard_input() || frame.keys_blocked;
+        if escape
+            && self.gesture.is_none()
+            && !self.is_editing_text()
+            && (!self.open_notes.is_empty() || self.table_cell.is_some())
+        {
+            // Escape lets go of what was opened or selected inside a drawing first.
+            self.open_notes.clear();
+            self.table_cell = None;
+            frame.escape_consumed = true;
+            return;
+        }
         if escape {
             match self.gesture.take() {
                 Some(Gesture::Draft(draft)) => {
@@ -633,7 +778,8 @@ impl DrawingLayer {
         if backspace
             && !typing
             && let Some(Gesture::Draft(draft)) = &mut self.gesture
-            && is_open(draft.tool)
+            && (is_open(draft.tool)
+                || (matches!(draft.tool.spec().placement, Placement::Points(_)) && !draft.dragging))
         {
             draft.placed.pop();
             if draft.placed.is_empty() {
@@ -754,7 +900,14 @@ impl DrawingLayer {
                     .originals
                     .iter()
                     .map(|original| {
-                        edit::edited(original, edit.part, edit.press, pointer, target, proj)
+                        let edited =
+                            edit::edited(original, edit.part, edit.press, pointer, target, proj);
+                        // Shift holds a Gann square's ratio of price to time while a corner moves.
+                        if modifiers.shift {
+                            edit::keep_ratio(original, edited, edit.part, proj)
+                        } else {
+                            edited
+                        }
                     })
                     .collect();
             }
@@ -886,8 +1039,29 @@ impl DrawingLayer {
         }
         match frame.tool {
             Tool::Cursor => {
+                // A click on a cell of the one selected table selects it; a second edits it.
+                if !modifiers.shift
+                    && let Some((id, row, column)) = self.table_cell_at(frame, point, proj)
+                {
+                    self.table_cell = Some((id, row, column));
+                    if double {
+                        self.begin_cell_edit(id, row, column, None, frame, proj);
+                    }
+                    return;
+                }
+                // A click on the text place of the one selected drawing edits its text, ahead of
+                // whatever line the text sits on.
+                if !modifiers.shift
+                    && let Some(id) = self.text_at(frame, point)
+                    && self.begin_text_edit(id, frame, proj)
+                {
+                    return;
+                }
                 // Shift is for building a selection: a handle under the pointer is no target.
                 let hit = self.hit_test(frame, point, proj, !modifiers.shift);
+                if !modifiers.shift {
+                    self.toggle_notes(hit, point, frame, proj);
+                }
                 frame.select = Some(match (hit, modifiers.shift) {
                     (Some(hit), true) => {
                         let mut selection = frame.selected.clone();
@@ -906,7 +1080,17 @@ impl DrawingLayer {
                     && let Some(hit) = hit
                     && !hit.locked
                 {
-                    frame.open_properties = Some(hit.id);
+                    // A pin's note is written where it opens; the rest open their properties.
+                    let in_place = frame.drawings.iter().any(|drawing| {
+                        drawing.id() == hit.id
+                            && drawing.edits_text_in_place()
+                            && drawing
+                                .tool()
+                                .is_some_and(|tool| tool.caps().has(Caps::COLLAPSIBLE))
+                    });
+                    if !(in_place && self.begin_text_edit(hit.id, frame, proj)) {
+                        frame.open_properties = Some(hit.id);
+                    }
                 }
             }
             tool => {
@@ -929,13 +1113,52 @@ impl DrawingLayer {
         }
     }
 
+    /// A click on a pin opens its note, or shuts it when it is open; a click anywhere else shuts
+    /// every note, except on the open note itself.
+    fn toggle_notes(
+        &mut self,
+        hit: Option<Hit>,
+        point: Pos2,
+        frame: &DrawingFrame,
+        proj: &Projection,
+    ) {
+        let pin = hit.and_then(|hit| {
+            frame
+                .drawings
+                .iter()
+                .find(|drawing| drawing.id() == hit.id)
+                .filter(|drawing| {
+                    drawing
+                        .tool()
+                        .is_some_and(|tool| tool.caps().has(Caps::COLLAPSIBLE))
+                })
+        });
+        let Some(pin) = pin else {
+            self.open_notes.clear();
+            return;
+        };
+        let id = pin.id();
+        let was_open = self.open_notes.contains(&id);
+        let on_note = was_open
+            && self
+                .screen(pin, proj)
+                .and_then(|screen| screen.popup.as_ref().map(|popup| popup.rect))
+                .is_some_and(|rect| rect.contains(point));
+        self.open_notes.clear();
+        if was_open == on_note {
+            // Opened, or the note itself was clicked and stays as it is.
+            self.open_notes.insert(id);
+        }
+    }
+
     fn secondary_click(&mut self, point: Pos2, frame: &mut DrawingFrame, proj: &Projection) {
         // A right-click finishes an open shape (a polyline's documented alternative to a
-        // double-click); otherwise it opens the menu of what is under it.
+        // double-click) and abandons a drawing of a fixed number of points that is half placed;
+        // otherwise it opens the menu of what is under it.
         if let Some(Gesture::Draft(draft)) = self.gesture.take() {
             if is_open(draft.tool) && draft.placed.len() >= 2 {
                 self.finish_open(draft, false, frame, proj);
-            } else {
+            } else if !matches!(draft.tool.spec().placement, Placement::Points(_)) {
                 self.gesture = Some(Gesture::Draft(draft));
             }
             return;
@@ -993,19 +1216,73 @@ impl DrawingLayer {
             return;
         }
         let id = frame.next_id;
-        let Some(mut drawing) = Drawing::build(tool, id, &anchors, frame.style_for(tool)) else {
+        let built = if tool.caps().has(Caps::CONTENT) {
+            // What was chosen is dropped where the click was: a picture at its own size, brought
+            // to fit the plot.
+            let Some(content) = frame.pending_content.clone() else {
+                return;
+            };
+            let Some(first) = anchors.first().map(|anchor| proj.point(*anchor)) else {
+                return;
+            };
+            // Where its top-left corner goes, and (for a picture) the size the plot allows it.
+            let (corner, content) = match content {
+                crate::model::image_content::Content::Image(mut picture) => {
+                    let rect = placed_rect(&picture, first, proj.plot);
+                    picture.size = [rect.width(), rect.height()];
+                    (
+                        proj.anchor(rect.left_top()),
+                        crate::model::image_content::Content::Image(picture),
+                    )
+                }
+                crate::model::image_content::Content::Link(card) => {
+                    let rect = placed_card_rect(&card, first, proj.plot);
+                    (
+                        proj.anchor(rect.left_top()),
+                        crate::model::image_content::Content::Link(card),
+                    )
+                }
+            };
+            Drawing::build_with(tool, id, &[corner], frame.style_for(tool), &content)
+        } else if tool.caps().has(Caps::POSITION) && anchors.len() == 1 {
+            // A position is a click: its target, stop and width come from what is on screen.
+            forecast_shapes::sized_position(tool, anchors[0], proj)
+                .and_then(|sized| Drawing::build(tool, id, &sized, frame.style_for(tool)))
+        } else if tool.caps().has(Caps::BARS) {
+            // A bars pattern copies the bars the chart draws between its first two clicks and sets
+            // them down at the third.
+            forecast_shapes::captured_pattern(&anchors, proj)
+                .and_then(|geometry| Drawing::from_geometry(id, geometry, frame.style_for(tool)))
+        } else {
+            Drawing::build(tool, id, &anchors, frame.style_for(tool))
+        };
+        let Some(mut drawing) = built else {
             return;
         };
         if closed && let Some(Geometry::Polyline { closed, .. }) = drawing.geometry_mut() {
             *closed = true;
         }
         frame.next_id += 1;
-        frame.commands.push(DrawingCommand::Add(drawing));
-        frame.select = Some(vec![id]);
+        if tool.caps().has(Caps::TEXT_FIRST) {
+            // Nothing without its text: the editor opens, and the drawing is added with what is
+            // typed. Escape leaves nothing behind.
+            self.begin_draft_text_edit(drawing, proj);
+        } else {
+            frame.commands.push(DrawingCommand::Add(drawing));
+            frame.select = Some(vec![id]);
+            if tool.caps().has(Caps::TABLE) {
+                // Its first cell takes the keyboard as soon as the table is on the chart.
+                self.pending_cell = Some((id, 0));
+            }
+        }
         if frame.hide_all {
             frame.reveal_all = true;
         }
-        if !frame.keep_drawing && tool != Tool::Ruler {
+        if tool.caps().has(Caps::CONTENT) {
+            // What was chosen is used up: the next one is chosen again.
+            frame.content_used = true;
+            frame.disarm = true;
+        } else if !frame.keep_drawing && tool != Tool::Ruler {
             frame.disarm = true;
         }
     }
@@ -1017,9 +1294,14 @@ impl DrawingLayer {
             Some(Gesture::Draft(_)) => Some(CursorIcon::Crosshair),
             None if !over_plot => None,
             None if frame.tool != Tool::Cursor => Some(CursorIcon::Crosshair),
+            None if pointer.is_some_and(|point| self.text_at(frame, point).is_some()) => {
+                Some(CursorIcon::Text)
+            }
             None => self.hover.map(|hit| match hit.part {
                 Part::Body => CursorIcon::Move,
-                Part::Anchor(_) => CursorIcon::Grab,
+                Part::Anchor(_) | Part::Label => CursorIcon::Grab,
+                Part::Width | Part::Column(_) => CursorIcon::ResizeHorizontal,
+                Part::Row(_) => CursorIcon::ResizeVertical,
                 Part::Box(handle) => match handle {
                     BoxHandle::TopLeft | BoxHandle::BottomRight => CursorIcon::ResizeNwSe,
                     BoxHandle::TopRight | BoxHandle::BottomLeft => CursorIcon::ResizeNeSw,
@@ -1055,9 +1337,12 @@ impl DrawingLayer {
         let hovered = self.hover.map(|hit| hit.id);
         let single = frame.selected.len() == 1;
         let mut live = HashSet::new();
+        self.tags.clear();
+        self.textures.begin();
         for stored in frame.drawings {
             live.insert(stored.id());
             if !frame.shows(stored) {
+                self.text_boxes.remove(&stored.id());
                 continue;
             }
             let drawing = match (editing.get(&stored.id()), frame.preview) {
@@ -1078,12 +1363,59 @@ impl DrawingLayer {
             );
         }
         self.cache.retain(|id, _| live.contains(id));
+        self.text_boxes.retain(|id, _| live.contains(id));
 
         if let Some(Gesture::Draft(draft)) = &gesture {
             self.paint_draft(&clipped, proj, frame, draft);
         }
+        // The picture waiting to be placed follows the pointer, faint, where a click would put it.
+        if frame.tool.caps().has(Caps::CONTENT)
+            && let Some(content) = &frame.pending_content
+            && let Some(point) = self.pointer
+        {
+            match content {
+                crate::model::image_content::Content::Image(picture) => {
+                    let rect = placed_rect(picture, point, proj.plot);
+                    draw::draw_picture(
+                        &clipped,
+                        &mut self.textures,
+                        rect,
+                        &picture.asset,
+                        &picture.name,
+                        0.55,
+                    );
+                }
+                crate::model::image_content::Content::Link(card) => {
+                    let rect = placed_card_rect(card, point, proj.plot);
+                    crate::ui::content_card::paint(&clipped, rect, card, 0.55, None);
+                }
+            }
+        }
+        // A drawing waiting for its text is shown as it will be, growing as it is typed into.
+        if let Some(preview) = self
+            .text_edit
+            .as_ref()
+            .and_then(text_edit::TextEditing::preview)
+        {
+            self.paint_drawing(&clipped, proj, &preview, true, true, true);
+        }
         drop(editing);
         self.gesture = gesture;
+        self.textures.end();
+    }
+
+    /// Paints the tags the drawings painted this frame asked for on the price and time axes.
+    pub(super) fn paint_tags(
+        &self,
+        painter: &Painter,
+        rect: Rect,
+        plot: Rect,
+        proj: &Projection,
+        style: &super::canvas_render::CanvasStyle,
+    ) {
+        for tag in &self.tags {
+            draw::paint_tag(painter, *tag, rect, plot, proj, style);
+        }
     }
 
     fn paint_draft(
@@ -1099,39 +1431,34 @@ impl DrawingLayer {
             anchors.push(draft.rubber);
         }
         let preview = match tool {
-            Tool::TrendLine | Tool::Fib | Tool::Ruler => {
-                let (a, b) = (draft.placed[0], draft.rubber);
-                Some(match tool {
-                    Tool::TrendLine => Drawing::TrendLine {
-                        id: 0,
-                        a,
-                        b,
-                        locked: false,
-                        hidden: false,
-                        visibility: Default::default(),
-                        style: frame.style_for(tool),
-                    },
-                    Tool::Fib => Drawing::Fib {
-                        id: 0,
-                        a,
-                        b,
-                        locked: false,
-                        hidden: false,
-                        visibility: Default::default(),
-                    },
-                    _ => Drawing::Ruler { id: 0, a, b },
+            Tool::Ruler => Some(Drawing::Ruler {
+                id: 0,
+                a: draft.placed[0],
+                b: draft.rubber,
+            }),
+            Tool::Brush => Drawing::build(Tool::Brush, 0, &anchors, frame.style_for(tool)),
+            _ => {
+                let geometry = if tool.caps().has(Caps::POSITION) {
+                    // Sized from the view as it will be when placed.
+                    anchors
+                        .last()
+                        .and_then(|last| forecast_shapes::sized_position(tool, *last, proj))
+                        .and_then(|sized| Geometry::from_anchors(tool, &sized))
+                } else if tool.caps().has(Caps::BARS) {
+                    forecast_shapes::bars_preview(&anchors, proj)
+                } else {
+                    Geometry::preview(tool, &anchors)
+                };
+                geometry.map(|geometry| Drawing::Shape {
+                    id: 0,
+                    geometry,
+                    style: frame.style_for(tool),
+                    text: String::new(),
+                    locked: false,
+                    hidden: false,
+                    visibility: Default::default(),
                 })
             }
-            Tool::Brush => Drawing::build(Tool::Brush, 0, &anchors, frame.style_for(tool)),
-            _ => Geometry::preview(tool, &anchors).map(|geometry| Drawing::Shape {
-                id: 0,
-                geometry,
-                style: frame.style_for(tool),
-                text: String::new(),
-                locked: false,
-                hidden: false,
-                visibility: Default::default(),
-            }),
         };
         let Some(preview) = preview else {
             return;
@@ -1161,26 +1488,6 @@ impl DrawingLayer {
         draft: bool,
     ) {
         match drawing {
-            Drawing::TrendLine { a, b, style, .. } => {
-                draw::draw_trend_line(
-                    painter,
-                    proj.point(*a),
-                    proj.point(*b),
-                    proj.plot,
-                    style,
-                    emphasized,
-                );
-            }
-            Drawing::Fib { a, b, .. } => {
-                drawing_render::draw_fibonacci(
-                    painter,
-                    proj.plot,
-                    proj.point(*a),
-                    proj.point(*b),
-                    &fib_levels(*a, *b, proj),
-                    emphasized,
-                );
-            }
             Drawing::Ruler { a, b, .. } => {
                 let readout = RulerReadout::new(
                     a.price,
@@ -1205,13 +1512,33 @@ impl DrawingLayer {
                 } else {
                     self.screen(drawing, proj)
                 };
-                let Some(screen) = screen else {
+                // Nothing showing means nothing to click: forget where the text was.
+                let Some(screen) = screen.filter(|screen| screen.bounds.intersects(proj.plot))
+                else {
+                    if !draft {
+                        self.text_boxes.remove(&drawing.id());
+                    }
                     return;
                 };
-                if !screen.bounds.intersects(proj.plot) {
-                    return;
+                if !draft {
+                    self.tags.extend(screen.tags.iter().copied());
                 }
-                draw::paint(
+                let text = if self
+                    .text_edit
+                    .as_ref()
+                    .is_some_and(|editing| editing.id == drawing.id())
+                {
+                    draw::TextMode::Editing
+                } else if with_handles
+                    && !draft
+                    && !drawing.locked()
+                    && drawing.edits_text_in_place()
+                {
+                    draw::TextMode::Invite
+                } else {
+                    draw::TextMode::Text
+                };
+                let text_box = draw::paint(
                     painter,
                     &screen,
                     drawing,
@@ -1219,9 +1546,36 @@ impl DrawingLayer {
                     draw::Emphasis {
                         halo: emphasized && !draft,
                         selected: with_handles,
+                        text,
+                        open: !draft && self.open_notes.contains(&drawing.id()),
+                        cell: self
+                            .table_cell
+                            .filter(|(id, ..)| !draft && *id == drawing.id())
+                            .map(|(_, row, column)| (row, column)),
+                        divider: self
+                            .hover
+                            .filter(|hit| !draft && hit.id == drawing.id())
+                            .map(|hit| hit.part)
+                            .filter(|part| matches!(part, Part::Column(_) | Part::Row(_))),
                     },
+                    &mut self.textures,
                 );
-                if with_handles && !drawing.locked() {
+                if !draft {
+                    match text_box {
+                        Some(found) => {
+                            self.text_boxes.insert(drawing.id(), found);
+                        }
+                        None => {
+                            self.text_boxes.remove(&drawing.id());
+                        }
+                    }
+                }
+                // A trend line shows its ends while hovered as well, as it always did.
+                let hover_handles = emphasized
+                    && !draft
+                    && !drawing.locked()
+                    && drawing.tool() == Some(Tool::TrendLine);
+                if (with_handles || hover_handles) && !drawing.locked() {
                     let color = drawing
                         .style()
                         .map_or(Color32::WHITE, |style| {
@@ -1236,6 +1590,88 @@ impl DrawingLayer {
             Drawing::Unreadable(_) => {}
         }
     }
+}
+
+impl DrawingLayer {
+    /// Puts the waiting picture in the middle of the plot when the workspace says it arrived by
+    /// a drop or a paste, instead of waiting for a click.
+    fn place_waiting_content(&mut self, frame: &mut DrawingFrame, proj: &Projection) {
+        if !frame.place_pending || frame.pending_content.is_none() {
+            return;
+        }
+        frame.place_pending = false;
+        let (tool, size) = match frame.pending_content.clone().expect("checked above") {
+            crate::model::image_content::Content::Image(picture) => (
+                Tool::Image,
+                placed_rect(&picture, proj.plot.center(), proj.plot).size(),
+            ),
+            crate::model::image_content::Content::Link(card) => (
+                Tool::Post,
+                placed_card_rect(&card, proj.plot.center(), proj.plot).size(),
+            ),
+        };
+        let at = proj.anchor(proj.plot.center() - size / 2.0);
+        let draft = Draft {
+            tool,
+            placed: vec![at],
+            rubber: at,
+            dragging: false,
+            placed_at_press: 0,
+        };
+        self.commit_draft(draft, false, frame, proj);
+    }
+
+    /// Swaps the picture of a drawing for the one the user chose: the same place, the same
+    /// width and the same opacity, one undo step. A picture of another shape takes the shape
+    /// that suits it, from the same top-left corner, unless the drawing was told not to keep it.
+    fn replace_picture(&mut self, frame: &mut DrawingFrame) {
+        let Some((id, content)) = frame.replace_with.take() else {
+            return;
+        };
+        let Some(drawing) = frame
+            .drawings
+            .iter()
+            .find(|drawing| drawing.id() == id && !drawing.locked())
+        else {
+            return;
+        };
+        let mut changed = drawing.clone();
+        let Some(Geometry::Image(image)) = changed.geometry_mut() else {
+            return;
+        };
+        image.name.clone_from(&content.name);
+        image.swap_picture(&content);
+        frame.commands.push(DrawingCommand::Replace {
+            id,
+            drawing: changed,
+        });
+    }
+}
+
+/// The rectangle a picture takes when it is dropped with its top-left corner at `at`: the size it
+/// starts at, scaled down to at most 40 % of the plot's width and half its height, and moved back
+/// onto the plot if that would put it over an edge.
+fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, plot: Rect) -> Rect {
+    let (width, height) = (picture.size[0].max(1.0), picture.size[1].max(1.0));
+    let scale = (plot.width() * 0.4 / width)
+        .min(plot.height() * 0.5 / height)
+        .min(1.0);
+    let size = egui::vec2((width * scale).max(24.0), (height * scale).max(24.0));
+    let left = at.x.min(plot.right() - size.x).max(plot.left());
+    let top = at.y.min(plot.bottom() - size.y).max(plot.top());
+    Rect::from_min_size(Pos2::new(left, top), size)
+}
+
+/// The rectangle a card takes when it is dropped with its top-left corner at `at`: its own size,
+/// moved back onto the plot if that would put it over an edge.
+fn placed_card_rect(card: &crate::model::link_card::LinkCard, at: Pos2, plot: Rect) -> Rect {
+    let size = egui::vec2(
+        card.size[0].min(plot.width()),
+        card.size[1].min(plot.height()),
+    );
+    let left = at.x.min(plot.right() - size.x).max(plot.left());
+    let top = at.y.min(plot.bottom() - size.y).max(plot.top());
+    Rect::from_min_size(Pos2::new(left, top), size)
 }
 
 /// Whether a tool collects any number of vertices (a path or polyline).

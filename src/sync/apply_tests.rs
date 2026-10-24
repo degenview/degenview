@@ -61,7 +61,7 @@ pub(super) fn symbols(row: &Value) -> Vec<String> {
         .collect()
 }
 
-fn pair() -> (MockCloud, Mac, Mac) {
+pub(super) fn pair() -> (MockCloud, Mac, Mac) {
     let cloud = MockCloud::new();
     let mut a = mac(&cloud, "Mac A", "acct", Some("acct"));
     let mut b = mac(&cloud, "Mac B", "acct", Some("acct"));
@@ -71,7 +71,7 @@ fn pair() -> (MockCloud, Mac, Mac) {
 }
 
 /// Lets both Macs upload and fetch until nothing moves.
-fn settle(a: &mut Mac, b: &mut Mac) {
+pub(super) fn settle(a: &mut Mac, b: &mut Mac) {
     for _ in 0..6 {
         a.core.request_sync();
         a.run();
@@ -622,7 +622,7 @@ fn layout(id: u64, name: &str, charts: &[TestChart]) -> Raw {
     Raw(value)
 }
 
-fn put_layouts(mac: &Mac, layouts: &[Raw]) {
+pub(super) fn put_layouts(mac: &Mac, layouts: &[Raw]) {
     mac.store
         .lock()
         .unwrap()
@@ -1111,6 +1111,477 @@ fn an_unreadable_future_drawing_travels_untouched() {
     assert!(
         drawings.contains(&future),
         "the future drawing is preserved exactly"
+    );
+}
+
+/// A layout holding one chart whose drawings are `drawings`, as stored.
+pub(super) fn layout_of(id: u64, name: &str, drawings: &[crate::model::Drawing]) -> Raw {
+    let mut row = layout(id, name, &[(1, "BTC", &[])]).0;
+    row["charts"][0]["drawings"] = Value::Array(
+        drawings
+            .iter()
+            .map(|drawing| serde_json::to_value(drawing).unwrap())
+            .collect(),
+    );
+    assert!(
+        crate::store::sync::row_decodes("saved_view", &row.to_string()),
+        "the layout decodes"
+    );
+    Raw(row)
+}
+
+/// One drawing of every line, channel and pitchfork tool, with a style that uses every new
+/// setting and text where the tool takes it.
+fn every_line_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..4)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + index as f64 * 7.5,
+        })
+        .collect();
+    Tool::line_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.pitchfork_levels[3].line.enabled = true;
+            style.pitchfork_levels[3].ratio = 0.7;
+            style.channel_levels[0].line.enabled = true;
+            style.regression.upper_dev = 1.5;
+            style.use_one_color = true;
+            style.time_label = true;
+            style.text.orientation = crate::model::drawing_style::TextOrientation::Vertical;
+            let mut drawing =
+                Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap();
+            drawing.set_text("a note\non two lines");
+            drawing
+        })
+        .collect()
+}
+
+#[test]
+fn every_line_channel_and_pitchfork_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_line_tool();
+    assert_eq!(drawings.len(), 17);
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: nothing about the new tools needed a record of its own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 17);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        // And it still reads as the drawing it was.
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+    // Changing one level of one fork uploads that drawing and nothing else.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let fork = edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::Pitchfork))
+        .unwrap();
+    let mut style = *fork.style().unwrap();
+    style.pitchfork_levels[3].ratio = 0.9;
+    fork.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Lines", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let pitchfork = on_b[0]["charts"][0]["drawings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|drawing| drawing["Shape"]["geometry"]["pitchfork"]["variant"] == "standard")
+        .unwrap();
+    assert_eq!(
+        pitchfork["Shape"]["style"]["pitchfork_levels"][3]["ratio"],
+        json!(0.9f32 as f64)
+    );
+}
+
+/// One drawing of every pattern, Elliott wave and cycle tool, with a style that uses every option
+/// they have.
+fn every_pattern_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::elliott::Degree;
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..7)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::pattern_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.pattern.degree = Degree::Primary;
+            style.pattern.precision = 2;
+            style.pattern.ratios = index % 2 == 0;
+            style.text.size = 16.0;
+            Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+/// One drawing of every forecasting, volume and measurement tool, with options that are not the
+/// defaults.
+fn every_forecast_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..7)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::forecast_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            style.position.account = 25_000.0;
+            style.position.always_stats = true;
+            style.ghost.variance = 80.0;
+            style.vwap.bands[1].enabled = true;
+            style.profile.rows = 36;
+            style.measure.ticks = false;
+            Drawing::sample(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn every_forecast_volume_and_measurement_tool_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_forecast_tool();
+    assert_eq!(drawings.len(), 12);
+    put_layouts(&a, &[layout_of(10, "Forecast", &drawings)]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 12);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Moving a position's stop uploads that drawing and no other.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::LongPosition))
+        .unwrap()
+        .anchors_mut()[2]
+        .price -= 3.0;
+    put_layouts(&a, &[layout_of(10, "Forecast", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    // And so does another ghost feed run (a new seed).
+    let before = cloud.save_attempts();
+    let mut rerun = edited.clone();
+    if let Some(crate::model::Geometry::Ghost { seed, .. }) = rerun
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::GhostFeed))
+        .and_then(|drawing| drawing.geometry_mut())
+    {
+        *seed = seed.wrapping_add(1);
+    }
+    put_layouts(&a, &[layout_of(10, "Forecast", &rerun)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
+/// One drawing of every Fibonacci and Gann tool, with levels and switches that are not the
+/// defaults.
+fn every_fib_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::fib_style::FibLevel;
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..4)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::fib_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            let mut fib = style.fib.expect("a Fibonacci tool carries its levels");
+            fib.reverse = index % 2 == 0;
+            fib.as_percent = true;
+            fib.log_levels = true;
+            fib.levels.push(FibLevel {
+                ratio: 0.9,
+                color: [1, 2, 3, 255],
+                ..FibLevel::default()
+            });
+            fib.levels.remove(1);
+            style.fib = Some(fib);
+            style.extend_right = true;
+            Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn every_fibonacci_and_gann_tool_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_fib_tool();
+    assert_eq!(drawings.len(), crate::model::Tool::fib_tools().count());
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: the new tools needed no record kind of their own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), drawings.len());
+    // Compared as drawings: a ratio is an `f32`, and its JSON text (an `f64`'s digits) can be read
+    // back one unit in the last place off as a bare number, though never as the ratio.
+    for (sent, got) in drawings.iter().zip(&received) {
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent, "{:?}", sent.tool());
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Editing one level uploads that drawing and no other.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let first = edited.first_mut().unwrap();
+    let mut style = *first.style().unwrap();
+    let mut fib = style.fib.unwrap();
+    fib.levels.as_mut_slice()[0].ratio = 0.05;
+    style.fib = Some(fib);
+    first.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let first = &on_b[0]["charts"][0]["drawings"][0];
+    let back: crate::model::Drawing = serde_json::from_value(first.clone()).unwrap();
+    assert_eq!(back, edited[0]);
+
+    // Moving an anchor uploads that drawing too, and only it.
+    let before = cloud.save_attempts();
+    let mut moved = edited.clone();
+    moved[0].anchors_mut()[1].price += 4.0;
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &moved)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
+#[test]
+fn every_pattern_wave_and_cycle_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_pattern_tool();
+    assert_eq!(drawings.len(), 14);
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: the new tools needed no record kind of their own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), 14);
+    for (sent, got) in drawings.iter().zip(&received) {
+        assert_eq!(
+            &serde_json::to_value(sent).unwrap(),
+            got,
+            "{:?}",
+            sent.tool()
+        );
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent);
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Changing one wave's degree uploads that drawing and nothing else.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let wave = edited
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::ElliottTripleCombo))
+        .unwrap();
+    let mut style = *wave.style().unwrap();
+    style.pattern.degree = crate::model::elliott::Degree::Minute;
+    wave.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Patterns", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let triple = on_b[0]["charts"][0]["drawings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|drawing| drawing["Shape"]["geometry"]["wave"]["kind"] == "triple_combo")
+        .unwrap();
+    assert_eq!(triple["Shape"]["style"]["pattern"]["degree"], "minute");
+
+    // Moving a pivot of a pattern uploads that drawing too, and only it.
+    let before = cloud.save_attempts();
+    let mut moved = edited.clone();
+    moved
+        .iter_mut()
+        .find(|drawing| drawing.tool() == Some(crate::model::Tool::XabcdPattern))
+        .unwrap()
+        .anchors_mut()[3]
+        .price += 4.0;
+    put_layouts(&a, &[layout_of(10, "Patterns", &moved)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
+#[test]
+fn deleting_a_pattern_propagates_and_the_others_stay() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_pattern_tool();
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings)]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout_of(10, "Patterns", &drawings[1..])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        13
+    );
+    assert_eq!(
+        rows(&a, "saved_view")[0]["charts"][0]["drawings"],
+        on_b[0]["charts"][0]["drawings"]
+    );
+}
+
+#[test]
+fn a_trend_line_gaining_and_losing_text_syncs_each_change_as_one_record() {
+    use crate::model::{Anchor, Drawing, Tool};
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let mut line = Drawing::build(
+        Tool::TrendLine,
+        1,
+        &[
+            Anchor {
+                time_ms: 1,
+                price: 1.0,
+            },
+            Anchor {
+                time_ms: 2,
+                price: 2.0,
+            },
+        ],
+        Tool::TrendLine.default_style(),
+    )
+    .unwrap();
+    let plain = serde_json::to_value(&line).unwrap();
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
+        plain,
+        "a line crosses exactly as drawn"
+    );
+    let before = cloud.save_attempts();
+    line.set_text("support");
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let received = &on_b[0]["charts"][0]["drawings"][0];
+    assert_eq!(received["Shape"]["text"], "support");
+    assert_eq!(
+        serde_json::from_value::<Drawing>(received.clone()).unwrap(),
+        line
+    );
+    line.set_text("");
+    put_layouts(&a, &[layout_of(10, "Main", std::slice::from_ref(&line))]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        rows(&b, "saved_view")[0]["charts"][0]["drawings"][0],
+        plain,
+        "clearing the text arrives too"
+    );
+}
+
+#[test]
+fn deleting_a_line_tool_drawing_propagates_and_an_unrelated_one_stays() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_line_tool();
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings)]);
+    settle(&mut a, &mut b);
+    put_layouts(&a, &[layout_of(10, "Lines", &drawings[1..])]);
+    settle(&mut a, &mut b);
+    let on_b = rows(&b, "saved_view");
+    assert_eq!(
+        on_b[0]["charts"][0]["drawings"].as_array().unwrap().len(),
+        16
+    );
+    // The drawings agree; the rows differ only in what stays per Mac (autosave, last opened).
+    assert_eq!(
+        rows(&a, "saved_view")[0]["charts"][0]["drawings"],
+        on_b[0]["charts"][0]["drawings"]
     );
 }
 
@@ -1842,7 +2313,7 @@ fn flags_follow_the_watchlists_switch_not_preferences() {
 
 /// One second of the app's alert tick as the GUI runs it: the long-lived host drains commands and
 /// saves its snapshot.
-fn host_tick(host: &mut crate::alert_host::AlertHost, mac: &Mac, now: i64) {
+fn host_tick(host: &mut crate::host::alert_host::AlertHost, mac: &Mac, now: i64) {
     let store = mac.store.lock().unwrap();
     host.drain_commands(&store, now);
     host.save_if_dirty(&store);
@@ -1855,11 +2326,11 @@ fn an_alert_made_through_the_apps_host_reaches_the_other_macs_host() {
     b.core.start();
     let mut host_a = {
         let store = a.store.lock().unwrap();
-        crate::alert_host::AlertHost::load(&store, T0)
+        crate::host::alert_host::AlertHost::load(&store, T0)
     };
     let mut host_b = {
         let store = b.store.lock().unwrap();
-        crate::alert_host::AlertHost::load(&store, T0)
+        crate::host::alert_host::AlertHost::load(&store, T0)
     };
     let alert = PriceAlert::new(btc(), AlertCondition::CrossesAbove { target: 100.0 }, T0);
     let id = alert.id;

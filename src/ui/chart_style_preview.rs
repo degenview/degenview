@@ -116,13 +116,7 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
         (low.min(bar.low), high.max(bar.high))
     });
     let padding = ((high - low) * 0.06).max(f64::EPSILON);
-    let scale = PriceScale {
-        minimum: low - padding,
-        maximum: high + padding,
-        top: plot.top(),
-        height: plot.height(),
-        logarithmic: false,
-    };
+    let scale = PriceScale::linear(low - padding, high + padding, plot.top(), plot.height());
     let slot = plot.width() / bars.len() as f32;
     let x_for = |index: usize| plot.left() + slot * (index as f32 + 0.5);
     let painter = ui.painter_at(plot);

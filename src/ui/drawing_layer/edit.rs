@@ -3,8 +3,11 @@
 //! drawing and a projection, so every tool is tested without a window.
 
 use super::Projection;
+use crate::model::gann::{self, GannKind};
 use crate::model::{Anchor, Drawing, Geometry};
+use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::{self, RulerCorner};
+use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Vec2};
 
 /// How far a duplicate is offset from the original, in px (right and down).
@@ -78,6 +81,15 @@ pub(super) enum Part {
     /// The anchor at this index of `Drawing::anchors`.
     Anchor(usize),
     Box(BoxHandle),
+    /// The right edge of a text box: dragging it sets the width the text wraps at.
+    Width,
+    /// The border to the right of this column of a table: dragging it resizes the column.
+    Column(usize),
+    /// The border under this row of a table: dragging it resizes the row.
+    Row(usize),
+    /// The label of a note or a signpost (the second anchor): dragging it moves the label by
+    /// the pointer's travel, so a handle that is not on the anchor itself does not make it jump.
+    Label,
     /// A ruler's corner.
     Corner(RulerCorner),
 }
@@ -107,6 +119,44 @@ pub(super) fn resize_box(a: Anchor, b: Anchor, handle: BoxHandle, to: Anchor) ->
 /// `original` after dragging `part` from `press` to `now`. `target` is where an anchor handle
 /// lands (the pointer, or the magnet's pick); a body drag moves every anchor by the pointer's
 /// pixel delta, which keeps it right on a log scale too.
+/// `edited`, with a Gann square's ratio of price to time held at what `original` had while one of
+/// its corners moves: the corner takes the price its bars-wide box would have at that ratio.
+/// Anything else, or a box with no ratio to hold, is `edited` as it was.
+pub(super) fn keep_ratio(
+    original: &Drawing,
+    mut edited: Drawing,
+    part: Part,
+    proj: &Projection,
+) -> Drawing {
+    let (Part::Anchor(index), Some(Geometry::Gann { kind, points })) = (part, original.geometry())
+    else {
+        return edited;
+    };
+    if *kind != GannKind::Square || points.len() != 2 || index > 1 {
+        return edited;
+    }
+    let bars =
+        |a: &Anchor, b: &Anchor| proj.times.index_of(b.time_ms) - proj.times.index_of(a.time_ms);
+    let Some(rate) = gann::price_per_bar(
+        points[0].price,
+        points[1].price,
+        bars(&points[0], &points[1]),
+    ) else {
+        return edited;
+    };
+    let anchors = edited.anchors();
+    let (fixed, moved) = (anchors[1 - index], anchors[index]);
+    let width = bars(&fixed, &moved).abs();
+    let direction = (moved.price - fixed.price).signum();
+    if let Some(anchor) = edited.anchors_mut().into_iter().nth(index) {
+        let price = fixed.price + direction * width * rate;
+        if price.is_finite() {
+            anchor.price = price;
+        }
+    }
+    edited
+}
+
 pub(super) fn edited(
     original: &Drawing,
     part: Part,
@@ -118,23 +168,90 @@ pub(super) fn edited(
     let delta = now - press;
     let mut result = original.clone();
     match part {
-        Part::Body => {
-            for anchor in result.anchors_mut() {
-                *anchor = proj.anchor(proj.point(*anchor) + delta);
-            }
-        }
+        Part::Body => translate(&mut result, delta, proj),
+        // A pinned table has no anchor to set: its corner moves with the pointer instead.
+        Part::Anchor(_) if pinned(&result) => translate(&mut result, delta, proj),
         Part::Anchor(index) => {
+            // A fixed Gann square keeps its corner on the screen's diagonal from the other one.
+            let held = match (
+                original.geometry(),
+                original.anchors().get(1 - index.min(1)),
+            ) {
+                (
+                    Some(Geometry::Gann {
+                        kind: GannKind::SquareFixed,
+                        ..
+                    }),
+                    Some(other),
+                ) if index < 2 => {
+                    let corner =
+                        geo::constrained_corner(proj.point(*other), proj.point(target), true);
+                    proj.anchor(corner)
+                }
+                _ => target,
+            };
             if let Some(anchor) = result.anchors_mut().into_iter().nth(index) {
-                *anchor = target;
+                *anchor = held;
             }
         }
-        Part::Box(handle) => {
-            if let Drawing::Shape {
+        Part::Column(column) => {
+            if let Some(grid) = grid_of(original, proj)
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+                && let (Some(left), Some(right)) = (grid.xs.get(column), grid.xs.get(column + 1))
+            {
+                table.resize_column(column, (right - left) + delta.x);
+            }
+        }
+        Part::Row(row) => {
+            if let Some(grid) = grid_of(original, proj)
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+                && let (Some(top), Some(bottom)) = (grid.ys.get(row), grid.ys.get(row + 1))
+            {
+                table.resize_row(row, (bottom - top) + delta.y);
+            }
+        }
+        Part::Box(handle) if matches!(original.geometry(), Some(Geometry::Table(_))) => {
+            if handle == BoxHandle::BottomRight
+                && let Some(grid) = grid_of(original, proj)
+                && let (Some(width), Some(height)) = (
+                    grid.xs.last().zip(grid.xs.first()).map(|(r, l)| r - l),
+                    grid.ys.last().zip(grid.ys.first()).map(|(b, t)| b - t),
+                )
+                && let Some(Geometry::Table(table)) = result.geometry_mut()
+            {
+                table.scale_to(width + delta.x, height + delta.y);
+            }
+        }
+        Part::Box(handle) => match &mut result {
+            Drawing::Shape {
                 geometry: Geometry::Rectangle { a, b } | Geometry::Ellipse { a, b },
                 ..
-            } = &mut result
+            } => (*a, *b) = resize_box(*a, *b, handle, target),
+            Drawing::Shape {
+                geometry: Geometry::Image(image),
+                ..
+            } => {
+                let resized = resize_image(image, handle, now, proj);
+                image.at = proj.anchor(resized.min);
+                image.size = [resized.width(), resized.height()];
+            }
+            Drawing::Shape {
+                geometry: Geometry::Card { card, .. },
+                ..
+            } if handle == BoxHandle::BottomRight => card.resize_by(delta.x, delta.y),
+            _ => {}
+        },
+        Part::Label => {
+            if let Some(label) = result.anchors_mut().into_iter().nth(1) {
+                *label = proj.anchor(proj.point(*label) + delta);
+            }
+        }
+        Part::Width => {
+            if let Some(width) = dragged_width(original, proj, press, now)
+                && let Drawing::Shape { style, .. } = &mut result
             {
-                (*a, *b) = resize_box(*a, *b, handle, target);
+                style.wrap = true;
+                style.box_width = width;
             }
         }
         Part::Corner(corner) => {
@@ -143,7 +260,185 @@ pub(super) fn edited(
             }
         }
     }
+    keep_channel_width(original, &mut result, part, press, now, proj);
+    if let (Some(edited), Some(before)) = (result.geometry_mut(), original.geometry()) {
+        edited.constrain(before);
+    }
     result
+}
+
+/// The outer width a text box has after its right edge is dragged from `press` to `now`: its
+/// width now, moved by the pointer's travel. `None` for a drawing with no text box.
+fn dragged_width(original: &Drawing, proj: &Projection, press: Pos2, now: Pos2) -> Option<f32> {
+    let screen = super::shape::build(original, proj)?;
+    let Some(super::shape::TextPlace::Inside(rect)) = screen.text else {
+        return None;
+    };
+    Some((rect.width() + (now.x - press.x)).clamp(
+        crate::model::drawing_style::MIN_BOX_WIDTH,
+        crate::model::drawing_style::MAX_BOX_WIDTH,
+    ))
+}
+
+/// Moves a drawing by `delta` px on screen. A drawing at chart points moves every anchor, which
+/// keeps it right on a log scale too; a table pinned to the screen moves its pinned place by the
+/// same fraction of the plot.
+pub(super) fn translate(drawing: &mut Drawing, delta: Vec2, proj: &Projection) {
+    if let Some(Geometry::Table(table)) = drawing.geometry_mut()
+        && let Some(place) = &mut table.screen
+    {
+        place.x += delta.x / proj.plot.width().max(1.0);
+        place.y += delta.y / proj.plot.height().max(1.0);
+        *place = place.clamped();
+        return;
+    }
+    for anchor in drawing.anchors_mut() {
+        *anchor = proj.anchor(proj.point(*anchor) + delta);
+    }
+}
+
+/// Whether the drawing is a table pinned to the screen.
+fn pinned(drawing: &Drawing) -> bool {
+    matches!(drawing.geometry(), Some(Geometry::Table(table)) if table.screen.is_some())
+}
+
+/// Where the cells of a table drawing are on screen now.
+fn grid_of(drawing: &Drawing, proj: &Projection) -> Option<super::shape::Grid> {
+    super::shape::build(drawing, proj)?.grid
+}
+
+/// The smallest a picture is resized to, on each side, in px.
+const MIN_PICTURE: f32 = 16.0;
+
+/// Where a picture is on screen: its top-left corner at its chart point, and its own size.
+pub(super) fn picture_rect(
+    image: &crate::model::image_content::ImageData,
+    proj: &Projection,
+) -> eframe::egui::Rect {
+    eframe::egui::Rect::from_min_size(
+        proj.point(image.at),
+        eframe::egui::vec2(image.size[0], image.size[1]),
+    )
+}
+
+/// The rectangle of a picture with `handle` dragged to `pointer`. The opposite edges stay where
+/// they are. When the picture keeps its shape, a corner takes the larger of the two moves and the
+/// other side follows from the shape, and an edge takes its own move and the other side follows
+/// about its middle. Worked in screen space; the caller stores its corner as a chart point and its
+/// size in pixels.
+pub(super) fn resize_image(
+    image: &crate::model::image_content::ImageData,
+    handle: BoxHandle,
+    pointer: Pos2,
+    proj: &Projection,
+) -> eframe::egui::Rect {
+    let rect = picture_rect(image, proj);
+    let aspect = image.aspect();
+    let (left, right) = (
+        handle.horizontal() == Some(true),
+        handle.horizontal() == Some(false),
+    );
+    let (top, bottom) = (
+        handle.vertical() == Some(true),
+        handle.vertical() == Some(false),
+    );
+    // The edges that stay put.
+    let fixed_x = if left { rect.right() } else { rect.left() };
+    let fixed_y = if top { rect.bottom() } else { rect.top() };
+    let mut min = rect.min;
+    let mut max = rect.max;
+    if image.keep_aspect {
+        if (left || right) && (top || bottom) {
+            let across = (pointer.x - fixed_x).abs().max(MIN_PICTURE);
+            let down = (pointer.y - fixed_y).abs().max(MIN_PICTURE);
+            let width = across.max(down * aspect);
+            let height = width / aspect;
+            let x = if left {
+                fixed_x - width
+            } else {
+                fixed_x + width
+            };
+            let y = if top {
+                fixed_y - height
+            } else {
+                fixed_y + height
+            };
+            min = Pos2::new(x.min(fixed_x), y.min(fixed_y));
+            max = Pos2::new(x.max(fixed_x), y.max(fixed_y));
+        } else if left || right {
+            let width = (pointer.x - fixed_x).abs().max(MIN_PICTURE);
+            let height = width / aspect;
+            let x = if left {
+                fixed_x - width
+            } else {
+                fixed_x + width
+            };
+            min = Pos2::new(x.min(fixed_x), rect.center().y - height / 2.0);
+            max = Pos2::new(x.max(fixed_x), rect.center().y + height / 2.0);
+        } else {
+            let height = (pointer.y - fixed_y).abs().max(MIN_PICTURE);
+            let width = height * aspect;
+            let y = if top {
+                fixed_y - height
+            } else {
+                fixed_y + height
+            };
+            min = Pos2::new(rect.center().x - width / 2.0, y.min(fixed_y));
+            max = Pos2::new(rect.center().x + width / 2.0, y.max(fixed_y));
+        }
+    } else {
+        if left || right {
+            let x = pointer.x;
+            min.x = x.min(fixed_x);
+            max.x = x.max(fixed_x);
+        }
+        if top || bottom {
+            let y = pointer.y;
+            min.y = y.min(fixed_y);
+            max.y = y.max(fixed_y);
+        }
+    }
+    eframe::egui::Rect::from_min_max(min, max)
+}
+
+/// A parallel channel keeps the price distance between its edges when an end of the first edge
+/// is dragged, and the handle on the second edge moves that distance by the pointer's vertical
+/// travel alone. Both are worked in screen space, where the distance is a vertical offset, so
+/// they are right on a log scale too.
+fn keep_channel_width(
+    original: &Drawing,
+    result: &mut Drawing,
+    part: Part,
+    press: Pos2,
+    now: Pos2,
+    proj: &Projection,
+) {
+    let (
+        Some(Geometry::ParallelChannel { a, b, c }),
+        Some(Geometry::ParallelChannel {
+            a: new_a,
+            b: new_b,
+            c: new_c,
+        }),
+    ) = (original.geometry(), result.geometry_mut())
+    else {
+        return;
+    };
+    let (pa, pb, pc) = (proj.point(*a), proj.point(*b), proj.point(*c));
+    if (pb.x - pa.x).abs() < 1e-3 {
+        // A vertical first edge has no price distance; the generic edit stands.
+        return;
+    }
+    let offset = lines::channel_offset(pa, pb, pc).y;
+    let (edge_a, edge_b) = (proj.point(*new_a), proj.point(*new_b));
+    let offset = match part {
+        Part::Anchor(2) => offset + (now.y - press.y),
+        Part::Anchor(0 | 1) => offset,
+        _ => return,
+    };
+    if let Some(y) = lines::y_at(edge_a, edge_b, pc.x) {
+        *new_c = proj.anchor(Pos2::new(pc.x, y + offset));
+    }
 }
 
 /// The vertices of an editable polyline-like shape.
@@ -195,9 +490,7 @@ pub(super) fn without_vertex(drawing: &Drawing, index: usize) -> Option<Drawing>
 /// exactly on the original, and unlocked.
 pub(super) fn duplicate(drawing: &Drawing, id: u64, proj: &Projection) -> Drawing {
     let mut copy = drawing.clone().with_id(id);
-    for anchor in copy.anchors_mut() {
-        *anchor = proj.anchor(proj.point(*anchor) + DUPLICATE_OFFSET);
-    }
+    translate(&mut copy, DUPLICATE_OFFSET, proj);
     copy.set_locked(false);
     copy
 }

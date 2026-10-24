@@ -26,6 +26,8 @@ pub mod mock;
 #[cfg(test)]
 mod apply_tests;
 #[cfg(test)]
+mod asset_tests;
+#[cfg(test)]
 mod core_tests;
 #[cfg(test)]
 mod crash_tests;
@@ -37,5 +39,7 @@ mod paper_tests;
 mod perf_tests;
 #[cfg(test)]
 mod portfolio_tests;
+#[cfg(test)]
+mod replay_tests;
 #[cfg(test)]
 mod script_tests;

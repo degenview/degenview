@@ -110,6 +110,8 @@ fn key_name(key: Key) -> &'static str {
         Key::F => "F",
         Key::G => "G",
         Key::H => "H",
+        Key::J => "J",
+        Key::L => "L",
         Key::P => "P",
         Key::S => "S",
         Key::T => "T",
@@ -305,6 +307,34 @@ pub const PASTE: Shortcut = Shortcut::new(
     &[Chord::new(Key::V).primary()],
 );
 
+/// Arms a line tool: Alt (Option on a Mac) and a letter, as on TradingView. The J of the
+/// horizontal ray is TradingView's default, which none of its help pages states.
+pub const TOOL_TREND_LINE: Shortcut =
+    Shortcut::new(&[Chord::new(Key::T).alt()], &[Chord::new(Key::T).alt()]);
+pub const TOOL_HORIZONTAL_LINE: Shortcut =
+    Shortcut::new(&[Chord::new(Key::H).alt()], &[Chord::new(Key::H).alt()]);
+pub const TOOL_HORIZONTAL_RAY: Shortcut =
+    Shortcut::new(&[Chord::new(Key::J).alt()], &[Chord::new(Key::J).alt()]);
+pub const TOOL_VERTICAL_LINE: Shortcut =
+    Shortcut::new(&[Chord::new(Key::V).alt()], &[Chord::new(Key::V).alt()]);
+pub const TOOL_CROSSLINE: Shortcut =
+    Shortcut::new(&[Chord::new(Key::C).alt()], &[Chord::new(Key::C).alt()]);
+pub const TOOL_FIB_RETRACEMENT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F).alt()], &[Chord::new(Key::F).alt()]);
+
+/// The shortcut that arms `tool`, for the tools that have one.
+pub fn tool(tool: crate::model::Tool) -> Option<Shortcut> {
+    match tool.hotkey()? {
+        'T' => Some(TOOL_TREND_LINE),
+        'H' => Some(TOOL_HORIZONTAL_LINE),
+        'J' => Some(TOOL_HORIZONTAL_RAY),
+        'V' => Some(TOOL_VERTICAL_LINE),
+        'C' => Some(TOOL_CROSSLINE),
+        'F' => Some(TOOL_FIB_RETRACEMENT),
+        _ => None,
+    }
+}
+
 /// Hides or shows every drawing on the chart.
 pub const HIDE_DRAWINGS: Shortcut = Shortcut::new(
     &[Chord::new(Key::H).control().alt()],
@@ -338,6 +368,27 @@ pub fn snapshot(action: crate::model::snapshot::SnapshotAction) -> Option<Shortc
     }
 }
 
+/// Switches the focused chart's price scale to Percent, or back to Regular when it already is.
+/// TradingView's Alt+P.
+pub const SCALE_PERCENT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::P).alt()], &[Chord::new(Key::P).alt()]);
+
+/// Switches the focused chart's price scale to Logarithmic, or back to Regular when it already
+/// is. TradingView's Alt+L.
+pub const SCALE_LOGARITHMIC: Shortcut =
+    Shortcut::new(&[Chord::new(Key::L).alt()], &[Chord::new(Key::L).alt()]);
+
+/// The shortcut that switches to `mode`, for the modes that have one. TradingView documents none
+/// for Indexed to 100, so none is invented.
+pub fn scale_mode(mode: crate::model::price_scale::PriceScaleMode) -> Option<Shortcut> {
+    use crate::model::price_scale::PriceScaleMode;
+    match mode {
+        PriceScaleMode::Percent => Some(SCALE_PERCENT),
+        PriceScaleMode::Logarithmic => Some(SCALE_LOGARITHMIC),
+        PriceScaleMode::Regular | PriceScaleMode::IndexedTo100 => None,
+    }
+}
+
 pub const UNDO: Shortcut = Shortcut::new(
     &[Chord::new(Key::Z).primary()],
     &[Chord::new(Key::Z).primary()],
@@ -355,7 +406,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 25] = [
+    const ALL: [(&str, Shortcut); 33] = [
         ("save", SAVE),
         ("new tab", NEW_TAB),
         ("close tab", CLOSE_TAB),
@@ -379,9 +430,36 @@ mod tests {
         ("snapshot download", SNAPSHOT_DOWNLOAD),
         ("snapshot copy image", SNAPSHOT_COPY_IMAGE),
         ("snapshot copy link", SNAPSHOT_COPY_LINK),
+        ("percent scale", SCALE_PERCENT),
+        ("logarithmic scale", SCALE_LOGARITHMIC),
         ("undo", UNDO),
         ("redo", REDO),
+        ("trend line", TOOL_TREND_LINE),
+        ("horizontal line", TOOL_HORIZONTAL_LINE),
+        ("horizontal ray", TOOL_HORIZONTAL_RAY),
+        ("vertical line", TOOL_VERTICAL_LINE),
+        ("crossline", TOOL_CROSSLINE),
+        ("fib retracement", TOOL_FIB_RETRACEMENT),
     ];
+
+    #[test]
+    fn every_tool_with_a_hotkey_has_a_shortcut_and_the_two_agree() {
+        use crate::model::Tool;
+        for tool in Tool::GROUPED {
+            let shortcut = super::tool(tool);
+            assert_eq!(shortcut.is_some(), tool.hotkey().is_some(), "{tool:?}");
+            if let (Some(shortcut), Some(letter)) = (shortcut, tool.hotkey()) {
+                // Alt (Option) and the letter, spelled the same on both platforms.
+                assert!(shortcut.label_for(true).ends_with(letter), "{tool:?}");
+                assert!(shortcut.label_for(true).starts_with('⌥'), "{tool:?}");
+                assert_eq!(
+                    shortcut.label_for(false),
+                    format!("Alt+{letter}"),
+                    "{tool:?}"
+                );
+            }
+        }
+    }
 
     /// What a Mac reports for ⌘ held (`command` mirrors `mac_cmd`).
     fn cmd() -> Modifiers {

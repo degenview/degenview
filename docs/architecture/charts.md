@@ -22,11 +22,22 @@ changes through `set_chart_type`.
 
 ## Drawings and undo
 
-`Drawing` holds the original trend line, Fibonacci, brush and ruler plus one `Shape` variant that
+`Drawing` holds the brush and the ruler plus one `Shape` variant that
 carries a typed `Geometry` for every newer tool, all with time+price anchors. The interactive layer
 (`ui::drawing_layer`) is one controller driven by each tool's `Placement`; it reports
-`DrawingCommand`s and never mutates drawings. See [drawing tools](../drawing-tools.md).
-Rulers and crosshairs are transient.
+`DrawingCommand`s and never mutates drawings. Lines, channels and pitchforks are projected by
+`drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::regression`, and a
+line's text is edited in place by `drawing_layer/text_edit.rs`. The chart patterns, Elliott waves
+and cycles are projected by `drawing_layer/pattern_shapes.rs` from `model::{pattern, elliott,
+cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::pattern_geometry` (apex, arcs, sine);
+see [chart patterns, Elliott waves and cycles](../pattern-tools.md). Positions, forecasts, the
+bars pattern, ghost feed, sector, anchored VWAP, volume profiles and measurers are projected by
+`forecast_shapes.rs` and `volume_shapes.rs` from `model::{position, volume_profile, ghost,
+bars_pattern, measure}`; see [forecasting, volume and measurement tools](../forecast-tools.md). The
+Fibonacci and Gann tools are projected by `fib_shapes.rs` and `gann_shapes.rs` from `model::{fib, gann,
+fib_style}` and the pure `ui::fib_geometry` (sampled curves, annuli, fans); see [Fibonacci and Gann
+tools](../fibonacci-gann-tools.md). See
+[drawing tools](../drawing-tools.md). Rulers and crosshairs are transient.
 
 `ChartWorkspace` keeps session-only per-workspace undo/redo entries containing one chart id and a
 `Snapshot`: its complete pre-command drawing list, or its built-in indicators and scripts before a

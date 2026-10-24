@@ -9,7 +9,11 @@ behavior.
 - `ui::chart_card::ChartCard` owns the painter loop. `ui::series_render` draws every main series;
   `model::chart_look` decides bar appearance. Do not add type-specific drawing to `chart_card.rs`.
 - Chart state lives in `workspace::Chart`. Draw grid, main series, overlays/indicators, then labels.
-  The price transform supports linear and log scales.
+  `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
+  one) and carries the chart's `PriceScaleMode` and reference. Percent and Indexed to 100 change only
+  what the axis, its tags and the crosshair say, never a stored price. Read
+  [price scale modes](../price-scale.md) before touching axis labels, ticks, tags or the corner
+  button, and write an axis-column tag with `PriceScale::tag_label`, not the bare `PriceFormat`.
 - Every chart price uses `ChartAppearance::price_format()` and `PriceFormat`, never
   `format::price`. This includes axes, tags, crosshair/OHLC, ruler/Fibonacci, and high/low markers.
 - Automatic precision is deliberately not the Swift app's: no decimals from 1,000, two from 1,
@@ -62,25 +66,73 @@ behavior.
 
 ## Drawings
 
-- A drawing is pinned to time+price. The four original tools keep their serialized form; every
-  newer tool is `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`.
-  New fields need `#[serde(default)]`. Nothing stores a pixel or a derived corner.
+- A drawing is pinned to time+price. The brush and the ruler have variants of their
+  own; every other tool, the trend line and the Fibonacci tools included, is
+  `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New fields
+  need `#[serde(default)]`. Nothing stores a pixel or a derived corner. The app has not shipped
+  an older stored form that must keep reading, so do not add compatibility readers.
+- A style field only some tools use is left out of the stored row while it holds its default
+  (`skip_serializing_if`): `DrawingStyle` is written whole, and every drawing and every synced
+  record would otherwise carry the levels of a pitchfork.
 - A tool is one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`. Add a
-  tool there, a `Geometry` variant, its `shape::shape` projection and an icon; the controller,
-  toolbar, dialog and tests (`every_tool_…` loop over `Tool::GROUPED`) pick it up. Do not add
-  `match tool` to pointer handling.
-- Geometry lives in `ui/drawing_geometry.rs` as pure functions on `Pos2` with their own tests.
-  Polygons fill by the even-odd rule; translucent freehand strokes are painted from a coverage map
-  (`rasterize_stroke`), never overlapping triangles.
+  tool there, a `Geometry` variant, its projection (`shape::shape`, `line_shapes::project` for
+  the lines, channels and pitchforks, or `pattern_shapes::project` for the patterns, Elliott waves
+  and cycles) and an icon; the controller, toolbar, dialog and tests
+  (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
+  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU`, `FORECAST_MENU`
+  and `FIB_MENU`. A tool of more than four anchors needs the test fixtures' seven: the
+  every-tool loops slice a seven-point array by `Placement::Points(n)`.
+- The Fibonacci and Gann tools (`fib_shapes`, `gann_shapes`; maths in `model::{fib, gann, fib_style}`
+  and `ui::fib_geometry`) keep their levels in `DrawingStyle.fib: Option<FibStyle>` (`None` is the
+  tool's defaults, so every projection reads `fib_style(tool, style)`), as fixed-size lists the one
+  level editor edits. Levels are worked from stored prices and bar indexes; curves are sampled only
+  where they cross the plot with a hard budget (`fib_geometry::sample`), and a fill is convex pieces
+  cut to the plot (`Screen.backdrop`: seen, never picked). A Gann angle is a ratio of price to time
+  taken from the second anchor, never a fixed screen angle. A control a tool does not honour is not in
+  `Features`, so it is not offered. See [Fibonacci and Gann tools](../fibonacci-gann-tools.md).
+- A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
+  painted, not text drawn in the projection. Ratios are worked from stored prices
+  (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is
+  counted in bars (`model::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
+  (`ui::pattern_geometry`). See [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
+- The forecasting, volume and measurement tools (`forecast_shapes`, `volume_shapes`; maths in
+  `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`
+  and `shade_meshes`. They read only the bars the chart draws, never fetch, and never reach an
+  order, alert or script: a position is hypothetical (a test pins that the trading and alert
+  engines do not mention drawings). `ProjectionKey` includes the newest bar's volume. See
+  [Forecasting, volume and measurement tools](../forecast-tools.md).
+- A tool whose anchor means only part of itself (a level's time, a regression's price) says so in
+  `Geometry::reads` and restores what an edit may not change in `Geometry::constrain`.
+- Geometry lives in `ui/drawing_geometry.rs` and `ui/line_geometry.rs` as pure functions on `Pos2`
+  with their own tests. Polygons fill by the even-odd rule; translucent freehand strokes are
+  painted from a coverage map (`rasterize_stroke`), never overlapping triangles. A line with no end
+  is cut to the plot with `line_in_rect`; never draw from an enormous coordinate.
+- A drawing's text is part of it: `Drawing::set_text`, the inline editor in
+  `drawing_layer/text_edit.rs`, and `TextPlace` for where the painter puts it. Axis tags are painted by `paint_frame`'s label pass, never by the drawing
+  painter (it is clipped to the plot).
 - The layer never mutates drawings: it returns `DrawingCommand`s in the `DrawingFrame`, and
   `drawings::apply_commands` applies them. One batch is one undo step; use `Style` for restyles
   (merged in bursts), never one command per pointer move. Previews and cancelled drafts are not
   commands.
 - `PersistedChart.drawings` decodes leniently: a row this version cannot read stays as
   `Drawing::Unreadable` and is written back untouched. Skip it in anything that draws, picks or
-  edits.
+  edits (the Object tree lists it, deletable only, by `Drawing::stored_id`).
+- **Older builds meet your changes through iCloud.** A new tool is a new `Geometry` variant and needs
+  nothing more. A new field on an existing tool that an older build would silently drop on re-save
+  needs `"since": N` in the drawing body and `DRAWING_FORMAT` raised to N (`model/drawings.rs`); without
+  it the older build strips the field and syncs the stripped copy over yours. The full table is in
+  [iCloud Sync](../icloud-sync.md#newer-versions).
 - Drawings are main-pane only and use the bars the chart draws (constructed and replay-cut); never
   index candles directly.
+- The text, note and content tools ([Annotation tools](../annotation-tools.md)) add rules to the
+  above. A box is sized with `Projection.measure` (the context that paints), never a guess. A shape with
+  nothing painted where it is to be clicked needs `Screen.hit`. A tool that moves with the screen
+  (a pinned table) has no anchors and moves through `edit::translate`. Content is named, never carried:
+  a drawing holds a picture's hash or a link, and a new picture goes through
+  `service::image_ingest` on a worker, never the UI thread. Nothing contacts a service except the
+  Preview button on a Post card, after a one-time allow.
+- `Drawing::sample` and `sample_content` (tests) make a drawing of any tool; the every-tool loops must
+  keep covering the content tools rather than skip them.
 
 ## Context menus
 
@@ -95,6 +147,9 @@ behavior.
 - Opening a menu, an order entry or Add alert never places an order or saves an alert: they open
   the paper ticket and the alert editor for the user to review.
 - Drags and clicks that move the chart or draw are primary-button only.
+- An alert's tag is draggable to a new level. The card only reports an `AlertMove`; the workspace
+  turns it into `WorkspaceAction::MoveAlert` (`workspace/context.rs`), so the card never edits a
+  `PriceAlert`, and a percentage alert or a replay is never draggable.
 - Cursor time lock, the Table view feed and the alert lines are card state that is never saved and
   never part of a template or linked navigation. Table and Object Tree read the bars and state the
   chart already draws; the tree is a view over the drawings, indicators and scripts, not a store.

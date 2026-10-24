@@ -4,6 +4,7 @@
 //! already owns the webhook + notification services.
 #![allow(dead_code)] // transient until the app threads it
 
+use crate::host::pine_host::KlineSecurityDataProvider;
 use crate::model::Kline;
 use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
 use crate::model::pine_instance::PineInstance;
@@ -12,7 +13,6 @@ use crate::pine::execution::ExecutionController;
 use crate::pine::program::SymbolInfo;
 use crate::pine::state::AlertEvent;
 use crate::pine::token::Limits;
-use crate::pine_host::KlineSecurityDataProvider;
 use crate::script_manager::registry::LibraryRegistry;
 use crate::store::Store;
 use std::collections::HashMap;

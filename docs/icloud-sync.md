@@ -22,6 +22,7 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Watchlist flags | one record, `watchlist.flags` | colour marks per market; follows the Watchlists switch and merges key by key |
 | Saved layouts | one per layout | without drawings, `last_opened`, `autosave` (per Mac) |
 | Drawings | one per drawing, keyed `layout.chart.drawing` | only inside saved layouts, never the tab session |
+| Pictures | one per distinct picture, keyed by the hash of its bytes (`drawingasset`) | see [Pictures](#pictures); never deleted |
 | Chart / drawing templates | one each | built-in presets live in code |
 | Pine scripts | one per script, content inline | no drafts, no revisions; unmodified bundled examples are skipped |
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
@@ -32,7 +33,7 @@ against SQLite, and every sync problem leaves the app fully usable.
 Never synced: market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
-snapshot consent and token. Every document table and `setting` key is classified in
+snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 
@@ -83,8 +84,12 @@ Private database, zone `DegenViewZone`, **one record type `DegenViewSyncRecord`*
 entity never need a manual schema deploy. `recordName = <kind>.<id>`, deterministic from the
 entity's identity, so repeated uploads and downloads hit the same record. Plain fields:
 `schemaVersion`, `entityType`, `revision`, `originDevice`, `payloadSize`. Encrypted
-(`encryptedValues`): `payload` (JSON), `modifiedAtMs`. A record from a newer schema is kept
-untouched in the inbox and applied after an update. A payload over ~900 KB as written (in practice a long paper-trading
+(`encryptedValues`): `payload` (JSON), `modifiedAtMs`. A record this build cannot read when it
+arrives (a kind it does not know, `unknown_type`, or a schema above its own, `newer_schema`) is kept
+untouched in the inbox. An update that teaches it to read the record applies it: `apply_batch` looks at
+those entries again on every apply, and a launch with any waiting (after the first sync) asks for one
+empty apply, so nothing waits for new changes. What it still cannot read stays put, byte for byte. See
+[Newer versions](#newer-versions). A payload over ~900 KB as written (in practice a long paper-trading
 history) is deflated behind a `DVZ1` marker (`record::to_wire` / `from_wire`, applied in the core's
 `build` and `RawRecord::into_record`, so nothing else sees the difference); a paper account
 built by the real engine shrinks about 30 times. A payload that is still over ~900 KB deflated is blocked and
@@ -97,6 +102,69 @@ Entity ids are nanosecond timestamps (watchlists, layouts, templates, alerts) or
 are per chart, so a drawing is keyed `layout.chart.drawing`. When two Macs give different
 drawings the same id, the local one is renumbered so both survive. Each Mac's Favorites list has
 a different local id, so it syncs as the singleton `watchlist.favorites` and keeps its own id.
+
+## Pictures
+
+An Image drawing names its picture by the sha256 of the stored bytes and carries nothing else, so the
+drawing record stays small and a layout never embeds pixels. The picture is its own record
+(`EntityKind::DrawingAsset`, prefix `drawingasset`, category Layouts, table `drawing_asset`),
+`{ id, mime, width, height, data }` with the bytes base64 in `data`.
+
+* **Limits.** A stored picture is at most 600 000 bytes (`image_ingest` re-encodes and shrinks until it
+  fits), so its record stays under `MAX_PAYLOAD_BYTES` (900 000) after base64. No `CKAsset` is used.
+* **Validation** (`sync/validate.rs`): a record is accepted only if its name is 64 lower-case hex
+  digits, the mime is PNG or JPEG, the bytes are within the limit, start with that format's signature
+  and hash to the name. A record that is anything else is refused, not stored.
+* **Merge.** A picture is immutable (its name is its hash), so there is nothing to merge: last writer
+  wins is moot, and a copy that arrives is the copy. It is reconciled by name only; the picture table is
+  not read for fingerprints.
+* **Order.** A drawing may arrive before its picture. It is stored as usual and paints a placeholder
+  ("Image unavailable (waiting to sync)") until the picture arrives, which the host asks the store for
+  every two seconds while it is visible.
+* **No deletion.** A picture is never deleted or tombstoned, locally or remotely: layouts sync but tab
+  sessions do not, so one Mac cannot know another still draws a picture, and a remote delete is ignored
+  (and the row sent again). Deleting a drawing, undo, replace and deleting a layout all leave the
+  picture. Cost: at most 600 kB per distinct picture, for good. A scan across devices before deleting is
+  the way to fix this; it is not built.
+* **What uses a picture:** Image drawings, and the author's picture on a fetched Post card (named in
+  its preview). The same rules apply to both: stored once by hash, synced as their own record, never
+  deleted.
+* **Writes** go through `Store::put_asset` (idempotent, one outbox entry in its own savepoint); a picture
+  that arrived from iCloud is written with `put_asset_from_cloud` (no entry back).
+
+Tested on `MockCloud` (`sync/asset_tests.rs`: upload, a second device receiving it, a picture arriving
+after its drawing, a remote delete, a layout that stops using a picture, and all twelve text, note and
+content drawings reaching the other Mac exactly as drawn; `sync/validate.rs`: damaged and oversize
+records). Not verified: a real CloudKit transfer of a
+picture, and a record near the size limit.
+
+## Newer versions
+
+What an older build does with data a newer one wrote, and the rules a change has to follow so that
+stays safe. (Read from the code; it has not been tried between two real builds.)
+
+| A newer build writes | An older build |
+|---|---|
+| A new drawing tool (a new `Geometry` variant in the existing drawing record, same schema number) | Accepts the record and stores it. The drawing decodes as `Drawing::Unreadable`: it is not drawn, selected or edited, is listed in the Object tree as "From a newer version" (deletable, nothing else), and is written back and synced byte for byte. |
+| A new field on an existing tool, marked `"since": N` above the older build's `DRAWING_FORMAT` | The same: kept whole as `Unreadable`, never re-saved without the field. |
+| A new field on an existing tool **without** the marker | The older build decodes the drawing, ignores the field and re-saves it without it, and the stripped copy syncs back over the newer one. Not allowed: see the rule below. |
+| A new record kind (as pictures were), or a higher `SCHEMA_VERSION` | Kept in the inbox, applied by the first launch that reads it (see above). |
+| A new tool or magnet value in `drawing.prefs` | That one option falls back to its default; the others are kept. (The fallback is then what this build saves.) |
+| A default style (`drawing.defaults`) or a template for a new tool | **Not read at all**: both are read whole, so one entry for a tool this build lacks leaves them unreadable. The build then refuses to change defaults or templates ("Default styles could not be read ...") and leaves them as written. Drawings are unaffected. Every new tool has this effect, once a default or a template is saved for it. |
+
+The rule: **a new tool is a new `Geometry` variant. A change to an existing tool's stored form that an
+older build would lose (a new field it ignores) must write `"since": N` in the drawing's body, with
+`DRAWING_FORMAT` in `model/drawings.rs` raised to N.** A field that only some drawings use can be left
+out of the row while it holds its default (as the style fields are) and needs no marker until it is
+set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
+a count elsewhere would be easy to add.
+
+A chart's price-scale mode (`scale_mode` in the layout's chart rows) is not a drawing field and has no
+such marker. A layout field an older build does not know is dropped when that build re-saves the
+layout, which changes `layout_structure_hash` and can make a "conflict from" copy. The mode is written
+next to the `log_scale` switch older builds require, so those builds still decode the layout and keep
+a logarithmic chart logarithmic; a Percent or Indexed chart opens as Regular there. See
+[price scale modes](price-scale.md).
 
 ## Portfolios and paper trading
 
@@ -340,6 +408,7 @@ It is on `main` too.
   scans for rows an older build wrote without queuing them every five minutes) and on **Sync Now**,
   so a change reaches a covered window in about 20 seconds. Pushes are not relied on at all.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
+* Pictures between two real Macs ([Pictures](#pictures)): only `MockCloud` has carried one.
 * Behaviour with all windows hidden: remote changes are applied on the app thread while windows
   draw. When it has not ticked for 3 seconds (a covered or hidden window draws nothing) the sync
   worker applies them itself and the app reloads what it holds from the reports on its first frame

@@ -5,7 +5,7 @@
 //! permission snapshot equal to what is on disk, and hands queued tool requests to the app.
 //! Persist first, then publish: a write that fails changes nothing the server can see.
 
-use crate::alert_host::AlertHost;
+use crate::host::alert_host::AlertHost;
 use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{

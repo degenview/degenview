@@ -97,7 +97,7 @@ pub(super) struct Navigation<'a> {
     pub shown: Option<PriceRange>,
     pub total: usize,
     pub slot_width: f32,
-    pub log_scale: bool,
+    pub logarithmic: bool,
     /// Whether a drawing gesture owns the drag.
     pub drawing_claims: bool,
     pub response: &'a Response,
@@ -224,7 +224,7 @@ impl ChartCard {
                     nav.slot_width,
                     nav.regions.plot.height(),
                     nav.total,
-                    nav.log_scale,
+                    nav.logarithmic,
                 );
             }
             Kind::PriceAxis { origin } => {
@@ -232,7 +232,7 @@ impl ChartCard {
                 let factor = 2_f64.powf(f64::from(dy) / f64::from(AXIS_POINTS_PER_DOUBLING));
                 self.viewport
                     .vertical
-                    .stretch(origin, factor, nav.log_scale);
+                    .stretch(origin, factor, nav.logarithmic);
             }
             Kind::TimeAxis { origin_visible } => {
                 // Dragging right spreads the bars apart, so fewer fit.

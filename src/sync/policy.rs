@@ -71,6 +71,8 @@ pub enum Merge {
 pub enum EntityKind {
     Layout,
     LayoutDrawing,
+    /// An image a drawing shows, kept once by the hash of its bytes.
+    DrawingAsset,
     Watchlist,
     ChartTemplate,
     DrawingTemplate,
@@ -84,9 +86,10 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
-    pub const ALL: [EntityKind; 11] = [
+    pub const ALL: [EntityKind; 12] = [
         Self::Layout,
         Self::LayoutDrawing,
+        Self::DrawingAsset,
         Self::Watchlist,
         Self::ChartTemplate,
         Self::DrawingTemplate,
@@ -102,6 +105,7 @@ impl EntityKind {
         match self {
             Self::Layout => "layout",
             Self::LayoutDrawing => "layoutdrawing",
+            Self::DrawingAsset => "drawingasset",
             Self::Watchlist => "watchlist",
             Self::ChartTemplate => "chart_template",
             Self::DrawingTemplate => "drawing_template",
@@ -120,7 +124,7 @@ impl EntityKind {
 
     pub const fn category(self) -> Category {
         match self {
-            Self::Layout | Self::LayoutDrawing => Category::Layouts,
+            Self::Layout | Self::LayoutDrawing | Self::DrawingAsset => Category::Layouts,
             Self::Watchlist => Category::Watchlists,
             Self::ChartTemplate | Self::DrawingTemplate => Category::Templates,
             Self::Script => Category::Scripts,
@@ -136,6 +140,7 @@ impl EntityKind {
             Self::Watchlist => Merge::ThreeWay,
             Self::Layout | Self::Script | Self::PaperAccount => Merge::KeepBoth,
             Self::LayoutDrawing
+            | Self::DrawingAsset
             | Self::ChartTemplate
             | Self::DrawingTemplate
             | Self::Alert
@@ -184,6 +189,7 @@ pub fn table_policy(table: &str) -> TablePolicy {
             TablePolicy::Local("per-device session; tab and chart ids are sequential counters")
         }
         "drawing" => TablePolicy::Local("unused; drawings live inside layouts"),
+        "drawing_asset" => TablePolicy::Synced(EntityKind::DrawingAsset),
         "portfolio" => TablePolicy::Synced(EntityKind::Portfolio),
         "paper_account" => TablePolicy::Bundled(EntityKind::PaperAccount),
         "webhook_endpoint" => TablePolicy::Local(
@@ -272,7 +278,8 @@ mod tests {
                 "drawing_template",
                 "watchlist",
                 "portfolio",
-                "price_alert"
+                "price_alert",
+                "drawing_asset"
             ]
         );
     }
