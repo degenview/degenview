@@ -267,8 +267,9 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
 fn partly_supported_functions() -> [(&'static str, &'static str); 1] {
     [(
         "request.footprint",
-        "It is built from the chart's candles cut into 1-minute or longer intrabars (no tick data), \
-         so its rows are coarser than TradingView's, and it is `na` on charts of 1 minute or less.",
+        "It is built from 1-minute or longer intrabar candles (no tick data), so it is coarser than \
+         TradingView's. It is `na` on charts of 1 minute or less, on price-based charts, and for a bar \
+         that would need more than 1000 rows (use a larger `ticks_per_row`).",
     )]
 }
 
