@@ -85,6 +85,7 @@ impl ScriptManager {
     pub(super) fn apply_logs_action(&mut self, action: LogsAction) {
         match action {
             LogsAction::Close | LogsAction::Select(_) => {}
+            LogsAction::Clear => self.preview.clear_logs(),
             LogsAction::SetLogging(_, enabled) => self.preview.set_logging(enabled),
             LogsAction::Source(sequence) => {
                 let Some(event) = self.logged(sequence) else {

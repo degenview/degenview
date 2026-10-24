@@ -30,6 +30,8 @@ const TEXT_SIZE: f32 = 12.0;
 const STAMP_SIZE: f32 = 10.5;
 /// Rows laid out beyond the window, so a scroll does not show a blank edge.
 const OVERSCAN: f32 = 240.0;
+/// The row menu's width: its longest entry, "Scroll to bar", with its icon.
+const MENU_WIDTH: f32 = 170.0;
 const DOCS_URL: &str = "https://www.tradingview.com/pine-script-docs/writing/debugging/#pine-logs";
 
 /// A script the pane can show: an instance on the chart.
@@ -57,6 +59,8 @@ pub enum LogsAction {
     Source(u64),
     /// Bring the chart to the bar the message with this sequence number was written on.
     ScrollToBar(u64),
+    /// Forget every message kept for the selected script.
+    Clear,
 }
 
 #[derive(Default)]
@@ -811,8 +815,8 @@ fn row_buttons(ui: &mut Ui, row: Rect, sequence: u64, actions: &mut Vec<LogsActi
 }
 
 fn row_menu(response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsAction>) {
-    kit::context_popup(response).show(|ui| {
-        kit::menu_scope(ui, 170.0);
+    kit::context_popup(response).width(MENU_WIDTH).show(|ui| {
+        kit::menu_scope(ui, MENU_WIDTH - 20.0);
         if kit::menu_item(ui, Icon::Code, "Source code", true, false) {
             actions.push(LogsAction::Source(event.sequence));
             ui.close();
@@ -829,6 +833,11 @@ fn row_menu(response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsA
         if kit::menu_item(ui, Icon::CopyDoc, "Copy with time", true, false) {
             ui.ctx()
                 .copy_text(format!("{} {}", iso_utc(event.time_ms), event.message));
+            ui.close();
+        }
+        kit::menu_separator(ui);
+        if kit::menu_item(ui, Icon::Trash, "Clear logs", true, true) {
+            actions.push(LogsAction::Clear);
             ui.close();
         }
     });

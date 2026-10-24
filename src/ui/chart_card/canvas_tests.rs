@@ -1270,6 +1270,27 @@ fn logging_can_be_paused_per_script_without_losing_what_was_kept() {
 }
 
 #[test]
+fn clearing_a_scripts_messages_keeps_its_run() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Logging", LOGGING_SCRIPT);
+    wait_for_run(&mut harness, id);
+    let epoch = harness.card.pine_logs(id).unwrap().epoch;
+    assert!(!harness.card.pine_logs(id).unwrap().history.is_empty());
+    harness.card.clear_pine_logs(id);
+    let logs = harness.card.pine_logs(id).unwrap();
+    assert!(logs.history.is_empty() && !logs.history.gap);
+    assert_eq!(logs.epoch, epoch, "the run was not restarted");
+    // Frames that change nothing do not bring the messages back.
+    harness.frame();
+    harness.frame();
+    assert!(harness.card.pine_logs(id).unwrap().history.is_empty());
+    // An instance with no run has nothing to clear.
+    harness.card.clear_pine_logs(id + 100);
+}
+
+#[test]
 fn removing_a_script_drops_its_messages() {
     let mut harness = Harness::new(ChartCanvas::default());
     let id = harness

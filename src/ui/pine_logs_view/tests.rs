@@ -423,6 +423,70 @@ fn hovering_a_row_offers_source_code_and_scroll_to_bar() {
     assert_eq!(rig.actions, [LogsAction::ScrollToBar(1)]);
 }
 
+impl Rig {
+    fn right_click_at(&mut self, at: egui::Pos2) {
+        let button = |pressed| Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.frame(vec![Event::PointerMoved(at)]);
+        self.frame(vec![button(true)]);
+        self.frame(vec![button(false)]);
+        self.settle();
+    }
+
+    /// Where the text `needle` is drawn, and the popup area around it (the menu).
+    fn text_and_menu(&self, needle: &str) -> Option<(egui::Pos2, Rect)> {
+        let at = self
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(needle) => {
+                    Some(text.pos + text.galley.size() / 2.0)
+                }
+                _ => None,
+            })?;
+        let menu = self.ctx.memory(|memory| {
+            memory
+                .layer_ids()
+                .filter(|layer| layer.order != egui::Order::Middle)
+                .filter_map(|layer| memory.area_rect(layer.id))
+                .filter(|rect| rect.contains(at))
+                .min_by(|a, b| a.width().total_cmp(&b.width()))
+        })?;
+        Some((at, menu))
+    }
+}
+
+#[test]
+fn the_row_menu_is_narrow_and_can_clear_the_logs() {
+    let mut rig = Rig::new(history(vec![
+        event(0, LogLevel::Info, "first"),
+        event(1, LogLevel::Info, "second"),
+    ]));
+    rig.settle();
+    let top = rig.row_top("second");
+    rig.right_click_at(pos2(60.0, top.y + 20.0));
+    assert!(rig.text().contains("Clear logs"), "{}", rig.text());
+    let (clear, _) = rig
+        .text_and_menu("Clear logs")
+        .expect("the row menu is open with Clear logs");
+    let (_, menu) = rig.text_and_menu("Source code").expect("the menu");
+    assert!(
+        menu.width() <= MENU_WIDTH + 24.0,
+        "the menu is {} wide",
+        menu.width()
+    );
+    for entry in ["Scroll to bar", "Copy message", "Copy with time"] {
+        assert!(rig.text().contains(entry), "{entry}");
+    }
+    rig.actions.clear();
+    rig.press_at(clear);
+    assert_eq!(rig.actions, [LogsAction::Clear]);
+}
+
 #[test]
 fn a_filter_that_keeps_the_row_count_still_relays_the_rows_out() {
     let mut events = Vec::new();

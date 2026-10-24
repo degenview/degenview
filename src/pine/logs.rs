@@ -345,6 +345,13 @@ impl LogHistory {
         }
     }
 
+    /// Forgets the messages kept. The run goes on: what it writes next is added, with no gap.
+    pub fn clear(&mut self) {
+        self.buffer.clear();
+        self.dropped = 0;
+        self.gap = false;
+    }
+
     pub fn buffer(&self) -> &LogBuffer {
         &self.buffer
     }
@@ -560,6 +567,23 @@ mod tests {
         history.apply(sink.take());
         assert_eq!(history.len(), 1);
         assert_eq!(history.buffer().get(0).unwrap().message, "c");
+    }
+
+    #[test]
+    fn clearing_a_history_forgets_the_messages_but_not_where_the_run_is() {
+        let mut sink = enabled_sink();
+        let mut history = LogHistory::default();
+        sink.begin_bar(0, 0, false, true);
+        sink.record(LogLevel::Info, "a".into(), None, SourceRange::ZERO);
+        history.apply(sink.take());
+        history.clear();
+        assert!(history.is_empty() && !history.gap);
+        sink.record(LogLevel::Info, "b".into(), None, SourceRange::ZERO);
+        history.apply(sink.take());
+        // What the run writes next is added with no gap, and only that.
+        assert!(!history.gap);
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.buffer().get(0).unwrap().message, "b");
     }
 
     #[test]

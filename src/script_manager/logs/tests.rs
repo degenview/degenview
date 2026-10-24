@@ -79,6 +79,7 @@ fn the_switch_in_the_tab_reaches_the_preview() {
     // A message that is not there leaves things as they are.
     manager.apply_logs_action(LogsAction::Source(99));
     manager.apply_logs_action(LogsAction::ScrollToBar(99));
+    manager.apply_logs_action(LogsAction::Clear);
     assert!(manager.error.is_none());
     let _ = std::fs::remove_dir_all(root);
 }

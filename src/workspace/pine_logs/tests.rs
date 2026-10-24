@@ -110,6 +110,17 @@ fn choosing_a_script_in_the_selector_switches_the_history() {
 }
 
 #[test]
+fn clear_logs_asks_the_selected_script_and_leaves_the_others() {
+    let (mut workspace, chart, ids) = rig();
+    workspace.open_pine_logs(chart, Some(ids[0]));
+    // Nothing has run in this rig, so there is nothing to forget: it must be harmless.
+    workspace.apply_logs_action(chart, LogsAction::Clear);
+    assert!(card(&mut workspace, chart).pine_logs(ids[0]).is_none());
+    assert_eq!(workspace.context.logs.chart, Some(chart));
+    assert_eq!(workspace.context.logs.view.selected, Some(ids[0]));
+}
+
+#[test]
 fn disabling_logging_applies_to_that_script_only() {
     let (mut workspace, chart, ids) = rig();
     workspace.apply_logs_action(chart, LogsAction::SetLogging(ids[0], false));

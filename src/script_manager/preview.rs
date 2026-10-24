@@ -414,6 +414,10 @@ impl PreviewState {
         self.card.pine_logs(PREVIEW_INSTANCE)
     }
 
+    pub(super) fn clear_logs(&mut self) {
+        self.card.clear_pine_logs(PREVIEW_INSTANCE);
+    }
+
     pub(super) fn logging(&self) -> bool {
         self.card.pine_logging(PREVIEW_INSTANCE)
     }

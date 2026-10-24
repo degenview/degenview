@@ -1027,6 +1027,13 @@ impl ChartCard {
         })
     }
 
+    /// Forgets the messages kept for an instance's run. The run goes on and writes more.
+    pub fn clear_pine_logs(&mut self, id: u64) {
+        if let Some(run) = self.runs.get_mut(&id) {
+            run.logs.clear();
+        }
+    }
+
     /// Whether an instance keeps the messages it writes in realtime.
     pub fn pine_logging(&self, id: u64) -> bool {
         !self.logging_paused.contains(&id)

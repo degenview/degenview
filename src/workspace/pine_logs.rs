@@ -155,6 +155,13 @@ impl ChartWorkspace {
                     self.charts[index].chart.set_pine_logging(id, enabled);
                 }
             }
+            LogsAction::Clear => {
+                if let (Some(index), Some(id)) =
+                    (self.chart_index(chart_id), self.context.logs.view.selected)
+                {
+                    self.charts[index].chart.clear_pine_logs(id);
+                }
+            }
             LogsAction::Source(sequence) => self.open_log_source(chart_id, sequence),
             LogsAction::ScrollToBar(sequence) => self.scroll_to_log_bar(chart_id, sequence),
         }

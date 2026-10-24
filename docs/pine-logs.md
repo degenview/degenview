@@ -81,7 +81,9 @@ logging switch, search, start date and level filter.
 - **Rows** list the messages oldest first, newest at the bottom: the time in UTC (ISO 8601 with
   milliseconds) above the text, which is gray for info, orange for a warning, red for an error.
   Text is drawn as plain text; multi-line messages keep their lines and long tokens wrap. A
-  right-click copies the message, with or without its time. Only the rows on screen are laid out;
+  right-click opens a narrow menu: Source code, Scroll to bar, Copy message, Copy with time, and
+  **Clear logs**, which forgets every message kept for the script (the run goes on and what it
+  writes next is added; a restart or a rebuild brings the history back as it always did). Only the rows on screen are laid out;
   heights are estimated, then measured as rows come into view.
 - **Following.** The list sticks to the bottom while it is there; scrolling up stops it and a
   "Latest" button jumps back. Changing the script jumps to the latest message.
