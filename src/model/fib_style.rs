@@ -30,6 +30,8 @@ const CYAN: Rgba = [0, 188, 212, 255];
 const BLUE: Rgba = [41, 98, 255, 255];
 const PURPLE: Rgba = [156, 39, 176, 255];
 const PINK: Rgba = [233, 30, 99, 255];
+const VIOLET: Rgba = [103, 58, 183, 255];
+const LIGHT_GREEN: Rgba = [129, 199, 132, 255];
 const NAVY: Rgba = [21, 56, 153, 204];
 
 /// One line of a level list: where it sits as a ratio of the construction, and how it is drawn.
@@ -295,8 +297,24 @@ impl FibStyle {
     pub fn for_tool(tool: Tool) -> Option<Self> {
         let mut style = Self::default();
         match tool {
-            Tool::FibRetracement => {
+            Tool::FibRetracement | Tool::FibExtension => {
                 style.levels = retracement_levels();
+            }
+            Tool::FibChannel => {
+                style.levels = retracement_levels();
+                style.label_v = VerticalAlign::Middle;
+            }
+            // The time tools have no prices to print, and their labels sit right of the line, at
+            // the bottom of the plot.
+            Tool::FibTimeZone => {
+                style.levels = time_zone_levels();
+                style.label_h = HorizontalAlign::Right;
+                style.show_prices = false;
+            }
+            Tool::FibTrendTime => {
+                style.levels = trend_time_levels();
+                style.label_h = HorizontalAlign::Right;
+                style.show_prices = false;
             }
             _ => return None,
         }
@@ -360,6 +378,31 @@ pub fn retracement_levels() -> Levels {
         level(4.414, PINK, false),
         level(4.618, ORANGE, false),
         level(4.764, TEAL, false),
+    ])
+}
+
+/// The time zone's eleven lines: the first in grey, the rest in blue.
+pub fn time_zone_levels() -> Levels {
+    let multiples = [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0];
+    Levels::from_levels(
+        &multiples.map(|multiple| level(multiple, if multiple == 0.0 { GRAY } else { BLUE }, true)),
+    )
+}
+
+/// The trend-based time's eleven lines, the half off.
+pub fn trend_time_levels() -> Levels {
+    Levels::from_levels(&[
+        level(0.0, GRAY, true),
+        level(0.382, RED, true),
+        level(0.5, LIGHT_GREEN, false),
+        level(0.618, GREEN, true),
+        level(1.0, TEAL, true),
+        level(1.382, CYAN, true),
+        level(1.618, GRAY, true),
+        level(2.0, BLUE, true),
+        level(2.382, PINK, true),
+        level(2.618, PURPLE, true),
+        level(3.0, VIOLET, true),
     ])
 }
 
@@ -434,6 +477,32 @@ mod tests {
             "the first of two twins stays"
         );
         assert_eq!(set.as_slice()[2].width, 2.0);
+    }
+
+    #[test]
+    fn the_time_tools_default_to_the_librarys_levels() {
+        let zone: Vec<f32> = time_zone_levels().active().map(|l| l.ratio).collect();
+        assert_eq!(
+            zone,
+            [0.0, 1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0]
+        );
+        let trend = trend_time_levels();
+        assert_eq!(trend.len(), 11);
+        assert_eq!(trend.active().count(), 10, "the 0.5 is off");
+        // Each tool's own style starts with its own levels.
+        assert_eq!(
+            FibStyle::for_tool(Tool::FibTimeZone).unwrap().levels,
+            time_zone_levels()
+        );
+        assert_eq!(
+            FibStyle::for_tool(Tool::FibTrendTime).unwrap().levels,
+            trend_time_levels()
+        );
+        assert_eq!(
+            FibStyle::for_tool(Tool::FibChannel).unwrap().label_v,
+            VerticalAlign::Middle
+        );
+        assert!(FibStyle::for_tool(Tool::Rectangle).is_none());
     }
 
     #[test]

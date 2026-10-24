@@ -866,10 +866,25 @@ fn every_placed_tool_can_be_selected_moved_and_deleted() {
             vec![id],
             "{tool:?} is not selectable at {at:?}"
         );
-        // Clicking empty space clears the selection (the top right corner: a pitchfork's bands
-        // run on to the bottom right).
-        rig.click(pos2(940.0, 30.0));
-        assert!(rig.selected.is_empty(), "{tool:?}");
+        // Clicking empty space clears the selection. The top right corner is empty for most
+        // tools (a pitchfork's bands run on to the bottom right); a time zone's lines cross the
+        // whole plot, so another corner is tried when a line is there.
+        let cleared = [
+            pos2(940.0, 30.0),
+            pos2(930.0, 385.0),
+            pos2(60.0, 385.0),
+            pos2(60.0, 30.0),
+        ]
+        .into_iter()
+        .any(|empty| {
+            rig.click(empty);
+            let cleared = rig.selected.is_empty();
+            if !cleared {
+                rig.click(at);
+            }
+            cleared
+        });
+        assert!(cleared, "{tool:?}");
         rig.click(at);
         // Selecting floats the toolbar over the shape: grab it where the toolbar is not.
         let at = rig.body(id);

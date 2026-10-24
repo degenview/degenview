@@ -254,6 +254,9 @@ pub(super) struct Screen {
     pub bands: Vec<Band>,
     /// The bands as meshes, made when the shape is built.
     pub band_meshes: Vec<Arc<Mesh>>,
+    /// The bands are a backdrop: seen, but not a place to click the drawing (a Fibonacci tool's
+    /// fills cover half the chart).
+    pub backdrop: bool,
     /// Axis tags (see [`Tag`]).
     pub tags: Vec<Tag>,
     pub end_labels: Vec<EndLabel>,
@@ -335,6 +338,7 @@ impl Screen {
             styled: Vec::new(),
             bands: Vec::new(),
             band_meshes: Vec::new(),
+            backdrop: false,
             tags: Vec::new(),
             end_labels: Vec::new(),
             angle: None,
@@ -442,6 +446,7 @@ impl Screen {
         self.lines.iter().any(|path| near(path, false))
             || self.styled.iter().any(|styled| near(&styled.path, false))
             || (filled
+                && !self.backdrop
                 && self
                     .bands
                     .iter()

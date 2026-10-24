@@ -223,6 +223,10 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::ExtendedLine
         | Tool::TrendAngle
         | Tool::FibRetracement => &["Point 1", "Point 2"],
+        Tool::FibExtension => &["Start of move", "End of move", "End of retracement"],
+        Tool::FibChannel => &["Point 1", "Point 2", "Channel width"],
+        Tool::FibTimeZone => &["Point 1", "Point 2"],
+        Tool::FibTrendTime => &["Point 1", "Point 2", "Point 3"],
         Tool::HorizontalLine => &["Price level"],
         Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
         Tool::VerticalLine => &["Time"],

@@ -101,6 +101,10 @@ pub enum Icon {
     LineDiagonal,
     LineTrend,
     FibRetracement,
+    FibExtension,
+    FibChannel,
+    FibTimeZone,
+    FibTrendTime,
     Paintbrush,
     SunMaxFill,
     MoonFill,
@@ -972,6 +976,59 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(3.4, 12.8), p(12.6, 3.2)]);
             circle(p(3.4, 12.8), 1.5, true);
             circle(p(12.6, 3.2), 1.5, true);
+        }
+        Icon::FibExtension => {
+            // A swing and its pullback, with the levels projected from the pullback's end.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.0, 6.0, 9.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(8.5, y), p(14.0, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.4, 13.0), p(6.0, 5.0), p(8.5, 9.4)]);
+            for point in [p(2.4, 13.0), p(6.0, 5.0), p(8.5, 9.4)] {
+                painter.circle_filled(point, 1.4 * scale, color);
+            }
+        }
+        Icon::FibChannel => {
+            // Three parallel lines, the middle one drawn from its two anchors.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for shift in [-3.4, 3.4] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.4, 12.2 + shift), p(13.6, 5.6 + shift)],
+                    faint,
+                )));
+            }
+            line(&[p(3.4, 11.6), p(12.6, 6.2)]);
+            circle(p(3.4, 11.6), 1.4, true);
+            circle(p(12.6, 6.2), 1.4, true);
+        }
+        Icon::FibTimeZone => {
+            // Vertical lines further apart as they go: 0, 1, 2, 3, 5, 8.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for x in [5.0, 6.6, 8.2, 10.6, 14.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(x, 2.4), p(x, 13.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.8, 2.4), p(2.8, 13.6)]);
+            circle(p(2.8, 13.0), 1.4, true);
+            circle(p(5.0, 13.0), 1.4, true);
+        }
+        Icon::FibTrendTime => {
+            // A swing, then vertical lines at ratios of its length.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for x in [8.6, 11.0, 14.0] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(x, 2.4), p(x, 13.6)],
+                    faint,
+                )));
+            }
+            line(&[p(2.4, 12.6), p(6.0, 5.2)]);
+            circle(p(2.4, 12.6), 1.4, true);
+            circle(p(6.0, 5.2), 1.4, true);
         }
         Icon::Paintbrush => {
             closed(&[p(13.8, 1.8), p(14.4, 2.4), p(8.4, 9.6), p(6.6, 8.0)]);
@@ -2022,6 +2079,10 @@ mod tests {
             LineDiagonal,
             LineTrend,
             FibRetracement,
+            FibExtension,
+            FibChannel,
+            FibTimeZone,
+            FibTrendTime,
             Paintbrush,
             SunMaxFill,
             MoonFill,

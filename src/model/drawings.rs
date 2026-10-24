@@ -916,7 +916,11 @@ impl Geometry {
             // The pivots placed so far, then the pointer for every one still to come, so the
             // preview is already the whole shape: it moves with the pointer and settles as each
             // pivot is placed.
-            Tool::FibRetracement => {
+            Tool::FibRetracement
+            | Tool::FibExtension
+            | Tool::FibChannel
+            | Tool::FibTimeZone
+            | Tool::FibTrendTime => {
                 let kind = FibKind::of_tool(tool)?;
                 Self::Fib {
                     kind,

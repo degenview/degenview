@@ -883,10 +883,37 @@ fn fib_drawings() -> Vec<(&'static str, Drawing)> {
     let build = |tool: Tool, anchors: &[Anchor]| {
         Drawing::build(tool, 1, anchors, tool.default_style()).expect("builds")
     };
-    vec![(
-        "fib-retracement",
-        build(Tool::FibRetracement, &[at(228, 214.0), at(268, 262.0)]),
-    )]
+    vec![
+        (
+            "fib-retracement",
+            build(Tool::FibRetracement, &[at(228, 214.0), at(268, 262.0)]),
+        ),
+        (
+            "fib-extension",
+            build(
+                Tool::FibExtension,
+                &[at(222, 214.0), at(244, 262.0), at(258, 236.0)],
+            ),
+        ),
+        (
+            "fib-channel",
+            build(
+                Tool::FibChannel,
+                &[at(226, 212.0), at(280, 248.0), at(250, 246.0)],
+            ),
+        ),
+        (
+            "fib-time-zone",
+            build(Tool::FibTimeZone, &[at(226, 226.0), at(232, 226.0)]),
+        ),
+        (
+            "fib-trend-time",
+            build(
+                Tool::FibTrendTime,
+                &[at(218, 214.0), at(228, 250.0), at(240, 228.0)],
+            ),
+        ),
+    ]
 }
 
 #[test]

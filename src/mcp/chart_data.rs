@@ -1223,7 +1223,13 @@ mod tests {
             price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
         };
         let anchors: Vec<Anchor> = (0..4).map(at).collect();
-        let names = [(Tool::FibRetracement, "fib_retracement")];
+        let names = [
+            (Tool::FibRetracement, "fib_retracement"),
+            (Tool::FibExtension, "fib_extension"),
+            (Tool::FibChannel, "fib_channel"),
+            (Tool::FibTimeZone, "fib_time_zone"),
+            (Tool::FibTrendTime, "fib_trend_time"),
+        ];
         assert_eq!(
             names.len(),
             Tool::fib_tools().count(),

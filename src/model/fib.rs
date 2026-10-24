@@ -17,6 +17,14 @@ use serde::{Deserialize, Serialize};
 pub enum FibKind {
     /// Horizontal levels between two prices.
     Retracement,
+    /// Horizontal levels projecting a first move from the end of its retracement.
+    Extension,
+    /// Parallel lines at ratios of a channel's width.
+    Channel,
+    /// Vertical lines at Fibonacci multiples of the time between two anchors.
+    TimeZone,
+    /// Vertical lines at ratios of the time between two anchors, from a third.
+    TrendTime,
 }
 
 /// The controls a Fibonacci or Gann tool really has. A control a tool lacks is neither in its
@@ -54,17 +62,31 @@ pub struct Features {
 
 impl FibKind {
     #[cfg(test)]
-    pub const ALL: [Self; 1] = [Self::Retracement];
+    pub const ALL: [Self; 5] = [
+        Self::Retracement,
+        Self::Extension,
+        Self::Channel,
+        Self::TimeZone,
+        Self::TrendTime,
+    ];
 
     pub const fn tool(self) -> Tool {
         match self {
             Self::Retracement => Tool::FibRetracement,
+            Self::Extension => Tool::FibExtension,
+            Self::Channel => Tool::FibChannel,
+            Self::TimeZone => Tool::FibTimeZone,
+            Self::TrendTime => Tool::FibTrendTime,
         }
     }
 
     pub const fn of_tool(tool: Tool) -> Option<Self> {
         match tool {
             Tool::FibRetracement => Some(Self::Retracement),
+            Tool::FibExtension => Some(Self::Extension),
+            Tool::FibChannel => Some(Self::Channel),
+            Tool::FibTimeZone => Some(Self::TimeZone),
+            Tool::FibTrendTime => Some(Self::TrendTime),
             _ => None,
         }
     }
@@ -72,7 +94,8 @@ impl FibKind {
     /// How many anchors the tool takes.
     pub const fn points(self) -> usize {
         match self {
-            Self::Retracement => 2,
+            Self::Retracement | Self::TimeZone => 2,
+            Self::Extension | Self::Channel | Self::TrendTime => 3,
         }
     }
 
@@ -108,6 +131,31 @@ impl FibKind {
                 lists: ["Levels", "", ""],
                 ..none
             },
+            Self::Extension => Features {
+                trend_line: true,
+                extend: true,
+                reverse: true,
+                log_levels: true,
+                prices: true,
+                percent: true,
+                align: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
+            Self::Channel => Features {
+                extend: true,
+                prices: true,
+                percent: true,
+                align: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
+            Self::TimeZone | Self::TrendTime => Features {
+                trend_line: true,
+                align: true,
+                lists: ["Levels", "", ""],
+                ..none
+            },
         }
     }
 }
@@ -125,6 +173,29 @@ pub fn features_of(tool: Tool) -> Option<Features> {
 /// that is not finite.
 pub fn retracement_price(start: f64, end: f64, ratio: f64, log: bool) -> Option<f64> {
     interpolate(end, start, ratio, log)
+}
+
+/// The price of an extension level: 0 sits on the third anchor and 1 is a move as long as the
+/// first two anchors' from it, so level r is `p3 + r * (p2 - p1)`; with `log`, in the logarithm of
+/// the prices (the same percentage move), which needs all three above zero.
+pub fn extension_price(p1: f64, p2: f64, p3: f64, ratio: f64, log: bool) -> Option<f64> {
+    if !(p1.is_finite() && p2.is_finite() && p3.is_finite() && ratio.is_finite()) {
+        return None;
+    }
+    let price = if log && p1 > 0.0 && p2 > 0.0 && p3 > 0.0 {
+        (p3.ln() + (p2.ln() - p1.ln()) * ratio).exp()
+    } else {
+        p3 + (p2 - p1) * ratio
+    };
+    price.is_finite().then_some(price)
+}
+
+/// The bar index of a time line: `origin + ratio * interval`, all in the chart's bar index (so a
+/// weekend with no bars is no distance). `None` for anything that is not a finite number.
+pub fn time_line(origin: f64, interval: f64, ratio: f64) -> Option<f64> {
+    let index = origin + interval * ratio;
+    (origin.is_finite() && interval.is_finite() && ratio.is_finite() && index.is_finite())
+        .then_some(index)
 }
 
 /// `from + (to - from) * ratio`, in the logarithm of the prices when `log` and they allow it.
@@ -199,6 +270,66 @@ mod tests {
         assert_eq!(retracement_price(f64::NAN, 1.0, 0.5, false), None);
         assert_eq!(retracement_price(1.0, 2.0, f64::INFINITY, false), None);
         assert_eq!(retracement_price(f64::MAX, -f64::MAX, 1e300, false), None);
+    }
+
+    #[test]
+    fn an_extension_projects_the_first_move_from_the_third_anchor() {
+        // 100 to 150, back to 130: 1.0 is another 50 up from 130, 0.618 is 30.9 above it.
+        assert_eq!(
+            extension_price(100.0, 150.0, 130.0, 0.0, false),
+            Some(130.0)
+        );
+        assert_eq!(
+            extension_price(100.0, 150.0, 130.0, 1.0, false),
+            Some(180.0)
+        );
+        let p = extension_price(100.0, 150.0, 130.0, 0.618, false).unwrap();
+        assert!((p - 160.9).abs() < 1e-9);
+        // A falling first move projects downward, and a negative ratio the other way.
+        assert_eq!(extension_price(150.0, 100.0, 120.0, 1.0, false), Some(70.0));
+        assert_eq!(
+            extension_price(100.0, 150.0, 130.0, -1.0, false),
+            Some(80.0)
+        );
+        // Swapping the first two anchors is the extension turned upside down.
+        assert_eq!(extension_price(150.0, 100.0, 130.0, 1.0, false), Some(80.0));
+    }
+
+    #[test]
+    fn a_log_extension_repeats_the_first_moves_percentage() {
+        // 100 to 200 doubles; from 150 the 1.0 level doubles again, and 0.5 is a rise of 41.4 %.
+        let p = extension_price(100.0, 200.0, 150.0, 1.0, true).unwrap();
+        assert!((p - 300.0).abs() < 1e-9);
+        let half = extension_price(100.0, 200.0, 150.0, 0.5, true).unwrap();
+        assert!((half - 150.0 * 2f64.sqrt()).abs() < 1e-9);
+        // A price at or below zero cannot be a ratio, so the difference is used.
+        assert_eq!(extension_price(-10.0, 10.0, 0.0, 1.0, true), Some(20.0));
+        assert_eq!(extension_price(f64::NAN, 1.0, 1.0, 1.0, false), None);
+    }
+
+    #[test]
+    fn a_time_line_is_counted_in_bars_from_its_origin() {
+        assert_eq!(time_line(10.0, 4.0, 3.0), Some(22.0));
+        assert_eq!(time_line(10.0, -4.0, 2.0), Some(2.0));
+        assert_eq!(time_line(10.0, 4.0, 0.0), Some(10.0));
+        assert_eq!(time_line(10.0, f64::INFINITY, 1.0), None);
+        assert_eq!(time_line(f64::NAN, 4.0, 1.0), None);
+        assert_eq!(time_line(1e308, 1e308, 10.0), None);
+    }
+
+    #[test]
+    fn every_kind_has_the_levels_its_tool_draws_and_only_the_controls_it_honours() {
+        for kind in FibKind::ALL {
+            let features = kind.features();
+            assert!(
+                !features.lists[0].is_empty(),
+                "{kind:?} has a list of levels"
+            );
+            // A tool that cannot show prices or percentages on its lines offers neither.
+            let vertical = matches!(kind, FibKind::TimeZone | FibKind::TrendTime);
+            assert_eq!(features.prices, !vertical, "{kind:?}");
+            assert_eq!(features.extend, !vertical, "{kind:?}");
+        }
     }
 
     #[test]

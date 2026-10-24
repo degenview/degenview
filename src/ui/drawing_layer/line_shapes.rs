@@ -222,7 +222,14 @@ fn cross(style: &DrawingStyle, proj: &Projection, at: Pos2, stored: Anchor) -> S
 
 /// A parallelogram from the line `a`→`b` and its copy moved by `offset`, with either side run on
 /// for as far as the plot reaches.
-fn band(a: Pos2, b: Pos2, offset: Vec2, before: bool, after: bool, proj: &Projection) -> Vec<Pos2> {
+pub(super) fn band(
+    a: Pos2,
+    b: Pos2,
+    offset: Vec2,
+    before: bool,
+    after: bool,
+    proj: &Projection,
+) -> Vec<Pos2> {
     let edge = b - a;
     let length = edge.length();
     if length < 1e-3 {

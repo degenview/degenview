@@ -7,13 +7,15 @@
 //! move with the price scale mode), and only mapped to the screen here.
 
 use super::Projection;
+use super::line_shapes;
 use super::shape::{Band, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles};
 use crate::model::chart_type::Rgba;
 use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, VerticalAlign};
 use crate::model::fib::{self, FibKind};
 use crate::model::fib_style::{FibLevel, FibStyle};
 use crate::model::{Anchor, Geometry};
-use eframe::egui::{Pos2, Rect, pos2, vec2};
+use crate::ui::line_geometry as lines;
+use eframe::egui::{Pos2, Rect, Vec2, pos2, vec2};
 
 /// How far (px) beyond the plot a level may be and still be built: its stroke may reach in.
 const OFF_PLOT: f32 = 12.0;
@@ -45,7 +47,21 @@ pub(super) fn project(
     let fib = fib_style(*kind, style);
     let screen = match kind {
         FibKind::Retracement => retracement(style, &fib, proj, points, &anchors),
+        FibKind::Extension => extension(style, &fib, proj, points, &anchors),
+        FibKind::Channel => channel(style, &fib, proj, &anchors),
+        FibKind::TimeZone => {
+            let origin = proj.times.index_of(points[0].time_ms);
+            let interval = bars_between(proj, points[0], points[1]);
+            time_tool(style, &fib, proj, &anchors, origin, interval)
+        }
+        FibKind::TrendTime => {
+            let origin = proj.times.index_of(points[2].time_ms);
+            let interval = bars_between(proj, points[0], points[1]);
+            time_tool(style, &fib, proj, &anchors, origin, interval)
+        }
     };
+    let mut screen = screen;
+    screen.backdrop = true;
     screen.finish(style.stroke.width / 2.0 + 8.0)
 }
 
@@ -85,26 +101,42 @@ fn label_text(proj: &Projection, fib: &FibStyle, ratio: f64, price: Option<f64>)
     }
 }
 
-/// The label of a horizontal line from `left` to `right` at `y`, placed by the style's alignment
-/// against the part of the line that is on the plot. A bottom-aligned label sits on the line (its
-/// bottom edge on it), a top-aligned one hangs under it.
-fn horizontal_label(
-    text: String,
+/// The label of a level line from `from` to `to`, placed by the style's alignment against the
+/// part of the line that is on the plot: its left end, middle or right end, and above it (bottom
+/// aligned: the label's bottom edge on the line), on it or under it (top aligned). `text` is
+/// given the height the label sits at, for the price there. A label that meets another gives way
+/// along `push`, which is the way the levels' ratios grow on screen, so the labels keep their order.
+fn segment_label(
+    text: impl FnOnce(f32) -> Option<String>,
     color: Rgba,
-    (left, right): (f32, f32),
-    y: f32,
+    (from, to): (Pos2, Pos2),
+    push: Vec2,
     fib: &FibStyle,
     plot: Rect,
 ) -> Option<PivotLabel> {
-    let (from, to) = (left.max(plot.left()), right.min(plot.right()));
-    if from > to || y < plot.top() - OFF_PLOT || y > plot.bottom() + OFF_PLOT {
+    let (from, to) = if from.x <= to.x {
+        (from, to)
+    } else {
+        (to, from)
+    };
+    let (low, high) = (from.x.max(plot.left()), to.x.min(plot.right()));
+    if low > high {
         return None;
     }
     let (x, edge_x) = match fib.label_h {
-        HorizontalAlign::Left => (from + LABEL_GAP, -1.0),
-        HorizontalAlign::Center => ((from + to) / 2.0, 0.0),
-        HorizontalAlign::Right => (to - LABEL_GAP, 1.0),
+        HorizontalAlign::Left => (low + LABEL_GAP, -1.0),
+        HorizontalAlign::Center => ((low + high) / 2.0, 0.0),
+        HorizontalAlign::Right => (high - LABEL_GAP, 1.0),
     };
+    let run = to.x - from.x;
+    let y = if run.abs() > 1e-3 {
+        from.y + (to.y - from.y) * (x - from.x) / run
+    } else {
+        from.y
+    };
+    if !y.is_finite() || y < plot.top() - OFF_PLOT || y > plot.bottom() + OFF_PLOT {
+        return None;
+    }
     let (dy, edge_y) = match fib.label_v {
         VerticalAlign::Bottom => (-LABEL_GAP, 1.0),
         VerticalAlign::Middle => (0.0, 0.0),
@@ -112,6 +144,39 @@ fn horizontal_label(
     };
     Some(PivotLabel {
         at: pos2(x, y + dy),
+        text: text(y)?,
+        look: LabelLook::Ink(color),
+        place: LabelPlace::On,
+        push,
+        edge: vec2(edge_x, edge_y),
+        on_select: false,
+    })
+}
+
+/// The label of a vertical line at `x`: beside it (the side the style's horizontal alignment
+/// names) and at the top, middle or bottom of the plot.
+fn vertical_label(
+    text: String,
+    color: Rgba,
+    x: f32,
+    fib: &FibStyle,
+    plot: Rect,
+) -> Option<PivotLabel> {
+    if !x.is_finite() || x < plot.left() - OFF_PLOT || x > plot.right() + OFF_PLOT {
+        return None;
+    }
+    let (at_x, edge_x) = match fib.label_h {
+        HorizontalAlign::Left => (x - LABEL_GAP, 1.0),
+        HorizontalAlign::Center => (x, 0.0),
+        HorizontalAlign::Right => (x + LABEL_GAP, -1.0),
+    };
+    let (at_y, edge_y) = match fib.label_v {
+        VerticalAlign::Top => (plot.top() + LABEL_GAP, -1.0),
+        VerticalAlign::Middle => (plot.center().y, 0.0),
+        VerticalAlign::Bottom => (plot.bottom() - LABEL_GAP, 1.0),
+    };
+    Some(PivotLabel {
+        at: pos2(at_x, at_y),
         text,
         look: LabelLook::Ink(color),
         place: LabelPlace::On,
@@ -123,9 +188,12 @@ fn horizontal_label(
 
 /// The x range a drawing's horizontal levels cover: between its anchors, run on to the plot's
 /// edges where the style extends them.
-fn level_span(style: &DrawingStyle, plot: Rect, a: Pos2, b: Pos2) -> (f32, f32) {
-    let mut left = a.x.min(b.x);
-    let mut right = a.x.max(b.x);
+fn level_span(style: &DrawingStyle, plot: Rect, anchors: &[Pos2]) -> (f32, f32) {
+    let mut left = anchors.iter().map(|a| a.x).fold(f32::INFINITY, f32::min);
+    let mut right = anchors
+        .iter()
+        .map(|a| a.x)
+        .fold(f32::NEG_INFINITY, f32::max);
     if style.extend_left {
         left = plot.left() - OFF_PLOT;
     }
@@ -192,6 +260,11 @@ fn horizontal_levels(
         })
         .collect();
     rows.sort_by(|a, b| a.ratio.total_cmp(&b.ratio));
+    // The way the levels climb the screen: from the lowest ratio to the highest.
+    let push = match (rows.first(), rows.last()) {
+        (Some(first), Some(last)) if last.y != first.y => vec2(0.0, (last.y - first.y).signum()),
+        _ => vec2(0.0, -1.0),
+    };
     let alpha = style.fill.color[3];
     for pair in rows.windows(2) {
         let color = look(&pair[1].level, style);
@@ -210,9 +283,9 @@ fn horizontal_levels(
                 color,
             ));
         }
-        if let Some(text) = label_text(proj, fib, f64::from(row.ratio), Some(row.price))
-            && let Some(label) = horizontal_label(text, color, span, row.y, fib, proj.plot)
-        {
+        let text = |_: f32| label_text(proj, fib, f64::from(row.ratio), Some(row.price));
+        let ends = (pos2(span.0, row.y), pos2(span.1, row.y));
+        if let Some(label) = segment_label(text, color, ends, push, fib, proj.plot) {
             screen.labels.push(label);
         }
     }
@@ -233,7 +306,7 @@ fn retracement(
     }
     // The ratio of the prices only means something on a logarithmic chart.
     let log = fib.log_levels && proj.scale.logarithmic;
-    let span = level_span(style, proj.plot, anchors[0], anchors[1]);
+    let span = level_span(style, proj.plot, anchors);
     let mut screen = Screen::empty();
     if fib.trend_line {
         screen.lines.push(anchors.to_vec());
@@ -242,5 +315,170 @@ fn retracement(
         fib::retracement_price(start, end, ratio, log)
     });
     screen.handles = vertex_handles(anchors);
+    screen
+}
+
+// MARK: Extension
+
+fn extension(
+    style: &DrawingStyle,
+    fib: &FibStyle,
+    proj: &Projection,
+    points: &[Anchor],
+    anchors: &[Pos2],
+) -> Screen {
+    let (mut first, mut second) = (points[0].price, points[1].price);
+    // Reversed, the move is projected the other way: the first two prices change places.
+    if fib.reverse {
+        std::mem::swap(&mut first, &mut second);
+    }
+    let third = points[2].price;
+    let log = fib.log_levels && proj.scale.logarithmic;
+    let span = level_span(style, proj.plot, anchors);
+    let mut screen = Screen::empty();
+    if fib.trend_line {
+        screen.lines.push(anchors.to_vec());
+    }
+    horizontal_levels(&mut screen, style, fib, proj, span, |ratio| {
+        fib::extension_price(first, second, third, ratio, log)
+    });
+    screen.handles = vertex_handles(anchors);
+    screen
+}
+
+// MARK: Channel
+
+fn channel(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]) -> Screen {
+    let (pa, pb, pc) = (anchors[0], anchors[1], anchors[2]);
+    let plot = proj.plot;
+    let mut screen = Screen::empty();
+    screen.handles = vertex_handles(anchors);
+    // A base line that runs straight up has no height to measure a width against.
+    if (pb.x - pa.x).abs() <= 1e-3 {
+        return screen;
+    }
+    // "Left" is the left of the screen, whichever way the base line was drawn.
+    let (before, after) = if pa.x <= pb.x {
+        (style.extend_left, style.extend_right)
+    } else {
+        (style.extend_right, style.extend_left)
+    };
+    let offset = lines::channel_offset(pa, pb, pc);
+    let mut rows: Vec<&FibLevel> = fib.levels.active().collect();
+    rows.sort_by(|a, b| a.ratio.total_cmp(&b.ratio));
+    // Higher ratios are further along the offset, so a label that meets another gives way that way.
+    let push = if offset.length() > 1e-3 {
+        offset.normalized()
+    } else {
+        vec2(0.0, -1.0)
+    };
+    let alpha = style.fill.color[3];
+    for pair in rows.windows(2) {
+        let near = pa + offset * pair[0].ratio;
+        let far = offset * (pair[1].ratio - pair[0].ratio);
+        let polygon =
+            line_shapes::band(near, pb + offset * pair[0].ratio, far, before, after, proj);
+        if polygon.len() >= 3 {
+            let color = look(pair[1], style);
+            screen.bands.push(Band {
+                polygon,
+                color: [color[0], color[1], color[2], alpha],
+            });
+        }
+    }
+    for level in rows {
+        let (from, to) = (pa + offset * level.ratio, pb + offset * level.ratio);
+        let Some((from, to)) = lines::line_in_rect(from, to, plot, before, after) else {
+            continue;
+        };
+        let color = look(level, style);
+        screen.styled.push(styled(vec![from, to], level, color));
+        let text =
+            |y: f32| label_text(proj, fib, f64::from(level.ratio), Some(proj.scale.price(y)));
+        if let Some(label) = segment_label(text, color, (from, to), push, fib, plot) {
+            screen.labels.push(label);
+        }
+    }
+    screen
+}
+
+// MARK: Time tools
+
+/// The distance in bars from one anchor to another, fractional between bars.
+fn bars_between(proj: &Projection, from: Anchor, to: Anchor) -> f64 {
+    proj.times.index_of(to.time_ms) - proj.times.index_of(from.time_ms)
+}
+
+/// A time zone or a trend-based time: a vertical line at `origin + ratio * interval` bars for each
+/// level, a fill between neighbouring lines, a label on each, and the trend line through the
+/// anchors. At most the list's length of lines, however far the plot is zoomed out.
+fn time_tool(
+    style: &DrawingStyle,
+    fib: &FibStyle,
+    proj: &Projection,
+    anchors: &[Pos2],
+    origin: f64,
+    interval: f64,
+) -> Screen {
+    let plot = proj.plot;
+    let mut screen = Screen::empty();
+    if fib.trend_line {
+        screen.lines.push(anchors.to_vec());
+    }
+    screen.handles = vertex_handles(anchors);
+    // With no interval every line is the same line: none is drawn.
+    if !interval.is_finite() || interval.abs() < 1e-9 {
+        return screen;
+    }
+    let mut rows: Vec<(f32, FibLevel)> = fib
+        .levels
+        .active()
+        .filter_map(|level| {
+            let index = fib::time_line(origin, interval, f64::from(level.ratio))?;
+            let x = proj.x_at_index(index);
+            x.is_finite().then_some((x, *level))
+        })
+        .collect();
+    rows.sort_by(|a, b| a.1.ratio.total_cmp(&b.1.ratio));
+    let alpha = style.fill.color[3];
+    for pair in rows.windows(2) {
+        let (low, high) = (pair[0].0.min(pair[1].0), pair[0].0.max(pair[1].0));
+        let rect =
+            Rect::from_min_max(pos2(low, plot.top()), pos2(high, plot.bottom())).intersect(plot);
+        if rect.width() > 0.0 && rect.height() > 0.0 {
+            let color = look(&pair[1].1, style);
+            screen.bands.push(Band {
+                polygon: vec![
+                    rect.left_top(),
+                    rect.right_top(),
+                    rect.right_bottom(),
+                    rect.left_bottom(),
+                ],
+                color: [color[0], color[1], color[2], alpha],
+            });
+        }
+    }
+    for (x, level) in rows {
+        if x < plot.left() - OFF_PLOT || x > plot.right() + OFF_PLOT {
+            continue;
+        }
+        let color = look(&level, style);
+        screen.styled.push(styled(
+            vec![pos2(x, plot.top()), pos2(x, plot.bottom())],
+            &level,
+            color,
+        ));
+        if fib.show_labels
+            && let Some(label) = vertical_label(
+                fib::level_label(f64::from(level.ratio), false),
+                color,
+                x,
+                fib,
+                plot,
+            )
+        {
+            screen.labels.push(label);
+        }
+    }
     screen
 }

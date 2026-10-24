@@ -20,6 +20,10 @@ pub enum Tool {
     Cursor,
     TrendLine,
     FibRetracement,
+    FibExtension,
+    FibChannel,
+    FibTimeZone,
+    FibTrendTime,
     Brush,
     Ruler,
     Highlighter,
@@ -327,8 +331,12 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 72] = [
+    pub const GROUPED: [Self; 76] = [
         Self::FibRetracement,
+        Self::FibExtension,
+        Self::FibChannel,
+        Self::FibTimeZone,
+        Self::FibTrendTime,
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -578,6 +586,20 @@ impl Tool {
                 Points(2),
                 fib_levels.with(Caps::EXTEND),
             ),
+            Self::FibExtension => spec(
+                "Trend-based fib extension",
+                Fibonacci,
+                Points(3),
+                fib_levels.with(Caps::EXTEND),
+            ),
+            Self::FibChannel => spec(
+                "Fib channel",
+                Fibonacci,
+                Points(3),
+                fib_levels.with(Caps::EXTEND),
+            ),
+            Self::FibTimeZone => spec("Fib time zone", Fibonacci, Points(2), fib_levels),
+            Self::FibTrendTime => spec("Trend-based fib time", Fibonacci, Points(3), fib_levels),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
             Self::Highlighter => spec("Highlighter", Brushes, Freehand, Caps::STROKE),
@@ -1045,8 +1067,17 @@ impl Tool {
                 style.text.size = 12.0;
                 style
             }
-            Self::FibRetracement => {
-                fib_style(Tool::FibRetracement, [120, 123, 134, 255], LineDash::Dashed)
+            Self::FibRetracement | Self::FibExtension | Self::FibTrendTime => {
+                fib_style(self, [120, 123, 134, 255], LineDash::Dashed)
+            }
+            // A channel has no line of its own: its base line is its first level.
+            Self::FibChannel => fib_style(self, [120, 123, 134, 255], LineDash::Solid),
+            Self::FibTimeZone => {
+                // Grey, 1 px and with no background, as the library has it.
+                let mut style = fib_style(self, [128, 128, 128, 255], LineDash::Dashed);
+                style.stroke.width = 1.0;
+                style.fill.enabled = false;
+                style
             }
             // A card takes its look from the theme, and a picture has none to style.
             Self::Cursor | Self::Ruler | Self::Image | Self::Post => DrawingStyle::default(),
@@ -1109,7 +1140,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 72);
+        assert_eq!(Tool::GROUPED.len(), 76);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -1138,11 +1169,11 @@ mod tests {
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
         assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
-        assert_eq!(counts(&ToolGroup::FIB_MENU), [1, 0]);
+        assert_eq!(counts(&ToolGroup::FIB_MENU), [5, 0]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
         assert_eq!(Tool::forecast_tools().count(), 12);
-        assert_eq!(Tool::fib_tools().count(), 1);
+        assert_eq!(Tool::fib_tools().count(), 5);
         // The crosshair, the brush's own tile and the ruler are in no menu of theirs.
         assert!(!Tool::GROUPED.contains(&Tool::Ruler));
     }

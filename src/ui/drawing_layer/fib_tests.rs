@@ -339,3 +339,337 @@ fn a_retracement_off_the_plot_builds_nothing_visible_and_stays_finite() {
         assert!(screen.labels.is_empty());
     }
 }
+
+// MARK: Extension
+
+/// The x of every vertical level line, left to right.
+fn level_xs(screen: &Screen) -> Vec<f32> {
+    let mut xs: Vec<f32> = screen
+        .styled
+        .iter()
+        .filter(|line| line.path.len() == 2 && line.path[0].x == line.path[1].x)
+        .map(|line| line.path[0].x)
+        .collect();
+    xs.sort_by(f32::total_cmp);
+    xs
+}
+
+#[test]
+fn an_extension_projects_the_first_move_from_the_third_anchor() {
+    // 100 (bar 1) up to 110 (bar 3), back to 104 (bar 5): level r is at 104 + 10 r.
+    let anchors = [at(1, 100.0), at(3, 110.0), at(5, 104.0)];
+    let screen = built(Tool::FibExtension, &anchors);
+    let ys = level_ys(&screen);
+    // 0 at 104 (y 160), 0.236 at 106.36 (y 136.4), 0.5 at 109 (y 110), 1 at 114 (y 60), and
+    // 1.618 at 120.18, a hair above the plot's top edge (y -1.8) where it is still built.
+    for want in [160.0, 136.4, 110.0, 60.0, -1.8] {
+        assert!(ys.iter().any(|y| close(*y, want)), "{want} in {ys:?}");
+    }
+    // The lines span the three anchors: bars 1 to 5 are x = 150 to 550.
+    for line in &screen.styled {
+        assert!(close(line.path[0].x, 150.0) && close(line.path[1].x, 550.0));
+    }
+    // The trend line runs through all three.
+    assert_eq!(screen.lines.len(), 1);
+    assert!(near(screen.lines[0][1], pos2(350.0, 100.0)));
+    assert!(near(screen.lines[0][2], pos2(550.0, 160.0)));
+    assert_eq!(screen.handles.len(), 3);
+}
+
+#[test]
+fn a_reversed_extension_projects_the_move_the_other_way() {
+    let anchors = [at(1, 100.0), at(3, 110.0), at(5, 104.0)];
+    let mut style = Tool::FibExtension.default_style();
+    let mut fib = style.fib.unwrap();
+    fib.reverse = true;
+    style.fib = Some(fib);
+    let screen = built_on(Tool::FibExtension, &anchors, style, false);
+    // 104 - 10 x 0.5 = 99 (y 210); 104 - 10 x 1 = 94 (y 260).
+    let ys = level_ys(&screen);
+    assert!(ys.iter().any(|y| close(*y, 210.0)), "{ys:?}");
+    assert!(ys.iter().any(|y| close(*y, 260.0)));
+}
+
+#[test]
+fn a_falling_first_move_extends_downward() {
+    let screen = built(
+        Tool::FibExtension,
+        &[at(1, 110.0), at(3, 100.0), at(5, 106.0)],
+    );
+    // From 106, level 1 is another 10 down: 96 (y 240).
+    assert!(level_ys(&screen).iter().any(|y| close(*y, 240.0)));
+}
+
+#[test]
+fn the_extension_log_flag_repeats_the_first_moves_percentage() {
+    let anchors = [at(1, 100.0), at(3, 110.0), at(5, 104.0)];
+    let y_of = |price: f64| (400.0 * (120f64 / price).ln() / (120f64 / 80f64).ln()) as f32;
+    let mut style = Tool::FibExtension.default_style();
+    let mut fib = style.fib.unwrap();
+    fib.log_levels = true;
+    style.fib = Some(fib);
+    let screen = built_on(Tool::FibExtension, &anchors, style, true);
+    // A 10 % rise from 104 is 114.4.
+    assert!(level_ys(&screen).iter().any(|y| close(*y, y_of(114.4))));
+}
+
+// MARK: Channel
+
+fn slope(line: &super::shape::Styled) -> f32 {
+    (line.path[1].y - line.path[0].y) / (line.path[1].x - line.path[0].x)
+}
+
+fn height_at(line: &super::shape::Styled, x: f32) -> f32 {
+    line.path[0].y + slope(line) * (x - line.path[0].x)
+}
+
+#[test]
+fn a_fib_channels_levels_are_parallel_and_spaced_by_the_third_anchors_offset() {
+    // Base line 100 (bar 1) to 110 (bar 5); the third anchor at bar 3 is at 108, 3 above the
+    // base line there (105): an offset of 30 px upward.
+    let anchors = [at(1, 100.0), at(5, 110.0), at(3, 108.0)];
+    let screen = built(Tool::FibChannel, &anchors);
+    // The base line rises 100 px over 400: -0.25 px per px, and so does every level.
+    for line in &screen.styled {
+        assert!((slope(line) + 0.25).abs() < 1e-4, "{:?}", line.path);
+    }
+    // Each line is found by its label, which sits on it (the label is middle aligned).
+    let find = |ratio: f64| {
+        let text = format!("{} ", crate::model::fib::level_label(ratio, false));
+        let label = screen
+            .labels
+            .iter()
+            .find(|label| label.text.starts_with(&text))
+            .unwrap_or_else(|| panic!("a label for {ratio}"));
+        screen
+            .styled
+            .iter()
+            .find(|line| (height_at(line, label.at.x) - label.at.y).abs() < 0.1)
+            .unwrap_or_else(|| panic!("a line for {ratio}"))
+    };
+    // Level 0 is the base line (y 150 at x 350); level 1 passes through the third anchor
+    // (x 350, y 120); level 0.5 is halfway between them, 15 px above the base line.
+    assert!(close(height_at(find(0.0), 350.0), 150.0));
+    assert!(close(height_at(find(1.0), 350.0), 120.0));
+    assert!(close(height_at(find(0.5), 350.0), 135.0));
+    // 2.618 is as far beyond the third anchor as 1.618 is from it: 150 - 2.618 x 30.
+    assert!(close(height_at(find(2.618), 350.0), 150.0 - 2.618 * 30.0));
+    assert!(near(screen.handles[2].pos, pos2(350.0, 120.0)));
+}
+
+#[test]
+fn a_channel_extends_to_the_plot_whichever_way_it_was_drawn() {
+    let mut style = Tool::FibChannel.default_style();
+    style.extend_right = true;
+    // Drawn right to left, so "right" is still the right of the screen.
+    let backwards = built_on(
+        Tool::FibChannel,
+        &[at(5, 102.0), at(1, 100.0), at(3, 103.0)],
+        style,
+        false,
+    );
+    let forwards = built_on(
+        Tool::FibChannel,
+        &[at(1, 100.0), at(5, 102.0), at(3, 103.0)],
+        style,
+        false,
+    );
+    for screen in [&backwards, &forwards] {
+        let xs: Vec<f32> = screen
+            .styled
+            .iter()
+            .flat_map(|line| line.path.iter())
+            .map(|p| p.x)
+            .collect();
+        let right = xs.iter().copied().fold(0.0, f32::max);
+        let left = xs.iter().copied().fold(f32::MAX, f32::min);
+        assert!(close(right, 1000.0), "{right}");
+        assert!(close(left, 150.0), "{left}");
+    }
+}
+
+#[test]
+fn a_channel_on_a_vertical_base_line_has_no_width_to_measure() {
+    let screen = built(
+        Tool::FibChannel,
+        &[at(1, 100.0), at(1, 110.0), at(3, 108.0)],
+    );
+    assert!(screen.styled.is_empty());
+    assert_eq!(screen.handles.len(), 3, "still reshapeable");
+}
+
+#[test]
+fn a_channels_labels_carry_the_price_where_they_sit() {
+    let screen = built(
+        Tool::FibChannel,
+        &[at(1, 100.0), at(5, 110.0), at(3, 108.0)],
+    );
+    // Level 0 starts at (150, 200) = 100 and its label hangs off the left end at x = 153, where
+    // the line is 0.75 px higher: 100.075, written as the chart writes prices.
+    let label = screen
+        .labels
+        .iter()
+        .find(|label| label.text.starts_with("0 "))
+        .unwrap();
+    assert_eq!(label.text, "0 (100.08)");
+    assert_eq!((label.edge.x, label.edge.y), (-1.0, 0.0), "middle aligned");
+}
+
+// MARK: Time zone and trend-based time
+
+#[test]
+fn a_time_zone_puts_lines_at_fibonacci_multiples_of_the_base_interval_in_bars() {
+    // Bars 1 and 2 are x = 150 and 250: an interval of one bar, so the lines are at bars
+    // 1, 2, 3, 4, 6, 9, 14 ...: x = 150, 250, 350, 450, 650, 950, and the rest are past the plot.
+    let screen = built(Tool::FibTimeZone, &[at(1, 100.0), at(2, 100.0)]);
+    let xs = level_xs(&screen);
+    let expected = [150.0, 250.0, 350.0, 450.0, 650.0, 950.0];
+    assert_eq!(xs.len(), expected.len(), "{xs:?}");
+    for (x, want) in xs.iter().zip(expected) {
+        assert!(close(*x, want), "{x} against {want}");
+    }
+    // Each line crosses the plot.
+    for line in &screen.styled {
+        assert_eq!((line.path[0].y, line.path[1].y), (0.0, 400.0));
+    }
+}
+
+#[test]
+fn a_time_zone_counts_bars_not_calendar_time() {
+    // A weekend between the fourth bar and the fifth: bar 1 to the bar after the gap is three
+    // bars, however many hours that is.
+    let times = [0, 1, 2, 3, 1000, 1001, 1002, 1003, 1004, 1005];
+    let data: Vec<crate::model::Kline> = bars(&[100.0; 10])
+        .into_iter()
+        .zip(times)
+        .map(|(mut bar, minute)| {
+            bar.open_time = minute * 60_000;
+            bar.close_time = minute * 60_000 + 59_999;
+            bar
+        })
+        .collect();
+    let scale = scale(false);
+    let drawing = Drawing::build(
+        Tool::FibTimeZone,
+        1,
+        &[
+            Anchor {
+                time_ms: 60_000,
+                price: 100.0,
+            },
+            Anchor {
+                time_ms: 1000 * 60_000,
+                price: 100.0,
+            },
+        ],
+        Tool::FibTimeZone.default_style(),
+    )
+    .unwrap();
+    let screen = shape::build(&drawing, &projection(&data, &scale)).unwrap();
+    // Interval 3 bars = 300 px: lines at x = 150, 450, 750; the fourth (1050) is past the plot.
+    let xs = level_xs(&screen);
+    assert_eq!(xs.len(), 3, "{xs:?}");
+    for (x, want) in xs.iter().zip([150.0, 450.0, 750.0]) {
+        assert!(close(*x, want), "{x} against {want}");
+    }
+}
+
+#[test]
+fn a_time_zone_reaches_into_the_future_and_runs_backwards_as_drawn() {
+    // The last bar is bar 9 (x 950); the bar after it is x 1050, off this plot, so a zone from
+    // there shows nothing of itself but its trend line.
+    let forward = built(Tool::FibTimeZone, &[at(7, 100.0), at(8, 100.0)]);
+    let xs = level_xs(&forward);
+    for want in [750.0, 850.0, 950.0] {
+        assert!(xs.iter().any(|x| close(*x, want)), "{want} in {xs:?}");
+    }
+    // Drawn right to left the zones run leftward: bars 5, 4, 3, 2, then 0 and below.
+    let backward = built(Tool::FibTimeZone, &[at(5, 100.0), at(4, 100.0)]);
+    let xs = level_xs(&backward);
+    for want in [550.0, 450.0, 350.0, 250.0, 50.0] {
+        assert!(xs.iter().any(|x| close(*x, want)), "{want} in {xs:?}");
+    }
+}
+
+#[test]
+fn a_time_zone_with_no_interval_draws_no_lines_and_keeps_its_handles() {
+    let screen = built(Tool::FibTimeZone, &[at(3, 100.0), at(3, 110.0)]);
+    assert!(screen.styled.is_empty());
+    assert_eq!(screen.handles.len(), 2);
+}
+
+#[test]
+fn a_time_zones_lines_are_labelled_with_their_multiple_beside_them() {
+    let screen = built(Tool::FibTimeZone, &[at(1, 100.0), at(2, 100.0)]);
+    let texts: Vec<&str> = screen.labels.iter().map(|l| l.text.as_str()).collect();
+    assert_eq!(texts, ["0", "1", "2", "3", "5", "8"]);
+    // To the right of each line, at the bottom of the plot.
+    let first = &screen.labels[0];
+    assert!(
+        close(first.at.x, 153.0) && close(first.at.y, 397.0),
+        "{first:?}"
+    );
+    assert_eq!((first.edge.x, first.edge.y), (-1.0, 1.0));
+}
+
+#[test]
+fn a_time_zones_background_is_off_until_asked_for() {
+    let anchors = [at(1, 100.0), at(2, 100.0)];
+    let plain = built(Tool::FibTimeZone, &anchors);
+    assert!(plain.band_meshes.is_empty());
+    let mut style = Tool::FibTimeZone.default_style();
+    style.fill.enabled = true;
+    let filled = built_on(Tool::FibTimeZone, &anchors, style, false);
+    assert!(!filled.band_meshes.is_empty());
+}
+
+#[test]
+fn a_trend_based_time_projects_the_first_moves_length_in_bars_from_the_third_anchor() {
+    // Bars 1 to 2 are one bar; the third anchor is bar 4 (x 450): level r is at x = 450 + 100 r.
+    let screen = built(
+        Tool::FibTrendTime,
+        &[at(1, 100.0), at(2, 105.0), at(4, 102.0)],
+    );
+    let xs = level_xs(&screen);
+    let expected = [
+        450.0, 488.2, 511.8, 550.0, 588.2, 611.8, 650.0, 688.2, 711.8, 750.0,
+    ];
+    assert_eq!(xs.len(), expected.len(), "the 0.5 is off: {xs:?}");
+    for (x, want) in xs.iter().zip(expected) {
+        assert!(close(*x, want), "{x} against {want}");
+    }
+    // The trend lines join the three anchors.
+    assert_eq!(screen.lines[0].len(), 3);
+    // A third anchor elsewhere moves the whole projection: it is not a time zone.
+    let moved = built(
+        Tool::FibTrendTime,
+        &[at(1, 100.0), at(2, 105.0), at(6, 102.0)],
+    );
+    assert!(level_xs(&moved).iter().any(|x| close(*x, 650.0)));
+    // The first move's length sets the spacing: three bars apart triples it.
+    let longer = built(
+        Tool::FibTrendTime,
+        &[at(1, 100.0), at(4, 105.0), at(4, 102.0)],
+    );
+    assert!(
+        level_xs(&longer)
+            .iter()
+            .any(|x| close(*x, 450.0 + 300.0 * 0.618))
+    );
+}
+
+#[test]
+fn every_fib_tool_without_a_style_of_its_own_draws_its_default_levels() {
+    let anchors = [at(1, 100.0), at(5, 110.0), at(3, 104.0)];
+    for tool in Tool::fib_tools() {
+        let Placement::Points(count) = tool.spec().placement else {
+            panic!("{tool:?}");
+        };
+        let anchors = &anchors[..usize::from(count)];
+        let bare = built_on(tool, anchors, DrawingStyle::default(), false);
+        let own = built(tool, anchors);
+        assert!(!bare.styled.is_empty(), "{tool:?} draws levels");
+        assert_eq!(bare.styled.len(), own.styled.len(), "{tool:?}");
+        assert_eq!(bare.labels.len(), own.labels.len(), "{tool:?}");
+    }
+}
