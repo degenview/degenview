@@ -24,9 +24,16 @@ that draw bars are clipped to the plot for that reason.
 The offset counts from the **newest** bar. Two consequences are deliberate:
 
 - Older candles loading in front never move the view.
-- A bar that arrives while the chart is scrolled back (or into empty space) is added to the offset
-  (`ChartCard::keep_view_on_its_bars`) so the same bars stay on screen. At offset `0` the chart
-  follows the newest bar and the configured right margin positions it.
+- A bar that arrives while the previous newest bar is on screen (`HorizontalViewport::shows_newest`:
+  its centre is inside the plot, so the offset is below the reserved margin plus half a bar) leaves
+  the offset alone: the new bar takes the newest bar's place and the chart slides left one slot,
+  whether the chart is at offset `0`, scrolled back a few bars or dragged into empty space. This is
+  Lightweight Charts' `shiftVisibleRangeOnNewBar` rule (`ChartModel.updateTimeScale`), the open-source
+  engine of TradingView's charts.
+- A bar that arrives while the newest bar is already out of view (scrolled back past the margin) is
+  added to the offset (`ChartCard::keep_view_on_its_bars`) so the same bars stay on screen.
+- A bar that arrives mid-drag with the newest bar on screen moves the chart a slot under the
+  pointer, as there; the compensation for a held view is applied to the drag too.
 
 The Canvas right margin stays the default placement of the newest bar; panning into empty space is
 temporary viewport state and never writes the Canvas setting.
@@ -150,6 +157,9 @@ chart, drawing ownership (handle, locked drawing, tool), a drawing's anchors unc
 commands during a pan, live bars and older pages not moving the view, persistence, and script
 reruns. A drag frame over 100,000 candles and 200 drawings costs about 0.12 ms headless in release
 (`drag_frame_cost_report`, ignored).
+
+**New-bar shifting** follows the Lightweight Charts source and docs; tradingview.com itself was not
+compared.
 
 **Not verified against TradingView.** TradingView's public docs do not state axis-drag direction,
 double-click behavior, right-side whitespace limits, or when autoscale turns off. These are

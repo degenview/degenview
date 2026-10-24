@@ -200,6 +200,13 @@ impl HorizontalViewport {
         self.right_offset.abs() < 1e-6
     }
 
+    /// Whether the newest bar's centre is inside the plot, with `reserved` free slots past it.
+    /// Scrolled back far enough and it leaves on the right; the left edge is only crossed by an
+    /// offset [`offset_limits`](Self::offset_limits) would not allow.
+    pub fn shows_newest(&self, reserved: usize) -> bool {
+        self.right_offset < reserved as f64 + 0.5 && self.right_offset > 0.5 - self.visible as f64
+    }
+
     /// Keeps the offset a number the window can use and inside its limits.
     pub fn clamp(&mut self, total: usize) {
         let (low, high) = self.offset_limits(total);
