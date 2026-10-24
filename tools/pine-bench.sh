@@ -85,7 +85,11 @@ for line in open(sys.argv[1]):
     last[name][side] = fields
 
 print(f"{'workload':<20}{'base ms':>10}{'head ms':>10}{'change':>9}   rounds base / head (ms)   checksum")
+head_only = []
 for name, sides in medians.items():
+    if not sides["base"] or not sides["head"]:
+        head_only.append(name)
+        continue
     base, head = sides["base"], sides["head"]
     b, h = statistics.median(base), statistics.median(head)
     same = last[name]["base"]["checksum"] == last[name]["head"]["checksum"]
@@ -94,10 +98,18 @@ for name, sides in medians.items():
         f"   {min(base) / 1e6:.2f}-{max(base) / 1e6:.2f} / {min(head) / 1e6:.2f}-{max(head) / 1e6:.2f}"
         f"   {'same' if same else 'DIFFERENT'}"
     )
-if any(int(sides["base"].get("allocs", 0)) for sides in last.values()):
+if head_only:
+    print()
+    print("only in the second build (compare with the twin named in src/pine/bench_tests.rs):")
+    for name in head_only:
+        values = medians[name]["head"]
+        print(f"  {name:<30}{statistics.median(values) / 1e6:>10.2f} ms   rounds {min(values) / 1e6:.2f}-{max(values) / 1e6:.2f}")
+if any(int(sides["base"].get("allocs", 0)) for name, sides in last.items() if "base" in sides and name not in head_only):
     print()
     print(f"{'workload':<20}{'allocs base':>13}{'allocs head':>13}{'bytes base':>15}{'bytes head':>15}{'peak base':>13}{'peak head':>13}")
     for name, sides in last.items():
+        if name in head_only:
+            continue
         b, h = sides["base"], sides["head"]
         print(f"{name:<20}{b['allocs']:>13}{h['allocs']:>13}{b['bytes']:>15}{h['bytes']:>15}{b['peak']:>13}{h['peak']:>13}")
 PY

@@ -293,6 +293,69 @@ fn realtime(history: usize, steps: usize) -> u64 {
     checksum(&last.output)
 }
 
+// MARK: Debug mode
+//
+// These exist only where the debugger does, so a baseline build without it has none of them and
+// `tools/pine-bench.sh` leaves them out of the comparison. Compare each with its plain twin in the
+// same run: `debug_attached_*` against `simple_indicator` and `straight_line_800`, the stepping ones
+// against `plain_*`.
+
+use crate::pine::debug::{
+    BreakpointSpec, DebugControl, DebugOptions, DebugRuntime, Debugger, Resume, SourceMap, Stop,
+    StopView, parse_expression,
+};
+
+/// A debugger that is never asked anything: nothing stops.
+struct Idle;
+
+impl Debugger for Idle {
+    fn stopped(&mut self, _: &Stop, _: &mut StopView<'_>) -> Resume {
+        Resume::Continue
+    }
+}
+
+/// Steps into every statement and looks at everything a person would at each stop.
+struct Walker;
+
+impl Debugger for Walker {
+    fn stopped(&mut self, _: &Stop, view: &mut StopView<'_>) -> Resume {
+        let frame = view.stack().first().map_or(0, |frame| frame.index);
+        for group in view.variables(frame) {
+            std::hint::black_box(&group);
+        }
+        if let Ok(expression) = parse_expression("close - open") {
+            std::hint::black_box(view.watch(frame, &expression));
+        }
+        Resume::Into
+    }
+}
+
+fn debugged(
+    source: &str,
+    bars: &[Kline],
+    breakpoints: Vec<BreakpointSpec>,
+    debugger: Box<dyn Debugger>,
+    stop_on_entry: bool,
+) -> u64 {
+    let program = compile(source);
+    let map = std::sync::Arc::new(SourceMap::build(&program.statements));
+    let runtime = DebugRuntime::new(
+        map,
+        debugger,
+        DebugControl::default(),
+        DebugOptions {
+            stop_on_entry,
+            breakpoints,
+        },
+    );
+    checksum(
+        &run_script(source, bars, false, |session| {
+            session.attach_debugger(runtime)
+        })
+        .output(),
+    )
+}
+
 struct Workload {
     name: &'static str,
     run: Box<dyn Fn() -> u64>,
@@ -362,6 +425,62 @@ fn workloads() -> Vec<Workload> {
         add("simultaneous_x4", Box::new(move || simultaneous(&data)));
     }
     add("realtime_ticks", Box::new(|| realtime(2_000, 300)));
+    {
+        let data = minute.clone();
+        add(
+            "debug_attached_simple",
+            Box::new(move || debugged(SIMPLE, &data, Vec::new(), Box::new(Idle), false)),
+        );
+    }
+    {
+        // A breakpoint whose condition is evaluated at every pass and never holds.
+        let data = minute.clone();
+        let mut spec = BreakpointSpec::line(1, 6);
+        spec.condition = Some("close < 0".to_owned());
+        add(
+            "debug_breakpoint_miss_simple",
+            Box::new(move || debugged(SIMPLE, &data, vec![spec.clone()], Box::new(Idle), false)),
+        );
+    }
+    {
+        let data = bars(800, MINUTE_MS);
+        let source = straight_line(800);
+        add(
+            "debug_attached_straight_800",
+            Box::new(move || debugged(&source, &data, Vec::new(), Box::new(Idle), false)),
+        );
+    }
+    {
+        let data = bars(150, MINUTE_MS);
+        let twin = data.clone();
+        add(
+            "plain_simple_150",
+            Box::new(move || evaluate(SIMPLE, &twin, false)),
+        );
+        add(
+            "debug_stepping_simple_150",
+            Box::new(move || debugged(SIMPLE, &data, Vec::new(), Box::new(Walker), true)),
+        );
+    }
+    {
+        let data = bars(150, MINUTE_MS);
+        let twin = data.clone();
+        add(
+            "plain_functions_150",
+            Box::new(move || evaluate(NESTED_FUNCTIONS, &twin, false)),
+        );
+        add(
+            "debug_stepping_functions_150",
+            Box::new(move || debugged(NESTED_FUNCTIONS, &data, Vec::new(), Box::new(Walker), true)),
+        );
+    }
+    {
+        let program = compile(&straight_line(800));
+        add(
+            "source_map_800",
+            Box::new(move || SourceMap::build(&program.statements).len() as u64),
+        );
+    }
     {
         let source = straight_line(800);
         add(
