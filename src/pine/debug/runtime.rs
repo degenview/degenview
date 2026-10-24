@@ -6,25 +6,32 @@
 //! out of the session for the duration of the call, so the debugger gets `&mut Session` without
 //! any aliasing.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::pine::ast::Statement;
+use crate::pine::fast_hash::FastMap;
+use crate::pine::logs::LogLevel;
 use crate::pine::runtime_types::RuntimeContext;
 use crate::pine::runtime_value::RuntimeValue;
 use crate::pine::session::Session;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
+use super::breakpoints::{self, BreakpointSpec, CompiledBreakpoint};
 use super::commands::Resume;
+use super::evaluate;
+use super::expression::DebugExpression;
 use super::frames::{Frame, FrameInfo, FrameKind, Location};
+use super::inspect::{self, Env, InspectError, Page, ValueRef, VariableGroup, Watched};
 use super::source_map::SourceMap;
 use super::stepping::StepMode;
 
 /// Why the script stopped.
 #[derive(Clone, Debug, PartialEq)]
 pub enum StopReason {
-    Breakpoint,
+    /// The breakpoint with this id.
+    Breakpoint(u64),
     /// A step command finished.
     Step,
     /// The user asked for a pause.
@@ -46,6 +53,8 @@ pub struct Stop {
     pub generation: u64,
     /// Number of frames on the debugger's stack.
     pub depth: usize,
+    /// Something to tell the person: a breakpoint condition that could not be evaluated.
+    pub notice: Option<String>,
 }
 
 /// Whoever is debugging: told when the script stops, and answers how it goes on. It runs on the
@@ -55,13 +64,46 @@ pub trait Debugger: Send {
     fn stopped(&mut self, stop: &Stop, view: &mut StopView<'_>) -> Resume;
 }
 
-/// A read-only look at a stopped script.
+/// Where the script is, as the bar context panel shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BarContext {
+    pub bar_index: i64,
+    pub time_ms: i64,
+    pub open: f64,
+    pub high: f64,
+    pub low: f64,
+    pub close: f64,
+    pub volume: f64,
+    pub symbol: String,
+    pub bar_seconds: f64,
+    /// Replaying the chart's history, as opposed to a live bar.
+    pub historical: bool,
+    pub confirmed: bool,
+}
+
+/// A look at a stopped script. Everything it offers leaves the script as it was.
 pub struct StopView<'a> {
-    pub(crate) session: &'a mut Session,
-    pub(crate) frames: &'a [Frame],
+    session: &'a mut Session,
+    frames: &'a [Frame],
+    context: &'a RuntimeContext,
+    map: &'a SourceMap,
+    generation: u64,
+    previous: &'a FastMap<String, String>,
+    current: &'a mut FastMap<String, String>,
+    hits: Vec<(u64, u64)>,
 }
 
 impl StopView<'_> {
+    fn env(&mut self) -> Env<'_> {
+        Env {
+            session: self.session,
+            frames: self.frames,
+            context: self.context,
+            map: self.map,
+            generation: self.generation,
+        }
+    }
+
     /// The frames from the innermost call outwards.
     pub fn stack(&self) -> Vec<FrameInfo> {
         self.frames
@@ -71,25 +113,128 @@ impl StopView<'_> {
             .map(|(index, frame)| FrameInfo::of(index, frame))
             .collect()
     }
+
+    /// The variables in scope in `frame` (an index from [`FrameInfo::index`]).
+    pub fn variables(&mut self, frame: usize) -> Vec<VariableGroup> {
+        let previous = self.previous;
+        let groups = inspect::variables(&mut self.env(), frame, previous);
+        if frame + 1 == self.frames.len() {
+            for variable in groups.iter().flat_map(|group| &group.variables) {
+                if variable.assigned {
+                    self.current
+                        .insert(variable.name.clone(), variable.full.clone());
+                }
+            }
+        }
+        groups
+    }
+
+    /// Rows `start..` of what `reference` holds.
+    pub fn expand(
+        &mut self,
+        reference: &ValueRef,
+        start: usize,
+        limit: usize,
+    ) -> Result<Page, InspectError> {
+        inspect::expand(&mut self.env(), reference, start, limit)
+    }
+
+    /// Evaluates a checked expression in `frame`.
+    pub fn watch(&mut self, frame: usize, expression: &DebugExpression) -> Watched {
+        inspect::watch(&mut self.env(), frame, expression)
+    }
+
+    pub fn bar(&self) -> BarContext {
+        let bar = &self.context.bar;
+        BarContext {
+            bar_index: self.session.working.bar_index,
+            time_ms: bar.open_time,
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            volume: bar.volume,
+            symbol: self.session.symbol.ticker_id.clone(),
+            bar_seconds: self.session.bar_seconds,
+            historical: !self.context.flags.is_realtime,
+            confirmed: self.context.flags.is_confirmed,
+        }
+    }
+
+    /// How many times each breakpoint has acted, by id.
+    pub fn hit_counts(&self) -> &[(u64, u64)] {
+        &self.hits
+    }
 }
 
-/// The handle the person's side keeps: a request that takes effect at the next safepoint.
+#[derive(Debug, Default)]
+struct Shared {
+    pause: AtomicBool,
+    breakpoints_changed: AtomicBool,
+    breakpoints: Mutex<Vec<BreakpointSpec>>,
+    hits: Mutex<Vec<(u64, u64)>>,
+}
+
+/// The handle the person's side keeps: requests that take effect at the next safepoint, and what
+/// the session has counted.
 #[derive(Clone, Debug, Default)]
 pub struct DebugControl {
-    pause: Arc<AtomicBool>,
+    shared: Arc<Shared>,
 }
 
 impl DebugControl {
     pub fn request_pause(&self) {
-        self.pause.store(true, Ordering::Release);
+        self.shared.pause.store(true, Ordering::Release);
+    }
+
+    /// Replaces the breakpoints of a running session. Hit counts of breakpoints that keep their id
+    /// carry over.
+    pub fn set_breakpoints(&self, specs: Vec<BreakpointSpec>) {
+        if let Ok(mut current) = self.shared.breakpoints.lock() {
+            *current = specs;
+        }
+        self.shared
+            .breakpoints_changed
+            .store(true, Ordering::Release);
+    }
+
+    /// `(breakpoint id, hits)` as of the last stop or the end of the run.
+    pub fn hit_counts(&self) -> Vec<(u64, u64)> {
+        self.shared
+            .hits
+            .lock()
+            .map(|hits| hits.clone())
+            .unwrap_or_default()
     }
 
     fn take_pause(&self) -> bool {
-        self.pause.swap(false, Ordering::AcqRel)
+        self.shared.pause.swap(false, Ordering::AcqRel)
     }
 
     fn clear_pause(&self) {
-        self.pause.store(false, Ordering::Release);
+        self.shared.pause.store(false, Ordering::Release);
+    }
+
+    fn take_breakpoints(&self) -> Option<Vec<BreakpointSpec>> {
+        if self
+            .shared
+            .breakpoints_changed
+            .swap(false, Ordering::AcqRel)
+        {
+            self.shared
+                .breakpoints
+                .lock()
+                .ok()
+                .map(|specs| specs.clone())
+        } else {
+            None
+        }
+    }
+
+    fn publish_hits(&self, hits: Vec<(u64, u64)>) {
+        if let Ok(mut current) = self.shared.hits.lock() {
+            *current = hits;
+        }
     }
 }
 
@@ -97,8 +242,7 @@ impl DebugControl {
 pub struct DebugOptions {
     /// Stop at the first statement instead of running to the first breakpoint.
     pub stop_on_entry: bool,
-    /// Offsets of statements to stop at, from [`SourceMap::resolve_line`].
-    pub breakpoints: Vec<usize>,
+    pub breakpoints: Vec<BreakpointSpec>,
 }
 
 pub struct DebugRuntime {
@@ -107,14 +251,17 @@ pub struct DebugRuntime {
     control: DebugControl,
     frames: Vec<Frame>,
     step: StepMode,
-    /// Sorted.
-    breakpoints: Vec<usize>,
+    /// Sorted by statement.
+    breakpoints: Vec<CompiledBreakpoint>,
     first_of_bar: bool,
     generation: u64,
     /// The debugger said stop: every later hook unwinds the script.
     terminated: bool,
     /// An error has been shown for the run unwinding now.
     error_reported: bool,
+    /// What the variables read at the last stop that was inspected, and at this one.
+    previous: FastMap<String, String>,
+    current: FastMap<String, String>,
 }
 
 fn cancelled() -> Diagnostic {
@@ -133,9 +280,7 @@ impl DebugRuntime {
         control: DebugControl,
         options: DebugOptions,
     ) -> Self {
-        let mut breakpoints = options.breakpoints;
-        breakpoints.sort_unstable();
-        breakpoints.dedup();
+        let (breakpoints, _) = breakpoints::compile(&options.breakpoints, &map);
         Self {
             map,
             debugger,
@@ -151,7 +296,26 @@ impl DebugRuntime {
             generation: 0,
             terminated: false,
             error_reported: false,
+            previous: FastMap::default(),
+            current: FastMap::default(),
         }
+    }
+
+    fn reload_breakpoints(&mut self, specs: &[BreakpointSpec]) {
+        let (mut compiled, _) = breakpoints::compile(specs, &self.map);
+        for breakpoint in &mut compiled {
+            if let Some(old) = self.breakpoints.iter().find(|old| old.id == breakpoint.id) {
+                breakpoint.hits = old.hits;
+            }
+        }
+        self.breakpoints = compiled;
+    }
+
+    fn hit_counts(&self) -> Vec<(u64, u64)> {
+        self.breakpoints
+            .iter()
+            .map(|breakpoint| (breakpoint.id, breakpoint.hits))
+            .collect()
     }
 
     /// A bar is about to execute: the stack starts over with the script's own frame.
@@ -176,18 +340,26 @@ impl DebugRuntime {
             },
             None => FrameKind::Function(call_name.to_owned()),
         };
-        self.frames.push(Frame {
-            kind,
-            call_site: Some(call_site),
-            location: None,
-            shadowed,
-        });
+        self.frames
+            .push(Frame::new(kind, Some(call_site), shadowed));
     }
 
     pub(crate) fn leave_function(&mut self) {
         // The script's own frame is never popped: a call is always entered before it is left.
         if self.frames.len() > 1 {
             self.frames.pop();
+        }
+    }
+
+    /// `statement` ran to its end in the innermost frame.
+    pub(crate) fn after_statement(&mut self, statement: &Statement, context: &RuntimeContext) {
+        if context.scope.is_some() {
+            return;
+        }
+        if let Some(index) = self.map.index_of(statement.range().start.offset)
+            && let Some(frame) = self.frames.last_mut()
+        {
+            frame.mark_executed(index);
         }
     }
 
@@ -212,23 +384,112 @@ impl DebugRuntime {
         }) else {
             return Ok(());
         };
+        if let Some(specs) = self.control.take_breakpoints() {
+            self.reload_breakpoints(&specs);
+        }
         if let Some(frame) = self.frames.last_mut() {
             frame.location = Some(location);
         }
         let depth = self.frames.len();
         let first_of_bar = std::mem::take(&mut self.first_of_bar);
-        let reason = if self.control.take_pause() {
+        let mut notice = None;
+        let mut reason = if self.control.take_pause() {
             Some(StopReason::Pause)
-        } else if self.breakpoints.binary_search(&offset).is_ok() {
-            Some(StopReason::Breakpoint)
-        } else if self.step.stops(depth, first_of_bar) {
-            Some(StopReason::Step)
         } else {
             None
         };
+        if reason.is_none() {
+            let first = self
+                .breakpoints
+                .partition_point(|breakpoint| breakpoint.offset < offset);
+            let mut index = first;
+            while index < self.breakpoints.len() && self.breakpoints[index].offset == offset {
+                match self.check_breakpoint(session, context, statement, index) {
+                    Verdict::Skip => {}
+                    Verdict::Stop { id, note } => {
+                        reason = Some(StopReason::Breakpoint(id));
+                        notice = note;
+                        break;
+                    }
+                }
+                index += 1;
+            }
+        }
+        if reason.is_none() && self.step.stops(depth, first_of_bar) {
+            reason = Some(StopReason::Step);
+        }
         match reason {
-            Some(reason) => self.stop(session, reason, Some(location)),
+            Some(reason) => self.stop(session, context, reason, Some(location), notice),
             None => Ok(()),
+        }
+    }
+
+    fn check_breakpoint(
+        &mut self,
+        session: &mut Session,
+        context: &RuntimeContext,
+        statement: &Statement,
+        index: usize,
+    ) -> Verdict {
+        let top = self.frames.len().saturating_sub(1);
+        let breakpoint = &mut self.breakpoints[index];
+        if !breakpoint.enabled {
+            return Verdict::Skip;
+        }
+        let is_logpoint = breakpoint.template.is_some();
+        let mut note = None;
+        if let Some(condition) = &breakpoint.condition {
+            match evaluate::evaluate(session, &self.frames, top, context, condition) {
+                Ok(value) => {
+                    let holds = match &value {
+                        RuntimeValue::Bool(flag) => *flag,
+                        RuntimeValue::Na => false,
+                        other => other.number().is_some_and(|number| number != 0.0),
+                    };
+                    if !holds {
+                        return Verdict::Skip;
+                    }
+                }
+                Err(error) if is_logpoint => {
+                    session.logs.record(
+                        LogLevel::Warning,
+                        format!("Logpoint condition failed: {error}"),
+                        None,
+                        statement.range(),
+                    );
+                    return Verdict::Skip;
+                }
+                // A condition that cannot be evaluated stops, and says so, rather than letting a
+                // typo silently turn the breakpoint off.
+                Err(error) => note = Some(format!("The condition could not be evaluated: {error}")),
+            }
+        }
+        if note.is_none() {
+            breakpoint.hits += 1;
+            if !breakpoint.hit.accepts(breakpoint.hits) {
+                return Verdict::Skip;
+            }
+        }
+        if let Some(template) = &breakpoint.template {
+            let env = Env {
+                session,
+                frames: &self.frames,
+                context,
+                map: &self.map,
+                generation: self.generation,
+            };
+            let text = template.render(|expression| {
+                evaluate::evaluate(env.session, env.frames, top, env.context, expression)
+                    .map(|value| inspect::plain_text(&env, &value))
+            });
+            session
+                .logs
+                .record(LogLevel::Info, text, None, statement.range());
+            return Verdict::Skip;
+        }
+        Verdict::Stop {
+            id: breakpoint.id,
+            note,
         }
     }
 
@@ -237,6 +498,7 @@ impl DebugRuntime {
     pub(crate) fn failed(
         &mut self,
         session: &mut Session,
+        context: &RuntimeContext,
         statement: &Statement,
         error: &Diagnostic,
     ) {
@@ -258,33 +520,54 @@ impl DebugRuntime {
             })
             .or_else(|| self.frames.last().and_then(|frame| frame.location));
         // Whatever the debugger answers, an error cannot be continued past.
-        let _ = self.stop(session, StopReason::Exception(error.clone()), location);
+        let _ = self.stop(
+            session,
+            context,
+            StopReason::Exception(error.clone()),
+            location,
+            None,
+        );
         self.terminated = true;
     }
 
     fn stop(
         &mut self,
         session: &mut Session,
+        context: &RuntimeContext,
         reason: StopReason,
         location: Option<Location>,
+        notice: Option<String>,
     ) -> Result<(), Diagnostic> {
         self.generation += 1;
         let depth = self.frames.len();
+        let hits = self.hit_counts();
+        self.control.publish_hits(hits.clone());
         let stop = Stop {
             reason,
             location,
             bar_index: session.working.bar_index,
             generation: self.generation,
             depth,
+            notice,
         };
         let started = Instant::now();
+        self.current.clear();
         let resume = {
             let mut view = StopView {
                 session,
                 frames: &self.frames,
+                context,
+                map: &self.map,
+                generation: self.generation,
+                previous: &self.previous,
+                current: &mut self.current,
+                hits,
             };
             self.debugger.stopped(&stop, &mut view)
         };
+        if !self.current.is_empty() {
+            self.previous = std::mem::take(&mut self.current);
+        }
         // Time spent waiting for a person is not the script's: the deadline does not run while paused.
         if let Some(deadline) = session.deadline_at.as_mut() {
             *deadline += started.elapsed();
@@ -301,4 +584,15 @@ impl DebugRuntime {
             }
         }
     }
+}
+
+impl Drop for DebugRuntime {
+    fn drop(&mut self) {
+        self.control.publish_hits(self.hit_counts());
+    }
+}
+
+enum Verdict {
+    Skip,
+    Stop { id: u64, note: Option<String> },
 }

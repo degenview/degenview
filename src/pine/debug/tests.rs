@@ -13,7 +13,7 @@ use crate::pine::token::Limits;
 use super::*;
 
 #[derive(Clone, Debug, PartialEq)]
-enum Why {
+pub(super) enum Why {
     Breakpoint,
     Step,
     Pause,
@@ -21,30 +21,37 @@ enum Why {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Seen {
-    why: Why,
-    line: usize,
-    depth: usize,
-    bar: i64,
+pub(super) struct Seen {
+    pub why: Why,
+    pub line: usize,
+    pub depth: usize,
+    pub bar: i64,
     /// Innermost first.
-    stack: Vec<String>,
+    pub stack: Vec<String>,
 }
 
-type Log = Arc<Mutex<Vec<Seen>>>;
+pub(super) type Log = Arc<Mutex<Vec<Seen>>>;
+
+/// Looks at each stop through the view before the scripted answer is given.
+pub(super) type Probe = Box<dyn FnMut(&Stop, &mut StopView<'_>) + Send>;
 
 struct Scripted {
     answers: VecDeque<Resume>,
     seen: Log,
+    probe: Option<Probe>,
 }
 
 impl Debugger for Scripted {
     fn stopped(&mut self, stop: &Stop, view: &mut StopView<'_>) -> Resume {
         let why = match &stop.reason {
-            StopReason::Breakpoint => Why::Breakpoint,
+            StopReason::Breakpoint(_) => Why::Breakpoint,
             StopReason::Step => Why::Step,
             StopReason::Pause => Why::Pause,
             StopReason::Exception(error) => Why::Error(error.code.clone()),
         };
+        if let Some(probe) = self.probe.as_mut() {
+            probe(stop, view);
+        }
         self.seen.lock().unwrap().push(Seen {
             why,
             line: stop.location.map_or(0, |location| location.line),
@@ -56,7 +63,7 @@ impl Debugger for Scripted {
     }
 }
 
-fn bars(count: usize) -> Vec<Kline> {
+pub(super) fn bars(count: usize) -> Vec<Kline> {
     (0..count)
         .map(|index| {
             let price = 100.0 + index as f64;
@@ -73,7 +80,7 @@ fn bars(count: usize) -> Vec<Kline> {
         .collect()
 }
 
-fn with_header(body: &str) -> String {
+pub(super) fn with_header(body: &str) -> String {
     format!("//@version=6\nindicator(\"T\")\n{body}")
 }
 
@@ -87,17 +94,36 @@ fn runtime(
     let program = compiler::compile(source, Limits::default(), &NoLibraries);
     assert!(program.is_valid(), "{:?}", program.diagnostics);
     let map = SourceMap::build(&program.statements);
-    let breakpoints = breakpoint_lines
+    let specs = breakpoint_lines
         .iter()
-        .map(|line| match map.resolve_line(*line) {
-            LineResolution::Executable { offset } => offset,
-            other => panic!("line {line} is not executable: {other:?}"),
+        .enumerate()
+        .map(|(index, line)| {
+            match map.resolve_line(*line) {
+                LineResolution::Executable { .. } => {}
+                other => panic!("line {line} is not executable: {other:?}"),
+            }
+            BreakpointSpec::line(index as u64 + 1, *line)
         })
         .collect();
+    runtime_with(source, specs, stop_on_entry, answers, control, None)
+}
+
+pub(super) fn runtime_with(
+    source: &str,
+    specs: Vec<BreakpointSpec>,
+    stop_on_entry: bool,
+    answers: &[Resume],
+    control: DebugControl,
+    probe: Option<Probe>,
+) -> (DebugRuntime, Log) {
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let map = SourceMap::build(&program.statements);
     let seen = Log::default();
     let debugger = Scripted {
         answers: answers.iter().copied().collect(),
         seen: Arc::clone(&seen),
+        probe,
     };
     let runtime = DebugRuntime::new(
         Arc::new(map),
@@ -105,7 +131,7 @@ fn runtime(
         control,
         DebugOptions {
             stop_on_entry,
-            breakpoints,
+            breakpoints: specs,
         },
     );
     (runtime, seen)

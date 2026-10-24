@@ -338,6 +338,9 @@ impl Session {
     /// Makes this session a debugging session: the script stops where the debugger says. A session
     /// is never debugged by accident; nothing but this call installs the hooks.
     pub fn attach_debugger(&mut self, debug: super::debug::DebugRuntime) {
+        // Logpoints write to the Pine Logs, and the script's own `log.*()` calls are what a person
+        // debugging wants to read too.
+        self.logs.enable();
         self.debug = Some(Box::new(debug));
     }
 
@@ -1087,13 +1090,17 @@ impl Session {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
-                .map_err(|error| self.debug_failed(statement, error))?;
-            if self.debug.is_some() {
+                .map_err(|error| self.debug_failed(statement, context, error))?;
+            let debugging = self.debug.is_some();
+            if debugging {
                 self.debug_before(statement, context)?;
             }
             let step = self
                 .run_statement(statement, context)
-                .map_err(|error| self.debug_failed(statement, error))?;
+                .map_err(|error| self.debug_failed(statement, context, error))?;
+            if debugging {
+                self.debug_after(statement, context);
+            }
             if step.value != RuntimeValue::Void {
                 last = step.value;
             }
@@ -1125,12 +1132,26 @@ impl Session {
         outcome
     }
 
+    /// `statement` ran to its end: whatever it declares now has a value this bar.
+    #[cold]
+    #[inline(never)]
+    fn debug_after(&mut self, statement: &Statement, context: &RuntimeContext) {
+        if let Some(debug) = self.debug.as_mut() {
+            debug.after_statement(statement, context);
+        }
+    }
+
     /// Passes a failure of `statement` through the debugger on its way up, and hands it back.
     #[cold]
     #[inline(never)]
-    fn debug_failed(&mut self, statement: &Statement, error: Diagnostic) -> Diagnostic {
+    fn debug_failed(
+        &mut self,
+        statement: &Statement,
+        context: &RuntimeContext,
+        error: Diagnostic,
+    ) -> Diagnostic {
         if let Some(mut debug) = self.debug.take() {
-            debug.failed(self, statement, &error);
+            debug.failed(self, context, statement, &error);
             self.debug = Some(debug);
         }
         error

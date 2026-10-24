@@ -40,16 +40,43 @@ pub(crate) struct Frame {
     /// The caller's values of the names this function declares, taken off the variable table for the
     /// duration of the call. They are what the caller's frame sees.
     pub shadowed: Vec<(String, Option<RuntimeValue>)>,
+    /// The statements (by position in the source map) this frame has finished since it began. A name
+    /// the interpreter's table still holds from the previous bar is only a value of this bar once
+    /// the statement that declares it has run.
+    executed: Vec<u64>,
 }
 
 impl Frame {
-    pub fn script() -> Self {
+    pub fn new(
+        kind: FrameKind,
+        call_site: Option<SourceRange>,
+        shadowed: Vec<(String, Option<RuntimeValue>)>,
+    ) -> Self {
         Self {
-            kind: FrameKind::Script,
-            call_site: None,
+            kind,
+            call_site,
             location: None,
-            shadowed: Vec::new(),
+            shadowed,
+            executed: Vec::new(),
         }
+    }
+
+    pub fn script() -> Self {
+        Self::new(FrameKind::Script, None, Vec::new())
+    }
+
+    pub fn mark_executed(&mut self, index: usize) {
+        let word = index / 64;
+        if self.executed.len() <= word {
+            self.executed.resize(word + 1, 0);
+        }
+        self.executed[word] |= 1 << (index % 64);
+    }
+
+    pub fn has_executed(&self, index: usize) -> bool {
+        self.executed
+            .get(index / 64)
+            .is_some_and(|word| word & (1 << (index % 64)) != 0)
     }
 }
 
