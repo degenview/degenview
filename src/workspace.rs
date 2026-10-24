@@ -182,6 +182,8 @@ pub struct ChartWorkspace {
     pattern_tool: Tool,
     /// The tool the forecasting, volume and measurement tile shows.
     forecast_tool: Tool,
+    /// The tool the Fibonacci and Gann tile shows.
+    fib_tool: Tool,
     /// How drawings snap to the bars' prices (the strip's magnet).
     magnet: MagnetMode,
     /// Stay on a drawing tool after a drawing is placed; off returns to the crosshair.
@@ -345,6 +347,7 @@ impl ChartWorkspace {
             note_tool: Tool::Text,
             pattern_tool: Tool::XabcdPattern,
             forecast_tool: Tool::LongPosition,
+            fib_tool: Tool::FibRetracement,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all_drawings: false,

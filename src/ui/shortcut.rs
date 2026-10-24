@@ -319,6 +319,8 @@ pub const TOOL_VERTICAL_LINE: Shortcut =
     Shortcut::new(&[Chord::new(Key::V).alt()], &[Chord::new(Key::V).alt()]);
 pub const TOOL_CROSSLINE: Shortcut =
     Shortcut::new(&[Chord::new(Key::C).alt()], &[Chord::new(Key::C).alt()]);
+pub const TOOL_FIB_RETRACEMENT: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F).alt()], &[Chord::new(Key::F).alt()]);
 
 /// The shortcut that arms `tool`, for the tools that have one.
 pub fn tool(tool: crate::model::Tool) -> Option<Shortcut> {
@@ -328,6 +330,7 @@ pub fn tool(tool: crate::model::Tool) -> Option<Shortcut> {
         'J' => Some(TOOL_HORIZONTAL_RAY),
         'V' => Some(TOOL_VERTICAL_LINE),
         'C' => Some(TOOL_CROSSLINE),
+        'F' => Some(TOOL_FIB_RETRACEMENT),
         _ => None,
     }
 }
@@ -403,7 +406,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 32] = [
+    const ALL: [(&str, Shortcut); 33] = [
         ("save", SAVE),
         ("new tab", NEW_TAB),
         ("close tab", CLOSE_TAB),
@@ -436,6 +439,7 @@ mod tests {
         ("horizontal ray", TOOL_HORIZONTAL_RAY),
         ("vertical line", TOOL_VERTICAL_LINE),
         ("crossline", TOOL_CROSSLINE),
+        ("fib retracement", TOOL_FIB_RETRACEMENT),
     ];
 
     #[test]

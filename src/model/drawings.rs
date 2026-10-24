@@ -12,6 +12,7 @@ use super::cycle::CycleKind;
 use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
 use super::elliott::WaveKind;
+use super::fib::FibKind;
 use super::image_content::{Content, ImageData};
 use super::link_card::LinkCard;
 use super::measure::MeasureKind;
@@ -298,6 +299,11 @@ pub enum Geometry {
         anchor: Anchor,
         card: LinkCard,
     },
+    /// A Fibonacci drawing through its anchors: exactly `kind.points()` of them, in placement order.
+    Fib {
+        kind: FibKind,
+        points: Vec<Anchor>,
+    },
     /// A chart pattern through its pivots: exactly `kind.points()` of them, in placement order.
     Pattern {
         kind: PatternKind,
@@ -490,6 +496,7 @@ impl Geometry {
             Self::Table(_) => Tool::Table,
             Self::Image(_) => Tool::Image,
             Self::Card { .. } => Tool::Post,
+            Self::Fib { kind, .. } => kind.tool(),
             Self::Pattern { kind, .. } => kind.tool(),
             Self::Wave { kind, .. } => kind.tool(),
             Self::Cycle { kind, .. } => kind.tool(),
@@ -537,6 +544,7 @@ impl Geometry {
             Self::Highlighter { points }
             | Self::Path { points }
             | Self::Polyline { points, .. }
+            | Self::Fib { points, .. }
             | Self::Pattern { points, .. }
             | Self::Wave { points, .. } => points.clone(),
             Self::ArrowMarker { a, b }
@@ -610,6 +618,7 @@ impl Geometry {
             Self::Highlighter { points }
             | Self::Path { points }
             | Self::Polyline { points, .. }
+            | Self::Fib { points, .. }
             | Self::Pattern { points, .. }
             | Self::Wave { points, .. } => points.iter_mut().collect(),
             Self::ArrowMarker { a, b }
@@ -733,6 +742,7 @@ impl Geometry {
             Self::Image(image) => image.is_valid(),
             Self::Card { card, .. } => card.is_valid(),
             // A pattern or a wave has its tool's number of pivots and no other.
+            Self::Fib { kind, .. } => anchors.len() == kind.points(),
             Self::Pattern { kind, .. } => anchors.len() == kind.points(),
             Self::Wave { kind, .. } => anchors.len() == kind.points(),
             Self::Bars(pattern) => pattern.is_valid(),
@@ -906,6 +916,13 @@ impl Geometry {
             // The pivots placed so far, then the pointer for every one still to come, so the
             // preview is already the whole shape: it moves with the pointer and settles as each
             // pivot is placed.
+            Tool::FibRetracement => {
+                let kind = FibKind::of_tool(tool)?;
+                Self::Fib {
+                    kind,
+                    points: (0..kind.points()).map(at).collect(),
+                }
+            }
             Tool::XabcdPattern
             | Tool::CypherPattern
             | Tool::HeadAndShoulders
@@ -962,7 +979,6 @@ impl Geometry {
             // A picture has to be chosen before it can be shown, and a bars pattern copies the bars
             // the chart has, which a geometry alone does not hold: the layer previews them.
             Tool::Cursor
-            | Tool::Fib
             | Tool::Brush
             | Tool::Ruler
             | Tool::Image
@@ -1082,6 +1098,16 @@ impl Geometry {
                 c: *c,
                 d: disjoint_end(*a, *b, *c),
             },
+            // A Fibonacci drawing needs all its anchors, and not every one on the same point.
+            (tool, points)
+                if FibKind::of_tool(tool).is_some_and(|kind| kind.points() == points.len())
+                    && points.windows(2).any(|pair| pair[0] != pair[1]) =>
+            {
+                Self::Fib {
+                    kind: FibKind::of_tool(tool)?,
+                    points: points.to_vec(),
+                }
+            }
             // A pattern needs all its pivots, and not every one on the same point.
             (tool, points)
                 if PatternKind::of_tool(tool).is_some_and(|kind| kind.points() == points.len())
@@ -1175,16 +1201,6 @@ impl Geometry {
 /// line included, is one [`Drawing::Shape`] whose geometry says which.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum Drawing {
-    Fib {
-        id: u64,
-        a: Anchor,
-        b: Anchor,
-        locked: bool,
-        #[serde(default)]
-        hidden: bool,
-        #[serde(default)]
-        visibility: Visibility,
-    },
     Brush {
         id: u64,
         points: Vec<Anchor>,
@@ -1231,10 +1247,7 @@ fn brush_style() -> DrawingStyle {
 impl Drawing {
     pub fn id(&self) -> u64 {
         match self {
-            Self::Fib { id, .. }
-            | Self::Brush { id, .. }
-            | Self::Ruler { id, .. }
-            | Self::Shape { id, .. } => *id,
+            Self::Brush { id, .. } | Self::Ruler { id, .. } | Self::Shape { id, .. } => *id,
             Self::Unreadable(_) => 0,
         }
     }
@@ -1346,14 +1359,6 @@ impl Drawing {
         let at = |index: usize| anchors.get(index).copied();
         Some(match tool {
             Tool::Cursor => return None,
-            Tool::Fib => Self::Fib {
-                id,
-                a: at(0)?,
-                b: at(1)?,
-                locked: false,
-                hidden: false,
-                visibility: Visibility::ALL,
-            },
             Tool::Ruler => Self::Ruler {
                 id,
                 a: at(0)?,
@@ -1396,7 +1401,6 @@ impl Drawing {
     /// The tool that draws this, `None` for an unreadable row.
     pub fn tool(&self) -> Option<Tool> {
         match self {
-            Self::Fib { .. } => Some(Tool::Fib),
             Self::Brush { .. } => Some(Tool::Brush),
             Self::Ruler { .. } => Some(Tool::Ruler),
             Self::Shape { geometry, .. } => Some(geometry.tool()),
@@ -1406,27 +1410,21 @@ impl Drawing {
 
     pub fn locked(&self) -> bool {
         match self {
-            Self::Fib { locked, .. } | Self::Brush { locked, .. } | Self::Shape { locked, .. } => {
-                *locked
-            }
+            Self::Brush { locked, .. } | Self::Shape { locked, .. } => *locked,
             Self::Ruler { .. } | Self::Unreadable(_) => false,
         }
     }
 
     pub fn hidden(&self) -> bool {
         match self {
-            Self::Fib { hidden, .. } | Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => {
-                *hidden
-            }
+            Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => *hidden,
             Self::Ruler { .. } | Self::Unreadable(_) => false,
         }
     }
 
     pub fn visibility(&self) -> Visibility {
         match self {
-            Self::Fib { visibility, .. }
-            | Self::Brush { visibility, .. }
-            | Self::Shape { visibility, .. } => *visibility,
+            Self::Brush { visibility, .. } | Self::Shape { visibility, .. } => *visibility,
             Self::Ruler { .. } | Self::Unreadable(_) => Visibility::ALL,
         }
     }
@@ -1439,27 +1437,21 @@ impl Drawing {
 
     pub fn set_locked(&mut self, value: bool) {
         match self {
-            Self::Fib { locked, .. } | Self::Brush { locked, .. } | Self::Shape { locked, .. } => {
-                *locked = value
-            }
+            Self::Brush { locked, .. } | Self::Shape { locked, .. } => *locked = value,
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
 
     pub fn set_hidden(&mut self, value: bool) {
         match self {
-            Self::Fib { hidden, .. } | Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => {
-                *hidden = value
-            }
+            Self::Brush { hidden, .. } | Self::Shape { hidden, .. } => *hidden = value,
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
 
     pub fn set_visibility(&mut self, value: Visibility) {
         match self {
-            Self::Fib { visibility, .. }
-            | Self::Brush { visibility, .. }
-            | Self::Shape { visibility, .. } => *visibility = value,
+            Self::Brush { visibility, .. } | Self::Shape { visibility, .. } => *visibility = value,
             Self::Ruler { .. } | Self::Unreadable(_) => {}
         }
     }
@@ -1536,7 +1528,7 @@ impl Drawing {
     /// Every anchor in placement order.
     pub fn anchors(&self) -> Vec<Anchor> {
         match self {
-            Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => vec![*a, *b],
+            Self::Ruler { a, b, .. } => vec![*a, *b],
             Self::Brush { points, .. } => points.clone(),
             Self::Shape { geometry, .. } => geometry.anchors(),
             Self::Unreadable(_) => Vec::new(),
@@ -1546,7 +1538,7 @@ impl Drawing {
     /// Mutable access to every anchor in placement order, to move or edit them.
     pub fn anchors_mut(&mut self) -> Vec<&mut Anchor> {
         match self {
-            Self::Fib { a, b, .. } | Self::Ruler { a, b, .. } => vec![a, b],
+            Self::Ruler { a, b, .. } => vec![a, b],
             Self::Brush { points, .. } => points.iter_mut().collect(),
             Self::Shape { geometry, .. } => geometry.anchors_mut(),
             Self::Unreadable(_) => Vec::new(),
@@ -1571,10 +1563,9 @@ impl Drawing {
     /// This drawing under a new id (a duplicate).
     pub fn with_id(mut self, new_id: u64) -> Self {
         match &mut self {
-            Self::Fib { id, .. }
-            | Self::Brush { id, .. }
-            | Self::Ruler { id, .. }
-            | Self::Shape { id, .. } => *id = new_id,
+            Self::Brush { id, .. } | Self::Ruler { id, .. } | Self::Shape { id, .. } => {
+                *id = new_id
+            }
             Self::Unreadable(_) => {}
         }
         self
@@ -1741,14 +1732,13 @@ mod tests {
     fn rows_written_before_styles_existed_decode_unchanged() {
         // The exact JSON the previous version wrote for each original drawing.
         let old = r#"[
-            {"Fib":{"id":2,"a":{"time_ms":10,"price":1.5},"b":{"time_ms":20,"price":2.5},"locked":true}},
             {"Brush":{"id":3,"points":[{"time_ms":1,"price":1.0}],"width":2.0,"locked":false}}
         ]"#;
         let drawings: Vec<Drawing> = serde_json::from_str(old).unwrap();
-        assert_eq!(drawings.len(), 2);
+        assert_eq!(drawings.len(), 1);
         assert!(drawings[0].visibility().is_all());
-        assert!(drawings[0].locked());
-        let Drawing::Brush { style, width, .. } = &drawings[1] else {
+        assert!(!drawings[0].locked());
+        let Drawing::Brush { style, width, .. } = &drawings[0] else {
             panic!("brush");
         };
         assert_eq!(*width, 2.0);
@@ -1860,13 +1850,16 @@ mod tests {
         let holder: Holder = serde_json::from_str(stored).unwrap();
         assert_eq!(holder.drawings.len(), 3);
         assert!(matches!(holder.drawings[0], Drawing::Unreadable(_)));
-        assert!(matches!(holder.drawings[1], Drawing::Fib { id: 2, .. }));
+        // The retracement of an earlier build was a variant of its own, which this version lacks.
+        assert!(matches!(holder.drawings[1], Drawing::Unreadable(_)));
+        assert_eq!(holder.drawings[1].stored_id(), 2);
         assert!(matches!(holder.drawings[2], Drawing::Unreadable(_)));
         let again = serde_json::to_value(&holder).unwrap();
         let original: serde_json::Value = serde_json::from_str(stored).unwrap();
-        // The unreadable rows come back exactly; the readable one re-encodes with its defaults.
-        assert_eq!(again["drawings"][0], original["drawings"][0]);
-        assert_eq!(again["drawings"][2], original["drawings"][2]);
+        // The unreadable rows come back exactly.
+        for index in 0..3 {
+            assert_eq!(again["drawings"][index], original["drawings"][index]);
+        }
         let reread: Holder = serde_json::from_value(again).unwrap();
         assert_eq!(reread, holder);
     }

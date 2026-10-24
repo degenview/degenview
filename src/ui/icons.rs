@@ -100,7 +100,7 @@ pub enum Icon {
     ClockBadge,
     LineDiagonal,
     LineTrend,
-    FibPoints,
+    FibRetracement,
     Paintbrush,
     SunMaxFill,
     MoonFill,
@@ -960,21 +960,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(2.8, 13.2), 1.5, true);
             circle(p(13.2, 2.8), 1.5, true);
         }
-        Icon::FibPoints => {
-            // Three points joined by a dotted triangle, like `point.3.connected.trianglepath.dotted`.
-            let dots = |a: Pos2, b: Pos2| {
-                for k in 1..5 {
-                    let t = k as f32 / 5.0;
-                    painter.circle_filled(a + (b - a) * t, 0.55 * scale, color);
-                }
-            };
-            let (top, left, right) = (p(8.0, 2.6), p(2.6, 13.0), p(13.4, 13.0));
-            dots(top, left);
-            dots(left, right);
-            dots(top, right);
-            for point in [top, left, right] {
-                painter.circle_stroke(point, 1.7 * scale, stroke);
+        Icon::FibRetracement => {
+            // Four levels crossed by the swing they are measured from.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for y in [3.2, 6.4, 9.6, 12.8] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.5, y), p(13.5, y)],
+                    faint,
+                )));
             }
+            line(&[p(3.4, 12.8), p(12.6, 3.2)]);
+            circle(p(3.4, 12.8), 1.5, true);
+            circle(p(12.6, 3.2), 1.5, true);
         }
         Icon::Paintbrush => {
             closed(&[p(13.8, 1.8), p(14.4, 2.4), p(8.4, 9.6), p(6.6, 8.0)]);
@@ -2024,7 +2021,7 @@ mod tests {
             ClockBadge,
             LineDiagonal,
             LineTrend,
-            FibPoints,
+            FibRetracement,
             Paintbrush,
             SunMaxFill,
             MoonFill,

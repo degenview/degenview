@@ -10,6 +10,7 @@ use super::drawing_style::{
     VerticalAlign,
 };
 use super::drawings::{LONG_TEXT_CHARS, MAX_TEXT_CHARS};
+use super::fib_style::FibStyle;
 use serde::{Deserialize, Serialize};
 
 /// A drawing tool armed on the tool strip. `Cursor` is the crosshair (default).
@@ -18,7 +19,7 @@ pub enum Tool {
     #[default]
     Cursor,
     TrendLine,
-    Fib,
+    FibRetracement,
     Brush,
     Ruler,
     Highlighter,
@@ -97,8 +98,9 @@ pub enum Tool {
 pub enum ToolGroup {
     /// The crosshair, which draws nothing.
     Pointer,
-    /// Fibonacci: the strip's own tile.
-    Lines,
+    /// The Fibonacci and Gann tile's first section.
+    Fibonacci,
+    Gann,
     Measure,
     Brushes,
     Arrows,
@@ -132,11 +134,15 @@ impl ToolGroup {
     pub const PATTERN_MENU: [Self; 3] = [Self::ChartPatterns, Self::ElliottWaves, Self::Cycles];
     /// The groups listed in the forecasting, volume and measurement tile's menu, in order.
     pub const FORECAST_MENU: [Self; 3] = [Self::Forecasting, Self::VolumeBased, Self::Measurers];
+    /// The groups listed in the Fibonacci and Gann tile's menu, in order.
+    pub const FIB_MENU: [Self; 2] = [Self::Fibonacci, Self::Gann];
 
     pub const fn title(self) -> &'static str {
         match self {
             Self::Pointer => "Cursor",
-            Self::Lines | Self::TrendLines => "Lines",
+            Self::TrendLines => "Lines",
+            Self::Fibonacci => "Fibonacci",
+            Self::Gann => "Gann",
             Self::Measure => "Measure",
             Self::Brushes => "Brushes",
             Self::Arrows => "Arrows",
@@ -172,7 +178,7 @@ pub enum Placement {
 /// The style controls a tool offers. A tool shows exactly these in its floating toolbar and its
 /// properties dialog; nothing else is drawn or editable.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Caps(u32);
+pub struct Caps(u64);
 
 impl Caps {
     pub const NONE: Self = Self(0);
@@ -230,6 +236,8 @@ impl Caps {
     pub const MEASURE: Self = Self(1 << 30);
     /// A position forecast's success and failure colours.
     pub const FORECAST: Self = Self(1 << 31);
+    /// A Fibonacci or Gann tool's level lists and the switches of its `FibStyle`.
+    pub const FIB: Self = Self(1 << 32);
     /// Colour and thickness.
     pub const STROKE: Self = Self(Self::COLOR.0 | Self::WIDTH.0);
     /// Colour, thickness and line pattern.
@@ -319,7 +327,8 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 71] = [
+    pub const GROUPED: [Self; 72] = [
+        Self::FibRetracement,
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -396,11 +405,13 @@ impl Tool {
     pub const fn spec(self) -> ToolSpec {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
-            Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Forecasting,
-            Lines, Measure, Measurers, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
+            Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Fibonacci,
+            Forecasting, Measure, Measurers, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
             VolumeBased,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
+        // A Fibonacci tool: its trend line's stroke, its background and its level lists.
+        let fib_levels = Caps::LINE.with(Caps::FILL).with(Caps::FIB);
         // What every two-point line offers: text along it, ends, statistics and price tags.
         let line = Caps::LINE
             .with(Caps::EXTEND)
@@ -561,7 +572,12 @@ impl Tool {
                     .with(Caps::TEXT_FIRST)
                     .with(Caps::EMOJI),
             ),
-            Self::Fib => spec("Fib Retracement", Lines, Points(2), Caps::NONE),
+            Self::FibRetracement => spec(
+                "Fib retracement",
+                Fibonacci,
+                Points(2),
+                fib_levels.with(Caps::EXTEND),
+            ),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
             Self::Highlighter => spec("Highlighter", Brushes, Freehand, Caps::STROKE),
@@ -754,6 +770,15 @@ impl Tool {
             style
         };
         // The Charting Library's line: its blue, 2 px, nothing extended, no tags.
+        // A Fibonacci tool: the Charting Library's grey 2 px trend line, a 20 % background in each
+        // level's own colour, and 12 pt labels (which take each level's colour).
+        let fib_style = |tool: Self, trend: Rgba, dash: LineDash| {
+            let mut style = tinted(trend, true);
+            style.stroke.dash = dash;
+            style.text.size = 12.0;
+            style.fib = FibStyle::for_tool(tool);
+            style
+        };
         let line_style = |change: fn(&mut DrawingStyle)| {
             let mut style = tinted([41, 98, 255, 255], false);
             // Text below the line, as the Charting Library has it.
@@ -1020,10 +1045,11 @@ impl Tool {
                 style.text.size = 12.0;
                 style
             }
-            // A card takes its look from the theme, and a picture has none to style.
-            Self::Cursor | Self::Fib | Self::Ruler | Self::Image | Self::Post => {
-                DrawingStyle::default()
+            Self::FibRetracement => {
+                fib_style(Tool::FibRetracement, [120, 123, 134, 255], LineDash::Dashed)
             }
+            // A card takes its look from the theme, and a picture has none to style.
+            Self::Cursor | Self::Ruler | Self::Image | Self::Post => DrawingStyle::default(),
         };
         if matches!(self, Self::Rectangle) {
             style.middle_line.dash = LineDash::Dashed;
@@ -1039,6 +1065,7 @@ impl Tool {
             Self::HorizontalRay => Some('J'),
             Self::VerticalLine => Some('V'),
             Self::Crossline => Some('C'),
+            Self::FibRetracement => Some('F'),
             _ => None,
         }
     }
@@ -1059,6 +1086,14 @@ impl Tool {
             .filter(|tool| ToolGroup::PATTERN_MENU.contains(&tool.spec().group))
     }
 
+    /// The tools of the Fibonacci and Gann tile's menu, in order.
+    #[cfg(test)]
+    pub fn fib_tools() -> impl Iterator<Item = Self> {
+        Self::GROUPED
+            .into_iter()
+            .filter(|tool| ToolGroup::FIB_MENU.contains(&tool.spec().group))
+    }
+
     /// The tools of the Lines tile's menu, in order.
     #[cfg(test)]
     pub fn line_tools() -> impl Iterator<Item = Self> {
@@ -1074,7 +1109,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 71);
+        assert_eq!(Tool::GROUPED.len(), 72);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -1084,6 +1119,7 @@ mod tests {
                 &ToolGroup::NOTE_MENU,
                 &ToolGroup::PATTERN_MENU,
                 &ToolGroup::FORECAST_MENU,
+                &ToolGroup::FIB_MENU,
             ];
             assert_eq!(
                 menus.iter().filter(|menu| menu.contains(&group)).count(),
@@ -1102,12 +1138,13 @@ mod tests {
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
         assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
+        assert_eq!(counts(&ToolGroup::FIB_MENU), [1, 0]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
         assert_eq!(Tool::forecast_tools().count(), 12);
-        // The Fibonacci tile and the crosshair are in neither menu.
-        assert!(!Tool::GROUPED.contains(&Tool::Fib));
-        assert_eq!(Tool::Fib.spec().group, ToolGroup::Lines);
+        assert_eq!(Tool::fib_tools().count(), 1);
+        // The crosshair, the brush's own tile and the ruler are in no menu of theirs.
+        assert!(!Tool::GROUPED.contains(&Tool::Ruler));
     }
 
     #[test]
@@ -1157,6 +1194,7 @@ mod tests {
         assert_eq!(
             keys,
             [
+                (Tool::FibRetracement, 'F'),
                 (Tool::TrendLine, 'T'),
                 (Tool::HorizontalLine, 'H'),
                 (Tool::HorizontalRay, 'J'),

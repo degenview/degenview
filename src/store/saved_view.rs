@@ -190,6 +190,59 @@ mod tests {
     }
 
     #[test]
+    fn every_fibonacci_and_gann_tool_survives_the_database_exactly() {
+        use crate::model::fib_style::FibLevel;
+        use crate::model::{Anchor, Drawing, Placement, Tool};
+        let anchors: Vec<Anchor> = (0..4)
+            .map(|index| Anchor {
+                time_ms: 1_700_000_000_000 + index * 3_600_000,
+                price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+            })
+            .collect();
+        let stored: Vec<serde_json::Value> = Tool::fib_tools()
+            .enumerate()
+            .map(|(index, tool)| {
+                let Placement::Points(count) = tool.spec().placement else {
+                    panic!("{tool:?} is placed by points");
+                };
+                let mut style = tool.default_style();
+                let mut fib = style.fib.expect("a Fibonacci tool carries its levels");
+                fib.levels.push(FibLevel {
+                    ratio: 0.9,
+                    color: [9, 8, 7, 255],
+                    ..FibLevel::default()
+                });
+                fib.reverse = true;
+                style.fib = Some(fib);
+                let drawing = Drawing::build(
+                    tool,
+                    index as u64 + 1,
+                    &anchors[..usize::from(count)],
+                    style,
+                )
+                .unwrap();
+                serde_json::to_value(&drawing).unwrap()
+            })
+            .collect();
+        let store = Store::open_in_memory().expect("open");
+        store
+            .replace_saved_views(&[view_with(stored.clone())])
+            .expect("write");
+        let loaded = store.saved_views();
+        let drawings = &loaded[0].charts[0].drawings;
+        assert_eq!(drawings.len(), Tool::fib_tools().count());
+        assert!(drawings.iter().all(|drawing| drawing.tool().is_some()));
+        store.replace_saved_views(&loaded).expect("rewrite");
+        let again = store.saved_views();
+        let back: Vec<serde_json::Value> = again[0].charts[0]
+            .drawings
+            .iter()
+            .map(|drawing| serde_json::to_value(drawing).unwrap())
+            .collect();
+        assert_eq!(back, stored);
+    }
+
+    #[test]
     fn saved_views_round_trip_in_order() {
         let store = Store::open_in_memory().expect("open");
         store

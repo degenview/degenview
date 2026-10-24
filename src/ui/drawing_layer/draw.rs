@@ -951,7 +951,7 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selecte
         let size = galley.size();
         let padding = match label.look {
             LabelLook::Pill | LabelLook::Ratio | LabelLook::Plate { .. } => vec2(6.0, 2.5),
-            LabelLook::Plain => vec2(1.0, 0.0),
+            LabelLook::Plain | LabelLook::Ink(_) => vec2(1.0, 0.0),
         };
         let outer = size + padding * 2.0;
         let step = outer.y + LABEL_CLEARANCE;
@@ -960,7 +960,7 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selecte
             let center = match label.place {
                 LabelPlace::On => label.at + label.push * along,
                 LabelPlace::Beside => label.at + label.push * (LABEL_GAP + outer.y / 2.0 + along),
-            };
+            } - label.edge * outer / 2.0;
             Rect::from_center_size(pos2(snap(center.x), snap(center.y)), outer)
         };
         let mut rect = rect_at(0);
@@ -997,6 +997,22 @@ fn draw_labels(painter: &Painter, screen: &Screen, style: &DrawingStyle, selecte
                     Stroke::new(1.0, plate),
                     StrokeKind::Inside,
                 );
+            }
+            LabelLook::Ink(color) => {
+                let ink = series_render::color(color);
+                for offset in [
+                    vec2(-1.0, 0.0),
+                    vec2(1.0, 0.0),
+                    vec2(0.0, -1.0),
+                    vec2(0.0, 1.0),
+                ] {
+                    painter.add(
+                        TextShape::new(origin + offset, galley.clone(), ink)
+                            .with_override_text_color(halo),
+                    );
+                }
+                painter.add(TextShape::new(origin, galley, ink).with_override_text_color(ink));
+                continue;
             }
             LabelLook::Plain => {
                 for offset in [

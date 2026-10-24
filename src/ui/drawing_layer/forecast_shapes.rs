@@ -110,6 +110,7 @@ fn plate(
         look: LabelLook::Plate { fill, ink },
         place,
         push: vec2(0.0, push),
+        edge: vec2(0.0, 0.0),
         on_select: false,
     }
 }

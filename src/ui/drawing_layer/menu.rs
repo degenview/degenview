@@ -141,9 +141,6 @@ impl DrawingLayer {
             Drawing::Brush { .. } | Drawing::Shape { .. } => {
                 self.screen(drawing, proj).map(|screen| screen.bounds)
             }
-            Drawing::Fib { a, b, .. } => {
-                geo::bounds(&[proj.point(*a), proj.point(*b)]).map(|rect| rect.expand(10.0))
-            }
             Drawing::Ruler { .. } | Drawing::Unreadable(_) => None,
         }
     }

@@ -4,6 +4,7 @@
 
 use super::Projection;
 use super::edit::{BoxHandle, Part};
+use super::fib_shapes;
 use super::forecast_shapes;
 use super::line_shapes;
 use super::note_shapes;
@@ -168,6 +169,9 @@ pub(super) enum LabelLook {
     Ratio,
     /// On a plate of its own colour, in an ink of its own: a position's stats, a measurement.
     Plate { fill: Rgba, ink: Rgba },
+    /// The text alone in a colour of its own, with a halo: a Fibonacci level's ratio, written in
+    /// the level's colour.
+    Ink(Rgba),
 }
 
 /// Where a [`PivotLabel`] sits against its point.
@@ -191,6 +195,10 @@ pub(super) struct PivotLabel {
     /// A unit vector: the way the label sits from its point (`Beside`) and the way it gives
     /// way to another label.
     pub push: Vec2,
+    /// Which edge of the label sits on its point, as -1 (left, top), 0 (centre) or 1 (right,
+    /// bottom) on each axis: `(-1, 1)` puts the label's left edge on the point with the label
+    /// above it. A level's label hangs off the end of its line this way.
+    pub edge: Vec2,
     /// Shown only while the drawing is selected (a position's stats, unless it is set to always
     /// show them).
     pub on_select: bool,
@@ -879,6 +887,7 @@ fn shape(
         Geometry::Annotation { .. } | Geometry::Leader { .. } | Geometry::Signpost { .. } => {
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }
+        Geometry::Fib { .. } => return fib_shapes::project(geometry, style, proj, anchors),
         Geometry::Pattern { .. } | Geometry::Wave { .. } | Geometry::Cycle { .. } => {
             return pattern_shapes::project(geometry, style, proj, anchors);
         }

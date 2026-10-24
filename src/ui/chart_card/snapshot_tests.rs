@@ -872,6 +872,74 @@ fn gallery_of_the_patterns_waves_and_cycles() {
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
 
+/// One drawing of every Fibonacci and Gann tool, in the last stretch of `series(300)` (bars
+/// 215..290, prices around 200..275; the chart ends at bar 299).
+fn fib_drawings() -> Vec<(&'static str, Drawing)> {
+    use crate::model::Anchor;
+    let at = |bar: i64, price: f64| Anchor {
+        time_ms: bar * HOUR,
+        price,
+    };
+    let build = |tool: Tool, anchors: &[Anchor]| {
+        Drawing::build(tool, 1, anchors, tool.default_style()).expect("builds")
+    };
+    vec![(
+        "fib-retracement",
+        build(Tool::FibRetracement, &[at(228, 214.0), at(268, 262.0)]),
+    )]
+}
+
+#[test]
+fn every_fibonacci_and_gann_tool_snapshots_as_it_draws() {
+    for (_, drawing) in fib_drawings() {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.drawings = vec![drawing];
+        same_as_live(&mut harness, false);
+    }
+}
+
+/// The Fibonacci and Gann tools on a chart, written as PNGs for a person to look at.
+/// Run by hand: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_fib -- --ignored`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_fibonacci_and_gann_tools() {
+    use crate::ui::theme::{self, AppTheme};
+    let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    for light in [false, true] {
+        theme::apply(
+            &egui::Context::default(),
+            if light {
+                AppTheme::Light
+            } else {
+                AppTheme::Dark
+            },
+        );
+        for (name, drawing) in fib_drawings() {
+            if light && !["fib-retracement"].contains(&name) {
+                continue;
+            }
+            let mut harness = Harness::new(ChartCanvas::default());
+            harness.drawings = vec![drawing];
+            settled(&mut harness);
+            let size = harness.card.snapshot_size();
+            let dimensions =
+                SnapshotDimensions::fit(size.x, size.y, SnapshotScale::X2).expect("a size");
+            let scene = harness
+                .card
+                .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
+                .expect("a scene");
+            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let suffix = if light { "-light" } else { "" };
+            std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
+        }
+    }
+    theme::apply(&egui::Context::default(), AppTheme::Dark);
+}
+
 /// One drawing of every forecasting, volume and measurement tool, in the last stretch of
 /// `series(300)` (bars 215..290, prices around 200..275; the chart ends at bar 299).
 fn forecast_drawings() -> Vec<(&'static str, Drawing)> {

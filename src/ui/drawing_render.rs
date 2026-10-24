@@ -6,21 +6,6 @@ use crate::model::{Anchor, Kline, PriceFormat};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 
-/// Default retracement ratios, matching the Swift `FibonacciDefaults.levels`.
-pub const FIB_RATIOS: [f64; 7] = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
-
-/// Level colours, in the same order as `FIB_RATIOS`.
-pub const FIB_COLORS: [Color32; 7] = [
-    Color32::from_rgb(142, 142, 147),
-    Color32::from_rgb(245, 72, 76),
-    Color32::from_rgb(255, 149, 0),
-    Color32::from_rgb(23, 201, 114),
-    Color32::from_rgb(10, 132, 255),
-    Color32::from_rgb(175, 82, 222),
-    Color32::from_rgb(142, 142, 147),
-];
-
-pub const TREND_COLOR: Color32 = Color32::from_rgb(10, 132, 255);
 pub const HANDLE_RADIUS: f32 = 4.5;
 /// Pointer distance (px) within which a drawing counts as hovered.
 pub const HIT_TOLERANCE: f32 = 6.0;
@@ -235,21 +220,6 @@ pub fn duration(secs: i64) -> String {
     }
 }
 
-/// Price at `ratio` along the retracement from `price1` (ratio 0) to `price2` (ratio 1).
-/// `reverse` reflects the mapping; `log` interpolates in log space (both anchors > 0).
-pub fn fib_price(price1: f64, price2: f64, ratio: f64, reverse: bool, log: bool) -> Option<f64> {
-    let ratio = if reverse { 1.0 - ratio } else { ratio };
-    let value = if log {
-        if price1 <= 0.0 || price2 <= 0.0 {
-            return None;
-        }
-        (price1.ln() + ratio * (price2.ln() - price1.ln())).exp()
-    } else {
-        price1 + ratio * (price2 - price1)
-    };
-    value.is_finite().then_some(value)
-}
-
 /// Maps candle open times to a continuous index and back. Between candles it
 /// interpolates linearly; outside the data it extrapolates at the average interval,
 /// so a drawing anchored in the future or before the first bar still has a position.
@@ -348,90 +318,12 @@ pub fn resize_ruler(a: Anchor, b: Anchor, corner: RulerCorner, to: Anchor) -> (A
     (a, b)
 }
 
-/// Distance from `point` to the segment `a`–`b`.
-pub fn distance_to_segment(point: Pos2, a: Pos2, b: Pos2) -> f32 {
-    let ab = b - a;
-    let length_sq = ab.length_sq();
-    if length_sq <= f32::EPSILON {
-        return point.distance(a);
-    }
-    let t = ((point - a).dot(ab) / length_sq).clamp(0.0, 1.0);
-    point.distance(a + ab * t)
-}
-
 fn with_alpha(color: Color32, alpha: u8) -> Color32 {
     Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
 }
 
 fn draw_handle(painter: &Painter, at: Pos2, color: Color32) {
     painter.circle(at, HANDLE_RADIUS, theme::surface(), Stroke::new(1.5, color));
-}
-
-/// One level of a drawn retracement.
-pub struct FibLevelLine {
-    pub ratio: f64,
-    pub y: f32,
-    /// The level's price as the chart writes it.
-    pub label: String,
-    pub color: Color32,
-}
-
-/// A Fibonacci retracement across `[left, right]` with a tinted band between the
-/// outermost levels and a labelled line per level.
-pub fn draw_fibonacci(
-    painter: &Painter,
-    plot: Rect,
-    a: Pos2,
-    b: Pos2,
-    levels: &[FibLevelLine],
-    emphasized: bool,
-) {
-    let (left, right) = (a.x.min(b.x), a.x.max(b.x));
-    let clip = painter.with_clip_rect(plot);
-    let left = left.max(plot.left());
-    let right = right.min(plot.right());
-
-    // Background between consecutive levels.
-    for pair in levels.windows(2) {
-        let band = Rect::from_min_max(
-            Pos2::new(left, pair[0].y.min(pair[1].y)),
-            Pos2::new(right, pair[0].y.max(pair[1].y)),
-        );
-        clip.rect_filled(band, 0.0, with_alpha(pair[1].color, 20));
-    }
-
-    // Anchor-to-anchor guide.
-    clip.add(egui::Shape::dashed_line(
-        &[a, b],
-        Stroke::new(1.0, with_alpha(Color32::from_gray(150), 200)),
-        4.0,
-        3.0,
-    ));
-
-    for level in levels {
-        clip.line_segment(
-            [Pos2::new(left, level.y), Pos2::new(right, level.y)],
-            Stroke::new(1.0, level.color),
-        );
-        clip.text(
-            Pos2::new(right - 4.0, level.y - 2.0),
-            Align2::RIGHT_BOTTOM,
-            format!("{} ({})", ratio_label(level.ratio), level.label),
-            FontId::monospace(10.0),
-            level.color,
-        );
-    }
-
-    if emphasized {
-        draw_handle(painter, a, TREND_COLOR);
-        draw_handle(painter, b, TREND_COLOR);
-    }
-}
-
-/// "0", "0.236", "0.5", "1" — trailing zeros dropped.
-pub fn ratio_label(ratio: f64) -> String {
-    let text = format!("{ratio:.3}");
-    text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
 /// A ruler rectangle with its readout card. Green when measured upward, red downward.
@@ -525,18 +417,6 @@ pub fn hit_ruler(rect: Rect, pointer: Pos2) -> Option<RulerPart> {
     let outer = rect.expand(HIT_TOLERANCE);
     let inner = rect.shrink(HIT_TOLERANCE);
     (outer.contains(pointer) && !inner.contains(pointer)).then_some(RulerPart::Edge)
-}
-
-/// Fibonacci hit-test: any level line, or the anchor guide, within tolerance.
-pub fn hit_fibonacci(a: Pos2, b: Pos2, levels: &[FibLevelLine], pointer: Pos2) -> bool {
-    let (left, right) = (a.x.min(b.x), a.x.max(b.x));
-    if pointer.x < left - HIT_TOLERANCE || pointer.x > right + HIT_TOLERANCE {
-        return false;
-    }
-    levels
-        .iter()
-        .any(|level| (level.y - pointer.y).abs() <= HIT_TOLERANCE)
-        || distance_to_segment(pointer, a, b) <= HIT_TOLERANCE
 }
 
 #[cfg(test)]
@@ -666,23 +546,6 @@ mod tests {
         assert_eq!(readout.coverage_text(), "23 bars · 1d 14h");
     }
 
-    #[test]
-    fn fib_linear_log_reverse() {
-        assert_eq!(fib_price(100.0, 200.0, 0.5, false, false), Some(150.0));
-        assert_eq!(fib_price(100.0, 200.0, 0.25, true, false), Some(175.0));
-        let log_mid = fib_price(100.0, 400.0, 0.5, false, true).unwrap();
-        assert!((log_mid - 200.0).abs() < 1e-9);
-        assert_eq!(fib_price(0.0, 400.0, 0.5, false, true), None);
-    }
-
-    #[test]
-    fn ratio_labels_trim_zeros() {
-        assert_eq!(ratio_label(0.0), "0");
-        assert_eq!(ratio_label(1.0), "1");
-        assert_eq!(ratio_label(0.5), "0.5");
-        assert_eq!(ratio_label(0.236), "0.236");
-    }
-
     fn candles(times: &[i64]) -> Vec<Kline> {
         times
             .iter()
@@ -764,13 +627,6 @@ mod tests {
         );
         assert_eq!((a3.time_ms, a3.price), (300, 30.0));
         assert_eq!((b3.time_ms, b3.price), (200, 20.0));
-    }
-
-    #[test]
-    fn segment_distance() {
-        let (a, b) = (Pos2::new(0.0, 0.0), Pos2::new(10.0, 0.0));
-        assert_eq!(distance_to_segment(Pos2::new(5.0, 3.0), a, b), 3.0);
-        assert_eq!(distance_to_segment(Pos2::new(-4.0, 3.0), a, b), 5.0);
     }
 
     #[test]

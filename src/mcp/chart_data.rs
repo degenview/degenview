@@ -1014,7 +1014,7 @@ mod tests {
     fn editing_respects_locks_unknown_ids_and_unsupported_tools() {
         let data = bars(10);
         let fib = Drawing::build(
-            Tool::Fib,
+            Tool::FibRetracement,
             4,
             &[
                 Anchor {
@@ -1212,6 +1212,37 @@ mod tests {
                 .unwrap_or_else(|| panic!("{tool:?}"));
             let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
             assert_eq!(info.tool, name);
+            assert!(!info.editable, "{name} cannot be edited over MCP");
+        }
+    }
+
+    #[test]
+    fn every_fibonacci_and_gann_tool_is_listed_read_only_by_name() {
+        let at = |index: i64| Anchor {
+            time_ms: T0 + index * DAY,
+            price: 100.0 + (index % 3) as f64 * 5.0 + index as f64,
+        };
+        let anchors: Vec<Anchor> = (0..4).map(at).collect();
+        let names = [(Tool::FibRetracement, "fib_retracement")];
+        assert_eq!(
+            names.len(),
+            Tool::fib_tools().count(),
+            "every tool is named"
+        );
+        for (tool, name) in names {
+            let crate::model::Placement::Points(count) = tool.spec().placement else {
+                panic!("{tool:?} is placed by points");
+            };
+            let drawing = Drawing::sample(
+                tool,
+                1,
+                &anchors[..usize::from(count)],
+                tool.default_style(),
+            )
+            .unwrap_or_else(|| panic!("{tool:?}"));
+            let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
+            assert_eq!(info.tool, name);
+            assert_eq!(info.anchor_count, usize::from(count));
             assert!(!info.editable, "{name} cannot be edited over MCP");
         }
     }

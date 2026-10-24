@@ -8,6 +8,7 @@
 use super::Timeframe;
 use super::chart_type::{LineDash, PriceSource, Rgba};
 use super::elliott::Degree;
+use super::fib_style::FibStyle;
 use super::forecast_style::{
     GhostOptions, MeasureOptions, PositionOptions, ProfileOptions, VwapOptions,
 };
@@ -633,6 +634,10 @@ pub struct DrawingStyle {
     pub profile: ProfileOptions,
     #[serde(skip_serializing_if = "is_default_measure")]
     pub measure: MeasureOptions,
+    /// A Fibonacci or Gann drawing's levels and switches. `None` is the tool's own defaults, which
+    /// is what every other drawing carries, so none of them stores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fib: Option<FibStyle>,
     /// Draw every line of a pitchfork in the median's colour.
     #[serde(skip_serializing_if = "is_false")]
     pub use_one_color: bool,
@@ -686,6 +691,7 @@ impl Default for DrawingStyle {
             vwap: VwapOptions::default(),
             profile: ProfileOptions::default(),
             measure: MeasureOptions::default(),
+            fib: None,
             use_one_color: false,
             time_label: false,
             hide_text: false,
@@ -784,6 +790,7 @@ impl DrawingStyle {
         self.ghost = self.ghost.sanitized();
         self.vwap = self.vwap.sanitized();
         self.profile = self.profile.sanitized();
+        self.fib = self.fib.map(FibStyle::sanitized);
         self.box_width = if self.box_width.is_finite() {
             self.box_width.clamp(0.0, MAX_BOX_WIDTH)
         } else {

@@ -290,12 +290,12 @@ mod tests {
         let many: Vec<Drawing> = (0..=MAX_DRAWINGS as u64)
             .map(|id| {
                 Drawing::build(
-                    crate::model::Tool::Fib,
+                    crate::model::Tool::Ruler,
                     id,
                     &[anchor(0, 1.0), anchor(1, 2.0)],
                     Default::default(),
                 )
-                .expect("a Fibonacci")
+                .expect("a ruler")
             })
             .collect();
         let wire = Wire {

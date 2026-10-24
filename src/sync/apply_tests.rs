@@ -1334,6 +1334,95 @@ fn every_forecast_volume_and_measurement_tool_reaches_the_other_mac_exactly_as_d
     assert_eq!(cloud.save_attempts(), before + 1);
 }
 
+/// One drawing of every Fibonacci and Gann tool, with levels and switches that are not the
+/// defaults.
+fn every_fib_tool() -> Vec<crate::model::Drawing> {
+    use crate::model::fib_style::FibLevel;
+    use crate::model::{Anchor, Drawing, Placement, Tool};
+    let anchors: Vec<Anchor> = (0..4)
+        .map(|index| Anchor {
+            time_ms: 1_700_000_000_000 + index * 3_600_000,
+            price: 100.0 + (index % 3) as f64 * 7.5 + index as f64,
+        })
+        .collect();
+    Tool::fib_tools()
+        .enumerate()
+        .map(|(index, tool)| {
+            let count = match tool.spec().placement {
+                Placement::Points(count) => usize::from(count),
+                _ => 1,
+            };
+            let mut style = tool.default_style();
+            let mut fib = style.fib.expect("a Fibonacci tool carries its levels");
+            fib.reverse = index % 2 == 0;
+            fib.as_percent = true;
+            fib.log_levels = true;
+            fib.levels.push(FibLevel {
+                ratio: 0.9,
+                color: [1, 2, 3, 255],
+                ..FibLevel::default()
+            });
+            fib.levels.remove(1);
+            style.fib = Some(fib);
+            style.extend_right = true;
+            Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap()
+        })
+        .collect()
+}
+
+#[test]
+fn every_fibonacci_and_gann_tool_reaches_the_other_mac_exactly_as_drawn() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    let drawings = every_fib_tool();
+    assert_eq!(drawings.len(), crate::model::Tool::fib_tools().count());
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &drawings)]);
+    settle(&mut a, &mut b);
+    // The layout and one record per drawing: the new tools needed no record kind of their own.
+    assert_eq!(
+        cloud.names().len(),
+        1 + drawings.len(),
+        "{:?}",
+        cloud.names()
+    );
+    let on_b = rows(&b, "saved_view");
+    let received: Vec<Value> = on_b[0]["charts"][0]["drawings"].as_array().unwrap().clone();
+    assert_eq!(received.len(), drawings.len());
+    // Compared as drawings: a ratio is an `f32`, and its JSON text (an `f64`'s digits) can be read
+    // back one unit in the last place off as a bare number, though never as the ratio.
+    for (sent, got) in drawings.iter().zip(&received) {
+        let back: crate::model::Drawing = serde_json::from_value(got.clone()).unwrap();
+        assert_eq!(&back, sent, "{:?}", sent.tool());
+    }
+    assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+
+    // Editing one level uploads that drawing and no other.
+    let before = cloud.save_attempts();
+    let mut edited = drawings.clone();
+    let first = edited.first_mut().unwrap();
+    let mut style = *first.style().unwrap();
+    let mut fib = style.fib.unwrap();
+    fib.levels.as_mut_slice()[0].ratio = 0.05;
+    style.fib = Some(fib);
+    first.set_style(style);
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &edited)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+    let on_b = rows(&b, "saved_view");
+    let first = &on_b[0]["charts"][0]["drawings"][0];
+    let back: crate::model::Drawing = serde_json::from_value(first.clone()).unwrap();
+    assert_eq!(back, edited[0]);
+
+    // Moving an anchor uploads that drawing too, and only it.
+    let before = cloud.save_attempts();
+    let mut moved = edited.clone();
+    moved[0].anchors_mut()[1].price += 4.0;
+    put_layouts(&a, &[layout_of(10, "Fibonacci", &moved)]);
+    settle(&mut a, &mut b);
+    assert_eq!(cloud.save_attempts(), before + 1);
+}
+
 #[test]
 fn every_pattern_wave_and_cycle_reaches_the_other_mac_exactly_as_drawn() {
     let (cloud, mut a, mut b) = pair();

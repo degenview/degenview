@@ -236,7 +236,7 @@ fn a_post_card_is_joined_to_its_candle_by_a_painted_line() {
 
 #[test]
 fn the_original_tools_still_paint_inside_the_plot() {
-    for tool in [Tool::TrendLine, Tool::Fib] {
+    for tool in [Tool::TrendLine, Tool::FibRetracement] {
         let mut chart = Chart::new();
         let bare = chart.draw(&[]);
         let with = chart.draw(&[Drawing::build(

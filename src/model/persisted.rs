@@ -231,14 +231,19 @@ mod tests {
                     locked.set_locked(true);
                     locked
                 },
-                Drawing::Fib {
-                    id: 91,
-                    a: anchors[1],
-                    b: anchors[2],
-                    locked: false,
-                    hidden: true,
-                    visibility: crate::model::Visibility::ALL
-                        .with(crate::model::Timeframe::Week, false),
+                {
+                    let mut hidden = Drawing::build(
+                        Tool::FibRetracement,
+                        91,
+                        &anchors[1..3],
+                        Tool::FibRetracement.default_style(),
+                    )
+                    .expect("builds");
+                    hidden.set_hidden(true);
+                    hidden.set_visibility(
+                        crate::model::Visibility::ALL.with(crate::model::Timeframe::Week, false),
+                    );
+                    hidden
                 },
             ])
             .collect()

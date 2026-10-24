@@ -694,7 +694,7 @@ fn every_tool_is_placed_with_one_gesture_and_one_undo_step() {
 
 #[test]
 fn the_legacy_tools_still_place_as_before() {
-    for tool in [Tool::TrendLine, Tool::Fib, Tool::Ruler] {
+    for tool in [Tool::TrendLine, Tool::FibRetracement, Tool::Ruler] {
         let mut rig = Rig::with_tool(tool);
         rig.click(POINTS[0]);
         assert!(

@@ -46,6 +46,7 @@ const PLACES: [&str; 7] = [
 /// How many anchors the Coordinates tab lists; a long path keeps the rest on the chart.
 const MAX_LISTED: usize = 40;
 
+mod fib_pages;
 mod forecast_pages;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -221,7 +222,7 @@ fn anchor_label(tool: Tool, index: usize) -> String {
         | Tool::InfoLine
         | Tool::ExtendedLine
         | Tool::TrendAngle
-        | Tool::Fib => &["Point 1", "Point 2"],
+        | Tool::FibRetracement => &["Point 1", "Point 2"],
         Tool::HorizontalLine => &["Price level"],
         Tool::HorizontalRay | Tool::Crossline => &["Anchor"],
         Tool::VerticalLine => &["Time"],
@@ -351,7 +352,7 @@ impl DrawingProperties {
         if has_inputs_page(caps) {
             tabs.push(Tab::Inputs);
         }
-        if caps.has(Caps::LEVELS) {
+        if caps.has(Caps::LEVELS) || caps.has(Caps::FIB) {
             tabs.push(Tab::Levels);
         }
         if caps.has(Caps::TEXT) || caps.has(Caps::AUTO_TEXT) {
@@ -806,6 +807,7 @@ impl DrawingProperties {
             caps.has(Caps::EXTEND),
             details,
             caps.has(Caps::STATS),
+            caps.has(Caps::FIB),
         ];
         // A page of one group needs no heading to say what it is.
         let mut page = Page::new(groups.into_iter().filter(|present| *present).count() > 1);
@@ -834,6 +836,8 @@ impl DrawingProperties {
         if line {
             let title = if variant.is_some() {
                 "Median"
+            } else if caps.has(Caps::FIB) {
+                "Trend line"
             } else if caps.has(Caps::WIDTH) || caps.has(Caps::DASH) {
                 "Line"
             } else {
@@ -1038,6 +1042,9 @@ impl DrawingProperties {
         if caps.has(Caps::STATS) {
             self.stats_section(ui, &mut page, &mut style);
         }
+        if caps.has(Caps::FIB) {
+            self.fib_style_cards(ui, &mut page, &mut style);
+        }
         if style != before {
             self.set_style(style);
         }
@@ -1134,6 +1141,9 @@ impl DrawingProperties {
 
     /// The extra lines of a pitchfork (each on both sides of the median) or of a parallel channel.
     fn levels_page(&mut self, ui: &mut Ui) {
+        if self.tool.caps().has(Caps::FIB) {
+            return self.fib_levels_page(ui);
+        }
         let mut style = self.style();
         let before = style;
         let fork = matches!(self.draft.geometry(), Some(Geometry::Pitchfork { .. }));
@@ -2093,7 +2103,7 @@ mod tests {
             );
             assert_eq!(
                 tabs.contains(&Tab::Levels),
-                caps.has(Caps::LEVELS),
+                caps.has(Caps::LEVELS) || caps.has(Caps::FIB),
                 "{tool:?} levels"
             );
             assert_eq!(
@@ -2167,7 +2177,7 @@ mod tests {
         let ctx = egui::Context::default();
         let tools = Tool::GROUPED
             .into_iter()
-            .chain([Tool::TrendLine, Tool::Fib])
+            .chain([Tool::TrendLine, Tool::FibRetracement])
             .collect::<Vec<_>>();
         for tool in tools {
             let mut dialog = DrawingProperties::new(1, &drawing(tool)).expect("dialog");
@@ -2494,6 +2504,13 @@ mod tests {
             (
                 "dialog-flat-coordinates",
                 Tool::FlatChannel,
+                Tab::Coordinates,
+            ),
+            ("dialog-fib-style", Tool::FibRetracement, Tab::Style),
+            ("dialog-fib-levels", Tool::FibRetracement, Tab::Levels),
+            (
+                "dialog-fib-coordinates",
+                Tool::FibRetracement,
                 Tab::Coordinates,
             ),
             ("dialog-xabcd-style", Tool::XabcdPattern, Tab::Style),

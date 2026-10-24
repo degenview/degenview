@@ -20,6 +20,8 @@ pub mod drawing_template;
 pub mod drawing_tool;
 pub mod drawings;
 pub mod elliott;
+pub mod fib;
+pub mod fib_style;
 pub mod forecast_style;
 pub mod ghost;
 pub mod history;

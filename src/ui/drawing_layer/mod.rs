@@ -9,6 +9,9 @@
 
 mod draw;
 mod edit;
+mod fib_shapes;
+#[cfg(test)]
+mod fib_tests;
 mod forecast_shapes;
 #[cfg(test)]
 mod forecast_tests;
@@ -32,8 +35,7 @@ mod volume_shapes;
 use super::chart_card::PriceScale;
 use super::drawing_geometry as geo;
 use super::drawing_render::{
-    self, FIB_COLORS, FIB_RATIOS, FibLevelLine, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner,
-    RulerPart, RulerReadout, TimeIndex,
+    self, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner, RulerPart, RulerReadout, TimeIndex,
 };
 use crate::model::drawing_style::DrawingStyle;
 use crate::model::{
@@ -432,47 +434,13 @@ pub(super) struct DrawingLayer {
 
 // MARK: Original line drawings
 
-fn fib_levels(a: Anchor, b: Anchor, proj: &Projection) -> Vec<FibLevelLine> {
-    FIB_RATIOS
-        .iter()
-        .zip(FIB_COLORS)
-        .filter_map(|(ratio, color)| {
-            drawing_render::fib_price(a.price, b.price, *ratio, false, proj.scale.logarithmic).map(
-                |price| FibLevelLine {
-                    ratio: *ratio,
-                    y: proj.scale.y(price),
-                    label: proj.format.format(price),
-                    color,
-                },
-            )
-        })
-        .collect()
-}
-
 fn ruler_rect(a: Anchor, b: Anchor, proj: &Projection) -> Rect {
     Rect::from_two_pos(proj.point(a), proj.point(b))
 }
 
-fn end_hit(pointer: Pos2, a: Pos2, b: Pos2) -> Option<Part> {
-    if a.distance(pointer) <= HANDLE_REACH {
-        Some(Part::Anchor(0))
-    } else if b.distance(pointer) <= HANDLE_REACH {
-        Some(Part::Anchor(1))
-    } else {
-        None
-    }
-}
-
-/// The hit on the Fibonacci and the ruler, which paint themselves.
+/// The hit on the ruler, which paints itself.
 fn hit_legacy(drawing: &Drawing, pointer: Pos2, proj: &Projection) -> Option<Part> {
     match drawing {
-        Drawing::Fib { a, b, .. } => {
-            let (pa, pb) = (proj.point(*a), proj.point(*b));
-            end_hit(pointer, pa, pb).or_else(|| {
-                drawing_render::hit_fibonacci(pa, pb, &fib_levels(*a, *b, proj), pointer)
-                    .then_some(Part::Body)
-            })
-        }
         Drawing::Ruler { a, b, .. } => drawing_render::hit_ruler(ruler_rect(*a, *b, proj), pointer)
             .map(|part| match part {
                 RulerPart::Corner(corner) => Part::Corner(corner),
@@ -1444,20 +1412,11 @@ impl DrawingLayer {
             anchors.push(draft.rubber);
         }
         let preview = match tool {
-            Tool::Fib | Tool::Ruler => {
-                let (a, b) = (draft.placed[0], draft.rubber);
-                Some(match tool {
-                    Tool::Fib => Drawing::Fib {
-                        id: 0,
-                        a,
-                        b,
-                        locked: false,
-                        hidden: false,
-                        visibility: Default::default(),
-                    },
-                    _ => Drawing::Ruler { id: 0, a, b },
-                })
-            }
+            Tool::Ruler => Some(Drawing::Ruler {
+                id: 0,
+                a: draft.placed[0],
+                b: draft.rubber,
+            }),
             Tool::Brush => Drawing::build(Tool::Brush, 0, &anchors, frame.style_for(tool)),
             _ => {
                 let geometry = if tool.caps().has(Caps::POSITION) {
@@ -1510,16 +1469,6 @@ impl DrawingLayer {
         draft: bool,
     ) {
         match drawing {
-            Drawing::Fib { a, b, .. } => {
-                drawing_render::draw_fibonacci(
-                    painter,
-                    proj.plot,
-                    proj.point(*a),
-                    proj.point(*b),
-                    &fib_levels(*a, *b, proj),
-                    emphasized,
-                );
-            }
             Drawing::Ruler { a, b, .. } => {
                 let readout = RulerReadout::new(
                     a.price,

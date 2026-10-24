@@ -75,6 +75,7 @@ fn note(at: Pos2, text: &str) -> PivotLabel {
         },
         place: LabelPlace::Beside,
         push: vec2(0.0, -1.0),
+        edge: vec2(0.0, 0.0),
         on_select: false,
     }
 }

@@ -31,6 +31,8 @@ pub struct ToolSidebarInput {
     /// The tool the forecasting, volume and measurement tile shows and arms: the last one used
     /// from its menu.
     pub forecast_tool: Tool,
+    /// The tool the Fibonacci and Gann tile shows and arms: the last one used from its menu.
+    pub fib_tool: Tool,
     pub magnet: MagnetMode,
     pub keep_drawing: bool,
     pub hide_all: bool,
@@ -93,12 +95,13 @@ enum Slot {
     Menu(Menu),
 }
 
-/// The menus a tile opens: the lines, channels and pitchforks; the chart patterns, Elliott waves
-/// and cycles; the forecasting, volume and measurement tools; the brushes, arrows and shapes; and
-/// the text and notes.
+/// The menus a tile opens: the lines, channels and pitchforks; the Fibonacci and Gann tools; the
+/// chart patterns, Elliott waves and cycles; the forecasting, volume and measurement tools; the
+/// brushes, arrows and shapes; and the text and notes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Menu {
     Lines,
+    Fib,
     Patterns,
     Forecast,
     Shapes,
@@ -109,6 +112,7 @@ impl Menu {
     fn groups(self) -> &'static [ToolGroup] {
         match self {
             Self::Lines => &ToolGroup::LINE_MENU,
+            Self::Fib => &ToolGroup::FIB_MENU,
             Self::Patterns => &ToolGroup::PATTERN_MENU,
             Self::Forecast => &ToolGroup::FORECAST_MENU,
             Self::Shapes => &ToolGroup::MENU,
@@ -124,6 +128,7 @@ impl Menu {
     fn tool(self, input: &ToolSidebarInput) -> Tool {
         match self {
             Self::Lines => input.line_tool,
+            Self::Fib => input.fib_tool,
             Self::Patterns => input.pattern_tool,
             Self::Forecast => input.forecast_tool,
             Self::Shapes => input.group_tool,
@@ -134,6 +139,7 @@ impl Menu {
     fn width(self) -> f32 {
         match self {
             Self::Lines => 268.0,
+            Self::Fib => 268.0,
             // Wide enough for "Elliott triple combo wave (W·X·Y·X·Z)".
             Self::Patterns => 322.0,
             // Wide enough for "Fixed range volume profile".
@@ -159,6 +165,7 @@ impl Menu {
     fn key(self) -> &'static str {
         match self {
             Self::Lines => "lines",
+            Self::Fib => "fib",
             Self::Patterns => "patterns",
             Self::Forecast => "forecast",
             Self::Shapes => "group",
@@ -169,6 +176,7 @@ impl Menu {
     fn corner_label(self) -> &'static str {
         match self {
             Self::Lines => "More lines, channels and pitchforks",
+            Self::Fib => "More Fibonacci and Gann tools",
             Self::Patterns => "More chart patterns, Elliott waves and cycles",
             Self::Forecast => "More forecasting, volume and measurement tools",
             Self::Shapes => "More brushes, arrows and shapes",
@@ -180,7 +188,7 @@ impl Menu {
 const SLOTS: [Slot; 8] = [
     Slot::Tool(Tool::Cursor, Icon::Plus, "Crosshair"),
     Slot::Menu(Menu::Lines),
-    Slot::Tool(Tool::Fib, Icon::FibPoints, "Fib Retracement"),
+    Slot::Menu(Menu::Fib),
     Slot::Menu(Menu::Patterns),
     Slot::Menu(Menu::Forecast),
     Slot::Menu(Menu::Shapes),
@@ -196,7 +204,7 @@ pub fn tool_icon(tool: Tool) -> Icon {
     match tool {
         Tool::Cursor => Icon::Plus,
         Tool::TrendLine => Icon::LineTrend,
-        Tool::Fib => Icon::FibPoints,
+        Tool::FibRetracement => Icon::FibRetracement,
         Tool::Brush => Icon::Paintbrush,
         Tool::Ruler => Icon::Ruler,
         Tool::Highlighter => Icon::Highlighter,
@@ -972,7 +980,7 @@ mod tests {
         let ctx = egui::Context::default();
         for (tool, paper, replay, market, unseen) in [
             (Tool::Cursor, false, false, true, 0),
-            (Tool::Fib, true, true, true, 3),
+            (Tool::FibRetracement, true, true, true, 3),
             (Tool::Ruler, false, false, false, 120),
         ] {
             let state = ToolSidebarInput {
@@ -982,6 +990,7 @@ mod tests {
                 note_tool: Tool::Text,
                 pattern_tool: Tool::XabcdPattern,
                 forecast_tool: Tool::LongPosition,
+                fib_tool: Tool::FibRetracement,
                 magnet: MagnetMode::Weak,
                 keep_drawing: true,
                 hide_all: false,
@@ -1007,6 +1016,7 @@ mod tests {
             note_tool: Tool::Text,
             pattern_tool: Tool::XabcdPattern,
             forecast_tool: Tool::LongPosition,
+            fib_tool: Tool::FibRetracement,
             magnet: MagnetMode::Off,
             keep_drawing: true,
             hide_all: false,
@@ -1138,6 +1148,8 @@ mod tests {
 
     /// The Lines tile's corner, where its menu opens from.
     const LINES_CORNER: Pos2 = pos2(31.0, 76.0);
+    /// The corner notch of the Fibonacci and Gann tile, below the Lines tile.
+    const FIB_CORNER: Pos2 = pos2(31.0, 116.0);
 
     /// Opens the menu from `corner` on a tall window and returns the tools its rows arm, top to
     /// bottom, each by clicking it in a fresh strip.
@@ -1205,6 +1217,19 @@ mod tests {
         assert_eq!(armed[9], Tool::ParallelChannel);
         assert_eq!(armed[13], Tool::Pitchfork);
         assert!(menu.left() >= WIDTH && menu.width() >= Menu::Lines.width() - 1.0);
+    }
+
+    #[test]
+    fn the_fibonacci_menu_lists_fibonacci_then_gann_in_order() {
+        let (menu, armed) = tools_armed_by_the_menu(FIB_CORNER);
+        let expected: Vec<Tool> = ToolGroup::FIB_MENU
+            .iter()
+            .flat_map(|group| Tool::in_group(*group))
+            .collect();
+        assert_eq!(armed, expected, "every row, in order");
+        assert_eq!(armed.len(), Tool::fib_tools().count());
+        assert_eq!(armed[0], Tool::FibRetracement);
+        assert!(menu.left() >= WIDTH && menu.width() >= Menu::Fib.width() - 1.0);
     }
 
     #[test]
@@ -1290,10 +1315,17 @@ mod tests {
             actions,
             vec![ToolSidebarAction::Select(Tool::SchiffPitchfork)]
         );
-        // Fibonacci keeps its own tile, and arming it lights neither menu's tile.
+        // The Fibonacci tile is the next one down, and arming its tool lights neither of the others.
         let actions = click(&ctx, &mut time, size, pos2(14.0, 100.0), &input);
-        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::Fib)]);
-        assert!(!Menu::Lines.contains(Tool::Fib) && !Menu::Shapes.contains(Tool::Fib));
+        assert_eq!(
+            actions,
+            vec![ToolSidebarAction::Select(Tool::FibRetracement)]
+        );
+        assert!(Menu::Fib.contains(Tool::FibRetracement));
+        assert!(
+            !Menu::Lines.contains(Tool::FibRetracement)
+                && !Menu::Shapes.contains(Tool::FibRetracement)
+        );
         assert!(Menu::Lines.contains(Tool::Pitchfork) && !Menu::Shapes.contains(Tool::Pitchfork));
         assert!(Menu::Shapes.contains(Tool::Arc) && !Menu::Lines.contains(Tool::Arc));
     }
@@ -1318,6 +1350,7 @@ mod tests {
         }
         for (name, corner) in [
             ("menu-lines", LINES_CORNER),
+            ("menu-fib", FIB_CORNER),
             ("menu-patterns", PATTERNS_CORNER),
             ("menu-forecast", FORECAST_CORNER),
             ("menu-shapes", CORNER),

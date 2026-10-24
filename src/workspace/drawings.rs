@@ -95,6 +95,7 @@ impl ChartWorkspace {
             self.note_tool = prefs.note_tool;
             self.pattern_tool = prefs.pattern_tool;
             self.forecast_tool = prefs.forecast_tool;
+            self.fib_tool = prefs.fib_tool;
             self.saved_prefs = prefs;
             self.drawing_templates = Some(templates);
         }
@@ -113,6 +114,7 @@ impl ChartWorkspace {
             note_tool: self.note_tool,
             pattern_tool: self.pattern_tool,
             forecast_tool: self.forecast_tool,
+            fib_tool: self.fib_tool,
         };
         if prefs != self.saved_prefs {
             self.saved_prefs = prefs;

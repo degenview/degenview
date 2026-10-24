@@ -56,6 +56,9 @@ pub struct DrawingPrefs {
     /// The tool the forecasting, volume and measurement tile shows.
     #[serde(deserialize_with = "forecast_tool_or_default")]
     pub forecast_tool: Tool,
+    /// The tool the Fibonacci and Gann tile shows.
+    #[serde(deserialize_with = "fib_tool_or_default")]
+    pub fib_tool: Tool,
 }
 
 /// `T` read from whatever the field holds, or `fallback` when this version cannot read it.
@@ -98,6 +101,10 @@ fn forecast_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Resul
     field_or(deserializer, DrawingPrefs::default().forecast_tool)
 }
 
+fn fib_tool_or_default<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Tool, D::Error> {
+    field_or(deserializer, DrawingPrefs::default().fib_tool)
+}
+
 impl Default for DrawingPrefs {
     fn default() -> Self {
         Self {
@@ -108,6 +115,7 @@ impl Default for DrawingPrefs {
             note_tool: Tool::Text,
             pattern_tool: Tool::XabcdPattern,
             forecast_tool: Tool::LongPosition,
+            fib_tool: Tool::FibRetracement,
         }
     }
 }
@@ -132,6 +140,9 @@ impl DrawingPrefs {
         }
         if !ToolGroup::FORECAST_MENU.contains(&self.forecast_tool.spec().group) {
             self.forecast_tool = defaults.forecast_tool;
+        }
+        if !ToolGroup::FIB_MENU.contains(&self.fib_tool.spec().group) {
+            self.fib_tool = defaults.fib_tool;
         }
         self
     }
@@ -495,6 +506,7 @@ mod tests {
             note_tool: Tool::Pin,
             pattern_tool: Tool::SineLine,
             forecast_tool: Tool::DateAndPriceRange,
+            fib_tool: Tool::FibRetracement,
         };
         templates.set_prefs(&chosen);
         assert_eq!(DrawingTemplateStore::new(store).prefs(), chosen);
@@ -517,6 +529,7 @@ mod tests {
                     "note_tool": "Callout",
                     "pattern_tool": "ElliottImpulse",
                     "forecast_tool": "AnchoredVwap",
+                    "fib_tool": "AToolFromTheFuture",
                 }),
             )
             .unwrap();
@@ -532,6 +545,7 @@ mod tests {
         assert_eq!(prefs.note_tool, Tool::Callout);
         assert_eq!(prefs.pattern_tool, Tool::ElliottImpulse);
         assert_eq!(prefs.forecast_tool, Tool::AnchoredVwap);
+        assert_eq!(prefs.fib_tool, Tool::FibRetracement);
         // A value of the wrong kind altogether is the same.
         store
             .lock()
@@ -573,6 +587,7 @@ mod tests {
                     "note_tool": "Arc",
                     "pattern_tool": "Rectangle",
                     "forecast_tool": "Rectangle",
+                    "fib_tool": "Rectangle",
                 }),
             )
             .unwrap();
@@ -582,5 +597,6 @@ mod tests {
         assert_eq!(prefs.note_tool, Tool::Text);
         assert_eq!(prefs.pattern_tool, Tool::XabcdPattern);
         assert_eq!(prefs.forecast_tool, Tool::LongPosition);
+        assert_eq!(prefs.fib_tool, Tool::FibRetracement);
     }
 }
