@@ -131,7 +131,7 @@ pub fn watches(
         watch_row(ui, panel, index, text, result, state, actions);
     }
     // The line that adds one: the field, and the button that adds what it holds (Enter does too).
-    ui.add_space(4.0);
+    ui.add_space(8.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         ui.add_space(8.0);
