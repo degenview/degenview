@@ -729,7 +729,15 @@ impl ScriptManager {
             .as_ref()
             .is_some_and(|ran| *ran != script.source);
         let id = script.id.clone();
-        self.open_script(&id);
+        self.renaming = None;
+        self.selected_row = Some(RowKey {
+            group: group_of(script),
+            id: id.clone(),
+        });
+        // A script already in the editor stays as it is, with its caret and undo history.
+        if self.open.as_ref().map(|open| open.id.as_str()) != Some(id.as_str()) {
+            self.open_script(&id);
+        }
         if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
             open.editor.reveal_offset(target.offset);
         }
@@ -1475,6 +1483,53 @@ mod tests {
         assert_eq!(open.id, script.id);
         assert_eq!(open.editor.pending_jump(), Some(17));
         assert!(manager.error.is_none());
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_fresh_manager_survives_its_first_load_with_the_script_open_and_selected() {
+        // The scripts are on disk from an earlier session; the Script Manager tab does not exist
+        // yet when "Source code" is chosen, so the app opens it and asks before its first frame.
+        let (mut seeded, root) = manager("reveal-fresh");
+        seeded.first_load();
+        let script = seeded.scripts[1].clone();
+        let shared: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let store = ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"));
+        let mut fresh = ScriptManager::with_script_store(2, shared, Some(store));
+        assert!(!fresh.loaded);
+        fresh.reveal_source(&target(Some(&script.id), None, Some(&script.source)));
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                fresh.ui(ui, None);
+            });
+            output.textures_delta.clear();
+        }
+        assert!(fresh.loaded);
+        assert_eq!(
+            fresh.open.as_ref().map(|o| o.id.clone()),
+            Some(script.id.clone())
+        );
+        assert_eq!(
+            fresh.selected_row.as_ref().map(|row| row.id.clone()),
+            Some(script.id)
+        );
+        assert!(fresh.error.is_none());
+        // The editor took the caret request when it drew.
+        assert_eq!(fresh.open.as_ref().unwrap().editor.pending_jump(), None);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_script_already_in_the_editor_keeps_its_unsaved_text_and_history() {
+        let (mut manager, root, id) = edited("reveal-open");
+        let before = manager.open.as_ref().unwrap().editor.source.clone();
+        assert!(before.ends_with("// edited\n"));
+        manager.reveal_source(&target(Some(&id), None, None));
+        let open = manager.open.as_ref().unwrap();
+        assert_eq!(open.editor.source, before);
+        assert_eq!(open.editor.pending_jump(), Some(17));
         let _ = std::fs::remove_dir_all(root);
     }
 

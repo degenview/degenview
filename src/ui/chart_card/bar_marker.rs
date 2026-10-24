@@ -40,13 +40,20 @@ pub fn marker_label(open_time_ms: i64, timeframe: Option<Timeframe>) -> String {
 }
 
 impl ChartCard {
-    /// Scrolls so the bar of `candles` holding `time_ms` sits in the middle of the view, and marks
-    /// it. A time past the newest bar means the newest.
+    /// Scrolls so the bar holding `time_ms` sits in the middle of the view, and marks it. A time
+    /// past the newest bar means the newest. The bars are the ones the chart draws: a price-based
+    /// type's constructed bars, where scripts run and write their messages, else `candles`.
     pub fn scroll_to_time(&mut self, time_ms: i64, candles: &[Kline]) -> Scrolled {
+        let constructed = self.constructed.clone();
+        let candles = constructed
+            .as_ref()
+            .map_or(candles, |built| built.klines.as_slice());
         let total = candles.len();
         let Some(first) = candles.first() else {
             return Scrolled::NoBars;
         };
+        // Linked charts follow the move: the frame that draws next measures it from here.
+        self.scroll_from.get_or_insert(self.viewport.horizontal);
         let horizontal = &mut self.viewport.horizontal;
         if time_ms < first.open_time {
             horizontal.right_offset = horizontal.offset_limits(total).1;
@@ -185,6 +192,55 @@ mod tests {
         let (_, oldest) = card.viewport.horizontal.offset_limits(500);
         assert_eq!(card.viewport.horizontal.right_offset, oldest);
         assert_eq!(card.bar_marker(), None, "nothing to mark yet");
+    }
+
+    #[test]
+    fn linked_charts_are_told_about_the_scroll() {
+        use crate::model::DataSource;
+        let bars = candles(500);
+        let mut card = ChartCard::default();
+        card.scroll_to_time(100 * 3_600_000, &bars);
+        // The next frame starts from where the view was before the scroll, so it sees the move.
+        card.begin_sync_frame();
+        card.end_sync_frame(DataSource::Binance, &bars);
+        assert!(card.sync_change.is_some());
+        // And a frame after that has nothing new to report.
+        card.begin_sync_frame();
+        card.end_sync_frame(DataSource::Binance, &bars);
+        assert!(card.sync_change.is_none());
+    }
+
+    #[test]
+    fn a_price_based_chart_scrolls_over_the_bars_it_draws() {
+        use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
+        let mut bars = candles(300);
+        for (index, bar) in bars.iter_mut().enumerate() {
+            let close = 100.0 + ((index * 7) % 23) as f64 * 3.0;
+            bar.open = close;
+            bar.close = close;
+            bar.high = close + 1.0;
+            bar.low = close - 1.0;
+        }
+        let mut card = ChartCard::default();
+        let style = card.chart_style_mut();
+        style.chart_type = ChartType::Renko;
+        style.renko.size = SizeRule {
+            method: SizeMethod::Traditional,
+            amount: 1.0,
+            ..Default::default()
+        };
+        let built = card
+            .constructed_series(&bars, ChartType::Renko)
+            .expect("renko builds bars");
+        assert_ne!(built.klines.len(), bars.len(), "the series differ");
+        let middle = built.klines[built.klines.len() / 2].open_time;
+        assert_eq!(card.scroll_to_time(middle, &bars), Scrolled::Done);
+        assert_eq!(card.bar_marker(), Some(middle));
+        let index = built.klines.partition_point(|bar| bar.open_time <= middle) - 1;
+        let expected =
+            (built.klines.len() - 1 - index) as f64 - card.viewport.horizontal.visible as f64 / 2.0;
+        let (low, high) = card.viewport.horizontal.offset_limits(built.klines.len());
+        assert!((card.viewport.horizontal.right_offset - expected.clamp(low, high)).abs() < 1e-9);
     }
 
     #[test]

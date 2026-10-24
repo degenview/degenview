@@ -120,10 +120,14 @@ linked charts follow through the usual time-range sync. The Pine logs pane's "Sc
 it with the bar the message was written on (`LogEvent::bar_time_ms`), over the replay-cut candles
 while a replay runs.
 
-For a bar older than the candles held, the workspace keeps the jump pending, leaves the chart at its
-oldest bar (which makes it ask for an older page), and tries again every frame until the bar is in
-reach, the provider has nothing older (`OlderHistory::may_have_more`, `DataSource::supports_older_history`),
-the chart is at its cap, or 30 seconds passed. Then it says so and stays at the oldest bar.
+A bar older than the candles held is not paged for: loading older history makes the script run
+from scratch, which would clear the very messages being browsed. The chart goes to its oldest bar
+and says so; scrolling back from there loads history as usual.
+
+On a price-based type (Renko, Kagi, Line break, Point & figure) the bars are the constructed ones,
+which is also where scripts run and write their messages, so the scroll is over those. The scroll is
+made outside a frame, so the card remembers where the view was (`scroll_from`) and the next frame
+measures the change from there: that is how linked charts follow it.
 
 The marker (`chart_card/bar_marker.rs`) is a vertical line with a tag at the time axis, in the accent
 colour, for five seconds. Its label is the date for a daily or longer timeframe and the date and

@@ -265,14 +265,6 @@ impl Chart {
         self.older_inbox = None;
     }
 
-    /// Whether older candles can still be fetched for this chart.
-    pub(super) fn can_load_older(&self, timeframe: Timeframe) -> bool {
-        self.is_market()
-            && self.pm_series.is_empty()
-            && self.source.supports_older_history(timeframe)
-            && self.older.may_have_more(self.candles.len())
-    }
-
     /// Asks the provider for the page before the oldest candle once the view has come near it.
     pub(super) fn request_older(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
         if !self.is_market() || !self.pm_series.is_empty() {

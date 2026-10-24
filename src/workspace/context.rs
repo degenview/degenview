@@ -780,7 +780,6 @@ impl ChartWorkspace {
         {
             self.context.logs.chart = None;
         }
-        self.resolve_log_bar_jump();
         let table = self.context.table_chart;
         let replay_ms = self.replay_cut();
         let replaying =

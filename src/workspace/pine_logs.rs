@@ -24,19 +24,7 @@ pub(super) struct PineLogsPane {
     prefs_saved: LogsPrefs,
     /// What the pane asks of the app (open the Script Manager), handed on with the frame's actions.
     outbox: Vec<WorkspaceAction>,
-    /// A "Scroll to bar" waiting for older history to arrive.
-    pending_jump: Option<PendingJump>,
 }
-
-/// A bar the chart is on its way to, further back than the candles it holds.
-struct PendingJump {
-    chart_id: u64,
-    time_ms: i64,
-    since: Instant,
-}
-
-/// How long a jump waits for older history before it settles for the oldest bar.
-const JUMP_PATIENCE: Duration = Duration::from_secs(30);
 
 /// The scripts the pane can pick: each instance by name, the later ones of a repeated name
 /// numbered so two copies of one script can be told apart.
@@ -207,47 +195,23 @@ impl ChartWorkspace {
         let Some((_, event)) = self.selected_log(chart_id, sequence) else {
             return;
         };
-        self.begin_bar_jump(chart_id, event.bar_time_ms);
+        self.scroll_chart_to(chart_id, event.bar_time_ms);
     }
 
-    /// Takes the chart to the bar holding `time_ms`. A bar older than the candles held waits for
-    /// older history, as far as the provider has it.
-    fn begin_bar_jump(&mut self, chart_id: u64, time_ms: i64) {
-        self.context.logs.pending_jump = Some(PendingJump {
-            chart_id,
-            time_ms,
-            since: Instant::now(),
-        });
-        self.focus_chart(chart_id);
-        self.resolve_log_bar_jump();
-    }
-
-    /// Takes the pending jump as far as the candles allow; called every frame while one waits.
-    pub(super) fn resolve_log_bar_jump(&mut self) {
-        let Some(jump) = self.context.logs.pending_jump.as_ref() else {
-            return;
-        };
-        let (chart_id, time_ms, since) = (jump.chart_id, jump.time_ms, jump.since);
+    /// Takes the chart to the bar holding `time_ms`. A bar older than the candles held is not
+    /// fetched for: paging older history starts the script over and clears its messages.
+    fn scroll_chart_to(&mut self, chart_id: u64, time_ms: i64) {
         let Some(index) = self.chart_index(chart_id) else {
-            self.context.logs.pending_jump = None;
             return;
         };
+        self.focus_chart(chart_id);
         let replay_ms = self.replay_cut();
-        let timeframe = self.timeframe;
         let chart = &mut self.charts[index];
         let candles = displayed_candles(&chart.candles, replay_ms);
-        let outcome = chart.chart.scroll_to_time(time_ms, candles);
-        let waiting = outcome == Scrolled::BeforeHistory
-            && chart.can_load_older(timeframe)
-            && since.elapsed() < JUMP_PATIENCE;
-        if waiting {
-            return;
-        }
-        self.context.logs.pending_jump = None;
-        match outcome {
+        match chart.chart.scroll_to_time(time_ms, candles) {
             Scrolled::Done => {}
             Scrolled::BeforeHistory => self.say(
-                "That bar is older than the history this chart can load, so the chart is at its oldest bar.",
+                "That bar is older than the candles this chart holds, so it went to the oldest bar.",
                 false,
             ),
             Scrolled::NoBars => self.say("The chart has no bars to scroll to.", true),

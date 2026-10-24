@@ -260,8 +260,8 @@ fn scrolling_to_a_bar_moves_the_view_and_marks_it_without_touching_anything_else
     let (mut workspace, chart, _) = rig();
     chart_with_bars(&mut workspace, chart);
     let instances = card(&mut workspace, chart).pine_instances().len();
-    workspace.begin_bar_jump(chart, (1_000 + 120) * 3_600_000 + 5);
-    assert!(workspace.context.logs.pending_jump.is_none());
+    workspace.scroll_chart_to(chart, (1_000 + 120) * 3_600_000 + 5);
+    assert!(workspace.context.notice.is_none());
     let card = card(&mut workspace, chart);
     assert_eq!(card.bar_marker(), Some((1_000 + 120) * 3_600_000));
     assert!(card.scrolled_back() > 100.0);
@@ -270,38 +270,27 @@ fn scrolling_to_a_bar_moves_the_view_and_marks_it_without_touching_anything_else
 }
 
 #[test]
-fn a_bar_older_than_the_history_waits_while_the_provider_may_have_more() {
+fn a_bar_older_than_the_candles_held_goes_to_the_oldest_and_says_so() {
     let (mut workspace, chart, _) = rig();
     chart_with_bars(&mut workspace, chart);
-    workspace.begin_bar_jump(chart, 5 * 3_600_000);
-    assert!(workspace.context.logs.pending_jump.is_some());
+    workspace.scroll_chart_to(chart, 5 * 3_600_000);
     assert!(card(&mut workspace, chart).bar_marker().is_none());
-    assert!(workspace.context.notice.is_none());
-}
-
-#[test]
-fn a_bar_before_the_start_of_history_settles_for_the_oldest_and_says_so() {
-    let (mut workspace, chart, _) = rig();
-    chart_with_bars(&mut workspace, chart);
-    workspace
-        .charts
-        .iter_mut()
-        .find(|candidate| candidate.id == chart)
-        .expect("chart")
-        .older
-        .arrived(0);
-    workspace.begin_bar_jump(chart, 5 * 3_600_000);
-    assert!(workspace.context.logs.pending_jump.is_none());
     let notice = workspace.context.notice.as_ref().expect("a note");
     assert!(notice.text.contains("oldest bar") && !notice.error);
+    // It never asks the provider for older candles: that would start the script over.
+    let chart = workspace
+        .charts
+        .iter()
+        .find(|candidate| candidate.id == chart)
+        .expect("chart");
+    assert!(chart.older_inbox.is_none());
 }
 
 #[test]
-fn a_pending_jump_ends_with_its_chart() {
+fn scrolling_a_chart_that_is_gone_does_nothing() {
     let (mut workspace, chart, _) = rig();
     chart_with_bars(&mut workspace, chart);
-    workspace.begin_bar_jump(chart, 5 * 3_600_000);
     workspace.charts.retain(|candidate| candidate.id != chart);
-    workspace.resolve_log_bar_jump();
-    assert!(workspace.context.logs.pending_jump.is_none());
+    workspace.scroll_chart_to(chart, 5 * 3_600_000);
+    assert!(workspace.context.notice.is_none());
 }

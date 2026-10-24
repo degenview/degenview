@@ -118,7 +118,9 @@ Hovering a row shows two buttons (the same two are in its right-click menu): **S
   and changes nothing.
 - **Scroll to bar** scrolls the chart to `bar_time_ms` (not the message's time: a realtime
   message's time is the wall clock, and a message from `request.security` carries the requested
-  bar's open time, which lands on the chart bar containing it). See
+  bar's open time, which lands on the chart bar containing it). A bar older than the candles the
+  chart holds is not loaded for (older history restarts the script and clears its messages); the
+  chart goes to its oldest bar and says so. See
   [Chart navigation](chart-navigation.md#scrolling-to-a-bar).
 
 ### In the Script Manager

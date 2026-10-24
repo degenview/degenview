@@ -348,6 +348,9 @@ pub struct ChartCard {
     time_lock: Option<i64>,
     /// The bar "Scroll to bar" went to and when: a marker shown for a few seconds. View state.
     bar_marker: Option<(i64, std::time::Instant)>,
+    /// Where the view was before a scroll the workspace made outside a frame, until the next frame
+    /// measures the change for linked charts.
+    scroll_from: Option<crate::model::viewport::HorizontalViewport>,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
     table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
@@ -655,6 +658,7 @@ impl Default for ChartCard {
             pane_ids: Vec::new(),
             time_lock: None,
             bar_marker: None,
+            scroll_from: None,
             table_wanted: false,
             table_feed: None,
             table_stamp: 0,
