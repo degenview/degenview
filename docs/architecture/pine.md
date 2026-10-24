@@ -17,6 +17,12 @@ inside per-bar state, so realtime rollback restores orders, positions, and trade
 `request.*` uses `KlineSecurityDataProvider` with a short REST cache; imports use the Script
 Manager's `LibraryRegistry`. `run_script_alerts` replays the last bar as a realtime close.
 
+`pine/debug/` adds an opt-in debugger without a second interpreter: a `Session` may carry a
+`DebugRuntime` that its statement loop, user-function calls, bar start and `request.security`
+evaluation consult. A `DebugSession` runs a private `ExecutionController` on its own thread over a
+frozen copy of the preview's bars and talks to the UI through bounded channels. See
+[Pine debugger](../pine-debugger.md).
+
 ## Script Manager
 
 Scripts are file-backed (`Scripts/*.pine` plus `ScriptMetadata/`) with stable ids in extended

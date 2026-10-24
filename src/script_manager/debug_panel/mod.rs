@@ -453,15 +453,88 @@ fn variables_pane(ui: &mut Ui, context: &mut Context<'_>, with_header: bool) {
         return;
     }
     let stale = !panel.is_paused();
-    ui.add_enabled_ui(!stale, |ui| {
-        ScrollArea::vertical()
-            .id_salt("script-debug-variables")
-            .auto_shrink([false, false])
-            .show_rows(ui, ROW, lines.len(), |ui, range| {
+    // The list takes the keyboard once a row is picked: arrows move, Right and Left open and close.
+    let list_id = egui::Id::new("script-debug-variables-list");
+    let focused = ui.memory(|memory| memory.has_focus(list_id));
+    if focused {
+        // The arrows are this list's: egui would otherwise move the focus with them.
+        ui.memory_mut(|memory| {
+            memory.set_focus_lock_filter(
+                list_id,
+                egui::EventFilter {
+                    horizontal_arrows: true,
+                    vertical_arrows: true,
+                    ..Default::default()
+                },
+            );
+        });
+        let navigation = tree::navigate(
+            ui,
+            &lines,
+            shown,
+            context.state.cursor.as_deref(),
+            context.actions,
+        );
+        context.state.cursor = navigation.cursor;
+        if let Some(index) = navigation.reveal {
+            context.state.reveal = Some(index);
+        }
+    }
+    let mut area = ScrollArea::vertical()
+        .id_salt("script-debug-variables")
+        .auto_shrink([false, false]);
+    if let Some(offset) = context.state.scroll_to.take() {
+        area = area.vertical_scroll_offset(offset);
+    }
+    let before = context.actions.len();
+    let cursor = context.state.cursor.clone();
+    let output = ui
+        .add_enabled_ui(!stale, |ui| {
+            area.show_rows(ui, ROW, lines.len(), |ui, range| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                tree::show_rows(ui, &lines[range], shown, context.actions, true);
-            });
-    });
+                tree::show_rows(
+                    ui,
+                    &lines[range],
+                    shown,
+                    context.actions,
+                    true,
+                    cursor.as_deref(),
+                );
+            })
+        })
+        .inner;
+    if context.actions[before..]
+        .iter()
+        .any(|action| matches!(action, PanelAction::Cursor(_)))
+    {
+        ui.memory_mut(|memory| memory.request_focus(list_id));
+    }
+    // The list is a stop on the Tab order, and says so while it has the keys.
+    let response = ui.interact(
+        output.inner_rect,
+        list_id,
+        Sense::focusable_noninteractive(),
+    );
+    if focused {
+        ui.painter().rect_stroke(
+            output.inner_rect.shrink(1.0),
+            0.0,
+            Stroke::new(1.0, theme::with_alpha(kit::ACCENT, 0.7)),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let _ = response;
+    if let Some(index) = context.state.reveal.take() {
+        let top = index as f32 * ROW;
+        let height = output.inner_rect.height();
+        let offset = output.state.offset.y;
+        if top < offset {
+            context.state.scroll_to = Some(top);
+        } else if top + ROW > offset + height {
+            context.state.scroll_to = Some(top + ROW - height);
+        }
+        ui.ctx().request_repaint();
+    }
 }
 
 // MARK: The other sections

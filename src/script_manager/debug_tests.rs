@@ -612,6 +612,67 @@ fn bar_breaks_take_an_index_or_a_time_and_report_a_bad_one() {
 }
 
 #[test]
+fn the_arrow_keys_walk_the_variables_and_open_and_close_rows() {
+    let mut rig = Rig::new("arrows");
+    rig.manager.prefs.debug_open = true;
+    rig.gutter(GutterEvent::Toggle { line: 10 });
+    // Stop once the array has something in it.
+    let id = rig.manager.debug.state.breakpoints[0].spec.id;
+    rig.manager
+        .cmds
+        .push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: super::debug::BreakpointEdit::Condition("bar_index == 3".into()),
+        }));
+    rig.frame();
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    rig.frame();
+    let list = egui::Id::new("script-debug-variables-list");
+    let cursor = |rig: &Rig| rig.manager.debug.ui.cursor.clone();
+    // Picking a row gives the list the keyboard.
+    rig.manager
+        .cmds
+        .push(Cmd::DebugPanel(PanelAction::Cursor("levels".into())));
+    rig.frame();
+    rig.ctx.memory_mut(|memory| memory.request_focus(list));
+    rig.frame();
+    assert_eq!(cursor(&rig).as_deref(), Some("levels"));
+    // Right opens the array; its rows load and Right again steps into them.
+    rig.press(egui::Key::ArrowRight);
+    rig.until("the array's rows", |m| {
+        m.debug.shown.as_ref().is_some_and(|s| {
+            s.open.contains("levels") && s.loaded.values().any(|l| !l.items.is_empty())
+        })
+    });
+    rig.press(egui::Key::ArrowRight);
+    assert_eq!(cursor(&rig).as_deref(), Some("levels/[0]"));
+    // Left from a row with no parts goes to its parent; Left again closes the parent.
+    rig.press(egui::Key::ArrowLeft);
+    assert_eq!(cursor(&rig).as_deref(), Some("levels"));
+    rig.press(egui::Key::ArrowLeft);
+    assert!(
+        !rig.manager
+            .debug
+            .shown
+            .as_ref()
+            .unwrap()
+            .open
+            .contains("levels")
+    );
+    // Down moves on to the next variable, Up back, Home and End go to the ends.
+    rig.press(egui::Key::ArrowDown);
+    let next = cursor(&rig);
+    assert_ne!(next.as_deref(), Some("levels"));
+    rig.press(egui::Key::ArrowUp);
+    assert_eq!(cursor(&rig).as_deref(), Some("levels"));
+    rig.press(egui::Key::End);
+    let last = cursor(&rig);
+    rig.press(egui::Key::Home);
+    assert_ne!(cursor(&rig), last);
+}
+
+#[test]
 fn the_debug_panel_draws_in_every_state_without_panicking() {
     let mut rig = Rig::new("draw");
     rig.manager.prefs.debug_open = true;

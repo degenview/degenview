@@ -351,7 +351,7 @@ fn watch_row(
         && !failed
     {
         let lines = tree::watch_children(shown, index, variable);
-        tree::show_rows(ui, &lines, shown, actions, false);
+        tree::show_rows(ui, &lines, shown, actions, false, None);
     }
 }
 

@@ -82,6 +82,8 @@ pub enum PanelAction {
     LoadMore {
         reference: ValueRef,
     },
+    /// A row of the variables tree was picked: the arrow keys move from it.
+    Cursor(String),
     AddWatch(String),
     EditWatch {
         index: usize,
@@ -183,6 +185,12 @@ pub struct PanelUi {
     pub editing_watch: Option<(usize, String)>,
     pub console_input: String,
     pub bar_input: String,
+    /// The variables row the keyboard is on, by its path of names.
+    pub cursor: Option<String>,
+    /// The index of the variables line the keyboard just moved to, until it is brought into view.
+    pub reveal: Option<usize>,
+    /// A scroll offset to apply to the variables list next frame, to bring the cursor into view.
+    pub scroll_to: Option<f32>,
     pub editor: Option<BreakpointEditor>,
     /// A line whose breakpoint menu was asked for in the gutter, and where.
     pub menu_line: Option<usize>,
@@ -794,6 +802,10 @@ impl DebugPanel {
                 if opening {
                     self.request_rows(&reference, 0);
                 }
+                None
+            }
+            PanelAction::Cursor(key) => {
+                self.ui.cursor = Some(key);
                 None
             }
             PanelAction::LoadMore { reference } => {

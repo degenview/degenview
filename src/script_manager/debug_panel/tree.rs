@@ -67,6 +67,94 @@ pub fn variable_lines<'a>(shown: &'a Shown, filter: &str) -> Vec<Line<'a>> {
     lines
 }
 
+/// Where the arrow keys take the cursor in the variables tree.
+pub struct Navigation {
+    pub cursor: Option<String>,
+    /// The index among all `lines` to bring into view.
+    pub reveal: Option<usize>,
+}
+
+/// Up and Down move between rows, Right opens a row (or steps into it), Left closes it (or steps to
+/// its parent), Home and End jump, Return toggles. Only the rows that are values take the cursor.
+pub fn navigate(
+    ui: &Ui,
+    lines: &[Line<'_>],
+    shown: &Shown,
+    cursor: Option<&str>,
+    actions: &mut Vec<PanelAction>,
+) -> Navigation {
+    use eframe::egui::{Key, Modifiers};
+    let rows: Vec<(usize, &str, &Variable)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(index, line)| match line {
+            Line::Variable { key, variable, .. } => Some((index, key.as_str(), *variable)),
+            _ => None,
+        })
+        .collect();
+    let mut navigation = Navigation {
+        cursor: cursor.map(str::to_owned),
+        reveal: None,
+    };
+    if rows.is_empty() {
+        return navigation;
+    }
+    let pressed = |key: Key| ui.input_mut(|input| input.consume_key(Modifiers::NONE, key));
+    let at = cursor.and_then(|key| rows.iter().position(|(_, row, _)| *row == key));
+    let mut target = at;
+    if pressed(Key::ArrowDown) {
+        target = Some(at.map_or(0, |at| (at + 1).min(rows.len() - 1)));
+    }
+    if pressed(Key::ArrowUp) {
+        target = Some(at.map_or(0, |at| at.saturating_sub(1)));
+    }
+    if pressed(Key::Home) {
+        target = Some(0);
+    }
+    if pressed(Key::End) {
+        target = Some(rows.len() - 1);
+    }
+    if let Some(at) = at {
+        let (_, key, variable) = rows[at];
+        let open = shown.open.contains(key);
+        let toggle = |actions: &mut Vec<PanelAction>| {
+            if let Some(reference) = &variable.expand {
+                actions.push(PanelAction::ToggleRow {
+                    key: key.to_owned(),
+                    reference: reference.clone(),
+                });
+            }
+        };
+        if pressed(Key::ArrowRight) {
+            if variable.expand.is_some() && !open {
+                toggle(actions);
+            } else if open && at + 1 < rows.len() {
+                target = Some(at + 1);
+            }
+        }
+        if pressed(Key::ArrowLeft) {
+            if open {
+                toggle(actions);
+            } else if let Some((parent, _)) = key.rsplit_once('/') {
+                target = rows.iter().position(|(_, row, _)| *row == parent);
+            }
+        }
+        if pressed(Key::Enter) || pressed(Key::Space) {
+            toggle(actions);
+        }
+    }
+    if let Some(target) = target
+        && Some(target) != at
+    {
+        navigation.cursor = Some(rows[target].1.to_owned());
+        navigation.reveal = Some(rows[target].0);
+    } else if at.is_none() && target.is_some() {
+        navigation.cursor = Some(rows[0].1.to_owned());
+        navigation.reveal = Some(rows[0].0);
+    }
+    navigation
+}
+
 /// The parts of a watch's value, when the watch is open.
 pub fn watch_children<'a>(shown: &'a Shown, index: usize, variable: &'a Variable) -> Vec<Line<'a>> {
     let mut lines = Vec::new();
@@ -166,6 +254,7 @@ pub fn show_rows(
     shown: &Shown,
     actions: &mut Vec<PanelAction>,
     allow_watch: bool,
+    cursor: Option<&str>,
 ) {
     for line in lines {
         match line {
@@ -174,7 +263,18 @@ pub fn show_rows(
                 key,
                 depth,
                 variable,
-            } => variable_row(ui, key, *depth, variable, shown, actions, allow_watch),
+            } => variable_row(
+                ui,
+                Row {
+                    key,
+                    depth: *depth,
+                    variable,
+                    selected: cursor == Some(key.as_str()),
+                },
+                shown,
+                actions,
+                allow_watch,
+            ),
             Line::More {
                 reference,
                 depth,
@@ -372,27 +472,36 @@ pub fn paint_variable(
     }
 }
 
+/// What `variable_row` draws.
+struct Row<'a> {
+    key: &'a str,
+    depth: usize,
+    variable: &'a Variable,
+    selected: bool,
+}
+
 fn variable_row(
     ui: &mut Ui,
-    key: &str,
-    depth: usize,
-    variable: &Variable,
+    row: Row<'_>,
     shown: &Shown,
     actions: &mut Vec<PanelAction>,
     allow_watch: bool,
 ) {
-    let (rect, response) = ui.allocate_exact_size(
-        vec2(ui.available_width(), ROW),
-        if variable.expand.is_some() {
-            Sense::click()
-        } else {
-            Sense::hover()
-        },
-    );
+    let Row {
+        key,
+        depth,
+        variable,
+        selected,
+    } = row;
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
     if !ui.is_rect_visible(rect) {
         return;
     }
     let open = shown.open.contains(key);
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 0.0, theme::with_alpha(kit::ACCENT, 0.16));
+    }
     paint_variable(ui, rect, depth, variable, open, response.hovered());
     let tip = if variable.assigned {
         format!(
@@ -403,13 +512,14 @@ fn variable_row(
         format!("{}: {}", variable.name, variable.value)
     };
     let response = response.on_hover_text(tip);
-    if response.clicked()
-        && let Some(reference) = &variable.expand
-    {
-        actions.push(PanelAction::ToggleRow {
-            key: key.to_owned(),
-            reference: reference.clone(),
-        });
+    if response.clicked() {
+        actions.push(PanelAction::Cursor(key.to_owned()));
+        if let Some(reference) = &variable.expand {
+            actions.push(PanelAction::ToggleRow {
+                key: key.to_owned(),
+                reference: reference.clone(),
+            });
+        }
     }
     // An open row whose parts have not arrived yet asks for them.
     if open

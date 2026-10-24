@@ -11,6 +11,16 @@
   Capture is opt-in (`ExecutionController::with_logs`); a reader applies `LogBatch`es in order
   through `LogHistory`. Keep the limits in `pine::logs` and read [Pine Logs](../pine-logs.md) before
   changing them.
+- The debugger (`pine/debug/`, [Pine debugger](../pine-debugger.md)) is opt-in: `Session::debug` is
+  `None` unless `attach_debugger` ran, and the hooks (statement loop, `invoke`, `execute_bar`, the
+  `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Do not add a
+  hook to `eval`, `budget` or any per-expression path, and do not add work to the statement loop that
+  runs without a debugger. Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>`
+  (interleaved A/B, checksums prove both builds ran the same program). A watch or condition may
+  only be an expression `pine::debug::parse_expression` accepts: add to its allow-list only a call
+  that neither writes state nor allocates a handle, and test it against a clean run.
+- Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
+  `sync::policy`'s local keys).
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
