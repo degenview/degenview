@@ -20,7 +20,7 @@ use eframe::egui::{
 use std::sync::Arc;
 
 const TITLE_HEIGHT: f32 = 44.0;
-const TOOLBAR_HEIGHT: f32 = 34.0;
+const TOOLBAR_HEIGHT: f32 = 46.0;
 const BUTTON: f32 = 26.0;
 const MARGIN: f32 = 12.0;
 const FIELD_HEIGHT: f32 = 28.0;
@@ -123,19 +123,27 @@ pub fn show(
     let mut actions = Vec::new();
     ui.set_min_height(ui.available_height());
     state.base = Some(ui.id());
+    // The header's rows touch: each is as tall as it needs to be, its content centred in it, so the
+    // space above and below the toolbar is the same whatever is above it.
+    let spacing = ui.spacing().item_spacing.y;
+    ui.spacing_mut().item_spacing.y = 0.0;
     if !state.embedded {
         title(ui, &mut actions);
         divider(ui);
     }
     toolbar(ui, state, scripts, feed.as_ref(), &mut actions);
-    if state.search_open {
-        search_bar(ui, state);
+    if state.search_open || state.date_open || state.filter.start_ms.is_some() {
+        ui.spacing_mut().item_spacing.y = spacing;
+        if state.search_open {
+            search_bar(ui, state);
+        }
+        if state.date_open {
+            date_bar(ui, state);
+        }
+        chips(ui, state);
     }
-    if state.date_open {
-        date_bar(ui, state);
-    }
-    chips(ui, state);
     divider(ui);
+    ui.spacing_mut().item_spacing.y = spacing;
     match feed {
         None => no_script(ui),
         Some(feed) => {
@@ -192,7 +200,7 @@ fn toolbar(
 ) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
-        vec2(width, TOOLBAR_HEIGHT + 6.0),
+        vec2(width, TOOLBAR_HEIGHT),
         Layout::left_to_right(Align::Center),
         |ui| {
             ui.spacing_mut().item_spacing = vec2(2.0, 0.0);

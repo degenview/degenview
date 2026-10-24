@@ -186,6 +186,59 @@ impl Rig {
     }
 }
 
+/// The gaps above and below the toolbar's script picker: from `above` (the top of the pane, or
+/// the divider under the title) to the picker, and from the picker to the divider under it.
+fn toolbar_gaps(rig: &Rig, above: f32) -> (f32, f32) {
+    let rects: Vec<Rect> = rig
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => Some(rect.rect),
+            _ => None,
+        })
+        .collect();
+    let picker = rects
+        .iter()
+        .find(|rect| (rect.height() - 24.0).abs() < 0.1 && rect.min.y >= above)
+        .expect("the script picker");
+    let divider = rects
+        .iter()
+        .filter(|rect| {
+            rect.height() <= 1.1 && rect.width() >= WIDTH - 1.0 && rect.min.y > picker.max.y
+        })
+        .min_by(|a, b| a.min.y.total_cmp(&b.min.y))
+        .expect("the divider under the toolbar");
+    (picker.min.y - above, divider.min.y - picker.max.y)
+}
+
+#[test]
+fn the_toolbar_has_the_same_room_above_and_below_its_content() {
+    // Inside a tab: the toolbar is the first thing in the pane.
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.embedded = true;
+    rig.settle();
+    let (above, below) = toolbar_gaps(&rig, 0.0);
+    assert!((above - below).abs() < 1.0, "{above} above, {below} below");
+
+    // Docked: under the title and its divider.
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.settle();
+    let divider_under_title = rig
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect)
+                if rect.rect.height() <= 1.1 && rect.rect.width() >= WIDTH - 1.0 =>
+            {
+                Some(rect.rect.max.y)
+            }
+            _ => None,
+        })
+        .fold(f32::MAX, f32::min);
+    let (above, below) = toolbar_gaps(&rig, divider_under_title);
+    assert!((above - below).abs() < 1.0, "{above} above, {below} below");
+}
+
 #[test]
 fn the_empty_states_sit_in_the_middle_of_the_pane() {
     for logging in [true, false] {
@@ -589,6 +642,10 @@ fn gallery_of_the_pane() {
     }
     let scenes: Vec<(&str, f32, Setup)> = vec![
         ("empty", 320.0, |_, _, _| {}),
+        ("embedded", 520.0, |state, history, _| {
+            state.embedded = true;
+            *history = history_of(mixed_messages());
+        }),
         ("empty-narrow", 240.0, |_, _, _| {}),
         ("empty-wide", 520.0, |_, _, _| {}),
         ("populated", 320.0, |_, history, _| {
