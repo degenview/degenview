@@ -1253,6 +1253,23 @@ fn a_restarted_run_gets_a_new_epoch_and_forgets_the_old_messages() {
 }
 
 #[test]
+fn logging_can_be_paused_per_script_without_losing_what_was_kept() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Logging", LOGGING_SCRIPT);
+    wait_for_run(&mut harness, id);
+    let kept = harness.card.pine_logs(id).unwrap().history.len();
+    assert!(harness.card.pine_logging(id));
+    harness.card.set_pine_logging(id, false);
+    assert!(!harness.card.pine_logging(id));
+    // Pausing never touches the history, and the script keeps running.
+    assert_eq!(harness.card.pine_logs(id).unwrap().history.len(), kept);
+    harness.card.set_pine_logging(id, true);
+    assert!(harness.card.pine_logging(id));
+}
+
+#[test]
 fn removing_a_script_drops_its_messages() {
     let mut harness = Harness::new(ChartCanvas::default());
     let id = harness

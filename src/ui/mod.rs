@@ -48,6 +48,7 @@ mod pattern_geometry;
 pub mod pine_alert_editor;
 pub mod pine_chart_render;
 pub mod pine_geometry;
+pub mod pine_logs_view;
 pub mod pine_report;
 pub mod pine_settings_popover;
 pub mod pine_style_view;

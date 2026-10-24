@@ -291,6 +291,36 @@ impl Regex {
         (parser.position == parser.chars.len()).then_some(Self { alternatives })
     }
 
+    /// The non-overlapping non-empty matches in `text`, leftmost first, as byte ranges: at most
+    /// `limit` of them. One step budget covers the whole text, so a pathological pattern gives up
+    /// with what it found rather than hanging.
+    pub fn find_all(&self, text: &str, limit: usize) -> Vec<std::ops::Range<usize>> {
+        let chars: Vec<char> = text.chars().collect();
+        let mut offsets: Vec<usize> = text.char_indices().map(|(byte, _)| byte).collect();
+        offsets.push(text.len());
+        let steps = Cell::new(0_usize);
+        let mut found = Vec::new();
+        let mut start = 0;
+        while start <= chars.len() && found.len() < limit {
+            let mut end = None;
+            let matched = match_alternatives(&self.alternatives, &chars, start, &steps, &mut |p| {
+                end = Some(p);
+                true
+            });
+            if steps.get() > STEP_LIMIT {
+                break;
+            }
+            match end.filter(|end| matched && *end > start) {
+                Some(end) => {
+                    found.push(offsets[start]..offsets[end]);
+                    start = end;
+                }
+                None => start += 1,
+            }
+        }
+        found
+    }
+
     /// The first (leftmost) match in `text`, as a substring.
     pub fn first_match<'t>(&self, text: &'t str) -> Option<&'t str> {
         let chars: Vec<char> = text.chars().collect();
@@ -549,6 +579,18 @@ mod tests {
             Regex::new("").is_some(),
             "the empty expression matches the empty string"
         );
+    }
+
+    #[test]
+    fn find_all_returns_byte_ranges_of_every_match() {
+        let regex = Regex::new("[0-9]+").unwrap();
+        let text = "é12 ✓ 345";
+        let ranges = regex.find_all(text, 10);
+        let found: Vec<&str> = ranges.iter().map(|r| &text[r.clone()]).collect();
+        assert_eq!(found, ["12", "345"]);
+        assert_eq!(regex.find_all(text, 1).len(), 1);
+        // An expression that can match nothing yields no empty matches.
+        assert!(Regex::new("x*").unwrap().find_all("abc", 10).is_empty());
     }
 
     #[test]

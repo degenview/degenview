@@ -13,7 +13,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing_layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
 | A price alert tag | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
-| A script's pane | Settings, Hide or Show, Visual order, Open Script Manager, Remove from chart. |
+| A script's pane | Settings, Hide or Show, Visual order, Pine logs, Open Script Manager, Remove from chart. |
 | The price axis | Reset price scale, then the four [price scale modes](price-scale.md) (Regular, Percent, Indexed to 100, Logarithmic; the active one checked). |
 | The time axis | Reset chart view. |
 | Empty plot | The background menu (below). |
@@ -106,6 +106,12 @@ through the paths the chart's own controls use, so drawing changes are undoable.
 rename or grouping: drawings have no name and no group model. A drawing this version cannot read (from
 a newer build) is a row too, "From a newer version", with only Delete: it is not drawn or selectable,
 and nothing else changes it.
+
+## Pine logs
+
+A docked panel on the right (beside the Object tree, `workspace/pine_logs.rs`, `ui/pine_logs_view`),
+opened from a script's chip menu or pane menu, "Pine logs". It reads the messages the chart card
+keeps for each script's run and owns none of them. See [Pine Logs](pine-logs.md).
 
 ## Undo
 

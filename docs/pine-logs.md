@@ -3,8 +3,7 @@
 `log.info()`, `log.warning()` and `log.error()` write messages a person reads while debugging a
 script. They are not the app's own diagnostic log: they are script output, kept per script run.
 
-This page describes what the engine does and what is verified. The pane that shows the messages is
-a later change.
+This page describes what the engine does, what the pane shows, and what is verified.
 
 ## Language
 
@@ -73,6 +72,41 @@ still delivers its messages.
 `ChartCard` keeps one `LogHistory` and an epoch per run (`ChartCard::pine_logs`). Hiding or removing
 a script drops its run and with it its history; changing the app theme starts a new run too.
 
+## The pane
+
+Opened from a script's chip menu or pane menu (docked on the right of its chart, one pane per tab).
+Title and close; a script selector (two copies of one script read `Name` and `Name #2`); then the
+logging switch, search, start date and level filter.
+
+- **Rows** list the messages oldest first, newest at the bottom: the time in UTC (ISO 8601 with
+  milliseconds) above the text, which is gray for info, orange for a warning, red for an error.
+  Text is drawn as plain text; multi-line messages keep their lines and long tokens wrap. A
+  right-click copies the message, with or without its time. Only the rows on screen are laid out;
+  heights are estimated, then measured as rows come into view.
+- **Following.** The list sticks to the bottom while it is there; scrolling up stops it and a
+  "Latest" button jumps back. Changing the script jumps to the latest message.
+- **Disable logging** stops keeping the messages the script writes in realtime; the script keeps
+  running, what was kept stays, and historical messages are unaffected. Turning it on again keeps
+  the new ones.
+- **Levels** are three checkboxes in the `…` menu. Hidden messages stay in the history; the calls
+  still run.
+- **Search** is case-insensitive for ASCII by default; "Aa" matches case, "ab" matches whole words
+  (set off by white space or `. , : ; ' "`; a term holding one of them never matches), ".*" reads
+  the query as a regular expression. Matches are highlighted. A query that does not compile is
+  flagged and filters nothing.
+- **Start date** takes a UTC date and time; a tag above the list shows it and removes it.
+- Filters compose (level, start date, search) and never change the history. The listed rows are
+  recomputed only when messages, a filter, the script or the run change; new messages are scanned
+  alone.
+- **Empty states**: no scripts on the chart; the "How to work with logs" steps when a script has
+  written nothing; "Logging is disabled" with a button; "No matching messages" with "Clear filters".
+  The copy of the last three is ours, not TradingView's.
+- The level and search options are remembered per machine (`pineLogs.prefs`, never synced). The
+  messages, the selected script and the pane's size and openness are not saved.
+
+Pane regexes use the engine's `regex_lite` subset (the one behind `str.match`), not TradingView's:
+no `\xhh`/`\uhhhh` escapes, lookarounds or named groups, and a step budget bounds the search.
+
 ## Not verified / known differences
 
 - The format string has no `'…'` quoting: it follows `strings::format_template`, which `str.format()`
@@ -81,5 +115,7 @@ a script drops its run and with it its history; changing the app theme starts a 
   the rebuild triggers listed under Historical and realtime, and the extra limits.
 - The editor's signature help shows one `formatString, arg0, …` row for all three functions, not
   the two overloads.
-- The `PINE7002` warning ("There is no Pine Logs pane") stays until a pane shows the messages.
+- Source code and Scroll to bar, the editor's More menu, and the Script Manager preview's logs
+  are not built yet. The pane was checked through headless egui frames and rendered pictures, not
+  in a real window.
 - A formatted message whose first argument is `na` is the text `NaN`.

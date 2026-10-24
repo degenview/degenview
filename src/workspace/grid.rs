@@ -696,6 +696,7 @@ impl ChartWorkspace {
                         Action::ConfigureScript(id, anchor) => {
                             self.toggle_script_popover(chart_id, id, anchor);
                         }
+                        Action::OpenPineLogs(id) => self.open_pine_logs(chart_id, Some(id)),
                         Action::OpenScriptSettings => {
                             self.settings_state = ChartSettingsState::default();
                             self.settings_state.tab = chart_settings::Tab::Scripts;

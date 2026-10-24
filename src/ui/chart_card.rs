@@ -328,6 +328,9 @@ pub struct ChartCard {
     /// Counts the runs this card started, so each gets an epoch of its own: an instance id is
     /// reused once its script is removed, a run is never.
     run_epochs: u64,
+    /// The instances whose realtime messages are not kept (the pane's Disable logging). The script
+    /// keeps running; only what it writes from now on is left out.
+    logging_paused: HashSet<u64>,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
     /// the construction change. Restyling never rebuilds it.
     constructed: Option<Arc<ConstructedSeries>>,
@@ -391,7 +394,6 @@ struct Run {
     requested: Option<RunRevision>,
     generation: u64,
     /// Which run of this card this is; a restart (new source, inputs, symbol) is a new epoch.
-    #[allow(dead_code)] // Read by the Pine logs pane.
     epoch: u64,
     /// The `log.*()` messages the run wrote. They belong to the run, not to an output generation:
     /// a result whose output went stale still carries messages nothing else will deliver.
@@ -609,7 +611,6 @@ impl Drop for PineWorker {
 
 /// One run's `log.*()` messages. The epoch tells a restarted run from the one before it, which
 /// the instance id cannot.
-#[allow(dead_code)] // Read by the Pine logs pane.
 pub struct PineLogs<'a> {
     pub epoch: u64,
     pub history: &'a LogHistory,
@@ -644,6 +645,7 @@ impl Default for ChartCard {
             preview_inputs: HashMap::new(),
             runs: HashMap::new(),
             run_epochs: 0,
+            logging_paused: HashSet::new(),
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
@@ -936,6 +938,7 @@ impl ChartCard {
     pub fn set_pine_instances(&mut self, instances: Vec<PineInstance>) {
         self.instances = instances;
         self.runs.clear();
+        self.logging_paused.clear();
     }
 
     /// Applies a script to the chart, after the ones already there. Returns the new instance's id.
@@ -959,6 +962,7 @@ impl ChartCard {
     pub fn remove_pine_instance(&mut self, id: u64) {
         self.instances.retain(|instance| instance.id != id);
         self.runs.remove(&id);
+        self.logging_paused.remove(&id);
     }
 
     /// Moves an instance to `index` (clamped); draw order follows list order.
@@ -1009,12 +1013,25 @@ impl ChartCard {
     }
 
     /// The messages an instance's script wrote with `log.*()` in its current run.
-    #[allow(dead_code)] // Read by the Pine logs pane.
     pub fn pine_logs(&self, id: u64) -> Option<PineLogs<'_>> {
         self.runs.get(&id).map(|run| PineLogs {
             epoch: run.epoch,
             history: &run.logs,
         })
+    }
+
+    /// Whether an instance keeps the messages it writes in realtime.
+    pub fn pine_logging(&self, id: u64) -> bool {
+        !self.logging_paused.contains(&id)
+    }
+
+    /// Turns the keeping of an instance's realtime messages on or off. Messages already kept stay.
+    pub fn set_pine_logging(&mut self, id: u64, enabled: bool) {
+        if enabled {
+            self.logging_paused.remove(&id);
+        } else {
+            self.logging_paused.insert(id);
+        }
     }
 
     pub fn pine_status(&self, id: u64) -> Option<InstanceStatus<'_>> {
@@ -1162,7 +1179,11 @@ impl ChartCard {
             }
             if let Some(run) = self.runs.get_mut(&instance.id) {
                 while let Ok(result) = run.worker.results.try_recv() {
-                    run.logs.apply(result.logs);
+                    let mut batch = result.logs;
+                    if self.logging_paused.contains(&instance.id) {
+                        batch.events.retain(|event| !event.realtime);
+                    }
+                    run.logs.apply(batch);
                     if result.generation != run.generation {
                         continue;
                     }

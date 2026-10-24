@@ -43,6 +43,7 @@ pub mod pattern;
 mod persisted;
 pub mod pine_alert;
 pub mod pine_instance;
+pub mod pine_logs_view;
 mod pm_series;
 pub mod portfolio;
 pub mod portfolio_accounting;

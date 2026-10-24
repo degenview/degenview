@@ -53,6 +53,7 @@ mod links;
 mod live;
 mod paper;
 mod pine;
+mod pine_logs;
 mod replay;
 mod settings;
 mod snapshot;
@@ -637,6 +638,19 @@ impl ChartWorkspace {
                         .inner_margin(egui::Margin::ZERO),
                 )
                 .show(ui, |ui| self.show_tree_panel(ui));
+        }
+        if self.context.logs.chart.is_some() {
+            egui::Panel::right(egui::Id::new(("pine_logs", self.id)))
+                .resizable(true)
+                .default_size(320.0)
+                .min_size(240.0)
+                .max_size(640.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui::theme::chrome())
+                        .inner_margin(egui::Margin::ZERO),
+                )
+                .show(ui, |ui| self.show_logs_panel(ui));
         }
         if self.context.table_chart.is_some() {
             egui::Panel::bottom(egui::Id::new(("chart_table", self.id)))
