@@ -144,6 +144,9 @@ pub fn flat_filter(ui: &mut Ui, id: Id, value: &mut String, hint: &str, width: f
     }
 }
 
+/// The height of a text field: that of the pickers and buttons it sits beside.
+pub const FIELD_HEIGHT: f32 = 24.0;
+
 /// A quiet single-line field on a faint well, ringed in the accent while it has focus.
 pub fn text_field(
     ui: &mut Ui,
@@ -172,10 +175,13 @@ pub fn text_field(
         ))
         .inner_margin(Margin::symmetric(8, 3))
         .show(ui, |ui| {
+            // The well's margins and ring take 8 points of the height.
+            ui.spacing_mut().interact_size.y = FIELD_HEIGHT - 8.0;
             ui.add(
                 egui::TextEdit::singleline(value)
                     .id(id)
                     .frame(egui::Frame::NONE)
+                    .vertical_align(egui::Align::Center)
                     .font(font)
                     .text_color(theme::text_primary())
                     .hint_text(

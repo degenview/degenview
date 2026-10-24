@@ -181,7 +181,7 @@ fn gallery_of_series_and_select_bar() {
     for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
         let mut rig = Rig::new(&format!("gallery-series-{theme_name}"));
         rig.manager.prefs.chart_visible = false;
-        let screen = Screen::new(egui::vec2(1100.0, 1100.0));
+        let screen = Screen::new(egui::vec2(1100.0, 1350.0));
         theme::apply(&screen.ctx, app_theme);
         let mut scene = Scene {
             rig: &mut rig,
@@ -191,7 +191,7 @@ fn gallery_of_series_and_select_bar() {
         };
         scene.frames(3);
         scene.rig.manager.prefs.debug_open = true;
-        scene.rig.manager.prefs.debug_height = 640.0;
+        scene.rig.manager.prefs.debug_height = 900.0;
         // Inputs have no history; a series is read by how far back it is; Select bar is armed.
         scene.rig.manager.debug.end_session();
         scene.rig.set_source(
@@ -240,5 +240,19 @@ fn gallery_of_series_and_select_bar() {
         scene.save("series-and-select-bar");
         scene.push(Cmd::DebugPanel(PanelAction::CancelPickBar));
         scene.frames(2);
+        // The breakpoint's editor: a hit rule with its number, and a logpoint.
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::Hit(crate::pine::debug::HitRule::EveryNth(3)),
+        }));
+        scene.push(Cmd::DebugPanel(PanelAction::EditBreakpoint {
+            id,
+            edit: BreakpointEdit::LogMessage(Some("Bar {bar_index}: close={close}".into())),
+        }));
+        scene.frames(2);
+        let stored = scene.rig.manager.debug.state.breakpoints[0].clone();
+        scene.rig.manager.debug.ui.open_editor(&stored, false);
+        scene.frames(3);
+        scene.save("breakpoint-editor");
     }
 }

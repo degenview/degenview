@@ -113,7 +113,9 @@ logpoint message. They are compiled once against the source map; a condition or 
 parse or is not allowed is reported on the breakpoint, and a line with no code is `Unresolved`.
 
 * **Hit counts** count each time the statement is reached with the condition true, across bars and
-  calls, from the start of the session. Rules: always, the nth hit, every nth, after the nth.
+  calls, from the start of the session. Rules: always, the nth hit, every nth, after the nth; the
+  breakpoint's editor picks one from a drop-down, takes the number beside it and says in a sentence what
+  it will do.
   Restarting counts from zero. A live edit keeps the counts of breakpoints that keep their id.
 * **A condition that cannot be evaluated** (an out-of-range `array.get`) stops the script and says
   why, rather than silently never firing. On a logpoint it writes a warning instead.

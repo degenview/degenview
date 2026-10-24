@@ -662,16 +662,15 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
     let id = editor.id;
     egui::Frame::new()
         .fill(theme::ink(6))
-        .inner_margin(egui::Margin::symmetric(12, 8))
+        .inner_margin(egui::Margin::symmetric(12, 10))
         .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.spacing_mut().item_spacing.y = 4.0;
             let width = ui.available_width();
-            label(
-                ui,
-                "Condition",
-                "The breakpoint acts only when this Pine expression is true.",
-            );
-            let response = text_field(
+
+            // Condition.
+            label(ui, "Condition");
+            hint(ui, "Stops only when this Pine expression is true.");
+            text_field(
                 ui,
                 ui.id().with(("bp-condition", id)),
                 &mut editor.condition,
@@ -679,34 +678,32 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                 width,
                 true,
             );
-            let _ = response;
             if !editor.condition.trim().is_empty()
                 && let Err(error) = parse_expression(&editor.condition)
             {
-                ui.label(kit::text(
-                    error.message,
-                    kit::size::SUBHEADLINE,
-                    kit::REGULAR,
-                    theme::syntax::string(),
-                ));
+                problem(ui, &error.message);
             }
-            label(
+
+            // Hit count.
+            ui.add_space(8.0);
+            label(ui, "Hit count");
+            hint(
                 ui,
-                "Hit count",
-                "Hits are counted whenever the condition holds, across bars.",
+                "Hits are the times the condition held, counted across bars.",
             );
             ui.horizontal(|ui| {
-                kit::segmented(
-                    ui,
-                    ui.id().with(("bp-hit", id)),
-                    &[
-                        (HitKind::Always, "Always"),
-                        (HitKind::Equals, "= n"),
-                        (HitKind::EveryNth, "Every n"),
-                        (HitKind::GreaterThan, "> n"),
-                    ],
-                    &mut editor.hit,
-                );
+                ui.spacing_mut().item_spacing.x = 6.0;
+                let titles: Vec<String> = HitKind::ALL
+                    .iter()
+                    .map(|kind| kind.title().to_owned())
+                    .collect();
+                let selected = HitKind::ALL
+                    .iter()
+                    .position(|kind| *kind == editor.hit)
+                    .unwrap_or(0);
+                if let Some(index) = kit::menu_picker(ui, 168.0, &titles, selected, true) {
+                    editor.hit = HitKind::ALL[index];
+                }
                 if editor.hit != HitKind::Always {
                     text_field(
                         ui,
@@ -718,17 +715,34 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                     );
                 }
             });
-            ui.horizontal(|ui| {
-                let mut logpoint = editor.is_logpoint;
-                if kit::switch(ui, &mut logpoint, "Log a message instead of stopping").changed() {
-                    editor.is_logpoint = logpoint;
+            if editor.hit != HitKind::Always {
+                if editor.count.trim().parse::<u64>().is_ok_and(|n| n >= 1) {
+                    hint(ui, &hit_sentence(editor.hit, editor.count.trim()));
+                } else {
+                    problem(ui, "Enter a whole number, 1 or more.");
                 }
+            }
+
+            // Logpoint.
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                kit::switch(
+                    ui,
+                    &mut editor.is_logpoint,
+                    "Log a message instead of stopping",
+                );
+                ui.label(kit::text(
+                    "Log a message instead of stopping",
+                    kit::size::BODY,
+                    kit::REGULAR,
+                    theme::text_primary(),
+                ));
             });
             if editor.is_logpoint {
-                label(
+                hint(
                     ui,
-                    "Message",
-                    "{expression} is replaced by its value; {{ and }} are braces.",
+                    "Goes to the Logs tab. {expression} shows its value; {{ and }} are braces.",
                 );
                 text_field(
                     ui,
@@ -741,12 +755,12 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
                 if !editor.message.is_empty()
                     && let Err(error) = Template::parse(&editor.message)
                 {
-                    ui.label(kit::text(
-                        error,
-                        kit::size::SUBHEADLINE,
-                        kit::REGULAR,
-                        theme::syntax::string(),
-                    ));
+                    problem(ui, &error);
+                } else if editor.message.is_empty() {
+                    hint(
+                        ui,
+                        "Type a message; until then the breakpoint stops as usual.",
+                    );
                 }
             }
         });
@@ -773,14 +787,55 @@ fn breakpoint_editor(ui: &mut Ui, state: &mut PanelUi, actions: &mut Vec<PanelAc
     }
 }
 
-fn label(ui: &mut Ui, title: &str, detail: &str) {
+/// What a hit rule means with its number, as a sentence.
+fn hit_sentence(kind: HitKind, n: &str) -> String {
+    match kind {
+        HitKind::Always => "Stops every time the condition holds.".to_owned(),
+        HitKind::Equals => format!("Stops on hit number {n} only."),
+        HitKind::EveryNth => format!("Stops on every {} hit.", ordinal(n)),
+        HitKind::GreaterThan => format!("Stops on every hit after the {}.", ordinal(n)),
+    }
+}
+
+/// "1st", "2nd", "3rd", "4th", "11th", "22nd" for a number typed as digits.
+fn ordinal(n: &str) -> String {
+    let suffix = match (n.chars().last(), n.chars().rev().nth(1)) {
+        (_, Some('1')) => "th",
+        (Some('1'), _) => "st",
+        (Some('2'), _) => "nd",
+        (Some('3'), _) => "rd",
+        _ => "th",
+    };
+    format!("{n}{suffix}")
+}
+
+fn label(ui: &mut Ui, title: &str) {
     ui.label(kit::text(
         title,
         kit::size::SUBHEADLINE,
         kit::SEMIBOLD,
         theme::text_secondary(),
-    ))
-    .on_hover_text(detail);
+    ));
+}
+
+/// A line of explanation under a field.
+fn hint(ui: &mut Ui, text: &str) {
+    ui.label(kit::text(
+        text,
+        kit::size::SUBHEADLINE,
+        kit::REGULAR,
+        theme::text_tertiary(),
+    ));
+}
+
+/// What is wrong with what was typed.
+fn problem(ui: &mut Ui, text: &str) {
+    ui.label(kit::text(
+        text,
+        kit::size::SUBHEADLINE,
+        kit::REGULAR,
+        theme::syntax::string(),
+    ));
 }
 
 // MARK: Console
