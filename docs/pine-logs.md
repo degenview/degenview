@@ -125,11 +125,24 @@ Hovering a row shows two buttons (the same two are in its right-click menu): **S
 
 ### In the Script Manager
 
-The editor's toolbar has a More menu with "Pine logs": the same pane beside the editor, over the
-preview chart's run of the script being edited. There "Source code" moves the caret in the editor
-you are in, and "Scroll to bar" moves the preview chart, which only holds the candles it fetched.
-TradingView opens the pane from the editor's More menu; DegenView's Script Manager had no More menu,
-so this one only holds this entry. The placement beside the editor is ours.
+The drawer under the preview chart has a **Logs** tab beside Inputs, Report and Problems: the same
+pane (toolbar, script selector, list, filters, search, start date, the hover actions) over the
+preview chart's run of the script being edited, without the pane's own title. There "Source code"
+moves the caret in the editor you are in, and "Scroll to bar" moves the preview chart, which only
+holds the candles it fetched. TradingView opens the pane from the editor's More menu; DegenView's
+Script Manager has no such menu, so the drawer tab is its way in. The level and search options are
+the same local `pineLogs.prefs` setting as the chart's pane.
+
+### Unknown `log.*` functions and CRLF scripts
+
+`log` has three functions, so `log.hi()` is a compile error (`PINE3051`, from `name_check`), not
+only a runtime one: the editor's status says "1 error" and the Problems tab lists it. A script that
+imports a library `as log` keeps that library's members.
+
+The compiler folds each CRLF into one line feed before it reads the text, so its offsets are one
+short per CRLF before them, while the editor keeps both characters. Anything that takes a compiler
+offset into the editor (Problems, the underline, "Source code") converts it with
+`syntax::compiled_utf16_to_char_index`. Line and column were never affected.
 
 Pane regexes use the engine's `regex_lite` subset (the one behind `str.match`), not TradingView's:
 no `\xhh`/`\uhhhh` escapes, lookarounds or named groups, and a step budget bounds the search.

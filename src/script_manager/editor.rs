@@ -711,7 +711,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     let current = text_hash(&state.source);
 
     if let Some(offset) = state.jump_to.take() {
-        let index = syntax::utf16_to_char_index(&state.source, offset);
+        let index = syntax::compiled_utf16_to_char_index(&state.source, offset);
         let mut edit_state = TextEditState::load(ui.ctx(), id).unwrap_or_default();
         edit_state
             .cursor
@@ -1391,8 +1391,9 @@ fn underline_rect(
     origin: egui::Pos2,
     diagnostic: &Diagnostic,
 ) -> Option<Rect> {
-    let start = syntax::utf16_to_char_index(source, diagnostic.range.start.offset);
-    let mut end = syntax::utf16_to_char_index(source, diagnostic.range.end.offset).max(start);
+    let start = syntax::compiled_utf16_to_char_index(source, diagnostic.range.start.offset);
+    let mut end =
+        syntax::compiled_utf16_to_char_index(source, diagnostic.range.end.offset).max(start);
     // Underline only the first line of a multi-line range.
     let line_end = source
         .chars()

@@ -117,8 +117,8 @@ pub(crate) enum Cmd {
     SetChartPosition(ChartPosition),
     SetDrawerTab(DrawerTab),
     ToggleDrawer,
-    /// Open or close the Pine logs pane.
-    ToggleLogs,
+    /// Something chosen in the Logs tab.
+    Logs(crate::ui::pine_logs_view::LogsAction),
     OpenAlpacaSettings,
 }
 
@@ -180,7 +180,7 @@ pub struct ScriptManager {
     pub(crate) error: Option<String>,
     pub(crate) cmds: Vec<Cmd>,
     pub(crate) preview: workspace::PreviewState,
-    /// The Pine logs pane beside the editor, when open.
+    /// The Logs tab's state.
     logs: logs::LogsPane,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<ScriptManagerAction>,
@@ -201,7 +201,7 @@ impl ScriptManager {
         Self {
             id,
             preview: workspace::PreviewState::load(&shared),
-            logs: logs::LogsPane::default(),
+            logs: logs::LogsPane::load(&shared),
             shared,
             script_store,
             scripts: Vec::new(),
@@ -425,21 +425,13 @@ impl ScriptManager {
             )
             .show(ui, |ui| self.toolbar(ui));
 
-        if self.logs.open {
-            egui::Panel::right("script-manager-logs")
-                .resizable(true)
-                .default_size(320.0)
-                .min_size(240.0)
-                .max_size(640.0)
-                .frame(Self::logs_panel_frame())
-                .show(ui, |ui| self.show_logs_panel(ui));
-        }
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::background()))
             .show(ui, |ui| self.root(ui));
 
         self.sheets_ui(&ctx);
         self.apply_cmds(&ctx);
+        self.save_logs_prefs();
         self.end_frame(&ctx);
         std::mem::take(&mut self.actions)
     }
@@ -521,8 +513,6 @@ impl ScriptManager {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                let more = icons::button(ui, Icon::Ellipsis, 28.0, theme::text_primary(), "More");
-                self.more_menu(&more);
                 let (icon, tip) = if self.prefs.chart_visible {
                     (Icon::ChartLine, "Hide the preview chart")
                 } else {
@@ -945,7 +935,7 @@ impl ScriptManager {
                 self.prefs.drawer_open = true;
             }
             Cmd::ToggleDrawer => self.prefs.drawer_open = !self.prefs.drawer_open,
-            Cmd::ToggleLogs => self.toggle_logs(),
+            Cmd::Logs(action) => self.apply_logs_action(action),
             Cmd::OpenAlpacaSettings => self.actions.push(ScriptManagerAction::OpenAlpacaSettings),
         }
         let _ = ctx;
@@ -1444,7 +1434,7 @@ mod tests {
             manager.prefs.chart_position = position;
             frame(&mut manager);
         }
-        for tab in [DrawerTab::Inputs, DrawerTab::Report, DrawerTab::Problems] {
+        for tab in DrawerTab::ALL {
             manager.cmds.push(Cmd::SetDrawerTab(tab));
             frame(&mut manager);
         }
@@ -1471,6 +1461,38 @@ mod tests {
             offset: 17,
             ran_source: ran_source.map(str::to_owned),
         }
+    }
+
+    #[test]
+    fn an_unknown_log_function_fails_the_editors_compile_not_just_the_run() {
+        let source = "//@version=6\r\nindicator(\"T\")\r\n\r\nlog.hi(\"hiii\")\r\n";
+        let mut editor = EditorState::new("id", source, source);
+        compile_into(&mut editor);
+        assert_eq!(editor.status, CompileStatus::Error);
+        let problem = editor
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "PINE3051")
+            .expect("log.hi is not a function")
+            .clone();
+        assert_eq!(
+            (problem.range.start.line, problem.range.start.column),
+            (4, 1)
+        );
+        // Revealing it puts the caret on the call, though the editor's text holds the CRs.
+        editor.reveal(&problem);
+        let index = syntax::compiled_utf16_to_char_index(
+            &editor.source,
+            editor.pending_jump().expect("a jump"),
+        );
+        assert!(
+            editor
+                .source
+                .chars()
+                .skip(index)
+                .collect::<String>()
+                .starts_with("log.hi")
+        );
     }
 
     #[test]

@@ -63,6 +63,9 @@ pub enum LogsAction {
 pub struct LogsState {
     /// The script shown; the owner points it at one that exists before each frame.
     pub selected: Option<u64>,
+    /// Shown inside something that has its own title (a tab): the title row and its close
+    /// button are left out.
+    pub embedded: bool,
     pub filter: LogFilter,
     search_open: bool,
     date_open: bool,
@@ -116,8 +119,10 @@ pub fn show(
     let mut actions = Vec::new();
     ui.set_min_height(ui.available_height());
     state.base = Some(ui.id());
-    title(ui, &mut actions);
-    divider(ui);
+    if !state.embedded {
+        title(ui, &mut actions);
+        divider(ui);
+    }
     toolbar(ui, state, scripts, feed.as_ref(), &mut actions);
     if state.search_open {
         search_bar(ui, state);

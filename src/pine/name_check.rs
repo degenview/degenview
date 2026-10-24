@@ -172,6 +172,11 @@ fn variable_is_defined(name: &str, declared: &HashSet<String>) -> bool {
 }
 
 fn function_is_defined(name: &str, declared: &HashSet<String>) -> bool {
+    // `log` is a namespace of exactly three functions: that it is a namespace does not make
+    // `log.hi` one. A script's own `log` (an import alias, say) is left alone.
+    if name.starts_with("log.") && !declared.contains("log") && !declared.contains(name) {
+        return crate::pine::logs::LogLevel::from_function(name).is_some();
+    }
     declared.contains(name)
         || head_is_defined(name, declared)
         || symbol_catalog::FUNCTIONS.contains(&name)
@@ -217,6 +222,42 @@ mod tests {
         assert_eq!(
             codes("plot(nosuchvariable)"),
             ["PINE3050:Undefined variable 'nosuchvariable'."]
+        );
+    }
+
+    #[test]
+    fn log_has_three_functions_and_no_others() {
+        assert!(codes("log.info(\"a\")\nlog.warning(\"b\")\nlog.error(\"c\")").is_empty());
+        assert_eq!(
+            codes("log.hi(\"hiii\")"),
+            ["PINE3051:Undefined function 'log.hi'."]
+        );
+        assert_eq!(codes("log.infos(\"x\")").len(), 1);
+    }
+
+    #[test]
+    fn an_import_named_log_keeps_its_own_members() {
+        let mut libraries = std::collections::HashMap::new();
+        libraries.insert(
+            "user/Mine/1".to_owned(),
+            "//@version=6\nlibrary(\"Mine\")\nexport hi(string text) => text\n".to_owned(),
+        );
+        struct Libraries(std::collections::HashMap<String, String>);
+        impl crate::pine::compiler::LibraryResolver for Libraries {
+            fn source_for_library(&self, path: &str) -> Option<String> {
+                self.0.get(path).cloned()
+            }
+        }
+        let source =
+            "//@version=6\nindicator(\"T\")\nimport user/Mine/1 as log\nx = log.hi(\"a\")\n";
+        let program = compile(source, Limits::default(), &Libraries(libraries));
+        assert!(
+            program
+                .diagnostics
+                .iter()
+                .all(|d| d.code != UNDEFINED_FUNCTION),
+            "{:?}",
+            program.diagnostics
         );
     }
 

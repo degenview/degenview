@@ -89,6 +89,24 @@ pub fn utf16_to_char_index(source: &str, utf16: usize) -> usize {
     source.chars().count()
 }
 
+/// [`utf16_to_char_index`] for an offset into the text as the compiler reads it. The compiler
+/// folds each CRLF into one line feed first, so its offsets are one short for every CRLF before
+/// them; the text in the editor keeps both characters.
+pub fn compiled_utf16_to_char_index(source: &str, utf16: usize) -> usize {
+    let mut units = 0;
+    let mut chars = source.chars().enumerate().peekable();
+    while let Some((index, character)) = chars.next() {
+        if units >= utf16 {
+            return index;
+        }
+        if character == '\r' && chars.peek().is_some_and(|(_, next)| *next == '\n') {
+            continue;
+        }
+        units += character.len_utf16();
+    }
+    source.chars().count()
+}
+
 fn namespaces() -> &'static HashSet<String> {
     static SET: OnceLock<HashSet<String>> = OnceLock::new();
     SET.get_or_init(|| {
@@ -506,6 +524,53 @@ mod tests {
 
     fn has(found: &[(String, Category)], text: &str, category: Category) -> bool {
         found.iter().any(|(t, c)| t == text && *c == category)
+    }
+
+    #[test]
+    fn compiler_offsets_skip_the_carriage_return_of_a_crlf() {
+        // The compiler sees "a\nb\nc"; the editor holds "a\r\nb\r\nc".
+        let crlf = "a\r\nb\r\nc";
+        assert_eq!(compiled_utf16_to_char_index(crlf, 0), 0);
+        assert_eq!(compiled_utf16_to_char_index(crlf, 2), 3);
+        assert_eq!(compiled_utf16_to_char_index(crlf, 4), 6);
+        // Without CRLF it is the plain conversion, astral characters counting two units.
+        let plain = "a😀b\nc";
+        for offset in 0..=6 {
+            assert_eq!(
+                compiled_utf16_to_char_index(plain, offset),
+                utf16_to_char_index(plain, offset)
+            );
+        }
+        // A lone CR was folded into a line feed by the compiler, one unit as it is here.
+        assert_eq!(compiled_utf16_to_char_index("a\rb", 2), 2);
+    }
+
+    #[test]
+    fn a_diagnostic_in_a_crlf_script_is_found_where_it_is() {
+        let source =
+            "//@version=6\r\nindicator(\"T\")\r\n// a comment\r\n\r\n\r\nlog.hi(\"hiii\")\r\n";
+        let program = crate::pine::compiler::compile(
+            source,
+            crate::pine::token::Limits::default(),
+            &crate::pine::compiler::NoLibraries,
+        );
+        let diagnostic = program
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "PINE3051")
+            .expect("log.hi is not a function");
+        let index = compiled_utf16_to_char_index(source, diagnostic.range.start.offset);
+        let rest: String = source.chars().skip(index).collect();
+        assert!(rest.starts_with("log.hi"), "{rest:?}");
+        // The plain conversion lands in the line above, which is what clicking the problem did.
+        let wrong = utf16_to_char_index(source, diagnostic.range.start.offset);
+        assert!(
+            !source
+                .chars()
+                .skip(wrong)
+                .collect::<String>()
+                .starts_with("log.hi")
+        );
     }
 
     #[test]
