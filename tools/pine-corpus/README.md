@@ -37,9 +37,10 @@ manifest lists (and rewrites it). Use `--append` to widen the corpus without los
 - `expectations.json` is for the default run (1000 one-minute bars). `PINE_CORPUS_SPACING=900` (or 3600, 86400) is for exploring: scripts that check the chart's timeframe on purpose (`runtime.error("Use an intraday chart…")`) will then differ, and scripts that draw nothing on a 1-minute chart may start to draw.
 - To reduce one failure, run a single file with
   `PINE_RUN_FILE=path/to/script.pine [PINE_RUN_BARS=n] cargo test --release run_one_file -- --nocapture`.
-- A script that cannot run by design is recorded in `expectations.json` (a `request.footprint` script is a
-  `compile-error` with `PINE9003`; one that calls `runtime.error` on this synthetic 1-minute chart is a
-  `runtime-error`). Everything else must be `ok`: fix the engine, or make what it cannot do a warning.
+- A script that cannot run by design is recorded in `expectations.json` (one that calls `runtime.error`
+  on this synthetic 1-minute chart is a `runtime-error`). A `request.footprint` script compiles and runs,
+  but its footprint is `na` on a 1-minute chart (nothing finer is fetched): use `PINE_CORPUS_SPACING=300`
+  to see it draw. Everything else must be `ok`: fix the engine, or make what it cannot do a warning.
 - The listing pages and `pine-facade.tradingview.com` are not a documented API. The tool is
   rate limited (1 request/s), sends no credentials, skips closed-source scripts, and exits non-zero
   if the layout changes. Use it for local compatibility testing only.

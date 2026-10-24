@@ -28,10 +28,11 @@ pub fn validate(
     validator.validate(statements, &HashSet::new(), &HashSet::new(), false, false);
     for_each_call(statements, &mut |name, range| {
         // The data feeds the app lacks read as `na` (and warn); anything else under `request.` has no
-        // meaningful stand-in, such as `request.footprint`, whose result is an object.
+        // meaningful stand-in, since its result is an object or a series the app cannot build.
         if name.starts_with("request.")
             && name != "request.security"
             && name != "request.security_lower_tf"
+            && name != "request.footprint"
             && !super::misc_builtins::UNAVAILABLE_FEEDS.contains(&name)
         {
             validator.report(
@@ -438,7 +439,7 @@ mod tests {
     #[test]
     fn an_unsupported_request_call_is_pine9003() {
         let statements = [Statement::Expression(Expression::Call {
-            name: "request.footprint".to_owned(),
+            name: "request.volume_flow".to_owned(),
             arguments: vec![],
             site: 0,
             range: SourceRange::ZERO,

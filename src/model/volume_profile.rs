@@ -239,29 +239,49 @@ pub fn profile(
     if !(total.is_finite() && total > 0.0) {
         return None;
     }
-    let middle = (low + high) / 2.0;
+    let totals: Vec<f64> = rows.iter().map(Row::total).collect();
+    let middles: Vec<f64> = rows.iter().map(Row::middle).collect();
+    let (poc, value_area) =
+        point_of_control_and_value_area(&totals, &middles, (low + high) / 2.0, value_area);
+    Some(Profile {
+        rows,
+        poc,
+        value_area,
+        total,
+    })
+}
+
+/// The row of most volume (the point of control) and the rows the value area spans, from each row's
+/// total volume and the price in the middle of it. `range_middle` is the middle of the whole range,
+/// which settles ties; `fraction` is the share of the total the value area must hold. Shared with the
+/// footprint (`pine::footprint`), so both answer the same way. `totals` is not empty.
+pub fn point_of_control_and_value_area(
+    totals: &[f64],
+    middles: &[f64],
+    range_middle: f64,
+    fraction: f64,
+) -> (usize, (usize, usize)) {
+    let count = totals.len();
+    let total: f64 = totals.iter().sum();
     let poc = (0..count)
         .max_by(|a, b| {
-            rows[*a]
-                .total()
-                .total_cmp(&rows[*b].total())
+            totals[*a]
+                .total_cmp(&totals[*b])
                 // The nearer the middle wins a tie, so it compares greater; then the lower row.
                 .then_with(|| {
-                    (rows[*b].middle() - middle)
+                    (middles[*b] - range_middle)
                         .abs()
-                        .total_cmp(&(rows[*a].middle() - middle).abs())
+                        .total_cmp(&(middles[*a] - range_middle).abs())
                 })
                 .then_with(|| b.cmp(a))
         })
         .unwrap_or(0);
-    let target = total * value_area.clamp(0.0, 1.0);
+    let target = total * fraction.clamp(0.0, 1.0);
     let (mut bottom, mut top) = (poc, poc);
-    let mut held = rows[poc].total();
+    let mut held = totals[poc];
     while held < target && (bottom > 0 || top + 1 < count) {
-        let above: f64 = (top + 1..count.min(top + 3)).map(|i| rows[i].total()).sum();
-        let below: f64 = (bottom.saturating_sub(2)..bottom)
-            .map(|i| rows[i].total())
-            .sum();
+        let above: f64 = (top + 1..count.min(top + 3)).map(|i| totals[i]).sum();
+        let below: f64 = (bottom.saturating_sub(2)..bottom).map(|i| totals[i]).sum();
         let has_above = top + 1 < count;
         let has_below = bottom > 0;
         if has_above && (!has_below || above >= below) {
@@ -274,12 +294,7 @@ pub fn profile(
             bottom -= added;
         }
     }
-    Some(Profile {
-        rows,
-        poc,
-        value_area: (bottom, top),
-        total,
-    })
+    (poc, (bottom, top))
 }
 
 #[cfg(test)]

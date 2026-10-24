@@ -135,6 +135,8 @@ impl Session {
                     .instances
                     .get(id)
                     .is_some_and(|object| same_type(declared, &object.type_name)),
+                RuntimeValue::Ref(RefKind::Footprint, _) => same_type(declared, "footprint"),
+                RuntimeValue::Ref(RefKind::VolumeRow, _) => same_type(declared, "volume_row"),
                 // An enum member reads as the text `Enum.member`.
                 RuntimeValue::String(text) => text
                     .split_once('.')

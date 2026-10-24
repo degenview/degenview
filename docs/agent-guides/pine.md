@@ -19,6 +19,10 @@
   (interleaved A/B, checksums prove both builds ran the same program). A watch or condition may
   only be an expression `pine::debug::parse_expression` accepts: add to its allow-list only a call
   that neither writes state nor allocates a handle, and test it against a clean run.
+- `request.footprint()` handles are stateless (a footprint is a bar index, a `volume_row` a bar index
+  plus a row number) and the data lives in `Session::footprints`, outside `RuntimeState`; keep it
+  there so rollback does not copy it. Read [Pine volume footprints](../pine-footprint.md) before
+  changing its algorithm: most of it is inferred.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
 - Keep execution linear in bars: continue historical bars in working state
