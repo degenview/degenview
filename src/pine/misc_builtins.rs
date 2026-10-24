@@ -1,11 +1,14 @@
 //! Small builtins that carry no state: `max_bars_back`, the `ticker.*` builders, drawing-type
-//! casts (`box(na)`), the `log.*` no-ops and the `request.*` data feeds this app does not have.
+//! casts (`box(na)`), the `log.*` messages and the `request.*` data feeds this app does not have.
 //! The feeds read as `na`, and `ignored_features` warns about every call, so none is silent.
 
 use super::ast::Argument;
+use super::logs::LogLevel;
+use super::number_format;
 use super::runtime_types::RuntimeContext;
 use super::runtime_value::{RefKind, RuntimeValue};
 use super::session::Session;
+use super::strings;
 use super::token::{Diagnostic, SourceRange};
 
 /// `request.*` functions that return a series from a feed the app has no access to.
@@ -40,12 +43,29 @@ fn drawing_kind(name: &str) -> Option<RefKind> {
     })
 }
 
+/// The text of a `log.*()` call: the message as given, or the format string filled with the
+/// arguments after it, as `str.format()` does.
+fn log_message(values: &[RuntimeValue], mintick: f64) -> String {
+    let Some(first) = values.first() else {
+        return String::new();
+    };
+    let template = match first.text_value() {
+        Some(text) => text.to_owned(),
+        None => number_format::format(first, None, mintick),
+    };
+    if values.len() == 1 {
+        template
+    } else {
+        strings::format_template(&template, &values[1..], mintick)
+    }
+}
+
 impl Session {
     pub(crate) fn misc_call(
         &mut self,
         name: &str,
         arguments: &[Argument],
-        _range: SourceRange,
+        range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<Option<RuntimeValue>, Diagnostic> {
         if let Some(kind) = drawing_kind(name) {
@@ -62,7 +82,16 @@ impl Session {
                 RuntimeValue::Void
             }
             "log.info" | "log.warning" | "log.error" => {
-                self.eval_all(arguments, context)?;
+                let values = self.eval_all(arguments, context)?;
+                // The arguments are evaluated either way, as they may have effects; only a run
+                // somebody reads keeps the message.
+                if let Some(level) =
+                    LogLevel::from_function(name).filter(|_| self.logs.is_enabled())
+                {
+                    let message = log_message(&values, self.mintick);
+                    self.logs
+                        .record(level, message, context.scope.clone(), range);
+                }
                 RuntimeValue::Void
             }
             "ticker.new" => {

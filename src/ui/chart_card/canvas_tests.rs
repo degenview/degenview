@@ -1198,6 +1198,72 @@ fn a_reconfigured_script_keeps_its_last_valid_placement_until_the_new_run_arrive
     assert_eq!(harness.card.pane_count(), 0);
 }
 
+const LOGGING_SCRIPT: &str =
+    "//@version=6\nindicator(\"Logging\", overlay = true)\nlog.info(\"bar {0}\", bar_index)\n";
+
+#[test]
+fn a_runs_log_messages_reach_the_card() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Logging", LOGGING_SCRIPT);
+    wait_for_run(&mut harness, id);
+    let logs = harness.card.pine_logs(id).expect("a run");
+    assert_eq!(logs.history.len(), 300);
+    assert_eq!(logs.history.buffer().get(299).unwrap().message, "bar 299");
+    assert!(!logs.history.gap);
+}
+
+#[test]
+fn a_script_without_log_calls_has_an_empty_history() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness.card.add_pine_instance(None, "Pane", PANE_SCRIPT);
+    wait_for_run(&mut harness, id);
+    assert!(harness.card.pine_logs(id).unwrap().history.is_empty());
+}
+
+#[test]
+fn a_restarted_run_gets_a_new_epoch_and_forgets_the_old_messages() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    harness
+        .card
+        .set_pine_source(Some(LOGGING_SCRIPT.to_owned()));
+    wait_for_run(&mut harness, PREVIEW_INSTANCE);
+    let first = harness.card.pine_logs(PREVIEW_INSTANCE).unwrap().epoch;
+
+    harness.card.set_pine_source(Some(
+        "//@version=6\nindicator(\"Other\", overlay = true)\nlog.warning(\"other\")\n".to_owned(),
+    ));
+    for _ in 0..200 {
+        harness.frame();
+        let logs = harness.card.pine_logs(PREVIEW_INSTANCE).unwrap();
+        if logs.epoch != first && !logs.history.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let logs = harness.card.pine_logs(PREVIEW_INSTANCE).unwrap();
+    assert_ne!(logs.epoch, first);
+    assert!(
+        logs.history
+            .buffer()
+            .iter()
+            .all(|event| event.message == "other")
+    );
+}
+
+#[test]
+fn removing_a_script_drops_its_messages() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Logging", LOGGING_SCRIPT);
+    wait_for_run(&mut harness, id);
+    harness.card.remove_pine_instance(id);
+    harness.frame();
+    assert!(harness.card.pine_logs(id).is_none());
+}
+
 /// A chart with two script panes, drawn until their runs have arrived.
 pub(super) fn with_panes(canvas: ChartCanvas) -> Harness {
     let mut harness = Harness::new(canvas);

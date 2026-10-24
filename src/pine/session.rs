@@ -100,6 +100,9 @@ pub struct Session {
     pub last_committed_open_time: Option<i64>,
     pub once_per_bar_ledger: HashSet<usize>,
     pub emitted_alerts: Vec<AlertEvent>,
+    /// The messages of `log.*()` calls. Not part of the rolled-back state: a realtime bar's messages
+    /// outlive the bar's rollback.
+    pub logs: super::logs::LogSink,
     pub mintick: f64,
     pub bar_seconds: f64,
     /// The length of the chart's own bars when it cannot be read off their open times: a
@@ -273,6 +276,7 @@ impl Session {
             last_committed_open_time: None,
             once_per_bar_ledger: HashSet::new(),
             emitted_alerts: Vec::new(),
+            logs: super::logs::LogSink::default(),
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             bar_seconds: 0.0,
             fixed_bar_seconds: None,
@@ -313,6 +317,7 @@ impl Session {
         self.last_committed_open_time = None;
         self.once_per_bar_ledger.clear();
         self.emitted_alerts.clear();
+        self.logs.restart();
         self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
         self.last_bar_index = -1;
         self.last_bar_time = None;
@@ -487,6 +492,8 @@ impl Session {
             self.last_bar_time = Some(open_time);
         }
         self.working.instructions = 0;
+        self.logs
+            .begin_bar(open_time, self.working.bar_index, realtime, confirmed);
         if !is_new {
             for (key, value) in self.intrabar.clone() {
                 self.working.variables.insert(key, value);

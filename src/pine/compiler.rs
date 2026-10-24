@@ -98,6 +98,7 @@ fn compile_internal(
         &normalized,
     ));
     diagnostics.extend(super::alert_call::validate(&statements));
+    diagnostics.extend(super::log_call::validate(&statements));
     let has_early_error = diagnostics.iter().any(|d| {
         matches!(
             d.category,

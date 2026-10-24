@@ -13,6 +13,7 @@ use crate::model::{
     PmSeries, PriceFormat, Timeframe,
 };
 use crate::pine::execution::ExecutionController;
+use crate::pine::logs::{LogBatch, LogHistory};
 use crate::pine::program::ChartTheme;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
@@ -324,6 +325,9 @@ pub struct ChartCard {
     preview_inputs: HashMap<String, InputValue>,
     /// What each instance's last run produced, by instance id.
     runs: HashMap<u64, Run>,
+    /// Counts the runs this card started, so each gets an epoch of its own: an instance id is
+    /// reused once its script is removed, a run is never.
+    run_epochs: u64,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
     /// the construction change. Restyling never rebuilds it.
     constructed: Option<Arc<ConstructedSeries>>,
@@ -386,6 +390,12 @@ struct Run {
     worker: PineWorker,
     requested: Option<RunRevision>,
     generation: u64,
+    /// Which run of this card this is; a restart (new source, inputs, symbol) is a new epoch.
+    #[allow(dead_code)] // Read by the Pine logs pane.
+    epoch: u64,
+    /// The `log.*()` messages the run wrote. They belong to the run, not to an output generation:
+    /// a result whose output went stale still carries messages nothing else will deliver.
+    logs: LogHistory,
     /// Whether `output.overlay` came from a compiled script (or from a previous valid run). Until
     /// then the default output must not claim a pane: `VisualOutput::default()` is non-overlay.
     placement_known: bool,
@@ -419,6 +429,7 @@ struct WorkerResult {
     generation: u64,
     output: VisualOutput,
     error: Option<Diagnostic>,
+    logs: LogBatch,
     /// The controller compiled the declaration, so `output.overlay` is authoritative even when
     /// execution stopped with a runtime error.
     placement_known: bool,
@@ -538,7 +549,7 @@ impl PineWorker {
                         Some(Arc::clone(&cancellation)),
                     ) {
                         Ok(controller) => {
-                            let controller = controller.with_theme(config.theme);
+                            let controller = controller.with_theme(config.theme).with_logs();
                             WorkerEngine::Ready(Box::new(match config.bar_seconds {
                                 Some(seconds) => controller.with_bar_seconds(seconds),
                                 None => controller,
@@ -556,6 +567,7 @@ impl PineWorker {
                             generation: request.generation,
                             output: update.output,
                             error: update.error,
+                            logs: update.logs,
                             placement_known: true,
                         }
                     }
@@ -563,6 +575,7 @@ impl PineWorker {
                         generation: request.generation,
                         output: VisualOutput::default(),
                         error: Some(error.clone()),
+                        logs: LogBatch::default(),
                         placement_known: false,
                     },
                     WorkerEngine::Uninitialized(_) => unreachable!(),
@@ -594,6 +607,14 @@ impl Drop for PineWorker {
     }
 }
 
+/// One run's `log.*()` messages. The epoch tells a restarted run from the one before it, which
+/// the instance id cannot.
+#[allow(dead_code)] // Read by the Pine logs pane.
+pub struct PineLogs<'a> {
+    pub epoch: u64,
+    pub history: &'a LogHistory,
+}
+
 /// How one instance is doing, for the chart settings' Scripts tab.
 pub struct InstanceStatus<'a> {
     pub output: &'a VisualOutput,
@@ -622,6 +643,7 @@ impl Default for ChartCard {
             instances: Vec::new(),
             preview_inputs: HashMap::new(),
             runs: HashMap::new(),
+            run_epochs: 0,
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
@@ -986,6 +1008,15 @@ impl ChartCard {
         }
     }
 
+    /// The messages an instance's script wrote with `log.*()` in its current run.
+    #[allow(dead_code)] // Read by the Pine logs pane.
+    pub fn pine_logs(&self, id: u64) -> Option<PineLogs<'_>> {
+        self.runs.get(&id).map(|run| PineLogs {
+            epoch: run.epoch,
+            history: &run.logs,
+        })
+    }
+
     pub fn pine_status(&self, id: u64) -> Option<InstanceStatus<'_>> {
         self.runs
             .get(&id)
@@ -1090,6 +1121,8 @@ impl ChartCard {
                     && run.theme == chart_theme
             });
             if !configured {
+                self.run_epochs += 1;
+                let epoch = self.run_epochs;
                 let previous_valid = self
                     .runs
                     .remove(&instance.id)
@@ -1116,6 +1149,8 @@ impl ChartCard {
                         ),
                         requested: None,
                         generation: 0,
+                        epoch,
+                        logs: LogHistory::default(),
                         placement_known,
                         styled: Arc::clone(&shown),
                         styled_with: None,
@@ -1127,6 +1162,7 @@ impl ChartCard {
             }
             if let Some(run) = self.runs.get_mut(&instance.id) {
                 while let Ok(result) = run.worker.results.try_recv() {
+                    run.logs.apply(result.logs);
                     if result.generation != run.generation {
                         continue;
                     }
