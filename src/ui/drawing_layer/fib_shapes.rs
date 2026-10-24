@@ -14,22 +14,22 @@ use crate::model::chart_type::Rgba;
 use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, VerticalAlign};
 use crate::model::fib::{self, FibKind};
 use crate::model::fib_style::{FibLevel, FibStyle};
-use crate::model::{Anchor, Geometry};
+use crate::model::{Anchor, Geometry, Tool};
 use crate::ui::fib_geometry;
 use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Rect, Vec2, pos2, vec2};
 
 /// How far (px) beyond the plot a level may be and still be built: its stroke may reach in.
-const OFF_PLOT: f32 = 12.0;
+pub(super) const OFF_PLOT: f32 = 12.0;
 /// The space (px) between a level's line and its label, and between the label and the line's end.
-const LABEL_GAP: f32 = 3.0;
+pub(super) const LABEL_GAP: f32 = 3.0;
 
 /// The style a `kind` drawing is drawn with: its own, or the tool's defaults for a style that
 /// carries none (a drawing made by code, or by a client that sends no levels).
-pub(super) fn fib_style(kind: FibKind, style: &DrawingStyle) -> FibStyle {
+pub(super) fn fib_style(tool: Tool, style: &DrawingStyle) -> FibStyle {
     style
         .fib
-        .unwrap_or_else(|| FibStyle::for_tool(kind.tool()).unwrap_or_default())
+        .unwrap_or_else(|| FibStyle::for_tool(tool).unwrap_or_default())
 }
 
 /// Builds the screen shape of a Fibonacci drawing. `anchors` are the geometry's anchors on
@@ -46,7 +46,7 @@ pub(super) fn project(
     if anchors.len() != kind.points() || points.len() != kind.points() {
         return None;
     }
-    let fib = fib_style(*kind, style);
+    let fib = fib_style(kind.tool(), style);
     let screen = match kind {
         FibKind::Retracement => retracement(style, &fib, proj, points, &anchors),
         FibKind::Extension => extension(style, &fib, proj, points, &anchors),
@@ -76,7 +76,7 @@ pub(super) fn project(
 // MARK: Shared pieces
 
 /// How a level is drawn: its own colour, or the drawing's when it is set to use one colour.
-fn look(level: &FibLevel, style: &DrawingStyle) -> Rgba {
+pub(super) fn look(level: &FibLevel, style: &DrawingStyle) -> Rgba {
     if style.use_one_color {
         style.stroke.color
     } else {
@@ -84,7 +84,7 @@ fn look(level: &FibLevel, style: &DrawingStyle) -> Rgba {
     }
 }
 
-fn styled(path: Vec<Pos2>, level: &FibLevel, color: Rgba) -> Styled {
+pub(super) fn styled(path: Vec<Pos2>, level: &FibLevel, color: Rgba) -> Styled {
     Styled {
         path,
         color,
@@ -780,7 +780,7 @@ fn speed_fan(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &
 /// The labels of one level of a fan, on the sides of the box the style asks for: price levels on
 /// its left and right, time levels above and below.
 #[allow(clippy::too_many_arguments)]
-fn fan_labels(
+pub(super) fn fan_labels(
     screen: &mut Screen,
     fib: &FibStyle,
     plot: Rect,

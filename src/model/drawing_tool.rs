@@ -30,6 +30,10 @@ pub enum Tool {
     FibSpeedArcs,
     FibWedge,
     Pitchfan,
+    GannBox,
+    GannSquareFixed,
+    GannSquare,
+    GannFan,
     Brush,
     Ruler,
     Highlighter,
@@ -337,7 +341,7 @@ const FILL_ALPHA: u8 = 51;
 impl Tool {
     /// Every tool that lives in a flyout menu (the Lines tile's or the brushes, arrows and
     /// shapes tile's), in display order within its group.
-    pub const GROUPED: [Self; 82] = [
+    pub const GROUPED: [Self; 86] = [
         Self::FibRetracement,
         Self::FibExtension,
         Self::FibChannel,
@@ -349,6 +353,10 @@ impl Tool {
         Self::FibSpeedArcs,
         Self::FibWedge,
         Self::Pitchfan,
+        Self::GannBox,
+        Self::GannSquareFixed,
+        Self::GannSquare,
+        Self::GannFan,
         Self::TrendLine,
         Self::Ray,
         Self::InfoLine,
@@ -426,8 +434,8 @@ impl Tool {
         use Placement::{Freehand, Open, Points, Single};
         use ToolGroup::{
             Arrows, Brushes, Channels, ChartPatterns, Content, Cycles, ElliottWaves, Fibonacci,
-            Forecasting, Measure, Measurers, Pitchforks, Pointer, Shapes, TextNotes, TrendLines,
-            VolumeBased,
+            Forecasting, Gann, Measure, Measurers, Pitchforks, Pointer, Shapes, TextNotes,
+            TrendLines, VolumeBased,
         };
         let shape_line = Caps::LINE.with(Caps::FILL);
         // A Fibonacci tool: its trend line's stroke, its background and its level lists.
@@ -633,6 +641,15 @@ impl Tool {
             ),
             Self::FibWedge => spec("Fib wedge", Fibonacci, Points(3), fib_levels),
             Self::Pitchfan => spec("Pitchfan", Fibonacci, Points(3), fib_levels),
+            Self::GannBox => spec("Gann box", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::GannSquareFixed => spec(
+                "Gann square fixed",
+                Gann,
+                Points(2),
+                Caps::FILL.with(Caps::FIB),
+            ),
+            Self::GannSquare => spec("Gann square", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
+            Self::GannFan => spec("Gann fan", Gann, Points(2), Caps::FILL.with(Caps::FIB)),
             Self::Ruler => spec("Ruler", Measure, Points(2), Caps::NONE),
             Self::Brush => spec("Brush", Brushes, Freehand, Caps::STROKE),
             Self::Highlighter => spec("Highlighter", Brushes, Freehand, Caps::STROKE),
@@ -1115,6 +1132,14 @@ impl Tool {
                 style
             }
             Self::FibWedge => fib_style(self, [128, 128, 128, 255], LineDash::Solid),
+            // A Gann drawing's lines each have the look of their level; it has no line of its own.
+            Self::GannBox | Self::GannSquareFixed | Self::GannSquare | Self::GannFan => {
+                let mut style = fib_style(self, [120, 123, 134, 255], LineDash::Solid);
+                // The library fills a fan and the arcs of a square, and leaves the rest to ask.
+                style.fill.enabled = matches!(self, Self::GannFan | Self::GannBox);
+                style.text.color = [120, 123, 134, 255];
+                style
+            }
             // The median of a pitchfan is the line itself.
             Self::Pitchfan => fib_style(self, [242, 54, 69, 255], LineDash::Solid),
             // A channel has no line of its own: its base line is its first level.
@@ -1187,7 +1212,7 @@ mod tests {
 
     #[test]
     fn the_two_menus_list_every_tool_once_in_their_groups() {
-        assert_eq!(Tool::GROUPED.len(), 82);
+        assert_eq!(Tool::GROUPED.len(), 86);
         for (index, tool) in Tool::GROUPED.iter().enumerate() {
             assert!(!Tool::GROUPED[..index].contains(tool), "{tool:?} repeats");
             let group = tool.spec().group;
@@ -1216,11 +1241,11 @@ mod tests {
         assert_eq!(counts(&ToolGroup::NOTE_MENU), [10, 2]);
         assert_eq!(counts(&ToolGroup::PATTERN_MENU), [6, 5, 3]);
         assert_eq!(counts(&ToolGroup::FORECAST_MENU), [6, 3, 3]);
-        assert_eq!(counts(&ToolGroup::FIB_MENU), [11, 0]);
+        assert_eq!(counts(&ToolGroup::FIB_MENU), [11, 4]);
         assert_eq!(Tool::line_tools().count(), 17);
         assert_eq!(Tool::pattern_tools().count(), 14);
         assert_eq!(Tool::forecast_tools().count(), 12);
-        assert_eq!(Tool::fib_tools().count(), 11);
+        assert_eq!(Tool::fib_tools().count(), 15);
         // The crosshair, the brush's own tile and the ruler are in no menu of theirs.
         assert!(!Tool::GROUPED.contains(&Tool::Ruler));
     }

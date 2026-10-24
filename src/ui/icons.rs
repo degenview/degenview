@@ -111,6 +111,10 @@ pub enum Icon {
     FibSpeedArcs,
     FibWedge,
     Pitchfan,
+    GannBox,
+    GannSquareFixed,
+    GannSquare,
+    GannFan,
     Paintbrush,
     SunMaxFill,
     MoonFill,
@@ -1067,14 +1071,26 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         }
         Icon::FibSpiral => {
             // The golden spiral, from its middle out.
-            let turns = 3.6_f32;
-            let points: Vec<Pos2> = (0..=72)
+            // Sampled from the curve itself, then fitted to the icon's box.
+            let raw: Vec<(f32, f32)> = (0..=120)
                 .map(|k| {
-                    let t = turns * k as f32 / 72.0;
-                    let r = 0.55 * 1.618_f32.powf(t);
-                    let a = (t * 90.0 + 200.0).to_radians();
-                    p(7.2 + r * a.cos(), 8.4 + r * a.sin())
+                    let t = -2.0 + 6.2 * k as f32 / 120.0;
+                    let r = 1.618_f32.powf(t);
+                    let a = (t * 90.0 + 180.0).to_radians();
+                    (r * a.cos(), r * a.sin())
                 })
+                .collect();
+            let low = raw
+                .iter()
+                .fold((f32::MAX, f32::MAX), |m, v| (m.0.min(v.0), m.1.min(v.1)));
+            let high = raw
+                .iter()
+                .fold((f32::MIN, f32::MIN), |m, v| (m.0.max(v.0), m.1.max(v.1)));
+            let fit = 11.4 / (high.0 - low.0).max(high.1 - low.1);
+            let mid = ((low.0 + high.0) / 2.0, (low.1 + high.1) / 2.0);
+            let points: Vec<Pos2> = raw
+                .iter()
+                .map(|(x, y)| p(8.0 + (x - mid.0) * fit, 8.0 + (y - mid.1) * fit))
                 .collect();
             line(&points);
         }
@@ -1120,6 +1136,72 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             circle(p(2.6, 13.0), 1.4, true);
             circle(p(11.2, 3.6), 1.2, true);
             circle(p(12.6, 11.4), 1.2, true);
+        }
+        Icon::GannBox => {
+            // A box divided in both directions, with a corner ray.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for t in [5.8, 8.0, 10.2] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, t), p(13.4, t)],
+                    faint,
+                )));
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(t - 3.4 + 2.6, 2.6), p(t - 3.4 + 2.6, 13.4)],
+                    faint,
+                )));
+            }
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+        }
+        Icon::GannSquareFixed => {
+            // A square with its diagonal and an arc about a corner.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.add(Shape::Path(PathShape::line(
+                arc(2.6, 13.4, 7.0, -90.0, 0.0),
+                faint,
+            )));
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+            circle(p(2.6, 13.4), 1.3, true);
+        }
+        Icon::GannSquare => {
+            // A square with its grid, its diagonals and a ray between them.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(2.6, 8.0), p(13.4, 8.0)],
+                faint,
+            )));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(8.0, 2.6), p(8.0, 13.4)],
+                faint,
+            )));
+            painter.add(Shape::Path(PathShape::line(
+                vec![p(2.6, 2.6), p(13.4, 13.4)],
+                faint,
+            )));
+            closed(&[p(2.6, 2.6), p(13.4, 2.6), p(13.4, 13.4), p(2.6, 13.4)]);
+            line(&[p(2.6, 13.4), p(13.4, 2.6)]);
+            line(&[p(2.6, 13.4), p(13.4, 8.0)]);
+        }
+        Icon::GannFan => {
+            // Rays from one corner at 1x1 and the angles on either side of it.
+            let faint = Stroke::new(stroke.width, color.gamma_multiply(0.5));
+            for (x, y) in [
+                (13.6, 3.6),
+                (13.6, 6.0),
+                (13.6, 10.6),
+                (13.6, 12.2),
+                (9.6, 2.6),
+                (6.0, 2.6),
+            ] {
+                painter.add(Shape::Path(PathShape::line(
+                    vec![p(2.6, 13.4), p(x, y)],
+                    faint,
+                )));
+            }
+            line(&[p(2.6, 13.4), p(13.4, 8.4)]);
+            circle(p(2.6, 13.4), 1.4, true);
+            circle(p(13.4, 8.4), 1.2, true);
         }
         Icon::Paintbrush => {
             closed(&[p(13.8, 1.8), p(14.4, 2.4), p(8.4, 9.6), p(6.6, 8.0)]);
@@ -2180,6 +2262,10 @@ mod tests {
             FibSpeedArcs,
             FibWedge,
             Pitchfan,
+            GannBox,
+            GannSquareFixed,
+            GannSquare,
+            GannFan,
             Paintbrush,
             SunMaxFill,
             MoonFill,

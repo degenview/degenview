@@ -23,6 +23,7 @@ pub mod elliott;
 pub mod fib;
 pub mod fib_style;
 pub mod forecast_style;
+pub mod gann;
 pub mod ghost;
 pub mod history;
 pub mod image_content;

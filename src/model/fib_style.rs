@@ -33,6 +33,9 @@ const PINK: Rgba = [233, 30, 99, 255];
 const VIOLET: Rgba = [103, 58, 183, 255];
 const LIGHT_GREEN: Rgba = [129, 199, 132, 255];
 const LIGHT_ORANGE: Rgba = [255, 183, 77, 255];
+const LAVENDER: Rgba = [179, 157, 219, 255];
+const MAUVE: Rgba = [149, 117, 205, 255];
+const SLATE: Rgba = [149, 152, 161, 255];
 const SALMON: Rgba = [247, 124, 128, 255];
 const NAVY: Rgba = [21, 56, 153, 204];
 
@@ -248,8 +251,6 @@ pub struct FibStyle {
     pub full_circles: bool,
     /// A spiral's direction.
     pub counterclockwise: bool,
-    /// A box's corner rays.
-    pub angles: bool,
     /// A Gann square's time range, price range and ratio.
     pub readout: bool,
     /// A fan's grid.
@@ -277,7 +278,6 @@ impl Default for FibStyle {
             trend_line: true,
             full_circles: false,
             counterclockwise: false,
-            angles: false,
             readout: false,
             grid: MiddleLine {
                 enabled: true,
@@ -334,6 +334,28 @@ impl FibStyle {
             }
             // The spiral has no levels, only a line.
             Tool::FibSpiral => {}
+            Tool::GannFan => {
+                style.levels = gann_angles();
+            }
+            // A box's angles are its corner rays, in a colour of their own, and off.
+            Tool::GannBox => {
+                style.levels = fan_levels();
+                style.second = fan_levels();
+                style.grid = MiddleLine {
+                    enabled: false,
+                    color: SLATE,
+                    width: 2.0,
+                    dash: LineDash::Solid,
+                };
+            }
+            Tool::GannSquare | Tool::GannSquareFixed => {
+                style.levels = square_levels();
+                style.second = square_fans();
+                style.third = square_arcs();
+                // Only the standard square has a readout, and neither prints labels by default
+                // but the standard's fan lines.
+                style.show_labels = tool == Tool::GannSquare;
+            }
             _ => return None,
         }
         Some(style)
@@ -409,6 +431,73 @@ pub fn fan_levels<const N: usize>() -> LevelSet<N> {
         level(0.618, TEAL, true),
         level(0.75, BLUE, true),
         level(1.0, GRAY, true),
+    ])
+}
+
+/// The Gann fan's nine angles: 1x8 to 8x1, as price over time.
+pub fn gann_angles() -> Levels {
+    Levels::from_levels(&[
+        level(1.0 / 8.0, ORANGE, true),
+        level(1.0 / 4.0, TEAL, true),
+        level(1.0 / 3.0, GREEN, true),
+        level(1.0 / 2.0, TEAL, true),
+        level(1.0, CYAN, true),
+        level(2.0, BLUE, true),
+        level(3.0, PURPLE, true),
+        level(4.0, PINK, true),
+        level(8.0, RED, true),
+    ])
+}
+
+/// A Gann square's six grid levels.
+pub fn square_levels() -> Levels {
+    Levels::from_levels(&[
+        level(0.0, GRAY, true),
+        level(0.25, ORANGE, true),
+        level(0.382, CYAN, true),
+        level(0.5, GREEN, true),
+        level(0.618, TEAL, true),
+        level(1.0, GRAY, true),
+    ])
+}
+
+/// A Gann square's eleven fan lines: 8x1 to 1x8, only 2x1, 1x1 and 1x2 drawn.
+pub fn square_fans() -> SmallLevels {
+    let line = |ratio: f32, color: Rgba, enabled: bool| level(ratio, color, enabled);
+    SmallLevels::from_levels(&[
+        line(8.0, LAVENDER, false),
+        line(5.0, RED, false),
+        line(4.0, GRAY, false),
+        line(3.0, ORANGE, false),
+        line(2.0, CYAN, true),
+        line(1.0, GREEN, true),
+        line(1.0 / 2.0, TEAL, true),
+        line(1.0 / 3.0, TEAL, false),
+        line(1.0 / 4.0, BLUE, false),
+        line(1.0 / 5.0, MAUVE, false),
+        line(1.0 / 8.0, LAVENDER, false),
+    ])
+}
+
+/// A Gann square's eleven arcs, as TradingView names them (`1x0` is one side about the first
+/// corner, `1x1` one about the far one), all drawn.
+pub fn square_arcs() -> SmallLevels {
+    let arc = |ratio: f32, alt: bool, color: Rgba| FibLevel {
+        alt,
+        ..level(ratio, color, true)
+    };
+    SmallLevels::from_levels(&[
+        arc(1.0, false, ORANGE),
+        arc(1.0, true, ORANGE),
+        arc(1.5, false, ORANGE),
+        arc(2.0, false, CYAN),
+        arc(2.0, true, CYAN),
+        arc(3.0, false, GREEN),
+        arc(3.0, true, GREEN),
+        arc(4.0, false, TEAL),
+        arc(4.0, true, TEAL),
+        arc(5.0, false, BLUE),
+        arc(5.0, true, BLUE),
     ])
 }
 
@@ -610,6 +699,38 @@ mod tests {
                 .levels
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn the_gann_tools_default_to_the_librarys_angles_levels_and_arcs() {
+        let ratios = |levels: &[FibLevel]| -> Vec<f32> { levels.iter().map(|l| l.ratio).collect() };
+        let fan = gann_angles();
+        assert_eq!(fan.len(), 9);
+        assert_eq!(fan.active().count(), 9);
+        assert_eq!(
+            ratios(fan.as_slice()),
+            [0.125, 0.25, 1.0 / 3.0, 0.5, 1.0, 2.0, 3.0, 4.0, 8.0]
+        );
+        assert_eq!(
+            ratios(square_levels().as_slice()),
+            [0.0, 0.25, 0.382, 0.5, 0.618, 1.0]
+        );
+        let fans = square_fans();
+        assert_eq!(fans.len(), 11);
+        let on: Vec<f32> = fans.active().map(|l| l.ratio).collect();
+        assert_eq!(on, [2.0, 1.0, 0.5], "2x1, 1x1 and 1x2");
+        let arcs = square_arcs();
+        assert_eq!(arcs.len(), 11);
+        assert_eq!(arcs.active().count(), 11);
+        assert_eq!(arcs.as_slice().iter().filter(|a| a.alt).count(), 5);
+        let square = FibStyle::for_tool(Tool::GannSquare).unwrap();
+        assert!(square.show_labels);
+        assert!(
+            !FibStyle::for_tool(Tool::GannSquareFixed)
+                .unwrap()
+                .show_labels
+        );
+        assert!(!FibStyle::for_tool(Tool::GannBox).unwrap().grid.enabled);
     }
 
     #[test]

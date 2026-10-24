@@ -3,7 +3,9 @@
 //! drawing and a projection, so every tool is tested without a window.
 
 use super::Projection;
+use crate::model::gann::{self, GannKind};
 use crate::model::{Anchor, Drawing, Geometry};
+use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::{self, RulerCorner};
 use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Vec2};
@@ -117,6 +119,44 @@ pub(super) fn resize_box(a: Anchor, b: Anchor, handle: BoxHandle, to: Anchor) ->
 /// `original` after dragging `part` from `press` to `now`. `target` is where an anchor handle
 /// lands (the pointer, or the magnet's pick); a body drag moves every anchor by the pointer's
 /// pixel delta, which keeps it right on a log scale too.
+/// `edited`, with a Gann square's ratio of price to time held at what `original` had while one of
+/// its corners moves: the corner takes the price its bars-wide box would have at that ratio.
+/// Anything else, or a box with no ratio to hold, is `edited` as it was.
+pub(super) fn keep_ratio(
+    original: &Drawing,
+    mut edited: Drawing,
+    part: Part,
+    proj: &Projection,
+) -> Drawing {
+    let (Part::Anchor(index), Some(Geometry::Gann { kind, points })) = (part, original.geometry())
+    else {
+        return edited;
+    };
+    if *kind != GannKind::Square || points.len() != 2 || index > 1 {
+        return edited;
+    }
+    let bars =
+        |a: &Anchor, b: &Anchor| proj.times.index_of(b.time_ms) - proj.times.index_of(a.time_ms);
+    let Some(rate) = gann::price_per_bar(
+        points[0].price,
+        points[1].price,
+        bars(&points[0], &points[1]),
+    ) else {
+        return edited;
+    };
+    let anchors = edited.anchors();
+    let (fixed, moved) = (anchors[1 - index], anchors[index]);
+    let width = bars(&fixed, &moved).abs();
+    let direction = (moved.price - fixed.price).signum();
+    if let Some(anchor) = edited.anchors_mut().into_iter().nth(index) {
+        let price = fixed.price + direction * width * rate;
+        if price.is_finite() {
+            anchor.price = price;
+        }
+    }
+    edited
+}
+
 pub(super) fn edited(
     original: &Drawing,
     part: Part,
@@ -132,8 +172,26 @@ pub(super) fn edited(
         // A pinned table has no anchor to set: its corner moves with the pointer instead.
         Part::Anchor(_) if pinned(&result) => translate(&mut result, delta, proj),
         Part::Anchor(index) => {
+            // A fixed Gann square keeps its corner on the screen's diagonal from the other one.
+            let held = match (
+                original.geometry(),
+                original.anchors().get(1 - index.min(1)),
+            ) {
+                (
+                    Some(Geometry::Gann {
+                        kind: GannKind::SquareFixed,
+                        ..
+                    }),
+                    Some(other),
+                ) if index < 2 => {
+                    let corner =
+                        geo::constrained_corner(proj.point(*other), proj.point(target), true);
+                    proj.anchor(corner)
+                }
+                _ => target,
+            };
             if let Some(anchor) = result.anchors_mut().into_iter().nth(index) {
-                *anchor = target;
+                *anchor = held;
             }
         }
         Part::Column(column) => {

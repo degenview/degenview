@@ -15,6 +15,9 @@ mod fib_tests;
 mod forecast_shapes;
 #[cfg(test)]
 mod forecast_tests;
+mod gann_shapes;
+#[cfg(test)]
+mod gann_tests;
 mod line_shapes;
 #[cfg(test)]
 mod line_tests;
@@ -461,6 +464,12 @@ fn constrained(tool: Tool, first: Option<Pos2>, pointer: Pos2, shift: bool) -> P
     {
         return Pos2::new(first.x, pointer.y);
     }
+    // A fixed Gann square is always square on the screen, and is placed so.
+    if tool == Tool::GannSquareFixed
+        && let Some(first) = first
+    {
+        return geo::constrained_corner(first, pointer, true);
+    }
     let Some(first) = first.filter(|_| shift) else {
         return pointer;
     };
@@ -891,7 +900,14 @@ impl DrawingLayer {
                     .originals
                     .iter()
                     .map(|original| {
-                        edit::edited(original, edit.part, edit.press, pointer, target, proj)
+                        let edited =
+                            edit::edited(original, edit.part, edit.press, pointer, target, proj);
+                        // Shift holds a Gann square's ratio of price to time while a corner moves.
+                        if modifiers.shift {
+                            edit::keep_ratio(original, edited, edit.part, proj)
+                        } else {
+                            edited
+                        }
                     })
                     .collect();
             }

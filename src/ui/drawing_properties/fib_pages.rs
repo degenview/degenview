@@ -12,7 +12,9 @@ use super::{
 use crate::model::Tool;
 use crate::model::chart_type::LineDash;
 use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, MAX_LEVEL_RATIO, VerticalAlign};
+use crate::model::fib::Caption;
 use crate::model::fib_style::{FibLevel, FibStyle, LevelSet};
+use crate::model::gann;
 use crate::ui::{icons, kit, theme};
 use eframe::egui::{self, Align, Layout};
 
@@ -20,6 +22,8 @@ use eframe::egui::{self, Align, Layout};
 const RATIO_WIDTH: f32 = 52.0;
 /// The font sizes a label may have.
 const FONT_SIZES: std::ops::RangeInclusive<f64> = 8.0..=72.0;
+/// The width a level's caption (`8x1`, `1.5x0`) is given.
+const CAPTION_WIDTH: f32 = 38.0;
 
 /// What a level's row asks for besides editing the level in place.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -108,15 +112,6 @@ impl DrawingProperties {
                 &mut fib.counterclockwise,
             );
         }
-        if features.angles {
-            toggle_row(
-                ui,
-                Icon::LineCross,
-                "Angles",
-                "Rays from every corner.",
-                &mut fib.angles,
-            );
-        }
         if !features.second_fill.is_empty() {
             toggle_row(
                 ui,
@@ -126,8 +121,8 @@ impl DrawingProperties {
                 &mut fib.second_fill,
             );
         }
-        if features.grid {
-            settings_card::card(ui, Icon::Hash, "Grid", None, |ui| {
+        if !features.grid.is_empty() {
+            settings_card::card(ui, Icon::Hash, features.grid, None, |ui| {
                 color_well(ui, "Grid color", &mut fib.grid.color);
                 settings_card::switch(ui, &mut fib.grid.enabled);
             });
@@ -163,79 +158,81 @@ impl DrawingProperties {
             );
         }
 
-        page.section(ui, "Labels", None);
-        toggle_row(
-            ui,
-            Icon::Hash,
-            "Levels",
-            "Print each level's value.",
-            &mut fib.show_labels,
-        );
-        if features.percent && fib.show_labels {
+        if features.labels {
+            page.section(ui, "Labels", None);
             toggle_row(
                 ui,
-                Icon::Percent,
-                "Percents",
-                "Print values as percentages.",
-                &mut fib.as_percent,
+                Icon::Hash,
+                "Levels",
+                "Print each level's value.",
+                &mut fib.show_labels,
             );
-        }
-        if features.prices {
-            toggle_row(
-                ui,
-                Icon::Banknote,
-                "Prices",
-                "Print each level's price.",
-                &mut fib.show_prices,
-            );
-        }
-        if features.align {
-            let horizontal: Vec<(HorizontalAlign, &str)> = HorizontalAlign::ALL
-                .iter()
-                .map(|align| (*align, align.label()))
-                .collect();
-            picker_row(
-                ui,
-                Icon::ArrowLeftRight,
-                "Label position",
-                None,
-                &horizontal,
-                &mut fib.label_h,
-            );
-            let vertical: Vec<(VerticalAlign, &str)> = VerticalAlign::ALL
-                .iter()
-                .map(|align| (*align, align.label()))
-                .collect();
-            picker_row(
-                ui,
-                Icon::ChevronUpDown,
-                "Label placement",
-                Some("Bottom puts the text on the line, top under it."),
-                &vertical,
-                &mut fib.label_v,
-            );
-        }
-        if features.sides {
-            for (title, value) in [
-                ("Left labels", &mut fib.sides.left),
-                ("Right labels", &mut fib.sides.right),
-                ("Top labels", &mut fib.sides.top),
-                ("Bottom labels", &mut fib.sides.bottom),
-            ] {
-                toggle_row(ui, Icon::Tag, title, "", value);
+            if features.percent && fib.show_labels {
+                toggle_row(
+                    ui,
+                    Icon::Percent,
+                    "Percents",
+                    "Print values as percentages.",
+                    &mut fib.as_percent,
+                );
             }
-        }
-        if let Some(size) = settings_card::card(ui, Icon::TextFormat, "Font size", None, |ui| {
-            number_field(
-                ui,
-                Id::new("fib-font-size"),
-                f64::from(style.text.size),
-                1.0,
-                FONT_SIZES,
-                0,
-            )
-        }) {
-            style.text.size = size as f32;
+            if features.prices {
+                toggle_row(
+                    ui,
+                    Icon::Banknote,
+                    "Prices",
+                    "Print each level's price.",
+                    &mut fib.show_prices,
+                );
+            }
+            if features.align {
+                let horizontal: Vec<(HorizontalAlign, &str)> = HorizontalAlign::ALL
+                    .iter()
+                    .map(|align| (*align, align.label()))
+                    .collect();
+                picker_row(
+                    ui,
+                    Icon::ArrowLeftRight,
+                    "Label position",
+                    None,
+                    &horizontal,
+                    &mut fib.label_h,
+                );
+                let vertical: Vec<(VerticalAlign, &str)> = VerticalAlign::ALL
+                    .iter()
+                    .map(|align| (*align, align.label()))
+                    .collect();
+                picker_row(
+                    ui,
+                    Icon::ChevronUpDown,
+                    "Label placement",
+                    Some("Bottom puts the text on the line, top under it."),
+                    &vertical,
+                    &mut fib.label_v,
+                );
+            }
+            if features.sides {
+                for (title, value) in [
+                    ("Left labels", &mut fib.sides.left),
+                    ("Right labels", &mut fib.sides.right),
+                    ("Top labels", &mut fib.sides.top),
+                    ("Bottom labels", &mut fib.sides.bottom),
+                ] {
+                    toggle_row(ui, Icon::Tag, title, "", value);
+                }
+            }
+            if let Some(size) = settings_card::card(ui, Icon::TextFormat, "Font size", None, |ui| {
+                number_field(
+                    ui,
+                    Id::new("fib-font-size"),
+                    f64::from(style.text.size),
+                    1.0,
+                    FONT_SIZES,
+                    0,
+                )
+            }) {
+                style.text.size = size as f32;
+            }
         }
         style.fib = Some(fib);
     }
@@ -250,14 +247,18 @@ impl DrawingProperties {
         let mut fib = self.fib_style_of(&style);
         let mut page = Page::new(true);
         let lists = features.lists;
+        let captions = features.captions;
         if !lists[0].is_empty() {
-            edit_list(ui, &mut page, 0, lists[0], &mut fib.levels, false);
+            let list = (lists[0], captions[0]);
+            edit_list(ui, &mut page, 0, list, &mut fib.levels, false);
         }
         if !lists[1].is_empty() {
-            edit_list(ui, &mut page, 1, lists[1], &mut fib.second, false);
+            let list = (lists[1], captions[1]);
+            edit_list(ui, &mut page, 1, list, &mut fib.second, false);
         }
         if !lists[2].is_empty() {
-            edit_list(ui, &mut page, 2, lists[2], &mut fib.third, features.corners);
+            let list = (lists[2], captions[2]);
+            edit_list(ui, &mut page, 2, list, &mut fib.third, features.corners);
         }
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -280,7 +281,7 @@ fn edit_list<const N: usize>(
     ui: &mut Ui,
     page: &mut Page,
     list: usize,
-    title: &str,
+    (title, caption): (&str, Caption),
     levels: &mut LevelSet<N>,
     corners: bool,
 ) {
@@ -288,7 +289,13 @@ fn edit_list<const N: usize>(
     let count = levels.len();
     let mut action: Option<(usize, RowAction)> = None;
     for (index, level) in levels.as_mut_slice().iter_mut().enumerate() {
-        if let Some(asked) = level_row(ui, (list, index), level, (index, count), corners) {
+        let row = Row {
+            id: (list, index),
+            position: (index, count),
+            caption,
+            corners,
+        };
+        if let Some(asked) = level_row(ui, row, level) {
             action = Some((index, asked));
         }
     }
@@ -316,16 +323,21 @@ fn edit_list<const N: usize>(
     });
 }
 
-/// One level on one row: shown or not, its ratio, its colour, its look and where it is in the list.
-fn level_row(
-    ui: &mut Ui,
-    (list, index): (usize, usize),
-    level: &mut FibLevel,
-    (position, count): (usize, usize),
+/// Where a level's row is and what it shows beside the ratio.
+#[derive(Clone, Copy)]
+struct Row {
+    id: (usize, usize),
+    /// Its place in its list, and the list's length.
+    position: (usize, usize),
+    caption: Caption,
+    /// An arc: which corner it is about is a choice of its own.
     corners: bool,
-) -> Option<RowAction> {
+}
+
+/// One level on one row: shown or not, its ratio, its colour, its look and where it is in the list.
+fn level_row(ui: &mut Ui, row: Row, level: &mut FibLevel) -> Option<RowAction> {
     let mut action = None;
-    let id = Id::new(("fib-level", list, index));
+    let id = Id::new(("fib-level", row.id.0, row.id.1));
     kit::card_frame(false)
         .inner_margin(egui::Margin::symmetric(10, 6))
         .show(ui, |ui| {
@@ -333,13 +345,31 @@ fn level_row(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 settings_card::switch(ui, &mut level.enabled);
+                let name = match row.caption {
+                    Caption::None => None,
+                    Caption::Angle => Some(gann::angle_label(level.ratio)),
+                    Caption::Arc => Some(gann::arc_label(level)),
+                };
+                if let Some(name) = name {
+                    ui.add_sized(
+                        [CAPTION_WIDTH, 22.0],
+                        egui::Label::new(kit::text(
+                            name,
+                            11.5,
+                            kit::SEMIBOLD,
+                            theme::text_secondary(),
+                        )),
+                    );
+                }
                 let max = f64::from(MAX_LEVEL_RATIO);
                 if let Some(ratio) = number_field_row(ui, id, level.ratio, max) {
                     level.ratio = ratio;
                 }
                 color_well(ui, "Level color", &mut level.color);
-                look_chip(ui, id, level);
-                if corners {
+                if let Some(asked) = look_chip(ui, id, level, row.position) {
+                    action = Some(asked);
+                }
+                if row.corners {
                     let label = if level.alt { "Far" } else { "Near" };
                     if kit::value_chip(ui, label, level.alt)
                         .on_hover_text("The corner the arc is centred on")
@@ -352,16 +382,6 @@ fn level_row(
                     let color = theme::text_secondary();
                     if icons::button(ui, Icon::Trash, 22.0, color, "Remove level").clicked() {
                         action = Some(RowAction::Remove);
-                    }
-                    if position + 1 < count
-                        && icons::button(ui, Icon::ChevronDown, 22.0, color, "Move down").clicked()
-                    {
-                        action = Some(RowAction::Down);
-                    }
-                    if position > 0
-                        && icons::button(ui, Icon::ChevronUp, 22.0, color, "Move up").clicked()
-                    {
-                        action = Some(RowAction::Up);
                     }
                 });
             });
@@ -382,13 +402,20 @@ fn number_field_row(ui: &mut Ui, id: Id, ratio: f32, max: f64) -> Option<f32> {
     .map(|value| value as f32)
 }
 
-/// The chip that shows a level's thickness and opens the menu where it and its style are set.
-fn look_chip(ui: &mut Ui, id: Id, level: &mut FibLevel) {
+/// The chip that shows a level's thickness and opens the menu where it, its line style and its
+/// place in the list are set.
+fn look_chip(
+    ui: &mut Ui,
+    id: Id,
+    level: &mut FibLevel,
+    (position, count): (usize, usize),
+) -> Option<RowAction> {
     let dash = match level.dash {
         LineDash::Solid => "",
         LineDash::Dashed => " dashed",
         LineDash::Dotted => " dotted",
     };
+    let mut action = None;
     let chip = kit::value_chip(ui, &format!("{}px{dash}", level.width), false);
     egui::Popup::menu(&chip)
         .frame(kit::menu_frame())
@@ -417,5 +444,21 @@ fn look_chip(ui: &mut Ui, id: Id, level: &mut FibLevel) {
                     level.dash = dash;
                 }
             }
+            kit::menu_separator(ui);
+            if kit::menu_item(ui, Icon::ChevronUp, "Move up", position > 0, false) {
+                action = Some(RowAction::Up);
+                ui.close();
+            }
+            if kit::menu_item(
+                ui,
+                Icon::ChevronDown,
+                "Move down",
+                position + 1 < count,
+                false,
+            ) {
+                action = Some(RowAction::Down);
+                ui.close();
+            }
         });
+    action
 }

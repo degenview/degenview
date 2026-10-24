@@ -937,6 +937,22 @@ fn fib_drawings() -> Vec<(&'static str, Drawing)> {
             ),
         ),
         (
+            "gann-box",
+            build(Tool::GannBox, &[at(226, 214.0), at(262, 250.0)]),
+        ),
+        (
+            "gann-square-fixed",
+            build(Tool::GannSquareFixed, &[at(226, 212.0), at(256, 244.0)]),
+        ),
+        (
+            "gann-square",
+            build(Tool::GannSquare, &[at(224, 212.0), at(266, 254.0)]),
+        ),
+        (
+            "gann-fan",
+            build(Tool::GannFan, &[at(220, 214.0), at(236, 226.0)]),
+        ),
+        (
             "fib-trend-time",
             build(
                 Tool::FibTrendTime,

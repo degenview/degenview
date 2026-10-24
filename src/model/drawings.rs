@@ -13,6 +13,7 @@ use super::drawing_style::{DrawingStyle, Visibility};
 use super::drawing_tool::Tool;
 use super::elliott::WaveKind;
 use super::fib::FibKind;
+use super::gann::GannKind;
 use super::image_content::{Content, ImageData};
 use super::link_card::LinkCard;
 use super::measure::MeasureKind;
@@ -304,6 +305,12 @@ pub enum Geometry {
         kind: FibKind,
         points: Vec<Anchor>,
     },
+    /// A Gann drawing through its two anchors: the corners of its box, or a fan's origin and the
+    /// point its 1x1 angle passes through.
+    Gann {
+        kind: GannKind,
+        points: Vec<Anchor>,
+    },
     /// A chart pattern through its pivots: exactly `kind.points()` of them, in placement order.
     Pattern {
         kind: PatternKind,
@@ -497,6 +504,7 @@ impl Geometry {
             Self::Image(_) => Tool::Image,
             Self::Card { .. } => Tool::Post,
             Self::Fib { kind, .. } => kind.tool(),
+            Self::Gann { kind, .. } => kind.tool(),
             Self::Pattern { kind, .. } => kind.tool(),
             Self::Wave { kind, .. } => kind.tool(),
             Self::Cycle { kind, .. } => kind.tool(),
@@ -545,6 +553,7 @@ impl Geometry {
             | Self::Path { points }
             | Self::Polyline { points, .. }
             | Self::Fib { points, .. }
+            | Self::Gann { points, .. }
             | Self::Pattern { points, .. }
             | Self::Wave { points, .. } => points.clone(),
             Self::ArrowMarker { a, b }
@@ -619,6 +628,7 @@ impl Geometry {
             | Self::Path { points }
             | Self::Polyline { points, .. }
             | Self::Fib { points, .. }
+            | Self::Gann { points, .. }
             | Self::Pattern { points, .. }
             | Self::Wave { points, .. } => points.iter_mut().collect(),
             Self::ArrowMarker { a, b }
@@ -743,6 +753,7 @@ impl Geometry {
             Self::Card { card, .. } => card.is_valid(),
             // A pattern or a wave has its tool's number of pivots and no other.
             Self::Fib { kind, .. } => anchors.len() == kind.points(),
+            Self::Gann { kind, .. } => anchors.len() == kind.points(),
             Self::Pattern { kind, .. } => anchors.len() == kind.points(),
             Self::Wave { kind, .. } => anchors.len() == kind.points(),
             Self::Bars(pattern) => pattern.is_valid(),
@@ -933,6 +944,13 @@ impl Geometry {
                     points: (0..kind.points()).map(at).collect(),
                 }
             }
+            Tool::GannBox | Tool::GannSquareFixed | Tool::GannSquare | Tool::GannFan => {
+                let kind = GannKind::of_tool(tool)?;
+                Self::Gann {
+                    kind,
+                    points: (0..kind.points()).map(at).collect(),
+                }
+            }
             Tool::XabcdPattern
             | Tool::CypherPattern
             | Tool::HeadAndShoulders
@@ -1118,6 +1136,11 @@ impl Geometry {
                     points: points.to_vec(),
                 }
             }
+            // A Gann drawing needs both its anchors, and not on one point.
+            (tool, [a, b]) if GannKind::of_tool(tool).is_some() && a != b => Self::Gann {
+                kind: GannKind::of_tool(tool)?,
+                points: vec![*a, *b],
+            },
             // A pattern needs all its pivots, and not every one on the same point.
             (tool, points)
                 if PatternKind::of_tool(tool).is_some_and(|kind| kind.points() == points.len())

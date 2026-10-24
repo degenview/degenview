@@ -7,6 +7,7 @@
 //! in the projection (`ui::fib_geometry`), and only their ratios live here. Pure: no egui types.
 
 use super::drawing_tool::Tool;
+use super::gann::GannKind;
 use super::pattern::format_ratio;
 use serde::{Deserialize, Serialize};
 
@@ -58,18 +59,58 @@ pub struct Features {
     pub align: bool,
     /// Labels on the four sides of a fan or box.
     pub sides: bool,
-    pub grid: bool,
+    /// The name of a grid or a set of angle lines with a look of its own; empty for none.
+    pub grid: &'static str,
     pub full_circles: bool,
     pub counterclockwise: bool,
-    pub angles: bool,
     pub readout: bool,
     pub scale: bool,
+    /// A level's ratio is printed in the labels (the Levels section of the Labels page).
+    pub labels: bool,
+    /// What names a level in its row of the level editor, for each list.
+    pub captions: [Caption; 3],
     /// Arcs that can be centred on either corner.
     pub corners: bool,
     /// The name of a second background (a box's vertical one, a square's arcs'); empty for none.
     pub second_fill: &'static str,
     /// Titles of the level lists the tool has, in order; an empty title is no list.
     pub lists: [&'static str; 3],
+}
+
+/// What names a level in the level editor beside its ratio.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Caption {
+    /// Nothing: the ratio is the name.
+    #[default]
+    None,
+    /// A Gann angle's: `8x1`.
+    Angle,
+    /// A Gann arc's: `1.5x0`.
+    Arc,
+}
+
+impl Features {
+    /// A tool with none of the optional controls.
+    pub const NONE: Self = Self {
+        trend_line: false,
+        extend: false,
+        reverse: false,
+        log_levels: false,
+        prices: false,
+        percent: false,
+        align: false,
+        sides: false,
+        grid: "",
+        full_circles: false,
+        counterclockwise: false,
+        readout: false,
+        scale: false,
+        labels: false,
+        captions: [Caption::None; 3],
+        corners: false,
+        second_fill: "",
+        lists: ["", "", ""],
+    };
 }
 
 impl FibKind {
@@ -135,25 +176,7 @@ impl FibKind {
     }
 
     pub const fn features(self) -> Features {
-        let none = Features {
-            trend_line: false,
-            extend: false,
-            reverse: false,
-            log_levels: false,
-            prices: false,
-            percent: false,
-            align: false,
-            sides: false,
-            grid: false,
-            full_circles: false,
-            counterclockwise: false,
-            angles: false,
-            readout: false,
-            scale: false,
-            corners: false,
-            second_fill: "",
-            lists: ["", "", ""],
-        };
+        let none = Features::NONE;
         match self {
             Self::Retracement => Features {
                 trend_line: true,
@@ -163,6 +186,7 @@ impl FibKind {
                 prices: true,
                 percent: true,
                 align: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
@@ -174,6 +198,7 @@ impl FibKind {
                 prices: true,
                 percent: true,
                 align: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
@@ -182,25 +207,29 @@ impl FibKind {
                 prices: true,
                 percent: true,
                 align: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
             Self::TimeZone | Self::TrendTime => Features {
                 trend_line: true,
                 align: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
             Self::SpeedFan => Features {
                 reverse: true,
                 sides: true,
-                grid: true,
+                grid: "Grid",
+                labels: true,
                 lists: ["Price levels", "Time levels", ""],
                 ..none
             },
             Self::Circles | Self::Wedge => Features {
                 trend_line: true,
                 percent: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
@@ -212,6 +241,7 @@ impl FibKind {
                 trend_line: true,
                 percent: true,
                 full_circles: true,
+                labels: true,
                 lists: ["Levels", "", ""],
                 ..none
             },
@@ -225,7 +255,9 @@ impl FibKind {
 
 /// The controls of `tool`, or `None` when it is not a Fibonacci or Gann tool.
 pub fn features_of(tool: Tool) -> Option<Features> {
-    FibKind::of_tool(tool).map(FibKind::features)
+    FibKind::of_tool(tool)
+        .map(FibKind::features)
+        .or_else(|| GannKind::of_tool(tool).map(GannKind::features))
 }
 
 /// The price of a retracement level: 0 sits on the end, 1 on the start, so that dragging from a

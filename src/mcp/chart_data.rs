@@ -1235,6 +1235,10 @@ mod tests {
             (Tool::FibSpeedArcs, "fib_speed_arcs"),
             (Tool::FibWedge, "fib_wedge"),
             (Tool::Pitchfan, "pitchfan"),
+            (Tool::GannBox, "gann_box"),
+            (Tool::GannSquareFixed, "gann_square_fixed"),
+            (Tool::GannSquare, "gann_square"),
+            (Tool::GannFan, "gann_fan"),
         ];
         assert_eq!(
             names.len(),

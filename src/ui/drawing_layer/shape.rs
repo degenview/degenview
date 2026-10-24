@@ -6,6 +6,7 @@ use super::Projection;
 use super::edit::{BoxHandle, Part};
 use super::fib_shapes;
 use super::forecast_shapes;
+use super::gann_shapes;
 use super::line_shapes;
 use super::note_shapes;
 use super::pattern_shapes;
@@ -893,6 +894,7 @@ fn shape(
             return note_shapes::project(geometry, style, text, proj, &anchors);
         }
         Geometry::Fib { .. } => return fib_shapes::project(geometry, style, proj, anchors),
+        Geometry::Gann { .. } => return gann_shapes::project(geometry, style, proj, anchors),
         Geometry::Pattern { .. } | Geometry::Wave { .. } | Geometry::Cycle { .. } => {
             return pattern_shapes::project(geometry, style, proj, anchors);
         }
