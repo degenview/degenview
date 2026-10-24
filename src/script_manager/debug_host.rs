@@ -28,6 +28,10 @@ impl ScriptManager {
             ctx.request_repaint();
         }
         self.debug.picking_bar = self.preview.is_picking_bar();
+        let bars = self.preview.bar_key();
+        if self.debug.bars_key != bars {
+            self.debug.set_bars(self.preview.bar_open_times(), bars);
+        }
         if let Some(picked) = self.preview.take_picked_bar() {
             self.debug
                 .apply(PanelAction::BreakOnBar(super::debug_panel::bar_time_text(

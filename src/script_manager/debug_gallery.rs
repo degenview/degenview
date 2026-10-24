@@ -254,5 +254,10 @@ fn gallery_of_series_and_select_bar() {
         scene.rig.manager.debug.ui.open_editor(&stored, false);
         scene.frames(3);
         scene.save("breakpoint-editor");
+        // Stop at bar: the picture above shows a time the chart has no bar for; this one, bar 12.
+        scene.rig.manager.debug.ui.editor = None;
+        scene.push(Cmd::DebugPanel(PanelAction::BreakOnBar("12".into())));
+        scene.frames(3);
+        scene.save("stop-at-bar");
     }
 }

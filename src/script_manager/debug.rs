@@ -280,6 +280,13 @@ pub struct DebugPanel {
     pub bar_break: Option<String>,
     /// The preview chart is waiting for a click on a candle (set by the host each frame).
     pub picking_bar: bool,
+    /// The open times of the preview chart's bars, oldest first: the stops the pickers offer.
+    pub bar_times: Vec<i64>,
+    /// `bar_times` cut into UTC days, and the days' names, for the date picker.
+    pub bar_days: Vec<BarDay>,
+    pub day_labels: Vec<String>,
+    /// Which bars `bar_times` was made from, so it is made again only when they change.
+    pub bars_key: Option<(usize, i64, i64)>,
     pub console: Vec<ConsoleLine>,
     /// Rows of the variables tree that stay open across stops.
     open_rows: HashSet<String>,
@@ -302,7 +309,37 @@ fn now_epoch() -> u64 {
     EPOCH.fetch_add(1, Ordering::Relaxed)
 }
 
+/// The bars of one UTC day: `first..end` in `DebugPanel::bar_times`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BarDay {
+    pub first: usize,
+    pub end: usize,
+}
+
 impl DebugPanel {
+    /// Takes the open times of the bars the preview chart shows.
+    pub fn set_bars(&mut self, times: Vec<i64>, key: Option<(usize, i64, i64)>) {
+        const DAY_MS: i64 = 86_400_000;
+        self.bar_days.clear();
+        self.day_labels.clear();
+        for (index, time) in times.iter().enumerate() {
+            let day = time.div_euclid(DAY_MS);
+            match self.bar_days.last_mut() {
+                Some(last) if times[last.first].div_euclid(DAY_MS) == day => last.end = index + 1,
+                _ => {
+                    self.bar_days.push(BarDay {
+                        first: index,
+                        end: index + 1,
+                    });
+                    self.day_labels
+                        .push(super::debug_panel::bar_time_text(*time)[..10].to_owned());
+                }
+            }
+        }
+        self.bar_times = times;
+        self.bars_key = key;
+    }
+
     pub fn load(shared: &SharedStore) -> Self {
         let states = shared
             .lock()
@@ -326,6 +363,10 @@ impl DebugPanel {
             label: String::new(),
             bar_break: None,
             picking_bar: false,
+            bar_times: Vec::new(),
+            bar_days: Vec::new(),
+            day_labels: Vec::new(),
+            bars_key: None,
             console: Vec::new(),
             open_rows: HashSet::new(),
             pending: HashMap::new(),

@@ -1775,12 +1775,25 @@ pub fn menu_picker(
     selected: usize,
     enabled: bool,
 ) -> Option<usize> {
-    let color = if enabled {
+    menu_picker_hinted(ui, width, labels, selected, enabled, "")
+}
+
+/// `menu_picker` that shows `hint`, quietly, while `selected` is not one of `labels`.
+pub fn menu_picker_hinted(
+    ui: &mut Ui,
+    width: f32,
+    labels: &[String],
+    selected: usize,
+    enabled: bool,
+    hint: &str,
+) -> Option<usize> {
+    let chosen_label = labels.get(selected).map(String::as_str);
+    let color = if enabled && chosen_label.is_some() {
         theme::text_primary()
     } else {
         theme::text_tertiary()
     };
-    let current = labels.get(selected).map_or("", String::as_str);
+    let current = chosen_label.unwrap_or(hint);
     let text = galley(ui, current, size::BODY, REGULAR, color, width - 30.0);
     let truncated = galley(ui, current, size::BODY, REGULAR, color, f32::INFINITY)
         .size()
@@ -1840,7 +1853,12 @@ pub fn menu_picker(
     if !open {
         ui.data_mut(|data| data.remove::<bool>(scrolled));
     }
-    let menu_width = menu_width_for(ui, labels, width);
+    // Measuring every label is for the open menu; a long list is not laid out every frame.
+    let menu_width = if open {
+        menu_width_for(ui, labels, width)
+    } else {
+        width
+    };
     let mut chosen = None;
     egui::Popup::menu(&response)
         .frame(menu_frame())

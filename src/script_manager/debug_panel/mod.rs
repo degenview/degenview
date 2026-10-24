@@ -5,6 +5,7 @@
 //! nothing itself. On a wide window the variables take the left and the lists stack on the right;
 //! on a narrow one everything stacks in one column.
 
+mod bar_break;
 mod lists;
 mod toolbar;
 mod tree;
@@ -28,7 +29,7 @@ use crate::ui::theme;
 
 pub use toolbar::panel_button;
 
-use widgets::{ROW, flat_filter, icon_button, mono, placeholder, section_header, text_field};
+use widgets::{ROW, flat_filter, icon_button, mono, placeholder, section_header};
 
 const CONTROLS_HEIGHT: f32 = 36.0;
 const STATUS_HEIGHT: f32 = 26.0;
@@ -660,88 +661,10 @@ fn section(ui: &mut Ui, context: &mut Context<'_>, which: Section) {
                 context.state,
                 context.actions,
             );
-            bar_break(ui, context);
+            bar_break::show(ui, context);
         }
         Section::Console => lists::console(ui, panel, context.state, context.actions),
     }
-}
-
-/// The Pine-aware breakpoint: stop at the start of a bar, whatever runs in it.
-fn bar_break(ui: &mut Ui, context: &mut Context<'_>) {
-    ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        ui.add_space(12.0);
-        ui.spacing_mut().item_spacing = vec2(10.0, 6.0);
-        ui.label(kit::text(
-            "Stop at bar",
-            kit::size::SUBHEADLINE,
-            kit::SEMIBOLD,
-            theme::text_secondary(),
-        ));
-        let id = ui.id().with("bar-break");
-        let response = text_field(
-            ui,
-            id,
-            &mut context.state.bar_input,
-            "index or time",
-            140.0,
-            true,
-        );
-        let enter = response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-        if enter && !context.state.bar_input.trim().is_empty() {
-            context.actions.push(PanelAction::BreakOnBar(std::mem::take(
-                &mut context.state.bar_input,
-            )));
-        }
-        let picking = context.panel.picking_bar;
-        let button = kit::push_button(
-            ui,
-            Some(Icon::ScrollToBar),
-            if picking {
-                "Click a candle…"
-            } else {
-                "Select bar"
-            },
-            true,
-        )
-        .on_hover_text(if picking {
-            "Click a candle on the preview chart, or press Esc to cancel"
-        } else {
-            "Click a candle on the preview chart to stop at its bar"
-        });
-        if picking {
-            ui.painter().rect_stroke(
-                button.rect,
-                6.0,
-                Stroke::new(1.5, kit::ACCENT),
-                egui::StrokeKind::Inside,
-            );
-        }
-        if button.clicked() {
-            context.actions.push(if picking {
-                PanelAction::CancelPickBar
-            } else {
-                PanelAction::PickBar
-            });
-        }
-        if context.panel.bar_break.is_some()
-            && icon_button(ui, Icon::Xmark, true, "Cancel the stop at a bar")
-        {
-            context.actions.push(PanelAction::ClearBarBreak);
-        }
-    });
-    if let Some(armed) = &context.panel.bar_break {
-        ui.horizontal(|ui| {
-            ui.add_space(12.0);
-            ui.label(kit::text(
-                format!("Armed for {armed}"),
-                kit::size::SUBHEADLINE,
-                kit::REGULAR,
-                theme::editor_debug_line(),
-            ));
-        });
-    }
-    ui.add_space(8.0);
 }
 
 /// A bar's open time as a person types it: `2026-10-24 12:00`, with seconds only when it has them.

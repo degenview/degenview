@@ -277,6 +277,20 @@ impl PreviewState {
         self.candles = candles;
     }
 
+    /// What the chart's bars are, cheaply: how many, and the first and last open times.
+    pub fn bar_key(&self) -> Option<(usize, i64, i64)> {
+        Some((
+            self.candles.len(),
+            self.candles.first()?.open_time,
+            self.candles.last()?.open_time,
+        ))
+    }
+
+    /// The open times of the chart's bars, oldest first.
+    pub fn bar_open_times(&self) -> Vec<i64> {
+        self.candles.iter().map(|bar| bar.open_time).collect()
+    }
+
     /// The bars the preview chart shows, as a debugging session receives them: frozen, with the
     /// symbol and inputs the script runs on now. `None` until the chart has candles.
     pub fn debug_feed(&self, now_ms: i64, light: bool) -> Option<super::debug::DebugFeed> {
