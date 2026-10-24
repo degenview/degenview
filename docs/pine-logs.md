@@ -41,7 +41,7 @@ The call site is the compiler's range of the call, never a search of the source 
 | Realtime | any tick, confirmed or not; time = system time; **not rolled back** | same |
 | Rollback | messages survive, variables roll back | the sink is a `Session` field, not part of `RuntimeState` (like emitted alerts) |
 | Limits | last 10,000 historical messages; realtime appended after | same; display order is historical block then realtime block |
-| Restart | history kept "until the script restarts" | any rebuild (source, inputs, symbol, a non-prefix change of bars such as a replay seek) starts the history over |
+| Restart | history kept "until the script restarts" | any rebuild starts the history over: new source, inputs, symbol or app theme, and any change of the bars that is not a plain append or a live tick. On a live chart that includes loading older history (the bars are prepended) and a tail refresh, so realtime messages written before either are lost; a replay step back or seek too |
 | Strategies | | a message exists only if the script executed: unconfirmed ticks write nothing unless `calc_on_every_tick` |
 
 Limits that are **ours**, not TradingView's: 50,000 realtime messages (the oldest tenth goes when it
@@ -77,6 +77,9 @@ a script drops its run and with it its history; changing the app theme starts a 
 
 - The format string has no `'…'` quoting: it follows `strings::format_template`, which `str.format()`
   shares.
-- The `request.security` rules above, the lifecycle on hide/remove/theme change, replay behaviour
-  (a replay step back or seek is a rebuild and restarts the history), and the extra limits.
+- The `request.security` rules above, the lifecycle on hide/remove/theme change, replay behaviour,
+  the rebuild triggers listed under Historical and realtime, and the extra limits.
+- The editor's signature help shows one `formatString, arg0, …` row for all three functions, not
+  the two overloads.
+- The `PINE7002` warning ("There is no Pine Logs pane") stays until a pane shows the messages.
 - A formatted message whose first argument is `na` is the text `NaN`.

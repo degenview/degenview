@@ -283,8 +283,7 @@ fn what_cannot_be_honoured_is_warned_about() {
         2,
         "{codes:?}"
     );
-    // `log.*()` writes real messages now, so nothing about it is ignored.
-    assert!(!codes.contains(&"PINE7002".to_owned()), "{codes:?}");
+    assert!(codes.contains(&"PINE7002".to_owned()), "{codes:?}");
     assert!(!codes.contains(&"PINE9003".to_owned()), "{codes:?}");
     // A feed that returns an object has no stand-in and stays a compile error.
     let footprint = diagnostic_codes("f = request.footprint(1)\nplot(close)");

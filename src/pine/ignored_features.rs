@@ -223,11 +223,18 @@ fn marker() -> HashMap<&'static str, &'static str> {
 }
 
 /// Whole functions that do nothing, by name prefix.
-fn function_prefixes() -> [(&'static str, &'static str); 1] {
-    [(
-        "strategy.risk.",
-        "Risk limits are never enforced, so a drawdown or loss limit does not stop the strategy.",
-    )]
+fn function_prefixes() -> [(&'static str, &'static str); 2] {
+    [
+        (
+            "strategy.risk.",
+            "Risk limits are never enforced, so a drawdown or loss limit does not stop the strategy.",
+        ),
+        // The messages are recorded (`pine::logs`) but nothing shows them yet.
+        (
+            "log.",
+            "There is no Pine Logs pane, so the message is discarded.",
+        ),
+    ]
 }
 
 /// Functions the engine accepts but cannot honour: what they return instead, by exact name.

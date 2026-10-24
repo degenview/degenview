@@ -130,6 +130,18 @@ fn a_call_in_a_function_or_block_points_at_its_own_line() {
 }
 
 #[test]
+fn a_method_body_writes_messages_too() {
+    let events = history_of(
+        "type Probe\n    float level\n\
+         method trace(Probe this, string tag) =>\n    log.warning(\"{0}: {1}\", tag, this.level)\n    this.level\n\
+         p = Probe.new(2.5)\nq = p.trace(\"lvl\")",
+        1,
+    );
+    assert_eq!(messages(&events), ["lvl: 2.5"]);
+    assert_eq!(events[0].range.start.line, 6);
+}
+
+#[test]
 fn the_formatted_overload_follows_str_format() {
     let events = history_of(
         "log.info(\"{0} / {1,number,#.##} / {2} / {3}\", 7, 3.14159, true, na)\n\
