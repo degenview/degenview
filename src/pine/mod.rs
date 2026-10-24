@@ -6,6 +6,8 @@ pub mod alert_call;
 pub mod alert_frequency;
 pub mod array_builtins;
 pub mod ast;
+#[cfg(test)]
+mod bench_tests;
 pub mod broker;
 pub mod builtin_types;
 pub mod builtins;

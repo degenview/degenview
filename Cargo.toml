@@ -11,6 +11,9 @@ license = "GPL-3.0-only"
 # default so `cargo test` stays fast; run the full suite with `cargo test --features corpus`.
 default = []
 corpus = []
+# `alloc-count` installs a counting global allocator in the lib test binary so the Pine benchmarks
+# (src/pine/bench_tests.rs, tools/pine-bench.sh) can report allocations and peak memory.
+alloc-count = []
 # `icloud` compiles the Swift CloudKit bridge (macOS only; see build.rs) and enables iCloud Sync UI.
 # Off by default so developers without the entitlements or a Swift toolchain are unaffected.
 icloud = []
