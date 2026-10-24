@@ -17,6 +17,7 @@ pub(super) enum Why {
     Breakpoint,
     Step,
     Pause,
+    Bar,
     Error(String),
 }
 
@@ -47,6 +48,7 @@ impl Debugger for Scripted {
             StopReason::Breakpoint(_) => Why::Breakpoint,
             StopReason::Step => Why::Step,
             StopReason::Pause => Why::Pause,
+            StopReason::Bar => Why::Bar,
             StopReason::Exception(error) => Why::Error(error.code.clone()),
         };
         if let Some(probe) = self.probe.as_mut() {

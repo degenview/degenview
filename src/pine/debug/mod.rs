@@ -21,6 +21,8 @@ mod breakpoint_tests;
 #[cfg(test)]
 mod inspection_tests;
 #[cfg(test)]
+mod pine_tests;
+#[cfg(test)]
 mod tests;
 
 pub use breakpoints::{
@@ -34,7 +36,8 @@ pub use inspect::{
     Group, InspectError, PAGE_LIMIT, Page, ValueRef, Variable, VariableGroup, Watched,
 };
 pub use runtime::{
-    BarContext, DebugControl, DebugOptions, DebugRuntime, Debugger, Stop, StopReason, StopView,
+    BarBreak, BarContext, DebugControl, DebugOptions, DebugRuntime, Debugger, RequestContext, Stop,
+    StopReason, StopView,
 };
 pub use source_map::{
     DeclarationKind, Executable, LineResolution, NotExecutable, ScopeEntry, SourceMap,

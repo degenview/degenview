@@ -743,9 +743,16 @@ impl Session {
             },
             interval_seconds: request.interval,
         };
+        let debugging = self.debug_is_attached();
+        if debugging {
+            self.debug_enter_security(&requested.symbol, requested.interval_seconds);
+        }
         self.logs.enter_request(requested, candle.open_time, commit);
         let evaluated = self.eval(&request.expression, &mut security_context);
         self.logs.leave_request();
+        if debugging {
+            self.debug_leave();
+        }
         // A returned collection or object lives in the site's state; the chart gets a copy of its own.
         let value = evaluated
             .map(|evaluated| ReferenceExport::new(&self.working).export(evaluated, &mut chart));

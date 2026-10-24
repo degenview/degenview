@@ -150,10 +150,41 @@ pub(crate) struct Env<'a> {
 }
 
 impl Env<'_> {
+    /// The innermost `request.security()` frame: below it the chart's variables, above it the
+    /// expression's own.
+    fn boundary(&self) -> Option<usize> {
+        self.frames.iter().rposition(Frame::is_security)
+    }
+
     fn frame_value(&self, frame: usize, name: &str) -> Option<RuntimeValue> {
         // A callee took the names it declares off the table and parked the caller's values with its
         // own frame; the nearest callee that did so holds what this frame had.
-        for callee in self.frames.iter().skip(frame + 1) {
+        let callees_end = match self.boundary() {
+            Some(boundary) if frame == boundary => return None,
+            Some(boundary) if frame < boundary => {
+                // The expression runs in a state of its own and the interpreter set the chart's
+                // variables aside; only the nearest enclosing context can be read back. One further
+                // out is on the interpreter's stack, out of reach.
+                if self.frames[frame + 1..boundary]
+                    .iter()
+                    .any(Frame::is_security)
+                {
+                    return None;
+                }
+                for callee in &self.frames[frame + 1..boundary] {
+                    if let Some((_, value)) = callee.shadowed.iter().find(|(n, _)| n == name) {
+                        return value.clone();
+                    }
+                }
+                return self
+                    .session
+                    .security_globals
+                    .as_ref()
+                    .and_then(|globals| globals.get(name).cloned());
+            }
+            _ => self.frames.len(),
+        };
+        for callee in &self.frames[(frame + 1).min(callees_end)..callees_end] {
             if let Some((_, value)) = callee.shadowed.iter().find(|(n, _)| n == name) {
                 return value.clone();
             }
@@ -161,7 +192,11 @@ impl Env<'_> {
         self.session.working.variables.get(name).cloned()
     }
 
-    fn builtin(&self, name: &str) -> Option<RuntimeValue> {
+    fn builtin(&self, frame: usize, name: &str) -> Option<RuntimeValue> {
+        // Outside a running request the bar in hand is the requested one, not the chart's.
+        if self.boundary().is_some_and(|boundary| frame <= boundary) {
+            return None;
+        }
         let bar = &self.context.bar;
         Some(match name {
             "open" => RuntimeValue::Float(bar.open),
@@ -200,6 +235,11 @@ pub(crate) fn variables(
     frame: usize,
     previous: &FastMap<String, String>,
 ) -> Vec<VariableGroup> {
+    // A request boundary has no names of its own: the chart's are in the frame below it, the
+    // expression's in the frames above.
+    if env.frames.get(frame).is_none_or(Frame::is_security) {
+        return Vec::new();
+    }
     let Some(location) = env.frames.get(frame).and_then(|frame| frame.location) else {
         return Vec::new();
     };
@@ -246,7 +286,7 @@ pub(crate) fn variables(
     let builtins: Vec<Variable> = BUILTINS
         .iter()
         .filter(|name| !shadowed.contains(**name))
-        .filter_map(|name| env.builtin(name).map(|value| (*name, value)))
+        .filter_map(|name| env.builtin(frame, name).map(|value| (*name, value)))
         .map(|(name, value)| {
             let mut variable = describe(env, frame, name, &value);
             variable.changed = previous.get(name).is_some_and(|p| *p != variable.full);
@@ -502,7 +542,7 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
     let mut node = match steps.next() {
         Some(Step::Variable(name)) => Node::Value(
             env.frame_value(reference.frame, name)
-                .or_else(|| env.builtin(name))
+                .or_else(|| env.builtin(reference.frame, name))
                 .ok_or(InspectError::Gone)?,
         ),
         Some(Step::Expression(text)) => {
@@ -602,7 +642,9 @@ fn resolve(env: &mut Env<'_>, reference: &ValueRef) -> Result<Node, InspectError
 
 fn series_value(env: &Env<'_>, frame: usize, name: &str, back: usize) -> Option<RuntimeValue> {
     if back == 0 {
-        return env.frame_value(frame, name).or_else(|| env.builtin(name));
+        return env
+            .frame_value(frame, name)
+            .or_else(|| env.builtin(frame, name));
     }
     let history = env.session.working.histories.get(name)?;
     history

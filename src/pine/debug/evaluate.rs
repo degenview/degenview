@@ -23,6 +23,14 @@ pub(crate) fn evaluate(
     context: &RuntimeContext,
     expression: &DebugExpression,
 ) -> Result<RuntimeValue, String> {
+    // While a `request.security()` expression runs, the chart's variables are set aside inside the
+    // interpreter. They can be listed, but an expression cannot be run against them.
+    if frames.iter().skip(frame).any(Frame::is_security) {
+        return Err(
+            "This frame is outside the request.security() expression that is running, so nothing can be evaluated in it."
+                .to_owned(),
+        );
+    }
     // A call in progress removed the names it declares from the table and parked the caller's
     // values with its frame. Looking at an outer frame means putting those values back, briefly.
     let mut restore: Vec<(String, Option<RuntimeValue>)> = Vec::new();

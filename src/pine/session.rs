@@ -506,8 +506,9 @@ impl Session {
         self.working.instructions = 0;
         self.logs
             .begin_bar(open_time, self.working.bar_index, realtime, confirmed);
+        let chart_bar_index = self.working.bar_index;
         if let Some(debug) = self.debug.as_mut() {
-            debug.begin_bar();
+            debug.begin_bar(chart_bar_index);
         }
         if !is_new {
             for (key, value) in self.intrabar.clone() {
@@ -1171,9 +1172,23 @@ impl Session {
         }
     }
 
+    #[inline]
+    pub(crate) fn debug_is_attached(&self) -> bool {
+        self.debug.is_some()
+    }
+
+    /// A `request.security()` expression is about to run on `symbol` at `interval_seconds`.
     #[cold]
     #[inline(never)]
-    fn debug_leave(&mut self) {
+    pub(crate) fn debug_enter_security(&mut self, symbol: &str, interval_seconds: f64) {
+        if let Some(debug) = self.debug.as_mut() {
+            debug.enter_security(symbol, interval_seconds);
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    pub(crate) fn debug_leave(&mut self) {
         if let Some(debug) = self.debug.as_mut() {
             debug.leave_function();
         }
