@@ -473,6 +473,11 @@ impl DebugPanel {
         self.session.is_some()
     }
 
+    /// A handle that outlives the session, to watch its thread end.
+    pub fn liveness(&self) -> Option<std::sync::Weak<()>> {
+        self.session.as_ref().map(DebugSession::liveness)
+    }
+
     pub fn is_paused(&self) -> bool {
         self.session.as_ref().is_some_and(DebugSession::is_paused)
     }

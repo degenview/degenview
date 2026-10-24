@@ -237,6 +237,12 @@ impl PreviewState {
         }
     }
 
+    /// Stands in for the candles the preview would fetch.
+    #[cfg(test)]
+    pub(crate) fn set_candles_for_test(&mut self, candles: Vec<Kline>) {
+        self.candles = candles;
+    }
+
     /// The bars the preview chart shows, as a debugging session receives them: frozen, with the
     /// symbol and inputs the script runs on now. `None` until the chart has candles.
     pub fn debug_feed(&self, now_ms: i64, light: bool) -> Option<super::debug::DebugFeed> {

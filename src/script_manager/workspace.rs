@@ -236,7 +236,7 @@ fn editor_pane(
         min_primary: 140.0,
         min_secondary: 150.0,
         max_secondary: f32::MAX,
-        default: DefaultLength::Fraction(0.42),
+        default: DefaultLength::Points(280.0),
     };
     let mut state = SplitState {
         length: height,

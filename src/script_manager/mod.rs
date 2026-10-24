@@ -9,10 +9,14 @@
 mod bottom_bar;
 mod completion;
 pub mod debug;
+#[cfg(test)]
+mod debug_gallery;
 mod debug_host;
 pub mod debug_marks;
 mod debug_panel;
 pub mod debug_state;
+#[cfg(test)]
+mod debug_tests;
 pub mod demo;
 pub mod diff;
 mod diff_view;

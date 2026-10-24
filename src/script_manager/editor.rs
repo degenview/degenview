@@ -1226,10 +1226,8 @@ fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &Breakpoi
 fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark) {
     let color = if stop.error {
         theme::editor_breakpoint()
-    } else if stop.innermost {
-        theme::editor_debug_line()
     } else {
-        theme::with_alpha(theme::editor_debug_line(), 0.65)
+        theme::editor_debug_line()
     };
     let points = vec![
         center + Vec2::new(-5.6, -3.8),
@@ -1238,7 +1236,17 @@ fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark)
         center + Vec2::new(0.6, 3.8),
         center + Vec2::new(-5.6, 3.8),
     ];
-    painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+    if stop.innermost || stop.error {
+        painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
+    } else {
+        // A caller's line: the same arrow, outlined, over the gutter so a breakpoint beneath does
+        // not show through it.
+        painter.add(Shape::convex_polygon(
+            points,
+            theme::gutter_background(),
+            Stroke::new(1.5, color),
+        ));
+    }
 }
 
 /// The breakpoint column: a click on a line (its number or the marker beside it) sets or clears its

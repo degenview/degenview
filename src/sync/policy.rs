@@ -317,6 +317,7 @@ mod tests {
             "session.next_id",
             "scriptManager.layout",
             "pineLogs.prefs",
+            "scriptDebug.state",
             "scriptPreview.market",
             "scripts.demosSeeded",
             "addTicker.recentMarkets",

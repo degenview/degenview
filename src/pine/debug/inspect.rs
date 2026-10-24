@@ -421,10 +421,7 @@ fn summarize(env: &Env<'_>, value: &RuntimeValue) -> (String, String) {
             RefKind::Array => match state.arrays.get(id) {
                 Some(items) => (
                     format!("size {}", items.len()),
-                    format!(
-                        "array<{}>",
-                        items.first().map_or("?".to_owned(), element_type)
-                    ),
+                    generic("array", elements_type(items)),
                 ),
                 None => ("(removed)".to_owned(), "array".to_owned()),
             },
@@ -441,13 +438,7 @@ fn summarize(env: &Env<'_>, value: &RuntimeValue) -> (String, String) {
             RefKind::Matrix => match state.matrices.get(id) {
                 Some(matrix) => (
                     format!("{} × {}", matrix.rows(), matrix.columns()),
-                    format!(
-                        "matrix<{}>",
-                        matrix
-                            .all_elements()
-                            .first()
-                            .map_or("?".to_owned(), element_type)
-                    ),
+                    generic("matrix", elements_type(matrix.all_elements())),
                 ),
                 None => ("(removed)".to_owned(), "matrix".to_owned()),
             },
@@ -458,6 +449,23 @@ fn summarize(env: &Env<'_>, value: &RuntimeValue) -> (String, String) {
             other => (format!("#{id}"), format!("{other:?}").to_lowercase()),
         },
     }
+}
+
+/// `array<float>`, or plain `array` when nothing in it says what it holds.
+fn generic(name: &str, element: Option<String>) -> String {
+    match element {
+        Some(element) => format!("{name}<{element}>"),
+        None => name.to_owned(),
+    }
+}
+
+/// The type of a collection's elements, read off the first that has one: `na` says nothing.
+fn elements_type<'a>(items: impl IntoIterator<Item = &'a RuntimeValue>) -> Option<String> {
+    items
+        .into_iter()
+        .take(16)
+        .find(|item| !matches!(item, RuntimeValue::Na))
+        .map(element_type)
 }
 
 fn element_type(value: &RuntimeValue) -> String {
