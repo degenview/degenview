@@ -356,6 +356,40 @@ fn debugged(
     )
 }
 
+// MARK: Profile mode
+//
+// These exist only where the profiler does. Compare each with its plain twin in the same run:
+// `profiled_*` against `simple_indicator`, `straight_line_800`, `nested_functions` and `loops`.
+
+use crate::pine::profile::{MonotonicClock, ProfileRuntime, RegionTable};
+
+/// Nested loops over an array: many statements per bar, most of them tiny.
+pub(crate) const LOOPS: &str = "//@version=6
+indicator(\"Loops\")
+var values = array.new_float(0)
+if array.size(values) < 200
+    array.push(values, close)
+total = 0.0
+for i = 0 to array.size(values) - 1
+    v = array.get(values, i)
+    for j = 0 to 3
+        total += v * j
+plot(total)
+";
+
+fn profiled(source: &str, bars: &[Kline]) -> u64 {
+    checksum(
+        &run_script(source, bars, false, |session| {
+            let table = std::sync::Arc::new(RegionTable::build(&session.program));
+            session.attach_profiler(ProfileRuntime::with_clock(
+                table,
+                Box::new(MonotonicClock::new()),
+            ));
+        })
+        .output(),
+    )
+}
+
 struct Workload {
     name: &'static str,
     run: Box<dyn Fn() -> u64>,
@@ -472,6 +506,38 @@ fn workloads() -> Vec<Workload> {
         add(
             "debug_stepping_functions_150",
             Box::new(move || debugged(NESTED_FUNCTIONS, &data, Vec::new(), Box::new(Walker), true)),
+        );
+    }
+    {
+        let data = minute.clone();
+        let twin = minute.clone();
+        add("loops", Box::new(move || evaluate(LOOPS, &twin, false)));
+        add("profiled_loops", Box::new(move || profiled(LOOPS, &data)));
+    }
+    {
+        let data = minute.clone();
+        add("profiled_simple", Box::new(move || profiled(SIMPLE, &data)));
+    }
+    {
+        let data = bars(800, MINUTE_MS);
+        let source = straight_line(800);
+        add(
+            "profiled_straight_800",
+            Box::new(move || profiled(&source, &data)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "profiled_functions",
+            Box::new(move || profiled(NESTED_FUNCTIONS, &data)),
+        );
+    }
+    {
+        let program = compile(&straight_line(800));
+        add(
+            "region_table_800",
+            Box::new(move || RegionTable::build(&program).len() as u64),
         );
     }
     {
