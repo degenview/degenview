@@ -124,6 +124,7 @@ fn compile_internal(
         method_names: parser.method_names().clone(),
         exported_names: parser.exported_names().clone(),
         imports: linked.imports,
+        statement_ends: parser.statement_ends(),
     }
 }
 

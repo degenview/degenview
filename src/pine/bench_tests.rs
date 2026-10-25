@@ -100,7 +100,7 @@ fn mix(hash: &mut u64, bits: u64) {
     *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
 }
 
-fn checksum(output: &VisualOutput) -> u64 {
+pub(crate) fn checksum(output: &VisualOutput) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325u64;
     for plot in &output.plots {
         for value in &plot.values {

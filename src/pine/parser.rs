@@ -8,6 +8,7 @@ use super::ast::{
     LoopControl, Parameter, Qualifier, Statement, SwitchArm, TypeAnnotation, TypeField,
     UnaryOperator,
 };
+use super::program::StatementEnd;
 use crate::pine::{
     Diagnostic, DiagnosticCategory, Limits, SourceRange, Token, TokenKind, ValueType,
 };
@@ -30,6 +31,8 @@ pub struct Parser {
     method_names: HashSet<String>,
     import_aliases: HashSet<String>,
     exported_names: HashSet<String>,
+    /// Where each statement parsed so far ends, by the offset it starts at.
+    statement_ends: Vec<StatementEnd>,
 }
 
 impl Parser {
@@ -52,6 +55,7 @@ impl Parser {
             method_names: HashSet::new(),
             import_aliases,
             exported_names: HashSet::new(),
+            statement_ends: Vec::new(),
         }
     }
 
@@ -65,6 +69,15 @@ impl Parser {
     pub fn parse(&mut self) -> (Vec<Statement>, Vec<Diagnostic>) {
         let result = self.block(false);
         (result, std::mem::take(&mut self.diagnostics))
+    }
+
+    /// Where every statement ends, sorted by the offset it starts at. Statement ranges are
+    /// start-anchored, so this is the only record of how far a block reaches.
+    pub fn statement_ends(&self) -> Vec<StatementEnd> {
+        let mut ends = self.statement_ends.clone();
+        ends.sort_by_key(|end| end.offset);
+        ends.dedup_by_key(|end| end.offset);
+        ends
     }
 
     pub fn export_ranges(&self) -> &[SourceRange] {
@@ -223,6 +236,31 @@ impl Parser {
     // MARK: Statements
 
     fn statement(&mut self) -> Option<Statement> {
+        let statement = self.statement_unrecorded()?;
+        self.record_end(&statement);
+        Some(statement)
+    }
+
+    /// Notes where `statement`, just parsed, ends: the end of the last token it consumed that is not
+    /// layout (a dedent that closes its block, or the newline after it, is not part of it).
+    fn record_end(&mut self, statement: &Statement) {
+        let end = self.tokens[..self.index.min(self.tokens.len())]
+            .iter()
+            .rev()
+            .find(|token| {
+                !matches!(
+                    token.kind,
+                    TokenKind::Newline | TokenKind::Indent | TokenKind::Dedent | TokenKind::Eof
+                )
+            })
+            .map_or(statement.range().end, |token| token.range.end);
+        self.statement_ends.push(StatementEnd {
+            offset: statement.range().start.offset,
+            end,
+        });
+    }
+
+    fn statement_unrecorded(&mut self) -> Option<Statement> {
         if self.take_word("export") {
             return self.exported_statement();
         }
@@ -335,6 +373,7 @@ impl Parser {
         if self.take(TokenKind::Else) {
             if self.take(TokenKind::If) {
                 if let Some(chained) = self.if_statement() {
+                    self.record_end(&chained);
                     when_false = vec![chained];
                 }
             } else {
@@ -625,6 +664,7 @@ impl Parser {
             } else {
                 self.switch_statement()
             }?;
+            self.record_end(&block);
             return Some(Expression::Statement(Box::new(block), token.range));
         }
         let mut lhs = self.prefix_expression(&token)?;

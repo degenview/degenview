@@ -114,6 +114,8 @@ pub struct Session {
     cancellation: Option<Arc<AtomicBool>>,
     /// Present only in a debugging session; every hook below tests it and does nothing otherwise.
     debug: Option<Box<super::debug::DebugRuntime>>,
+    /// Present only in a profiling session; see `docs/pine-profiler.md`.
+    profile: Option<Box<super::profile::ProfileRuntime>>,
 }
 
 struct Step {
@@ -287,6 +289,7 @@ impl Session {
             deadline_at: None,
             cancellation: None,
             debug: None,
+            profile: None,
         };
         session.committed = session.fresh_state();
         session.working = session.committed.clone();
@@ -342,6 +345,17 @@ impl Session {
         // debugging wants to read too.
         self.logs.enable();
         self.debug = Some(Box::new(debug));
+    }
+
+    /// Makes this session a profiling session: each statement, user function call and bar is
+    /// timed. A session is never profiled by accident; nothing but this call installs the hooks.
+    pub fn attach_profiler(&mut self, profile: super::profile::ProfileRuntime) {
+        self.profile = Some(Box::new(profile));
+    }
+
+    /// Takes the recorder back out, to read what it measured.
+    pub fn detach_profiler(&mut self) -> Option<super::profile::ProfileRuntime> {
+        self.profile.take().map(|profile| *profile)
     }
 
     // MARK: Running
@@ -443,7 +457,14 @@ impl Session {
         if owns_deadline {
             self.start_deadline();
         }
+        let realtime = event.phase.is_realtime();
+        if self.profile.is_some() {
+            self.profile_begin_bar();
+        }
         let result = self.execute_bar(event, is_last, is_last_history);
+        if self.profile.is_some() {
+            self.profile_end_bar(!matches!(result, Err(RunError::Rejection(_))), realtime);
+        }
         if owns_deadline {
             self.deadline_at = None;
         }
@@ -1088,6 +1109,39 @@ impl Session {
         statements: &[Statement],
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
+        // One test per block, not per statement: a session with a debugger or a profiler takes the
+        // loop below that carries their hooks, every other session this one.
+        if self.hooked() {
+            return self.run_hooked(statements, context);
+        }
+        let mut last = RuntimeValue::Void;
+        for statement in statements {
+            self.budget()?;
+            let step = self.run_statement(statement, context)?;
+            if step.value != RuntimeValue::Void {
+                last = step.value;
+            }
+            if step.flow != Flow::Normal {
+                return Ok((step.flow, last));
+            }
+        }
+        Ok((Flow::Normal, last))
+    }
+
+    /// Whether a debugger or a profiler is attached.
+    #[inline]
+    fn hooked(&self) -> bool {
+        self.debug.is_some() || self.profile.is_some()
+    }
+
+    /// `run` for a session with a debugger or a profiler: the same statements in the same order, with
+    /// the hooks around each.
+    #[inline(never)]
+    fn run_hooked(
+        &mut self,
+        statements: &[Statement],
+        context: &mut RuntimeContext,
+    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
@@ -1096,9 +1150,12 @@ impl Session {
             if debugging {
                 self.debug_before(statement, context)?;
             }
-            let step = self
-                .run_statement(statement, context)
-                .map_err(|error| self.debug_failed(statement, context, error))?;
+            let timed = self.profile_enter_statement(statement, context);
+            let outcome = self.run_statement(statement, context);
+            if timed {
+                self.profile_exit();
+            }
+            let step = outcome.map_err(|error| self.debug_failed(statement, context, error))?;
             if debugging {
                 self.debug_after(statement, context);
             }
@@ -1110,6 +1167,65 @@ impl Session {
             }
         }
         Ok((Flow::Normal, last))
+    }
+
+    // MARK: Profiling hooks
+    //
+    // The recorder is taken from `self` by reference only; it never needs the session.
+
+    /// A statement is about to run. Returns whether it is being timed, so that its end is reported.
+    /// Library code is not timed: its offsets belong to another text, and its time is part of the
+    /// statement that called it.
+    #[inline(never)]
+    fn profile_enter_statement(&mut self, statement: &Statement, context: &RuntimeContext) -> bool {
+        // Walking past a function's declaration runs nothing; its calls are timed in `invoke`.
+        if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
+            return false;
+        }
+        match self.profile.as_mut() {
+            Some(profile) => profile.enter_statement(statement.range().start.offset),
+            None => false,
+        }
+    }
+
+    #[inline(never)]
+    fn profile_exit(&mut self) {
+        if let Some(profile) = self.profile.as_mut() {
+            profile.exit();
+        }
+    }
+
+    /// A user function's body is about to run, called from the call at `call`. Returns whether it is
+    /// being timed.
+    #[inline(never)]
+    fn profile_enter_function(&mut self, function: &RuntimeFunction, call: SourceRange) -> bool {
+        if function.scope.is_some() {
+            return false;
+        }
+        let (Some(profile), Some(first)) = (self.profile.as_mut(), function.body.first()) else {
+            return false;
+        };
+        profile.enter_function(first.range().start.offset, call.start.offset)
+    }
+
+    #[inline(never)]
+    fn profile_begin_bar(&mut self) {
+        if let Some(profile) = self.profile.as_mut() {
+            profile.begin_bar();
+        }
+    }
+
+    /// The bar ended. What measuring it added is given back to the deadline: a profiled run is
+    /// slower than a normal one, and must not time out where the normal one would not.
+    #[inline(never)]
+    fn profile_end_bar(&mut self, counted: bool, realtime: bool) {
+        let Some(profile) = self.profile.as_mut() else {
+            return;
+        };
+        let added = profile.end_bar(counted, realtime);
+        if let Some(deadline) = self.deadline_at.as_mut() {
+            *deadline += added;
+        }
     }
 
     // MARK: Debugging hooks
@@ -2698,12 +2814,22 @@ impl Session {
         } else {
             Some(function.locals.clone())
         };
-        if self.debug.is_some() {
-            self.debug_enter(call_name, range, function.scope.as_deref(), &saved);
+        let hooked = self.hooked();
+        let mut timed = false;
+        if hooked {
+            if self.debug.is_some() {
+                self.debug_enter(call_name, range, function.scope.as_deref(), &saved);
+            }
+            timed = self.profile_enter_function(&function, range);
         }
         let result = self.run(&function.body, context);
-        if self.debug.is_some() {
-            self.debug_leave();
+        if hooked {
+            if timed {
+                self.profile_exit();
+            }
+            if self.debug.is_some() {
+                self.debug_leave();
+            }
         }
         context.site_prefix = caller_prefix;
         context.depth -= 1;

@@ -106,6 +106,34 @@ impl ExecutionController {
         self
     }
 
+    /// Makes the run a profiling session: each statement, user function call and bar is timed.
+    /// Nothing else installs the hooks, so a controller built without this runs the code it always
+    /// did. The recorder reports the bars it has finished to `progress`.
+    pub fn with_profiler(mut self, progress: Arc<std::sync::atomic::AtomicU64>) -> Self {
+        let table = Arc::new(super::profile::RegionTable::build(&self.session.program));
+        self.session.attach_profiler(
+            super::profile::ProfileRuntime::new(table).report_progress_to(progress),
+        );
+        self
+    }
+
+    /// Like [`with_profiler`](Self::with_profiler), with a recorder the caller built (a test's, on a
+    /// clock it controls).
+    pub fn with_profile_runtime(mut self, runtime: super::profile::ProfileRuntime) -> Self {
+        self.session.attach_profiler(runtime);
+        self
+    }
+
+    /// Ends profiling and hands over what was measured; `None` if this run was not profiling.
+    pub fn finish_profile(
+        &mut self,
+        completeness: super::profile::Completeness,
+    ) -> Option<super::profile::ProfileReport> {
+        self.session
+            .detach_profiler()
+            .map(|runtime| runtime.finish(completeness))
+    }
+
     /// Fixes the bar length scripts read as `timeframe.in_seconds()`. A price-based chart's bars
     /// follow price, so it cannot be told from their times; the chart passes its source
     /// candles' length.
