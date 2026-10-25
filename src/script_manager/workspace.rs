@@ -7,6 +7,9 @@ use super::debug_panel;
 use super::drawer;
 use super::editor;
 use super::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
+use super::profile_marks::ProfileColumn;
+use super::profile_ui::{self, TabView};
+use super::profiler::{Profile, Status};
 use super::{Cmd, OpenScript, ScriptManager};
 use crate::pine::token::Diagnostic;
 use crate::ui::icons::{self, Icon};
@@ -162,6 +165,8 @@ impl ScriptManager {
 
         let cmds = RefCell::new(Vec::new());
         let changed = Cell::new(false);
+        let profile_column = self.profiler.column(self.profiler_now.as_ref());
+        let profile_status = self.profiler.status(self.profiler_now.as_ref());
         {
             let open = &mut self.open;
             let preview = &mut self.preview;
@@ -170,13 +175,21 @@ impl ScriptManager {
             // The editor draws the debugger's panel and the drawer shows its logs, so both reach the
             // layout preferences and the debugger through one cell.
             let shared = RefCell::new((&mut self.prefs, &mut self.debug));
+            let profile = ProfileTab {
+                status: profile_status,
+                profile: self.profiler.profile(),
+            };
+            let side = Side {
+                input: &input,
+                profile: &profile,
+            };
             split::show(
                 ui,
                 Id::new(("script-workspace", horizontal)),
                 spec,
                 &mut state,
-                |ui| editor_pane(ui, open, &shared, &cmds, &changed),
-                |ui| preview_pane(ui, preview, &shared, copied_at, &input, logs, &cmds),
+                |ui| editor_pane(ui, open, &shared, &cmds, &changed, profile_column.clone()),
+                |ui| preview_pane(ui, preview, &shared, copied_at, &side, logs, &cmds),
             );
         }
         if horizontal {
@@ -196,6 +209,18 @@ impl ScriptManager {
 
 type Shared<'a> = RefCell<(&'a mut LayoutPrefs, &'a mut DebugPanel)>;
 
+/// What the drawer reads of the open script and of its profile.
+struct Side<'a> {
+    input: &'a PreviewInput,
+    profile: &'a ProfileTab<'a>,
+}
+
+/// What the drawer's Profile tab shows.
+struct ProfileTab<'a> {
+    status: Status,
+    profile: Option<&'a Profile>,
+}
+
 /// The editor, and under it the debugger's panel when that is shown.
 fn editor_pane(
     ui: &mut Ui,
@@ -203,12 +228,14 @@ fn editor_pane(
     shared: &Shared<'_>,
     cmds: &RefCell<Vec<Cmd>>,
     changed: &Cell<bool>,
+    profile_column: Option<ProfileColumn>,
 ) {
     let Some(open) = open.as_mut() else {
         return;
     };
     let marks = shared.borrow_mut().1.marks();
     open.editor.set_debug_marks(marks);
+    open.editor.set_profile_column(profile_column);
     let (shown, height) = {
         let guard = shared.borrow();
         (guard.0.debug_open, guard.0.debug_height)
@@ -267,10 +294,11 @@ fn preview_pane(
     preview: &mut PreviewState,
     shared: &Shared<'_>,
     copied_at: &mut Option<Instant>,
-    input: &PreviewInput,
+    side: &Side<'_>,
     logs: &mut crate::ui::pine_logs_view::LogsState,
     cmds: &RefCell<Vec<Cmd>>,
 ) {
+    let (input, profile) = (side.input, side.profile);
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0.0, theme::background());
     let bar_rect = super::bottom_bar::rect(full);
@@ -344,6 +372,15 @@ fn preview_pane(
                     let preview = preview.borrow();
                     let guard = shared.borrow();
                     super::logs::tab(ui, &preview, guard.1, logs, &input.name, cmds);
+                }
+                DrawerTab::Profile => {
+                    let view = TabView {
+                        status: &profile.status,
+                        profile: profile.profile,
+                    };
+                    for action in profile_ui::tab(ui, &view) {
+                        cmds.borrow_mut().push(Cmd::from(action));
+                    }
                 }
             }
         },

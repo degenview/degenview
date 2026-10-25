@@ -14,7 +14,7 @@ use crate::format;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
-use crate::pine::program::{InputSchema, VisualOutput};
+use crate::pine::program::{InputSchema, InputValue, VisualOutput};
 use crate::pine::token::{DiagnosticSeverity, Limits};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
@@ -135,6 +135,16 @@ impl Picker {
             AssetType::Stock => &mut self.stock_text,
         }
     }
+}
+
+/// What a profile of the preview's run is of besides the script's text.
+pub struct RunContext<'a> {
+    /// The symbol and timeframe, as the preview names them.
+    pub chart: String,
+    /// The bars: how many, and the first and last open times.
+    pub bars: Option<(usize, i64, i64)>,
+    /// The inputs the script runs on.
+    pub inputs: &'a HashMap<String, InputValue>,
 }
 
 pub struct PreviewState {
@@ -284,6 +294,22 @@ impl PreviewState {
             self.candles.first()?.open_time,
             self.candles.last()?.open_time,
         ))
+    }
+
+    /// Sets one input value as if the person had typed it.
+    #[cfg(test)]
+    pub fn set_input_for_test(&mut self, name: &str, value: InputValue) {
+        self.input_values.insert(name.to_owned(), value);
+    }
+
+    /// What a profile of the preview's run is of besides the script's text: the chart's name, its
+    /// bars, and the inputs the script runs on.
+    pub fn run_context(&self) -> RunContext<'_> {
+        RunContext {
+            chart: format!("{} \u{b7} {}", self.market.ticker, self.timeframe.label()),
+            bars: self.bar_key(),
+            inputs: &self.input_values,
+        }
     }
 
     /// The open times of the chart's bars, oldest first.

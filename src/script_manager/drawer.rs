@@ -18,7 +18,13 @@ use std::time::{Duration, Instant};
 pub const BAR_HEIGHT: f32 = super::bottom_bar::HEIGHT;
 
 impl DrawerTab {
-    pub const ALL: [Self; 4] = [Self::Inputs, Self::Report, Self::Problems, Self::Logs];
+    pub const ALL: [Self; 5] = [
+        Self::Inputs,
+        Self::Report,
+        Self::Problems,
+        Self::Logs,
+        Self::Profile,
+    ];
 
     pub fn title(self) -> &'static str {
         match self {
@@ -26,6 +32,7 @@ impl DrawerTab {
             Self::Report => "Report",
             Self::Problems => "Problems",
             Self::Logs => "Logs",
+            Self::Profile => "Profile",
         }
     }
 
@@ -35,6 +42,7 @@ impl DrawerTab {
             Self::Report => Icon::ChartUptrend,
             Self::Problems => Icon::Triangle,
             Self::Logs => Icon::DocText,
+            Self::Profile => Icon::Gauge,
         }
     }
 }

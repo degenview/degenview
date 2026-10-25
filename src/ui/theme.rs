@@ -231,6 +231,37 @@ pub fn editor_debug_caller_background() -> Color32 {
 pub fn editor_debug_error_background() -> Color32 {
     with_alpha(editor_breakpoint(), pick_alpha(0.2, 0.14))
 }
+/// The profiler's marks in the editor. A bar runs from a cool slate, for a line that does little
+/// itself, to a warm orange, for one where the script's time goes; the hovered code block is a faint
+/// wash of the warm end, and a flame marks the hottest lines.
+pub fn profiler_heat(heat: f32) -> Color32 {
+    let cool = pick(
+        Color32::from_rgb(112, 124, 146),
+        Color32::from_rgb(138, 150, 170),
+    );
+    let warm = pick(
+        Color32::from_rgb(255, 138, 48),
+        Color32::from_rgb(222, 96, 12),
+    );
+    cool.lerp_to_gamma(warm, heat.clamp(0.0, 1.0))
+}
+/// A caution in the profiler's words (a stale or partial profile): amber on dark, a darker amber on
+/// light, where yellow text cannot be read.
+pub fn profiler_caution() -> Color32 {
+    pick(YELLOW, Color32::from_rgb(166, 104, 0))
+}
+pub fn profiler_track() -> Color32 {
+    ink(pick_alpha_byte(14, 16))
+}
+pub fn profiler_block() -> Color32 {
+    with_alpha(profiler_heat(1.0), pick_alpha(0.10, 0.09))
+}
+pub fn profiler_flame() -> Color32 {
+    profiler_heat(1.0)
+}
+fn pick_alpha_byte(dark: u8, light: u8) -> u8 {
+    if is_light() { light } else { dark }
+}
 fn pick_alpha(dark: f32, light: f32) -> f32 {
     if is_light() { light } else { dark }
 }

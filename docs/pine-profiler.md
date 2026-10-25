@@ -89,6 +89,33 @@ before a profile starts, because a profile runs on bars already loaded.
 * A run that fails, is cancelled or runs out of time keeps what it measured, labelled **partial**
   with the reason; a partial profile is never presented as complete.
 
+## In the window
+
+* **Toolbar** (right side, beside the debugger's bug): the stopwatch turns the profiler on and off
+  (⌥⌘R, Ctrl+Alt+R elsewhere). While it is on, a chip beside it says what it is doing and does the
+  obvious next thing when clicked: *Run profile*, *Profiling… 240/500* (click to cancel), *Profile
+  ready* (click to profile again), *Partial profile*, *Profile stale · Run again*, *Profile failed*,
+  *Waiting for chart…*. Turning it on opens the drawer's **Profile** tab.
+* **The column** beside the line numbers, present only while the profiler is on, so the text moves
+  once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
+  line's share of the script's time as a number, and, for the three hottest lines (if at least four
+  lines are marked), a flame. The bar is the line's *time* (itself and everything it runs) on one
+  scale for the whole profile: the longest bar is the line that took longest. Its colour is the
+  line's *own* time relative to the line that spent the most itself, from slate to orange, so a
+  loop's header is long and cool when its body does the work and the body's lines are the warm ones.
+  A line under 0.1% of the script's time draws nothing but can still be hovered.
+* **Hover** a line in the column for its figures (time with share and total, line time when it
+  differs, executions, iterations or branches taken, average and slowest, and for a function where it
+  is called from); the code block the line covers is washed in the editor. A time per execution
+  shorter than the clock's resolution is not averaged; the tooltip says so.
+* **The Profile tab**: the state, a progress bar while it runs, the summary (total time and bars,
+  executions, hottest line, block and function, time in no line, the profiler's own overhead, the
+  clock's resolution, how long compiling took), and the ten hottest lines by their own time; click
+  one to go to it. A partial profile says so at the top. A stale one says so, is dimmed, and its rows
+  do not navigate.
+* The editor keeps its syntax colouring, selection, find highlights and diagnostics: the wash is
+  painted under the text with the current-line band, and the column is a separate rectangle.
+
 ## Scope and what a profile belongs to
 
 A profile is of the script **open in the Script Manager** on the **preview chart's** bars (up to the

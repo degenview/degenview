@@ -36,6 +36,7 @@ pub enum DrawerTab {
     Report,
     Problems,
     Logs,
+    Profile,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

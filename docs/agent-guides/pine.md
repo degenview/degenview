@@ -19,6 +19,15 @@
   (interleaved A/B, checksums prove both builds ran the same program). A watch or condition may
   only be an expression `pine::debug::parse_expression` accepts: add to its allow-list only a call
   that neither writes state nor allocates a handle, and test it against a clean run.
+- The profiler (`pine/profile/`, [Pine profiler](../pine-profiler.md)) is opt-in the same way:
+  `Session::profile` is `None` unless `attach_profiler` ran, `Session::run` tests `hooked()` once per
+  block and takes `run_hooked` when a debugger or a profiler is attached, and `invoke` and `execute`
+  carry the only other hooks. Do not add a hook to `eval`, `budget` or a per-expression path, and do
+  not put a clock read, a map lookup or an allocation in the plain statement loop. A region is a
+  statement or a user function, identified by the offset the parser anchored it at; library code
+  (`context.scope`) is never timed. A change to timing must keep `Σ line time + not attributed =
+  total` exactly (the tests run on a stepping clock and assert it). Check a change to `session.rs`
+  with `tools/pine-bench.sh <base-rev>`; the `profiled_*` workloads there are the recorder's cost.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
 - Keep execution linear in bars: continue historical bars in working state

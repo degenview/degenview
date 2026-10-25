@@ -29,7 +29,7 @@ array.push(levels, value)
 plot(value)
 ";
 
-fn bars(count: usize) -> Vec<Kline> {
+pub(super) fn bars(count: usize) -> Vec<Kline> {
     (0..count)
         .map(|index| {
             let price = 100.0 + index as f64;
