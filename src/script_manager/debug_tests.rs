@@ -60,6 +60,8 @@ pub(super) struct Rig {
     pub shared: SharedStore,
     folder: Folder,
     pub ctx: egui::Context,
+    /// The window's size, when a test needs a small one (the default is huge).
+    pub screen: Option<egui::Rect>,
 }
 
 impl Rig {
@@ -82,6 +84,7 @@ impl Rig {
             shared,
             folder,
             ctx: egui::Context::default(),
+            screen: None,
         };
         rig.set_source(SOURCE);
         rig.manager.preview.set_candles_for_test(bars(40));
@@ -116,6 +119,7 @@ impl Rig {
         let mut output = self.ctx.run_ui(
             egui::RawInput {
                 events,
+                screen_rect: self.screen,
                 ..egui::RawInput::default()
             },
             |ui| {
@@ -762,4 +766,77 @@ fn the_debug_panel_draws_in_every_state_without_panicking() {
     });
     rig.frame();
     let _ = StartMode::Run;
+}
+
+/// A script of 120 lines whose last statement is at line 120; the lines before it are plots.
+fn long_script() -> String {
+    let mut source = String::from("//@version=6\nindicator(\"Long\")\n");
+    for index in 0..117 {
+        source.push_str(&format!("a{index} = close + {index}\n"));
+    }
+    source.push_str("plot(close)\n");
+    source
+}
+
+fn small_window(rig: &mut Rig) {
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(900.0, 500.0),
+    ));
+    // The test's clock does not move, so a scroll that animates would never get anywhere.
+    for theme in [egui::Theme::Dark, egui::Theme::Light] {
+        rig.ctx.style_mut_of(theme, |style| {
+            style.scroll_animation = egui::style::ScrollAnimation::none();
+        });
+    }
+    rig.frame();
+}
+
+#[test]
+fn a_stop_below_the_visible_lines_scrolls_the_editor_to_it() {
+    let mut rig = Rig::new("reveal-far");
+    rig.set_source(&long_script());
+    small_window(&mut rig);
+    let before = rig.manager.open.as_ref().unwrap().editor.scroll_y();
+    assert_eq!(before, 0.0);
+    rig.gutter(GutterEvent::Toggle { line: 100 });
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    rig.frame();
+    rig.frame();
+    assert_eq!(rig.stopped_line(), Some(100));
+    let after = rig.manager.open.as_ref().unwrap().editor.scroll_y();
+    assert!(after > 500.0, "the editor stayed at {after}");
+}
+
+#[test]
+fn a_stop_that_is_already_in_view_does_not_move_the_editor() {
+    let mut rig = Rig::new("reveal-near");
+    rig.set_source(&long_script());
+    small_window(&mut rig);
+    rig.gutter(GutterEvent::Toggle { line: 6 });
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    rig.frame();
+    rig.frame();
+    assert_eq!(rig.stopped_line(), Some(6));
+    assert_eq!(rig.manager.open.as_ref().unwrap().editor.scroll_y(), 0.0);
+}
+
+#[test]
+fn a_stop_is_handed_to_the_editor_once() {
+    let mut rig = Rig::new("reveal-once");
+    rig.gutter(GutterEvent::Toggle { line: 5 });
+    rig.run(DebugCommand::Continue);
+    rig.paused();
+    // `debug_frame` already took it for the editor; nothing is left until the next stop.
+    assert_eq!(rig.manager.debug.take_stop_to_reveal(), None);
+    rig.run(DebugCommand::StepOver);
+    rig.until("the next stop", |m| {
+        m.debug
+            .stack()
+            .first()
+            .is_some_and(|f| f.location.is_some_and(|l| l.line != 5))
+    });
+    assert_eq!(rig.manager.debug.take_stop_to_reveal(), None);
 }

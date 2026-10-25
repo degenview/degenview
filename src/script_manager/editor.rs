@@ -76,6 +76,8 @@ pub struct EditorState {
     preview: Option<DiffHunk>,
     /// A line to bring into view next frame (stepping between changes).
     scroll_to_line: Option<usize>,
+    /// The line a stopped script is at, to bring into view next frame unless it already is.
+    reveal_stop: Option<usize>,
     pub diagnostics: Vec<Diagnostic>,
     pub status: CompileStatus,
     highlighted: Option<(u64, Arc<Vec<Span>>)>,
@@ -94,6 +96,9 @@ pub struct EditorState {
     caret_rect: Option<Rect>,
     /// The caret position last scrolled to, so only a caret move scrolls (not a mouse wheel).
     caret_seen: Option<usize>,
+    /// How far down the text the editor was scrolled when last drawn.
+    #[cfg(test)]
+    scroll_y: f32,
     /// A match to select (char range) on the next frame.
     select_to: Option<std::ops::Range<usize>>,
     /// What a debugging session shows in the text and the gutter, set by the host each frame.
@@ -139,6 +144,7 @@ impl EditorState {
             diff: None,
             preview: None,
             scroll_to_line: None,
+            reveal_stop: None,
             diagnostics: Vec::new(),
             status: CompileStatus::NotCompiled,
             highlighted: None,
@@ -158,6 +164,8 @@ impl EditorState {
             menu_line: None,
             profile: None,
             profile_hover: None,
+            #[cfg(test)]
+            scroll_y: 0.0,
         }
     }
 
@@ -288,6 +296,18 @@ impl EditorState {
             .sum();
         self.scroll_to_line = Some(line - 1);
         self.flash = Some((start, Instant::now()));
+    }
+
+    /// Brings a one-based line into view next frame, centred, unless it is already well inside the
+    /// editor. Used when the debugger stops.
+    pub fn reveal_stop_line(&mut self, line: usize) {
+        self.reveal_stop = Some(line.max(1) - 1);
+    }
+
+    /// How far down the text the editor was scrolled when last drawn.
+    #[cfg(test)]
+    pub fn scroll_y(&self) -> f32 {
+        self.scroll_y
     }
 
     /// The offset the caret is waiting to be moved to.
@@ -817,6 +837,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     }
     let flash = state.flash;
     let mut scroll_to = state.scroll_to_line.take();
+    let mut reveal_stop = state.reveal_stop.take();
     let find_matches = if state.find.open {
         find::matches(&state.source, &state.find.query)
     } else {
@@ -884,6 +905,17 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                         .expand2(Vec2::new(0.0, 40.0)),
                     Some(Align::Center),
                 );
+            }
+            if let Some(line) = reveal_stop.take()
+                && let Some(row) = galley.rows.get(line)
+            {
+                let top = origin.y + row.pos.y;
+                let target =
+                    Rect::from_min_size(egui::pos2(origin.x, top), Vec2::new(1.0, row.row.size.y))
+                        .expand2(Vec2::new(0.0, 40.0));
+                if !ui.clip_rect().contains_rect(target) {
+                    ui.scroll_to_rect(target, Some(Align::Center));
+                }
             }
             let caret = text_edit.cursor_range;
             state.caret_rect = caret.map(|range| {
@@ -1126,6 +1158,11 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     if state.flash.is_some_and(|(_, at)| at.elapsed() >= FLASH) {
         state.flash = None;
     }
+    #[cfg(test)]
+    {
+        state.scroll_y = scroll.state.offset.y;
+    }
+    #[cfg(not(test))]
     let _ = scroll;
     rows
 }

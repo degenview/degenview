@@ -27,6 +27,11 @@ impl ScriptManager {
         if self.debug.poll() {
             ctx.request_repaint();
         }
+        if let Some(line) = self.debug.take_stop_to_reveal()
+            && let Some(open) = self.open.as_mut()
+        {
+            open.editor.reveal_stop_line(line);
+        }
         self.debug.picking_bar = self.preview.is_picking_bar();
         let bars = self.preview.bar_key();
         if self.debug.bars_key != bars {
