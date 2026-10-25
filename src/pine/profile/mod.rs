@@ -10,6 +10,7 @@ mod recorder;
 mod regions;
 mod report;
 mod session;
+mod wait;
 
 #[cfg(test)]
 pub(crate) mod support;
@@ -23,3 +24,4 @@ pub use report::{
     CallSiteStats, Completeness, Interruption, LineStats, ProfileReport, RegionStats, Summary,
 };
 pub use session::{ProfileConfig, ProfileOutcome, ProfileSession, StartError};
+pub use wait::WaitMeter;

@@ -34,6 +34,11 @@ pub struct ProfileKey {
 }
 
 impl ProfileKey {
+    /// Whether `other` is the same script with the same text, so that line numbers mean the same.
+    pub fn same_text(&self, other: &Self) -> bool {
+        self.script_id == other.script_id && self.source == other.source
+    }
+
     pub fn new(
         script_id: &str,
         source: &str,
@@ -336,6 +341,15 @@ impl Profiler {
         }
     }
 
+    /// Whether the profile's line numbers still mean what they do in the editor: it is of the text
+    /// on screen, whatever has changed besides.
+    pub fn lines_match(&self, current: Option<&ProfileKey>) -> bool {
+        match (&self.profile, current) {
+            (Some(profile), Some(current)) => profile.key.same_text(current),
+            _ => false,
+        }
+    }
+
     /// What the editor's profile column shows.
     pub fn column(&self, current: Option<&ProfileKey>) -> Option<ProfileColumn> {
         let status = self.status(current);
@@ -344,9 +358,12 @@ impl Profiler {
             Status::Ready | Status::Partial => {
                 ProfileColumn::Marks(Arc::clone(&self.profile.as_ref()?.marks))
             }
+            Status::Stale if self.lines_match(current) => {
+                ProfileColumn::Dated(Arc::clone(&self.profile.as_ref()?.marks))
+            }
             Status::Running { .. } => ProfileColumn::Empty("Profiling\u{2026}"),
             Status::Stale => ProfileColumn::Empty(
-                "This profile is of earlier text, inputs or data. Run it again to see where the time goes now.",
+                "This profile is of earlier text. Run it again to see where the time goes now.",
             ),
             Status::Failed(_) => ProfileColumn::Empty("The script could not be profiled."),
             Status::Waiting(why) => ProfileColumn::Empty(why),

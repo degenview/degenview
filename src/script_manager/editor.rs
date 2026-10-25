@@ -1262,8 +1262,10 @@ fn profile_gutter(ui: &mut Ui, column: Rect, rows: &GutterRows, state: &mut Edit
         + 1;
     let last = rows.rows.partition_point(|(top, _)| *top <= column.max.y);
     let pointer_line = response.hover_pos().and_then(|pointer| row_at(pointer.y));
-    let marks = match &content {
-        ProfileColumn::Marks(marks) => marks,
+    // Marks of a profile whose inputs or data have changed are faded.
+    let (marks, fade) = match &content {
+        ProfileColumn::Marks(marks) => (marks, 1.0),
+        ProfileColumn::Dated(marks) => (marks, 0.5),
         ProfileColumn::Empty(why) => {
             if response.hovered() {
                 response.on_hover_text(*why);
@@ -1300,7 +1302,7 @@ fn profile_gutter(ui: &mut Ui, column: Rect, rows: &GutterRows, state: &mut Edit
                     Vec2::splat(PROFILE_FLAME),
                 ),
                 Icon::Flame,
-                theme::profiler_flame(),
+                theme::profiler_flame().gamma_multiply(fade),
             );
         }
         let bar_left = column.min.x + PROFILE_BAR_X;
@@ -1308,13 +1310,13 @@ fn profile_gutter(ui: &mut Ui, column: Rect, rows: &GutterRows, state: &mut Edit
             egui::pos2(bar_left, center_y - PROFILE_BAR_HEIGHT / 2.0),
             Vec2::new(PROFILE_BAR_WIDTH, PROFILE_BAR_HEIGHT),
         );
-        painter.rect_filled(track, 2.0, theme::profiler_track());
+        painter.rect_filled(track, 2.0, theme::profiler_track().gamma_multiply(fade));
         // Never thinner than a sliver, so a small share is still a mark.
         let width = (mark.bar * PROFILE_BAR_WIDTH).clamp(1.5, PROFILE_BAR_WIDTH);
         painter.rect_filled(
             Rect::from_min_size(track.min, Vec2::new(width, PROFILE_BAR_HEIGHT)),
             2.0,
-            theme::profiler_heat(mark.heat),
+            theme::profiler_heat(mark.heat).gamma_multiply(fade),
         );
         painter.text(
             egui::pos2(column.max.x - 6.0, center_y),
@@ -1325,7 +1327,8 @@ fn profile_gutter(ui: &mut Ui, column: Rect, rows: &GutterRows, state: &mut Edit
                 theme::text_primary()
             } else {
                 theme::text_secondary()
-            },
+            }
+            .gamma_multiply(fade),
         );
     }
     // A line that ran but took too little to draw can still be asked about.

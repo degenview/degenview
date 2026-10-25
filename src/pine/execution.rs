@@ -109,10 +109,16 @@ impl ExecutionController {
     /// Makes the run a profiling session: each statement, user function call and bar is timed.
     /// Nothing else installs the hooks, so a controller built without this runs the code it always
     /// did. The recorder reports the bars it has finished to `progress`.
-    pub fn with_profiler(mut self, progress: Arc<std::sync::atomic::AtomicU64>) -> Self {
+    pub fn with_profiler(
+        mut self,
+        progress: Arc<std::sync::atomic::AtomicU64>,
+        waited: Arc<std::sync::atomic::AtomicU64>,
+    ) -> Self {
         let table = Arc::new(super::profile::RegionTable::build(&self.session.program));
         self.session.attach_profiler(
-            super::profile::ProfileRuntime::new(table).report_progress_to(progress),
+            super::profile::ProfileRuntime::new(table)
+                .report_progress_to(progress)
+                .exclude_waiting(waited),
         );
         self
     }

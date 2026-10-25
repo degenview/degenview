@@ -167,6 +167,7 @@ impl ScriptManager {
         let changed = Cell::new(false);
         let profile_column = self.profiler.column(self.profiler_now.as_ref());
         let profile_status = self.profiler.status(self.profiler_now.as_ref());
+        let profile_lines_match = self.profiler.lines_match(self.profiler_now.as_ref());
         {
             let open = &mut self.open;
             let preview = &mut self.preview;
@@ -178,6 +179,7 @@ impl ScriptManager {
             let profile = ProfileTab {
                 status: profile_status,
                 profile: self.profiler.profile(),
+                lines_match: profile_lines_match,
             };
             let side = Side {
                 input: &input,
@@ -219,6 +221,7 @@ struct Side<'a> {
 struct ProfileTab<'a> {
     status: Status,
     profile: Option<&'a Profile>,
+    lines_match: bool,
 }
 
 /// The editor, and under it the debugger's panel when that is shown.
@@ -377,6 +380,7 @@ fn preview_pane(
                     let view = TabView {
                         status: &profile.status,
                         profile: profile.profile,
+                        lines_match: profile.lines_match,
                     };
                     for action in profile_ui::tab(ui, &view) {
                         cmds.borrow_mut().push(Cmd::from(action));

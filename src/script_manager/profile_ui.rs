@@ -156,6 +156,8 @@ fn chip_button(
 pub struct TabView<'a> {
     pub status: &'a Status,
     pub profile: Option<&'a Profile>,
+    /// The profile is of the text in the editor, so its line numbers can be followed.
+    pub lines_match: bool,
 }
 
 /// The Profile tab: what the profiler is doing, the summary of the run, and the hottest lines.
@@ -170,7 +172,7 @@ pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
         waiting_body(ui, view.status);
         return actions;
     };
-    let current = matches!(view.status, Status::Ready | Status::Partial);
+    let current = view.lines_match;
     ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
@@ -184,7 +186,11 @@ pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
                     if *view.status == Status::Stale {
                         note(
                             ui,
-                            "This profile is of earlier text, inputs or data. Its lines no longer match the editor.",
+                            if view.lines_match {
+                                "This profile is of earlier inputs or data. Its lines still match the editor."
+                            } else {
+                                "This profile is of earlier text. Its lines no longer match the editor."
+                            },
                             theme::profiler_caution(),
                         );
                     }
@@ -562,6 +568,7 @@ mod tests {
                 let view = TabView {
                     status: &status,
                     profile: None,
+                    lines_match: false,
                 };
                 assert!(tab(ui, &view).is_empty());
             });

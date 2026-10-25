@@ -72,6 +72,10 @@ pub struct ProfileRuntime {
     resolution_ns: u64,
     /// Bars finished, readable from another thread while the run goes on.
     progress: Arc<AtomicU64>,
+    /// Nanoseconds the run has spent waiting for data it asked for, which no region is charged: the
+    /// clock the recorder reads is the real one less this.
+    waited: Arc<AtomicU64>,
+    last_read: u64,
 }
 
 impl ProfileRuntime {
@@ -100,7 +104,28 @@ impl ProfileRuntime {
             pair_cost_ns: 0,
             resolution_ns: 1,
             progress: Arc::new(AtomicU64::new(0)),
+            waited: Arc::new(AtomicU64::new(0)),
+            last_read: 0,
         }
+    }
+
+    /// Takes the time the run spends waiting for data out of every time it measures. The counter is
+    /// added to by whoever fetches (see [`WaitMeter`](super::WaitMeter)), on the thread that runs
+    /// the script.
+    pub fn exclude_waiting(mut self, waited: Arc<AtomicU64>) -> Self {
+        self.waited = waited;
+        self
+    }
+
+    /// The clock, less the time spent waiting for data, never going backwards.
+    #[inline]
+    fn now(&mut self) -> u64 {
+        let raw = self.clock.now_ns();
+        let now = raw
+            .saturating_sub(self.waited.load(Ordering::Relaxed))
+            .max(self.last_read);
+        self.last_read = now;
+        now
     }
 
     /// Reports the number of bars finished to `progress`, which another thread can read while the
@@ -119,14 +144,14 @@ impl ProfileRuntime {
     pub fn begin_bar(&mut self) {
         self.stack.clear();
         self.bar_frames = 0;
-        self.bar_started = self.clock.now_ns();
+        self.bar_started = self.now();
     }
 
     /// Ends the bar. `counted` is false when the interpreter refused the bar before running it. The
     /// returned time is what measuring this bar is estimated to have added to it, which the caller
     /// gives back to the run's deadline.
     pub fn end_bar(&mut self, counted: bool, realtime: bool) -> Duration {
-        let now = self.clock.now_ns();
+        let now = self.now();
         // A region left open (the run was cut short, or an error unwound past it) ends with the bar.
         while !self.stack.is_empty() {
             self.pop(now);
@@ -212,7 +237,7 @@ impl ProfileRuntime {
         };
         self.bar_frames += 1;
         // The clock is read last, so the work above is not charged to the region.
-        let start = self.clock.now_ns();
+        let start = self.now();
         self.stack.push(Frame {
             region,
             call,
@@ -229,7 +254,7 @@ impl ProfileRuntime {
         // An untimed frame has no end to read.
         let now = match self.stack.last() {
             Some(frame) if frame.region == UNTIMED => 0,
-            _ => self.clock.now_ns(),
+            _ => self.now(),
         };
         self.pop(now);
     }
@@ -276,7 +301,7 @@ impl ProfileRuntime {
 
     /// Ends the recording and hands over what it measured.
     pub fn finish(mut self, completeness: Completeness) -> ProfileReport {
-        let now = self.clock.now_ns();
+        let now = self.now();
         while !self.stack.is_empty() {
             self.pop(now);
         }
@@ -315,6 +340,7 @@ impl ProfileRuntime {
                 attributed_ns: attributed.min(self.total_ns),
                 measured_executions: measured,
                 overhead_ns: measured.saturating_mul(self.pair_cost_ns),
+                waited_ns: self.waited.load(Ordering::Relaxed),
                 pair_cost_ns: self.pair_cost_ns,
                 resolution_ns: self.resolution_ns,
             },

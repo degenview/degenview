@@ -926,3 +926,90 @@ fn an_untimed_frame_passes_what_ran_inside_it_to_the_region_around_it() {
         "untimed frames cost no read"
     );
 }
+
+// MARK: Waiting for data
+
+#[test]
+fn time_spent_waiting_for_data_is_in_no_region_and_not_in_the_total() {
+    let waited = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let mut runtime = single().exclude_waiting(Arc::clone(&waited));
+    runtime.begin_bar(); // read 0
+    runtime.enter_statement(0); // read 1000
+    // A fetch of 400 ns happens here, while the statement is open.
+    waited.fetch_add(400, std::sync::atomic::Ordering::Relaxed);
+    runtime.exit(); // the clock reads 2000; less the 400 waited
+    runtime.end_bar(true, false); // 3000 less 400
+    let report = runtime.finish(Completeness::Complete);
+    assert_eq!(report.stats_of(0).inclusive_ns, STEP - 400);
+    assert_eq!(report.summary.total_ns, 3 * STEP - 400);
+    assert_eq!(report.summary.waited_ns, 400);
+    assert_eq!(
+        report.summary.attributed_ns + report.summary.unattributed_ns(),
+        report.summary.total_ns
+    );
+}
+
+#[test]
+fn the_meter_forwards_every_request_and_counts_the_time() {
+    use crate::pine::runtime_support::{ChartSpan, SecurityDataProvider, SecurityKey};
+
+    struct Slow;
+    impl SecurityDataProvider for Slow {
+        fn candles(&self, _: &SecurityKey) -> Option<Vec<Kline>> {
+            std::thread::sleep(std::time::Duration::from_millis(15));
+            Some(bars(3, 60_000))
+        }
+    }
+    let waited = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let meter = WaitMeter::new(Box::new(Slow), Arc::clone(&waited));
+    let key = SecurityKey {
+        symbol: "X".into(),
+        interval: 60.0,
+        recent_bars: 0,
+    };
+    assert_eq!(meter.candles(&key).map(|c| c.len()), Some(3));
+    // `candles_over` falls back to `candles` for a provider that does not care about the span.
+    let span = ChartSpan {
+        start_ms: 0,
+        end_ms: 1,
+        spacing_ms: 1,
+    };
+    assert_eq!(meter.candles_over(&key, span).map(|c| c.len()), Some(3));
+    assert!(waited.load(std::sync::atomic::Ordering::Relaxed) >= 30_000_000);
+}
+
+#[test]
+fn a_slow_fetch_is_not_charged_to_the_line_that_asked_for_it() {
+    use crate::pine::runtime_support::{SecurityDataProvider, SecurityKey};
+
+    struct Slow;
+    impl SecurityDataProvider for Slow {
+        fn candles(&self, key: &SecurityKey) -> Option<Vec<Kline>> {
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            Some(bars(40, (key.interval * 1000.0) as i64))
+        }
+    }
+    let data = bars(20, 60_000);
+    let now = data.last().unwrap().close_time + 1;
+    let mut config = config(
+        &script("htf = request.security(\"OTHER\", \"5\", close)\nplot(htf)\n"),
+        data,
+    );
+    config.now_ms = now;
+    config.security_data = Some(Box::new(Slow));
+    let mut session = ProfileSession::start(config, Arc::new(|| {})).unwrap();
+    let report = wait(&mut session).result.expect("a profile");
+    assert!(
+        report.summary.waited_ns >= 60_000_000,
+        "the fetch was timed"
+    );
+    let request = line(&report, FIRST_LINE);
+    assert!(
+        request.time_ns < report.summary.waited_ns / 4,
+        "the line took {} ns of a {} ns wait",
+        request.time_ns,
+        report.summary.waited_ns
+    );
+    assert!(report.summary.total_ns < report.summary.waited_ns);
+    assert_consistent(&report);
+}

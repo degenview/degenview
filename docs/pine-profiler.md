@@ -19,9 +19,11 @@ is described exactly, so a number on screen has one meaning.
    script's time, a flame on the three hottest regions. Hover a line for the details; hover its
    column to highlight the code block it covers. The panel under the editor ranks the hottest regions;
    click one to go to it.
-4. Editing the script, changing an input, or a different symbol, timeframe or set of bars makes the
-   profile **stale**: it stays readable but is greyed and labelled, and is never drawn on lines it no
-   longer describes. *Run again* replaces it.
+4. A profile belongs to the text, inputs, chart and bars it was made for. Edit the script and it is
+   **stale**: the column goes empty (its line numbers describe other text), and the tab keeps the old
+   figures, dimmed, with a banner. Change an input, the symbol or timeframe, or let the live chart get
+   a new candle, and it is stale too, but the text is the same, so the marks stay on the column,
+   faded, and rows of the list still go to their lines. *Run again* replaces it.
 
 ## What is measured
 
@@ -58,9 +60,10 @@ What is **not** timed separately: expressions. A built-in (`ta.sma`, `array.sort
 operator is part of the statement that contains it, as in TradingView where a wrapped line is
 attributed to the line it starts on. Split a statement onto several lines to learn which part costs.
 Time inside a library's functions is part of the statement that called them; library lines are never
-mapped onto the script's lines (their offsets belong to another text). `request.*()` is timed as the
-synchronous work the engine does to answer it (the expression, the lookup); waiting for data happens
-before a profile starts, because a profile runs on bars already loaded.
+mapped onto the script's lines (their offsets belong to another text). `request.security()` reading another symbol may fetch its candles over the network, blocking: that time
+is measured around the provider and kept out of every region and out of the total (the clock the
+recorder reads is the real one less the time spent waiting), and shown as *Waiting for data*. What the
+script does with the candles afterwards is timed like anything else.
 
 ## How it is built
 
@@ -136,8 +139,10 @@ round's median. Head must be a commit, not the working tree: the script builds t
 
 **The profiler off (a session with no hooks).** The plain statement loop is the loop it was: one
 `hooks.is_some()` per statement, the test the debugger already made. The first design, a test once per
-block and a second loop for hooked sessions, measured 1–2% *slower* on statement-heavy workloads
-(layout, not work), so it was dropped. The final build against the base:
+block and a second loop for hooked sessions, measured 1–2% *slower* on statement-heavy workloads, so
+it was dropped. The `invoke` hook was then given the shape the debugger's had (a test before and a
+test after the call, the same arguments), because call-heavy workloads had measured +1.7…+3.1% in five
+runs. The final build against the base:
 
 | workload (quiet machine, 14 rounds) | base ms | head ms | change |
 |---|---:|---:|---:|
@@ -151,8 +156,11 @@ block and a second loop for hooked sessions, measured 1–2% *slower* on stateme
 
 Two builds that differ only by a dummy function added to `session.rs` move the same workloads between
 −1.4% and +2.4% against the base, and base against base between −0.5% and +0.9%. So this benchmark
-cannot show that the disabled profiler costs under 1%; it shows the result is **indistinguishable
-from a null change**, with one pointer test per statement as before. The later run with allocation
+cannot show that the disabled profiler costs under 1%. The hot-loop shape is the base's (one pointer
+test per statement), and every plain workload stayed inside ±3%, but **call-heavy scripts
+(`nested_functions`, `plain_functions_150`) measured up to about 3% slower in several runs**, and −1.8%
+and −1.0% in two later ones; if that is a real cost it is at most a few nanoseconds per user-function
+call, and it is not resolved here. The later run with allocation
 counts (`PINE_BENCH_FEATURES=alloc-count`, a noisier machine) agrees: plain workloads +1.6% on
 average, every one inside the null-change band.
 
@@ -174,6 +182,7 @@ profiled workloads' bars.
 Every profiled run produced the same checksum (plots, trades) as its plain twin. A profile's memory is
 one 40-byte counter per region plus one per call site: it does not grow with bars. The measured cost of
 timing one region on this machine is about 115 ns (the summary says so), the clock's resolution 41 ns.
+The run's own slowdown is in the table above; nothing is subtracted from any figure.
 
 ## Tests
 
@@ -217,5 +226,9 @@ timing one region on this machine is about 115 ns (the summary says so), the clo
 * **Not exercised in a real window.** The window was run headlessly and its pictures looked at, not
   driven by hand. In particular tooltip placement near the window's edge and behaviour at other UI
   scales are unverified.
-* `ui::theme::tests::the_theme_round_trips_under_the_swift_key_and_names` failed once in a full
-  `cargo test` and passed on every rerun: it reads a global that other tests set.
+* Lines in the editor are split on `\n`; a lone CR or U+2028/2029 in a script is a line break to the
+  compiler but not to the editor, so line numbers after one may disagree (as in the debugger).
+* The timer's cost is stated twice because it is two things: ~115 ns is what timing one *region*
+  costs (measured on an empty region), and the ~84 ns per statement in the table is the whole
+  slowdown of a profiled run of one-line statements, which also pays for the stack and the counters
+  and loses a little to the extra code in the loop.

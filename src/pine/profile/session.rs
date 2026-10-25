@@ -20,6 +20,7 @@ use crate::pine::runtime_support::SecurityDataProvider;
 use crate::pine::{Diagnostic, DiagnosticCategory, Limits, SourceRange};
 
 use super::report::{Completeness, Interruption, ProfileReport};
+use super::wait::WaitMeter;
 
 pub struct ProfileConfig {
     pub source: String,
@@ -212,6 +213,11 @@ fn unexpected() -> Diagnostic {
 }
 
 fn run(config: ProfileConfig, cancel: Arc<AtomicBool>, progress: Arc<AtomicU64>) -> ProfileOutcome {
+    // Fetching another symbol's candles blocks; the time is measured and kept out of every region.
+    let waited = Arc::new(AtomicU64::new(0));
+    let security_data = config.security_data.map(|inner| {
+        Box::new(WaitMeter::new(inner, Arc::clone(&waited))) as Box<dyn SecurityDataProvider>
+    });
     let compile_started = Instant::now();
     let built = ExecutionController::new(
         &config.source,
@@ -220,7 +226,7 @@ fn run(config: ProfileConfig, cancel: Arc<AtomicBool>, progress: Arc<AtomicU64>)
         config.visible_range,
         config.limits,
         config.libraries.as_ref(),
-        config.security_data,
+        security_data,
         Some(Arc::clone(&cancel)),
     );
     let compile_ns = compile_started.elapsed().as_nanos() as u64;
@@ -239,7 +245,7 @@ fn run(config: ProfileConfig, cancel: Arc<AtomicBool>, progress: Arc<AtomicU64>)
     if let Some(seconds) = config.bar_seconds {
         controller = controller.with_bar_seconds(seconds);
     }
-    controller = controller.with_profiler(progress);
+    controller = controller.with_profiler(progress, waited);
     let bars = config.bars;
     let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         controller.update(&bars, config.visible_range, config.now_ms)

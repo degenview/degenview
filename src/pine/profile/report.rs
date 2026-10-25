@@ -68,6 +68,9 @@ pub struct Summary {
     /// What measuring them is estimated to have added to `total_ns`: the number of timed executions
     /// times the cost of timing one. Reported, never subtracted from anything.
     pub overhead_ns: u64,
+    /// Time the run spent waiting for data it asked for (`request.security()` reading another
+    /// symbol). It is in no region and not in `total_ns`.
+    pub waited_ns: u64,
     /// The cost of timing one execution on this machine.
     pub pair_cost_ns: u64,
     /// The smallest difference the clock reports.

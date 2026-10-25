@@ -192,6 +192,9 @@ impl ProfileMarks {
 pub enum ProfileColumn {
     /// The profile is current: draw its marks.
     Marks(Arc<ProfileMarks>),
+    /// The script's text is what was profiled but its inputs or data have changed since: its lines
+    /// still match, so the marks stay, faded, until the profile is run again.
+    Dated(Arc<ProfileMarks>),
     /// There is nothing to draw yet, or what there is describes other text. The column stays, so
     /// the text does not move, and says why when hovered.
     Empty(&'static str),
@@ -352,6 +355,13 @@ fn summary(report: &ProfileReport, compile_ns: u64) -> Vec<SummaryRow> {
             percent(report.share(s.unattributed_ns()))
         )),
     ));
+    if s.waited_ns > 0 {
+        rows.push(row(
+            "Waiting for data",
+            duration(s.waited_ns),
+            Some("fetching other symbols for request.security(); in no time above".to_owned()),
+        ));
+    }
     rows.push(row(
         "Profiler overhead",
         format!("about {}", duration(s.overhead_ns)),

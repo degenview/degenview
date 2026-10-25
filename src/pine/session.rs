@@ -2800,7 +2800,10 @@ impl Session {
             Some(function.locals.clone())
         };
         if self.hooks.is_some() {
-            let first_statement = function.body.first().map(|first| first.range().start.offset);
+            let first_statement = function
+                .body
+                .first()
+                .map(|first| first.range().start.offset);
             self.hook_enter_function(
                 call_name,
                 range,
