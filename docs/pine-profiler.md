@@ -125,6 +125,94 @@ different. Each profile records the source text, the inputs, the symbol, timefra
 the replay state it was produced for, and is stale as soon as any of them changes. The Script Manager
 has no bar replay; there is no future to expose.
 
+## Performance
+
+Measured with `tools/pine-bench.sh b49f53c <head>` (the commit before any of this) on one Apple-silicon
+Mac, `--release`, twelve to fourteen interleaved rounds of five to seven runs, the median of each
+round's median. Head must be a commit, not the working tree: the script builds the tree it is given.
+
+**The profiler off (a session with no hooks).** The plain statement loop is the loop it was: one
+`hooks.is_some()` per statement, the test the debugger already made. The first design, a test once per
+block and a second loop for hooked sessions, measured 1–2% *slower* on statement-heavy workloads
+(layout, not work), so it was dropped. The final build against the base:
+
+| workload (quiet machine, 14 rounds) | base ms | head ms | change |
+|---|---:|---:|---:|
+| simple_indicator | 13.53 | 13.31 | −1.64% |
+| straight_line_800 | 98.34 | 97.87 | −0.48% |
+| many_ta | 27.42 | 27.82 | +1.44% |
+| long_history | 47.94 | 48.99 | +2.19% |
+| containers | 94.24 | 94.56 | +0.34% |
+| nested_functions | 24.01 | 24.74 | +3.06% |
+| strategy | 16.59 | 16.91 | +1.92% |
+
+Two builds that differ only by a dummy function added to `session.rs` move the same workloads between
+−1.4% and +2.4% against the base, and base against base between −0.5% and +0.9%. So this benchmark
+cannot show that the disabled profiler costs under 1%; it shows the result is **indistinguishable
+from a null change**, with one pointer test per statement as before. The later run with allocation
+counts (`PINE_BENCH_FEATURES=alloc-count`, a noisier machine) agrees: plain workloads +1.6% on
+average, every one inside the null-change band.
+
+**Allocations** are the same to within a handful: a plain run allocates 3–11 times more than the base
+over a whole benchmark (the parser keeps statement ends: 3 allocations and ~600 bytes per compile),
+and nothing per statement. Peak memory is +2 MB for every workload, the benchmark binary holding the
+profiled workloads' bars.
+
+**The profiler on** (the same run; each against its plain twin):
+
+| mode | plain ms | profiled ms | cost |
+|---|---:|---:|---:|
+| simple (5,000 bars, ~8 statements a bar) | 14.93 | 18.05 | +21% |
+| straight line (800 statements × 800 bars) | 122.69 | 176.31 | +44%, 84 ns per statement |
+| nested functions | 27.75 | 35.57 | +28% |
+| nested loops over an array | 851.69 | 1265.13 | +49% |
+| building the region table (800 statements) | | 0.07 | compiling them takes 1.51 |
+
+Every profiled run produced the same checksum (plots, trades) as its plain twin. A profile's memory is
+one 40-byte counter per region plus one per call site: it does not grow with bars. The measured cost of
+timing one region on this machine is about 115 ns (the summary says so), the clock's resolution 41 ns.
+
+## Tests
+
+* `cargo test --lib pine::profile`: counts exactly (statements, loops and their iterations, nested
+  loops, `while` with `break` and `continue`, branches taken, `switch` arms, two statements on a line,
+  multi-line statements, user functions from several call sites, a call in a loop, library code),
+  time exactly on a stepping clock (inclusive, exclusive, the bar's total, what no line covers,
+  recursion, an open region closed by the end of a bar, a refused bar), the same outputs, trades and
+  alerts with and without the recorder across seven workloads including a strategy and
+  `request.security`, a failing script failing the same way, and sessions (own thread, a script that
+  does not compile, no bars, cancelling keeps a labelled partial profile, a failing script keeps what
+  ran before it, dropping a session ends its thread, two sessions are independent).
+* `cargo test --lib script_manager::profile` (and the editor's tests): the words (units, percentages,
+  separators), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
+  and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
+  and scripts making a profile stale, errors and libraries, cancelling, turning it off ending the
+  thread, two windows. The editor's column moves the text once and washes the hovered block.
+* `cargo test --lib pine::bench_tests -- --ignored` prints one workload per line, including the
+  `profiled_*` twins.
+* Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib script_manager::profiler_gallery -- --ignored`
+  (off, ready, hovering, stale; wide and narrow; dark and light).
+
 ## Not verified / limitations
 
-(Filled in as the work is verified.)
+* **Nothing is checked against TradingView's numbers**, which are not documented. Only its
+  presentation was followed.
+* **A profile is of the open script on the preview chart's bars** (up to 500 candles), not of a
+  script applied to a chart. The Script Manager has no bar replay, so none is handled. A profile of a
+  few hundred bars runs for milliseconds: shares are meaningful, absolute times are of that run, and a
+  second run differs (TradingView's own documentation shows the same spread). Run it again and compare.
+* **Measurement is per statement.** Expressions inside one are not separated, and a line that costs
+  less than the clock can tell apart (41 ns here) is flagged, not averaged. The timer's own cost
+  (~115 ns here) is inside every figure; for statements of a few nanoseconds the profile overstates
+  what a normal run spends.
+* **Library code** is part of the statement that called it; library lines are never shown. Libraries
+  themselves are not profiled.
+* **Realtime:** the preview's last bar, if still forming, runs as one tick and the run ends. The
+  profile does not follow later ticks; run it again.
+* The deadline is extended by the estimated overhead of each bar; a script close to the 10 s limit may
+  still time out, and then the profile is partial and says so.
+* **Not exercised in a real window.** The window was run headlessly and its pictures looked at, not
+  driven by hand. In particular tooltip placement near the window's edge and behaviour at other UI
+  scales are unverified.
+* `ui::theme::tests::the_theme_round_trips_under_the_swift_key_and_names` failed once in a full
+  `cargo test` and passed on every rerun: it reads a global that other tests set.
