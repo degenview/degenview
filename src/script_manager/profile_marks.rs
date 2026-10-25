@@ -68,19 +68,48 @@ pub struct HotRow {
     pub line_share: f32,
 }
 
+/// Which card of the details a row belongs to.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SummaryGroup {
+    /// Where the time goes.
+    Hotspots,
+    /// How it was measured.
+    Measurement,
+}
+
+impl SummaryGroup {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Hotspots => "Where the time goes",
+            Self::Measurement => "How it was measured",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct SummaryRow {
+    pub group: SummaryGroup,
     pub label: &'static str,
-    pub value: String,
+    /// What goes under the label, saying what the value is of.
     pub note: Option<String>,
+    pub value: String,
+    /// The one-based line a click on the row goes to.
+    pub line: Option<usize>,
+}
+
+/// The three figures at the top of a result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Totals {
+    pub time: String,
+    pub bars: String,
+    pub executions: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ProfileMarks {
     lines: Vec<LineMark>,
     pub hot: Vec<HotRow>,
-    /// "179 ms \u{b7} 400 bars \u{b7} 84,000 executions".
-    pub headline: String,
+    pub totals: Totals,
     /// The rest of the run's figures.
     pub summary: Vec<SummaryRow>,
     /// "Partial: cancelled after 120 of 500 bars", when the profile does not cover the run.
@@ -152,8 +181,8 @@ impl ProfileMarks {
         Self {
             lines,
             hot: rows,
-            headline: headline(report),
-            summary: summary(report, compile_ns),
+            totals: totals(report),
+            summary: summary(report, &text, compile_ns),
             caveat: caveat(report),
         }
     }
@@ -301,96 +330,113 @@ fn average_count(iterations: u64, entries: u64) -> String {
     }
 }
 
-fn summary(report: &ProfileReport, compile_ns: u64) -> Vec<SummaryRow> {
+fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRow> {
     let s = report.summary;
-    let row = |label: &'static str, value: String, note: Option<String>| SummaryRow {
+    let row = |group: SummaryGroup,
+               label: &'static str,
+               note: Option<String>,
+               value: String,
+               line: Option<usize>| SummaryRow {
+        group,
         label,
-        value,
         note,
+        value,
+        line,
     };
+    let (hot, measured) = (SummaryGroup::Hotspots, SummaryGroup::Measurement);
     let mut rows = Vec::new();
     if let Some(line) = report.hottest_lines(1).first() {
         rows.push(row(
+            hot,
             "Hottest line",
-            format!(
-                "line {} \u{b7} {}",
-                line.line,
-                percent(report.share(line.line_time_ns))
-            ),
-            Some("of the script's time, in the line itself".to_owned()),
+            Some(format!("Line {}: {}", line.line, snippet(text, line.line))),
+            percent(report.share(line.line_time_ns)),
+            Some(line.line),
         ));
     }
     if let Some((index, stats)) = report.hottest_block()
         && let Some(region) = report.table.get(index)
     {
         rows.push(row(
+            hot,
             "Hottest block",
-            format!(
-                "lines {}\u{2013}{} \u{b7} {}",
+            Some(format!(
+                "Lines {}\u{2013}{}",
                 region.start.line,
-                region.end.line.max(region.start.line),
-                percent(report.share(stats.inclusive_ns))
-            ),
-            None,
+                region.end.line.max(region.start.line)
+            )),
+            percent(report.share(stats.inclusive_ns)),
+            Some(region.start.line),
         ));
     }
     if let Some((index, stats)) = report.hottest_function()
         && let Some(region) = report.table.get(index)
     {
         rows.push(row(
+            hot,
             "Hottest function",
-            format!(
-                "{}() \u{b7} {}",
+            Some(format!(
+                "{}() \u{b7} {} calls",
                 region.name.as_deref().unwrap_or("?"),
-                percent(report.share(stats.inclusive_ns))
-            ),
-            Some(format!("{} calls", count(stats.executions))),
+                count(stats.executions)
+            )),
+            percent(report.share(stats.inclusive_ns)),
+            Some(region.start.line),
         ));
     }
     rows.push(row(
+        measured,
         "Not in any line",
-        duration(s.unattributed_ns()),
         Some(format!(
             "{} of the total: setting bars up, committing them, orders",
             percent(report.share(s.unattributed_ns()))
         )),
+        duration(s.unattributed_ns()),
+        None,
     ));
     if s.waited_ns > 0 {
         rows.push(row(
+            measured,
             "Waiting for data",
+            Some("Fetching other symbols for request.security(); in no time here".to_owned()),
             duration(s.waited_ns),
-            Some("fetching other symbols for request.security(); in no time above".to_owned()),
+            None,
         ));
     }
     rows.push(row(
+        measured,
         "Profiler overhead",
-        format!("about {}", duration(s.overhead_ns)),
         Some(format!(
-            "{} per measured execution; included in every time above, not subtracted",
+            "About {} per measured execution; inside every time, not subtracted",
             duration(s.pair_cost_ns)
         )),
+        format!("\u{2248} {}", duration(s.overhead_ns)),
+        None,
     ));
     rows.push(row(
+        measured,
         "Clock resolution",
+        Some("Times shorter than this are estimates".to_owned()),
         duration(s.resolution_ns),
-        Some("times shorter than this are estimates".to_owned()),
+        None,
     ));
     rows.push(row(
+        measured,
         "Compiled in",
+        Some("Not part of the total".to_owned()),
         duration(compile_ns),
-        Some("not part of the total".to_owned()),
+        None,
     ));
     rows
 }
 
-fn headline(report: &ProfileReport) -> String {
+fn totals(report: &ProfileReport) -> Totals {
     let s = report.summary;
-    format!(
-        "{} \u{b7} {} bars \u{b7} {} executions",
-        duration(s.total_ns),
-        count(s.bars),
-        count(s.measured_executions)
-    )
+    Totals {
+        time: duration(s.total_ns),
+        bars: count(s.bars),
+        executions: count(s.measured_executions),
+    }
 }
 
 fn caveat(report: &ProfileReport) -> Option<String> {
@@ -686,13 +732,28 @@ mod tests {
         ] {
             assert!(labels.contains(&wanted), "{wanted} in {labels:?}");
         }
+        assert_eq!(marks.totals.time, duration(report.summary.total_ns));
+        assert_eq!(marks.totals.bars, "25");
         assert_eq!(
-            marks.headline,
-            format!(
-                "{} \u{b7} 25 bars \u{b7} {} executions",
-                duration(report.summary.total_ns),
-                count(report.summary.measured_executions)
-            )
+            marks.totals.executions,
+            count(report.summary.measured_executions)
+        );
+        let hottest = marks.summary.iter().find(|row| row.label == "Hottest line");
+        assert!(hottest.is_some_and(|row| row.line.is_some()));
+        assert!(
+            marks
+                .summary
+                .iter()
+                .filter(|row| row.group == SummaryGroup::Hotspots)
+                .all(|row| row.line.is_some()),
+            "every hotspot goes to its line"
+        );
+        assert!(
+            marks
+                .summary
+                .iter()
+                .filter(|row| row.group == SummaryGroup::Measurement)
+                .all(|row| row.line.is_none())
         );
         assert!(marks.caveat.is_none());
     }

@@ -108,11 +108,23 @@ fn gallery_of_the_profiler() {
             scene.rig.manager.prefs.drawer_open = true;
             scene.frames(2);
             scene.save("off");
+            // The Logs tab beside it, for the two to be compared.
+            scene.rig.manager.prefs.drawer_tab = prefs::DrawerTab::Logs;
+            scene.frames(3);
+            scene.save("logs");
+            scene.rig.manager.prefs.drawer_tab = prefs::DrawerTab::Profile;
+            scene.frames(2);
 
             scene.rig.manager.cmds.push(Cmd::ProfilerToggle);
             scene.until(|status| *status == Status::Ready);
             scene.frames(4);
             scene.save("ready");
+            // A tall drawer, to see the whole result.
+            scene.rig.manager.prefs.drawer_height = 760.0;
+            scene.frames(4);
+            scene.save("details");
+            scene.rig.manager.prefs.drawer_height = 0.0;
+            scene.frames(2);
 
             // The pointer over line 13's bar in the profile column: its figures, and the block
             // it sits in washed in the code.
@@ -132,11 +144,17 @@ fn gallery_of_the_profiler() {
             scene.frames(4);
             scene.save("stale");
 
-            scene.rig.set_source(SOURCE);
+            scene.rig.set_source(
+                "//@version=6\nindicator(\"Slow\")\nt = 0.0\nfor i = 0 to 300000\n    t += i\nplot(t)\n",
+            );
             scene.rig.manager.cmds.push(Cmd::ProfilerRun);
-            scene.frames(1);
-            scene.save("running-or-ready");
-            scene.until(|status| *status == Status::Ready);
+            scene.until(|status| matches!(status, Status::Running { done, .. } if *done > 0));
+            scene.frames(2);
+            scene.save("running");
+            scene.rig.manager.cmds.push(Cmd::ProfilerCancel);
+            scene.until(|status| *status == Status::Partial);
+            scene.frames(3);
+            scene.save("partial");
         }
     }
 }

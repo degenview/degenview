@@ -97,11 +97,10 @@ script does with the candles afterwards is timed like anything else.
 
 ## In the window
 
-* **Toolbar** (right side, beside the debugger's bug): the stopwatch turns the profiler on and off
-  (⌥⌘R, Ctrl+Alt+R elsewhere). While it is on, a chip beside it says what it is doing and does the
-  obvious next thing when clicked: *Run profile*, *Profiling… 240/500* (click to cancel), *Profile
-  ready* (click to profile again), *Partial profile*, *Profile stale · Run again*, *Profile failed*,
-  *Waiting for chart…*. Turning it on opens the drawer's **Profile** tab.
+* **Toolbar** (right side, between the debugger's bug and the preview chart's buttons): the stopwatch
+  turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is blue while the profiler is on,
+  amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
+  Turning it on opens the drawer's **Profile** tab.
 * **The column** beside the line numbers, present only while the profiler is on, so the text moves
   once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
   line's share of the script's time as a number, and, for the three hottest lines (if at least four
@@ -114,11 +113,18 @@ script does with the candles afterwards is timed like anything else.
   differs, executions, iterations or branches taken, average and slowest, and for a function where it
   is called from); the code block the line covers is washed in the editor. A time per execution
   shorter than the clock's resolution is not averaged; the tooltip says so.
-* **The Profile tab**: the state, a progress bar while it runs, the summary (total time and bars,
-  executions, hottest line, block and function, time in no line, the profiler's own overhead, the
-  clock's resolution, how long compiling took), and the ten hottest lines by their own time; click
-  one to go to it. A partial profile says so at the top. A stale one says so and is dimmed; its rows go
-  to their lines only while the editor still holds the text that was profiled.
+* **The Profile tab** is laid out like the Logs tab beside it: a toolbar row (a field that says what
+  the profiler is doing, with a dot coloured by state and the chart it ran on, and one button for the
+  next thing: run again, cancel, try again), a hairline, then the body. Off, it introduces the
+  profiler in three steps with a picture of the column and a *Start profiling* button. Running, it
+  shows progress and *Cancel*. With a result: the three totals (time, bars, executions); the ten
+  hottest lines by their own time (click one to go to it); and two cards of figures, *Where the time
+  goes* (hottest line, block and function, each a click away from its line) and *How it was
+  measured* (what is in no line, waiting for data, the profiler's overhead, the clock's resolution,
+  compile time), each with a note saying what the figure is of. A partial profile says so at the top.
+  A stale one says so and is dimmed; its rows go to their lines only while the editor still holds the
+  text that was profiled. All text in the tab is the secondary label colour or darker, so it reads in
+  both appearances.
 * The editor keeps its syntax colouring, selection, find highlights and diagnostics: the wash is
   painted under the text with the current-line band, and the column is a separate rectangle.
 
