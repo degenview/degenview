@@ -1224,21 +1224,17 @@ impl Session {
         &mut self,
         call_name: &str,
         range: SourceRange,
-        function: &RuntimeFunction,
+        scope: Option<&str>,
+        first_statement: Option<usize>,
         shadowed: &[(String, Option<RuntimeValue>)],
     ) {
         match self.hooks.as_deref_mut() {
             Some(Hooks::Debug(debug)) => {
-                debug.enter_function(
-                    call_name,
-                    range,
-                    function.scope.as_deref(),
-                    shadowed.to_vec(),
-                );
+                debug.enter_function(call_name, range, scope, shadowed.to_vec());
             }
-            Some(Hooks::Profile(profile)) => match function.body.first() {
-                Some(first) if function.scope.is_none() => {
-                    profile.enter_function(first.range().start.offset, range.start.offset);
+            Some(Hooks::Profile(profile)) => match first_statement {
+                Some(first) if scope.is_none() => {
+                    profile.enter_function(first, range.start.offset);
                 }
                 _ => profile.enter_untimed(),
             },
@@ -2803,12 +2799,18 @@ impl Session {
         } else {
             Some(function.locals.clone())
         };
-        let hooked = self.hooks.is_some();
-        if hooked {
-            self.hook_enter_function(call_name, range, &function, &saved);
+        if self.hooks.is_some() {
+            let first_statement = function.body.first().map(|first| first.range().start.offset);
+            self.hook_enter_function(
+                call_name,
+                range,
+                function.scope.as_deref(),
+                first_statement,
+                &saved,
+            );
         }
         let result = self.run(&function.body, context);
-        if hooked {
+        if self.hooks.is_some() {
             self.hook_leave_function();
         }
         context.site_prefix = caller_prefix;
