@@ -38,6 +38,10 @@ struct CallSite {
     active: u32,
 }
 
+/// Marks a frame that is not a region: code the profile does not time, kept on the stack so that
+/// every start has an end to match.
+const UNTIMED: u32 = u32::MAX;
+
 /// A region that has started and not yet ended.
 struct Frame {
     region: u32,
@@ -139,26 +143,51 @@ impl ProfileRuntime {
 
     // MARK: Regions
 
-    /// A statement starts. Returns whether it is a measured region; if so, [`exit`](Self::exit) must
-    /// follow when it ends.
+    /// A statement starts. Returns whether it is a measured region. Either way a frame is open until
+    /// [`exit`](Self::exit): every start has one end.
     #[inline]
     pub fn enter_statement(&mut self, offset: usize) -> bool {
-        let Some(region) = self.table.at_offset(offset) else {
-            return false;
-        };
-        self.push(region, None);
-        true
+        match self.table.at_offset(offset) {
+            Some(region) => {
+                self.push(region, None);
+                true
+            }
+            None => {
+                self.enter_untimed();
+                false
+            }
+        }
     }
 
     /// A user-defined function's body starts, called from the call at `call_offset`. `first_statement`
-    /// is the offset of the first statement of the body, which names the function.
+    /// is the offset of the first statement of the body, which names the function. Returns whether
+    /// it is a measured region; either way a frame is open until [`exit`](Self::exit).
     #[inline]
     pub fn enter_function(&mut self, first_statement: usize, call_offset: usize) -> bool {
-        let Some(region) = self.table.function_with_body(first_statement) else {
-            return false;
-        };
-        self.push(region, Some(call_offset));
-        true
+        match self.table.function_with_body(first_statement) {
+            Some(region) => {
+                self.push(region, Some(call_offset));
+                true
+            }
+            None => {
+                self.enter_untimed();
+                false
+            }
+        }
+    }
+
+    /// Something starts that the profile does not time (library code, a function's declaration). Its
+    /// end is matched like any other, and whatever ran inside it is charged to what is around it.
+    #[inline]
+    pub fn enter_untimed(&mut self) {
+        self.stack.push(Frame {
+            region: UNTIMED,
+            call: None,
+            start: 0,
+            children: 0,
+            outermost: false,
+            outermost_call: false,
+        });
     }
 
     #[inline]
@@ -197,7 +226,11 @@ impl ProfileRuntime {
     /// The region entered last ends.
     #[inline]
     pub fn exit(&mut self) {
-        let now = self.clock.now_ns();
+        // An untimed frame has no end to read.
+        let now = match self.stack.last() {
+            Some(frame) if frame.region == UNTIMED => 0,
+            _ => self.clock.now_ns(),
+        };
         self.pop(now);
     }
 
@@ -206,6 +239,14 @@ impl ProfileRuntime {
         let Some(frame) = self.stack.pop() else {
             return;
         };
+        if frame.region == UNTIMED {
+            // What ran inside it was timed on its own; the region around it spent that time in
+            // children all the same.
+            if let Some(parent) = self.stack.last_mut() {
+                parent.children += frame.children;
+            }
+            return;
+        }
         let elapsed = now.saturating_sub(frame.start);
         let exclusive = elapsed.saturating_sub(frame.children);
         let counters = &mut self.counters[frame.region as usize];

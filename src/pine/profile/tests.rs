@@ -848,3 +848,81 @@ fn functions_are_found_by_their_first_body_statement() {
     );
     assert_eq!(table.function_with_body(0), None);
 }
+
+// MARK: Library code and untimed frames
+
+struct Libraries;
+
+impl compiler::LibraryResolver for Libraries {
+    fn source_for_library(&self, path: &str) -> Option<String> {
+        (path == "user/Math/1").then(|| {
+            "//@version=6\nlibrary(\"Math\")\nexport double(float x) =>\n    a = x * 2\n    b = a + 1\n    b\n"
+                .to_owned()
+        })
+    }
+}
+
+#[test]
+fn library_code_is_part_of_the_statement_that_called_it_and_never_a_line_of_the_script() {
+    let source = script("import user/Math/1 as m\ny = m.double(close)\nplot(y)\n");
+    let program = compiler::compile(&source, Limits::default(), &Libraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        Default::default(),
+        Limits::default(),
+        Some(0.01),
+        Default::default(),
+        None,
+        None,
+    );
+    let runtime = recorder(&session, STEP);
+    session.attach_profiler(runtime);
+    session.evaluate(&bars(12, 60_000)).expect("runs");
+    let report = session
+        .detach_profiler()
+        .unwrap()
+        .finish(Completeness::Complete);
+    assert_consistent(&report);
+    // `y = …` and `plot(y)`: the library's three statements are not regions of this script.
+    assert_eq!(report.table.len(), 2);
+    let call = line(&report, FIRST_LINE + 1);
+    assert_eq!(call.executions, 12);
+    assert_eq!(
+        call.time_ns, call.line_time_ns,
+        "the library's time is the call's own"
+    );
+    assert!(
+        report.call_sites.is_empty(),
+        "library functions are not tracked"
+    );
+    assert_eq!(report.summary.measured_executions, 24);
+}
+
+#[test]
+fn an_untimed_frame_passes_what_ran_inside_it_to_the_region_around_it() {
+    let mut runtime = single();
+    runtime.begin_bar();
+    // A (read 1) runs library code, untimed, that runs B (reads 2 and 3); A ends at read 4.
+    assert!(runtime.enter_statement(0));
+    runtime.enter_untimed();
+    assert!(runtime.enter_statement(0));
+    runtime.exit();
+    runtime.exit();
+    runtime.exit();
+    runtime.end_bar(true, false);
+    let report = runtime.finish(Completeness::Complete);
+    let stats = report.stats_of(0);
+    assert_eq!(stats.executions, 2);
+    assert_eq!(stats.inclusive_ns, 3 * STEP, "the outer execution");
+    assert_eq!(
+        stats.exclusive_ns,
+        3 * STEP,
+        "B's one step is not counted twice"
+    );
+    assert_eq!(
+        report.summary.total_ns,
+        5 * STEP,
+        "untimed frames cost no read"
+    );
+}

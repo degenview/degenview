@@ -59,6 +59,13 @@ pub(crate) const INTERNAL_PREFIX: &str = "\u{0}";
 const ALERT_LIMIT: usize = 200;
 const DEFAULT_MINTICK: f64 = 0.01;
 
+/// What a hooked session carries: a debugger or a profiler, never both. A session without either
+/// has `hooks: None`, the one thing the statement loop tests.
+enum Hooks {
+    Debug(super::debug::DebugRuntime),
+    Profile(super::profile::ProfileRuntime),
+}
+
 pub struct Session {
     pub program: CompiledProgram,
     pub inputs: HashMap<String, InputValue>,
@@ -112,10 +119,9 @@ pub struct Session {
     supplied_mintick: Option<f64>,
     pub(crate) deadline_at: Option<Instant>,
     cancellation: Option<Arc<AtomicBool>>,
-    /// Present only in a debugging session; every hook below tests it and does nothing otherwise.
-    debug: Option<Box<super::debug::DebugRuntime>>,
-    /// Present only in a profiling session; see `docs/pine-profiler.md`.
-    profile: Option<Box<super::profile::ProfileRuntime>>,
+    /// Present only in a debugging or profiling session; every hook below tests it and does nothing
+    /// otherwise.
+    hooks: Option<Box<Hooks>>,
 }
 
 struct Step {
@@ -288,8 +294,7 @@ impl Session {
             supplied_mintick,
             deadline_at: None,
             cancellation: None,
-            debug: None,
-            profile: None,
+            hooks: None,
         };
         session.committed = session.fresh_state();
         session.working = session.committed.clone();
@@ -344,18 +349,24 @@ impl Session {
         // Logpoints write to the Pine Logs, and the script's own `log.*()` calls are what a person
         // debugging wants to read too.
         self.logs.enable();
-        self.debug = Some(Box::new(debug));
+        self.hooks = Some(Box::new(Hooks::Debug(debug)));
     }
 
     /// Makes this session a profiling session: each statement, user function call and bar is
     /// timed. A session is never profiled by accident; nothing but this call installs the hooks.
     pub fn attach_profiler(&mut self, profile: super::profile::ProfileRuntime) {
-        self.profile = Some(Box::new(profile));
+        self.hooks = Some(Box::new(Hooks::Profile(profile)));
     }
 
     /// Takes the recorder back out, to read what it measured.
     pub fn detach_profiler(&mut self) -> Option<super::profile::ProfileRuntime> {
-        self.profile.take().map(|profile| *profile)
+        match self.hooks.take().map(|hooks| *hooks) {
+            Some(Hooks::Profile(profile)) => Some(profile),
+            other => {
+                self.hooks = other.map(Box::new);
+                None
+            }
+        }
     }
 
     // MARK: Running
@@ -457,13 +468,14 @@ impl Session {
         if owns_deadline {
             self.start_deadline();
         }
+        let hooked = self.hooks.is_some();
         let realtime = event.phase.is_realtime();
-        if self.profile.is_some() {
-            self.profile_begin_bar();
+        if hooked {
+            self.hook_begin_bar();
         }
         let result = self.execute_bar(event, is_last, is_last_history);
-        if self.profile.is_some() {
-            self.profile_end_bar(!matches!(result, Err(RunError::Rejection(_))), realtime);
+        if hooked {
+            self.hook_end_bar(!matches!(result, Err(RunError::Rejection(_))), realtime);
         }
         if owns_deadline {
             self.deadline_at = None;
@@ -528,7 +540,7 @@ impl Session {
         self.logs
             .begin_bar(open_time, self.working.bar_index, realtime, confirmed);
         let chart_bar_index = self.working.bar_index;
-        if let Some(debug) = self.debug.as_mut() {
+        if let Some(Hooks::Debug(debug)) = self.hooks.as_deref_mut() {
             debug.begin_bar(chart_bar_index);
         }
         if !is_new {
@@ -1109,55 +1121,19 @@ impl Session {
         statements: &[Statement],
         context: &mut RuntimeContext,
     ) -> Result<(Flow, RuntimeValue), Diagnostic> {
-        // One test per block, not per statement: a session with a debugger or a profiler takes the
-        // loop below that carries their hooks, every other session this one.
-        if self.hooked() {
-            return self.run_hooked(statements, context);
-        }
-        let mut last = RuntimeValue::Void;
-        for statement in statements {
-            self.budget()?;
-            let step = self.run_statement(statement, context)?;
-            if step.value != RuntimeValue::Void {
-                last = step.value;
-            }
-            if step.flow != Flow::Normal {
-                return Ok((step.flow, last));
-            }
-        }
-        Ok((Flow::Normal, last))
-    }
-
-    /// Whether a debugger or a profiler is attached.
-    #[inline]
-    fn hooked(&self) -> bool {
-        self.debug.is_some() || self.profile.is_some()
-    }
-
-    /// `run` for a session with a debugger or a profiler: the same statements in the same order, with
-    /// the hooks around each.
-    #[inline(never)]
-    fn run_hooked(
-        &mut self,
-        statements: &[Statement],
-        context: &mut RuntimeContext,
-    ) -> Result<(Flow, RuntimeValue), Diagnostic> {
         let mut last = RuntimeValue::Void;
         for statement in statements {
             self.budget()
-                .map_err(|error| self.debug_failed(statement, context, error))?;
-            let debugging = self.debug.is_some();
-            if debugging {
-                self.debug_before(statement, context)?;
+                .map_err(|error| self.hook_failed(statement, context, error, false))?;
+            let hooked = self.hooks.is_some();
+            if hooked {
+                self.hook_before(statement, context)?;
             }
-            let timed = self.profile_enter_statement(statement, context);
-            let outcome = self.run_statement(statement, context);
-            if timed {
-                self.profile_exit();
-            }
-            let step = outcome.map_err(|error| self.debug_failed(statement, context, error))?;
-            if debugging {
-                self.debug_after(statement, context);
+            let step = self
+                .run_statement(statement, context)
+                .map_err(|error| self.hook_failed(statement, context, error, true))?;
+            if hooked {
+                self.hook_after(statement, context);
             }
             if step.value != RuntimeValue::Void {
                 last = step.value;
@@ -1169,135 +1145,148 @@ impl Session {
         Ok((Flow::Normal, last))
     }
 
-    // MARK: Profiling hooks
+    // MARK: Hooks
     //
-    // The recorder is taken from `self` by reference only; it never needs the session.
-
-    /// A statement is about to run. Returns whether it is being timed, so that its end is reported.
-    /// Library code is not timed: its offsets belong to another text, and its time is part of the
-    /// statement that called it.
-    #[inline(never)]
-    fn profile_enter_statement(&mut self, statement: &Statement, context: &RuntimeContext) -> bool {
-        // Walking past a function's declaration runs nothing; its calls are timed in `invoke`.
-        if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
-            return false;
-        }
-        match self.profile.as_mut() {
-            Some(profile) => profile.enter_statement(statement.range().start.offset),
-            None => false,
-        }
-    }
-
-    #[inline(never)]
-    fn profile_exit(&mut self) {
-        if let Some(profile) = self.profile.as_mut() {
-            profile.exit();
-        }
-    }
-
-    /// A user function's body is about to run, called from the call at `call`. Returns whether it is
-    /// being timed.
-    #[inline(never)]
-    fn profile_enter_function(&mut self, function: &RuntimeFunction, call: SourceRange) -> bool {
-        if function.scope.is_some() {
-            return false;
-        }
-        let (Some(profile), Some(first)) = (self.profile.as_mut(), function.body.first()) else {
-            return false;
-        };
-        profile.enter_function(first.range().start.offset, call.start.offset)
-    }
-
-    #[inline(never)]
-    fn profile_begin_bar(&mut self) {
-        if let Some(profile) = self.profile.as_mut() {
-            profile.begin_bar();
-        }
-    }
-
-    /// The bar ended. What measuring it added is given back to the deadline: a profiled run is
-    /// slower than a normal one, and must not time out where the normal one would not.
-    #[inline(never)]
-    fn profile_end_bar(&mut self, counted: bool, realtime: bool) {
-        let Some(profile) = self.profile.as_mut() else {
-            return;
-        };
-        let added = profile.end_bar(counted, realtime);
-        if let Some(deadline) = self.deadline_at.as_mut() {
-            *deadline += added;
-        }
-    }
-
-    // MARK: Debugging hooks
-    //
-    // Each takes the debugger out of the session while it runs, so it can be handed `&mut self`.
-    // They are cold and never inlined: a session without a debugger must not carry their code in the
-    // statement loop.
+    // The debugger's hooks take it out of the session while they run, so it can be handed `&mut self`.
+    // They are cold and never inlined: a session without hooks must not carry their code in the
+    // statement loop. Every `hook_before` is answered by exactly one `hook_after` or `hook_failed`
+    // with `entered`, and every `hook_enter_function` by one `hook_leave_function`; the profiler's
+    // stack of open regions relies on it.
 
     #[cold]
     #[inline(never)]
-    fn debug_before(
+    fn hook_before(
         &mut self,
         statement: &Statement,
         context: &RuntimeContext,
     ) -> Result<(), Diagnostic> {
-        let Some(mut debug) = self.debug.take() else {
+        let Some(mut hooks) = self.hooks.take() else {
             return Ok(());
         };
-        let outcome = debug.before_statement(self, statement, context);
-        self.debug = Some(debug);
+        let outcome = match &mut *hooks {
+            Hooks::Debug(debug) => debug.before_statement(self, statement, context),
+            Hooks::Profile(profile) => {
+                // Library code is not timed: its offsets belong to another text, and its time is
+                // part of the statement that called it. Walking past a function's declaration runs
+                // nothing; its calls are timed in `invoke`.
+                if context.scope.is_some() || matches!(statement, Statement::Function { .. }) {
+                    profile.enter_untimed();
+                } else {
+                    profile.enter_statement(statement.range().start.offset);
+                }
+                Ok(())
+            }
+        };
+        self.hooks = Some(hooks);
         outcome
     }
 
     /// `statement` ran to its end: whatever it declares now has a value this bar.
     #[cold]
     #[inline(never)]
-    fn debug_after(&mut self, statement: &Statement, context: &RuntimeContext) {
-        if let Some(debug) = self.debug.as_mut() {
-            debug.after_statement(statement, context);
+    fn hook_after(&mut self, statement: &Statement, context: &RuntimeContext) {
+        match self.hooks.as_deref_mut() {
+            Some(Hooks::Debug(debug)) => debug.after_statement(statement, context),
+            Some(Hooks::Profile(profile)) => profile.exit(),
+            None => {}
         }
     }
 
-    /// Passes a failure of `statement` through the debugger on its way up, and hands it back.
+    /// Passes a failure of `statement` through the hooks on its way up, and hands it back. `entered`
+    /// is whether `hook_before` ran for the statement (it did not if the budget was spent first).
     #[cold]
     #[inline(never)]
-    fn debug_failed(
+    fn hook_failed(
         &mut self,
         statement: &Statement,
         context: &RuntimeContext,
         error: Diagnostic,
+        entered: bool,
     ) -> Diagnostic {
-        if let Some(mut debug) = self.debug.take() {
-            debug.failed(self, context, statement, &error);
-            self.debug = Some(debug);
+        if let Some(mut hooks) = self.hooks.take() {
+            match &mut *hooks {
+                Hooks::Debug(debug) => debug.failed(self, context, statement, &error),
+                Hooks::Profile(profile) => {
+                    if entered {
+                        profile.exit();
+                    }
+                }
+            }
+            self.hooks = Some(hooks);
         }
         error
     }
 
+    /// A user function's body is about to run, called from the call at `range`.
     #[cold]
     #[inline(never)]
-    fn debug_enter(
+    fn hook_enter_function(
         &mut self,
         call_name: &str,
         range: SourceRange,
-        scope: Option<&str>,
+        function: &RuntimeFunction,
         shadowed: &[(String, Option<RuntimeValue>)],
     ) {
-        if let Some(debug) = self.debug.as_mut() {
-            debug.enter_function(call_name, range, scope, shadowed.to_vec());
+        match self.hooks.as_deref_mut() {
+            Some(Hooks::Debug(debug)) => {
+                debug.enter_function(
+                    call_name,
+                    range,
+                    function.scope.as_deref(),
+                    shadowed.to_vec(),
+                );
+            }
+            Some(Hooks::Profile(profile)) => match function.body.first() {
+                Some(first) if function.scope.is_none() => {
+                    profile.enter_function(first.range().start.offset, range.start.offset);
+                }
+                _ => profile.enter_untimed(),
+            },
+            None => {}
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn hook_leave_function(&mut self) {
+        match self.hooks.as_deref_mut() {
+            Some(Hooks::Debug(debug)) => debug.leave_function(),
+            Some(Hooks::Profile(profile)) => profile.exit(),
+            None => {}
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn hook_begin_bar(&mut self) {
+        if let Some(Hooks::Profile(profile)) = self.hooks.as_deref_mut() {
+            profile.begin_bar();
+        }
+    }
+
+    /// The bar ended. What measuring it added is given back to the deadline: a profiled run is
+    /// slower than a normal one, and must not time out where the normal one would not.
+    #[cold]
+    #[inline(never)]
+    fn hook_end_bar(&mut self, counted: bool, realtime: bool) {
+        if let Some(Hooks::Profile(profile)) = self.hooks.as_deref_mut() {
+            let added = profile.end_bar(counted, realtime);
+            if let Some(deadline) = self.deadline_at.as_mut() {
+                *deadline += added;
+            }
         }
     }
 
     #[inline]
     pub(crate) fn debug_is_attached(&self) -> bool {
-        self.debug.is_some()
+        matches!(self.hooks.as_deref(), Some(Hooks::Debug(_)))
     }
 
     /// A `request.security()` expression is about to run on `symbol` at `interval_seconds`.
     #[cold]
     #[inline(never)]
     pub(crate) fn debug_enter_security(&mut self, symbol: &str, interval_seconds: f64) {
-        if let Some(debug) = self.debug.as_mut() {
+        if let Some(Hooks::Debug(debug)) = self.hooks.as_deref_mut() {
             debug.enter_security(symbol, interval_seconds);
         }
     }
@@ -1305,7 +1294,7 @@ impl Session {
     #[cold]
     #[inline(never)]
     pub(crate) fn debug_leave(&mut self) {
-        if let Some(debug) = self.debug.as_mut() {
+        if let Some(Hooks::Debug(debug)) = self.hooks.as_deref_mut() {
             debug.leave_function();
         }
     }
@@ -2814,22 +2803,13 @@ impl Session {
         } else {
             Some(function.locals.clone())
         };
-        let hooked = self.hooked();
-        let mut timed = false;
+        let hooked = self.hooks.is_some();
         if hooked {
-            if self.debug.is_some() {
-                self.debug_enter(call_name, range, function.scope.as_deref(), &saved);
-            }
-            timed = self.profile_enter_function(&function, range);
+            self.hook_enter_function(call_name, range, &function, &saved);
         }
         let result = self.run(&function.body, context);
         if hooked {
-            if timed {
-                self.profile_exit();
-            }
-            if self.debug.is_some() {
-                self.debug_leave();
-            }
+            self.hook_leave_function();
         }
         context.site_prefix = caller_prefix;
         context.depth -= 1;

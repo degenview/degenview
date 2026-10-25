@@ -166,7 +166,9 @@ impl RegionTable {
 
     /// The innermost region whose text contains `offset`.
     pub fn enclosing(&self, offset: usize) -> Option<u32> {
-        let before = self.by_offset.partition_point(|(start, _)| *start <= offset);
+        let before = self
+            .by_offset
+            .partition_point(|(start, _)| *start <= offset);
         self.by_offset[..before]
             .iter()
             .rev()

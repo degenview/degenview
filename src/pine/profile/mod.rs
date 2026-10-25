@@ -12,6 +12,8 @@ mod report;
 mod session;
 
 #[cfg(test)]
+pub(crate) mod support;
+#[cfg(test)]
 mod tests;
 
 pub use clock::{Clock, MonotonicClock, SteppingClock, resolution_ns};
