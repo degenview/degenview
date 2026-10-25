@@ -555,6 +555,42 @@ impl ScriptManager {
             if icons::button(ui, Icon::SidebarLeft, 28.0, theme::text_primary(), &tip).clicked() {
                 self.cmds.push(Cmd::ToggleSidebar);
             }
+            let position_icon = match self.prefs.chart_position {
+                ChartPosition::Left => Icon::RectLeft,
+                ChartPosition::Top => Icon::RectTop,
+                ChartPosition::Bottom => Icon::RectBottom,
+            };
+            let button = icons::button(
+                ui,
+                position_icon,
+                28.0,
+                theme::text_primary(),
+                "Where the preview chart sits next to the code",
+            );
+            egui::Popup::menu(&button).show(|ui| {
+                ui.set_min_width(140.0);
+                for position in ChartPosition::ALL {
+                    let selected = position == self.prefs.chart_position;
+                    let label = if selected {
+                        format!("✓  {}", position.title())
+                    } else {
+                        format!("    {}", position.title())
+                    };
+                    if ui.button(label).clicked() {
+                        self.cmds.push(Cmd::SetChartPosition(position));
+                        ui.close();
+                    }
+                }
+            });
+            let (icon, tip) = if self.prefs.chart_visible {
+                (Icon::ChartLine, "Hide the preview chart")
+            } else {
+                (Icon::ChartLineFlat, "Show the preview chart")
+            };
+            let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
+            if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
+                self.cmds.push(Cmd::ToggleChart);
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
@@ -566,42 +602,6 @@ impl ScriptManager {
                         self.cmds.push(Cmd::from(action));
                     }
                 }
-                let (icon, tip) = if self.prefs.chart_visible {
-                    (Icon::ChartLine, "Hide the preview chart")
-                } else {
-                    (Icon::ChartLineFlat, "Show the preview chart")
-                };
-                let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
-                if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
-                    self.cmds.push(Cmd::ToggleChart);
-                }
-                let position_icon = match self.prefs.chart_position {
-                    ChartPosition::Left => Icon::RectLeft,
-                    ChartPosition::Top => Icon::RectTop,
-                    ChartPosition::Bottom => Icon::RectBottom,
-                };
-                let button = icons::button(
-                    ui,
-                    position_icon,
-                    28.0,
-                    theme::text_primary(),
-                    "Where the preview chart sits next to the code",
-                );
-                egui::Popup::menu(&button).show(|ui| {
-                    ui.set_min_width(140.0);
-                    for position in ChartPosition::ALL {
-                        let selected = position == self.prefs.chart_position;
-                        let label = if selected {
-                            format!("✓  {}", position.title())
-                        } else {
-                            format!("    {}", position.title())
-                        };
-                        if ui.button(label).clicked() {
-                            self.cmds.push(Cmd::SetChartPosition(position));
-                            ui.close();
-                        }
-                    }
-                });
             });
         });
     }
