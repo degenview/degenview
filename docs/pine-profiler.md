@@ -68,9 +68,12 @@ before a profile starts, because a profile runs on bars already loaded.
   * `RegionTable` is built once from the compiled program: regions in source order with their start
     and **end** (the parser now records where each statement ends, because its ranges are start-anchored),
     lexical parent, and the region of the first statement of each nested block.
-  * `ProfileRuntime` is the recorder. `Session::profile` is `None` unless a profile was asked for. The
-    interpreter tests that one pointer in the places it already tests for a debugger, and
-    the statement loop that runs without hooks does less work than it did.
+  * `ProfileRuntime` is the recorder. A `Session` carries `hooks: Option<Box<Hooks>>`, a debugger or a
+    profiler and never both; it is `None` unless `attach_debugger` or `attach_profiler` ran. The
+    statement loop tests that one pointer once per statement, as it did for the debugger alone, and the
+    hooks (`#[cold] #[inline(never)]`) do the rest. `invoke` and `execute` carry the only other hooks.
+    Every start has exactly one end, including on the error path; code that is not timed (library
+    functions, a function's declaration) starts an *untimed* frame that costs no clock read.
   * A stack of frames gives properly nested timing: on exit a frame's elapsed time is added to its
     parent's *children* total, so exclusive time needs no estimation and nothing is counted twice.
     The stack is closed on the error path and reset every bar.
