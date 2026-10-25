@@ -117,8 +117,8 @@ script does with the candles afterwards is timed like anything else.
 * **The Profile tab**: the state, a progress bar while it runs, the summary (total time and bars,
   executions, hottest line, block and function, time in no line, the profiler's own overhead, the
   clock's resolution, how long compiling took), and the ten hottest lines by their own time; click
-  one to go to it. A partial profile says so at the top. A stale one says so, is dimmed, and its rows
-  do not navigate.
+  one to go to it. A partial profile says so at the top. A stale one says so and is dimmed; its rows go
+  to their lines only while the editor still holds the text that was profiled.
 * The editor keeps its syntax colouring, selection, find highlights and diagnostics: the wash is
   painted under the text with the current-line band, and the column is a separate rectangle.
 
