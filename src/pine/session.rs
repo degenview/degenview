@@ -2213,6 +2213,31 @@ impl Session {
         Ok(bound)
     }
 
+    /// The first `count` operands of a builtin whose arguments are all positional, evaluated in
+    /// source order into stack slots (an omitted one is `na`), with `receiver` as the first when the
+    /// call is a method. `None`, with nothing evaluated, when any argument is named: that call goes
+    /// through `bind_named`. Arguments past `count` are not evaluated, as `bind_named` skips them.
+    fn positional_operands(
+        &mut self,
+        receiver: Option<&RuntimeValue>,
+        arguments: &[super::ast::Argument],
+        count: usize,
+        context: &mut RuntimeContext,
+    ) -> Result<Option<[RuntimeValue; 3]>, Diagnostic> {
+        if count > 3 || arguments.iter().any(|argument| argument.name.is_some()) {
+            return Ok(None);
+        }
+        let mut slots = [RuntimeValue::Na, RuntimeValue::Na, RuntimeValue::Na];
+        let first = usize::from(receiver.is_some());
+        if let Some(receiver) = receiver {
+            slots[0] = receiver.clone();
+        }
+        for (slot, argument) in slots[first..count].iter_mut().zip(arguments) {
+            *slot = self.eval(&argument.value, context)?;
+        }
+        Ok(Some(slots))
+    }
+
     /// Runs one `array.*`/`map.*`/`matrix.*` call, or `None` when the name is none of them.
     fn collection_call(
         &mut self,
@@ -2234,6 +2259,14 @@ impl Session {
                 range,
             )?;
             return Ok(Some(value));
+        }
+        if map_builtins::handles(name) {
+            let count = map_builtins::parameters(name).len();
+            if let Some(slots) = self.positional_operands(None, arguments, count, context)? {
+                let value =
+                    map_builtins::call_positional(name, &slots[..count], &mut self.working, range)?;
+                return Ok(Some(value));
+            }
         }
         let parameters = if array_builtins::handles(name) {
             array_builtins::parameters(name)
@@ -2624,6 +2657,21 @@ impl Session {
                 ));
             }
         };
+        if prefix == "map"
+            && let Some(full) = map_builtins::qualified(member)
+        {
+            let count = map_builtins::parameters(full).len();
+            if let Some(slots) =
+                self.positional_operands(Some(&value), arguments, count, context)?
+            {
+                return map_builtins::call_positional(
+                    full,
+                    &slots[..count],
+                    &mut self.working,
+                    range,
+                );
+            }
+        }
         let full = format!("{prefix}.{member}");
         let parameters = match prefix {
             "array" => array_builtins::parameters(&full),

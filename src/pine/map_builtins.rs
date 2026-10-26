@@ -30,6 +30,26 @@ const MEMBERS: [&str; 10] = [
     "put", "get", "contains", "remove", "size", "clear", "keys", "values", "copy", "put_all",
 ];
 
+/// `map.member` for a member this module handles, so a method call needs no `format!`.
+pub fn qualified(member: &str) -> Option<&'static str> {
+    const NAMES: [&str; 10] = [
+        "map.put",
+        "map.get",
+        "map.contains",
+        "map.remove",
+        "map.size",
+        "map.clear",
+        "map.keys",
+        "map.values",
+        "map.copy",
+        "map.put_all",
+    ];
+    MEMBERS
+        .iter()
+        .position(|candidate| *candidate == member)
+        .map(|index| NAMES[index])
+}
+
 fn runtime_error(code: &str, message: String, range: SourceRange) -> Diagnostic {
     Diagnostic::error(code, DiagnosticCategory::Runtime, message, range)
 }
@@ -61,11 +81,56 @@ pub fn call(
     state: &mut RuntimeState,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
+    run(
+        name,
+        Operands {
+            id: bound.get("id"),
+            key: bound.get("key"),
+            third: bound.get("value").or_else(|| bound.get("id2")),
+        },
+        state,
+        range,
+    )
+}
+
+/// `call` for arguments in `parameters(name)` order, none of them named: the session's hot path,
+/// which binds nothing by name. A slot the script left out reads as `na`, as it does bound.
+pub fn call_positional(
+    name: &str,
+    arguments: &[RuntimeValue],
+    state: &mut RuntimeState,
+    range: SourceRange,
+) -> Result<RuntimeValue, Diagnostic> {
+    run(
+        name,
+        Operands {
+            id: arguments.first(),
+            key: arguments.get(1),
+            third: arguments.get(2),
+        },
+        state,
+        range,
+    )
+}
+
+/// The arguments of one operation: the map, the key, and the value (`put`) or second map (`put_all`).
+struct Operands<'a> {
+    id: Option<&'a RuntimeValue>,
+    key: Option<&'a RuntimeValue>,
+    third: Option<&'a RuntimeValue>,
+}
+
+fn run(
+    name: &str,
+    operands: Operands,
+    state: &mut RuntimeState,
+    range: SourceRange,
+) -> Result<RuntimeValue, Diagnostic> {
     if name == "map.new" {
         return Ok(new_map(state, Map::default()));
     }
     let member = name.strip_prefix("map.").unwrap_or(name);
-    let Some(RuntimeValue::Ref(RefKind::Map, id)) = bound.get("id") else {
+    let Some(RuntimeValue::Ref(RefKind::Map, id)) = operands.id else {
         return Err(runtime_error(
             "PINE4026",
             format!("{name} requires a map; got na."),
@@ -81,7 +146,7 @@ pub fn call(
             range,
         ));
     };
-    let outcome = apply(member, name, bound, &mut map, id, state, range);
+    let outcome = apply(member, name, operands, &mut map, id, state, range);
     state.maps.insert(id, map);
     outcome
 }
@@ -89,7 +154,7 @@ pub fn call(
 fn apply(
     member: &str,
     name: &str,
-    bound: &Bound,
+    operands: Operands,
     map: &mut Map,
     id: usize,
     state: &mut RuntimeState,
@@ -97,17 +162,17 @@ fn apply(
 ) -> Result<RuntimeValue, Diagnostic> {
     Ok(match member {
         "put" => {
-            let key = key_of(bound.get("key"), name, range)?;
-            map.put(bound.get("value").cloned().unwrap_or(RuntimeValue::Na), key);
+            let key = key_of(operands.key, name, range)?;
+            map.put(operands.third.cloned().unwrap_or(RuntimeValue::Na), key);
             RuntimeValue::Void
         }
         "get" => map
-            .value(&key_of(bound.get("key"), name, range)?)
+            .value(&key_of(operands.key, name, range)?)
             .cloned()
             .unwrap_or(RuntimeValue::Na),
-        "contains" => RuntimeValue::Bool(map.contains(&key_of(bound.get("key"), name, range)?)),
+        "contains" => RuntimeValue::Bool(map.contains(&key_of(operands.key, name, range)?)),
         "remove" => map
-            .remove(&key_of(bound.get("key"), name, range)?)
+            .remove(&key_of(operands.key, name, range)?)
             .unwrap_or(RuntimeValue::Na),
         "size" => RuntimeValue::Int(map.count() as i64),
         "clear" => {
@@ -118,7 +183,7 @@ fn apply(
         "values" => new_array(state, map.values()),
         "copy" => new_map(state, map.clone()),
         "put_all" => {
-            let Some(RuntimeValue::Ref(RefKind::Map, other_id)) = bound.get("id2") else {
+            let Some(RuntimeValue::Ref(RefKind::Map, other_id)) = operands.third else {
                 return Err(runtime_error(
                     "PINE4026",
                     "map.put_all requires a map; got na.".to_owned(),
@@ -314,6 +379,69 @@ mod tests {
         assert_eq!(ok(&mut state, "map.get", &[a, s("y")]), Int(2));
         assert_eq!(
             run(&mut state, "map.put_all", &[copy, Na])
+                .unwrap_err()
+                .code,
+            "PINE4026"
+        );
+    }
+
+    #[test]
+    fn positional_calls_match_bound_calls() {
+        let mut bound_state = RuntimeState::default();
+        let mut positional_state = RuntimeState::default();
+        let bound_map = ok(&mut bound_state, "map.new", &[]);
+        let positional_map =
+            call_positional("map.new", &[], &mut positional_state, SourceRange::ZERO).unwrap();
+        assert_eq!(bound_map, positional_map);
+        let steps: [(&str, Vec<RuntimeValue>); 8] = [
+            ("map.put", vec![bound_map.clone(), Int(1), Float(2.5)]),
+            ("map.put", vec![bound_map.clone(), s("k"), Int(7)]),
+            ("map.put", vec![bound_map.clone(), Float(1.0), Int(9)]),
+            ("map.get", vec![bound_map.clone(), Int(1)]),
+            ("map.get", vec![bound_map.clone(), Int(404)]),
+            ("map.contains", vec![bound_map.clone(), s("k")]),
+            ("map.size", vec![bound_map.clone()]),
+            ("map.remove", vec![bound_map.clone(), s("k")]),
+        ];
+        for (name, arguments) in steps {
+            let expected = ok(&mut bound_state, name, &arguments);
+            let actual =
+                call_positional(name, &arguments, &mut positional_state, SourceRange::ZERO)
+                    .unwrap_or_else(|e| panic!("{name}: {}", e.message));
+            assert_eq!(actual, expected, "{name}");
+        }
+        assert_eq!(bound_state.maps, positional_state.maps);
+        // A slot the script left out is `na`: a missing value is stored as na, a missing key fails.
+        call_positional(
+            "map.put",
+            &[bound_map.clone(), Int(5)],
+            &mut positional_state,
+            SourceRange::ZERO,
+        )
+        .unwrap();
+        assert_eq!(
+            call_positional(
+                "map.get",
+                &[bound_map.clone(), Int(5)],
+                &mut positional_state,
+                SourceRange::ZERO
+            )
+            .unwrap(),
+            Na
+        );
+        assert_eq!(
+            call_positional(
+                "map.get",
+                &[bound_map],
+                &mut positional_state,
+                SourceRange::ZERO
+            )
+            .unwrap_err()
+            .code,
+            "PINE4027"
+        );
+        assert_eq!(
+            call_positional("map.get", &[], &mut positional_state, SourceRange::ZERO)
                 .unwrap_err()
                 .code,
             "PINE4026"

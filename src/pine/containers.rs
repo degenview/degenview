@@ -2,7 +2,9 @@
 //! `PineObject.swift`, `PineMap.swift` and `PineMatrix.swift`.
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 
+use super::fast_hash::FastMap;
 use super::runtime_value::RuntimeValue;
 
 /// One instance of a script-defined `type`. Fields are dynamic: the declaration only supplies
@@ -59,7 +61,7 @@ impl MapKey {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Map {
     order: Vec<MapKey>,
-    storage: HashMap<MapKey, RuntimeValue>,
+    storage: FastMap<MapKey, RuntimeValue>,
 }
 
 impl Map {
@@ -100,11 +102,14 @@ impl Map {
 
     /// Stores `value`, returning what the key held before.
     pub fn put(&mut self, value: RuntimeValue, key: MapKey) -> Option<RuntimeValue> {
-        let previous = self.storage.insert(key.clone(), value);
-        if previous.is_none() {
-            self.order.push(key);
+        match self.storage.entry(key) {
+            Entry::Occupied(mut slot) => Some(slot.insert(value)),
+            Entry::Vacant(slot) => {
+                self.order.push(slot.key().clone());
+                slot.insert(value);
+                None
+            }
         }
-        previous
     }
 
     pub fn remove(&mut self, key: &MapKey) -> Option<RuntimeValue> {
