@@ -2260,18 +2260,17 @@ impl Session {
             )?;
             return Ok(Some(value));
         }
-        if map_builtins::handles(name) {
-            let count = map_builtins::parameters(name).len();
+        let parameters = if array_builtins::handles(name) {
+            array_builtins::parameters(name)
+        } else if map_builtins::handles(name) {
+            let parameters = map_builtins::parameters(name);
+            let count = parameters.len();
             if let Some(slots) = self.positional_operands(None, arguments, count, context)? {
                 let value =
                     map_builtins::call_positional(name, &slots[..count], &mut self.working, range)?;
                 return Ok(Some(value));
             }
-        }
-        let parameters = if array_builtins::handles(name) {
-            array_builtins::parameters(name)
-        } else if map_builtins::handles(name) {
-            map_builtins::parameters(name)
+            parameters
         } else if matrix_builtins::handles(name) {
             matrix_builtins::parameters(name)
         } else {
