@@ -420,8 +420,10 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &mut edited);
-    edited |= navigation::rename_box(ui.ctx(), state);
-    edited |= update_completion(ui, state, edited);
+    // A rename changes the text but is not typing: no suggestions follow it.
+    let renamed = navigation::rename_box(ui.ctx(), state);
+    edited |= renamed;
+    edited |= update_completion(ui, state, edited && !renamed);
     draw_signature(ui, state);
     paint_gutter(ui, gutter, &rows, &state.debug);
     if state.profile.is_some() {

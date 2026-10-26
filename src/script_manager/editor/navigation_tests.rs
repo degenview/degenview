@@ -276,6 +276,10 @@ fn rename_applies_to_every_use_as_one_undo_step() {
         h.state.source,
         "//@version=6\nindicator(\"T\")\nperiod = 14\nplot(ta.sma(close, period))\n"
     );
+    assert!(
+        h.state.completion.is_none() && !h.state.completion_wanted,
+        "a rename is not typing: no suggestions"
+    );
     h.frame(vec![key(Key::Z, cmd())]);
     assert_eq!(h.state.source, SCRIPT, "one undo");
 }
