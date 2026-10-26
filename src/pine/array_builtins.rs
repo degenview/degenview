@@ -46,7 +46,9 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
 
 /// Whether `name` is an `array.*` function this module handles.
 pub fn handles(name: &str) -> bool {
-    name.starts_with("array.new_") || name == "array.from" || KNOWN.contains(&name)
+    // Every known name has the prefix, so a `map.*` or `matrix.*` call skips the scan of `KNOWN`.
+    name.starts_with("array.")
+        && (name.starts_with("array.new_") || name == "array.from" || KNOWN.contains(&name))
 }
 
 const KNOWN: [&str; 47] = [
