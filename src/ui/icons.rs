@@ -47,6 +47,8 @@ pub enum Icon {
     ArrowUpRightSquare,
     CopyDoc,
     Clipboard,
+    /// Cut: two rings, and blades crossing above them.
+    Scissors,
     Bell,
     BellBadge,
     BellFill,
@@ -646,6 +648,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             );
             line(&[p(6.0, 8.0), p(10.0, 8.0)]);
             line(&[p(6.0, 10.5), p(10.0, 10.5)]);
+        }
+        Icon::Scissors => {
+            circle(p(4.5, 11.8), 2.2, false);
+            circle(p(11.5, 11.8), 2.2, false);
+            line(&[p(5.9, 10.2), p(12.0, 2.0)]);
+            line(&[p(10.1, 10.2), p(4.0, 2.0)]);
         }
         Icon::CopyDoc => {
             painter.rect_stroke(
@@ -2272,6 +2280,7 @@ mod tests {
             ArrowUpRightSquare,
             CopyDoc,
             Clipboard,
+            Scissors,
             Bell,
             BellFill,
             Clock,
@@ -2492,5 +2501,42 @@ mod tests {
             }));
         }
         screen.save("magnet", last.expect("a frame"));
+    }
+
+    /// The clipboard icons of the editor menu, small as used and large to judge the drawing.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_clipboard_icons() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let mut screen = Screen::new(egui::vec2(260.0, 120.0));
+        let muted = Color32::from_gray(190);
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(screen.run(Vec::new(), |ui| {
+                let painter = ui.painter();
+                for (k, icon) in [Icon::Scissors, Icon::CopyDoc, Icon::Clipboard]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let x = 12.0 + k as f32 * 80.0;
+                    paint(
+                        painter,
+                        Rect::from_min_size(pos2(x, 12.0), Vec2::splat(12.0)),
+                        icon,
+                        muted,
+                    );
+                    paint(
+                        painter,
+                        Rect::from_min_size(pos2(x, 36.0), Vec2::splat(64.0)),
+                        icon,
+                        muted,
+                    );
+                }
+            }));
+        }
+        screen.save("clipboard-icons", last.expect("a frame"));
     }
 }

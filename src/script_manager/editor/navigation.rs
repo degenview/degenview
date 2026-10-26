@@ -250,7 +250,7 @@ pub(super) fn context_menu(
             .is_some_and(|range| range.primary != range.secondary);
         for (icon, label, shortcut, enabled, chosen) in [
             (
-                None,
+                Some(Icon::Scissors),
                 "Cut",
                 shortcut::CUT.label(),
                 selected,
