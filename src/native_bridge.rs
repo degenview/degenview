@@ -59,12 +59,6 @@ impl EditMenu {
 
 static EDIT_MENU: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
-/// Shows or hides the Edit menu itself: it belongs to the Script Manager, so it is only in the
-/// menu bar while one has the focus. Main thread only; nothing to do off the Mac.
-pub fn set_edit_menu_visible(visible: bool) {
-    platform::set_edit_menu_visible(visible);
-}
-
 /// Tells the Edit menu what is available; the app does it every frame.
 pub fn set_edit_menu(menu: EditMenu) {
     EDIT_MENU.store(menu.bits(), std::sync::atomic::Ordering::Release);
@@ -90,23 +84,6 @@ mod platform {
     use objc2_foundation::{MainThreadMarker, NSString, ns_string};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
-
-    thread_local! {
-        /// The Edit menu's item in the menu bar, kept to show and hide it. AppKit objects live on
-        /// the main thread, which is also where `install` and the app's frames run.
-        static EDIT_ITEM: std::cell::RefCell<Option<Retained<NSMenuItem>>> =
-            const { std::cell::RefCell::new(None) };
-    }
-
-    pub fn set_edit_menu_visible(visible: bool) {
-        EDIT_ITEM.with(|item| {
-            if let Some(item) = item.borrow().as_ref()
-                && item.isHidden() == visible
-            {
-                item.setHidden(!visible);
-            }
-        });
-    }
 
     static COMMANDS: Mutex<Vec<NativeCommand>> = Mutex::new(Vec::new());
     static CONTEXT: OnceLock<egui::Context> = OnceLock::new();
@@ -540,10 +517,7 @@ mod platform {
             edit_menu.addItem(&item);
         }
         edit_item.setSubmenu(Some(&edit_menu));
-        // Shown while a Script Manager has the focus (`set_edit_menu_visible`).
-        edit_item.setHidden(true);
         menubar.addItem(&edit_item);
-        EDIT_ITEM.with(|slot| *slot.borrow_mut() = Some(edit_item));
 
         let window_item = NSMenuItem::new(mtm);
         let window_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Window"));
@@ -633,8 +607,6 @@ mod platform {
     pub fn intercept_quit(_on: bool) {}
 
     pub fn center_traffic_lights(_height: f64) {}
-
-    pub fn set_edit_menu_visible(_visible: bool) {}
 }
 
 /// Keeps the macOS window buttons centred in a title bar `height` points tall (see

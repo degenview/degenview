@@ -938,10 +938,10 @@ impl DegenViewApp {
     }
 
     fn process_commands(&mut self, ctx: &egui::Context) {
-        // The Edit menu is the Script Manager's: in the menu bar only while its tab has the focus.
-        let edit = self.with_focused_script_manager(|pine| pine.edit_menu());
-        native_bridge::set_edit_menu_visible(edit.is_some());
-        native_bridge::set_edit_menu(edit.unwrap_or_default());
+        native_bridge::set_edit_menu(
+            self.with_focused_script_manager(|pine| pine.edit_menu())
+                .unwrap_or_default(),
+        );
         for command in native_bridge::take_commands() {
             match command {
                 NativeCommand::EditCut
