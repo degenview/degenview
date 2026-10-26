@@ -945,8 +945,16 @@ impl DegenViewApp {
             self.with_focused_script_manager(|pine| pine.edit_menu())
                 .unwrap_or_default(),
         );
+        native_bridge::set_new_script_enabled(
+            self.with_focused_script_manager(|pine| pine.can_create_script())
+                .unwrap_or(false),
+        );
         for command in native_bridge::take_commands() {
             match command {
+                NativeCommand::NewScript => {
+                    self.with_focused_script_manager(|pine| pine.new_script());
+                    ctx.request_repaint();
+                }
                 NativeCommand::EditCut
                 | NativeCommand::EditCopy
                 | NativeCommand::EditPaste

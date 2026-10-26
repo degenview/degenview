@@ -3,6 +3,8 @@ use eframe::egui;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeCommand {
     NewTab,
+    /// File ▸ New Script, for the focused Script Manager.
+    NewScript,
     OpenSettings,
     SaveCurrentLayout,
     /// File ▸ Close Tab.
@@ -62,6 +64,20 @@ static EDIT_MENU: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new
 /// Tells the Edit menu what is available; the app does it every frame.
 pub fn set_edit_menu(menu: EditMenu) {
     EDIT_MENU.store(menu.bits(), std::sync::atomic::Ordering::Release);
+}
+
+static NEW_SCRIPT_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Tells File ▸ New Script whether it may run: the app says so every frame, on only while a Script
+/// Manager has focus and no sheet is up. Kept apart from [`EditMenu`], which the editor rewrites.
+pub fn set_new_script_enabled(enabled: bool) {
+    NEW_SCRIPT_ENABLED.store(enabled, std::sync::atomic::Ordering::Release);
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn new_script_enabled() -> bool {
+    NEW_SCRIPT_ENABLED.load(std::sync::atomic::Ordering::Acquire)
 }
 
 #[cfg(any(target_os = "macos", test))]
@@ -127,6 +143,10 @@ mod platform {
 
     pub fn intercept_quit(on: bool) {
         INTERCEPT_QUIT.store(on, Ordering::Release);
+    }
+
+    extern "C-unwind" fn new_script(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::NewScript);
     }
 
     extern "C-unwind" fn open_settings(
@@ -234,6 +254,7 @@ mod platform {
             Some(action) if action == sel!(editPaste:) => menu.paste,
             Some(action) if action == sel!(goToDefinition:) => menu.go_to_definition,
             Some(action) if action == sel!(renameSymbol:) => menu.rename,
+            Some(action) if action == sel!(newScript:) => super::new_script_enabled(),
             _ => true,
         };
         Bool::new(enabled)
@@ -341,6 +362,7 @@ mod platform {
             "delegate already implements applicationShouldTerminate:"
         );
         install_action(delegate_class, sel!(newWindowForTab:), new_window_for_tab);
+        install_action(delegate_class, sel!(newScript:), new_script);
         install_action(delegate_class, sel!(openSettings:), open_settings);
         install_action(
             delegate_class,
@@ -462,6 +484,14 @@ mod platform {
         );
         unsafe { new_tab.setTarget(Some(delegate)) };
         file_menu.addItem(&new_tab);
+        let new_script = menu_item(
+            mtm,
+            ns_string!("New Script"),
+            Some(sel!(newScript:)),
+            ns_string!("n"),
+        );
+        unsafe { new_script.setTarget(Some(delegate)) };
+        file_menu.addItem(&new_script);
         let close_tab = menu_item(
             mtm,
             ns_string!("Close Tab"),
@@ -785,6 +815,19 @@ mod edit_menu_tests {
         for bits in 0..32u8 {
             assert_eq!(EditMenu::from_bits(bits).bits(), bits);
         }
+    }
+}
+
+#[cfg(test)]
+mod new_script_tests {
+    use super::*;
+
+    #[test]
+    fn the_new_script_item_follows_what_the_app_last_said() {
+        set_new_script_enabled(true);
+        assert!(new_script_enabled());
+        set_new_script_enabled(false);
+        assert!(!new_script_enabled());
     }
 }
 

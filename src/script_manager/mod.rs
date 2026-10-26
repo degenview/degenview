@@ -296,6 +296,18 @@ impl ScriptManager {
         }
     }
 
+    /// Whether File ▸ New Script may run: not while another sheet is up, which it would replace.
+    pub fn can_create_script(&self) -> bool {
+        self.sheet.is_none()
+    }
+
+    /// The New Script button's action, from the menu or the keyboard.
+    pub fn new_script(&mut self) {
+        if self.can_create_script() {
+            self.cmds.push(Cmd::NewScript);
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }
@@ -520,13 +532,18 @@ impl ScriptManager {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        let (save, sidebar, chart) = ctx.input(|i| {
+        let (save, sidebar, chart, new_script) = ctx.input(|i| {
             (
                 shortcut::SAVE.peek(i),
                 shortcut::TOGGLE_SCRIPT_LIST.peek(i),
                 shortcut::TOGGLE_PREVIEW_CHART.peek(i),
+                // macOS owns New Script in its File menu (`NativeCommand::NewScript`).
+                !shortcut::is_mac() && shortcut::NEW_SCRIPT.peek(i),
             )
         });
+        if new_script {
+            self.new_script();
+        }
         if save && self.open.is_some() {
             self.cmds.push(Cmd::Save);
         }
@@ -1299,6 +1316,62 @@ mod tests {
         let open = manager.open.as_mut().unwrap();
         open.editor.source.push_str("// edited\n");
         (manager, root, id)
+    }
+
+    /// With `DEGENVIEW_GALLERY_DIR` set, the sidebar is written as pictures: a row selected, the
+    /// button idle and under the pointer, in both themes. Without it the test does nothing, so it
+    /// never touches the shared theme.
+    #[test]
+    fn the_sidebar_gallery() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::{self, AppTheme};
+        use eframe::egui::{Event, Pos2, vec2};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let (mut manager, root) = manager("sidebar-gallery");
+        manager.first_load();
+        let script = manager.scripts[2].clone();
+        manager.selected_row = Some(RowKey {
+            group: group_of(&script),
+            id: script.id.clone(),
+        });
+        for (tag, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(vec2(240.0, 420.0));
+            theme::apply(&screen.ctx, appearance);
+            for (name, pointer) in [
+                ("idle", None),
+                ("hover-button", Some(Pos2::new(120.0, 420.0 - 28.0 - 24.0))),
+                ("hover-row", Some(Pos2::new(120.0, 120.0))),
+            ] {
+                let events = pointer
+                    .map(|pos| vec![Event::PointerMoved(pos)])
+                    .unwrap_or_default();
+                screen.run(events.clone(), |ui| manager.sidebar_ui(ui));
+                let output = screen.run(events, |ui| manager.sidebar_ui(ui));
+                screen.save(&format!("sidebar-{tag}-{name}"), output);
+            }
+        }
+        theme::apply(&egui::Context::default(), AppTheme::Dark);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn new_script_asks_for_a_name_unless_a_sheet_is_already_up() {
+        let (mut manager, root) = manager("new-script");
+        assert!(manager.can_create_script());
+        manager.new_script();
+        assert!(matches!(manager.cmds.as_slice(), [Cmd::NewScript]));
+        manager.cmds.clear();
+        manager.sheet = Some(Sheet::New {
+            name: "kept".into(),
+            error: None,
+            needs_focus: false,
+        });
+        assert!(!manager.can_create_script());
+        manager.new_script();
+        assert!(manager.cmds.is_empty());
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]
