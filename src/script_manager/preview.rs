@@ -180,6 +180,10 @@ pub struct PreviewState {
     picking_bar: bool,
     /// The candle that was clicked (its open time, ms), until the debugger takes it.
     picked_bar: Option<i64>,
+    /// The chart is waiting for a drag over bars, to list their log messages.
+    picking_range: bool,
+    /// The bars that were dragged over (open times, ms), until the Logs tab takes them.
+    picked_range: Option<(i64, i64)>,
     /// The picker asked to open Settings (Stocks need Alpaca keys).
     pending_settings: bool,
 }
@@ -249,12 +253,16 @@ impl PreviewState {
             inputs_dirty_at: None,
             picking_bar: false,
             picked_bar: None,
+            picking_range: false,
+            picked_range: None,
             pending_settings: false,
         }
     }
 
     /// Waits for a click on a candle of the chart, in the debugger's colours.
     pub fn begin_bar_pick(&mut self) {
+        // One "click a candle" at a time.
+        self.picking_range = false;
         self.picking_bar = true;
         self.picked_bar = None;
         self.card.set_pick_kind(crate::ui::PickKind::StopAtBar);
@@ -274,6 +282,40 @@ impl PreviewState {
 
     pub fn is_picking_bar(&self) -> bool {
         self.picking_bar
+    }
+
+    /// Waits for a drag over the bars of the chart, whose log messages the Logs tab then lists.
+    pub fn begin_range_pick(&mut self) {
+        self.picking_bar = false;
+        self.picking_range = true;
+        self.picked_range = None;
+        self.card.set_pick_kind(crate::ui::PickKind::LogsRange);
+    }
+
+    pub fn cancel_range_pick(&mut self) {
+        self.picking_range = false;
+        self.card.set_pick_kind(crate::ui::PickKind::default());
+    }
+
+    pub fn is_picking_range(&self) -> bool {
+        self.picking_range
+    }
+
+    /// The bars dragged over since the last call: the open times of the first and the last.
+    pub fn take_picked_range(&mut self) -> Option<(i64, i64)> {
+        self.picked_range.take()
+    }
+
+    /// What the Logs tab lists, to show as a band over those bars.
+    pub fn set_logs_range(&mut self, range: Option<(i64, i64)>) {
+        self.card.set_logs_range(range);
+    }
+
+    /// What a drag over bars does, without the chart: the same end state.
+    #[cfg(test)]
+    pub(crate) fn pick_range_for_test(&mut self, from_ms: i64, to_ms: i64) {
+        self.picked_range = Some((from_ms, to_ms));
+        self.cancel_range_pick();
     }
 
     /// The candle clicked since the last call, as its open time in milliseconds.
@@ -916,9 +958,10 @@ pub fn chart(
     let drawings: Vec<crate::model::Drawing> = Vec::new();
     let mut frame = DrawingFrame::new(&drawings, crate::model::Tool::default(), None, 1);
     let mut replay = ReplayChartFrame {
-        selecting: preview.picking_bar,
+        selecting: preview.picking_bar || preview.picking_range,
         active: false,
         picked_ms: None,
+        picked_range: None,
     };
     let candles = std::mem::take(&mut preview.candles);
     let symbol = preview.market.ticker.clone();
@@ -950,6 +993,16 @@ pub fn chart(
             preview.cancel_bar_pick();
         } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
             preview.cancel_bar_pick();
+        }
+    }
+
+    if preview.picking_range {
+        if let Some(range) = replay.picked_range {
+            preview.picked_range = Some(range);
+            preview.cancel_range_pick();
+            ctx.request_repaint();
+        } else if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+            preview.cancel_range_pick();
         }
     }
 

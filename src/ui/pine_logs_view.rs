@@ -1,18 +1,18 @@
 //! The Pine logs pane: the messages a script wrote with `log.info()`, `log.warning()` and
 //! `log.error()`, newest at the bottom, with the filters TradingView's pane has.
 //!
-//! A docked panel over `model::pine_logs_view`: a title, a toolbar (search, a start date, the
+//! A docked panel over `model::pine_logs_view`: a title, a toolbar (search, a bar range, the
 //! logging switch and the levels filter), the list, and states for the times there is
 //! nothing to list. It owns nothing of the messages: they are lent for the frame, and what the
 //! person asks for is returned as a [`LogsAction`]. Only the rows on screen are laid out.
 
 use crate::model::pine_logs_view::{
-    FilteredLogs, LogFilter, LogsPrefs, MAX_HIGHLIGHTS, RowHeights, estimated_height, iso_utc,
+    BarRange, FilteredLogs, LogFilter, LogsPrefs, MAX_HIGHLIGHTS, RowHeights, estimated_height,
+    iso_utc,
 };
 use crate::pine::logs::{LogEvent, LogHistory, LogLevel};
-use crate::ui::date_picker;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{accessibility, kit, theme};
+use crate::ui::{accessibility, kit, replay_bar, theme};
 use eframe::egui::{
     self, Align, Color32, FontId, Layout, Rect, Sense, TextFormat, Ui, epaint::text::LayoutJob,
     pos2, vec2,
@@ -35,8 +35,8 @@ const MENU_WIDTH: f32 = 170.0;
 /// The search field's width: it grows with the pane up to the larger and does not shrink below the
 /// smaller.
 const SEARCH_WIDTH: std::ops::RangeInclusive<f32> = 150.0..=280.0;
-/// The width of toolbar below which the start date is only an icon.
-const NARROW: f32 = 440.0;
+/// The width of toolbar below which the bar range is only an icon.
+const NARROW: f32 = 480.0;
 const DOCS_URL: &str = "https://www.tradingview.com/pine-script-docs/writing/debugging/#pine-logs";
 
 /// A script the pane can show: an instance on the chart.
@@ -66,6 +66,10 @@ pub enum LogsAction {
     ScrollToBar(u64),
     /// Forget every message kept for the selected script.
     Clear,
+    /// Ask the chart for a drag over the bars whose messages to list.
+    PickRange,
+    /// Stop waiting for that drag.
+    CancelPick,
 }
 
 #[derive(Default)]
@@ -76,8 +80,8 @@ pub struct LogsState {
     /// button are left out.
     pub embedded: bool,
     pub filter: LogFilter,
-    /// The start date being picked (`YYYY-MM-DD HH:MM`, UTC).
-    date_text: String,
+    /// In: the chart is waiting for the drag that marks the bars (the owner says so every frame).
+    pub picking: bool,
     filtered: FilteredLogs,
     heights: RowHeights,
     /// What the rows were laid out for: the script, its run, the list, and how many rows.
@@ -107,9 +111,14 @@ impl LogsState {
         }
     }
 
+    /// Lists only the messages written on the bars from `a_ms` to `b_ms` (open times, either order).
+    pub fn set_range(&mut self, a_ms: i64, b_ms: i64) {
+        self.filter.range = Some(BarRange::between(a_ms, b_ms));
+    }
+
     fn clear_filters(&mut self) {
         self.filter.query.clear();
-        self.filter.start_ms = None;
+        self.filter.range = None;
         self.filter.levels = Default::default();
     }
 }
@@ -204,7 +213,7 @@ fn title(
 
 // MARK: Toolbar
 
-/// One row: the search field and the start date on the left, the logging switch and the levels
+/// One row: the search field and the bar range on the left, the logging switch and the levels
 /// filter on the right. The search field takes what the pane gives it, up to a limit, so a wide
 /// drawer does not stretch it into a bar.
 fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mut Vec<LogsAction>) {
@@ -217,11 +226,11 @@ fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mu
             ui.add_space(MARGIN - 6.0);
             let narrow = width < NARROW;
             let buttons = BUTTON * 2.0 + 2.0;
-            let date = date_width(ui, state, narrow);
-            let room = width - MARGIN * 2.0 - buttons - date - 6.0 * 3.0;
+            let range = range_width(ui, state, narrow);
+            let room = width - MARGIN * 2.0 - buttons - range - 6.0 * 3.0;
             let search = room.clamp(*SEARCH_WIDTH.start(), *SEARCH_WIDTH.end());
             search_field(ui, state, search.min(room.max(80.0)));
-            date_pill(ui, state, date, narrow);
+            range_pill(ui, state, range, narrow, actions);
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
@@ -420,32 +429,41 @@ fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
     }
 }
 
-// MARK: Start date
+// MARK: Bar range
 
-/// The start date as the pill shows it, and how wide that makes the pill.
-fn date_label(state: &LogsState) -> String {
-    match state.filter.start_ms {
-        Some(start) => format!(
-            "From {}",
-            crate::model::portfolio_editor::date_text(start, 0)
-        ),
-        None => "Any time".to_owned(),
+/// The range pill's words: what it asks while it waits for the drag, what is kept, or "All bars".
+fn range_label(state: &LogsState) -> String {
+    if state.picking {
+        return "Drag on the chart".to_owned();
+    }
+    let Some(range) = state.filter.range else {
+        return "All bars".to_owned();
+    };
+    let from = replay_bar::compact_text(range.from_ms);
+    if range.from_ms == range.to_ms {
+        return format!("Bar {from}");
+    }
+    let to = replay_bar::compact_text(range.to_ms);
+    // "Oct 9, 14:03 – 14:45" when both ends are on one day.
+    match (from.split_once(", "), to.split_once(", ")) {
+        (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),
+        _ => format!("{from} – {to}"),
     }
 }
 
-fn date_width(ui: &Ui, state: &LogsState, narrow: bool) -> f32 {
+fn range_width(ui: &Ui, state: &LogsState, narrow: bool) -> f32 {
     if narrow {
         return FIELD_HEIGHT;
     }
     let label = kit::galley(
         ui,
-        &date_label(state),
+        &range_label(state),
         kit::size::SUBHEADLINE,
         kit::REGULAR,
         theme::text_primary(),
         f32::INFINITY,
     );
-    let clear = if state.filter.start_ms.is_some() {
+    let clear = if state.filter.range.is_some() && !state.picking {
         20.0
     } else {
         0.0
@@ -453,25 +471,38 @@ fn date_width(ui: &Ui, state: &LogsState, narrow: bool) -> f32 {
     10.0 + 12.0 + 6.0 + label.size().x + clear + 10.0
 }
 
-/// The start date: a pill beside the search field. Tinted while a date is set, with a cross that
-/// takes it away; a click opens the calendar under it, and picking a moment applies it at once.
-fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
+/// The bars to list: a pill beside the search field. A click asks the chart for a drag over the
+/// bars to keep (the owner draws the band and answers with the range); while it waits the pill is
+/// outlined, and clicking it again cancels. Tinted while a range is set, with a cross that takes
+/// it away.
+fn range_pill(
+    ui: &mut Ui,
+    state: &mut LogsState,
+    width: f32,
+    narrow: bool,
+    actions: &mut Vec<LogsAction>,
+) {
     let id = state
         .base
         .unwrap_or_else(|| egui::Id::new("pine-logs"))
-        .with("start-date");
-    let set = state.filter.start_ms.is_some();
+        .with("bar-range");
+    let picking = state.picking;
+    let set = state.filter.range.is_some() && !picking;
     let (rect, response) = ui.allocate_exact_size(vec2(width, FIELD_HEIGHT), Sense::click());
-    let open = date_picker::is_open(ui.ctx(), id);
-    let tooltip = if set {
-        "Showing messages from this time on (UTC)"
+    let tooltip = if picking {
+        "Drag across the bars on the chart (Esc cancels)"
+    } else if set {
+        "Showing messages written on these bars"
     } else {
-        "Show messages from a start time on (UTC)"
+        "Show only messages written on bars you drag over on the chart"
     };
     let response = accessibility::label(response.on_hover_text(tooltip), tooltip);
+    if response.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
     let fill = if set {
         kit::ACCENT.gamma_multiply(if response.hovered() { 0.3 } else { 0.22 })
-    } else if open || response.hovered() {
+    } else if picking || response.hovered() {
         theme::ink(14)
     } else {
         theme::ink(10)
@@ -481,12 +512,12 @@ fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
         rect,
         7.0,
         egui::Stroke::new(
-            if open { 1.5 } else { 1.0 },
-            if open { kit::ACCENT } else { theme::ink(14) },
+            if picking { 1.5 } else { 1.0 },
+            if picking { kit::ACCENT } else { theme::ink(14) },
         ),
         egui::StrokeKind::Inside,
     );
-    let tint = if set {
+    let tint = if set || picking {
         theme::text_primary()
     } else {
         theme::text_secondary()
@@ -499,13 +530,13 @@ fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
     icons::paint(
         ui.painter(),
         Rect::from_center_size(icon_at, vec2(12.0, 12.0)),
-        Icon::Clock,
-        if set { kit::ACCENT } else { tint },
+        Icon::ScrollToBar,
+        if set || picking { kit::ACCENT } else { tint },
     );
     if !narrow {
         let label = kit::galley(
             ui,
-            &date_label(state),
+            &range_label(state),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             tint,
@@ -528,8 +559,8 @@ fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
         let cross =
             Rect::from_center_size(pos2(rect.right() - 14.0, rect.center().y), vec2(18.0, 18.0));
         let hit = ui.interact(cross, id.with("clear"), Sense::click());
-        let hit = accessibility::label(hit, "Remove the start date")
-            .on_hover_text("Remove the start date");
+        let hit =
+            accessibility::label(hit, "Remove the bar range").on_hover_text("Remove the bar range");
         if hit.hovered() {
             ui.painter()
                 .circle_filled(cross.center(), 8.0, theme::ink(18));
@@ -543,20 +574,13 @@ fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
         cleared = hit.clicked();
     }
     if cleared {
-        state.filter.start_ms = None;
-        state.date_text.clear();
-        date_picker::close(ui.ctx(), id);
-        return;
-    }
-    if state.date_text.is_empty()
-        && let Some(start) = state.filter.start_ms
-    {
-        state.date_text = crate::model::portfolio_editor::date_text(start, 0);
-    }
-    if date_picker::show_popover(ui, id, &response, &mut state.date_text, 0)
-        && let Some(ms) = crate::model::portfolio_editor::parse_date_text(&state.date_text, 0)
-    {
-        state.filter.start_ms = Some(ms);
+        state.filter.range = None;
+    } else if response.clicked() {
+        actions.push(if picking {
+            LogsAction::CancelPick
+        } else {
+            LogsAction::PickRange
+        });
     }
 }
 

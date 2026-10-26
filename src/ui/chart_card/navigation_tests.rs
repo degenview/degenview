@@ -4,7 +4,7 @@
 use super::*;
 use crate::model::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
 use crate::model::{Anchor, Drawing, IndicatorConfig, Tool};
-use crate::ui::replay_overlay::ReplayChartFrame;
+use crate::ui::replay_overlay::{PickKind, ReplayChartFrame};
 use eframe::egui::Modifiers;
 
 const HOUR: i64 = 3_600_000;
@@ -41,6 +41,9 @@ struct Rig {
     commands: usize,
     /// The cursor the last frame asked for.
     cursor: egui::CursorIcon,
+    /// The chart is in "drag over bars" mode, and what it answered with the last time.
+    selecting: bool,
+    picked_range: Option<(i64, i64)>,
 }
 
 impl Rig {
@@ -59,6 +62,8 @@ impl Rig {
             rect: Rect::NOTHING,
             commands: 0,
             cursor: egui::CursorIcon::Default,
+            selecting: false,
+            picked_range: None,
         };
         rig.frames(&[]);
         rig
@@ -79,14 +84,17 @@ impl Rig {
             self.scale_mode,
         );
         let (tool, selected) = (self.tool, self.selected.clone());
+        let selecting = self.selecting;
         let (mut rect, mut commands) = (Rect::NOTHING, 0);
+        let mut picked = None;
         let mut output = self.ctx.run_ui(input, |ui| {
             let mut frame =
                 DrawingFrame::new(drawings, tool, None, 100).with_selection(selected.clone());
             let mut replay = ReplayChartFrame {
-                selecting: false,
+                selecting,
                 active: false,
                 picked_ms: None,
+                picked_range: None,
             };
             let pointer = card.body(
                 ui,
@@ -104,11 +112,15 @@ impl Rig {
             );
             rect = pointer.rect.unwrap_or(Rect::NOTHING);
             commands = frame.commands.len();
+            picked = replay.picked_range;
         });
         output.textures_delta.clear();
         self.cursor = output.platform_output.cursor_icon;
         self.rect = rect;
         self.commands += commands;
+        if picked.is_some() {
+            self.picked_range = picked;
+        }
     }
 
     fn frames(&mut self, events: &[egui::Event]) {
@@ -836,4 +848,206 @@ fn a_price_out_of_view_does_not_widen_the_axis() {
     spiked[0].high = 98_765_432.0;
     // The spike is the oldest bar, far outside the 100 or so the plot shows.
     assert_eq!(axis_width_of(spiked), plain);
+}
+
+#[test]
+fn a_drag_over_bars_picks_them_in_order_and_does_not_pan() {
+    for backwards in [false, true] {
+        let mut rig = Rig::new();
+        rig.card.set_pick_kind(PickKind::LogsRange);
+        rig.selecting = true;
+        rig.frames(&[]);
+        let start = rig.probe().start;
+        let (a, b) = (start + 10, start + 20);
+        let (from, to) = (rig.x_of(a), rig.x_of(b));
+        let y = rig.in_plot().y;
+        let before = rig.offset();
+        if backwards {
+            rig.press(Pos2::new(to, y));
+            rig.drag_to(Pos2::new(to, y), Pos2::new(from, y));
+            rig.release(Pos2::new(from, y));
+        } else {
+            rig.press(Pos2::new(from, y));
+            rig.drag_to(Pos2::new(from, y), Pos2::new(to, y));
+            rig.release(Pos2::new(to, y));
+        }
+        let candles = &rig.candles;
+        assert_eq!(
+            rig.picked_range,
+            Some((candles[a].open_time, candles[b].open_time)),
+            "backwards: {backwards}"
+        );
+        assert_eq!(rig.offset(), before, "the drag is not a pan");
+    }
+}
+
+#[test]
+fn a_click_on_a_bar_picks_that_bar_alone() {
+    let mut rig = Rig::new();
+    rig.card.set_pick_kind(PickKind::LogsRange);
+    rig.selecting = true;
+    rig.frames(&[]);
+    let index = rig.probe().start + 15;
+    let at = Pos2::new(rig.x_of(index), rig.in_plot().y);
+    rig.press(at);
+    rig.release(at);
+    let time = rig.candles[index].open_time;
+    assert_eq!(rig.picked_range, Some((time, time)));
+}
+
+#[test]
+fn a_drag_past_the_plot_ends_on_the_last_bar_shown() {
+    let mut rig = Rig::new();
+    rig.card.set_pick_kind(PickKind::LogsRange);
+    rig.selecting = true;
+    rig.frames(&[]);
+    let probe = rig.probe();
+    let first = probe.start + 30;
+    let y = rig.in_plot().y;
+    rig.press(Pos2::new(rig.x_of(first), y));
+    rig.drag_to(
+        Pos2::new(rig.x_of(first), y),
+        Pos2::new(rig.rect.right() + 200.0, y),
+    );
+    rig.release(Pos2::new(rig.rect.right() + 200.0, y));
+    let (from, to) = rig.picked_range.expect("picked");
+    assert_eq!(from, rig.candles[first].open_time);
+    assert!(to >= from && to <= rig.candles.last().unwrap().open_time);
+    assert!(to > from, "the end is a later bar");
+}
+
+#[test]
+fn nothing_is_picked_and_the_chart_still_pans_when_the_mode_is_off() {
+    let mut rig = Rig::new();
+    rig.card.set_pick_kind(PickKind::LogsRange);
+    let before = rig.offset();
+    rig.drag(rig.in_plot(), Vec2::new(-120.0, 0.0));
+    assert_eq!(rig.picked_range, None);
+    assert_ne!(rig.offset(), before, "the drag panned");
+}
+
+#[test]
+fn the_band_over_the_listed_bars_draws_without_moving_the_view() {
+    let mut rig = Rig::new();
+    let start = rig.probe().start;
+    let (a, b) = (
+        rig.candles[start + 5].open_time,
+        rig.candles[start + 25].open_time,
+    );
+    let before = rig.offset();
+    rig.card.set_logs_range(Some((a, b)));
+    rig.frames(&[]);
+    assert_eq!(rig.card.logs_range(), Some((a, b)));
+    assert_eq!(rig.offset(), before);
+    // Out of view on the left: nothing to draw, and no panic.
+    rig.card.set_logs_range(Some((-10 * HOUR, -5 * HOUR)));
+    rig.frames(&[]);
+}
+
+/// The drag over bars, and the band it leaves, as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR`.
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_bar_range() {
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    use crate::ui::theme::{self, AppTheme};
+    if gallery_dir().is_none() {
+        return;
+    }
+    let candles = series(400);
+    for (name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        let mut screen = Screen::new(SIZE);
+        theme::apply(&screen.ctx, appearance);
+        let mut card = ChartCard::default();
+        card.set_timeframe(Timeframe::Hour);
+        let mut selecting = true;
+        card.set_pick_kind(PickKind::LogsRange);
+        let picked = std::cell::Cell::new(None);
+        let frame = |screen: &mut Screen,
+                     card: &mut ChartCard,
+                     selecting: bool,
+                     events: Vec<egui::Event>| {
+            theme::sync(&screen.ctx);
+            screen.run(events, |ui| {
+                let drawings: Vec<Drawing> = Vec::new();
+                let mut frame = DrawingFrame::new(&drawings, Tool::Cursor, None, 100);
+                let mut replay = ReplayChartFrame {
+                    selecting,
+                    active: false,
+                    picked_ms: None,
+                    picked_range: None,
+                };
+                card.body(
+                    ui,
+                    "BTCUSDT",
+                    &candles,
+                    false,
+                    None,
+                    PriceScaleMode::Regular,
+                    DataSource::Binance,
+                    &IndicatorConfig::default(),
+                    None,
+                    1,
+                    &mut frame,
+                    &mut replay,
+                );
+                picked.set(picked.get().or(replay.picked_range));
+            })
+        };
+        for _ in 0..3 {
+            frame(&mut screen, &mut card, selecting, Vec::new());
+        }
+        let probe = card.probe.expect("drawn");
+        let x = |index: usize| {
+            probe.plot.left()
+                + probe.slot_width * (index as f32 - probe.start as f32 + 0.5 + probe.lead)
+        };
+        let y = probe.plot.top() + 200.0;
+        let (a, b) = (probe.start + 40, probe.start + 70);
+        let button = |at: Pos2, pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        // Armed, the pointer over a bar.
+        let output = frame(
+            &mut screen,
+            &mut card,
+            selecting,
+            vec![egui::Event::PointerMoved(Pos2::new(x(a), y))],
+        );
+        screen.save(&format!("bar-range-hover-{name}"), output);
+        frame(
+            &mut screen,
+            &mut card,
+            selecting,
+            vec![button(Pos2::new(x(a), y), true)],
+        );
+        let mut last = None;
+        for step in 1..=6 {
+            let at = Pos2::new(x(a) + (x(b) - x(a)) * step as f32 / 6.0, y);
+            last = Some(frame(
+                &mut screen,
+                &mut card,
+                selecting,
+                vec![egui::Event::PointerMoved(at)],
+            ));
+        }
+        screen.save(&format!("bar-range-drag-{name}"), last.expect("a frame"));
+        frame(
+            &mut screen,
+            &mut card,
+            selecting,
+            vec![button(Pos2::new(x(b), y), false)],
+        );
+        let (from, to) = picked.get().expect("picked");
+        selecting = false;
+        card.set_pick_kind(PickKind::default());
+        card.set_logs_range(Some((from, to)));
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(frame(&mut screen, &mut card, selecting, Vec::new()));
+        }
+        screen.save(&format!("bar-range-set-{name}"), last.expect("a frame"));
+    }
 }

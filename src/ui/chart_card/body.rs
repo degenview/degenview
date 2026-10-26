@@ -147,6 +147,7 @@ impl ChartCard {
     ) -> navigation::Regions {
         let (bars, plot) = (data.bars, layout.plot);
         replay.picked_ms = None;
+        replay.picked_range = None;
         let view = self.view(bars, plot, data.scale_mode, data.chart_type);
         if layout.main_visible
             && let Some(view) = &view
@@ -175,7 +176,9 @@ impl ChartCard {
             total: bars.len(),
             slot_width: self.slot_width(plot),
             logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
-            drawing_claims: self.layer.claims_drag(),
+            // Dragging over bars for the logs pane is not a pan.
+            drawing_claims: self.layer.claims_drag()
+                || (replay.selecting && self.pick_kind == replay_overlay::PickKind::LogsRange),
             response,
         };
         drawing.escape_consumed |= self.handle_input(ui, &navigation);

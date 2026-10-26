@@ -305,3 +305,33 @@ fn scrolling_a_chart_that_is_gone_does_nothing() {
     workspace.scroll_chart_to(chart, 5 * 3_600_000);
     assert!(workspace.context.notice.is_none());
 }
+
+#[test]
+fn asking_for_a_drag_over_bars_arms_the_chart_and_cancelling_or_closing_disarms_it() {
+    let (mut workspace, chart, ids) = rig();
+    workspace.open_pine_logs(chart, Some(ids[0]));
+    workspace.apply_logs_action(chart, LogsAction::PickRange);
+    assert!(workspace.context.logs.picking);
+    workspace.apply_logs_action(chart, LogsAction::CancelPick);
+    assert!(!workspace.context.logs.picking);
+    workspace.apply_logs_action(chart, LogsAction::PickRange);
+    workspace.apply_logs_action(chart, LogsAction::Close);
+    assert!(
+        !workspace.context.logs.picking,
+        "a closed pane waits for nothing"
+    );
+}
+
+#[test]
+fn a_replay_start_and_a_drag_over_bars_never_wait_together() {
+    let (mut workspace, chart, ids) = rig();
+    workspace.open_pine_logs(chart, Some(ids[0]));
+    workspace.replay.begin_selecting();
+    workspace.apply_logs_action(chart, LogsAction::PickRange);
+    assert!(workspace.context.logs.picking);
+    assert_ne!(
+        workspace.replay.status,
+        ReplayStatus::SelectingStart,
+        "the bars win over the replay's start"
+    );
+}

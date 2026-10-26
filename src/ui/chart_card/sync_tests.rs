@@ -130,6 +130,7 @@ impl Linked {
                         selecting: false,
                         active: false,
                         picked_ms: None,
+                        picked_range: None,
                     };
                     let pointer = member.card.body(
                         ui,

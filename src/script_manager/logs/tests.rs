@@ -112,3 +112,33 @@ fn the_logs_tab_is_remembered_with_the_layout() {
     let back: super::super::prefs::LayoutPrefs = serde_json::from_str(&json).unwrap();
     assert_eq!(back.drawer_tab, DrawerTab::Logs);
 }
+
+#[test]
+fn a_drag_over_bars_is_asked_for_by_the_pane_and_answered_into_its_filter() {
+    let (mut manager, root, ctx) = on_the_logs_tab("range");
+    manager.preview.begin_bar_pick();
+    manager.prefs.chart_visible = false;
+    manager.apply_logs_action(LogsAction::PickRange);
+    assert!(
+        manager.prefs.chart_visible,
+        "the chart has to be there to be dragged on"
+    );
+    assert!(manager.preview.is_picking_range());
+    assert!(!manager.preview.is_picking_bar(), "one pick at a time");
+    manager.sync_logs_range();
+    assert!(manager.logs.view.picking);
+
+    manager.preview.pick_range_for_test(5_000, 2_000);
+    manager.sync_logs_range();
+    assert!(!manager.logs.view.picking);
+    let range = manager.logs.view.filter.range.expect("the range is kept");
+    assert_eq!((range.from_ms, range.to_ms), (2_000, 5_000));
+    // It stays after the next frame, and the pane draws with it.
+    let _ = drawn_text(&mut manager, &ctx, 2);
+    assert!(manager.logs.view.filter.range.is_some());
+
+    manager.apply_logs_action(LogsAction::PickRange);
+    manager.apply_logs_action(LogsAction::CancelPick);
+    assert!(!manager.preview.is_picking_range());
+    let _ = std::fs::remove_dir_all(root);
+}

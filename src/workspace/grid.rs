@@ -9,7 +9,9 @@ use crate::model::{
     Tool,
 };
 use crate::ui::chart_settings::{self, ChartSettingsState};
-use crate::ui::{self, ChartCardAction, CrosshairInfo, DrawingFrame, ReplayChartFrame, shortcut};
+use crate::ui::{
+    self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame, shortcut,
+};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -231,6 +233,21 @@ impl ChartWorkspace {
             None
         };
         let replay_selecting = self.replay.status == ReplayStatus::SelectingStart;
+        // The logs pane's drag over bars: only its own chart takes it, and a replay's start wins
+        // if both were somehow asked for.
+        if replay_selecting {
+            self.context.logs.picking = false;
+        }
+        let logs_chart = self.context.logs.chart;
+        let logs_picking = self.context.logs.picking;
+        let logs_range = self
+            .context
+            .logs
+            .view
+            .filter
+            .range
+            .map(|range| (range.from_ms, range.to_ms));
+        let mut logs_picked: Option<(i64, i64)> = None;
         let timeframe = self.timeframe;
         let hosting_note = match self.snapshot_hosting() {
             crate::host::snapshot_host::Hosting::Ready(_) => None,
@@ -499,10 +516,23 @@ impl ChartWorkspace {
                                                     })
                                                     .map(|(_, draft)| draft),
                                             );
+                                            let for_logs = logs_chart == Some(chart_id);
+                                            chart
+                                                .chart
+                                                .set_logs_range(logs_range.filter(|_| for_logs));
+                                            chart.chart.set_pick_kind(
+                                                if for_logs && logs_picking {
+                                                    PickKind::LogsRange
+                                                } else {
+                                                    PickKind::Replay
+                                                },
+                                            );
                                             let mut replay_frame = ReplayChartFrame {
-                                                selecting: replay_selecting,
+                                                selecting: replay_selecting
+                                                    || (for_logs && logs_picking),
                                                 active: replay_active,
                                                 picked_ms: None,
+                                                picked_range: None,
                                             };
                                             let pointer = chart.chart.body(
                                                 ui,
@@ -518,6 +548,9 @@ impl ChartWorkspace {
                                                 &mut frame,
                                                 &mut replay_frame,
                                             );
+                                            if let Some(range) = replay_frame.picked_range {
+                                                logs_picked = Some(range);
+                                            }
                                             if let Some(picked_ms) = replay_frame.picked_ms {
                                                 replay_picked = Some((chart_id, picked_ms));
                                             }
@@ -754,6 +787,11 @@ impl ChartWorkspace {
             self.open_context_menu(chart_id, request);
         }
 
+        if let Some((from_ms, to_ms)) = logs_picked {
+            self.context.logs.view.set_range(from_ms, to_ms);
+            self.context.logs.picking = false;
+        }
+
         if let Some((chart_id, picked_ms)) = replay_picked {
             let (symbol, timeline) = self
                 .charts
@@ -823,6 +861,8 @@ impl ChartWorkspace {
         {
             if self.replay.status == ReplayStatus::SelectingStart {
                 self.replay.cancel_selection();
+            } else if self.context.logs.picking {
+                self.context.logs.picking = false;
             } else if self.active_tool != Tool::Cursor {
                 self.active_tool = Tool::Cursor;
             } else {

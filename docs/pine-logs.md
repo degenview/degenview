@@ -77,8 +77,8 @@ a script drops its run and with it its history; changing the app theme starts a 
 Opened from a script's chip menu or pane menu (docked on the right of its chart, one pane per tab).
 Title and close, with a script selector beside them when the chart has more than one script (two
 copies of one script read `Name` and `Name #2`); then one toolbar row: the search field and the
-start date on the left, the logging switch and the level filter (a funnel, with a dot while a level
-is hidden) on the right. The search field and the date pill are DegenView's layout, not TradingView's.
+bar range on the left, the logging switch and the level filter (a funnel, with a dot while a level
+is hidden) on the right. The search field and the range pill are DegenView's layout, not TradingView's.
 
 - **Rows** list the messages oldest first, newest at the bottom: the time in UTC (ISO 8601 with
   milliseconds) above the text, which is gray for info, orange for a warning, red for an error.
@@ -99,10 +99,22 @@ is hidden) on the right. The search field and the date pill are DegenView's layo
   the query as a regular expression. Matches are highlighted. A query that does not compile is
   flagged (red outline, and the reason on hover) and filters nothing. The three options show only
   while the field is in use.
-- **Start date** is a pill beside the search field ("Any time", or "From 2023-11-14 22:13" with a
-  cross that removes it); it opens a calendar for a UTC date and time, and picking applies at once.
-  In a narrow pane it is only its icon, with a dot while set.
-- Filters compose (level, start date, search) and never change the history. The listed rows are
+- **Bar range** is a pill beside the search field ("All bars"). A click asks the chart for a drag
+  (the pill reads "Drag on the chart" and is outlined; a second click or Esc cancels): the user drags
+  over candles and lets go, and only messages written on those bars are listed. A click on one candle
+  keeps that bar alone. The pill then reads "Oct 9, 14:03 – 14:45" (local time, the day written once
+  when both ends are on it) with a cross that removes it, and the chart shows a band over the bars with
+  a "Logs" tag. The range is on `bar_time_ms`, the open time of the bar the call ran on (a
+  `request.*` call carries the requested bar's), both ends included, so a realtime message follows its
+  bar, not the wall clock. It replaces a start date typed into a calendar, which filtered on `time_ms`
+  and so meant little when every historical message was written in the same instant. Nothing in
+  TradingView does this: it is ours, and so are the single-bar click, the band and the wording. In a
+  narrow pane the pill is only its icon, with a dot while set. The range is not saved, "Clear
+  filters" removes it, and a rerun of the script leaves it (it is a time span of this chart). The
+  chart side is `PickKind::LogsRange` on the replay picker's plumbing (`ReplayChartFrame::picked_range`,
+  `chart_card/logs_range.rs`): while it waits the drag is not a pan, and it never waits together with a
+  replay's "click a candle" or the debugger's "Select bar".
+- Filters compose (level, bar range, search) and never change the history. The listed rows are
   recomputed only when messages, a filter, the script or the run change; new messages are scanned
   alone.
 - **Empty states**: no scripts on the chart; the "How to work with logs" steps when a script has
@@ -133,11 +145,12 @@ Hovering a row shows two buttons (the same two are in its right-click menu): **S
 ### In the Script Manager
 
 The drawer under the preview chart has a **Logs** tab beside Inputs, Report and Problems: the same
-pane (toolbar, list, filters, search, start date, the hover actions) over the preview chart's run
+pane (toolbar, list, filters, search, bar range, the hover actions) over the preview chart's run
 of the script being edited, without the pane's own title or a script selector (there is only one
 script). There "Source code"
 moves the caret in the editor you are in, and "Scroll to bar" moves the preview chart, which only
-holds the candles it fetched. TradingView opens the pane from the editor's More menu; DegenView's
+holds the candles it fetched. The bar range is dragged on the preview chart (the chart is shown if
+it was hidden), and an arm of the debugger's "Select bar" is dropped when it is asked for. TradingView opens the pane from the editor's More menu; DegenView's
 Script Manager has no such menu, so the drawer tab is its way in. The level and search options are
 the same local `pineLogs.prefs` setting as the chart's pane. Where the drawer is wide, the
 introduction puts its picture beside its steps.

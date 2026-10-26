@@ -379,6 +379,7 @@ impl Live {
                 selecting: false,
                 active: false,
                 picked_ms: None,
+                picked_range: None,
             };
             card.body(
                 ui,
@@ -588,6 +589,7 @@ fn gallery_of_the_scale_modes() {
                 selecting: false,
                 active: false,
                 picked_ms: None,
+                picked_range: None,
             };
             card.body(
                 ui,

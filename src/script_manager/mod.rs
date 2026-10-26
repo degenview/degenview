@@ -490,6 +490,7 @@ impl ScriptManager {
             )
             .show(ui, |ui| self.toolbar(ui));
 
+        self.sync_logs_range();
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::background()))
             .show(ui, |ui| self.root(ui));
