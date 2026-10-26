@@ -399,7 +399,10 @@ fn show_window(
     let focused = ui.input(|input| input.viewport().focused == Some(true));
     if focused {
         env.host.note_focused(window_id);
-        env.focused_tab.store(window.active, Ordering::Release);
+        // A tab change reaches the root's frame, which publishes the Edit menu's state.
+        if env.focused_tab.swap(window.active, Ordering::AcqRel) != window.active {
+            ctx.request_repaint_of(egui::ViewportId::ROOT);
+        }
     }
 
     // A tab being dragged is driven from the window that received the press.

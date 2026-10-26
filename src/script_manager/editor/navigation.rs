@@ -196,9 +196,20 @@ pub(super) fn edit_menu(ctx: &egui::Context, state: &mut EditorState) {
         }
         ctx.request_repaint();
     }
-    let focused =
-        ctx.memory(|memory| memory.has_focus(state.id)) && ctx.input(|input| input.focused);
-    let Some(caret) = caret.filter(|_| focused) else {
+    let viewport_focused = ctx.input(|input| input.focused);
+    let focused = ctx.memory(|memory| memory.has_focus(state.id)) && viewport_focused;
+    update_menu(ctx, state, caret.filter(|_| focused));
+    // Published from here as well as by the app, so a change of focus or caret is in the menu bar
+    // at once rather than at the root window's next frame. A window without the keyboard leaves
+    // it to the one that has it.
+    if viewport_focused {
+        crate::native_bridge::set_edit_menu(state.nav.menu);
+    }
+}
+
+/// Works out what the Edit menu may do; `caret` is `None` unless this editor has the keyboard.
+fn update_menu(ctx: &egui::Context, state: &mut EditorState, caret: Option<usize>) {
+    let Some(caret) = caret else {
         state.nav.menu = EditMenu::default();
         state.nav.menu_key = None;
         return;

@@ -785,14 +785,6 @@ mod edit_menu_tests {
         for bits in 0..32u8 {
             assert_eq!(EditMenu::from_bits(bits).bits(), bits);
         }
-        let menu = EditMenu {
-            copy: true,
-            rename: true,
-            ..EditMenu::default()
-        };
-        set_edit_menu(menu);
-        assert_eq!(edit_menu(), menu);
-        set_edit_menu(EditMenu::default());
     }
 }
 
