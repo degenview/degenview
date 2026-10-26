@@ -443,3 +443,57 @@ fn a_right_click_outside_the_selection_moves_the_caret_there() {
     assert_eq!(a, b, "a caret, not the old selection");
     assert_eq!(a, h.index(2, 2));
 }
+
+#[test]
+fn the_edit_menu_follows_the_caret_and_the_selection() {
+    let mut h = Harness::new(SCRIPT);
+    let on_use = h.index(3, 20);
+    h.place(on_use, on_use);
+    let menu = h.state.edit_menu();
+    assert!(menu.go_to_definition && menu.rename && menu.paste);
+    assert!(!menu.cut && !menu.copy, "nothing selected");
+
+    h.place(h.index(3, 5), h.index(3, 12));
+    let menu = h.state.edit_menu();
+    assert!(menu.cut && menu.copy);
+
+    let on_declaration = h.index(2, 1);
+    h.place(on_declaration, on_declaration);
+    let menu = h.state.edit_menu();
+    assert!(!menu.go_to_definition, "already at the definition");
+    assert!(menu.rename);
+
+    let in_comment = h.index(0, 4);
+    h.place(in_comment, in_comment);
+    let menu = h.state.edit_menu();
+    assert!(!menu.go_to_definition && !menu.rename);
+}
+
+#[test]
+fn the_edit_menu_is_off_when_the_editor_has_not_the_keyboard() {
+    let mut h = Harness::new(SCRIPT);
+    h.ctx.memory_mut(|m| m.surrender_focus(h.state.id));
+    h.frame(vec![]);
+    h.frame(vec![]);
+    assert_eq!(
+        h.state.edit_menu(),
+        crate::native_bridge::EditMenu::default()
+    );
+}
+
+#[test]
+fn edit_menu_commands_act_on_the_caret() {
+    let mut h = Harness::new(SCRIPT);
+    let on_use = h.index(3, 20);
+    h.place(on_use, on_use);
+    h.state.request_edit(EditAction::GoToDefinition);
+    h.frame(vec![]);
+    h.frame(vec![]);
+    let declaration = h.index(2, 0);
+    assert_eq!(h.primary(), (declaration, declaration + 3));
+
+    h.place(on_use, on_use);
+    h.state.request_edit(EditAction::Rename);
+    h.frame(vec![]);
+    assert!(h.state.rename_open());
+}

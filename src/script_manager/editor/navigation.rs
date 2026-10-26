@@ -4,6 +4,7 @@
 //! the inline rename box and the keys that open them.
 
 use super::*;
+use crate::native_bridge::EditMenu;
 use crate::script_manager::symbols::{self, SymbolId, SymbolTable};
 use eframe::egui::Galley;
 use std::ops::Range;
@@ -16,6 +17,22 @@ pub(super) struct NavState {
     pub(super) rename: Option<RenameBox>,
     /// Where the rename box hangs, set while the text is laid out.
     anchor: Option<Rect>,
+    /// An Edit-menu item chosen since the last frame.
+    pending: Option<EditAction>,
+    /// What the Edit menu may do, worked out each frame the editor has the keyboard.
+    menu: EditMenu,
+    /// The text and caret `menu`'s name checks were made for.
+    menu_key: Option<(u64, usize)>,
+}
+
+/// What the macOS Edit menu asks of the editor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EditAction {
+    Cut,
+    Copy,
+    Paste,
+    GoToDefinition,
+    Rename,
 }
 
 pub(super) struct RenameBox {
@@ -86,6 +103,16 @@ impl EditorState {
         }
     }
 
+    /// Runs an Edit-menu item on the next frame (the menu lives outside the window's frames).
+    pub fn request_edit(&mut self, action: EditAction) {
+        self.nav.pending = Some(action);
+    }
+
+    /// What the Edit menu may do now.
+    pub fn edit_menu(&self) -> EditMenu {
+        self.nav.menu
+    }
+
     /// Opens the rename box on the name at `index`. Returns whether there was a name.
     pub(super) fn begin_rename(&mut self, index: usize) -> bool {
         let table = self.symbols();
@@ -135,6 +162,60 @@ impl EditorState {
         if let Some(rename) = self.nav.rename.as_mut() {
             rename.text = text.to_owned();
         }
+    }
+}
+
+/// Cut, Copy or Paste: the platform answers with the matching event next frame, which the text
+/// field (or `carets`) handles like the key.
+fn clipboard(ctx: &egui::Context, state: &EditorState, action: EditAction) {
+    ctx.send_viewport_cmd(match action {
+        EditAction::Cut => egui::ViewportCommand::RequestCut,
+        EditAction::Copy => egui::ViewportCommand::RequestCopy,
+        _ => egui::ViewportCommand::RequestPaste,
+    });
+    ctx.memory_mut(|memory| memory.request_focus(state.id));
+}
+
+/// The Edit menu's side of a frame: runs the item chosen since the last one, then works out what
+/// the menu may do next. The items are on only while this editor has the keyboard.
+pub(super) fn edit_menu(ctx: &egui::Context, state: &mut EditorState) {
+    let caret = caret_index(ctx, state.id);
+    if let Some(action) = state.nav.pending.take() {
+        match action {
+            EditAction::Cut | EditAction::Copy | EditAction::Paste => clipboard(ctx, state, action),
+            EditAction::GoToDefinition => {
+                if let Some(caret) = caret {
+                    state.go_to_definition(ctx, caret);
+                }
+            }
+            EditAction::Rename => {
+                if let Some(caret) = caret {
+                    state.begin_rename(caret);
+                }
+            }
+        }
+        ctx.request_repaint();
+    }
+    let focused =
+        ctx.memory(|memory| memory.has_focus(state.id)) && ctx.input(|input| input.focused);
+    let Some(caret) = caret.filter(|_| focused) else {
+        state.nav.menu = EditMenu::default();
+        state.nav.menu_key = None;
+        return;
+    };
+    let selected = TextEditState::load(ctx, state.id)
+        .and_then(|edit| edit.cursor.char_range())
+        .is_some_and(|range| range.primary != range.secondary);
+    state.nav.menu.cut = selected;
+    state.nav.menu.copy = selected;
+    state.nav.menu.paste = true;
+    // Worked out once per text and caret, not per frame.
+    let key = (text_hash(&state.source), caret);
+    if state.nav.menu_key != Some(key) {
+        let table = state.symbols();
+        state.nav.menu.go_to_definition = table.definition_of(caret).is_some();
+        state.nav.menu.rename = table.name_at(caret).is_some();
+        state.nav.menu_key = Some(key);
     }
 }
 
@@ -307,16 +388,9 @@ pub(super) fn context_menu(
         }
     });
     match action {
-        Some(chosen @ (MenuAction::Cut | MenuAction::Copy | MenuAction::Paste)) => {
-            // The platform answers with the matching event next frame, which the text field (or
-            // `carets`) handles like the key.
-            ctx.send_viewport_cmd(match chosen {
-                MenuAction::Cut => egui::ViewportCommand::RequestCut,
-                MenuAction::Copy => egui::ViewportCommand::RequestCopy,
-                _ => egui::ViewportCommand::RequestPaste,
-            });
-            ctx.memory_mut(|memory| memory.request_focus(state.id));
-        }
+        Some(MenuAction::Cut) => clipboard(ctx, state, EditAction::Cut),
+        Some(MenuAction::Copy) => clipboard(ctx, state, EditAction::Copy),
+        Some(MenuAction::Paste) => clipboard(ctx, state, EditAction::Paste),
         Some(MenuAction::Definition(range)) => state.go_to_range(ctx, range),
         Some(MenuAction::Rename(index)) => {
             state.begin_rename(index);

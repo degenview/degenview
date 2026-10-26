@@ -24,6 +24,7 @@ use crate::model::watchlist::{WatchlistInstrument, new_id};
 use crate::model::watchlist_quote::Freshness;
 use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge::{self, NativeCommand};
+use crate::script_manager::editor::EditAction;
 use crate::script_manager::store::hash_source;
 use crate::script_manager::{ExitReason, ScriptManager, ScriptManagerAction};
 use crate::service::background_service::BackgroundAlertService;
@@ -920,9 +921,44 @@ impl DegenViewApp {
         self.register(slot, None);
     }
 
+    /// The focused tab's Script Manager, if that is what has the keyboard, for the Edit menu.
+    fn with_focused_script_manager<R>(&self, f: impl FnOnce(&mut ScriptManager) -> R) -> Option<R> {
+        let focused = self.focused_tab.load(Ordering::Acquire);
+        for tab in &self.tabs {
+            let Ok(mut content) = tab.content.lock() else {
+                continue;
+            };
+            if let TabContent::Pine(pine) = &mut *content
+                && pine.id() == focused
+            {
+                return Some(f(pine));
+            }
+        }
+        None
+    }
+
     fn process_commands(&mut self, ctx: &egui::Context) {
+        native_bridge::set_edit_menu(
+            self.with_focused_script_manager(|pine| pine.edit_menu())
+                .unwrap_or_default(),
+        );
         for command in native_bridge::take_commands() {
             match command {
+                NativeCommand::EditCut
+                | NativeCommand::EditCopy
+                | NativeCommand::EditPaste
+                | NativeCommand::GoToDefinition
+                | NativeCommand::RenameSymbol => {
+                    let action = match command {
+                        NativeCommand::EditCut => EditAction::Cut,
+                        NativeCommand::EditCopy => EditAction::Copy,
+                        NativeCommand::EditPaste => EditAction::Paste,
+                        NativeCommand::GoToDefinition => EditAction::GoToDefinition,
+                        _ => EditAction::Rename,
+                    };
+                    self.with_focused_script_manager(|pine| pine.edit_command(action));
+                    ctx.request_repaint();
+                }
                 NativeCommand::NewTab => {
                     let window = self.tab_host.focused_window();
                     self.add_tab(window);

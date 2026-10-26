@@ -277,6 +277,21 @@ impl ScriptManager {
         }
     }
 
+    /// What the Edit menu may do for the open script's editor: nothing unless it has the keyboard.
+    pub fn edit_menu(&self) -> crate::native_bridge::EditMenu {
+        self.open
+            .as_ref()
+            .map(|open| open.editor.edit_menu())
+            .unwrap_or_default()
+    }
+
+    /// An Edit-menu item chosen by the app, run by the editor on its next frame.
+    pub fn edit_command(&mut self, action: editor::EditAction) {
+        if let Some(open) = self.open.as_mut() {
+            open.editor.request_edit(action);
+        }
+    }
+
     pub fn id(&self) -> u64 {
         self.id
     }

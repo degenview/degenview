@@ -34,6 +34,7 @@ use std::time::{Duration, Instant};
 
 mod carets;
 mod navigation;
+pub use navigation::EditAction;
 #[cfg(test)]
 mod navigation_tests;
 
@@ -417,6 +418,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
 
     let mut edited = completion_keys(ui.ctx(), state);
     navigation::keys(ui.ctx(), state);
+    navigation::edit_menu(ui.ctx(), state);
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &mut edited);
