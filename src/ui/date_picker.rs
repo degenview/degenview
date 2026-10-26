@@ -146,8 +146,7 @@ pub fn show(
     error: bool,
 ) -> bool {
     let parsed = parse_date_text(text, utc_offset_secs);
-    let popup_id = popup_id(id);
-    let mut open = is_open(ui.ctx(), id);
+    let open = is_open(ui.ctx(), id);
 
     let compact = look == Look::Compact;
     let height = if compact { 24.0 } else { 41.0 };
@@ -208,6 +207,22 @@ pub fn show(
         theme::text_secondary(),
     );
     let response = accessibility::label(response, format!("Date and time, {label}"));
+    show_popover(ui, id, &response, text, utc_offset_secs)
+}
+
+/// The calendar pop-over under `anchor`, which toggles it when clicked: for a control that is not
+/// the field (a pill in a toolbar). Returns whether the pop-over changed `text`.
+pub fn show_popover(
+    ui: &mut Ui,
+    id: Id,
+    anchor: &egui::Response,
+    text: &mut String,
+    utc_offset_secs: i64,
+) -> bool {
+    let response = anchor;
+    let parsed = parse_date_text(text, utc_offset_secs);
+    let popup_id = popup_id(id);
+    let mut open = is_open(ui.ctx(), id);
     if response.clicked() {
         open = !open;
     }
@@ -218,7 +233,7 @@ pub fn show(
         ui.data_mut(|data| data.remove::<(i64, i64)>(month_key));
     }
     let mut changed = false;
-    egui::Popup::from_response(&response)
+    egui::Popup::from_response(response)
         .id(popup_id)
         .open_bool(&mut open)
         .close_behavior(PopupCloseBehavior::CloseOnClickOutside)

@@ -1,8 +1,8 @@
 //! The Pine logs pane: the messages a script wrote with `log.info()`, `log.warning()` and
 //! `log.error()`, newest at the bottom, with the filters TradingView's pane has.
 //!
-//! A docked panel over `model::pine_logs_view`: a title, a toolbar (the script, the logging
-//! switch, search, a start date and the levels), the list, and states for the times there is
+//! A docked panel over `model::pine_logs_view`: a title, a toolbar (search, a start date, the
+//! logging switch and the levels filter), the list, and states for the times there is
 //! nothing to list. It owns nothing of the messages: they are lent for the frame, and what the
 //! person asks for is returned as a [`LogsAction`]. Only the rows on screen are laid out.
 
@@ -23,7 +23,7 @@ const TITLE_HEIGHT: f32 = 44.0;
 const TOOLBAR_HEIGHT: f32 = 46.0;
 const BUTTON: f32 = 26.0;
 const MARGIN: f32 = 12.0;
-const FIELD_HEIGHT: f32 = 28.0;
+const FIELD_HEIGHT: f32 = 26.0;
 const ROW_PAD_X: f32 = 12.0;
 const ROW_PAD_Y: f32 = 5.0;
 const TEXT_SIZE: f32 = 12.0;
@@ -32,10 +32,11 @@ const STAMP_SIZE: f32 = 10.5;
 const OVERSCAN: f32 = 240.0;
 /// The row menu's width: its longest entry, "Scroll to bar", with its icon.
 const MENU_WIDTH: f32 = 170.0;
-/// The width from which the search bar and the date bar share a row.
-const BARS_SIDE_BY_SIDE: f32 = 640.0;
-/// The height of list a short pane keeps under the header when the search bars are open.
-const MIN_LIST: f32 = 60.0;
+/// The search field's width: it grows with the pane up to the larger and does not shrink below the
+/// smaller.
+const SEARCH_WIDTH: std::ops::RangeInclusive<f32> = 150.0..=280.0;
+/// The width of toolbar below which the start date is only an icon.
+const NARROW: f32 = 440.0;
 const DOCS_URL: &str = "https://www.tradingview.com/pine-script-docs/writing/debugging/#pine-logs";
 
 /// A script the pane can show: an instance on the chart.
@@ -75,11 +76,8 @@ pub struct LogsState {
     /// button are left out.
     pub embedded: bool,
     pub filter: LogFilter,
-    pub(crate) search_open: bool,
-    pub(crate) date_open: bool,
-    /// The start date being typed or picked (`YYYY-MM-DD HH:MM`, UTC).
+    /// The start date being picked (`YYYY-MM-DD HH:MM`, UTC).
     date_text: String,
-    date_error: bool,
     filtered: FilteredLogs,
     heights: RowHeights,
     /// What the rows were laid out for: the script, its run, the list, and how many rows.
@@ -132,25 +130,10 @@ pub fn show(
     let spacing = ui.spacing().item_spacing.y;
     ui.spacing_mut().item_spacing.y = 0.0;
     if !state.embedded {
-        title(ui, &mut actions);
+        title(ui, state, scripts, &mut actions);
         divider(ui);
     }
-    let bars = state.search_open || state.date_open || state.filter.start_ms.is_some();
-    if bars {
-        // The search and date rows may not push the list out of a short pane: past what is left
-        // after a sliver of list, the header scrolls.
-        let room = (ui.available_height() - MIN_LIST).max(TOOLBAR_HEIGHT);
-        egui::ScrollArea::vertical()
-            .id_salt("pine-logs-header")
-            .max_height(room)
-            .auto_shrink([false, true])
-            .min_scrolled_height(0.0)
-            .show(ui, |ui| {
-                header(ui, state, scripts, feed.as_ref(), spacing, &mut actions);
-            });
-    } else {
-        header(ui, state, scripts, feed.as_ref(), spacing, &mut actions);
-    }
+    toolbar(ui, state, feed.as_ref(), &mut actions);
     divider(ui);
     ui.spacing_mut().item_spacing.y = spacing;
     match feed {
@@ -163,50 +146,18 @@ pub fn show(
     actions
 }
 
-/// The toolbar, and under it the search and date bars and the start-date tag when they are open.
-fn header(
-    ui: &mut Ui,
-    state: &mut LogsState,
-    scripts: &[ScriptEntry],
-    feed: Option<&Feed>,
-    spacing: f32,
-    actions: &mut Vec<LogsAction>,
-) {
-    toolbar(ui, state, scripts, feed, actions);
-    if state.search_open || state.date_open || state.filter.start_ms.is_some() {
-        ui.spacing_mut().item_spacing.y = spacing;
-        if state.search_open && state.date_open && ui.available_width() >= BARS_SIDE_BY_SIDE {
-            // Wide enough, the two bars share a row rather than taking two.
-            let half = ui.available_width() / 2.0;
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                ui.allocate_ui_with_layout(vec2(half, 0.0), Layout::top_down(Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = spacing;
-                    search_bar(ui, state);
-                });
-                ui.allocate_ui_with_layout(vec2(half, 0.0), Layout::top_down(Align::Min), |ui| {
-                    ui.spacing_mut().item_spacing.y = spacing;
-                    date_bar(ui, state);
-                });
-            });
-        } else {
-            if state.search_open {
-                search_bar(ui, state);
-            }
-            if state.date_open {
-                date_bar(ui, state);
-            }
-        }
-        chips(ui, state);
-    }
-}
-
 fn divider(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
     ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
-fn title(ui: &mut Ui, actions: &mut Vec<LogsAction>) {
+/// The docked pane's title, with the choice of script when the chart has more than one.
+fn title(
+    ui: &mut Ui,
+    state: &mut LogsState,
+    scripts: &[ScriptEntry],
+    actions: &mut Vec<LogsAction>,
+) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, TITLE_HEIGHT),
@@ -231,6 +182,21 @@ fn title(ui: &mut Ui, actions: &mut Vec<LogsAction>) {
                 if close.clicked() {
                     actions.push(LogsAction::Close);
                 }
+                if scripts.len() > 1 {
+                    ui.add_space(6.0);
+                    let labels: Vec<String> =
+                        scripts.iter().map(|script| script.label.clone()).collect();
+                    let current = scripts
+                        .iter()
+                        .position(|script| Some(script.id) == state.selected)
+                        .unwrap_or(0);
+                    let room = (ui.available_width() - 12.0).clamp(80.0, 190.0);
+                    if let Some(chosen) = kit::menu_picker(ui, room, &labels, current, true)
+                        && scripts[chosen].id != state.selected.unwrap_or(0)
+                    {
+                        actions.push(LogsAction::Select(scripts[chosen].id));
+                    }
+                }
             });
         },
     );
@@ -238,177 +204,78 @@ fn title(ui: &mut Ui, actions: &mut Vec<LogsAction>) {
 
 // MARK: Toolbar
 
-fn toolbar(
-    ui: &mut Ui,
-    state: &mut LogsState,
-    scripts: &[ScriptEntry],
-    feed: Option<&Feed>,
-    actions: &mut Vec<LogsAction>,
-) {
+/// One row: the search field and the start date on the left, the logging switch and the levels
+/// filter on the right. The search field takes what the pane gives it, up to a limit, so a wide
+/// drawer does not stretch it into a bar.
+fn toolbar(ui: &mut Ui, state: &mut LogsState, feed: Option<&Feed>, actions: &mut Vec<LogsAction>) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, TOOLBAR_HEIGHT),
         Layout::left_to_right(Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-            ui.add_space(MARGIN);
-            let buttons = BUTTON * 4.0 + 2.0 * 3.0;
-            let picker = (width - MARGIN * 2.0 - buttons - 8.0).max(60.0);
-            let labels: Vec<String> = scripts.iter().map(|script| script.label.clone()).collect();
-            let current = scripts
-                .iter()
-                .position(|script| Some(script.id) == state.selected)
-                .unwrap_or(0);
-            if labels.is_empty() {
-                let (rect, _) = ui.allocate_exact_size(vec2(picker, 24.0), Sense::hover());
-                let galley = kit::galley(
+            ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
+            ui.add_space(MARGIN - 6.0);
+            let narrow = width < NARROW;
+            let buttons = BUTTON * 2.0 + 2.0;
+            let date = date_width(ui, state, narrow);
+            let room = width - MARGIN * 2.0 - buttons - date - 6.0 * 3.0;
+            let search = room.clamp(*SEARCH_WIDTH.start(), *SEARCH_WIDTH.end());
+            search_field(ui, state, search.min(room.max(80.0)));
+            date_pill(ui, state, date, narrow);
+
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
+                ui.add_space(MARGIN - 6.0);
+                let filtered = !state.filter.levels.all();
+                let more = icons::button(
                     ui,
-                    "No scripts",
-                    kit::size::BODY,
-                    kit::REGULAR,
-                    theme::text_tertiary(),
-                    picker - 16.0,
+                    Icon::Filter,
+                    BUTTON,
+                    if filtered {
+                        kit::ACCENT
+                    } else {
+                        theme::text_secondary()
+                    },
+                    "Filter levels",
                 );
-                ui.painter().galley(
-                    pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0),
-                    galley,
-                    theme::text_tertiary(),
-                );
-            } else if state.embedded && labels.len() == 1 {
-                // A tab that only ever shows one script has nothing to choose: the name stays, as
-                // a label, so the field does not look like a menu.
-                script_label(ui, picker, &labels[0]);
-            } else if let Some(chosen) = kit::menu_picker(ui, picker, &labels, current, true)
-                && scripts[chosen].id != state.selected.unwrap_or(0)
-            {
-                actions.push(LogsAction::Select(scripts[chosen].id));
-            }
-            ui.add_space(8.0);
-
-            let logging = feed.is_none_or(|feed| feed.logging);
-            let (icon, tip) = if logging {
-                (Icon::PauseCircle, "Disable logging")
-            } else {
-                (Icon::PlayCircle, "Enable logging")
-            };
-            let tint = if logging {
-                theme::text_secondary()
-            } else {
-                kit::ACCENT
-            };
-            let switch = ui.add_enabled_ui(feed.is_some(), |ui| {
-                icons::button(ui, icon, BUTTON, tint, tip)
-            });
-            if switch.inner.clicked()
-                && let Some(id) = state.selected
-            {
-                actions.push(LogsAction::SetLogging(id, !logging));
-            }
-
-            let searching = state.search_open || !state.filter.query.is_empty();
-            let search = icons::button(
-                ui,
-                Icon::Magnifier,
-                BUTTON,
-                if searching {
-                    kit::ACCENT
-                } else {
-                    theme::text_secondary()
-                },
-                "Search",
-            );
-            if search.clicked() {
-                state.search_open = !state.search_open;
-                if state.search_open {
-                    let id = search_field_id(state);
-                    ui.memory_mut(|memory| memory.request_focus(id));
-                }
-            }
-
-            let dated = state.date_open || state.filter.start_ms.is_some();
-            let date = icons::button(
-                ui,
-                Icon::Clock,
-                BUTTON,
-                if dated {
-                    kit::ACCENT
-                } else {
-                    theme::text_secondary()
-                },
-                "Start date",
-            );
-            if date.clicked() {
-                state.date_open = !state.date_open;
-                if state.date_open && state.date_text.is_empty() {
-                    state.date_text = state
-                        .filter
-                        .start_ms
-                        .map(|ms| crate::model::portfolio_editor::date_text(ms, 0))
-                        .unwrap_or_default();
-                }
-            }
-
-            let filtered = !state.filter.levels.all();
-            let more = icons::button(
-                ui,
-                Icon::Ellipsis,
-                BUTTON,
                 if filtered {
-                    kit::ACCENT
+                    ui.painter().circle_filled(
+                        pos2(more.rect.right() - 4.0, more.rect.top() + 5.0),
+                        2.5,
+                        kit::ACCENT,
+                    );
+                }
+                levels_menu(&more, state);
+
+                let logging = feed.is_none_or(|feed| feed.logging);
+                let (icon, tip) = if logging {
+                    (Icon::PauseCircle, "Disable logging")
                 } else {
+                    (Icon::PlayCircle, "Enable logging")
+                };
+                let tint = if logging {
                     theme::text_secondary()
-                },
-                "Filter levels",
-            );
-            levels_menu(&more, state);
+                } else {
+                    kit::ACCENT
+                };
+                let switch = ui.add_enabled_ui(feed.is_some(), |ui| {
+                    icons::button(ui, icon, BUTTON, tint, tip)
+                });
+                if switch.inner.clicked()
+                    && let Some(id) = state.selected
+                {
+                    actions.push(LogsAction::SetLogging(id, !logging));
+                }
+            });
         },
     );
 }
 
-/// The script's name in the picker's field, without the chevron or the menu.
-fn script_label(ui: &mut Ui, width: f32, label: &str) {
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::hover());
-    let response = accessibility::label(response, format!("Script: {label}"));
-    ui.painter().rect_filled(rect, 6.0, kit::primary(0.1));
-    ui.painter().rect_stroke(
-        rect,
-        6.0,
-        egui::Stroke::new(1.0, kit::primary(0.06)),
-        egui::StrokeKind::Inside,
-    );
-    let text = kit::galley(
-        ui,
-        label,
-        kit::size::BODY,
-        kit::REGULAR,
-        theme::text_primary(),
-        width - 20.0,
-    );
-    if text.size().x
-        < kit::galley(
-            ui,
-            label,
-            kit::size::BODY,
-            kit::REGULAR,
-            theme::text_primary(),
-            f32::INFINITY,
-        )
-        .size()
-        .x - 0.5
-    {
-        response.on_hover_text(label);
-    }
-    ui.painter().galley(
-        pos2(rect.left() + 10.0, rect.center().y - text.size().y / 2.0),
-        text,
-        theme::text_primary(),
-    );
-}
-
 fn levels_menu(button: &egui::Response, state: &mut LogsState) {
-    kit::menu_popup(button).width(190.0).show(|ui| {
-        kit::menu_scope(ui, 170.0);
-        kit::menu_heading(ui, "Filter levels");
+    kit::menu_popup(button).show(|ui| {
+        kit::menu_scope(ui, 0.0);
+        kit::menu_fit(ui, &["Warning", "Levels"]);
+        kit::menu_heading(ui, "Levels");
         for (level, label) in [
             (LogLevel::Info, "Info"),
             (LogLevel::Warning, "Warning"),
@@ -423,7 +290,7 @@ fn levels_menu(button: &egui::Response, state: &mut LogsState) {
     });
 }
 
-// MARK: Search and date
+// MARK: Search
 
 /// The ids are derived from the panel's own, so the same pane in two tabs or windows (one
 /// context) never shares a field's focus or a calendar's open flag.
@@ -434,20 +301,16 @@ fn search_field_id(state: &LogsState) -> egui::Id {
         .with("search")
 }
 
-fn search_bar(ui: &mut Ui, state: &mut LogsState) {
+/// The search field: a magnifier, the text, a clear button, and the three options as small toggles
+/// that only show while the field is in use, so an idle toolbar stays quiet.
+fn search_field(ui: &mut Ui, state: &mut LogsState, width: f32) {
+    let id = search_field_id(state);
+    let focused = ui.memory(|memory| memory.has_focus(id));
     let invalid = state.filter.options.regex
         && !state.filter.query.is_empty()
         && state.filtered.search().is_invalid();
-    ui.add_space(2.0);
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width(), FIELD_HEIGHT), Sense::hover());
-    let well = Rect::from_min_max(
-        pos2(rect.left() + MARGIN, rect.top()),
-        pos2(rect.right() - MARGIN, rect.bottom()),
-    );
-    let id = search_field_id(state);
-    let focused = ui.memory(|memory| memory.has_focus(id));
-    ui.painter().rect_filled(well, 8.0, theme::ink(10));
+    let (well, hover) = ui.allocate_exact_size(vec2(width, FIELD_HEIGHT), Sense::hover());
+    ui.painter().rect_filled(well, 7.0, theme::ink(10));
     let (stroke_color, stroke_width) = if invalid {
         (theme::DOWN, 1.5)
     } else if focused {
@@ -457,25 +320,31 @@ fn search_bar(ui: &mut Ui, state: &mut LogsState) {
     };
     ui.painter().rect_stroke(
         well,
-        8.0,
+        7.0,
         egui::Stroke::new(stroke_width, stroke_color),
         egui::StrokeKind::Inside,
     );
     icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(well.left() + 15.0, well.center().y), vec2(12.0, 12.0)),
+        Rect::from_center_size(pos2(well.left() + 13.0, well.center().y), vec2(12.0, 12.0)),
         Icon::Magnifier,
-        theme::text_tertiary(),
+        if focused {
+            theme::text_secondary()
+        } else {
+            theme::text_tertiary()
+        },
     );
 
-    // From the right: clear, then the three options, each a small toggle.
-    let mut right = well.right() - 6.0;
-    let mut slot = |ui: &mut Ui, width: f32, id_part: &str| {
+    // From the right: clear, then the options; the options need room, so a short field has only the
+    // clear button.
+    let in_use = focused || !state.filter.query.is_empty();
+    let mut right = well.right() - 4.0;
+    let mut slot = |ui: &mut Ui, size: f32, id_part: &str| {
         let slot = Rect::from_min_max(
-            pos2(right - width, well.top() + 3.0),
+            pos2(right - size, well.top() + 3.0),
             pos2(right, well.bottom() - 3.0),
         );
-        right -= width + 2.0;
+        right -= size + 2.0;
         (slot, ui.interact(slot, id.with(id_part), Sense::click()))
     };
     if !state.filter.query.is_empty() {
@@ -495,37 +364,39 @@ fn search_bar(ui: &mut Ui, state: &mut LogsState) {
             ui.memory_mut(|memory| memory.request_focus(id));
         }
     }
-    let options = &mut state.filter.options;
-    for (label, tip, flag, key) in [
-        (".*", "Use regular expression", &mut options.regex, "regex"),
-        ("ab", "Match whole word", &mut options.whole_word, "word"),
-        ("Aa", "Match case", &mut options.match_case, "case"),
-    ] {
-        let (slot, response) = slot(ui, 24.0, key);
-        let response = accessibility::label(response, tip).on_hover_text(tip);
-        if *flag {
-            ui.painter()
-                .rect_filled(slot, 5.0, kit::ACCENT.gamma_multiply(0.28));
-        } else if response.hovered() {
-            ui.painter().rect_filled(slot, 5.0, theme::ink(14));
-        }
-        ui.painter().text(
-            slot.center(),
-            egui::Align2::CENTER_CENTER,
-            label,
-            FontId::proportional(11.0),
+    if in_use && well.width() >= 200.0 {
+        let options = &mut state.filter.options;
+        for (label, tip, flag, key) in [
+            (".*", "Use regular expression", &mut options.regex, "regex"),
+            ("ab", "Match whole word", &mut options.whole_word, "word"),
+            ("Aa", "Match case", &mut options.match_case, "case"),
+        ] {
+            let (slot, response) = slot(ui, 22.0, key);
+            let response = accessibility::label(response, tip).on_hover_text(tip);
             if *flag {
-                kit::ACCENT
-            } else {
-                theme::text_secondary()
-            },
-        );
-        if response.clicked() {
-            *flag = !*flag;
+                ui.painter()
+                    .rect_filled(slot, 5.0, kit::ACCENT.gamma_multiply(0.28));
+            } else if response.hovered() {
+                ui.painter().rect_filled(slot, 5.0, theme::ink(14));
+            }
+            ui.painter().text(
+                slot.center(),
+                egui::Align2::CENTER_CENTER,
+                label,
+                FontId::proportional(10.5),
+                if *flag {
+                    kit::ACCENT
+                } else {
+                    theme::text_secondary()
+                },
+            );
+            if response.clicked() {
+                *flag = !*flag;
+            }
         }
     }
     let field = Rect::from_min_max(
-        pos2(well.left() + 28.0, well.top()),
+        pos2(well.left() + 26.0, well.top()),
         pos2(right - 2.0, well.bottom()),
     );
     let edit = egui::TextEdit::singleline(&mut state.filter.query)
@@ -536,112 +407,157 @@ fn search_bar(ui: &mut Ui, state: &mut LogsState) {
         .margin(egui::Margin::ZERO)
         .vertical_align(Align::Center)
         .desired_width(field.width());
-    let response = ui.put(field, edit);
+    // In a child of its own: `put` would move the toolbar's cursor to the field's end.
+    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(field));
+    let response = inner.add(edit);
     accessibility::label(response, "Search logs");
     if invalid {
-        ui.add_space(2.0);
-        ui.horizontal(|ui| {
-            ui.add_space(MARGIN + 2.0);
-            ui.label(kit::text(
-                "Not a regular expression this search can read.",
-                kit::size::CAPTION,
-                kit::REGULAR,
-                theme::DOWN,
-            ));
-        });
+        hover.on_hover_text("Not a regular expression this search can read.");
     }
-    // Escape closes the bar while the field has the focus, and keeps what was typed.
+    // Escape leaves the field, and keeps what was typed.
     if focused && ui.input(|input| input.key_pressed(egui::Key::Escape)) {
-        state.search_open = false;
         ui.memory_mut(|memory| memory.surrender_focus(id));
     }
-    ui.add_space(4.0);
 }
 
-fn date_bar(ui: &mut Ui, state: &mut LogsState) {
-    ui.add_space(2.0);
-    let width = ui.available_width() - MARGIN * 2.0;
-    ui.horizontal(|ui| {
-        ui.add_space(MARGIN);
-        ui.spacing_mut().item_spacing = vec2(6.0, 0.0);
-        let id = state
-            .base
-            .unwrap_or_else(|| egui::Id::new("pine-logs"))
-            .with("start-date");
-        let apply_width = 54.0;
-        date_picker::show(
-            ui,
-            id,
-            &mut state.date_text,
-            0,
-            (width - apply_width - 6.0).max(120.0),
-            date_picker::Look::Compact,
-            state.date_error,
-        );
-        if kit::push_button(ui, None, "Apply", true).clicked() {
-            match crate::model::portfolio_editor::parse_date_text(&state.date_text, 0) {
-                Some(ms) => {
-                    state.filter.start_ms = Some(ms);
-                    state.date_error = false;
-                    state.date_open = false;
-                    date_picker::close(ui.ctx(), id);
-                }
-                None => state.date_error = true,
-            }
-        }
-    });
-    ui.horizontal(|ui| {
-        ui.add_space(MARGIN + 2.0);
-        ui.label(kit::text(
-            "Show messages from this time on (UTC).",
-            kit::size::CAPTION,
-            kit::REGULAR,
-            theme::text_tertiary(),
-        ));
-    });
-    ui.add_space(4.0);
-}
+// MARK: Start date
 
-/// The start date as a tag above the list, with a way to take it away.
-fn chips(ui: &mut Ui, state: &mut LogsState) {
-    let Some(start) = state.filter.start_ms else {
-        return;
-    };
-    ui.add_space(2.0);
-    ui.horizontal(|ui| {
-        ui.add_space(MARGIN);
-        let text = format!(
+/// The start date as the pill shows it, and how wide that makes the pill.
+fn date_label(state: &LogsState) -> String {
+    match state.filter.start_ms {
+        Some(start) => format!(
             "From {}",
             crate::model::portfolio_editor::date_text(start, 0)
-        );
-        let galley = kit::galley(
+        ),
+        None => "Any time".to_owned(),
+    }
+}
+
+fn date_width(ui: &Ui, state: &LogsState, narrow: bool) -> f32 {
+    if narrow {
+        return FIELD_HEIGHT;
+    }
+    let label = kit::galley(
+        ui,
+        &date_label(state),
+        kit::size::SUBHEADLINE,
+        kit::REGULAR,
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    let clear = if state.filter.start_ms.is_some() {
+        20.0
+    } else {
+        0.0
+    };
+    10.0 + 12.0 + 6.0 + label.size().x + clear + 10.0
+}
+
+/// The start date: a pill beside the search field. Tinted while a date is set, with a cross that
+/// takes it away; a click opens the calendar under it, and picking a moment applies it at once.
+fn date_pill(ui: &mut Ui, state: &mut LogsState, width: f32, narrow: bool) {
+    let id = state
+        .base
+        .unwrap_or_else(|| egui::Id::new("pine-logs"))
+        .with("start-date");
+    let set = state.filter.start_ms.is_some();
+    let (rect, response) = ui.allocate_exact_size(vec2(width, FIELD_HEIGHT), Sense::click());
+    let open = date_picker::is_open(ui.ctx(), id);
+    let tooltip = if set {
+        "Showing messages from this time on (UTC)"
+    } else {
+        "Show messages from a start time on (UTC)"
+    };
+    let response = accessibility::label(response.on_hover_text(tooltip), tooltip);
+    let fill = if set {
+        kit::ACCENT.gamma_multiply(if response.hovered() { 0.3 } else { 0.22 })
+    } else if open || response.hovered() {
+        theme::ink(14)
+    } else {
+        theme::ink(10)
+    };
+    ui.painter().rect_filled(rect, 7.0, fill);
+    ui.painter().rect_stroke(
+        rect,
+        7.0,
+        egui::Stroke::new(
+            if open { 1.5 } else { 1.0 },
+            if open { kit::ACCENT } else { theme::ink(14) },
+        ),
+        egui::StrokeKind::Inside,
+    );
+    let tint = if set {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
+    let icon_at = if narrow {
+        rect.center()
+    } else {
+        pos2(rect.left() + 10.0 + 6.0, rect.center().y)
+    };
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(icon_at, vec2(12.0, 12.0)),
+        Icon::Clock,
+        if set { kit::ACCENT } else { tint },
+    );
+    if !narrow {
+        let label = kit::galley(
             ui,
-            &text,
+            &date_label(state),
             kit::size::SUBHEADLINE,
             kit::REGULAR,
-            theme::text_primary(),
-            f32::INFINITY,
+            tint,
+            width - 10.0 - 12.0 - 6.0 - if set { 30.0 } else { 10.0 },
         );
-        let size = vec2(galley.size().x + 36.0, 22.0);
-        let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-        ui.painter()
-            .rect_filled(rect, 11.0, kit::ACCENT.gamma_multiply(0.22));
         ui.painter().galley(
-            pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0),
-            galley,
-            theme::text_primary(),
+            pos2(
+                rect.left() + 10.0 + 12.0 + 6.0,
+                rect.center().y - label.size().y / 2.0,
+            ),
+            label,
+            tint,
         );
+    } else if set {
+        ui.painter()
+            .circle_filled(pos2(rect.right() - 4.0, rect.top() + 5.0), 2.5, kit::ACCENT);
+    }
+    let mut cleared = false;
+    if set && !narrow {
         let cross =
-            Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), vec2(8.0, 8.0));
-        icons::paint(ui.painter(), cross, Icon::Xmark, theme::text_secondary());
-        let response = accessibility::label(response, "Remove the start date")
+            Rect::from_center_size(pos2(rect.right() - 14.0, rect.center().y), vec2(18.0, 18.0));
+        let hit = ui.interact(cross, id.with("clear"), Sense::click());
+        let hit = accessibility::label(hit, "Remove the start date")
             .on_hover_text("Remove the start date");
-        if response.clicked() {
-            state.filter.start_ms = None;
-            state.date_text.clear();
+        if hit.hovered() {
+            ui.painter()
+                .circle_filled(cross.center(), 8.0, theme::ink(18));
         }
-    });
-    ui.add_space(6.0);
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(cross.center(), vec2(7.0, 7.0)),
+            Icon::Xmark,
+            theme::text_secondary(),
+        );
+        cleared = hit.clicked();
+    }
+    if cleared {
+        state.filter.start_ms = None;
+        state.date_text.clear();
+        date_picker::close(ui.ctx(), id);
+        return;
+    }
+    if state.date_text.is_empty()
+        && let Some(start) = state.filter.start_ms
+    {
+        state.date_text = crate::model::portfolio_editor::date_text(start, 0);
+    }
+    if date_picker::show_popover(ui, id, &response, &mut state.date_text, 0)
+        && let Some(ms) = crate::model::portfolio_editor::parse_date_text(&state.date_text, 0)
+    {
+        state.filter.start_ms = Some(ms);
+    }
 }
 
 // MARK: Body

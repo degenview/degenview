@@ -41,6 +41,7 @@ pub enum Icon {
     XmarkCircleFill,
     Xmark,
     Sliders,
+    Filter,
     CircleDashed,
     Key,
     Books,
@@ -586,6 +587,17 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 line(&[p(2.0, y), p(14.0, y)]);
                 painter.circle_filled(p(x, y), 1.9 * scale, color);
             }
+        }
+        Icon::Filter => {
+            line(&[
+                p(2.5, 3.5),
+                p(13.5, 3.5),
+                p(9.4, 8.2),
+                p(9.4, 12.8),
+                p(6.6, 11.4),
+                p(6.6, 8.2),
+                p(2.5, 3.5),
+            ]);
         }
         Icon::CircleDashed => {
             for i in 0..8 {
@@ -2274,6 +2286,7 @@ mod tests {
             XmarkCircleFill,
             Xmark,
             Sliders,
+            Filter,
             CircleDashed,
             Key,
             Books,
