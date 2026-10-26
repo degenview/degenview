@@ -199,7 +199,7 @@ fn toolbar_gaps(rig: &Rig, above: f32) -> (f32, f32) {
         .collect();
     let picker = rects
         .iter()
-        .find(|rect| (rect.height() - 24.0).abs() < 0.1 && rect.min.y >= above)
+        .find(|rect| (rect.height() - 26.0).abs() < 0.1 && rect.min.y >= above)
         .expect("the script picker");
     let divider = rects
         .iter()
@@ -403,13 +403,12 @@ fn filters_that_hide_everything_say_so_and_clear_filters_restores_the_list() {
 #[test]
 fn a_regex_that_does_not_compile_is_flagged_and_lists_everything() {
     let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
-    rig.state.search_open = true;
     rig.state.filter.options.regex = true;
     rig.state.filter.query = "(".to_owned();
     rig.settle();
     let text = rig.text();
     assert!(text.contains("hello"), "{text}");
-    assert!(text.contains("Not a regular expression"), "{text}");
+    assert!(rig.state.filtered.search().is_invalid());
 }
 
 #[test]
@@ -421,7 +420,9 @@ fn the_start_date_shows_as_a_tag_and_filters_by_absolute_time() {
     rig.state.filter.start_ms = Some(1_700_000_030_000);
     rig.settle();
     let text = rig.text();
-    assert!(text.contains("From 2023-11-14 22:13"), "{text}");
+    // At this width the pill is only its icon; its words are what a wider pane shows.
+    assert_eq!(date_label(&rig.state), "From 2023-11-14 22:13");
+    assert_eq!(date_label(&LogsState::default()), "Any time");
     assert!(text.contains("late") && !text.contains("early"), "{text}");
 }
 
@@ -659,23 +660,16 @@ fn gallery_of_the_pane() {
         }),
         ("search", 320.0, |state, history, _| {
             *history = history_of(mixed_messages());
-            state.search_open = true;
             state.filter.query = "bar".to_owned();
         }),
         ("search-regex-invalid", 320.0, |state, history, _| {
             *history = history_of(mixed_messages());
-            state.search_open = true;
             state.filter.options.regex = true;
             state.filter.query = "(bar".to_owned();
         }),
         ("date", 320.0, |state, history, _| {
             *history = history_of(mixed_messages());
             state.filter.start_ms = Some(1_700_000_000_000 + 20 * 60_000);
-        }),
-        ("date-bar", 320.0, |state, history, _| {
-            *history = history_of(mixed_messages());
-            state.date_open = true;
-            state.date_text = "2023-11-14 22:30".to_owned();
         }),
         ("errors-only", 320.0, |state, history, _| {
             *history = history_of(mixed_messages());
@@ -765,4 +759,48 @@ fn gallery_of_the_pane() {
 
 fn history_of(events: Vec<LogEvent>) -> LogHistory {
     history(events)
+}
+
+fn script_names_drawn(rig: &mut Rig) -> bool {
+    rig.settle();
+    rig.text().contains("Alpha")
+}
+
+#[test]
+fn the_script_is_chosen_in_the_docked_title_and_only_when_there_is_a_choice() {
+    // A tab shows one script, whatever it is fed: nothing to choose, nothing drawn.
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.embedded = true;
+    assert!(!script_names_drawn(&mut rig));
+    rig.scripts.truncate(1);
+    assert!(!script_names_drawn(&mut rig));
+
+    // The docked pane offers the choice between two, and nothing for one.
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    assert!(script_names_drawn(&mut rig));
+    rig.scripts.truncate(1);
+    assert!(!script_names_drawn(&mut rig));
+}
+
+#[test]
+fn the_levels_menu_is_as_narrow_as_its_rows() {
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.embedded = true;
+    rig.settle();
+    // The filter button is the rightmost icon of the toolbar.
+    let at = pos2(WIDTH - MARGIN - BUTTON / 2.0, 23.0);
+    let button = |pressed| Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    rig.frame(vec![Event::PointerMoved(at)]);
+    rig.frame(vec![button(true)]);
+    rig.frame(vec![button(false)]);
+    rig.settle();
+    let (_, menu) = rig
+        .text_and_menu("Warning")
+        .expect("the levels menu is open");
+    assert!(menu.width() < 140.0, "the menu is {} wide", menu.width());
 }

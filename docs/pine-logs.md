@@ -75,8 +75,10 @@ a script drops its run and with it its history; changing the app theme starts a 
 ## The pane
 
 Opened from a script's chip menu or pane menu (docked on the right of its chart, one pane per tab).
-Title and close; a script selector (two copies of one script read `Name` and `Name #2`); then the
-logging switch, search, start date and level filter.
+Title and close, with a script selector beside them when the chart has more than one script (two
+copies of one script read `Name` and `Name #2`); then one toolbar row: the search field and the
+start date on the left, the logging switch and the level filter (a funnel, with a dot while a level
+is hidden) on the right. The search field and the date pill are DegenView's layout, not TradingView's.
 
 - **Rows** list the messages oldest first, newest at the bottom: the time in UTC (ISO 8601 with
   milliseconds) above the text, which is gray for info, orange for a warning, red for an error.
@@ -95,8 +97,11 @@ logging switch, search, start date and level filter.
 - **Search** is case-insensitive for ASCII by default; "Aa" matches case, "ab" matches whole words
   (set off by white space or `. , : ; ' "`; a term holding one of them never matches), ".*" reads
   the query as a regular expression. Matches are highlighted. A query that does not compile is
-  flagged and filters nothing.
-- **Start date** takes a UTC date and time; a tag above the list shows it and removes it.
+  flagged (red outline, and the reason on hover) and filters nothing. The three options show only
+  while the field is in use.
+- **Start date** is a pill beside the search field ("Any time", or "From 2023-11-14 22:13" with a
+  cross that removes it); it opens a calendar for a UTC date and time, and picking applies at once.
+  In a narrow pane it is only its icon, with a dot while set.
 - Filters compose (level, start date, search) and never change the history. The listed rows are
   recomputed only when messages, a filter, the script or the run change; new messages are scanned
   alone.
@@ -128,14 +133,14 @@ Hovering a row shows two buttons (the same two are in its right-click menu): **S
 ### In the Script Manager
 
 The drawer under the preview chart has a **Logs** tab beside Inputs, Report and Problems: the same
-pane (toolbar, script selector, list, filters, search, start date, the hover actions) over the
-preview chart's run of the script being edited, without the pane's own title. There "Source code"
+pane (toolbar, list, filters, search, start date, the hover actions) over the preview chart's run
+of the script being edited, without the pane's own title or a script selector (there is only one
+script). There "Source code"
 moves the caret in the editor you are in, and "Scroll to bar" moves the preview chart, which only
 holds the candles it fetched. TradingView opens the pane from the editor's More menu; DegenView's
 Script Manager has no such menu, so the drawer tab is its way in. The level and search options are
-the same local `pineLogs.prefs` setting as the chart's pane. Where the drawer is wide enough the
-search bar and the start-date bar share a row, and the introduction puts its picture beside its
-steps; in a drawer too short for the header, the header scrolls so some of the list stays in view.
+the same local `pineLogs.prefs` setting as the chart's pane. Where the drawer is wide, the
+introduction puts its picture beside its steps.
 
 ### Unknown `log.*` functions and CRLF scripts
 

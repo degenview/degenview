@@ -267,8 +267,10 @@ fn logs_fit_the_drawer() {
         for size in SIZES {
             let mut view = LogsState::default();
             view.embedded = true;
-            view.search_open = search;
-            view.date_open = search;
+            if search {
+                view.filter.query = "signal".to_owned();
+                view.filter.start_ms = Some(1_700_000_000_000);
+            }
             view.select_valid(&scripts);
             fits("logs", state, size, |ui| {
                 let feed = Feed {
