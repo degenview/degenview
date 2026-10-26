@@ -15,6 +15,8 @@ pub enum ValueType {
     Label,
     Box,
     Table,
+    Linefill,
+    Polyline,
     Array,
     Object,
     Map,

@@ -972,3 +972,52 @@ fn a_numeric_once_condition_is_rejected() {
 fn once_cannot_be_assigned_to_a_variable() {
     assert!(!diagnostic_codes("x = once\n    1").is_empty());
 }
+
+#[test]
+fn linefill_and_polyline_annotations_are_typed_handles() {
+    let session = run(
+        "var line a = na\nvar line b = na\nvar linefill f = na\nvar polyline p = na\n\
+         if barstate.isfirst\n    a := line.new(0, 1.0, 2, 3.0)\n    b := line.new(0, 2.0, 2, 4.0)\n    f := linefill.new(a, b, color.red)\n\
+         first = f.get_line1() == a\n\
+         same = array.size(linefill.all)",
+        2,
+    );
+    assert_eq!(value(&session, "first"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "same"), RuntimeValue::Int(1));
+}
+
+#[test]
+fn a_function_parameter_may_be_a_linefill() {
+    let session = run(
+        "var line a = na\nvar line b = na\n\
+         if barstate.isfirst\n    a := line.new(0, 1.0, 2, 3.0)\n    b := line.new(0, 2.0, 2, 4.0)\n\
+         tint(linefill f, color c) =>\n    f.set_color(c)\n    f.get_line2() == b\n\
+         ok = tint(linefill.new(a, b, color.blue), color.green)",
+        2,
+    );
+    assert_eq!(value(&session, "ok"), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn a_linefill_variable_rejects_a_value_of_another_type() {
+    assert!(diagnostic_codes("linefill f = 1.5").contains(&"PINE3030".to_owned()));
+    assert!(diagnostic_codes("polyline p = \"x\"").contains(&"PINE3030".to_owned()));
+    assert!(
+        diagnostic_codes("linefill f = line.new(0, 1.0, 1, 2.0)").contains(&"PINE3030".to_owned())
+    );
+}
+
+#[test]
+fn linefill_and_polyline_names_are_spelled_in_diagnostics() {
+    let message = compiler::compile(
+        "//@version=6\nindicator(\"T\")\nlinefill f = 1.5",
+        Limits::default(),
+        &NoLibraries,
+    )
+    .diagnostics
+    .into_iter()
+    .find(|d| d.code == "PINE3030")
+    .map(|d| d.message)
+    .unwrap_or_default();
+    assert!(message.contains("linefill"), "{message}");
+}
