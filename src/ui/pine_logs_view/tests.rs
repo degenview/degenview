@@ -754,6 +754,45 @@ fn gallery_of_the_pane() {
             &format!("pine-logs-hover-{theme_name}"),
             last.expect("a frame"),
         );
+
+        // Scrolled up, so the Latest pill floats over the messages.
+        let mut screen = Screen::new(vec2(320.0, 560.0));
+        theme::apply(&screen.ctx, app_theme);
+        let mut state = LogsState::default();
+        let mut last = None;
+        for frame in 0..6 {
+            theme::sync(&screen.ctx);
+            let events = if frame == 3 {
+                vec![
+                    Event::PointerMoved(pos2(160.0, 300.0)),
+                    Event::MouseWheel {
+                        unit: egui::MouseWheelUnit::Point,
+                        delta: vec2(0.0, 600.0),
+                        phase: egui::TouchPhase::Move,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ]
+            } else {
+                Vec::new()
+            };
+            last = Some(screen.run(events, |ui| {
+                state.select_valid(&scripts);
+                let feed = Feed {
+                    epoch: 1,
+                    history: &history,
+                    logging: true,
+                };
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::new().fill(theme::chrome()))
+                    .show(ui, |ui| {
+                        show(ui, &mut state, &scripts, Some(feed));
+                    });
+            }));
+        }
+        screen.save(
+            &format!("pine-logs-latest-{theme_name}"),
+            last.expect("a frame"),
+        );
     }
 }
 

@@ -6,10 +6,11 @@ use super::model::{LocalScript, ScriptId, ScriptType};
 use super::{Cmd, ScriptManager};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::shortcut;
 use crate::ui::theme;
 use eframe::egui::{
-    self, Align, Align2, Color32, CursorIcon, FontId, Id, Margin, Rect, RichText, Sense, Shape, Ui,
-    Vec2, epaint::Shadow, pos2, vec2,
+    self, Align, Color32, CursorIcon, FontId, Id, Margin, Rect, RichText, Sense, Shape, Ui, Vec2,
+    pos2, vec2,
 };
 use std::time::{Duration, Instant};
 
@@ -106,7 +107,7 @@ impl ScriptManager {
         ui.painter().rect_filled(rect, 0.0, theme::chrome());
         // The footer and the New Script button are pinned; the list takes the rest.
         let footer_height = super::bottom_bar::HEIGHT;
-        let button_height = 24.0 + 20.0;
+        let button_height = ROW_HEIGHT + 16.0;
         let list_rect = Rect::from_min_max(
             rect.min,
             pos2(rect.max.x, rect.max.y - footer_height - button_height),
@@ -223,15 +224,18 @@ impl ScriptManager {
         let id = Id::new(("script-row", group.key(), &script.id));
 
         if selected {
-            ui.painter().rect_filled(pill, 6.0, theme::SYSTEM_ACCENT);
+            ui.painter()
+                .rect_filled(pill, 6.0, theme::surface_selected());
+            ui.painter().rect_stroke(
+                pill,
+                6.0,
+                egui::Stroke::new(1.0, theme::border()),
+                egui::StrokeKind::Inside,
+            );
         } else if response.hovered() && !renaming {
             ui.painter().rect_filled(pill, 6.0, theme::ink(14));
         }
-        let text_color = if selected {
-            Color32::WHITE
-        } else {
-            theme::text_primary()
-        };
+        let text_color = theme::text_primary();
 
         // The favorite star sits at the trailing edge; it takes its own clicks.
         let star_rect =
@@ -245,7 +249,7 @@ impl ScriptManager {
         let star_color = if script.is_favorite {
             theme::YELLOW
         } else if selected {
-            Color32::WHITE.gamma_multiply(0.8)
+            theme::text_primary().gamma_multiply(0.8)
         } else {
             theme::text_secondary()
         };
@@ -267,15 +271,24 @@ impl ScriptManager {
                 Rect::from_min_max(pill.min + vec2(6.0, 2.0), pill.max - vec2(30.0, 2.0)),
             );
         } else {
-            ui.painter()
-                .with_clip_rect(Rect::from_min_max(pill.min, pill.max - vec2(30.0, 0.0)))
-                .text(
-                    pos2(pill.min.x + 10.0, rect.center().y),
-                    Align2::LEFT_CENTER,
-                    &script.name,
-                    FontId::proportional(13.0),
-                    text_color,
-                );
+            let weight = if selected {
+                kit::SEMIBOLD
+            } else {
+                kit::REGULAR
+            };
+            let name = kit::galley(
+                ui,
+                &script.name,
+                13.0,
+                weight,
+                text_color,
+                pill.width() - 40.0,
+            );
+            ui.painter().galley(
+                pos2(pill.min.x + 10.0, rect.center().y - name.size().y / 2.0),
+                name,
+                text_color,
+            );
         }
 
         if response.clicked() && !renaming && !star.hovered() {
@@ -316,7 +329,7 @@ impl ScriptManager {
         let color = if rename.error.is_some() {
             Color32::from_rgb(0xFF, 0x45, 0x3A)
         } else {
-            Color32::WHITE
+            theme::text_primary()
         };
         let mut field = ui.new_child(egui::UiBuilder::new().max_rect(rect));
         let response = field.add(
@@ -435,49 +448,56 @@ impl ScriptManager {
     }
 
     fn new_script_button(&mut self, ui: &mut Ui, area: Rect) {
-        let size = vec2(112.0, 24.0);
-        let rect = Rect::from_min_size(
-            pos2(
-                area.center().x - size.x / 2.0,
-                area.center().y - size.y / 2.0,
-            ),
-            size,
-        );
+        // Same gutter as the search field and the row pills above it.
+        let rect = area.shrink2(vec2(8.0, 8.0));
         let response = ui
             .interact(rect, Id::new("new-script"), Sense::click())
-            .on_hover_text("Create a new script");
+            .on_hover_text(shortcut::NEW_SCRIPT.hint("Create a new script"));
         if response.hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
+        let hovered = response.hovered();
         let fill = if response.is_pointer_button_down_on() {
-            theme::SYSTEM_ACCENT.gamma_multiply(0.8)
-        } else if response.hovered() {
-            Color32::from_rgb(40, 150, 255)
+            theme::ink(30)
         } else {
-            theme::SYSTEM_ACCENT
+            theme::card_fill(hovered)
         };
         let painter = ui.painter();
-        painter.add(
-            Shadow {
-                offset: [0, 1],
-                blur: 4,
-                spread: 0,
-                color: Color32::from_black_alpha(46),
-            }
-            .as_shape(rect, 12.0),
+        painter.rect_filled(rect, 6.0, fill);
+        painter.rect_stroke(
+            rect,
+            6.0,
+            egui::Stroke::new(1.0, theme::card_border(hovered)),
+            egui::StrokeKind::Inside,
         );
-        painter.rect_filled(rect, 12.0, fill);
+        painter.hline(
+            rect.x_range().shrink(6.0),
+            rect.min.y + 1.0,
+            egui::Stroke::new(1.0, theme::card_highlight()),
+        );
+        let color = theme::text_primary();
+        let label = kit::galley(
+            ui,
+            "New Script",
+            12.0,
+            kit::SEMIBOLD,
+            color,
+            rect.width() - 40.0,
+        );
+        // The plus and the label read as one group, centred in the button.
+        let gap = 6.0;
+        let icon = 11.0;
+        let start = rect.center().x - (icon + gap + label.size().x) / 2.0;
         icons::paint(
-            painter,
-            Rect::from_center_size(pos2(rect.min.x + 18.0, rect.center().y), Vec2::splat(11.0)),
+            ui.painter(),
+            Rect::from_center_size(pos2(start + icon / 2.0, rect.center().y), Vec2::splat(icon)),
             Icon::Plus,
-            Color32::WHITE,
+            color,
         );
-        let label = kit::galley(ui, "New Script", 12.0, kit::SEMIBOLD, Color32::WHITE, 90.0);
         ui.painter().galley(
-            pos2(rect.min.x + 30.0, rect.center().y - label.size().y / 2.0),
+            pos2(start + icon + gap, rect.center().y - label.size().y / 2.0),
             label,
-            Color32::WHITE,
+            color,
         );
         if response.clicked() {
             self.cmds.push(Cmd::NewScript);

@@ -115,6 +115,7 @@ fn key_name(key: Key) -> &'static str {
         Key::H => "H",
         Key::J => "J",
         Key::L => "L",
+        Key::N => "N",
         Key::P => "P",
         Key::S => "S",
         Key::T => "T",
@@ -218,6 +219,13 @@ pub const SAVE: Shortcut = Shortcut::new(&[S], &[S]);
 pub const NEW_TAB: Shortcut = Shortcut::new(
     &[Chord::new(Key::T).primary()],
     &[Chord::new(Key::T).primary()],
+);
+
+/// Create a script in the Script Manager. macOS gets ⌘N from File ▸ New Script; this is for every
+/// other platform.
+pub const NEW_SCRIPT: Shortcut = Shortcut::new(
+    &[Chord::new(Key::N).primary()],
+    &[Chord::new(Key::N).primary()],
 );
 
 /// Close the tab in front. macOS gets ⌘W from File ▸ Close Tab.
@@ -507,7 +515,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 50] = [
+    const ALL: [(&str, Shortcut); 51] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -520,6 +528,7 @@ mod tests {
         ("profiler", PROFILER_TOGGLE),
         ("save", SAVE),
         ("new tab", NEW_TAB),
+        ("new script", NEW_SCRIPT),
         ("close tab", CLOSE_TAB),
         ("next tab", NEXT_TAB),
         ("previous tab", PREVIOUS_TAB),
