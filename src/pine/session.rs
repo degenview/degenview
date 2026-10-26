@@ -139,6 +139,57 @@ impl Step {
     }
 }
 
+/// How many shadowed names a block statement keeps without touching the heap: a loop counter and
+/// the few names its body declares.
+const SHADOWED_INLINE: usize = 4;
+
+/// The values a block statement's declared names held outside it, to put back when it ends. The
+/// names borrow from the statement, so saving one builds no `String`, and a block that shadows a few
+/// names allocates nothing.
+struct Shadowed<'s> {
+    inline: [Option<(&'s str, Option<RuntimeValue>)>; SHADOWED_INLINE],
+    used: usize,
+    overflow: Vec<(&'s str, Option<RuntimeValue>)>,
+}
+
+impl Default for Shadowed<'_> {
+    fn default() -> Self {
+        Self {
+            inline: [const { None }; SHADOWED_INLINE],
+            used: 0,
+            overflow: Vec::new(),
+        }
+    }
+}
+
+impl<'s> Shadowed<'s> {
+    /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
+    fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
+        if self.used < SHADOWED_INLINE {
+            self.inline[self.used] = Some((name, value));
+            self.used += 1;
+        } else {
+            self.overflow.push((name, value));
+        }
+    }
+
+    /// Puts every name back, in the order it was saved.
+    fn restore(self, variables: &mut FastMap<String, RuntimeValue>) {
+        let saved = self.inline.into_iter().flatten().chain(self.overflow);
+        for (name, value) in saved {
+            match (value, variables.get_mut(name)) {
+                (Some(value), Some(slot)) => *slot = value,
+                (Some(value), None) => {
+                    variables.insert(name.to_owned(), value);
+                }
+                (None, _) => {
+                    variables.remove(name);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum RunError {
     Rejection(ExecutionRejection),
@@ -1303,58 +1354,62 @@ impl Session {
     ) -> Result<Step, Diagnostic> {
         // A name a block declares shadows an outer variable of the same name only inside the block;
         // the variable table is flat, so the outer value is put back when the statement ends.
+        if !matches!(
+            statement,
+            Statement::ForRange { .. }
+                | Statement::ForIn { .. }
+                | Statement::Conditional { .. }
+                | Statement::WhileLoop { .. }
+                | Statement::Switch { .. }
+        ) {
+            return self.run_statement_unscoped(statement, context);
+        }
         let shadowed = self.shadowed_by(statement);
         let result = self.run_statement_unscoped(statement, context);
-        for (name, value) in shadowed {
-            match value {
-                Some(value) => self.working.variables.insert(name, value),
-                None => self.working.variables.remove(&name),
-            };
-        }
+        shadowed.restore(&mut self.working.variables);
         result
     }
 
     /// The current values of the variables that `statement`'s blocks declare anew (a loop counter,
     /// an ordinary `x = …` in a branch or body), for those that already exist outside it.
-    fn shadowed_by(&self, statement: &Statement) -> Vec<(String, Option<RuntimeValue>)> {
-        let mut names: Vec<&str> = Vec::new();
-        match statement {
-            Statement::ForRange { variable, .. } => names.push(variable),
-            Statement::ForIn { index, value, .. } => {
-                names.extend(index.as_deref());
-                names.push(value);
+    fn shadowed_by<'s>(&self, statement: &'s Statement) -> Shadowed<'s> {
+        let mut saved = Shadowed::default();
+        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
+        let mut save = |name: &'s str| match self.working.variables.get(name) {
+            Some(value) => saved.push(name, Some(value.clone())),
+            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
+                saved.push(name, None);
             }
-            Statement::Conditional { .. }
-            | Statement::WhileLoop { .. }
-            | Statement::Switch { .. } => {}
-            _ => return Vec::new(),
+            None => {}
+        };
+        match statement {
+            Statement::ForRange { variable, .. } => save(variable),
+            Statement::ForIn { index, value, .. } => {
+                if let Some(index) = index.as_deref() {
+                    save(index);
+                }
+                save(value);
+            }
+            _ => {}
         }
-        for block in super::traversal::nested_blocks(statement) {
+        super::traversal::for_each_nested_block(statement, |block| {
             for inner in block {
                 match inner {
                     Statement::Declaration {
                         name,
                         mode: DeclarationMode::Ordinary,
                         ..
-                    } => names.push(name),
+                    } => save(name),
                     Statement::TupleDeclaration { names: tuple, .. } => {
-                        names.extend(tuple.iter().map(String::as_str));
+                        for name in tuple {
+                            save(name);
+                        }
                     }
                     _ => {}
                 }
             }
-        }
-        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
-        names
-            .into_iter()
-            .filter_map(|name| match self.working.variables.get(name) {
-                Some(value) => Some((name.to_owned(), Some(value.clone()))),
-                None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
-                    Some((name.to_owned(), None))
-                }
-                None => None,
-            })
-            .collect()
+        });
+        saved
     }
 
     fn run_statement_unscoped(
