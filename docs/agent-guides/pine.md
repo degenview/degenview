@@ -86,6 +86,8 @@
   (which scrolls), and scroll areas set `min_scrolled_height(0.0)` (egui's default of 64 pushes a
   tab past a short drawer). `drawer_tabs_tests` asserts every tab uses no more than the room at five
   sizes; set `DEGENVIEW_GALLERY_DIR` to get pictures.
+- A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
+  an example; see `drawer_intro`), never a bare text placeholder.
 - `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
   the same pieces (`metric_grid`, `equity_curve`) itself.
 

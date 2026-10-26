@@ -313,11 +313,7 @@ pub fn problems(
         }
     });
     if diagnostics.is_empty() {
-        placeholder(
-            ui,
-            "No problems",
-            "Compile errors, warnings and runtime failures are listed here.",
-        );
+        super::drawer_intro::problems(ui);
         return None;
     }
     let mut jump = None;
@@ -590,11 +586,7 @@ pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
         );
     });
     if strategy.is_none() && alerts.is_empty() {
-        placeholder(
-            ui,
-            "No report",
-            "Strategies report their trades and equity curve here. Indicators show alerts they raise.",
-        );
+        super::drawer_intro::report(ui);
         return;
     }
     chrome::scroll(ui, "script-report-scroll", |ui| {

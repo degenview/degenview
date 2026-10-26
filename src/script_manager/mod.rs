@@ -21,6 +21,7 @@ pub mod demo;
 pub mod diff;
 mod diff_view;
 pub mod drawer;
+mod drawer_intro;
 #[cfg(test)]
 mod drawer_tabs_tests;
 pub mod edit_ops;
