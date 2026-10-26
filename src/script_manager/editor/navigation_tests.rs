@@ -407,3 +407,39 @@ fn a_right_click_on_a_name_opens_the_menu_for_that_name() {
     );
     assert!(egui::Popup::is_any_open(&h.ctx), "the menu is up");
 }
+
+fn right_click(h: &mut Harness, pos: egui::Pos2) {
+    h.frame(vec![Event::PointerMoved(pos)]);
+    for pressed in [true, false] {
+        h.frame(vec![Event::PointerButton {
+            pos,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::default(),
+        }]);
+    }
+    h.frame(vec![]);
+}
+
+#[test]
+fn a_right_click_inside_the_selection_keeps_it_for_cut_and_copy() {
+    let mut h = Harness::new(SCRIPT);
+    let (start, end) = (h.index(3, 5), h.index(3, 22));
+    h.place(start, end);
+    let inside = h.at(3, 12);
+    right_click(&mut h, inside);
+    assert_eq!(h.primary(), (start, end));
+    assert!(egui::Popup::is_any_open(&h.ctx));
+}
+
+#[test]
+fn a_right_click_outside_the_selection_moves_the_caret_there() {
+    let mut h = Harness::new(SCRIPT);
+    let (start, end) = (h.index(3, 5), h.index(3, 12));
+    h.place(start, end);
+    let outside = h.at(2, 2);
+    right_click(&mut h, outside);
+    let (a, b) = h.primary();
+    assert_eq!(a, b, "a caret, not the old selection");
+    assert_eq!(a, h.index(2, 2));
+}

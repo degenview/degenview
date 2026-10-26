@@ -39,6 +39,9 @@ pub(super) struct RenameBox {
 const RENAME_ID: &str = "script-rename-field";
 
 enum MenuAction {
+    Cut,
+    Copy,
+    Paste,
     Definition(Range<usize>),
     Rename(usize),
 }
@@ -242,6 +245,44 @@ pub(super) fn context_menu(
         let definition = target.and_then(|index| table.definition_of(index));
         kit::menu_scope(ui, 200.0);
         kit::menu_fit(ui, &["Go to Definition", "Rename Symbol…"]);
+        let selected = TextEditState::load(ctx, state.id)
+            .and_then(|edit| edit.cursor.char_range())
+            .is_some_and(|range| range.primary != range.secondary);
+        for (icon, label, shortcut, enabled, chosen) in [
+            (
+                None,
+                "Cut",
+                shortcut::CUT.label(),
+                selected,
+                MenuAction::Cut,
+            ),
+            (
+                Some(Icon::CopyDoc),
+                "Copy",
+                shortcut::COPY.label(),
+                selected,
+                MenuAction::Copy,
+            ),
+            (
+                Some(Icon::Clipboard),
+                "Paste",
+                shortcut::PASTE.label(),
+                true,
+                MenuAction::Paste,
+            ),
+        ] {
+            let row = kit::MenuRow {
+                icon,
+                shortcut: Some(&shortcut),
+                enabled,
+                ..kit::MenuRow::new(label)
+            };
+            if kit::menu_row(ui, row).clicked() {
+                action = Some(chosen);
+                ui.close();
+            }
+        }
+        kit::menu_separator(ui);
         if kit::menu_item_with_shortcut(
             ui,
             Icon::ArrowUpRight,
@@ -266,6 +307,16 @@ pub(super) fn context_menu(
         }
     });
     match action {
+        Some(chosen @ (MenuAction::Cut | MenuAction::Copy | MenuAction::Paste)) => {
+            // The platform answers with the matching event next frame, which the text field (or
+            // `carets`) handles like the key.
+            ctx.send_viewport_cmd(match chosen {
+                MenuAction::Cut => egui::ViewportCommand::RequestCut,
+                MenuAction::Copy => egui::ViewportCommand::RequestCopy,
+                _ => egui::ViewportCommand::RequestPaste,
+            });
+            ctx.memory_mut(|memory| memory.request_focus(state.id));
+        }
         Some(MenuAction::Definition(range)) => state.go_to_range(ctx, range),
         Some(MenuAction::Rename(index)) => {
             state.begin_rename(index);

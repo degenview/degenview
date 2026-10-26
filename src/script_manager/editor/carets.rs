@@ -32,6 +32,9 @@ pub(super) struct CaretState {
     column_press: Option<Pos2>,
     /// The cell a column selection started at, while the button is down.
     column: Option<Cell>,
+    /// A right-click this frame and the selection it found: a click inside that selection keeps
+    /// it, so Cut and Copy in the menu have something to act on.
+    secondary: Option<(Pos2, Sel)>,
 }
 
 impl CaretState {
@@ -40,6 +43,7 @@ impl CaretState {
         self.column = None;
         self.press = None;
         self.column_press = None;
+        self.secondary = None;
     }
 }
 
@@ -309,9 +313,11 @@ fn note_pointer(ctx: &egui::Context, state: &mut EditorState, text_area: Rect) {
                     });
                 }
             }
-            PointerButton::Primary | PointerButton::Secondary if !modifiers.shift => {
+            PointerButton::Secondary if !modifiers.shift => {
                 state.carets.extra.clear();
+                state.carets.secondary = primary_sel(ctx, state.id).map(|prior| (*pos, prior));
             }
+            PointerButton::Primary if !modifiers.shift => state.carets.extra.clear(),
             PointerButton::Middle => state.carets.column_press = Some(*pos),
             PointerButton::Secondary => state.carets.column_press = Some(*pos),
             PointerButton::Primary => state.carets.extra.clear(),
@@ -363,6 +369,16 @@ pub(super) fn resolve(
                 state.carets.extra = selections.extras();
                 state.carets.hash = text_hash(&state.source);
             }
+        }
+    }
+    if let Some((pos, prior)) = state.carets.secondary.take() {
+        let index = galley
+            .cursor_from_pos(pos.to_vec2() - origin.to_vec2())
+            .index
+            .0;
+        let range = prior.range();
+        if !range.is_empty() && range.contains(&index) {
+            write(ctx, state, &Selections::single(prior));
         }
     }
     if let Some(pos) = state.carets.column_press.take() {

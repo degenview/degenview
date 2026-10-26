@@ -121,6 +121,7 @@ fn key_name(key: Key) -> &'static str {
         Key::Tab => "Tab",
         Key::V => "V",
         Key::W => "W",
+        Key::X => "X",
         Key::Y => "Y",
         Key::Z => "Z",
         Key::F2 => "F2",
@@ -395,6 +396,12 @@ pub const COPY: Shortcut = Shortcut::new(
     &[Chord::new(Key::C).primary()],
 );
 
+/// Cuts the selected text in the code editor (an `Event::Cut`, see [`COPY`]); the chart has no cut.
+pub const CUT: Shortcut = Shortcut::new(
+    &[Chord::new(Key::X).primary()],
+    &[Chord::new(Key::X).primary()],
+);
+
 /// Pastes copied drawings (an `Event::Paste`, see [`COPY`]).
 pub const PASTE: Shortcut = Shortcut::new(
     &[Chord::new(Key::V).primary()],
@@ -500,7 +507,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 49] = [
+    const ALL: [(&str, Shortcut); 50] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -534,6 +541,7 @@ mod tests {
         ("add cursor above", ADD_CURSOR_ABOVE),
         ("add cursor below", ADD_CURSOR_BELOW),
         ("duplicate drawing", DUPLICATE_DRAWING),
+        ("cut", CUT),
         ("copy", COPY),
         ("paste", PASTE),
         ("hide drawings", HIDE_DRAWINGS),
@@ -657,6 +665,8 @@ mod tests {
         assert_eq!(SELECT_ALL_OCCURRENCES.label_for(false), "Alt+F3");
         assert_eq!(ADD_CURSOR_ABOVE.label_for(true), "⌃⇧↑");
         assert_eq!(ADD_CURSOR_BELOW.label_for(false), "Ctrl+Alt+↓");
+        assert_eq!(CUT.label_for(true), "⌘X");
+        assert_eq!(CUT.label_for(false), "Ctrl+X");
         assert_eq!(GO_TO_DEFINITION.label_for(true), "⌃⌘J");
         assert_eq!(GO_TO_DEFINITION.label_for(false), "F12");
         assert_eq!(RENAME_SYMBOL.label_for(true), "⌃⌘E");
