@@ -180,6 +180,37 @@ fn changing_an_input_or_the_bars_marks_the_profile_stale_but_keeps_its_lines() {
 }
 
 #[test]
+fn a_run_asked_for_while_the_preview_has_no_bars_starts_when_they_arrive() {
+    let mut rig = profile_on("profiler-run-waits");
+    rig.manager.preview.set_candles_for_test(Vec::new());
+    rig.frame();
+    rig.manager.cmds.push(Cmd::ProfilerRun);
+    rig.frame();
+    assert_eq!(
+        status(&rig),
+        Status::Stale,
+        "nothing to run on yet, so the old profile stays"
+    );
+    rig.manager
+        .preview
+        .set_candles_for_test(super::debug_tests::bars(45));
+    until(&mut rig, "the run that was asked for", |s| {
+        *s == Status::Ready
+    });
+    assert_eq!(
+        rig.manager
+            .profiler
+            .profile()
+            .unwrap()
+            .key
+            .bars
+            .map(|b| b.0),
+        Some(45),
+        "the new profile is of the bars that arrived"
+    );
+}
+
+#[test]
 fn a_script_with_errors_is_not_run_and_is_run_when_fixed() {
     let mut rig = Rig::new("profiler-errors");
     rig.set_source("//@version=6\nindicator(\"Bad\")\nx = nope(\nplot(x)\n");

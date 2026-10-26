@@ -192,9 +192,11 @@ impl Profiler {
         self.run.is_some()
     }
 
-    /// Notes that a run cannot start until `why` is there; the manager tries again next frame.
+    /// Notes that a run cannot start until `why` is there; the manager tries again next frame, a
+    /// run the person asked for as much as one that was to start by itself.
     pub fn wait(&mut self, why: &'static str) {
         self.waiting = Some(why);
+        self.auto = self.on;
     }
 
     /// Notes a refusal without running anything.
