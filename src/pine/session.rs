@@ -112,6 +112,9 @@ pub struct Session {
     /// outlive the bar's rollback.
     pub logs: super::logs::LogSink,
     pub mintick: f64,
+    /// The footprints `request.footprint()` built. Not part of the rolled-back state: they follow
+    /// from the candles, and a handle names a bar, not an object.
+    pub(crate) footprints: super::footprint_call::FootprintCache,
     pub bar_seconds: f64,
     /// The length of the chart's own bars when it cannot be read off their open times: a
     /// price-based chart's bars follow price, not time.
@@ -340,6 +343,7 @@ impl Session {
             emitted_alerts: Vec::new(),
             logs: super::logs::LogSink::default(),
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
+            footprints: Default::default(),
             bar_seconds: 0.0,
             fixed_bar_seconds: None,
             drawing_limits,
@@ -381,6 +385,7 @@ impl Session {
         self.once_per_bar_ledger.clear();
         self.emitted_alerts.clear();
         self.logs.restart();
+        self.footprints.clear();
         self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
         self.last_bar_index = -1;
         self.last_bar_time = None;
@@ -2131,6 +2136,14 @@ impl Session {
         if name == "request.security_lower_tf" {
             return self.security_lower_tf_call(arguments, site, range, context);
         }
+        if name == "request.footprint" {
+            return self.footprint_request(arguments, range, context);
+        }
+        if let Some((namespace, member)) = name.split_once('.')
+            && super::footprint_call::handles(namespace, member)
+        {
+            return self.footprint_function(namespace, member, arguments, range, context);
+        }
         // `levels.push(x)`: the lexer reads `name.member` as one dotted name, so a variable (or
         // parameter) holding an array, map or matrix reaches here as a call to `levels.push`.
         if let Some((receiver, member)) = name.rsplit_once('.') {
@@ -2710,6 +2723,14 @@ impl Session {
                 format!("Cannot call '{member}' on a value that is na."),
                 range,
             ));
+        }
+        let footprint_type = match &value {
+            RuntimeValue::Ref(RefKind::Footprint, _) => Some("footprint"),
+            RuntimeValue::Ref(RefKind::VolumeRow, _) => Some("volume_row"),
+            _ => None,
+        };
+        if let Some(namespace) = footprint_type {
+            return self.footprint_member(namespace, member, value, arguments, range, context);
         }
         let prefix = match &value {
             RuntimeValue::Ref(RefKind::Array, _) => "array",

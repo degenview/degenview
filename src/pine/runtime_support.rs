@@ -67,6 +67,11 @@ pub trait SecurityDataProvider: Send {
     }
 }
 
+/// The most base candles a provider fetches for one intrabar series; the newest are kept, so a long
+/// chart gets intrabars for its recent part. Whoever asks for a series (`request.footprint`) picks a
+/// candle size that keeps the chart's span within it.
+pub const MAX_INTRABAR_CANDLES: usize = 60_000;
+
 /// The time the chart's bars cover, in milliseconds: from the first bar's open to the end of the last.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct ChartSpan {

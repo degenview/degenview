@@ -22,6 +22,10 @@ pub mod debug;
 pub mod drawings;
 pub mod execution;
 pub mod fast_hash;
+pub mod footprint;
+pub mod footprint_call;
+#[cfg(test)]
+mod footprint_tests;
 pub mod identifier_rules;
 pub mod ignored_features;
 #[cfg(test)]

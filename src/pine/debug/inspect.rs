@@ -8,6 +8,7 @@
 
 use crate::pine::containers::Object;
 use crate::pine::fast_hash::FastMap;
+use crate::pine::footprint_call::ROW_BITS;
 use crate::pine::number_format;
 use crate::pine::runtime_types::RuntimeContext;
 use crate::pine::runtime_value::{RefKind, RuntimeValue};
@@ -460,6 +461,11 @@ fn summarize(env: &Env<'_>, value: &RuntimeValue) -> (String, String) {
                 Some(object) => (object_text(env, object), object.type_name.clone()),
                 None => ("(removed)".to_owned(), "object".to_owned()),
             },
+            RefKind::Footprint => (format!("bar {id}"), "footprint".to_owned()),
+            RefKind::VolumeRow => (
+                format!("bar {}, row {}", id >> ROW_BITS, id & ((1 << ROW_BITS) - 1)),
+                "volume_row".to_owned(),
+            ),
             other => (format!("#{id}"), format!("{other:?}").to_lowercase()),
         },
     }
@@ -492,6 +498,7 @@ fn element_type(value: &RuntimeValue) -> String {
         RuntimeValue::Na => "na",
         RuntimeValue::Tuple(_) => "tuple",
         RuntimeValue::Void => "void",
+        RuntimeValue::Ref(RefKind::VolumeRow, _) => "volume_row",
         RuntimeValue::Ref(kind, _) => {
             return format!("{kind:?}").to_lowercase();
         }

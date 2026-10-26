@@ -29,6 +29,10 @@
   A change to timing must keep `Σ line time + not attributed = total` exactly (the tests run on a
   stepping clock and assert it). Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>
   <head-rev>` (head must be a commit; the `profiled_*` workloads are the recorder's cost).
+- `request.footprint()` handles are stateless (a footprint is a bar index, a `volume_row` a bar index
+  plus a row number) and the data lives in `Session::footprints`, outside `RuntimeState`; keep it
+  there so rollback does not copy it. Read [Pine volume footprints](../pine-footprint.md) before
+  changing its algorithm: most of it is inferred.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
 - Keep execution linear in bars: continue historical bars in working state
