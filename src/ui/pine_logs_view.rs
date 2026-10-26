@@ -1086,6 +1086,8 @@ pub(crate) fn step(ui: &mut Ui, number: usize, content: impl FnOnce(&mut Ui)) {
             kit::ACCENT,
         );
         ui.add_space(10.0);
+        // A line wider than the card wraps instead of running out of it.
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Wrap);
         content(ui);
     });
 }
