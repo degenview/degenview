@@ -2238,6 +2238,24 @@ impl Session {
         Ok(Some(slots))
     }
 
+    /// A `map.*` function call with only positional arguments, run without binding them by name.
+    /// Its own function so the operand slots stay out of `collection_call`'s frame, which every
+    /// `array.*` call crosses.
+    #[inline(never)]
+    fn map_call_positional(
+        &mut self,
+        name: &str,
+        arguments: &[super::ast::Argument],
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<Option<RuntimeValue>, Diagnostic> {
+        let count = map_builtins::parameters(name).len();
+        let Some(slots) = self.positional_operands(None, arguments, count, context)? else {
+            return Ok(None);
+        };
+        map_builtins::call_positional(name, &slots[..count], &mut self.working, range).map(Some)
+    }
+
     /// Runs one `array.*`/`map.*`/`matrix.*` call, or `None` when the name is none of them.
     fn collection_call(
         &mut self,
@@ -2264,10 +2282,7 @@ impl Session {
             array_builtins::parameters(name)
         } else if map_builtins::handles(name) {
             let parameters = map_builtins::parameters(name);
-            let count = parameters.len();
-            if let Some(slots) = self.positional_operands(None, arguments, count, context)? {
-                let value =
-                    map_builtins::call_positional(name, &slots[..count], &mut self.working, range)?;
+            if let Some(value) = self.map_call_positional(name, arguments, range, context)? {
                 return Ok(Some(value));
             }
             parameters
