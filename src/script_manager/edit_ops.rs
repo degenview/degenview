@@ -463,7 +463,12 @@ pub fn opens_block(kinds: &[TokenKind]) -> bool {
     };
     if matches!(
         first,
-        TokenKind::If | TokenKind::Else | TokenKind::For | TokenKind::While | TokenKind::Switch
+        TokenKind::If
+            | TokenKind::Else
+            | TokenKind::For
+            | TokenKind::While
+            | TokenKind::Once
+            | TokenKind::Switch
     ) {
         return true;
     }

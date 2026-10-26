@@ -35,6 +35,10 @@
   changing its algorithm: most of it is inferred.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
+- A `once` structure's finished flag is `RuntimeState::once_finished` (by site key), in the working
+  state on purpose: an unconfirmed realtime tick that ran the block is rolled back, so the structure
+  stays active until the block runs on a closing tick, as TradingView documents. Its condition is
+  evaluated every bar (like an `if`'s) so `ta.*` calls in it keep their history.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

@@ -339,6 +339,7 @@ pub fn classify(source: &str) -> Vec<Span> {
             | TokenKind::Break
             | TokenKind::Continue
             | TokenKind::While
+            | TokenKind::Once
             | TokenKind::Switch => push(range, Category::Keyword),
             TokenKind::LeftParen => paren_depth += 1,
             TokenKind::RightParen => paren_depth = paren_depth.saturating_sub(1),
@@ -354,6 +355,7 @@ pub fn classify(source: &str) -> Vec<Span> {
             | TokenKind::MinusAssign
             | TokenKind::StarAssign
             | TokenKind::SlashAssign
+            | TokenKind::PercentAssign
             | TokenKind::Equal
             | TokenKind::NotEqual
             | TokenKind::Less

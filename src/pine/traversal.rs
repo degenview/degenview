@@ -44,6 +44,7 @@ pub fn expressions(statement: &Statement) -> Vec<&Expression> {
         Statement::Conditional { condition, .. } | Statement::WhileLoop { condition, .. } => {
             vec![condition]
         }
+        Statement::Once { condition, .. } => condition.iter().collect(),
         Statement::ForRange { from, to, step, .. } => {
             let mut out = vec![from, to];
             if let Some(step) = step {
@@ -90,6 +91,7 @@ pub fn for_each_nested_block<'a>(statement: &'a Statement, mut visit: impl FnMut
         Statement::ForRange { body, .. }
         | Statement::ForIn { body, .. }
         | Statement::WhileLoop { body, .. }
+        | Statement::Once { body, .. }
         | Statement::Function { body, .. } => visit(body),
         Statement::Switch { arms, .. } => {
             for arm in arms {

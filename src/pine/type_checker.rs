@@ -138,6 +138,15 @@ impl TypeChecker {
                     self.require_bool(value, "while condition", condition.range());
                     self.block(body, scope);
                 }
+                Statement::Once {
+                    condition, body, ..
+                } => {
+                    if let Some(condition) = condition {
+                        let value = self.infer(condition, scope);
+                        self.require_bool(value, "once condition", condition.range());
+                    }
+                    self.block(body, scope);
+                }
                 Statement::Switch { subject, arms, .. } => {
                     if let Some(subject) = subject {
                         self.infer(subject, scope);
@@ -730,6 +739,7 @@ fn nested_blocks(statement: &Statement) -> Vec<&[Statement]> {
         Statement::ForRange { body, .. }
         | Statement::ForIn { body, .. }
         | Statement::WhileLoop { body, .. }
+        | Statement::Once { body, .. }
         | Statement::Function { body, .. } => vec![body.as_slice()],
         Statement::Switch { arms, .. } => arms.iter().map(|arm| arm.body.as_slice()).collect(),
         _ => Vec::new(),

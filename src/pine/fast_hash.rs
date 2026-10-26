@@ -3,7 +3,7 @@
 //! standard `SipHash` buys nothing and costs a large share of every bar. The multiply-rotate mix is
 //! the one `rustc` uses for its own maps.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::hash::{BuildHasherDefault, Hasher};
 
 const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
@@ -60,6 +60,7 @@ impl Hasher for FastHasher {
 }
 
 pub type FastMap<K, V> = HashMap<K, V, BuildHasherDefault<FastHasher>>;
+pub type FastSet<K> = HashSet<K, BuildHasherDefault<FastHasher>>;
 
 #[cfg(test)]
 mod tests {

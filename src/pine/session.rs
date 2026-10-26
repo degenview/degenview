@@ -1365,6 +1365,7 @@ impl Session {
                 | Statement::ForIn { .. }
                 | Statement::Conditional { .. }
                 | Statement::WhileLoop { .. }
+                | Statement::Once { .. }
                 | Statement::Switch { .. }
         ) {
             return self.run_statement_unscoped(statement, context);
@@ -1454,6 +1455,11 @@ impl Session {
             Statement::WhileLoop {
                 condition, body, ..
             } => self.run_while(condition, body, context),
+            Statement::Once {
+                condition,
+                body,
+                range,
+            } => self.run_once(condition.as_ref(), body, *range, context),
             Statement::Switch {
                 subject,
                 arms,
@@ -1586,6 +1592,40 @@ impl Session {
         )?;
         let (flow, value) = self.run(if test { when_true } else { when_false }, context)?;
         Ok(Step { flow, value })
+    }
+
+    /// `once [condition]`. The condition is evaluated on every bar, like an `if`'s, so the `ta.*`
+    /// calls in it keep their history; the block runs only until it has run once. The finished
+    /// flag lives in the working state, so an unconfirmed realtime tick that ran the block leaves
+    /// the structure active, as TradingView's rollback does.
+    fn run_once(
+        &mut self,
+        condition: Option<&Expression>,
+        body: &[Statement],
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<Step, Diagnostic> {
+        if let Some(condition) = condition {
+            let value = self.eval(condition, context)?;
+            let test = self.require_bool(
+                value,
+                "once condition must be bool; numeric-to-bool coercion is not allowed in v6.",
+                condition.range(),
+            )?;
+            if !test {
+                return Ok(Step::normal(RuntimeValue::Void));
+            }
+        }
+        let key = self.site_key(range.start.offset, context);
+        if self.working.once_finished.contains(&key) {
+            return Ok(Step::normal(RuntimeValue::Void));
+        }
+        let (flow, _) = self.run(body, context)?;
+        self.working.once_finished.push(key);
+        Ok(Step {
+            flow,
+            value: RuntimeValue::Void,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3512,6 +3552,73 @@ mod tests {
                 .values()
                 .all(|state| state.inputs.len() == 2),
             "only the historical bar and confirmed realtime bar should be committed"
+        );
+    }
+
+    #[test]
+    fn once_stays_active_through_realtime_ticks_and_finishes_when_the_bar_closes() {
+        let program = super::super::compiler::compile(
+            "//@version=6\nindicator(\"T\")\nvarip int runs = 0\n\
+             once barstate.isrealtime\n    runs += 1\nplot(runs)",
+            Limits::default(),
+            &super::super::compiler::NoLibraries,
+        );
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session.load_history(&[hourly(0)], true, None).unwrap();
+        let runs_after = |session: &mut Session, phase: BarPhase, open_time: i64| {
+            session
+                .execute(
+                    BarEvent {
+                        candle: hourly(open_time),
+                        phase,
+                    },
+                    true,
+                    None,
+                )
+                .unwrap();
+            session.output().plots[0].values.last().copied().flatten()
+        };
+        // Two ticks of the open bar each run the block: rollback keeps the structure active.
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: true },
+                3_600_000
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: false },
+                3_600_000
+            ),
+            Some(2.0)
+        );
+        // It runs on the closing tick and is then finished for good.
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeClose { is_new: false },
+                3_600_000
+            ),
+            Some(3.0)
+        );
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: true },
+                7_200_000
+            ),
+            Some(3.0)
         );
     }
 

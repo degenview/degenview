@@ -904,3 +904,71 @@ fn a_nested_loop_restores_its_own_counter_each_time_it_runs() {
     assert_eq!(value(&session, "acc"), RuntimeValue::Int(3 * 2 + 3 * 40));
     assert_eq!(value(&session, "after"), RuntimeValue::Int(40));
 }
+
+#[test]
+fn percent_assign_takes_the_remainder_like_modulo() {
+    let session = run(
+        "whole = 17\nwhole %= 5\nfraction = 7.5\nfraction %= 2\nwrapped = -7\nwrapped %= 3",
+        2,
+    );
+    assert_eq!(value(&session, "whole"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "fraction"), RuntimeValue::Float(1.5));
+    assert_eq!(value(&session, "wrapped"), RuntimeValue::Int(-1));
+}
+
+#[test]
+fn once_runs_its_block_the_first_time_the_condition_holds() {
+    let session = run(
+        "var int hits = 0\nvar int at = -1\n\
+         once bar_index >= 2\n    hits += 1\n    at := bar_index",
+        6,
+    );
+    assert_eq!(value(&session, "hits"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "at"), RuntimeValue::Int(2));
+}
+
+#[test]
+fn once_without_a_condition_runs_on_the_first_bar_only() {
+    let session = run("var int hits = 0\nonce\n    hits += 1", 5);
+    assert_eq!(value(&session, "hits"), RuntimeValue::Int(1));
+}
+
+#[test]
+fn once_never_runs_when_its_condition_never_holds() {
+    let session = run("var int hits = 0\nonce bar_index > 100\n    hits += 1", 5);
+    assert_eq!(value(&session, "hits"), RuntimeValue::Int(0));
+}
+
+#[test]
+fn each_once_structure_keeps_its_own_state() {
+    let session = run(
+        "var int early = 0\nvar int late = 0\n\
+         once bar_index >= 1\n    early += 1\n\
+         once bar_index >= 3\n    late += 1",
+        6,
+    );
+    assert_eq!(value(&session, "early"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "late"), RuntimeValue::Int(1));
+}
+
+#[test]
+fn a_loop_control_inside_once_still_reaches_the_loop() {
+    let session = run(
+        "var int hits = 0\nvar int seen = 0\n\
+         for i = 0 to 4\n    once\n        hits += 1\n        continue\n    seen += 1",
+        3,
+    );
+    // The block runs once in the whole run, so `continue` skips `seen` on one pass of 15.
+    assert_eq!(value(&session, "hits"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "seen"), RuntimeValue::Int(14));
+}
+
+#[test]
+fn a_numeric_once_condition_is_rejected() {
+    assert!(!diagnostic_codes("once 1\n    x = 1").is_empty());
+}
+
+#[test]
+fn once_cannot_be_assigned_to_a_variable() {
+    assert!(!diagnostic_codes("x = once\n    1").is_empty());
+}

@@ -67,9 +67,9 @@ pub struct Completion {
     pub items: Vec<Item>,
 }
 
-const KEYWORDS: [&str; 22] = [
+const KEYWORDS: [&str; 23] = [
     "if", "else", "for", "while", "switch", "var", "varip", "import", "export", "method", "type",
-    "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by",
+    "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by", "once",
 ];
 
 const TYPES: [&str; 16] = [

@@ -218,7 +218,9 @@ impl Builder<'_> {
             Statement::ForRange { .. } | Statement::ForIn { .. } | Statement::WhileLoop { .. } => {
                 RegionKind::Loop
             }
-            Statement::Conditional { .. } | Statement::Switch { .. } => RegionKind::Branch,
+            Statement::Conditional { .. } | Statement::Once { .. } | Statement::Switch { .. } => {
+                RegionKind::Branch
+            }
             // Declaring a type or an enum runs nothing, and `indicator()`, `strategy()` and
             // `library()` only configure the script; the interpreter walks past them each bar.
             Statement::TypeDeclaration { .. } | Statement::EnumDeclaration { .. } => return,
