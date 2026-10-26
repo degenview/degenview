@@ -32,6 +32,10 @@ const STAMP_SIZE: f32 = 10.5;
 const OVERSCAN: f32 = 240.0;
 /// The row menu's width: its longest entry, "Scroll to bar", with its icon.
 const MENU_WIDTH: f32 = 170.0;
+/// The width from which the search bar and the date bar share a row.
+const BARS_SIDE_BY_SIDE: f32 = 640.0;
+/// The height of list a short pane keeps under the header when the search bars are open.
+const MIN_LIST: f32 = 60.0;
 const DOCS_URL: &str = "https://www.tradingview.com/pine-script-docs/writing/debugging/#pine-logs";
 
 /// A script the pane can show: an instance on the chart.
@@ -71,8 +75,8 @@ pub struct LogsState {
     /// button are left out.
     pub embedded: bool,
     pub filter: LogFilter,
-    search_open: bool,
-    date_open: bool,
+    pub(crate) search_open: bool,
+    pub(crate) date_open: bool,
     /// The start date being typed or picked (`YYYY-MM-DD HH:MM`, UTC).
     date_text: String,
     date_error: bool,
@@ -131,16 +135,21 @@ pub fn show(
         title(ui, &mut actions);
         divider(ui);
     }
-    toolbar(ui, state, scripts, feed.as_ref(), &mut actions);
-    if state.search_open || state.date_open || state.filter.start_ms.is_some() {
-        ui.spacing_mut().item_spacing.y = spacing;
-        if state.search_open {
-            search_bar(ui, state);
-        }
-        if state.date_open {
-            date_bar(ui, state);
-        }
-        chips(ui, state);
+    let bars = state.search_open || state.date_open || state.filter.start_ms.is_some();
+    if bars {
+        // The search and date rows may not push the list out of a short pane: past what is left
+        // after a sliver of list, the header scrolls.
+        let room = (ui.available_height() - MIN_LIST).max(TOOLBAR_HEIGHT);
+        egui::ScrollArea::vertical()
+            .id_salt("pine-logs-header")
+            .max_height(room)
+            .auto_shrink([false, true])
+            .min_scrolled_height(0.0)
+            .show(ui, |ui| {
+                header(ui, state, scripts, feed.as_ref(), spacing, &mut actions);
+            });
+    } else {
+        header(ui, state, scripts, feed.as_ref(), spacing, &mut actions);
     }
     divider(ui);
     ui.spacing_mut().item_spacing.y = spacing;
@@ -152,6 +161,44 @@ pub fn show(
         }
     }
     actions
+}
+
+/// The toolbar, and under it the search and date bars and the start-date tag when they are open.
+fn header(
+    ui: &mut Ui,
+    state: &mut LogsState,
+    scripts: &[ScriptEntry],
+    feed: Option<&Feed>,
+    spacing: f32,
+    actions: &mut Vec<LogsAction>,
+) {
+    toolbar(ui, state, scripts, feed, actions);
+    if state.search_open || state.date_open || state.filter.start_ms.is_some() {
+        ui.spacing_mut().item_spacing.y = spacing;
+        if state.search_open && state.date_open && ui.available_width() >= BARS_SIDE_BY_SIDE {
+            // Wide enough, the two bars share a row rather than taking two.
+            let half = ui.available_width() / 2.0;
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+                ui.allocate_ui_with_layout(vec2(half, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = spacing;
+                    search_bar(ui, state);
+                });
+                ui.allocate_ui_with_layout(vec2(half, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.spacing_mut().item_spacing.y = spacing;
+                    date_bar(ui, state);
+                });
+            });
+        } else {
+            if state.search_open {
+                search_bar(ui, state);
+            }
+            if state.date_open {
+                date_bar(ui, state);
+            }
+        }
+        chips(ui, state);
+    }
 }
 
 fn divider(ui: &mut Ui) {
@@ -618,6 +665,7 @@ fn list(
     let area = egui::ScrollArea::vertical()
         .id_salt("pine-logs-rows")
         .auto_shrink([false, false])
+        .min_scrolled_height(0.0)
         .animated(false)
         .stick_to_bottom(true);
     let jump = std::mem::take(&mut state.jump_to_latest);
@@ -890,19 +938,78 @@ fn logging_off(ui: &mut Ui, script: u64, actions: &mut Vec<LogsAction>) {
 
 fn onboarding(ui: &mut Ui) {
     centered(ui, |ui| {
-        let width = ui.available_width().min(268.0);
+        intro(
+            ui,
+            "How to work with logs",
+            "See what your script does, bar by bar.",
+            |ui| {
+                step(ui, 1, |ui| {
+                    ui.label(muted("Add the indicator to the chart."));
+                });
+                step(ui, 2, |ui| {
+                    ui.label(muted("Use the "));
+                    let link = ui.add(
+                        egui::Label::new(
+                            kit::text(
+                                "log functions",
+                                kit::size::SUBHEADLINE,
+                                kit::MEDIUM,
+                                kit::ACCENT,
+                            )
+                            .underline(),
+                        )
+                        .sense(Sense::click()),
+                    );
+                    if link
+                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                        .clicked()
+                    {
+                        ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
+                    }
+                    ui.label(muted("."));
+                });
+                step(ui, 3, |ui| {
+                    ui.label(muted("Enable logging."));
+                });
+            },
+            example,
+            illustration,
+            |_| {},
+        );
+    });
+}
+
+/// The width from which an introduction puts its picture beside its steps.
+const INTRO_WIDE: f32 = 520.0;
+
+/// What a tab says while it has nothing to show: a picture and what the tab is for, a card of
+/// numbered steps, an example, and whatever `footer` adds under the words (a button). Side by side
+/// where the width allows, so it takes half the height; one column otherwise. Call it inside
+/// [`centered`].
+pub(crate) fn intro(
+    ui: &mut Ui,
+    heading: &str,
+    subheading: &str,
+    steps: impl FnOnce(&mut Ui),
+    example: impl FnOnce(&mut Ui, f32),
+    picture: impl FnOnce(&Ui, Rect),
+    footer: impl FnOnce(&mut Ui),
+) {
+    let available = ui.available_width();
+    let words = |ui: &mut Ui| {
         let (rect, _) = ui.allocate_exact_size(vec2(96.0, 84.0), Sense::hover());
-        illustration(ui, rect);
+        picture(ui, rect);
         ui.add_space(16.0);
         ui.label(kit::text(
-            "How to work with logs",
+            heading,
             14.0,
             kit::SEMIBOLD,
             theme::text_primary(),
         ));
         ui.add_space(3.0);
-        ui.label(muted("See what your script does, bar by bar."));
-        ui.add_space(16.0);
+        ui.label(muted(subheading));
+    };
+    let card = |ui: &mut Ui, width: f32| {
         ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
             egui::Frame::new()
                 .fill(theme::ink(7))
@@ -912,41 +1019,32 @@ fn onboarding(ui: &mut Ui) {
                 .show(ui, |ui| {
                     ui.set_width(width - 26.0);
                     ui.spacing_mut().item_spacing = vec2(0.0, 10.0);
-                    step(ui, 1, |ui| {
-                        ui.label(muted("Add the indicator to the chart."));
-                    });
-                    step(ui, 2, |ui| {
-                        ui.label(muted("Use the "));
-                        let link = ui.add(
-                            egui::Label::new(
-                                kit::text(
-                                    "log functions",
-                                    kit::size::SUBHEADLINE,
-                                    kit::MEDIUM,
-                                    kit::ACCENT,
-                                )
-                                .underline(),
-                            )
-                            .sense(Sense::click()),
-                        );
-                        if link
-                            .on_hover_cursor(egui::CursorIcon::PointingHand)
-                            .clicked()
-                        {
-                            ui.ctx().open_url(egui::OpenUrl::new_tab(DOCS_URL));
-                        }
-                        ui.label(muted("."));
-                    });
-                    step(ui, 3, |ui| {
-                        ui.label(muted("Enable logging."));
-                    });
+                    steps(ui);
                 });
             if width >= 220.0 {
                 ui.add_space(10.0);
                 example(ui, width);
             }
         });
-    });
+    };
+    if available >= INTRO_WIDE {
+        let (left, right, gap) = (210.0, 268.0, 28.0);
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            ui.add_space(((available - left - right - gap) / 2.0).max(0.0));
+            ui.allocate_ui_with_layout(vec2(left, 0.0), Layout::top_down(Align::Center), |ui| {
+                ui.set_width(left);
+                words(ui);
+                footer(ui);
+            });
+            card(ui, right);
+        });
+    } else {
+        words(ui);
+        ui.add_space(16.0);
+        card(ui, available.min(268.0));
+        footer(ui);
+    }
 }
 
 /// A call as a script writes it, in the editor's colours.
@@ -1021,21 +1119,30 @@ fn detail(ui: &mut Ui, text: &str) {
 }
 
 /// Content in the middle of what is left of the pane, both ways. Its height is measured as it is
-/// laid out and used the next frame, as the first frame cannot know it.
+/// laid out and used the next frame, as the first frame cannot know it. When it is taller than the
+/// pane it starts at the top and scrolls, rather than being cut off.
 pub(crate) fn centered(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
     let id = ui.id().with("centered-height");
     let known = ui.data(|data| data.get_temp::<f32>(id)).unwrap_or(0.0);
-    ui.add_space(((ui.available_height() - known) / 2.0).max(12.0));
-    let top = ui.cursor().top();
-    ui.vertical_centered(|ui| {
-        ui.set_max_width((ui.available_width() - MARGIN * 3.0).max(120.0));
-        content(ui);
-    });
-    let used = ui.cursor().top() - top;
-    if (used - known).abs() > 0.5 {
-        ui.data_mut(|data| data.insert_temp(id, used));
-        ui.ctx().request_repaint();
-    }
+    let room = ui.available_height();
+    egui::ScrollArea::vertical()
+        .id_salt(id.with("scroll"))
+        .auto_shrink([false, false])
+        .min_scrolled_height(0.0)
+        .show(ui, |ui| {
+            ui.add_space(((room - known) / 2.0).max(12.0));
+            let top = ui.cursor().top();
+            ui.vertical_centered(|ui| {
+                ui.set_max_width((ui.available_width() - MARGIN * 3.0).max(120.0));
+                content(ui);
+            });
+            let used = ui.cursor().top() - top;
+            ui.add_space(12.0);
+            if (used - known).abs() > 0.5 {
+                ui.data_mut(|data| data.insert_temp(id, used));
+                ui.ctx().request_repaint();
+            }
+        });
 }
 
 /// A page of log lines on a soft disc: a gray, an orange and a red message, the three levels.

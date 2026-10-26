@@ -74,6 +74,21 @@
   `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
   second.
 
+## Drawer tabs
+
+- The preview drawer's Report, Problems and Profile tabs share `script_manager::tab_chrome`: a 46px
+  toolbar with a `state_field`, a hairline, then cards of rows. The Logs tab (`ui::pine_logs_view`,
+  shared with the chart workspace) mirrors its constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and
+  `BUTTON` equal.
+- Spend width before height: `chrome::wide` (520pt of room) puts parts in `chrome::columns`, and
+  `pine_logs_view::intro` puts a picture beside its steps. Nothing outside a scroll area may be
+  taller than the drawer (minimum 90pt): bodies use `chrome::scroll`, empty states use `centered`
+  (which scrolls), and scroll areas set `min_scrolled_height(0.0)` (egui's default of 64 pushes a
+  tab past a short drawer). `drawer_tabs_tests` asserts every tab uses no more than the room at five
+  sizes; set `DEGENVIEW_GALLERY_DIR` to get pictures.
+- `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
+  the same pieces (`metric_grid`, `equity_curve`) itself.
+
 ## Manager lifecycle
 
 - `ScriptManager` owns its window. `workspace::PreviewState` drives one crypto/stock preview with

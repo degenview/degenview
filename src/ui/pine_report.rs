@@ -95,7 +95,7 @@ impl PineReportFormat {
 }
 
 /// Green above zero, red below, neutral at zero.
-fn tint(value: f64, neutral: Color32) -> Color32 {
+pub(crate) fn tint(value: f64, neutral: Color32) -> Color32 {
     if value > 0.0 {
         theme::WIN
     } else if value < 0.0 {
@@ -141,7 +141,13 @@ pub fn show(ui: &mut egui::Ui, report: Option<&StrategyReport>) {
             );
         }
         metric_grid(ui, report, neutral);
-        equity_curve(ui, &report.equity, report.settings.initial_capital);
+        equity_curve(
+            ui,
+            &report.equity,
+            report.settings.initial_capital,
+            EQUITY_HEIGHT,
+            true,
+        );
         if !report.trades.is_empty() {
             trade_list(ui, report, neutral);
         }
@@ -167,7 +173,7 @@ pub fn synthetic_fill_notice(chart: crate::model::ChartKind) -> Option<String> {
     ))
 }
 
-fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
+pub(crate) fn metric_grid(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
     let drawdown = report.max_drawdown();
     let net = report.net_profit();
     let win_rate = report
@@ -311,10 +317,19 @@ fn trade_list(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
     });
 }
 
-/// Draws the equity curve against the starting capital, downsampled to `POINT_LIMIT` points.
-fn equity_curve(ui: &mut egui::Ui, equity: &[f64], initial_capital: f64) {
+/// The height of the equity curve in the report box.
+const EQUITY_HEIGHT: f32 = 64.0;
+
+/// Draws the equity curve against the starting capital, downsampled to `POINT_LIMIT` points, with
+/// its name in the corner when `labelled`.
+pub(crate) fn equity_curve(
+    ui: &mut egui::Ui,
+    equity: &[f64],
+    initial_capital: f64,
+    height: f32,
+    labelled: bool,
+) {
     const POINT_LIMIT: usize = 400;
-    const HEIGHT: f32 = 64.0;
     const INSET: f32 = 2.0;
 
     let values = downsample(equity, POINT_LIMIT);
@@ -323,7 +338,7 @@ fn equity_curve(ui: &mut egui::Ui, equity: &[f64], initial_capital: f64) {
     }
     let rect = ui
         .allocate_exact_size(
-            egui::vec2(ui.available_width(), HEIGHT),
+            egui::vec2(ui.available_width(), height),
             egui::Sense::hover(),
         )
         .0;
@@ -368,13 +383,15 @@ fn equity_curve(ui: &mut egui::Ui, equity: &[f64], initial_capital: f64) {
         .collect();
     painter.add(egui::Shape::line(points, Stroke::new(1.5, tone)));
 
-    painter.text(
-        rect.min + egui::vec2(4.0, 4.0),
-        Align2::LEFT_TOP,
-        "Equity",
-        FontId::proportional(9.0),
-        weak,
-    );
+    if labelled {
+        painter.text(
+            rect.min + egui::vec2(4.0, 4.0),
+            Align2::LEFT_TOP,
+            "Equity",
+            FontId::proportional(9.0),
+            weak,
+        );
+    }
 }
 
 /// Keeps the first and last points and evenly spaced ones between.

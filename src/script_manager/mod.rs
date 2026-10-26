@@ -21,6 +21,8 @@ pub mod demo;
 pub mod diff;
 mod diff_view;
 pub mod drawer;
+#[cfg(test)]
+mod drawer_tabs_tests;
 pub mod edit_ops;
 pub mod editor;
 mod find;
@@ -46,6 +48,7 @@ mod signature;
 pub mod store;
 pub mod symbols;
 pub mod syntax;
+mod tab_chrome;
 mod unsaved;
 mod workspace;
 

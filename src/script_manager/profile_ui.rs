@@ -6,24 +6,22 @@
 //! the one button that does the next thing), a hairline, then the body: an introduction while it is
 //! off, a message while there is nothing to show, the result otherwise.
 
+use std::cell::RefCell;
+
 use eframe::egui::{
-    self, Align, Align2, Color32, CursorIcon, FontId, Layout, Margin, Rect, ScrollArea, Sense,
-    Stroke, StrokeKind, Ui, pos2, vec2,
+    self, Align2, Color32, CursorIcon, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
 use super::profile_marks::{HotRow, ProfileMarks, SummaryGroup, SummaryRow, count};
 use super::profiler::{Profile, Status};
+use super::tab_chrome::{self as chrome, BUTTON, banner, caption, card, hairline};
 use crate::pine::profile::RegionKind;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
-use crate::ui::pine_logs_view::{centered, step};
+use crate::ui::pine_logs_view::{centered, intro, step};
 use crate::ui::shortcut;
 use crate::ui::theme;
 
-const TOOLBAR_HEIGHT: f32 = 46.0;
-const MARGIN: f32 = 12.0;
-const BUTTON: f32 = 26.0;
-const FIELD_HEIGHT: f32 = 24.0;
 const ROW_HEIGHT: f32 = 26.0;
 
 /// What a surface asked for.
@@ -163,11 +161,7 @@ pub struct TabView<'a> {
 pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
     let mut actions = Vec::new();
     ui.set_min_height(ui.available_height());
-    let spacing = ui.spacing().item_spacing.y;
-    ui.spacing_mut().item_spacing.y = 0.0;
     toolbar_row(ui, view, &mut actions);
-    divider(ui);
-    ui.spacing_mut().item_spacing.y = spacing;
     match (view.status, view.profile) {
         (Status::Off, _) => introduction(ui, &mut actions),
         (Status::Running { done, total, .. }, _) => running(ui, *done, *total, &mut actions),
@@ -194,99 +188,43 @@ pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
     actions
 }
 
-fn divider(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, kit::hairline());
-}
-
 /// The state, in a field like the Logs tab's script picker, and the button that does the next thing.
 fn toolbar_row(ui: &mut Ui, view: &TabView<'_>, actions: &mut Vec<Action>) {
     let description = describe(view.status);
-    let width = ui.available_width();
-    ui.allocate_ui_with_layout(
-        vec2(width, TOOLBAR_HEIGHT),
-        Layout::left_to_right(Align::Center),
-        |ui| {
-            ui.spacing_mut().item_spacing = vec2(2.0, 0.0);
-            ui.add_space(MARGIN);
-            let button = if description.action.is_some() {
-                BUTTON + 8.0
+    chrome::toolbar(ui, |ui, width| {
+        let field = chrome::field_width(width, usize::from(description.action.is_some()));
+        // The chart the profile is of, at the field's right edge, if there is room beside the state.
+        let chart = view
+            .profile
+            .filter(|_| *view.status != Status::Off)
+            .map(|profile| (profile.label.as_str(), theme::text_secondary()));
+        chrome::state_field(
+            ui,
+            field,
+            description.tone.color(),
+            &description.label,
+            chart,
+        );
+        if let Some(action) = description.action {
+            ui.add_space(6.0);
+            let icon = if action == Action::Cancel {
+                Icon::Xmark
             } else {
-                0.0
+                Icon::Repeat
             };
-            let field_width = (width - MARGIN * 2.0 - button).max(60.0);
-            let (rect, response) =
-                ui.allocate_exact_size(vec2(field_width, FIELD_HEIGHT), Sense::hover());
-            crate::ui::accessibility::label(response, &description.label);
-            ui.painter().rect_filled(rect, 6.0, kit::primary(0.1));
-            ui.painter().rect_stroke(
-                rect,
-                6.0,
-                Stroke::new(1.0, kit::primary(0.06)),
-                StrokeKind::Inside,
-            );
-            ui.painter().circle_filled(
-                pos2(rect.left() + 13.0, rect.center().y),
-                3.5,
-                description.tone.color(),
-            );
-            let label = kit::galley(
+            if icons::button(
                 ui,
-                &description.label,
-                kit::size::BODY,
-                kit::REGULAR,
-                theme::text_primary(),
-                field_width - 34.0,
-            );
-            let label_right = rect.left() + 26.0 + label.size().x;
-            // The chart the profile is of, at the field's right edge, if there is room beside the state.
-            if let Some(profile) = view.profile.filter(|_| *view.status != Status::Off) {
-                let room = rect.right() - 10.0 - label_right - 16.0;
-                if room > 40.0 {
-                    let chart = kit::galley(
-                        ui,
-                        &profile.label,
-                        kit::size::SUBHEADLINE,
-                        kit::REGULAR,
-                        theme::text_secondary(),
-                        room,
-                    );
-                    ui.painter().galley(
-                        pos2(
-                            rect.right() - 10.0 - chart.size().x,
-                            rect.center().y - chart.size().y / 2.0,
-                        ),
-                        chart,
-                        theme::text_secondary(),
-                    );
-                }
+                icon,
+                BUTTON,
+                theme::text_secondary(),
+                description.button,
+            )
+            .clicked()
+            {
+                actions.push(action);
             }
-            ui.painter().galley(
-                pos2(rect.left() + 26.0, rect.center().y - label.size().y / 2.0),
-                label,
-                theme::text_primary(),
-            );
-            if let Some(action) = description.action {
-                ui.add_space(6.0);
-                let icon = if action == Action::Cancel {
-                    Icon::Xmark
-                } else {
-                    Icon::Repeat
-                };
-                if icons::button(
-                    ui,
-                    icon,
-                    BUTTON,
-                    theme::text_secondary(),
-                    description.button,
-                )
-                .clicked()
-                {
-                    actions.push(action);
-                }
-            }
-        },
-    );
+        }
+    });
 }
 
 // MARK: Off, waiting, failed, running
@@ -295,47 +233,30 @@ fn toolbar_row(ui: &mut Ui, view: &TabView<'_>, actions: &mut Vec<Action>) {
 /// introduction.
 fn introduction(ui: &mut Ui, actions: &mut Vec<Action>) {
     centered(ui, |ui| {
-        let width = ui.available_width().min(268.0);
-        let (rect, _) = ui.allocate_exact_size(vec2(96.0, 84.0), Sense::hover());
-        illustration(ui, rect);
-        ui.add_space(16.0);
-        ui.label(kit::text(
+        intro(
+            ui,
             "Find what makes a script slow",
-            14.0,
-            kit::SEMIBOLD,
-            theme::text_primary(),
-        ));
-        ui.add_space(3.0);
-        ui.label(muted("See where its time goes, line by line."));
-        ui.add_space(16.0);
-        ui.allocate_ui_with_layout(vec2(width, 0.0), Layout::top_down(Align::Min), |ui| {
-            egui::Frame::new()
-                .fill(theme::ink(7))
-                .stroke(Stroke::new(1.0, theme::ink(14)))
-                .corner_radius(10.0)
-                .inner_margin(Margin::symmetric(12, 11))
-                .show(ui, |ui| {
-                    ui.set_width(width - 26.0);
-                    ui.spacing_mut().item_spacing = vec2(0.0, 10.0);
-                    step(ui, 1, |ui| {
-                        ui.label(muted("Turn the profiler on with the stopwatch."));
-                    });
-                    step(ui, 2, |ui| {
-                        ui.label(muted("It runs the script on the preview chart's bars."));
-                    });
-                    step(ui, 3, |ui| {
-                        ui.label(muted("Bars and shares appear beside the code."));
-                    });
+            "See where its time goes, line by line.",
+            |ui| {
+                step(ui, 1, |ui| {
+                    ui.label(muted("Turn the profiler on with the stopwatch."));
                 });
-            if width >= 220.0 {
-                ui.add_space(10.0);
-                example(ui, width);
-            }
-        });
-        ui.add_space(14.0);
-        if kit::push_button(ui, Some(Icon::Gauge), "Start profiling", true).clicked() {
-            actions.push(Action::Toggle);
-        }
+                step(ui, 2, |ui| {
+                    ui.label(muted("It runs the script on the preview chart's bars."));
+                });
+                step(ui, 3, |ui| {
+                    ui.label(muted("Bars and shares appear beside the code."));
+                });
+            },
+            example,
+            illustration,
+            |ui| {
+                ui.add_space(14.0);
+                if kit::push_button(ui, Some(Icon::Gauge), "Start profiling", true).clicked() {
+                    actions.push(Action::Toggle);
+                }
+            },
+        );
     });
 }
 
@@ -401,76 +322,69 @@ fn running(ui: &mut Ui, done: u64, total: u64, actions: &mut Vec<Action>) {
 
 fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<Action>) {
     let navigable = view.lines_match;
-    ScrollArea::vertical()
-        .id_salt("profile-result")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            egui::Frame::new()
-                .inner_margin(Margin::symmetric(MARGIN as i8, 12))
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 0.0;
-                    if let Some(caveat) = &profile.marks.caveat {
-                        banner(ui, caveat);
-                    }
-                    if *view.status == Status::Stale {
-                        banner(
-                            ui,
-                            if navigable {
-                                "This profile is of earlier inputs or data. Its lines still match the editor."
-                            } else {
-                                "This profile is of earlier text. Its lines no longer match the editor."
-                            },
-                        );
-                    }
-                    totals(ui, &profile.marks, navigable);
+    chrome::scroll(ui, "profile-result", |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        if let Some(caveat) = &profile.marks.caveat {
+            banner(ui, caveat);
+        }
+        if *view.status == Status::Stale {
+            banner(
+                ui,
+                if navigable {
+                    "This profile is of earlier inputs or data. Its lines still match the editor."
+                } else {
+                    "This profile is of earlier text. Its lines no longer match the editor."
+                },
+            );
+        }
+        totals(ui, &profile.marks, navigable);
+        ui.add_space(16.0);
+        let hottest_lines = |ui: &mut Ui, actions: &mut Vec<Action>| {
+            caption(ui, "Hottest lines");
+            hottest(ui, profile, navigable, actions);
+        };
+        let groups = |ui: &mut Ui, actions: &mut Vec<Action>, first: bool| {
+            let mut first = first;
+            for group in [SummaryGroup::Hotspots, SummaryGroup::Measurement] {
+                let rows: Vec<&SummaryRow> = profile
+                    .marks
+                    .summary
+                    .iter()
+                    .filter(|row| row.group == group)
+                    .collect();
+                if rows.is_empty() {
+                    continue;
+                }
+                if !std::mem::take(&mut first) {
                     ui.add_space(16.0);
-                    caption(ui, "Hottest lines");
-                    hottest(ui, profile, navigable, actions);
-                    for group in [SummaryGroup::Hotspots, SummaryGroup::Measurement] {
-                        let rows: Vec<&SummaryRow> = profile
-                            .marks
-                            .summary
-                            .iter()
-                            .filter(|row| row.group == group)
-                            .collect();
-                        if rows.is_empty() {
-                            continue;
-                        }
-                        ui.add_space(16.0);
-                        caption(ui, group.title());
-                        details(ui, &rows, navigable, actions);
-                    }
-                });
+                }
+                caption(ui, group.title());
+                details(ui, &rows, navigable, actions);
+            }
+        };
+        let any_group = profile.marks.summary.iter().any(|row| {
+            matches!(
+                row.group,
+                SummaryGroup::Hotspots | SummaryGroup::Measurement
+            )
         });
-}
-
-/// A quiet strip above the figures: a caution about what follows.
-fn banner(ui: &mut Ui, text: &str) {
-    egui::Frame::new()
-        .fill(theme::with_alpha(theme::profiler_caution(), 0.12))
-        .corner_radius(8.0)
-        .inner_margin(Margin::symmetric(10, 7))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(kit::text(
-                text,
-                kit::size::SUBHEADLINE,
-                kit::REGULAR,
-                theme::profiler_caution(),
-            ));
-        });
-    ui.add_space(10.0);
-}
-
-/// A small heading above a list or a card.
-fn caption(ui: &mut Ui, text: &str) {
-    ui.label(kit::text(
-        text,
-        kit::size::SUBHEADLINE,
-        kit::SEMIBOLD,
-        theme::text_secondary(),
-    ));
-    ui.add_space(6.0);
+        if chrome::wide(ui) && any_group {
+            // The ranked lines beside the figures, so the drawer's height goes to whichever is longer.
+            let actions = RefCell::new(&mut *actions);
+            chrome::columns(
+                ui,
+                0.56,
+                |ui| hottest_lines(ui, &mut actions.borrow_mut()),
+                |ui| groups(ui, &mut actions.borrow_mut(), true),
+            );
+        } else {
+            hottest_lines(ui, actions);
+            if any_group {
+                ui.add_space(16.0);
+            }
+            groups(ui, actions, true);
+        }
+    });
 }
 
 /// The run's three figures, side by side.
@@ -525,7 +439,7 @@ fn hottest(ui: &mut Ui, profile: &Profile, navigable: bool, actions: &mut Vec<Ac
         ui.label(muted("No line took a measurable share of the time."));
         return;
     }
-    list_card(ui, |ui| {
+    card(ui, |ui| {
         for (index, row) in profile.marks.hot.iter().enumerate() {
             if index > 0 {
                 hairline(ui);
@@ -535,29 +449,6 @@ fn hottest(ui: &mut Ui, profile: &Profile, navigable: bool, actions: &mut Vec<Ac
             }
         }
     });
-}
-
-/// The rounded card that holds a list of rows.
-fn list_card(ui: &mut Ui, rows: impl FnOnce(&mut Ui)) {
-    egui::Frame::new()
-        .fill(theme::ink(7))
-        .stroke(Stroke::new(1.0, theme::ink(14)))
-        .corner_radius(10.0)
-        .inner_margin(Margin::symmetric(0, 3))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.spacing_mut().item_spacing.y = 0.0;
-            rows(ui);
-        });
-}
-
-fn hairline(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().hline(
-        rect.left() + 12.0..=rect.right() - 12.0,
-        rect.center().y,
-        Stroke::new(1.0, theme::ink(10)),
-    );
 }
 
 /// One ranked line: where it is, what it says, and on the right how long it took itself and how
@@ -643,7 +534,7 @@ fn hot_row(ui: &mut Ui, row: &HotRow, navigable: bool) -> egui::Response {
 /// A card of label-and-value rows: the label and what it is of on the left, the figure on the
 /// right, a hairline between rows. A row that names a line goes to it.
 fn details(ui: &mut Ui, rows: &[&SummaryRow], navigable: bool, actions: &mut Vec<Action>) {
-    list_card(ui, |ui| {
+    card(ui, |ui| {
         for (index, row) in rows.iter().enumerate() {
             if index > 0 {
                 hairline(ui);
