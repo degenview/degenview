@@ -11,8 +11,61 @@ use super::runtime_value::{RefKind, RuntimeValue};
 use super::state::RuntimeState;
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 
-/// Evaluated arguments by parameter name.
-pub type Bound = super::fast_hash::FastMap<String, RuntimeValue>;
+/// The most parameters a builtin binds by name (`ta.alma`).
+const BOUND_CAPACITY: usize = 5;
+
+/// Evaluated arguments by parameter name. A builtin has a handful of parameters with static names,
+/// so this is a short list searched in order: binding a call allocates nothing, where a table of
+/// owned names cost an allocation per argument on every `array.get` in a loop.
+pub struct Bound {
+    entries: [(&'static str, RuntimeValue); BOUND_CAPACITY],
+    len: usize,
+}
+
+impl Default for Bound {
+    fn default() -> Self {
+        Self {
+            entries: [const { ("", RuntimeValue::Na) }; BOUND_CAPACITY],
+            len: 0,
+        }
+    }
+}
+
+impl Bound {
+    pub fn get(&self, name: &str) -> Option<&RuntimeValue> {
+        self.entries[..self.len]
+            .iter()
+            .find(|(candidate, _)| *candidate == name)
+            .map(|(_, value)| value)
+    }
+
+    /// Binds `name`, replacing an earlier binding of it.
+    pub fn insert(&mut self, name: &'static str, value: RuntimeValue) {
+        if let Some(entry) = self.entries[..self.len]
+            .iter_mut()
+            .find(|(candidate, _)| *candidate == name)
+        {
+            entry.1 = value;
+            return;
+        }
+        assert!(
+            self.len < BOUND_CAPACITY,
+            "a builtin binds at most {BOUND_CAPACITY} parameters"
+        );
+        self.entries[self.len] = (name, value);
+        self.len += 1;
+    }
+}
+
+impl FromIterator<(&'static str, RuntimeValue)> for Bound {
+    fn from_iter<I: IntoIterator<Item = (&'static str, RuntimeValue)>>(pairs: I) -> Self {
+        let mut bound = Self::default();
+        for (name, value) in pairs {
+            bound.insert(name, value);
+        }
+        bound
+    }
+}
 
 /// Parameter names per operation, in positional order. Operations not listed take `id`.
 pub fn parameters(name: &str) -> &'static [&'static str] {
@@ -637,7 +690,7 @@ mod tests {
             let bound: Bound = parameters(name)
                 .iter()
                 .zip(arguments)
-                .map(|(parameter, value)| ((*parameter).to_owned(), value.clone()))
+                .map(|(parameter, value)| (*parameter, value.clone()))
                 .collect();
             call(
                 name,
@@ -1036,5 +1089,24 @@ mod tests {
             f.run("array.covariance", &[x, Na]).unwrap_err().code,
             "PINE4011"
         );
+    }
+
+    #[test]
+    fn bound_arguments_are_found_by_name_and_replaced_on_rebind() {
+        let mut bound = Bound::default();
+        assert_eq!(bound.get("id"), None);
+        bound.insert("id", Int(1));
+        bound.insert("index", Int(2));
+        bound.insert("id", Int(3));
+        assert_eq!(bound.get("id"), Some(&Int(3)));
+        assert_eq!(bound.get("index"), Some(&Int(2)));
+        assert_eq!(bound.get("value"), None);
+        let collected: Bound = [("a", Int(1)), ("b", Na)].into_iter().collect();
+        assert_eq!(collected.get("b"), Some(&Na));
+        let mut full = Bound::default();
+        for name in ["a", "b", "c", "d", "e"] {
+            full.insert(name, Int(0));
+        }
+        assert_eq!(full.get("e"), Some(&Int(0)), "five parameters fit");
     }
 }

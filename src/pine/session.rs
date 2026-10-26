@@ -9,6 +9,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+use super::array_builtins::Bound;
 use super::ast::{
     AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Literal, Statement, SwitchArm,
     UnaryOperator,
@@ -2187,27 +2188,24 @@ impl Session {
     pub(crate) fn bind_named(
         &mut self,
         arguments: &[super::ast::Argument],
-        parameters: &[&str],
+        parameters: &[&'static str],
         context: &mut RuntimeContext,
-    ) -> Result<FastMap<String, RuntimeValue>, Diagnostic> {
-        let positional: Vec<&super::ast::Argument> = arguments
-            .iter()
-            .filter(|argument| argument.name.is_none())
-            .collect();
-        let mut bound = FastMap::default();
+    ) -> Result<Bound, Diagnostic> {
+        let mut bound = Bound::default();
         for (index, name) in parameters.iter().enumerate() {
             if let Some(named) = arguments
                 .iter()
                 .find(|argument| argument.name.as_deref() == Some(*name))
             {
-                bound.insert((*name).to_owned(), self.eval(&named.value, context)?);
-            } else if index < positional.len() {
-                bound.insert(
-                    (*name).to_owned(),
-                    self.eval(&positional[index].value, context)?,
-                );
+                bound.insert(name, self.eval(&named.value, context)?);
+            } else if let Some(positional) = arguments
+                .iter()
+                .filter(|argument| argument.name.is_none())
+                .nth(index)
+            {
+                bound.insert(name, self.eval(&positional.value, context)?);
             } else {
-                bound.insert((*name).to_owned(), RuntimeValue::Na);
+                bound.insert(name, RuntimeValue::Na);
             }
         }
         Ok(bound)
@@ -2270,7 +2268,7 @@ impl Session {
             let values = self.eval_all(arguments, context)?;
             let value = array_builtins::call(
                 name,
-                &FastMap::default(),
+                &Bound::default(),
                 &values,
                 &mut self.working,
                 self.mintick,
@@ -2692,12 +2690,8 @@ impl Session {
             "map" => map_builtins::parameters(&full),
             _ => matrix_builtins::parameters(&full),
         };
-        let mut bound = FastMap::default();
-        bound.insert("id".to_owned(), value.clone());
-        let positional: Vec<&super::ast::Argument> = arguments
-            .iter()
-            .filter(|argument| argument.name.is_none())
-            .collect();
+        let mut bound = Bound::default();
+        bound.insert("id", value.clone());
         let mut position = 0;
         for parameter in parameters {
             if *parameter == "id" {
@@ -2707,15 +2701,16 @@ impl Session {
                 .iter()
                 .find(|argument| argument.name.as_deref() == Some(*parameter))
             {
-                bound.insert((*parameter).to_owned(), self.eval(&named.value, context)?);
-            } else if position < positional.len() {
-                bound.insert(
-                    (*parameter).to_owned(),
-                    self.eval(&positional[position].value, context)?,
-                );
+                bound.insert(parameter, self.eval(&named.value, context)?);
+            } else if let Some(positional) = arguments
+                .iter()
+                .filter(|argument| argument.name.is_none())
+                .nth(position)
+            {
+                bound.insert(parameter, self.eval(&positional.value, context)?);
                 position += 1;
             } else {
-                bound.insert((*parameter).to_owned(), RuntimeValue::Na);
+                bound.insert(parameter, RuntimeValue::Na);
             }
         }
         let result = match prefix {

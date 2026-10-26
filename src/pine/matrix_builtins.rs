@@ -332,7 +332,7 @@ mod tests {
         let bound: Bound = parameters(name)
             .iter()
             .zip(arguments)
-            .map(|(parameter, value)| ((*parameter).to_owned(), value.clone()))
+            .map(|(parameter, value)| (*parameter, value.clone()))
             .collect();
         call(name, &bound, state, SourceRange::ZERO)
     }
