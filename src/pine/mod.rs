@@ -32,6 +32,7 @@ pub mod ignored_features;
 mod language_tests;
 pub mod lexer;
 pub mod library_call;
+pub mod linalg;
 pub mod log_call;
 #[cfg(test)]
 mod log_tests;

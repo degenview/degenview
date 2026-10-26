@@ -1038,3 +1038,56 @@ fn array_percentrank_every_and_some_work_as_functions_and_methods() {
     assert_eq!(value(&session, "all_flags"), RuntimeValue::Bool(false));
     assert_eq!(value(&session, "any_flags"), RuntimeValue::Bool(true));
 }
+
+#[test]
+fn matrix_arithmetic_and_structure_work_as_functions_and_methods() {
+    let session = run(
+        "a = matrix.new<int>(2, 2, 0)\n\
+         a.set(0, 0, 1)\na.set(0, 1, 2)\na.set(1, 0, 3)\na.set(1, 1, 4)\n\
+         b = a.mult(a)\n\
+         c = matrix.sum(a, b)\n\
+         sq = matrix.pow(a, 2)\n\
+         tr = a.trace()\n\
+         top = c.get(0, 0)\n\
+         same = sq.get(1, 1)\n\
+         a.concat(matrix.copy(a))\n\
+         rows = a.rows()\n\
+         a.reshape(2, 4)\n\
+         wide = a.columns()\n\
+         part = a.submatrix(0, 1, 0, 2)\n\
+         first = part.get(0, 1)\n\
+         a.sort(0, order.descending)\n\
+         lead = a.get(0, 0)",
+        2,
+    );
+    assert_eq!(value(&session, "top"), RuntimeValue::Int(8));
+    assert_eq!(value(&session, "same"), RuntimeValue::Float(22.0));
+    assert_eq!(value(&session, "tr"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "rows"), RuntimeValue::Int(4));
+    assert_eq!(value(&session, "wide"), RuntimeValue::Int(4));
+    assert_eq!(value(&session, "first"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "lead"), RuntimeValue::Int(1));
+}
+
+#[test]
+fn a_matrix_runtime_error_names_the_function() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\na = matrix.new<int>(2, 2, 0)\nb = matrix.new<int>(3, 3, 0)\nc = matrix.sum(a, b)",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(error) = session.evaluate(&bars(2)) else {
+        panic!("a mismatched sum must fail");
+    };
+    assert!(format!("{error:?}").contains("PINE4037"), "{error:?}");
+}

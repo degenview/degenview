@@ -2403,7 +2403,7 @@ impl Session {
         } else if map_builtins::handles(name) {
             map_builtins::call(name, &bound, &mut self.working, range)?
         } else {
-            matrix_builtins::call(name, &bound, &mut self.working, range)?
+            matrix_builtins::call(name, &bound, &mut self.working, self.mintick, range)?
         };
         Ok(Some(value))
     }
@@ -2806,11 +2806,13 @@ impl Session {
             "map" => map_builtins::parameters(&full),
             _ => matrix_builtins::parameters(&full),
         };
+        // The receiver is the function's first parameter: `id`, or `id1` for a two-matrix function.
+        let receiver = parameters.first().copied().unwrap_or("id");
         let mut bound = Bound::default();
-        bound.insert("id", value.clone());
+        bound.insert(receiver, value.clone());
         let mut position = 0;
         for parameter in parameters {
-            if *parameter == "id" {
+            if *parameter == receiver {
                 continue;
             }
             if let Some(named) = arguments
@@ -2834,7 +2836,7 @@ impl Session {
                 array_builtins::call(&full, &bound, &[], &mut self.working, self.mintick, range)?
             }
             "map" => map_builtins::call(&full, &bound, &mut self.working, range)?,
-            _ => matrix_builtins::call(&full, &bound, &mut self.working, range)?,
+            _ => matrix_builtins::call(&full, &bound, &mut self.working, self.mintick, range)?,
         };
         Ok(result)
     }

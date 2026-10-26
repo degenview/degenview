@@ -7,7 +7,7 @@
 use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
-use crate::pine::{array_builtins, map_builtins, math, strings, ta, ta_extra};
+use crate::pine::{array_builtins, map_builtins, math, matrix_builtins, strings, ta, ta_extra};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -282,6 +282,9 @@ pub fn builtins() -> &'static [Item] {
         {
             add(name, Kind::Function);
         }
+        for member in matrix_builtins::MEMBERS {
+            add(&format!("matrix.{member}"), Kind::Function);
+        }
         for name in COLORS
             .iter()
             .filter(|n| !matches!(**n, "color.new" | "color.rgb"))
@@ -469,8 +472,12 @@ mod tests {
     }
 
     #[test]
-    fn every_array_and_map_function_the_engine_handles_is_offered() {
+    fn every_array_map_and_matrix_function_the_engine_handles_is_offered() {
         let offered: Vec<&str> = builtins().iter().map(|i| i.label.as_str()).collect();
+        for member in matrix_builtins::MEMBERS {
+            let name = format!("matrix.{member}");
+            assert!(offered.contains(&name.as_str()), "{name}");
+        }
         for name in array_builtins::KNOWN.iter().chain(&map_builtins::NAMES) {
             assert!(offered.contains(name), "{name}");
         }

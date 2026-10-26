@@ -39,6 +39,12 @@
   state on purpose: an unconfirmed realtime tick that ran the block is rolled back, so the structure
   stays active until the block runs on a closing tick, as TradingView documents. Its condition is
   evaluated every bar (like an `if`'s) so `ta.*` calls in it keep their history.
+- `matrix.*` lives in `matrix_builtins` (names in `MEMBERS`, which the editor offers directly). Element
+  arithmetic (`sum`, `diff`, `mult`) goes through `operators::apply` so ints stay ints and `na`
+  propagates like the operators; anything numerical that returns floats (`pow`, `kron`, linear algebra)
+  converts to `pine::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
+  use is `PINE4037`; an index or range outside the matrix is `PINE4010`. `Bound` holds six arguments
+  (`matrix.fill`), so a new builtin with more needs `BOUND_CAPACITY` raised and `tools/pine-bench.sh` run.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

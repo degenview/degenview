@@ -12,7 +12,7 @@ use super::state::RuntimeState;
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 
 /// The most parameters a builtin binds by name (`ta.alma`).
-const BOUND_CAPACITY: usize = 5;
+const BOUND_CAPACITY: usize = 6;
 
 /// Evaluated arguments by parameter name. A builtin has a handful of parameters with static names,
 /// so this is a short list searched in order: binding a call allocates nothing, where a table of
@@ -540,7 +540,11 @@ fn sort(items: &mut [RuntimeValue], descending: bool, mintick: f64) {
 }
 
 /// `array.sort_indices`: the indexes that would sort `items`, ties keeping their original order.
-fn sorted_indices(items: &[RuntimeValue], descending: bool, mintick: f64) -> Vec<RuntimeValue> {
+pub(crate) fn sorted_indices(
+    items: &[RuntimeValue],
+    descending: bool,
+    mintick: f64,
+) -> Vec<RuntimeValue> {
     let mut indices: Vec<usize> = (0..items.len()).collect();
     indices.sort_by(|a, b| compare(&items[*a], &items[*b], descending, mintick).then(a.cmp(b)));
     indices
@@ -631,7 +635,7 @@ fn aggregate(name: &str, items: &[RuntimeValue]) -> RuntimeValue {
 
 /// The statistics over the numbers in the array (`na` entries are ignored); `na` when there are
 /// none. `variance`, `stdev` and `covariance` are the population figures unless `biased = false`.
-fn statistic(name: &str, bound: &Bound, items: &[RuntimeValue]) -> RuntimeValue {
+pub(crate) fn statistic(name: &str, bound: &Bound, items: &[RuntimeValue]) -> RuntimeValue {
     let mut numbers: Vec<f64> = items.iter().filter_map(RuntimeValue::number).collect();
     numbers.sort_by(f64::total_cmp);
     if numbers.is_empty() {
@@ -1213,5 +1217,7 @@ mod tests {
             full.insert(name, Int(0));
         }
         assert_eq!(full.get("e"), Some(&Int(0)), "five parameters fit");
+        full.insert("f", Int(1));
+        assert_eq!(full.get("f"), Some(&Int(1)), "so do six (matrix.fill)");
     }
 }
