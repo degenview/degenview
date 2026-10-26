@@ -30,6 +30,14 @@ pub mod model;
 pub mod name;
 pub mod prefs;
 mod preview;
+mod profile_marks;
+mod profile_ui;
+mod profiler;
+#[cfg(test)]
+mod profiler_gallery;
+mod profiler_host;
+#[cfg(test)]
+mod profiler_tests;
 pub mod registry;
 mod sheets;
 mod sidebar;
@@ -135,6 +143,12 @@ pub(crate) enum Cmd {
     /// A click or menu choice in the editor's breakpoint column.
     Gutter(debug_marks::GutterEvent),
     ToggleDebugPanel,
+    /// The profiler's control: on or off, run (again), cancel.
+    ProfilerToggle,
+    ProfilerRun,
+    ProfilerCancel,
+    /// Show a one-based line of the open script.
+    RevealLine(usize),
     OpenAlpacaSettings,
 }
 
@@ -200,6 +214,11 @@ pub struct ScriptManager {
     logs: logs::LogsPane,
     /// Breakpoints, watches and the debugging session of the open script.
     pub(crate) debug: debug::DebugPanel,
+    /// Whether the profiler is on, the run in flight and the profile it made.
+    pub(crate) profiler: profiler::Profiler,
+    /// What the profile on screen would have to be of to be current; kept up to date while the
+    /// profiler is on.
+    profiler_now: Option<profiler::ProfileKey>,
     pub(crate) problems_copied: Option<Instant>,
     actions: Vec<ScriptManagerAction>,
     export_rx: Option<Receiver<(ScriptId, Option<PathBuf>)>>,
@@ -221,6 +240,8 @@ impl ScriptManager {
             preview: workspace::PreviewState::load(&shared),
             logs: logs::LogsPane::load(&shared),
             debug: debug::DebugPanel::load(&shared),
+            profiler: profiler::Profiler::default(),
+            profiler_now: None,
             shared,
             script_store,
             scripts: Vec::new(),
@@ -435,6 +456,8 @@ impl ScriptManager {
         self.shortcuts(&ctx);
         self.debug_shortcuts(&ctx);
         self.debug_frame(&ctx);
+        self.profiler_shortcuts(&ctx);
+        self.profiler_frame(&ctx);
 
         egui::Panel::top("script-manager-toolbar")
             .exact_size(38.0)
@@ -532,47 +555,53 @@ impl ScriptManager {
             if icons::button(ui, Icon::SidebarLeft, 28.0, theme::text_primary(), &tip).clicked() {
                 self.cmds.push(Cmd::ToggleSidebar);
             }
+            let position_icon = match self.prefs.chart_position {
+                ChartPosition::Left => Icon::RectLeft,
+                ChartPosition::Top => Icon::RectTop,
+                ChartPosition::Bottom => Icon::RectBottom,
+            };
+            let button = icons::button(
+                ui,
+                position_icon,
+                28.0,
+                theme::text_primary(),
+                "Where the preview chart sits next to the code",
+            );
+            egui::Popup::menu(&button).show(|ui| {
+                ui.set_min_width(140.0);
+                for position in ChartPosition::ALL {
+                    let selected = position == self.prefs.chart_position;
+                    let label = if selected {
+                        format!("✓  {}", position.title())
+                    } else {
+                        format!("    {}", position.title())
+                    };
+                    if ui.button(label).clicked() {
+                        self.cmds.push(Cmd::SetChartPosition(position));
+                        ui.close();
+                    }
+                }
+            });
+            let (icon, tip) = if self.prefs.chart_visible {
+                (Icon::ChartLine, "Hide the preview chart")
+            } else {
+                (Icon::ChartLineFlat, "Show the preview chart")
+            };
+            let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
+            if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
+                self.cmds.push(Cmd::ToggleChart);
+            }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
-                let (icon, tip) = if self.prefs.chart_visible {
-                    (Icon::ChartLine, "Hide the preview chart")
-                } else {
-                    (Icon::ChartLineFlat, "Show the preview chart")
-                };
-                let tip = shortcut::TOGGLE_PREVIEW_CHART.hint(tip);
-                if icons::button(ui, icon, 28.0, theme::text_primary(), &tip).clicked() {
-                    self.cmds.push(Cmd::ToggleChart);
-                }
                 if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
                     self.cmds.push(Cmd::ToggleDebugPanel);
                 }
-                let position_icon = match self.prefs.chart_position {
-                    ChartPosition::Left => Icon::RectLeft,
-                    ChartPosition::Top => Icon::RectTop,
-                    ChartPosition::Bottom => Icon::RectBottom,
-                };
-                let button = icons::button(
-                    ui,
-                    position_icon,
-                    28.0,
-                    theme::text_primary(),
-                    "Where the preview chart sits next to the code",
-                );
-                egui::Popup::menu(&button).show(|ui| {
-                    ui.set_min_width(140.0);
-                    for position in ChartPosition::ALL {
-                        let selected = position == self.prefs.chart_position;
-                        let label = if selected {
-                            format!("✓  {}", position.title())
-                        } else {
-                            format!("    {}", position.title())
-                        };
-                        if ui.button(label).clicked() {
-                            self.cmds.push(Cmd::SetChartPosition(position));
-                            ui.close();
-                        }
+                if self.open.is_some() {
+                    let status = self.profiler.status(self.profiler_now.as_ref());
+                    for action in profile_ui::toolbar(ui, &status) {
+                        self.cmds.push(Cmd::from(action));
                     }
-                });
+                }
             });
         });
     }
@@ -793,6 +822,7 @@ impl ScriptManager {
         }
         self.preview.script_changed(&script.id);
         self.debug.script_changed(&script.id);
+        self.profiler.script_changed();
         self.open = Some(OpenScript {
             id: script.id.clone(),
             name: script.name.clone(),
@@ -971,6 +1001,15 @@ impl ScriptManager {
             Cmd::DebugPanel(action) => self.debug_action(action, ctx),
             Cmd::Gutter(event) => self.debug_gutter(event),
             Cmd::ToggleDebugPanel => self.prefs.debug_open = !self.prefs.debug_open,
+            Cmd::ProfilerToggle => self.profiler_toggle(),
+            Cmd::ProfilerRun => self.profiler_start(ctx),
+            Cmd::ProfilerCancel => self.profiler.cancel(),
+            Cmd::RevealLine(line) => {
+                if let Some(open) = self.open.as_mut() {
+                    open.editor.show_line(line);
+                    ctx.request_repaint();
+                }
+            }
             Cmd::OpenAlpacaSettings => self.actions.push(ScriptManagerAction::OpenAlpacaSettings),
         }
         let _ = ctx;
@@ -1094,6 +1133,7 @@ impl ScriptManager {
             self.close_script();
         }
         self.debug.script_deleted(id);
+        self.profiler.script_deleted(id);
         self.with_store(|store| store.delete(id));
         self.refresh();
     }

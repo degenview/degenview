@@ -974,7 +974,7 @@ fn example(ui: &mut Ui, width: f32) {
 }
 
 /// One numbered line of the instructions.
-fn step(ui: &mut Ui, number: usize, content: impl FnOnce(&mut Ui)) {
+pub(crate) fn step(ui: &mut Ui, number: usize, content: impl FnOnce(&mut Ui)) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
         let (badge, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
@@ -1022,7 +1022,7 @@ fn detail(ui: &mut Ui, text: &str) {
 
 /// Content in the middle of what is left of the pane, both ways. Its height is measured as it is
 /// laid out and used the next frame, as the first frame cannot know it.
-fn centered(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
+pub(crate) fn centered(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
     let id = ui.id().with("centered-height");
     let known = ui.data(|data| data.get_temp::<f32>(id)).unwrap_or(0.0);
     ui.add_space(((ui.available_height() - known) / 2.0).max(12.0));

@@ -15,10 +15,12 @@ an expression. Everything below follows from that.
    function header, a `type`) is refused with the reason.
 2. Open the debugger panel under the editor (the bug button at the top right; starting a session
    from the keyboard opens it too). Its top row holds the controls: ▶ continue or start, ⏸ pause,
-   step over, into, out, step bar, restart and stop. ▶ runs the script on the preview chart's bars to
-   the first breakpoint; stepping when nothing is running starts a session stopped at the first
+   step over, into, out, step bar, restart and stop, then a separator and what the session is doing
+   ("Paused on a breakpoint at line 5"). ▶ runs the script on the preview chart's bars to the first
+   breakpoint; stepping when nothing is running starts a session stopped at the first statement.
+3. The panel shows the stop, and the editor scrolls to the stopped line when it is not already in
+   view (every stop, steps included, not only breakpoints); ⏸ stops a running script at its next
    statement.
-3. The panel shows the stop; ⏸ stops a running script at its next statement.
 
 A session runs on a **frozen copy of the preview chart's bars**, as the preview has them at the
 moment it starts (up to 500 candles). Later fetches and ticks do not reach it. Edit the script while
@@ -209,7 +211,9 @@ that), and anything stateful.
 
 ## The panel
 
-The controls row; the status line and bar context (bar index, symbol, timeframe,
+The controls row (the buttons, a separator, the status line, then a note, the restart-on-new-code
+button and close; the status shortens to a dot with the words on hover, and leaves when the buttons
+use the whole width); the bar context (bar index, symbol, timeframe,
 historical/realtime, confirmed, OHLCV, the request when inside one); Variables with a filter (the
 same flat field as the watchlist's); Watches (add, edit in place, remove, expand);
 Call Stack (click a frame to show its variables and watches and mark its line); Breakpoints (switch,
@@ -299,7 +303,8 @@ test --lib script_manager::debug_gallery -- --ignored`.
 
 * Nothing is checked against TradingView, which has no debugger.
 * The window was exercised by headless frames, rendered pictures and a pass over a release build
-  (see the PR for exactly what was done); there has been no wider manual pass.
+  (see the PR for exactly what was done); there has been no wider manual pass. The scroll to a stop
+  is tested headless with the scroll animation off; the animated scroll was not watched.
 * A session is a frozen copy of the preview's bars; it cannot follow live ticks, and a chart-applied
   instance cannot be debugged (only the Script Manager's script).
 * Library code is stepped over; breakpoints in a library or in code reached only through one are not

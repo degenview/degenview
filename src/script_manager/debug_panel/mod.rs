@@ -32,8 +32,12 @@ pub use toolbar::panel_button;
 use widgets::{ROW, flat_filter, icon_button, mono, placeholder, section_header};
 
 const CONTROLS_HEIGHT: f32 = 36.0;
-const STATUS_HEIGHT: f32 = 26.0;
 const STRIP_HEIGHT: f32 = 24.0;
+/// The most of the controls bar a note may take.
+const NOTICE_SHARE: f32 = 0.4;
+/// Room left of the buttons below which the status is left out, and below which it is a dot.
+const DOT_ROOM: f32 = 30.0;
+const TEXT_ROOM: f32 = 110.0;
 /// Below this width the two columns stack.
 const WIDE: f32 = 640.0;
 
@@ -93,9 +97,7 @@ fn draw(
     ui.painter().rect_filled(full, 0.0, theme::background());
     let controls = Rect::from_min_size(full.min, vec2(full.width(), CONTROLS_HEIGHT));
     controls_bar(ui, controls, panel, out_of_date, &mut actions);
-    let status = Rect::from_min_size(controls.left_bottom(), vec2(full.width(), STATUS_HEIGHT));
-    status_bar(ui, status, panel, &mut actions);
-    let mut top = status.bottom();
+    let mut top = controls.bottom();
     if let Some(bar) = panel.bar() {
         let strip = Rect::from_min_max(
             pos2(full.left(), top),
@@ -145,9 +147,10 @@ fn draw(
     actions
 }
 
-// MARK: Status
+// MARK: Controls
 
-/// The transport buttons, and at the right what ends or renews the session.
+/// The transport buttons, then what the session is doing, and at the right a note, what renews the
+/// session and the close button.
 fn controls_bar(
     ui: &mut Ui,
     rect: Rect,
@@ -160,83 +163,102 @@ fn controls_bar(
         [rect.left_bottom(), rect.right_bottom()],
         Stroke::new(1.0, kit::hairline()),
     );
-    let mut row = ui.new_child(
+    let inner = rect.shrink2(vec2(8.0, 0.0));
+    // The right side is drawn first so the status text on the left knows where to stop.
+    let mut right = ui.new_child(
         UiBuilder::new()
-            .max_rect(rect.shrink2(vec2(8.0, 0.0)))
-            .layout(Layout::left_to_right(Align::Center)),
+            .max_rect(inner)
+            .layout(Layout::right_to_left(Align::Center)),
     );
-    row.spacing_mut().item_spacing.x = 4.0;
-    for command in toolbar::transport(&mut row, panel) {
-        actions.push(PanelAction::Command(command));
+    right.spacing_mut().item_spacing.x = 8.0;
+    if icons::button(
+        &mut right,
+        Icon::Xmark,
+        22.0,
+        theme::text_secondary(),
+        "Close the debugger panel",
+    )
+    .clicked()
+    {
+        actions.push(PanelAction::Close);
     }
-    row.with_layout(Layout::right_to_left(Align::Center), |ui| {
-        if icons::button(
-            ui,
-            Icon::Xmark,
-            22.0,
-            theme::text_secondary(),
-            "Close the debugger panel",
+    if out_of_date && panel.has_session() {
+        let response = kit::push_button(
+            &mut right,
+            Some(Icon::Restart),
+            "Restart on the new code",
+            true,
         )
-        .clicked()
-        {
-            actions.push(PanelAction::Close);
+        .on_hover_text(
+            "The script was edited after this session began; it is still running the old text.",
+        );
+        if response.clicked() {
+            actions.push(PanelAction::Command(DebugCommand::Restart));
         }
-        if out_of_date && panel.has_session() {
-            let response = kit::push_button(
-                ui,
-                Some(Icon::Restart),
-                "Restart on the new code",
-                true,
+    }
+    if let Some(notice) = &panel.notice {
+        right.scope(|ui| {
+            ui.set_max_width(inner.width() * NOTICE_SHARE);
+            ui.add(
+                egui::Label::new(kit::text(
+                    notice.text.clone(),
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    if notice.error {
+                        theme::syntax::string()
+                    } else {
+                        theme::text_secondary()
+                    },
+                ))
+                .truncate(),
             )
-            .on_hover_text(
-                "The script was edited after this session began; it is still running the old text.",
-            );
-            if response.clicked() {
-                actions.push(PanelAction::Command(DebugCommand::Restart));
-            }
-        }
-    });
-}
+            .on_hover_text(notice.text.clone());
+        });
+    }
+    let limit = right.min_rect().left() - 8.0;
 
-/// What the session is doing, in words, and what could not be done.
-fn status_bar(ui: &mut Ui, rect: Rect, panel: &DebugPanel, _actions: &mut Vec<PanelAction>) {
-    ui.painter().rect_filled(rect, 0.0, theme::chrome());
-    ui.painter().line_segment(
-        [rect.left_bottom(), rect.right_bottom()],
-        Stroke::new(1.0, kit::hairline()),
-    );
-    let (color, text) = headline(panel);
-    let dot = pos2(rect.left() + 16.0, rect.center().y);
-    ui.painter().circle_filled(dot, 4.0, color);
-    let mut content = ui.new_child(
+    let mut left = ui.new_child(
         UiBuilder::new()
             .max_rect(Rect::from_min_max(
-                pos2(rect.left() + 30.0, rect.top()),
-                pos2(rect.right() - 8.0, rect.bottom()),
+                inner.min,
+                pos2(limit.max(inner.min.x), inner.max.y),
             ))
             .layout(Layout::left_to_right(Align::Center)),
     );
-    content.spacing_mut().item_spacing.x = 8.0;
-    content.label(kit::text(
-        text,
-        kit::size::BODY - 0.5,
-        kit::MEDIUM,
-        theme::text_primary(),
-    ));
-    if let Some(notice) = &panel.notice {
-        content.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            ui.label(kit::text(
-                notice.text.clone(),
-                kit::size::SUBHEADLINE,
-                kit::REGULAR,
-                if notice.error {
-                    theme::syntax::string()
-                } else {
-                    theme::text_secondary()
-                },
-            ));
-        });
+    left.spacing_mut().item_spacing.x = 4.0;
+    for command in toolbar::transport(&mut left, panel) {
+        actions.push(PanelAction::Command(command));
     }
+    let room = limit - left.next_widget_position().x;
+    if room < DOT_ROOM {
+        return;
+    }
+    left.add_space(6.0);
+    let (separator, _) = left.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
+    left.painter().line_segment(
+        [separator.center_top(), separator.center_bottom()],
+        Stroke::new(1.0, kit::hairline()),
+    );
+    left.add_space(6.0);
+    let (color, text) = headline(panel);
+    let (dot, response) = left.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
+    left.painter().circle_filled(dot.center(), 4.0, color);
+    // Too narrow for words: the dot alone, and the words on hover.
+    if room < TEXT_ROOM {
+        response.on_hover_text(text);
+        return;
+    }
+    left.add_space(2.0);
+    left.add(
+        egui::Label::new(kit::text(
+            text.clone(),
+            kit::size::BODY - 0.5,
+            kit::MEDIUM,
+            theme::text_primary(),
+        ))
+        .truncate(),
+    )
+    .on_hover_text(text);
 }
 
 fn headline(panel: &DebugPanel) -> (eframe::egui::Color32, String) {

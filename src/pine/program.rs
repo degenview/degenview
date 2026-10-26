@@ -288,6 +288,14 @@ pub struct Import {
     pub library: Option<Box<CompiledProgram>>,
 }
 
+/// Where a statement ends. Statement ranges are anchored at their first token, so a block's extent
+/// is only known from here. Keyed by the UTF-16 offset the statement starts at.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct StatementEnd {
+    pub offset: usize,
+    pub end: crate::pine::SourcePosition,
+}
+
 #[derive(Clone, Debug)]
 pub struct CompiledProgram {
     pub source: String,
@@ -301,6 +309,8 @@ pub struct CompiledProgram {
     pub exported_names: HashSet<String>,
     /// The libraries this script imports, with the compiled program of each that was found.
     pub imports: Vec<Import>,
+    /// Where each statement ends, sorted by start offset.
+    pub statement_ends: Vec<StatementEnd>,
 }
 
 impl CompiledProgram {

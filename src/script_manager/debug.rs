@@ -291,6 +291,8 @@ pub struct DebugPanel {
     /// Rows of the variables tree that stay open across stops.
     open_rows: HashSet<String>,
     pending: HashMap<u64, Pending>,
+    /// A stop has arrived that the editor has not been told to bring into view.
+    reveal_stop: bool,
     map: Option<Arc<SourceMap>>,
     /// Counts the maps set, so the statuses are recomputed when there is a new one.
     map_serial: u64,
@@ -370,6 +372,7 @@ impl DebugPanel {
             console: Vec::new(),
             open_rows: HashSet::new(),
             pending: HashMap::new(),
+            reveal_stop: false,
             map: None,
             map_serial: 0,
             text: None,
@@ -617,6 +620,7 @@ impl DebugPanel {
         self.session = None;
         self.shown = None;
         self.pending.clear();
+        self.reveal_stop = false;
     }
 
     /// Applies the toolbar's commands. `Restart` is the manager's, because it needs a fresh feed.
@@ -660,6 +664,7 @@ impl DebugPanel {
         match event {
             DebugEvent::Started => {}
             DebugEvent::Paused(snapshot) => {
+                self.reveal_stop = true;
                 self.hits.clone_from(&snapshot.hits);
                 self.pending.clear();
                 if let Some(notice) = &snapshot.stop.notice {
@@ -1146,6 +1151,21 @@ impl DebugPanel {
             }
         }
         marks
+    }
+
+    /// The one-based line of a stop that has arrived since this was last asked, once: the editor
+    /// brings it into view.
+    pub fn take_stop_to_reveal(&mut self) -> Option<usize> {
+        if !std::mem::take(&mut self.reveal_stop) {
+            return None;
+        }
+        let shown = self.shown.as_ref()?;
+        shown
+            .snapshot
+            .stack
+            .iter()
+            .find(|frame| frame.index == shown.frame)
+            .and_then(|frame| frame.location.map(|location| location.line))
     }
 
     /// The call stack, innermost first, when stopped.

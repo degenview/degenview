@@ -12,6 +12,7 @@ use super::diff_view::{self, PreviewEvent};
 use super::edit_ops::{self, Context, Edit};
 use super::find::{self, FindEvent, FindState};
 use super::model::CompileStatus;
+use super::profile_marks::{LineMark, ProfileColumn};
 use super::signature;
 use super::syntax::{self, Span};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
@@ -32,6 +33,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const GUTTER_WIDTH: f32 = 64.0;
+/// The profiler's column, left of the gutter while the profiler is on: a flame, a bar and a share.
+const PROFILE_WIDTH: f32 = 104.0;
+const PROFILE_FLAME: f32 = 11.0;
+const PROFILE_BAR_X: f32 = 21.0;
+const PROFILE_BAR_WIDTH: f32 = 40.0;
+const PROFILE_BAR_HEIGHT: f32 = 6.0;
 /// Where a breakpoint marker sits in the gutter, from its left edge: right of the change strip,
 /// left of the line numbers.
 const MARKER_X: f32 = 21.0;
@@ -69,6 +76,8 @@ pub struct EditorState {
     preview: Option<DiffHunk>,
     /// A line to bring into view next frame (stepping between changes).
     scroll_to_line: Option<usize>,
+    /// The line a stopped script is at, to bring into view next frame unless it already is.
+    reveal_stop: Option<usize>,
     pub diagnostics: Vec<Diagnostic>,
     pub status: CompileStatus,
     highlighted: Option<(u64, Arc<Vec<Span>>)>,
@@ -87,12 +96,19 @@ pub struct EditorState {
     caret_rect: Option<Rect>,
     /// The caret position last scrolled to, so only a caret move scrolls (not a mouse wheel).
     caret_seen: Option<usize>,
+    /// How far down the text the editor was scrolled when last drawn.
+    #[cfg(test)]
+    scroll_y: f32,
     /// A match to select (char range) on the next frame.
     select_to: Option<std::ops::Range<usize>>,
     /// What a debugging session shows in the text and the gutter, set by the host each frame.
     debug: DebugMarks,
     /// The line whose breakpoint menu is open.
     menu_line: Option<usize>,
+    /// The profiler's column, while the profiler is on.
+    profile: Option<ProfileColumn>,
+    /// The lines the pointer is over in the profile column: the code block to wash.
+    profile_hover: Option<(usize, usize)>,
 }
 
 /// The open suggestion list and its highlighted row.
@@ -108,6 +124,8 @@ pub struct EditorOutput {
     pub save: bool,
     /// Clicks in the breakpoint column.
     pub gutter: Vec<GutterEvent>,
+    /// Where the text is drawn: right of the profile column and the gutter.
+    pub text_area: Option<Rect>,
 }
 
 fn text_hash(text: &str) -> u64 {
@@ -126,6 +144,7 @@ impl EditorState {
             diff: None,
             preview: None,
             scroll_to_line: None,
+            reveal_stop: None,
             diagnostics: Vec::new(),
             status: CompileStatus::NotCompiled,
             highlighted: None,
@@ -143,6 +162,10 @@ impl EditorState {
             select_to: None,
             debug: DebugMarks::default(),
             menu_line: None,
+            profile: None,
+            profile_hover: None,
+            #[cfg(test)]
+            scroll_y: 0.0,
         }
     }
 
@@ -241,6 +264,14 @@ impl EditorState {
         self.debug = marks;
     }
 
+    /// Shows the profiler's column (or removes it) this frame.
+    pub fn set_profile_column(&mut self, column: Option<ProfileColumn>) {
+        if column.is_none() {
+            self.profile_hover = None;
+        }
+        self.profile = column;
+    }
+
     /// The one-based line the caret is on, once the editor has shown the text.
     pub fn caret_line(&self) -> Option<usize> {
         let index = self.caret_seen?;
@@ -265,6 +296,18 @@ impl EditorState {
             .sum();
         self.scroll_to_line = Some(line - 1);
         self.flash = Some((start, Instant::now()));
+    }
+
+    /// Brings a one-based line into view next frame, centred, unless it is already well inside the
+    /// editor. Used when the debugger stops.
+    pub fn reveal_stop_line(&mut self, line: usize) {
+        self.reveal_stop = Some(line.max(1) - 1);
+    }
+
+    /// How far down the text the editor was scrolled when last drawn.
+    #[cfg(test)]
+    pub fn scroll_y(&self) -> f32 {
+        self.scroll_y
     }
 
     /// The offset the caret is waiting to be moved to.
@@ -336,7 +379,17 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
         0.0
     };
     let code = Rect::from_min_max(egui::pos2(area.min.x, area.min.y + find_height), area.max);
-    let gutter = Rect::from_min_max(code.min, egui::pos2(code.min.x + GUTTER_WIDTH, code.max.y));
+    let profile_width = if state.profile.is_some() {
+        PROFILE_WIDTH
+    } else {
+        0.0
+    };
+    let profile_column =
+        Rect::from_min_max(code.min, egui::pos2(code.min.x + profile_width, code.max.y));
+    let gutter = Rect::from_min_max(
+        egui::pos2(profile_column.max.x, code.min.y),
+        egui::pos2(profile_column.max.x + GUTTER_WIDTH, code.max.y),
+    );
     let text_area = Rect::from_min_max(egui::pos2(gutter.max.x, code.min.y), code.max);
 
     ui.painter()
@@ -355,9 +408,13 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     edited |= update_completion(ui, state, edited);
     draw_signature(ui, state);
     paint_gutter(ui, gutter, &rows, &state.debug);
+    if state.profile.is_some() {
+        profile_gutter(ui, profile_column, &rows, state);
+    }
     let changes = state.changes();
     edited |= change_gutter(ui, gutter, &rows, state, &changes);
     output.gutter = breakpoint_gutter(ui, gutter, &rows, state);
+    output.text_area = Some(text_area);
     output.changed = edited;
     if edited {
         state.last_edit = Some(Instant::now());
@@ -780,6 +837,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     }
     let flash = state.flash;
     let mut scroll_to = state.scroll_to_line.take();
+    let mut reveal_stop = state.reveal_stop.take();
     let find_matches = if state.find.open {
         find::matches(&state.source, &state.find.query)
     } else {
@@ -848,6 +906,17 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                     Some(Align::Center),
                 );
             }
+            if let Some(line) = reveal_stop.take()
+                && let Some(row) = galley.rows.get(line)
+            {
+                let top = origin.y + row.pos.y;
+                let target =
+                    Rect::from_min_size(egui::pos2(origin.x, top), Vec2::new(1.0, row.row.size.y))
+                        .expand2(Vec2::new(0.0, 40.0));
+                if !ui.clip_rect().contains_rect(target) {
+                    ui.scroll_to_rect(target, Some(Align::Center));
+                }
+            }
             let caret = text_edit.cursor_range;
             state.caret_rect = caret.map(|range| {
                 galley
@@ -887,6 +956,22 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                     Rect::from_x_y_ranges(band_x, top..=top + row.row.size.y),
                     0.0,
                     color,
+                ));
+            }
+            // The code the pointer is on in the profile column, first line to last.
+            if let Some((first, last)) = state.profile_hover
+                && let Some(first_row) = galley.rows.get(first.saturating_sub(1))
+                && let Some(last_row) = galley.rows.get(
+                    last.saturating_sub(1)
+                        .min(galley.rows.len().saturating_sub(1)),
+                )
+            {
+                let top = origin.y + first_row.pos.y;
+                let bottom = origin.y + last_row.pos.y + last_row.row.size.y;
+                behind_shapes.push(Shape::rect_filled(
+                    Rect::from_x_y_ranges(band_x, top..=bottom.max(top)),
+                    0.0,
+                    theme::profiler_block(),
                 ));
             }
             if let Some(range) = caret
@@ -1073,6 +1158,11 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     if state.flash.is_some_and(|(_, at)| at.elapsed() >= FLASH) {
         state.flash = None;
     }
+    #[cfg(test)]
+    {
+        state.scroll_y = scroll.state.offset.y;
+    }
+    #[cfg(not(test))]
     let _ = scroll;
     rows
 }
@@ -1177,6 +1267,168 @@ fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks) {
         if let Some(stop) = marks.stop.filter(|stop| stop.line == line) {
             paint_stop_arrow(&painter, center, stop);
         }
+    }
+}
+
+// MARK: Profile column
+
+/// The profiler's column: a bar and the share of the script's time beside each measured line, a
+/// flame on the hottest, and a tooltip with the figures. Hovering a line washes the code block it
+/// covers (the next frame; the wash is painted with the text). The column holds its width while the
+/// profiler is on, so nothing moves when a profile arrives.
+fn profile_gutter(ui: &mut Ui, column: Rect, rows: &GutterRows, state: &mut EditorState) {
+    let Some(content) = state.profile.clone() else {
+        return;
+    };
+    let painter = ui.painter().with_clip_rect(column);
+    painter.line_segment(
+        [column.right_top(), column.right_bottom()],
+        Stroke::new(1.0, theme::separator()),
+    );
+    let response = ui.interact(column, state.id.with("profile-column"), Sense::hover());
+    let row_at = |y: f32| {
+        let index = rows.rows.partition_point(|(top, height)| top + height <= y);
+        rows.rows
+            .get(index)
+            .filter(|(top, _)| *top <= y)
+            .map(|_| index + 1)
+    };
+    let first = rows
+        .rows
+        .partition_point(|(top, height)| top + height < column.min.y)
+        + 1;
+    let last = rows.rows.partition_point(|(top, _)| *top <= column.max.y);
+    let pointer_line = response.hover_pos().and_then(|pointer| row_at(pointer.y));
+    // Marks of a profile whose inputs or data have changed are faded.
+    let (marks, fade) = match &content {
+        ProfileColumn::Marks(marks) => (marks, 1.0),
+        ProfileColumn::Dated(marks) => (marks, 0.5),
+        ProfileColumn::Empty(why) => {
+            if response.hovered() {
+                response.on_hover_text(*why);
+            }
+            if state.profile_hover.take().is_some() {
+                ui.ctx().request_repaint();
+            }
+            return;
+        }
+    };
+    let mut hovered: Option<&LineMark> = None;
+    for mark in marks.in_view(first, last) {
+        let (top, height) = rows.rows[mark.line - 1];
+        let center_y = top + height / 2.0;
+        if pointer_line == Some(mark.line) {
+            hovered = Some(mark);
+            painter.rect_filled(
+                Rect::from_min_max(
+                    egui::pos2(column.min.x, top),
+                    egui::pos2(column.max.x, top + height),
+                ),
+                0.0,
+                theme::ink(10),
+            );
+        }
+        if mark.quiet {
+            continue;
+        }
+        if mark.flame {
+            icons::paint(
+                &painter,
+                Rect::from_center_size(
+                    egui::pos2(column.min.x + 6.0 + PROFILE_FLAME / 2.0, center_y),
+                    Vec2::splat(PROFILE_FLAME),
+                ),
+                Icon::Flame,
+                theme::profiler_flame().gamma_multiply(fade),
+            );
+        }
+        let bar_left = column.min.x + PROFILE_BAR_X;
+        let track = Rect::from_min_size(
+            egui::pos2(bar_left, center_y - PROFILE_BAR_HEIGHT / 2.0),
+            Vec2::new(PROFILE_BAR_WIDTH, PROFILE_BAR_HEIGHT),
+        );
+        painter.rect_filled(track, 2.0, theme::profiler_track().gamma_multiply(fade));
+        // Never thinner than a sliver, so a small share is still a mark.
+        let width = (mark.bar * PROFILE_BAR_WIDTH).clamp(1.5, PROFILE_BAR_WIDTH);
+        painter.rect_filled(
+            Rect::from_min_size(track.min, Vec2::new(width, PROFILE_BAR_HEIGHT)),
+            2.0,
+            theme::profiler_heat(mark.heat).gamma_multiply(fade),
+        );
+        painter.text(
+            egui::pos2(column.max.x - 6.0, center_y),
+            Align2::RIGHT_CENTER,
+            &mark.label,
+            FontId::monospace(10.0),
+            if mark.flame {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            }
+            .gamma_multiply(fade),
+        );
+    }
+    // A line that ran but took too little to draw can still be asked about.
+    if hovered.is_none()
+        && let Some(line) = pointer_line
+    {
+        hovered = marks.mark(line);
+    }
+    let next = hovered.and_then(|mark| mark.block.or(Some((mark.line, mark.line))));
+    if state.profile_hover != next {
+        state.profile_hover = next;
+        ui.ctx().request_repaint();
+    }
+    if let Some(mark) = hovered
+        && let Some(pointer) = response.hover_pos()
+        && let Some((top, height)) = rows.rows.get(mark.line - 1).copied()
+    {
+        let mut at_line = response.clone();
+        at_line.interact_rect = Rect::from_min_size(
+            egui::pos2(column.min.x, top),
+            Vec2::new(column.width(), height),
+        );
+        let _ = pointer;
+        at_line.on_hover_ui(|ui| profile_tooltip(ui, mark));
+    }
+}
+
+fn profile_tooltip(ui: &mut Ui, mark: &LineMark) {
+    ui.set_max_width(320.0);
+    ui.spacing_mut().item_spacing.y = 3.0;
+    ui.label(kit::text(
+        mark.tooltip.title.clone(),
+        12.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+    ));
+    egui::Grid::new("profile-tooltip")
+        .num_columns(2)
+        .spacing(Vec2::new(12.0, 2.0))
+        .show(ui, |ui| {
+            for (label, value) in &mark.tooltip.rows {
+                ui.label(kit::text(
+                    *label,
+                    11.5,
+                    kit::REGULAR,
+                    theme::text_secondary(),
+                ));
+                ui.label(kit::text(
+                    value.clone(),
+                    11.5,
+                    kit::MEDIUM,
+                    theme::text_primary(),
+                ));
+                ui.end_row();
+            }
+        });
+    for note in &mark.tooltip.notes {
+        ui.label(kit::text(
+            note.clone(),
+            11.0,
+            kit::REGULAR,
+            theme::text_tertiary(),
+        ));
     }
 }
 
@@ -2413,5 +2665,94 @@ mod tests {
             }
             assert!(state.preview.is_some());
         }
+    }
+
+    // MARK: Profile column
+
+    const PROFILED: &str =
+        "//@version=6\nindicator(\"T\")\nt = 0.0\nfor i = 0 to 9\n    t += i\nplot(t)\n";
+
+    fn profile_marks() -> std::sync::Arc<super::super::profile_marks::ProfileMarks> {
+        let report = crate::pine::profile::support::report(
+            "t = 0.0\nfor i = 0 to 9\n    t += i\nplot(t)\n",
+            20,
+            1_000,
+        );
+        std::sync::Arc::new(super::super::profile_marks::ProfileMarks::build(
+            &report, PROFILED, 0,
+        ))
+    }
+
+    fn move_to(ctx: &egui::Context, state: &mut EditorState, x: f32, y: f32, time: f64) {
+        run_frame(
+            ctx,
+            state,
+            time,
+            vec![Event::PointerMoved(egui::pos2(x, y))],
+        );
+        run_frame(ctx, state, time + 0.01, vec![]);
+    }
+
+    #[test]
+    fn the_profile_column_takes_room_only_while_the_profiler_is_on() {
+        let mut state = EditorState::new("s", PROFILED, PROFILED);
+        let ctx = egui::Context::default();
+        let text_left = |state: &mut EditorState, ctx: &egui::Context, time: f64| {
+            let mut left = 0.0;
+            let raw = egui::RawInput {
+                time: Some(time),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                left = show(ui, state).text_area.expect("drawn").min.x;
+            });
+            output.textures_delta.clear();
+            left
+        };
+        let plain = text_left(&mut state, &ctx, 0.0);
+        state.set_profile_column(Some(ProfileColumn::Empty("Run the profiler.")));
+        assert_eq!(text_left(&mut state, &ctx, 0.1), plain + PROFILE_WIDTH);
+        state.set_profile_column(None);
+        assert_eq!(
+            text_left(&mut state, &ctx, 0.2),
+            plain,
+            "and back when it is off"
+        );
+    }
+
+    #[test]
+    fn hovering_a_line_in_the_profile_column_washes_the_block_it_covers() {
+        let mut state = EditorState::new("s", PROFILED, PROFILED);
+        state.set_profile_column(Some(ProfileColumn::Marks(profile_marks())));
+        let ctx = egui::Context::default();
+        for step in 0..3 {
+            run_frame(&ctx, &mut state, f64::from(step) * 0.1, vec![]);
+        }
+        assert_eq!(state.profile_hover, None);
+        let mut found = None;
+        let mut y = 4.0;
+        while y < 140.0 && found.is_none() {
+            move_to(&ctx, &mut state, 30.0, y, 1.0 + f64::from(y));
+            found = state.profile_hover;
+            y += 3.0;
+        }
+        assert!(found.is_some(), "the pointer found a measured line");
+        // Leaving the column ends it.
+        move_to(&ctx, &mut state, 400.0, 60.0, 500.0);
+        assert_eq!(state.profile_hover, None);
+    }
+
+    #[test]
+    fn an_empty_column_says_why_and_hovers_nothing() {
+        let mut state = EditorState::new("s", PROFILED, PROFILED);
+        state.set_profile_column(Some(ProfileColumn::Empty(
+            "This profile is of earlier text.",
+        )));
+        let ctx = egui::Context::default();
+        for step in 0..3 {
+            run_frame(&ctx, &mut state, f64::from(step) * 0.1, vec![]);
+        }
+        move_to(&ctx, &mut state, 30.0, 40.0, 5.0);
+        assert_eq!(state.profile_hover, None);
     }
 }

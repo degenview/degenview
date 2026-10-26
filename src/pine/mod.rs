@@ -42,6 +42,7 @@ pub mod number_format;
 pub mod operators;
 pub mod outputs;
 pub mod parser;
+pub mod profile;
 pub mod program;
 pub mod regex_lite;
 pub mod runtime_support;

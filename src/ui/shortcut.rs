@@ -328,6 +328,11 @@ pub const DEBUG_RESTART: Shortcut = Shortcut::new(
     &[Chord::new(Key::R).primary().shift()],
     &[Chord::new(Key::F5).primary().shift()],
 );
+/// Turns the Script Manager's profiler on or off.
+pub const PROFILER_TOGGLE: Shortcut = Shortcut::new(
+    &[Chord::new(Key::R).alt().primary()],
+    &[Chord::new(Key::R).alt().primary()],
+);
 /// Sets or clears a breakpoint on the caret's line.
 pub const DEBUG_TOGGLE_BREAKPOINT: Shortcut =
     Shortcut::new(&[Chord::new(Key::F9)], &[Chord::new(Key::F9)]);
@@ -450,7 +455,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 42] = [
+    const ALL: [(&str, Shortcut); 43] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -460,6 +465,7 @@ mod tests {
         ("debug stop", DEBUG_STOP),
         ("debug restart", DEBUG_RESTART),
         ("debug breakpoint", DEBUG_TOGGLE_BREAKPOINT),
+        ("profiler", PROFILER_TOGGLE),
         ("save", SAVE),
         ("new tab", NEW_TAB),
         ("close tab", CLOSE_TAB),
