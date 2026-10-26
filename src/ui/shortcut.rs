@@ -122,6 +122,7 @@ fn key_name(key: Key) -> &'static str {
         Key::W => "W",
         Key::Y => "Y",
         Key::Z => "Z",
+        Key::F2 => "F2",
         Key::F3 => "F3",
         Key::F5 => "F5",
         Key::F6 => "F6",
@@ -130,6 +131,7 @@ fn key_name(key: Key) -> &'static str {
         Key::F9 => "F9",
         Key::F10 => "F10",
         Key::F11 => "F11",
+        Key::F12 => "F12",
         _ => "?",
     }
 }
@@ -296,6 +298,41 @@ pub const COMPLETE: Shortcut = Shortcut::new(
     &[Chord::new(Key::Space).control()],
 );
 
+/// Jump from a name to where it is declared (the editor also does it on ⌘-click).
+pub const GO_TO_DEFINITION: Shortcut =
+    Shortcut::new(&[Chord::new(Key::F12)], &[Chord::new(Key::F12)]);
+
+/// Rename the declared name at the caret, and every use of it.
+pub const RENAME_SYMBOL: Shortcut = Shortcut::new(&[Chord::new(Key::F2)], &[Chord::new(Key::F2)]);
+
+/// Multiple carets, as in Sublime Text. The first adds the next match of the selection (the word
+/// at a bare caret); ⌘D is also Duplicate on the chart, which is never under a focused editor.
+pub const SELECT_NEXT_OCCURRENCE: Shortcut = Shortcut::new(
+    &[Chord::new(Key::D).primary()],
+    &[Chord::new(Key::D).primary()],
+);
+
+/// Selects every match of the selection (the word at a bare caret).
+pub const SELECT_ALL_OCCURRENCES: Shortcut = Shortcut::new(
+    &[
+        Chord::new(Key::F3).alt(),
+        Chord::new(Key::G).control().primary(),
+    ],
+    &[Chord::new(Key::F3).alt()],
+);
+
+/// Adds a caret on the line above the topmost caret.
+pub const ADD_CURSOR_ABOVE: Shortcut = Shortcut::new(
+    &[Chord::new(Key::ArrowUp).control().shift()],
+    &[Chord::new(Key::ArrowUp).primary().alt()],
+);
+
+/// Adds a caret on the line below the bottommost caret.
+pub const ADD_CURSOR_BELOW: Shortcut = Shortcut::new(
+    &[Chord::new(Key::ArrowDown).control().shift()],
+    &[Chord::new(Key::ArrowDown).primary().alt()],
+);
+
 // The debugger. Off the Mac the keys are Visual Studio Code's; on the Mac, Xcode's, because F5 and
 // F10/F11 belong to the system there (and F11 to Show Desktop). F9 sets a breakpoint on both.
 
@@ -455,7 +492,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 43] = [
+    const ALL: [(&str, Shortcut); 49] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -482,6 +519,12 @@ mod tests {
         ("duplicate up", DUPLICATE_LINE_UP),
         ("duplicate down", DUPLICATE_LINE_DOWN),
         ("complete", COMPLETE),
+        ("go to definition", GO_TO_DEFINITION),
+        ("rename symbol", RENAME_SYMBOL),
+        ("select next occurrence", SELECT_NEXT_OCCURRENCE),
+        ("select all occurrences", SELECT_ALL_OCCURRENCES),
+        ("add cursor above", ADD_CURSOR_ABOVE),
+        ("add cursor below", ADD_CURSOR_BELOW),
         ("duplicate drawing", DUPLICATE_DRAWING),
         ("copy", COPY),
         ("paste", PASTE),
@@ -581,6 +624,13 @@ mod tests {
             for (name, shortcut) in &ALL {
                 for chord in shortcut.chords(is_mac) {
                     if let Some((_, other)) = seen.iter().find(|(c, _)| c == chord) {
+                        // ⌘D is Duplicate on the chart and Select Next in the editor; the editor
+                        // has the keyboard whenever it is on screen.
+                        let scoped = [*name, *other].contains(&"select next occurrence")
+                            && [*name, *other].contains(&"duplicate drawing");
+                        if scoped {
+                            continue;
+                        }
                         panic!(
                             "{name} and {other} share {} (mac: {is_mac})",
                             chord.label(is_mac)
@@ -590,6 +640,17 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_editor_shortcuts_are_named_for_each_platform() {
+        assert_eq!(SELECT_NEXT_OCCURRENCE.label_for(true), "⌘D");
+        assert_eq!(SELECT_ALL_OCCURRENCES.label_for(true), "⌥F3");
+        assert_eq!(SELECT_ALL_OCCURRENCES.label_for(false), "Alt+F3");
+        assert_eq!(ADD_CURSOR_ABOVE.label_for(true), "⌃⇧↑");
+        assert_eq!(ADD_CURSOR_BELOW.label_for(false), "Ctrl+Alt+↓");
+        assert_eq!(GO_TO_DEFINITION.label_for(true), "F12");
+        assert_eq!(RENAME_SYMBOL.label_for(false), "F2");
     }
 
     #[test]

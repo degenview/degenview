@@ -1,0 +1,421 @@
+//! Go to definition, the text area's right-click menu and Rename, over [`symbols`].
+//!
+//! The resolver is pure and cached by text; this is the egui side: the ⌘-hover cue, the menu,
+//! the inline rename box and the keys that open them.
+
+use super::*;
+use crate::script_manager::symbols::{self, SymbolId, SymbolTable};
+use eframe::egui::Galley;
+use std::ops::Range;
+
+#[derive(Default)]
+pub(super) struct NavState {
+    table: Option<(u64, Arc<SymbolTable>)>,
+    /// The character under the pointer when the context menu opened.
+    menu_target: Option<usize>,
+    pub(super) rename: Option<RenameBox>,
+    /// Where the rename box hangs, set while the text is laid out.
+    anchor: Option<Rect>,
+}
+
+pub(super) struct RenameBox {
+    symbol: SymbolId,
+    kind: &'static str,
+    original: String,
+    /// Where the name starts (where the box hangs from) and where the caret was.
+    at: usize,
+    caret: usize,
+    text: String,
+    /// The text the box was opened on; any other text cancels it.
+    source_hash: u64,
+    error: Option<String>,
+    checked: Option<String>,
+    needs_focus: bool,
+    /// The box has been drawn once. An area's first frame only measures it and takes no focus.
+    shown: bool,
+    had_focus: bool,
+}
+
+const RENAME_ID: &str = "script-rename-field";
+
+enum MenuAction {
+    Definition(Range<usize>),
+    Rename(usize),
+}
+
+impl EditorState {
+    /// The symbols of the current text, analysed once per change.
+    pub(super) fn symbols(&mut self) -> Arc<SymbolTable> {
+        let key = text_hash(&self.source);
+        if let Some((cached, table)) = &self.nav.table
+            && *cached == key
+        {
+            return Arc::clone(table);
+        }
+        let table = Arc::new(symbols::analyze(&self.source));
+        self.nav.table = Some((key, Arc::clone(&table)));
+        table
+    }
+
+    /// Selects `range`, focuses the editor and flashes the spot (which also scrolls to it).
+    pub(super) fn go_to_range(&mut self, ctx: &egui::Context, range: Range<usize>) {
+        self.carets.clear();
+        self.nav.rename = None;
+        let mut edit_state = TextEditState::load(ctx, self.id).unwrap_or_default();
+        edit_state.cursor.set_char_range(Some(CCursorRange::two(
+            CCursor::new(range.start),
+            CCursor::new(range.end),
+        )));
+        edit_state.store(ctx, self.id);
+        ctx.memory_mut(|memory| memory.request_focus(self.id));
+        self.flash = Some((range.start, Instant::now()));
+        ctx.request_repaint();
+    }
+
+    /// Jumps from the name at `index` to its declaration. Returns whether it had one.
+    pub(super) fn go_to_definition(&mut self, ctx: &egui::Context, index: usize) -> bool {
+        match self.symbols().definition_of(index) {
+            Some(range) => {
+                self.go_to_range(ctx, range);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Opens the rename box on the name at `index`. Returns whether there was a name.
+    pub(super) fn begin_rename(&mut self, index: usize) -> bool {
+        let table = self.symbols();
+        let Some((id, range)) = table.name_at(index) else {
+            return false;
+        };
+        let symbol = table.symbol(id);
+        self.nav.rename = Some(RenameBox {
+            symbol: id,
+            kind: symbol.kind.label(),
+            original: symbol.name.clone(),
+            at: range.start,
+            caret: index,
+            text: symbol.name.clone(),
+            source_hash: text_hash(&self.source),
+            error: None,
+            checked: None,
+            needs_focus: true,
+            shown: false,
+            had_focus: false,
+        });
+        true
+    }
+
+    #[cfg(test)]
+    pub fn rename_error(&self) -> Option<String> {
+        self.nav
+            .rename
+            .as_ref()
+            .and_then(|rename| rename.error.clone())
+    }
+
+    #[cfg(test)]
+    pub fn rename_open(&self) -> bool {
+        self.nav.rename.is_some()
+    }
+
+    /// Opens the rename box on the name at the caret (tests and the menu share this).
+    #[cfg(test)]
+    pub fn rename_text(&mut self, text: &str) {
+        if let Some(rename) = self.nav.rename.as_mut() {
+            rename.text = text.to_owned();
+        }
+    }
+}
+
+fn caret_index(ctx: &egui::Context, id: Id) -> Option<usize> {
+    TextEditState::load(ctx, id)?
+        .cursor
+        .char_range()
+        .map(|range| range.primary.index.0)
+}
+
+/// F12 and F2 while the editor has the keyboard.
+pub(super) fn keys(ctx: &egui::Context, state: &mut EditorState) {
+    if !ctx.memory(|memory| memory.has_focus(state.id)) {
+        return;
+    }
+    let (go, rename) = ctx.input_mut(|input| {
+        (
+            shortcut::GO_TO_DEFINITION.consume(input),
+            shortcut::RENAME_SYMBOL.consume(input),
+        )
+    });
+    let Some(caret) = caret_index(ctx, state.id) else {
+        return;
+    };
+    if go {
+        state.go_to_definition(ctx, caret);
+    }
+    if rename {
+        state.begin_rename(caret);
+    }
+}
+
+fn name_rect(galley: &Galley, origin: egui::Pos2, range: &Range<usize>) -> Option<Rect> {
+    let a = galley.pos_from_cursor(CCursor::new(range.start));
+    let b = galley.pos_from_cursor(CCursor::new(range.end));
+    ((a.min.y - b.min.y).abs() < 1.0).then(|| {
+        Rect::from_min_max(a.min, egui::pos2(b.min.x, a.max.y)).translate(origin.to_vec2())
+    })
+}
+
+/// While ⌘ (Ctrl off the Mac) is held: underlines the name under the pointer if it has a
+/// definition to jump to, and shows the hand.
+pub(super) fn hover(
+    ui: &Ui,
+    state: &mut EditorState,
+    response: &egui::Response,
+    galley: &Galley,
+    origin: egui::Pos2,
+) {
+    if !ui.input(|input| input.modifiers.command) || !response.hovered() {
+        return;
+    }
+    let Some(pointer) = ui.input(|input| input.pointer.hover_pos()) else {
+        return;
+    };
+    let index = galley
+        .cursor_from_pos(pointer.to_vec2() - origin.to_vec2())
+        .index
+        .0;
+    let table = state.symbols();
+    let Some((_, range)) = table.name_at(index) else {
+        return;
+    };
+    if table.definition_of(index).is_none() {
+        return;
+    }
+    if let Some(rect) = name_rect(galley, origin, &range)
+        && rect.expand2(Vec2::new(0.0, 1.0)).contains(pointer)
+    {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+        ui.painter().line_segment(
+            [rect.left_bottom(), rect.right_bottom()],
+            Stroke::new(1.0, theme::text_primary()),
+        );
+    }
+}
+
+/// The right-click menu of the text area. Applies what was chosen; returns nothing to repaint
+/// for because it only moves the caret or opens the rename box.
+pub(super) fn context_menu(
+    ctx: &egui::Context,
+    state: &mut EditorState,
+    response: &egui::Response,
+    galley: &Galley,
+    origin: egui::Pos2,
+) {
+    state.nav.anchor = state.nav.rename.as_ref().map(|rename| {
+        galley
+            .pos_from_cursor(CCursor::new(rename.at))
+            .translate(origin.to_vec2())
+    });
+    if response.secondary_clicked()
+        && let Some(pos) = response.interact_pointer_pos()
+        && !ctx.input(|input| input.modifiers.shift)
+    {
+        let index = galley
+            .cursor_from_pos(pos.to_vec2() - origin.to_vec2())
+            .index
+            .0;
+        state.nav.menu_target = Some(index);
+    }
+    let mut action = None;
+    kit::context_popup(response).show(|ui| {
+        // Analysed when the menu is open, not on every frame the editor is drawn.
+        let table = state.symbols();
+        let target = state.nav.menu_target;
+        let named = target.and_then(|index| table.name_at(index)).is_some();
+        let definition = target.and_then(|index| table.definition_of(index));
+        kit::menu_scope(ui, 200.0);
+        kit::menu_fit(ui, &["Go to Definition", "Rename Symbol…"]);
+        if kit::menu_item_with_shortcut(
+            ui,
+            Icon::ArrowUpRight,
+            "Go to Definition",
+            Some(&shortcut::GO_TO_DEFINITION.label()),
+            definition.is_some(),
+            false,
+        ) {
+            action = definition.map(MenuAction::Definition);
+            ui.close();
+        }
+        if kit::menu_item_with_shortcut(
+            ui,
+            Icon::Pencil,
+            "Rename Symbol…",
+            Some(&shortcut::RENAME_SYMBOL.label()),
+            named,
+            false,
+        ) {
+            action = target.map(MenuAction::Rename);
+            ui.close();
+        }
+    });
+    match action {
+        Some(MenuAction::Definition(range)) => state.go_to_range(ctx, range),
+        Some(MenuAction::Rename(index)) => {
+            state.begin_rename(index);
+        }
+        None => {}
+    }
+}
+
+/// The rename box, under the name being renamed. Returns whether the text changed.
+pub(super) fn rename_box(ctx: &egui::Context, state: &mut EditorState) -> bool {
+    let Some(mut rename) = state.nav.rename.take() else {
+        return false;
+    };
+    if rename.source_hash != text_hash(&state.source) {
+        return false;
+    }
+    let Some(anchor) = state.nav.anchor else {
+        state.nav.rename = Some(rename);
+        ctx.request_repaint();
+        return false;
+    };
+    if rename.checked.as_deref() != Some(rename.text.as_str()) {
+        let table = state.symbols();
+        rename.error = if rename.text == rename.original {
+            None
+        } else {
+            table
+                .rename(&state.source, rename.symbol, &rename.text)
+                .err()
+                .map(|why| why.message())
+        };
+        rename.checked = Some(rename.text.clone());
+    }
+    let field = Id::new(RENAME_ID);
+    if rename.needs_focus && rename.shown {
+        let mut edit_state = TextEditState::load(ctx, field).unwrap_or_default();
+        edit_state.cursor.set_char_range(Some(CCursorRange::two(
+            CCursor::new(0),
+            CCursor::new(rename.text.chars().count()),
+        )));
+        edit_state.store(ctx, field);
+        ctx.memory_mut(|memory| memory.request_focus(field));
+        rename.needs_focus = false;
+    }
+    let mut accept = false;
+    let mut cancel = ctx.input_mut(|input| input.consume_key(Modifiers::NONE, Key::Escape));
+    egui::Area::new(Id::new("script-rename"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(egui::pos2(anchor.left(), anchor.bottom() + 4.0))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(theme::chrome())
+                .stroke(Stroke::new(1.0, theme::separator()))
+                .corner_radius(6.0)
+                .inner_margin(Margin::same(6))
+                .show(ui, |ui| {
+                    ui.set_width(240.0);
+                    ui.label(
+                        RichText::new(format!("Rename {} {}", rename.kind, rename.original))
+                            .size(11.0)
+                            .color(theme::text_secondary()),
+                    );
+                    let output = egui::TextEdit::singleline(&mut rename.text)
+                        .id(field)
+                        .font(FontId::monospace(FONT_SIZE))
+                        .desired_width(f32::INFINITY)
+                        .show(ui);
+                    let response = output.response;
+                    rename.had_focus |= response.has_focus();
+                    if response.lost_focus() {
+                        let entered = ui.input(|input| input.key_pressed(Key::Enter));
+                        if entered {
+                            accept = true;
+                        } else if rename.had_focus {
+                            cancel = true;
+                        }
+                    }
+                    if let Some(error) = &rename.error {
+                        ui.label(
+                            RichText::new(error)
+                                .size(11.0)
+                                .color(theme::syntax::string()),
+                        );
+                    }
+                });
+        });
+    if !rename.shown {
+        rename.shown = true;
+        ctx.request_repaint();
+    }
+    if accept && rename.error.is_none() {
+        return finish(ctx, state, &rename);
+    }
+    if accept {
+        // Enter on a name that cannot be used: stay open, and keep the keyboard.
+        ctx.memory_mut(|memory| memory.request_focus(field));
+        state.nav.rename = Some(rename);
+        return false;
+    }
+    if !cancel {
+        state.nav.rename = Some(rename);
+    } else {
+        ctx.memory_mut(|memory| memory.request_focus(state.id));
+    }
+    false
+}
+
+/// Renames, as one undo step, and puts the caret back on the name it was on.
+fn finish(ctx: &egui::Context, state: &mut EditorState, rename: &RenameBox) -> bool {
+    ctx.memory_mut(|memory| memory.request_focus(state.id));
+    if rename.text == rename.original {
+        return false;
+    }
+    let table = state.symbols();
+    let Ok(edits) = table.rename(&state.source, rename.symbol, &rename.text) else {
+        return false;
+    };
+    let mut chars: Vec<char> = state.source.chars().collect();
+    for (range, text) in edits.iter().rev() {
+        chars.splice(range.clone(), text.chars());
+    }
+    // The caret keeps its place in the name, and moves with every change before it.
+    let mut shift = 0isize;
+    let mut inside = None;
+    for (range, text) in &edits {
+        let length = text.chars().count();
+        if range.end <= rename.caret {
+            shift += length as isize - (range.end - range.start) as isize;
+        } else {
+            if range.start < rename.caret {
+                let offset = (rename.caret - range.start).min(length);
+                inside = Some(range.start as isize + shift + offset as isize);
+            }
+            break;
+        }
+    }
+    let caret = inside.unwrap_or(rename.caret as isize + shift);
+    let renamed: String = chars.into_iter().collect();
+    let mut edit_state = TextEditState::load(ctx, state.id).unwrap_or_default();
+    // A rename is its own undo step, apart from the typing before it.
+    let before = edit_state
+        .cursor
+        .char_range()
+        .unwrap_or_else(|| CCursorRange::one(CCursor::new(0)));
+    let mut undoer = edit_state.undoer();
+    undoer.add_undo(&(before, state.source.clone()));
+    state.source = renamed;
+    edit_state.set_undoer(undoer);
+    edit_state
+        .cursor
+        .set_char_range(Some(CCursorRange::one(CCursor::new(caret.max(0) as usize))));
+    edit_state.store(ctx, state.id);
+    state.carets.clear();
+    state.completion = None;
+    state.completion_wanted = false;
+    state.completion_explicit = false;
+    ctx.request_repaint();
+    true
+}

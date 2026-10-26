@@ -141,6 +141,13 @@ impl Context {
         self.sel.start
     }
 
+    /// Points the context at another selection of the same text, so several carets share one
+    /// scan.
+    pub fn select(&mut self, selection: Range<usize>) {
+        let end = self.chars.len();
+        self.sel = selection.start.min(end)..selection.end.min(end);
+    }
+
     fn unit(&self, at: usize) -> Option<char> {
         self.chars.get(at).copied()
     }
