@@ -239,6 +239,24 @@ pub fn declared_symbols(source: &str) -> HashSet<String> {
     declared_names(&Lexer::new(source).lex().tokens)
 }
 
+/// The declared names that are functions (`name(args) =>`), for completion to add the call
+/// parentheses.
+pub fn declared_functions(source: &str) -> HashSet<String> {
+    let tokens = Lexer::new(source).lex().tokens;
+    let mut functions = HashSet::new();
+    for (index, token) in tokens.iter().enumerate() {
+        let TokenKind::Identifier(name) = &token.kind else {
+            continue;
+        };
+        let after_dot = index > 0 && tokens[index - 1].kind == TokenKind::Dot;
+        let call = tokens.get(index + 1).map(|t| &t.kind) == Some(&TokenKind::LeftParen);
+        if !after_dot && call && is_function_definition(&tokens, index) {
+            functions.insert(name.clone());
+        }
+    }
+    functions
+}
+
 /// Classifies the source. Spans are sorted, non-overlapping and cover only what is not plain.
 pub fn classify(source: &str) -> Vec<Span> {
     let result = Lexer::new(source).lex();
