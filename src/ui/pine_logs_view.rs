@@ -274,6 +274,10 @@ fn toolbar(
                     galley,
                     theme::text_tertiary(),
                 );
+            } else if state.embedded && labels.len() == 1 {
+                // A tab that only ever shows one script has nothing to choose: the name stays, as
+                // a label, so the field does not look like a menu.
+                script_label(ui, picker, &labels[0]);
             } else if let Some(chosen) = kit::menu_picker(ui, picker, &labels, current, true)
                 && scripts[chosen].id != state.selected.unwrap_or(0)
             {
@@ -358,6 +362,46 @@ fn toolbar(
             );
             levels_menu(&more, state);
         },
+    );
+}
+
+/// The script's name in the picker's field, without the chevron or the menu.
+fn script_label(ui: &mut Ui, width: f32, label: &str) {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::hover());
+    let response = accessibility::label(response, format!("Script: {label}"));
+    ui.painter().rect_filled(rect, 6.0, kit::primary(0.1));
+    ui.painter().rect_stroke(
+        rect,
+        6.0,
+        egui::Stroke::new(1.0, kit::primary(0.06)),
+        egui::StrokeKind::Inside,
+    );
+    let text = kit::galley(
+        ui,
+        label,
+        kit::size::BODY,
+        kit::REGULAR,
+        theme::text_primary(),
+        width - 20.0,
+    );
+    if text.size().x
+        < kit::galley(
+            ui,
+            label,
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_primary(),
+            f32::INFINITY,
+        )
+        .size()
+        .x - 0.5
+    {
+        response.on_hover_text(label);
+    }
+    ui.painter().galley(
+        pos2(rect.left() + 10.0, rect.center().y - text.size().y / 2.0),
+        text,
+        theme::text_primary(),
     );
 }
 

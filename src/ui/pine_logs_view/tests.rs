@@ -766,3 +766,43 @@ fn gallery_of_the_pane() {
 fn history_of(events: Vec<LogEvent>) -> LogHistory {
     history(events)
 }
+
+/// How many times `needle` is drawn after a click on the script field.
+fn drawn_after_clicking_the_script_field(rig: &mut Rig, needle: &str) -> usize {
+    // The toolbar is the top of a tab, and under the title in the docked pane.
+    let at = pos2(60.0, if rig.state.embedded { 23.0 } else { 68.0 });
+    let button = |pressed| Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    };
+    rig.frame(vec![Event::PointerMoved(at)]);
+    rig.frame(vec![button(true)]);
+    rig.frame(vec![button(false)]);
+    rig.settle();
+    rig.galleys()
+        .iter()
+        .filter(|galley| galley.job.text.contains(needle))
+        .count()
+}
+
+#[test]
+fn a_tab_with_one_script_shows_its_name_without_a_menu() {
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.embedded = true;
+    rig.scripts.truncate(1);
+    rig.settle();
+    assert_eq!(drawn_after_clicking_the_script_field(&mut rig, "Alpha"), 1);
+
+    // Two scripts in a tab, or one in the docked pane, still choose from a menu: the name is in the
+    // field and again in the open menu.
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.state.embedded = true;
+    rig.settle();
+    assert!(drawn_after_clicking_the_script_field(&mut rig, "Alpha") >= 2);
+    let mut rig = Rig::new(history(vec![event(0, LogLevel::Info, "hello")]));
+    rig.scripts.truncate(1);
+    rig.settle();
+    assert!(drawn_after_clicking_the_script_field(&mut rig, "Alpha") >= 2);
+}
