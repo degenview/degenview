@@ -32,6 +32,12 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod carets;
+mod navigation;
+pub use navigation::EditAction;
+#[cfg(test)]
+mod navigation_tests;
+
 const GUTTER_WIDTH: f32 = 64.0;
 /// The profiler's column, left of the gutter while the profiler is on: a flame, a bar and a share.
 const PROFILE_WIDTH: f32 = 104.0;
@@ -109,6 +115,10 @@ pub struct EditorState {
     profile: Option<ProfileColumn>,
     /// The lines the pointer is over in the profile column: the code block to wash.
     profile_hover: Option<(usize, usize)>,
+    /// The extra carets (Sublime-style multiple cursors) and the click that may add one.
+    carets: carets::CaretState,
+    /// Go to definition, the right-click menu and the rename box.
+    nav: navigation::NavState,
 }
 
 /// The open suggestion list and its highlighted row.
@@ -164,6 +174,8 @@ impl EditorState {
             menu_line: None,
             profile: None,
             profile_hover: None,
+            carets: carets::CaretState::default(),
+            nav: navigation::NavState::default(),
             #[cfg(test)]
             scroll_y: 0.0,
         }
@@ -191,6 +203,8 @@ impl EditorState {
         self.completion_wanted = false;
         self.completion_explicit = false;
         self.select_to = None;
+        self.carets.clear();
+        self.nav.rename = None;
     }
 
     pub fn mark_saved(&mut self) {
@@ -403,9 +417,15 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     }
 
     let mut edited = completion_keys(ui.ctx(), state);
+    navigation::keys(ui.ctx(), state);
+    navigation::edit_menu(ui.ctx(), state);
+    edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &mut edited);
-    edited |= update_completion(ui, state, edited);
+    // A rename changes the text but is not typing: no suggestions follow it.
+    let renamed = navigation::rename_box(ui.ctx(), state);
+    edited |= renamed;
+    edited |= update_completion(ui, state, edited && !renamed);
     draw_signature(ui, state);
     paint_gutter(ui, gutter, &rows, &state.debug);
     if state.profile.is_some() {
@@ -510,6 +530,13 @@ fn accept_completion(ctx: &egui::Context, state: &mut EditorState) -> bool {
 /// Returns whether a row click changed the text.
 fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool {
     let ctx = ui.ctx().clone();
+    if !state.carets.extra.is_empty() {
+        // Suggestions follow one caret.
+        state.completion = None;
+        state.completion_wanted = false;
+        state.completion_explicit = false;
+        return false;
+    }
     let focused = ctx.memory(|memory| memory.has_focus(state.id));
     let caret = TextEditState::load(&ctx, state.id)
         .and_then(|edit| edit.cursor.char_range())
@@ -890,6 +917,15 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             }
             let galley = &text_edit.galley;
             let origin = text_edit.galley_pos;
+            carets::resolve(ui.ctx(), state, galley, origin, char_width);
+            navigation::hover(ui, state, &text_edit.response.response, galley, origin);
+            navigation::context_menu(
+                ui.ctx(),
+                state,
+                &text_edit.response.response,
+                galley,
+                origin,
+            );
             for placed in &galley.rows {
                 rows.rows.push((origin.y + placed.pos.y, placed.row.size.y));
             }
@@ -1050,7 +1086,11 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                 char_width,
                 caret.map(|c| c.primary.index.0),
             ));
+            let (extra_behind, extra_over) =
+                carets::shapes(state, galley, origin, ui.visuals(), char_width);
+            behind_shapes.extend(extra_behind);
             ui.painter().set(behind, Shape::Vec(behind_shapes));
+            ui.painter().extend(extra_over);
 
             // Diagnostic underlines and their merged hover messages (over the text).
             for diagnostic in &state.diagnostics {

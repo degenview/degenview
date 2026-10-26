@@ -71,18 +71,32 @@ pub fn expressions(statement: &Statement) -> Vec<&Expression> {
 
 /// Directly nested statement lists: branches, loop and function bodies, switch arms.
 pub fn nested_blocks(statement: &Statement) -> Vec<&[Statement]> {
+    let mut blocks = Vec::new();
+    for_each_nested_block(statement, |block| blocks.push(block));
+    blocks
+}
+
+/// `nested_blocks` without building the list, for code that runs once per executed statement.
+pub fn for_each_nested_block<'a>(statement: &'a Statement, mut visit: impl FnMut(&'a [Statement])) {
     match statement {
         Statement::Conditional {
             when_true,
             when_false,
             ..
-        } => vec![when_true.as_slice(), when_false.as_slice()],
+        } => {
+            visit(when_true);
+            visit(when_false);
+        }
         Statement::ForRange { body, .. }
         | Statement::ForIn { body, .. }
         | Statement::WhileLoop { body, .. }
-        | Statement::Function { body, .. } => vec![body.as_slice()],
-        Statement::Switch { arms, .. } => arms.iter().map(|arm| arm.body.as_slice()).collect(),
-        _ => Vec::new(),
+        | Statement::Function { body, .. } => visit(body),
+        Statement::Switch { arms, .. } => {
+            for arm in arms {
+                visit(&arm.body);
+            }
+        }
+        _ => {}
     }
 }
 

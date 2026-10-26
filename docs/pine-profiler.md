@@ -124,7 +124,9 @@ script does with the candles afterwards is timed like anything else.
   compile time), each with a note saying what the figure is of. A partial profile says so at the top.
   A stale one says so and is dimmed; its rows go to their lines only while the editor still holds the
   text that was profiled. All text in the tab is the secondary label colour or darker, so it reads in
-  both appearances.
+  both appearances. Where the drawer is wide, the introduction puts its picture beside the steps and
+  the hottest lines stand beside the two cards of figures; the body scrolls instead of being cut off
+  in a short drawer.
 * The editor keeps its syntax colouring, selection, find highlights and diagnostics: the wash is
   painted under the text with the current-line band, and the column is a separate rectangle.
 

@@ -1737,6 +1737,19 @@ impl ChartCard {
         self.newest_bar = None;
     }
 
+    /// Whether the price axis follows the bars on screen (no range placed by dragging).
+    #[cfg(test)]
+    pub(crate) fn prices_are_autoscaled(&self) -> bool {
+        self.viewport.vertical.manual.is_none()
+    }
+
+    /// Places the price range as a drag of the chart would.
+    #[cfg(test)]
+    pub(crate) fn place_prices_for_test(&mut self, minimum: f64, maximum: f64) {
+        self.viewport.vertical.manual =
+            Some(crate::model::viewport::PriceRange::new(minimum, maximum));
+    }
+
     /// Price scale back to autoscale at the natural zoom, leaving the time window where it is.
     pub fn reset_price_scale(&mut self) {
         self.viewport.vertical.reset();
@@ -3124,6 +3137,9 @@ mod drawing_tests;
 
 #[cfg(test)]
 mod price_scale_tests;
+
+#[cfg(test)]
+mod market_switch_tests;
 
 #[cfg(test)]
 mod tests {

@@ -831,3 +831,56 @@ fn the_chart_colours_are_the_themes() {
     assert_eq!(value(&session, "fg"), RuntimeValue::Color(0x1317_22ff));
     assert_eq!(value(&session, "light"), RuntimeValue::Bool(true));
 }
+
+#[test]
+fn names_a_block_declares_do_not_leak_out_of_it() {
+    let session = run(
+        "i = 100\nx = 5.0\ntotal = 0.0\n\
+         for i = 0 to 3\n    x = i * 2.0\n    total += x\n\
+         if total > 0\n    x = 99.0\n    i = 7\n\
+         y = x\nz = i",
+        2,
+    );
+    assert_eq!(value(&session, "total"), RuntimeValue::Float(12.0));
+    assert_eq!(value(&session, "x"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "y"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "i"), RuntimeValue::Int(100));
+    assert_eq!(value(&session, "z"), RuntimeValue::Int(100));
+}
+
+#[test]
+fn a_block_that_breaks_or_continues_still_puts_its_names_back() {
+    let session = run(
+        "n = 1.0\nm = 2.0\nseen = 0\n\
+         for k = 0 to 5\n    n = k * 1.0\n    if k == 1\n        continue\n    m = 50.0\n    seen += 1\n    if k == 2\n        break\n\
+         r = n\ns = m",
+        2,
+    );
+    assert_eq!(value(&session, "seen"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "r"), RuntimeValue::Float(1.0));
+    assert_eq!(value(&session, "s"), RuntimeValue::Float(2.0));
+}
+
+#[test]
+fn a_block_that_shadows_more_names_than_fit_inline_puts_them_all_back() {
+    let session = run(
+        "a = 1.0\nb = 2.0\nc = 3.0\nd = 4.0\ne = 5.0\nf = 6.0\n\
+         for q = 0 to 1\n    a = 10.0\n    b = 11.0\n    c = 12.0\n    d = 13.0\n    e = 14.0\n    f = 15.0\n\
+         sum = a + b + c + d + e + f",
+        2,
+    );
+    assert_eq!(value(&session, "sum"), RuntimeValue::Float(21.0));
+}
+
+#[test]
+fn a_nested_loop_restores_its_own_counter_each_time_it_runs() {
+    let session = run(
+        "j = 40\nacc = 0\n\
+         for i = 0 to 2\n    for j = 0 to 1\n        acc += 1\n    acc += j\n\
+         after = j",
+        2,
+    );
+    // The inner counter is the outer loop's own `j` again after each inner loop: 40 per outer pass.
+    assert_eq!(value(&session, "acc"), RuntimeValue::Int(3 * 2 + 3 * 40));
+    assert_eq!(value(&session, "after"), RuntimeValue::Int(40));
+}

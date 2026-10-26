@@ -51,6 +51,43 @@
   `is_dirty()` remains a string comparison.
 - `revert_edit` must reject stale text. Apply through `apply_hunk_edit` so revert is one undo step.
   Only `mark_saved`/`replace_source(saved)` move the baseline. Use `theme::editor_diff_*` colors.
+- `script_manager::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
+  the AST (which has no span for parameters, loop variables, tuple names or aliases and drops every
+  statement it cannot parse), so it works on a script mid-edit. Scopes come from each statement's raw
+  leading whitespace; a declaration is visible from the end of its statement and block; values and
+  callables are separate namespaces; members, fields and `lib.fn` are not resolved. Cache
+  `EditorState::symbols()` by text hash. A rename is never reasoned about: `SymbolTable::rename` applies
+  it, analyses the result again and refuses unless every name still resolves to the same declaration.
+  Test it with CRLF and astral characters; every range is a char index.
+- Multiple carets: egui's text field keeps the *primary* caret (it draws and moves it);
+  `editor/carets.rs` holds the others in `CaretState::extra`. While extras exist, `carets::apply` takes
+  the editing and moving keys before egui and runs them through pure `script_manager::multi_cursor`,
+  which reuses `edit_ops` per caret against one shared scan and lays the edits down together (an edit
+  overlapping an earlier one drops its caret). Extras belong to the text they were made in: any other
+  change (egui typing, undo, find/replace, rename, sync) fails the `hash` check and drops them, which is
+  also how undo collapses them. Do not give extras their own undo history. Escape blurs an egui text
+  field before any editor code runs, so `apply` reads it through `had_focus_last_frame` and re-takes the
+  focus. Clicks are seen before egui moves the caret for them (`note_pointer`) and finished against the
+  laid-out text afterwards (`resolve`); ⌘/Ctrl-click is a jump when the click is on a name with a
+  definition and a new caret otherwise, ⌥-click always a new caret.
+- The right-click menu, the ⌘-hover cue and the inline rename box are `editor/navigation.rs`. An egui
+  `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
+  second.
+
+## Drawer tabs
+
+- The preview drawer's Report, Problems and Profile tabs share `script_manager::tab_chrome`: a 46px
+  toolbar with a `state_field`, a hairline, then cards of rows. The Logs tab (`ui::pine_logs_view`,
+  shared with the chart workspace) mirrors its constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and
+  `BUTTON` equal.
+- Spend width before height: `chrome::wide` (520pt of room) puts parts in `chrome::columns`, and
+  `pine_logs_view::intro` puts a picture beside its steps. Nothing outside a scroll area may be
+  taller than the drawer (minimum 90pt): bodies use `chrome::scroll`, empty states use `centered`
+  (which scrolls), and scroll areas set `min_scrolled_height(0.0)` (egui's default of 64 pushes a
+  tab past a short drawer). `drawer_tabs_tests` asserts every tab uses no more than the room at five
+  sizes; set `DEGENVIEW_GALLERY_DIR` to get pictures.
+- `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
+  the same pieces (`metric_grid`, `equity_curve`) itself.
 
 ## Manager lifecycle
 

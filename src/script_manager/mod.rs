@@ -21,12 +21,15 @@ pub mod demo;
 pub mod diff;
 mod diff_view;
 pub mod drawer;
+#[cfg(test)]
+mod drawer_tabs_tests;
 pub mod edit_ops;
 pub mod editor;
 mod find;
 pub mod inputs;
 mod logs;
 pub mod model;
+pub mod multi_cursor;
 pub mod name;
 pub mod prefs;
 mod preview;
@@ -43,7 +46,9 @@ mod sheets;
 mod sidebar;
 mod signature;
 pub mod store;
+pub mod symbols;
 pub mod syntax;
+mod tab_chrome;
 mod unsaved;
 mod workspace;
 
@@ -272,6 +277,21 @@ impl ScriptManager {
     pub fn request_save(&mut self) {
         if self.open.is_some() {
             self.cmds.push(Cmd::Save);
+        }
+    }
+
+    /// What the Edit menu may do for the open script's editor: nothing unless it has the keyboard.
+    pub fn edit_menu(&self) -> crate::native_bridge::EditMenu {
+        self.open
+            .as_ref()
+            .map(|open| open.editor.edit_menu())
+            .unwrap_or_default()
+    }
+
+    /// An Edit-menu item chosen by the app, run by the editor on its next frame.
+    pub fn edit_command(&mut self, action: editor::EditAction) {
+        if let Some(open) = self.open.as_mut() {
+            open.editor.request_edit(action);
         }
     }
 

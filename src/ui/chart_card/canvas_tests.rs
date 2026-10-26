@@ -36,9 +36,9 @@ pub(super) fn series(count: usize) -> Vec<Kline> {
 
 #[derive(Default)]
 pub(super) struct Drawn {
-    segments: Vec<([Pos2; 2], Stroke)>,
-    texts: Vec<(Pos2, String, f32)>,
-    meshes: Vec<Arc<egui::epaint::Mesh>>,
+    pub(super) segments: Vec<([Pos2; 2], Stroke)>,
+    pub(super) texts: Vec<(Pos2, String, f32)>,
+    pub(super) meshes: Vec<Arc<egui::epaint::Mesh>>,
 }
 
 fn collect(shape: &Shape, out: &mut Drawn) {
@@ -64,7 +64,7 @@ fn collect(shape: &Shape, out: &mut Drawn) {
     }
 }
 
-fn gather(shapes: &[ClippedShape]) -> Drawn {
+pub(super) fn gather(shapes: &[ClippedShape]) -> Drawn {
     let mut out = Drawn::default();
     for clipped in shapes {
         // Shapes clipped away entirely are never painted.
@@ -87,6 +87,7 @@ pub(super) struct Harness {
     pub(super) drawings: Vec<crate::model::Drawing>,
     pub(super) error: Option<&'static str>,
     pub(super) scale_mode: PriceScaleMode,
+    pub(super) source: DataSource,
 }
 
 impl Harness {
@@ -105,6 +106,7 @@ impl Harness {
             drawings: Vec::new(),
             error: None,
             scale_mode: PriceScaleMode::Regular,
+            source: DataSource::Binance,
         }
     }
 
@@ -119,6 +121,7 @@ impl Harness {
             ..Default::default()
         };
         let mut pointer = ChartPointer::default();
+        let source = self.source;
         let (card, candles, replay_active, crosshair, error, scale_mode) = (
             &mut self.card,
             &self.candles,
@@ -143,7 +146,7 @@ impl Harness {
                 false,
                 error,
                 scale_mode,
-                DataSource::Binance,
+                source,
                 indicators,
                 crosshair.as_ref(),
                 1,

@@ -133,7 +133,9 @@ preview chart's run of the script being edited, without the pane's own title. Th
 moves the caret in the editor you are in, and "Scroll to bar" moves the preview chart, which only
 holds the candles it fetched. TradingView opens the pane from the editor's More menu; DegenView's
 Script Manager has no such menu, so the drawer tab is its way in. The level and search options are
-the same local `pineLogs.prefs` setting as the chart's pane.
+the same local `pineLogs.prefs` setting as the chart's pane. Where the drawer is wide enough the
+search bar and the start-date bar share a row, and the introduction puts its picture beside its
+steps; in a drawer too short for the header, the header scrolls so some of the list stays in view.
 
 ### Unknown `log.*` functions and CRLF scripts
 

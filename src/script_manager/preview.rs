@@ -586,6 +586,7 @@ impl PreviewState {
     fn select_market(&mut self, market: PreviewMarket) {
         if market != self.market {
             self.candles.clear();
+            self.show_newest_bars();
             self.market = market.clone();
             self.fetched_for = None;
             self.error = None;
@@ -601,9 +602,21 @@ impl PreviewState {
         if timeframe != self.timeframe {
             self.timeframe = timeframe;
             self.candles.clear();
+            self.show_newest_bars();
             self.fetched_for = None;
             self.save(TIMEFRAME_KEY, &timeframe);
         }
+    }
+
+    /// Back to the newest bars with the price axis on autoscale, as the workspace does when a
+    /// chart's market or timeframe changes. A price range placed by dragging is in the old
+    /// market's prices and would leave the new one off screen. The candle count and price zoom
+    /// are the person's saved choices, so they stay.
+    fn show_newest_bars(&mut self) {
+        let (candles, zoom) = (self.card.visible_candles(), self.card.y_zoom());
+        self.card.reset_view();
+        self.card.set_visible_candles(candles);
+        self.card.set_y_zoom(zoom);
     }
 
     /// The last close and the change across the candles on screen. The warm-up candles off the
@@ -1532,6 +1545,34 @@ mod tests {
             preview.applied_source.as_deref(),
             Some(edited.source.as_str())
         );
+    }
+
+    #[test]
+    fn a_new_market_or_timeframe_starts_on_autoscale_and_keeps_the_saved_zoom() {
+        let mut preview = state();
+        preview.card.set_visible_candles(80);
+        preview.card.set_y_zoom(2.0);
+        let stock = PreviewMarket {
+            ticker: "AAPL".into(),
+            source: DataSource::Alpaca,
+        };
+
+        // A range placed by dragging the old market's chart is in the old market's prices.
+        preview.card.place_prices_for_test(90_000.0, 100_000.0);
+        preview.select_market(stock.clone());
+        assert!(preview.card.prices_are_autoscaled());
+        assert_eq!(preview.card.visible_candles(), 80);
+        assert_eq!(preview.card.y_zoom(), 2.0);
+
+        preview.card.place_prices_for_test(240.0, 260.0);
+        preview.select_timeframe(Timeframe::Week);
+        assert!(preview.card.prices_are_autoscaled());
+
+        // Choosing what is already shown leaves a placed range alone.
+        preview.card.place_prices_for_test(240.0, 260.0);
+        preview.select_market(stock);
+        preview.select_timeframe(Timeframe::Week);
+        assert!(!preview.card.prices_are_autoscaled());
     }
 
     #[test]

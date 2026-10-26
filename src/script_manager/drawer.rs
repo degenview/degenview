@@ -3,13 +3,16 @@
 //! `PineDiagnosticsListView`.
 
 use super::prefs::DrawerTab;
+use super::tab_chrome::{self as chrome, BUTTON, card, hairline};
 use crate::model::pine_alert::frequency_name;
 use crate::pine::program::VisualOutput;
 use crate::pine::state::AlertEvent;
+use crate::pine::strategy::{StrategyReport, Trade};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
-use crate::ui::pine_report;
-use crate::ui::theme;
+use crate::ui::pine_logs_view::centered;
+use crate::ui::pine_report::{self, PineReportFormat};
+use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, FontId, Id, Rect, RichText, Sense, Ui, Vec2, pos2, vec2,
 };
@@ -197,22 +200,22 @@ pub fn bar(
     output
 }
 
-/// A centred "title / caption" placeholder, like the drawer's empty states.
+/// A centred "title / caption" message, like the drawer's empty states.
 pub fn placeholder(ui: &mut Ui, title: &str, caption: &str) {
-    ui.vertical_centered(|ui| {
-        ui.add_space((ui.available_height() / 2.0 - 30.0).max(8.0));
-        ui.label(
-            RichText::new(title)
-                .size(11.0)
-                .variation("wght", crate::ui::kit::SEMIBOLD)
-                .color(theme::text_primary()),
-        );
+    centered(ui, |ui| {
+        ui.label(kit::text(
+            title,
+            kit::size::HEADLINE,
+            kit::SEMIBOLD,
+            theme::text_primary(),
+        ));
         ui.add_space(2.0);
-        ui.label(
-            RichText::new(caption)
-                .size(10.0)
-                .color(theme::text_secondary()),
-        );
+        ui.label(kit::text(
+            caption,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_tertiary(),
+        ));
     });
 }
 
@@ -246,12 +249,69 @@ pub fn sorted(diagnostics: &[Diagnostic]) -> Vec<&Diagnostic> {
     list
 }
 
-/// The Problems tab. Returns the diagnostic whose row was clicked.
+/// "3 errors", "1 warning", "2 errors · 1 warning", or "No problems".
+pub fn problems_summary(diagnostics: &[Diagnostic]) -> String {
+    let errors = diagnostics
+        .iter()
+        .filter(|d| d.severity == DiagnosticSeverity::Error)
+        .count();
+    let warnings = diagnostics.len() - errors;
+    match (errors, warnings) {
+        (0, 0) => "No problems".to_owned(),
+        (errors, 0) => counted(errors, "error"),
+        (0, warnings) => counted(warnings, "warning"),
+        (errors, warnings) => format!(
+            "{} \u{b7} {}",
+            counted(errors, "error"),
+            counted(warnings, "warning")
+        ),
+    }
+}
+
+fn counted(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
+/// The Problems tab: a toolbar saying how many there are, with the button that copies them, and
+/// the diagnostics as rows of a card. Returns the diagnostic whose row was clicked.
 pub fn problems(
     ui: &mut Ui,
     diagnostics: &[Diagnostic],
     copied_at: &mut Option<Instant>,
 ) -> Option<Diagnostic> {
+    let has_errors = diagnostics
+        .iter()
+        .any(|d| d.severity == DiagnosticSeverity::Error);
+    let just_copied = copied_at.is_some_and(|at| at.elapsed() < Duration::from_secs(2));
+    chrome::toolbar(ui, |ui, width| {
+        let copy = !diagnostics.is_empty();
+        let dot = if diagnostics.is_empty() {
+            kit::GREEN
+        } else if has_errors {
+            theme::syntax::string()
+        } else {
+            theme::YELLOW
+        };
+        let field = chrome::field_width(width, usize::from(copy));
+        chrome::state_field(ui, field, dot, &problems_summary(diagnostics), None);
+        if copy {
+            ui.add_space(6.0);
+            let (icon, tip, color) = if just_copied {
+                (Icon::Check, "Copied", theme::text_secondary())
+            } else if has_errors {
+                (Icon::CopyDoc, "Copy errors", theme::text_secondary())
+            } else {
+                (Icon::CopyDoc, "Copy problems", theme::text_secondary())
+            };
+            if icons::button(ui, icon, BUTTON, color, tip).clicked() && !just_copied {
+                ui.ctx().copy_text(copy_text(diagnostics));
+                *copied_at = Some(Instant::now());
+            }
+            if just_copied {
+                ui.ctx().request_repaint_after(Duration::from_secs(2));
+            }
+        }
+    });
     if diagnostics.is_empty() {
         placeholder(
             ui,
@@ -261,117 +321,140 @@ pub fn problems(
         return None;
     }
     let mut jump = None;
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 8))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("Diagnostics")
-                        .size(10.0)
-                        .variation("wght", crate::ui::kit::SEMIBOLD)
-                        .color(theme::text_primary()),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let just_copied =
-                        copied_at.is_some_and(|at| at.elapsed() < Duration::from_secs(2));
-                    let has_errors = diagnostics
-                        .iter()
-                        .any(|d| d.severity == DiagnosticSeverity::Error);
-                    let label = if just_copied {
-                        "Copied"
-                    } else if has_errors {
-                        "Copy Errors"
-                    } else {
-                        "Copy Problems"
-                    };
-                    let color = if just_copied {
-                        theme::text_secondary()
-                    } else {
-                        theme::SYSTEM_ACCENT
-                    };
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    let text = ui.add(
-                        egui::Label::new(RichText::new(label).size(10.0).color(color))
-                            .sense(Sense::click()),
-                    );
-                    icons::inline(
-                        ui,
-                        if just_copied {
-                            Icon::Check
-                        } else {
-                            Icon::CopyDoc
-                        },
-                        11.0,
-                        color,
-                    );
-                    if text.on_hover_cursor(CursorIcon::PointingHand).clicked() && !just_copied {
-                        ui.ctx().copy_text(copy_text(diagnostics));
-                        *copied_at = Some(Instant::now());
-                    }
-                    if just_copied {
-                        ui.ctx().request_repaint_after(Duration::from_secs(2));
-                    }
-                });
-            });
-            ui.add_space(4.0);
-            egui::ScrollArea::vertical()
-                .id_salt("problems-scroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 4.0;
-                    for diagnostic in sorted(diagnostics) {
-                        if problem_row(ui, diagnostic).clicked() {
-                            jump = Some(diagnostic.clone());
-                        }
-                    }
-                });
+    chrome::scroll(ui, "problems-scroll", |ui| {
+        card(ui, |ui| {
+            for (index, diagnostic) in sorted(diagnostics).into_iter().enumerate() {
+                if index > 0 {
+                    hairline(ui);
+                }
+                if problem_row(ui, diagnostic).clicked() {
+                    jump = Some(diagnostic.clone());
+                }
+            }
         });
+    });
     jump
 }
 
 fn problem_row(ui: &mut Ui, diagnostic: &Diagnostic) -> egui::Response {
-    let (icon, color) = match diagnostic.severity {
+    let (icon, tint) = match diagnostic.severity {
         DiagnosticSeverity::Error => (Icon::XmarkOctagonFill, theme::syntax::string()),
         DiagnosticSeverity::Warning => (Icon::TriangleFill, theme::YELLOW),
     };
-    let prefix = format!(
-        "{} · {}:{}",
-        diagnostic.code, diagnostic.range.start.line, diagnostic.range.start.column
-    );
-    let mut job = egui::text::LayoutJob::default();
-    let mono = FontId::monospace(10.0);
-    job.append(
-        &prefix,
-        0.0,
-        egui::TextFormat::simple(mono.clone(), theme::text_secondary()),
-    );
-    job.append(
-        "  ",
-        0.0,
-        egui::TextFormat::simple(mono.clone(), theme::text_secondary()),
-    );
-    job.append(
-        &diagnostic.message,
-        0.0,
-        egui::TextFormat::simple(mono, theme::text_primary()),
-    );
     let line = diagnostic.range.start.line;
-    // The label is plain (no click sense) so the whole row, not just the text, is one target.
-    let inner = ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        icons::inline(ui, icon, 12.0, color);
-        ui.add(egui::Label::new(job).wrap().selectable(false));
-    });
-    let rect = inner.response.rect.with_max_x(ui.max_rect().right());
-    let response = ui.interact(
-        rect,
-        ui.id()
-            .with(("problem-row", line, &diagnostic.code, &diagnostic.message)),
-        Sense::click(),
+    let response = list_row(
+        ui,
+        &ListRow {
+            icon,
+            tint,
+            code: Some(&diagnostic.code),
+            text: &diagnostic.message,
+            text_color: theme::text_primary(),
+            trail: &format!("{line}:{}", diagnostic.range.start.column),
+            clickable: true,
+        },
+    );
+    crate::ui::accessibility::label(
+        response,
+        format!("{}, line {line}: {}", diagnostic.code, diagnostic.message),
+    )
+    .on_hover_cursor(CursorIcon::PointingHand)
+    .on_hover_text(format!("Go to line {line}"))
+}
+
+/// What a card's row says: a status icon, an optional code in a capsule, the words, and a figure at
+/// the right edge.
+struct ListRow<'a> {
+    icon: Icon,
+    tint: Color32,
+    code: Option<&'a str>,
+    text: &'a str,
+    text_color: Color32,
+    trail: &'a str,
+    clickable: bool,
+}
+
+/// One row of a card, as tall as its words. The words wrap; where the width would squeeze them,
+/// they drop under the code and the figure instead.
+fn list_row(ui: &mut Ui, row: &ListRow<'_>) -> egui::Response {
+    const PAD_X: f32 = 12.0;
+    const PAD_Y: f32 = 7.0;
+    const LINE: f32 = 16.0;
+    const INDENT: f32 = 20.0;
+    const SQUEEZED: f32 = 140.0;
+
+    let width = ui.available_width();
+    let painter = ui.painter().clone();
+    let mono = FontId::monospace(10.0);
+    let trail = painter.layout_no_wrap(row.trail.to_owned(), mono.clone(), theme::text_tertiary());
+    let code = row
+        .code
+        .map(|code| painter.layout_no_wrap(code.to_owned(), mono, theme::text_secondary()));
+    let beside_x = PAD_X + INDENT + code.as_ref().map_or(0.0, |code| code.size().x + 10.0 + 8.0);
+    let beside = width - beside_x - PAD_X - trail.size().x - 10.0;
+    let stacked = beside < SQUEEZED;
+    let (words_x, wrap) = if stacked {
+        (PAD_X + INDENT, width - PAD_X * 2.0 - INDENT)
+    } else {
+        (beside_x, beside)
+    };
+    let words = painter.layout(
+        row.text.to_owned(),
+        FontId::proportional(12.0),
+        row.text_color,
+        wrap.max(40.0),
+    );
+    let height = if stacked {
+        PAD_Y * 2.0 + LINE + 3.0 + words.size().y
+    } else {
+        PAD_Y * 2.0 + words.size().y.max(LINE)
+    };
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(width, height),
+        if row.clickable {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    if row.clickable && response.hovered() {
+        painter.rect_filled(rect, 6.0, theme::ink(10));
+    }
+    let top = rect.top() + PAD_Y;
+    let mid = top + LINE / 2.0;
+    icons::paint(
+        &painter,
+        Rect::from_center_size(pos2(rect.left() + PAD_X + 6.0, mid), Vec2::splat(12.0)),
+        row.icon,
+        row.tint,
+    );
+    if let Some(code) = code {
+        let capsule = Rect::from_min_size(
+            pos2(rect.left() + PAD_X + INDENT, mid - 8.0),
+            vec2(code.size().x + 10.0, 16.0),
+        );
+        painter.rect_filled(capsule, 5.0, theme::ink(10));
+        painter.galley(
+            pos2(capsule.left() + 5.0, mid - code.size().y / 2.0),
+            code,
+            theme::text_secondary(),
+        );
+    }
+    painter.galley(
+        pos2(
+            rect.right() - PAD_X - trail.size().x,
+            mid - trail.size().y / 2.0,
+        ),
+        trail,
+        theme::text_tertiary(),
+    );
+    let words_top = if stacked { top + LINE + 3.0 } else { top + 1.0 };
+    painter.galley(
+        pos2(rect.left() + words_x, words_top),
+        words,
+        row.text_color,
     );
     response
-        .on_hover_cursor(CursorIcon::PointingHand)
-        .on_hover_text(format!("Go to line {line}"))
 }
 
 #[cfg(test)]
@@ -454,10 +537,58 @@ pub fn visible_alerts(alerts: &[AlertEvent]) -> Vec<&AlertEvent> {
     alerts.iter().rev().take(ALERT_LIMIT).collect()
 }
 
-/// The Report tab: the strategy report, and the alerts the script raised.
+/// "Strategy \u{b7} 24 trades", "Indicator \u{b7} 3 alerts", "Strategy \u{b7} 24 trades \u{b7} 3 alerts"
+/// or "No report".
+pub fn report_summary(strategy: Option<&StrategyReport>, alerts: usize) -> String {
+    let mut parts = Vec::new();
+    match strategy {
+        Some(report) => parts.push(format!(
+            "Strategy \u{b7} {}",
+            counted(report.trades.len(), "trade")
+        )),
+        None if alerts > 0 => parts.push("Indicator".to_owned()),
+        None => {}
+    }
+    if alerts > 0 {
+        parts.push(counted(alerts, "alert"));
+    }
+    if parts.is_empty() {
+        "No report".to_owned()
+    } else {
+        parts.join(" \u{b7} ")
+    }
+}
+
+/// The Report tab: a toolbar with what the script reported, and under it the strategy's figures,
+/// equity curve and trades, and the alerts the script raised, as cards. Where the width allows, the
+/// trades stand beside the figures.
 pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
     let strategy = visual.and_then(|v| v.strategy.as_ref());
     let alerts: &[AlertEvent] = visual.map_or(&[], |v| v.alerts.as_slice());
+    chrome::toolbar(ui, |ui, width| {
+        let neutral = theme::text_secondary();
+        let (dot, trailing) = match strategy {
+            Some(report) => {
+                let net = report.net_profit();
+                let tint = pine_report::tint(net, neutral);
+                let text = format!(
+                    "{}  {}",
+                    PineReportFormat::signed_money(net),
+                    PineReportFormat::percent(report.return_fraction(), true)
+                );
+                (tint, Some((text, tint)))
+            }
+            None if !alerts.is_empty() => (kit::ACCENT, None),
+            None => (neutral, None),
+        };
+        chrome::state_field(
+            ui,
+            chrome::field_width(width, 0),
+            dot,
+            &report_summary(strategy, alerts.len()),
+            trailing.as_ref().map(|(text, tint)| (text.as_str(), *tint)),
+        );
+    });
     if strategy.is_none() && alerts.is_empty() {
         placeholder(
             ui,
@@ -466,14 +597,243 @@ pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
         );
         return;
     }
-    egui::ScrollArea::vertical()
-        .id_salt("script-report-scroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            egui::Frame::new()
-                .inner_margin(egui::Margin::same(12))
-                .show(ui, |ui| report_content(ui, visual));
+    chrome::scroll(ui, "script-report-scroll", |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        match strategy {
+            Some(report) if !report.trades.is_empty() && chrome::wide(ui) => {
+                chrome::columns(
+                    ui,
+                    0.5,
+                    |ui| {
+                        figures_card(ui, report);
+                        if !alerts.is_empty() {
+                            ui.add_space(16.0);
+                            alerts_card(ui, alerts);
+                        }
+                    },
+                    |ui| trades_card(ui, report),
+                );
+            }
+            Some(report) => {
+                figures_card(ui, report);
+                if !report.trades.is_empty() {
+                    ui.add_space(16.0);
+                    trades_card(ui, report);
+                }
+                if !alerts.is_empty() {
+                    ui.add_space(16.0);
+                    alerts_card(ui, alerts);
+                }
+            }
+            None => alerts_card(ui, alerts),
+        }
+    });
+}
+
+/// The strategy's headline figures and its equity curve.
+fn figures_card(ui: &mut Ui, report: &StrategyReport) {
+    if let Some(notice) = pine_report::synthetic_fill_notice(report.chart) {
+        chrome::banner(ui, &notice);
+    }
+    let padded = egui::Margin::symmetric(12, 10);
+    chrome::caption(ui, "Figures");
+    card(ui, |ui| {
+        egui::Frame::new().inner_margin(padded).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            pine_report::metric_grid(ui, report, theme::text_primary());
         });
+    });
+    if report.equity.len() > 1 {
+        ui.add_space(16.0);
+        chrome::caption(ui, "Equity");
+        card(ui, |ui| {
+            egui::Frame::new().inner_margin(padded).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                pine_report::equity_curve(
+                    ui,
+                    &report.equity,
+                    report.settings.initial_capital,
+                    72.0,
+                    false,
+                );
+            });
+        });
+    }
+}
+
+const TRADE_LIMIT: usize = 100;
+
+/// The closed trades, newest first.
+fn trades_card(ui: &mut Ui, report: &StrategyReport) {
+    chrome::caption(ui, &format!("Trades ({})", report.trades.len()));
+    card(ui, |ui| {
+        for (index, trade) in report.trades.iter().rev().take(TRADE_LIMIT).enumerate() {
+            if index > 0 {
+                hairline(ui);
+            }
+            trade_row(ui, trade);
+        }
+    });
+    if report.trades.len() > TRADE_LIMIT {
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(format!(
+                "Showing the latest {TRADE_LIMIT} of {}",
+                report.trades.len()
+            ))
+            .size(9.0)
+            .color(theme::text_tertiary()),
+        );
+    }
+}
+
+/// One trade: its number and side, where it went in and out, and what it made.
+fn trade_row(ui: &mut Ui, trade: &Trade) {
+    const HEIGHT: f32 = 28.0;
+    const PAD_X: f32 = 12.0;
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
+    let painter = ui.painter().with_clip_rect(rect);
+    let mid = rect.center().y;
+    let number = painter.layout_no_wrap(
+        format!("#{}", trade.id),
+        FontId::monospace(10.0),
+        theme::text_tertiary(),
+    );
+    painter.galley(
+        pos2(rect.left() + PAD_X, mid - number.size().y / 2.0),
+        number,
+        theme::text_tertiary(),
+    );
+    let (side, tint) = if trade.is_long {
+        ("Long", kit::ACCENT)
+    } else {
+        ("Short", kit::ORANGE)
+    };
+    let capsule_x = rect.left() + PAD_X + 40.0;
+    let galley = painter.layout_no_wrap(side.to_owned(), FontId::proportional(9.0), tint);
+    let capsule = Rect::from_min_size(
+        pos2(capsule_x, mid - 7.5),
+        vec2(galley.size().x + 14.0, 15.0),
+    );
+    painter.rect_filled(capsule, 8.0, theme::with_alpha(tint, 0.14));
+    painter.galley(
+        pos2(capsule.left() + 7.0, mid - galley.size().y / 2.0),
+        galley,
+        tint,
+    );
+    let profit = painter.layout_no_wrap(
+        PineReportFormat::signed_money(trade.profit),
+        FontId::monospace(10.5),
+        pine_report::tint(trade.profit, theme::text_primary()),
+    );
+    let profit_x = rect.right() - PAD_X - profit.size().x;
+    painter.galley(
+        pos2(profit_x, mid - profit.size().y / 2.0),
+        profit,
+        Color32::PLACEHOLDER,
+    );
+    let prices_x = capsule.right() + 10.0;
+    let room = profit_x - 10.0 - prices_x;
+    if room > 30.0 {
+        let prices = kit::galley(
+            ui,
+            &format!(
+                "{} \u{2192} {}",
+                PineReportFormat::price(trade.entry_price),
+                PineReportFormat::price(trade.exit_price)
+            ),
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+            room,
+        );
+        painter.galley(
+            pos2(prices_x, mid - prices.size().y / 2.0),
+            prices,
+            theme::text_secondary(),
+        );
+    }
+    response.on_hover_text(format!(
+        "{} \u{2192} {} \u{b7} qty {}",
+        trade.entry_id,
+        trade.exit_id,
+        PineReportFormat::price(trade.quantity)
+    ));
+}
+
+/// The alerts the script raised, newest first, with how many were live.
+fn alerts_card(ui: &mut Ui, alerts: &[AlertEvent]) {
+    let (live, historical) = alert_summary(alerts);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.label(kit::text(
+            "Alerts",
+            kit::size::SUBHEADLINE,
+            kit::SEMIBOLD,
+            theme::text_secondary(),
+        ));
+        if live > 0 {
+            chrome::chip(ui, &format!("{live} live"), theme::syntax::variable());
+        }
+        if historical > 0 {
+            chrome::chip(
+                ui,
+                &format!("{historical} historical"),
+                theme::text_secondary(),
+            );
+        }
+    });
+    ui.add_space(6.0);
+    card(ui, |ui| {
+        for (index, alert) in visible_alerts(alerts).into_iter().enumerate() {
+            if index > 0 {
+                hairline(ui);
+            }
+            let (icon, tint) = if alert.is_realtime {
+                (Icon::BellFill, theme::SYSTEM_ACCENT)
+            } else {
+                (Icon::Clock, theme::text_secondary())
+            };
+            let (text, color) = if alert.message.is_empty() {
+                ("No message", theme::text_secondary())
+            } else {
+                (alert.message.as_str(), theme::text_primary())
+            };
+            list_row(
+                ui,
+                &ListRow {
+                    icon,
+                    tint,
+                    code: None,
+                    text,
+                    text_color: color,
+                    trail: &alert_time(alert.time),
+                    clickable: false,
+                },
+            )
+            .on_hover_text(format!(
+                "{} \u{b7} {}",
+                if alert.is_realtime {
+                    "Live bar, notifies"
+                } else {
+                    "Historical bar, never notifies"
+                },
+                frequency_name(alert.frequency)
+            ));
+        }
+    });
+    if alerts.len() > ALERT_LIMIT {
+        ui.add_space(6.0);
+        ui.label(
+            RichText::new(format!(
+                "Showing the latest {ALERT_LIMIT} of {}",
+                alerts.len()
+            ))
+            .size(9.0)
+            .color(theme::text_tertiary()),
+        );
+    }
 }
 
 /// The strategy report and the alerts box, without a scroll area of their own (the chart settings
@@ -486,20 +846,6 @@ pub fn report_content(ui: &mut Ui, visual: Option<&VisualOutput>) {
     if !alerts.is_empty() {
         alerts_section(ui, alerts);
     }
-}
-
-fn count_chip(ui: &mut Ui, text: &str, tint: Color32) {
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), FontId::proportional(9.0), tint);
-    let (rect, _) = ui.allocate_exact_size(vec2(galley.size().x + 14.0, 15.0), Sense::hover());
-    ui.painter()
-        .rect_filled(rect, 8.0, theme::with_alpha(tint, 0.14));
-    ui.painter().galley(
-        pos2(rect.min.x + 7.0, rect.center().y - galley.size().y / 2.0),
-        galley,
-        tint,
-    );
 }
 
 /// The alerts box: header with live/historical chips, collapsed by default (a log, not a
@@ -519,10 +865,10 @@ fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
                         .color(theme::text_primary()),
                 );
                 if live > 0 {
-                    count_chip(ui, &format!("{live} live"), theme::syntax::variable());
+                    chrome::chip(ui, &format!("{live} live"), theme::syntax::variable());
                 }
                 if historical > 0 {
-                    count_chip(
+                    chrome::chip(
                         ui,
                         &format!("{historical} historical"),
                         theme::text_secondary(),

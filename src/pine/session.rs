@@ -9,6 +9,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+use super::array_builtins::Bound;
 use super::ast::{
     AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Literal, Statement, SwitchArm,
     UnaryOperator,
@@ -134,6 +135,57 @@ impl Step {
         Self {
             flow: Flow::Normal,
             value,
+        }
+    }
+}
+
+/// How many shadowed names a block statement keeps without touching the heap: a loop counter and
+/// the few names its body declares.
+const SHADOWED_INLINE: usize = 4;
+
+/// The values a block statement's declared names held outside it, to put back when it ends. The
+/// names borrow from the statement, so saving one builds no `String`, and a block that shadows a few
+/// names allocates nothing.
+struct Shadowed<'s> {
+    inline: [Option<(&'s str, Option<RuntimeValue>)>; SHADOWED_INLINE],
+    used: usize,
+    overflow: Vec<(&'s str, Option<RuntimeValue>)>,
+}
+
+impl Default for Shadowed<'_> {
+    fn default() -> Self {
+        Self {
+            inline: [const { None }; SHADOWED_INLINE],
+            used: 0,
+            overflow: Vec::new(),
+        }
+    }
+}
+
+impl<'s> Shadowed<'s> {
+    /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
+    fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
+        if self.used < SHADOWED_INLINE {
+            self.inline[self.used] = Some((name, value));
+            self.used += 1;
+        } else {
+            self.overflow.push((name, value));
+        }
+    }
+
+    /// Puts every name back, in the order it was saved.
+    fn restore(self, variables: &mut FastMap<String, RuntimeValue>) {
+        let saved = self.inline.into_iter().flatten().chain(self.overflow);
+        for (name, value) in saved {
+            match (value, variables.get_mut(name)) {
+                (Some(value), Some(slot)) => *slot = value,
+                (Some(value), None) => {
+                    variables.insert(name.to_owned(), value);
+                }
+                (None, _) => {
+                    variables.remove(name);
+                }
+            }
         }
     }
 }
@@ -1302,58 +1354,62 @@ impl Session {
     ) -> Result<Step, Diagnostic> {
         // A name a block declares shadows an outer variable of the same name only inside the block;
         // the variable table is flat, so the outer value is put back when the statement ends.
+        if !matches!(
+            statement,
+            Statement::ForRange { .. }
+                | Statement::ForIn { .. }
+                | Statement::Conditional { .. }
+                | Statement::WhileLoop { .. }
+                | Statement::Switch { .. }
+        ) {
+            return self.run_statement_unscoped(statement, context);
+        }
         let shadowed = self.shadowed_by(statement);
         let result = self.run_statement_unscoped(statement, context);
-        for (name, value) in shadowed {
-            match value {
-                Some(value) => self.working.variables.insert(name, value),
-                None => self.working.variables.remove(&name),
-            };
-        }
+        shadowed.restore(&mut self.working.variables);
         result
     }
 
     /// The current values of the variables that `statement`'s blocks declare anew (a loop counter,
     /// an ordinary `x = …` in a branch or body), for those that already exist outside it.
-    fn shadowed_by(&self, statement: &Statement) -> Vec<(String, Option<RuntimeValue>)> {
-        let mut names: Vec<&str> = Vec::new();
-        match statement {
-            Statement::ForRange { variable, .. } => names.push(variable),
-            Statement::ForIn { index, value, .. } => {
-                names.extend(index.as_deref());
-                names.push(value);
+    fn shadowed_by<'s>(&self, statement: &'s Statement) -> Shadowed<'s> {
+        let mut saved = Shadowed::default();
+        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
+        let mut save = |name: &'s str| match self.working.variables.get(name) {
+            Some(value) => saved.push(name, Some(value.clone())),
+            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
+                saved.push(name, None);
             }
-            Statement::Conditional { .. }
-            | Statement::WhileLoop { .. }
-            | Statement::Switch { .. } => {}
-            _ => return Vec::new(),
+            None => {}
+        };
+        match statement {
+            Statement::ForRange { variable, .. } => save(variable),
+            Statement::ForIn { index, value, .. } => {
+                if let Some(index) = index.as_deref() {
+                    save(index);
+                }
+                save(value);
+            }
+            _ => {}
         }
-        for block in super::traversal::nested_blocks(statement) {
+        super::traversal::for_each_nested_block(statement, |block| {
             for inner in block {
                 match inner {
                     Statement::Declaration {
                         name,
                         mode: DeclarationMode::Ordinary,
                         ..
-                    } => names.push(name),
+                    } => save(name),
                     Statement::TupleDeclaration { names: tuple, .. } => {
-                        names.extend(tuple.iter().map(String::as_str));
+                        for name in tuple {
+                            save(name);
+                        }
                     }
                     _ => {}
                 }
             }
-        }
-        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
-        names
-            .into_iter()
-            .filter_map(|name| match self.working.variables.get(name) {
-                Some(value) => Some((name.to_owned(), Some(value.clone()))),
-                None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
-                    Some((name.to_owned(), None))
-                }
-                None => None,
-            })
-            .collect()
+        });
+        saved
     }
 
     fn run_statement_unscoped(
@@ -2187,30 +2243,70 @@ impl Session {
     pub(crate) fn bind_named(
         &mut self,
         arguments: &[super::ast::Argument],
-        parameters: &[&str],
+        parameters: &[&'static str],
         context: &mut RuntimeContext,
-    ) -> Result<FastMap<String, RuntimeValue>, Diagnostic> {
-        let positional: Vec<&super::ast::Argument> = arguments
-            .iter()
-            .filter(|argument| argument.name.is_none())
-            .collect();
-        let mut bound = FastMap::default();
+    ) -> Result<Bound, Diagnostic> {
+        let mut bound = Bound::default();
         for (index, name) in parameters.iter().enumerate() {
             if let Some(named) = arguments
                 .iter()
                 .find(|argument| argument.name.as_deref() == Some(*name))
             {
-                bound.insert((*name).to_owned(), self.eval(&named.value, context)?);
-            } else if index < positional.len() {
-                bound.insert(
-                    (*name).to_owned(),
-                    self.eval(&positional[index].value, context)?,
-                );
+                bound.insert(name, self.eval(&named.value, context)?);
+            } else if let Some(positional) = arguments
+                .iter()
+                .filter(|argument| argument.name.is_none())
+                .nth(index)
+            {
+                bound.insert(name, self.eval(&positional.value, context)?);
             } else {
-                bound.insert((*name).to_owned(), RuntimeValue::Na);
+                bound.insert(name, RuntimeValue::Na);
             }
         }
         Ok(bound)
+    }
+
+    /// The first `count` operands of a builtin whose arguments are all positional, evaluated in
+    /// source order into stack slots (an omitted one is `na`), with `receiver` as the first when the
+    /// call is a method. `None`, with nothing evaluated, when any argument is named: that call goes
+    /// through `bind_named`. Arguments past `count` are not evaluated, as `bind_named` skips them.
+    fn positional_operands(
+        &mut self,
+        receiver: Option<&RuntimeValue>,
+        arguments: &[super::ast::Argument],
+        count: usize,
+        context: &mut RuntimeContext,
+    ) -> Result<Option<[RuntimeValue; 3]>, Diagnostic> {
+        if count > 3 || arguments.iter().any(|argument| argument.name.is_some()) {
+            return Ok(None);
+        }
+        let mut slots = [RuntimeValue::Na, RuntimeValue::Na, RuntimeValue::Na];
+        let first = usize::from(receiver.is_some());
+        if let Some(receiver) = receiver {
+            slots[0] = receiver.clone();
+        }
+        for (slot, argument) in slots[first..count].iter_mut().zip(arguments) {
+            *slot = self.eval(&argument.value, context)?;
+        }
+        Ok(Some(slots))
+    }
+
+    /// A `map.*` function call with only positional arguments, run without binding them by name.
+    /// Its own function so the operand slots stay out of `collection_call`'s frame, which every
+    /// `array.*` call crosses.
+    #[inline(never)]
+    fn map_call_positional(
+        &mut self,
+        name: &str,
+        arguments: &[super::ast::Argument],
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<Option<RuntimeValue>, Diagnostic> {
+        let count = map_builtins::parameters(name).len();
+        let Some(slots) = self.positional_operands(None, arguments, count, context)? else {
+            return Ok(None);
+        };
+        map_builtins::call_positional(name, &slots[..count], &mut self.working, range).map(Some)
     }
 
     /// Runs one `array.*`/`map.*`/`matrix.*` call, or `None` when the name is none of them.
@@ -2227,7 +2323,7 @@ impl Session {
             let values = self.eval_all(arguments, context)?;
             let value = array_builtins::call(
                 name,
-                &FastMap::default(),
+                &Bound::default(),
                 &values,
                 &mut self.working,
                 self.mintick,
@@ -2238,7 +2334,11 @@ impl Session {
         let parameters = if array_builtins::handles(name) {
             array_builtins::parameters(name)
         } else if map_builtins::handles(name) {
-            map_builtins::parameters(name)
+            let parameters = map_builtins::parameters(name);
+            if let Some(value) = self.map_call_positional(name, arguments, range, context)? {
+                return Ok(Some(value));
+            }
+            parameters
         } else if matrix_builtins::handles(name) {
             matrix_builtins::parameters(name)
         } else {
@@ -2624,18 +2724,29 @@ impl Session {
                 ));
             }
         };
+        if prefix == "map"
+            && let Some(full) = map_builtins::qualified(member)
+        {
+            let count = map_builtins::parameters(full).len();
+            if let Some(slots) =
+                self.positional_operands(Some(&value), arguments, count, context)?
+            {
+                return map_builtins::call_positional(
+                    full,
+                    &slots[..count],
+                    &mut self.working,
+                    range,
+                );
+            }
+        }
         let full = format!("{prefix}.{member}");
         let parameters = match prefix {
             "array" => array_builtins::parameters(&full),
             "map" => map_builtins::parameters(&full),
             _ => matrix_builtins::parameters(&full),
         };
-        let mut bound = FastMap::default();
-        bound.insert("id".to_owned(), value.clone());
-        let positional: Vec<&super::ast::Argument> = arguments
-            .iter()
-            .filter(|argument| argument.name.is_none())
-            .collect();
+        let mut bound = Bound::default();
+        bound.insert("id", value.clone());
         let mut position = 0;
         for parameter in parameters {
             if *parameter == "id" {
@@ -2645,15 +2756,16 @@ impl Session {
                 .iter()
                 .find(|argument| argument.name.as_deref() == Some(*parameter))
             {
-                bound.insert((*parameter).to_owned(), self.eval(&named.value, context)?);
-            } else if position < positional.len() {
-                bound.insert(
-                    (*parameter).to_owned(),
-                    self.eval(&positional[position].value, context)?,
-                );
+                bound.insert(parameter, self.eval(&named.value, context)?);
+            } else if let Some(positional) = arguments
+                .iter()
+                .filter(|argument| argument.name.is_none())
+                .nth(position)
+            {
+                bound.insert(parameter, self.eval(&positional.value, context)?);
                 position += 1;
             } else {
-                bound.insert((*parameter).to_owned(), RuntimeValue::Na);
+                bound.insert(parameter, RuntimeValue::Na);
             }
         }
         let result = match prefix {

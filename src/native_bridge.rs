@@ -15,6 +15,58 @@ pub enum NativeCommand {
     SelectPreviousTab,
     /// ⌘Q, the Dock's Quit or a logout, held back while the app asks about unsaved scripts.
     Quit,
+    /// Edit ▸ Cut, Copy, Paste, Go to Definition and Rename Symbol…: for the Script Manager's
+    /// code editor, whenever it has the keyboard.
+    EditCut,
+    EditCopy,
+    EditPaste,
+    GoToDefinition,
+    RenameSymbol,
+}
+
+/// What the Edit menu can do right now. Everything is off unless a Script Manager editor has the
+/// keyboard; an item that is off is grey, and AppKit then leaves its key to the window, so ⌘C in
+/// a chart or a text field elsewhere behaves exactly as it did before the menu existed.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EditMenu {
+    pub cut: bool,
+    pub copy: bool,
+    pub paste: bool,
+    pub go_to_definition: bool,
+    pub rename: bool,
+}
+
+impl EditMenu {
+    fn bits(self) -> u8 {
+        u8::from(self.cut)
+            | u8::from(self.copy) << 1
+            | u8::from(self.paste) << 2
+            | u8::from(self.go_to_definition) << 3
+            | u8::from(self.rename) << 4
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    fn from_bits(bits: u8) -> Self {
+        Self {
+            cut: bits & 1 != 0,
+            copy: bits & 2 != 0,
+            paste: bits & 4 != 0,
+            go_to_definition: bits & 8 != 0,
+            rename: bits & 16 != 0,
+        }
+    }
+}
+
+static EDIT_MENU: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// Tells the Edit menu what is available; the app does it every frame.
+pub fn set_edit_menu(menu: EditMenu) {
+    EDIT_MENU.store(menu.bits(), std::sync::atomic::Ordering::Release);
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn edit_menu() -> EditMenu {
+    EditMenu::from_bits(EDIT_MENU.load(std::sync::atomic::Ordering::Acquire))
 }
 
 #[cfg(target_os = "macos")]
@@ -23,10 +75,11 @@ mod platform {
     use eframe::egui;
     use objc2::ffi;
     use objc2::rc::Retained;
-    use objc2::runtime::{AnyClass, AnyObject, ProtocolObject, Sel};
+    use objc2::runtime::{AnyClass, AnyObject, Bool, ProtocolObject, Sel};
     use objc2::sel;
     use objc2_app_kit::{
-        NSAccessibility, NSApplication, NSApplicationDelegate, NSMenu, NSMenuItem, NSWindow,
+        NSAccessibility, NSApplication, NSApplicationDelegate, NSEventModifierFlags, NSMenu,
+        NSMenuItem, NSWindow,
     };
     use objc2_foundation::{MainThreadMarker, NSString, ns_string};
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -140,6 +193,50 @@ mod platform {
         _sender: Option<&AnyObject>,
     ) {
         push(NativeCommand::SelectPreviousTab);
+    }
+
+    extern "C-unwind" fn edit_cut(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::EditCut);
+    }
+
+    extern "C-unwind" fn edit_copy(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::EditCopy);
+    }
+
+    extern "C-unwind" fn edit_paste(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::EditPaste);
+    }
+
+    extern "C-unwind" fn go_to_definition(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::GoToDefinition);
+    }
+
+    extern "C-unwind" fn rename_symbol(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::RenameSymbol);
+    }
+
+    /// `validateMenuItem:`: the Edit items follow [`super::EditMenu`]; every other item the
+    /// delegate owns is always available.
+    extern "C-unwind" fn validate_menu_item(
+        _delegate: &AnyObject,
+        _selector: Sel,
+        item: Option<&AnyObject>,
+    ) -> Bool {
+        let Some(item) = item else {
+            return Bool::YES;
+        };
+        // SAFETY: `item` is the NSMenuItem AppKit is validating; `action` returns a selector.
+        let action: Option<Sel> = unsafe { objc2::msg_send![item, action] };
+        let menu = super::edit_menu();
+        let enabled = match action {
+            Some(action) if action == sel!(editCut:) => menu.cut,
+            Some(action) if action == sel!(editCopy:) => menu.copy,
+            Some(action) if action == sel!(editPaste:) => menu.paste,
+            Some(action) if action == sel!(goToDefinition:) => menu.go_to_definition,
+            Some(action) if action == sel!(renameSymbol:) => menu.rename,
+            _ => true,
+        };
+        Bool::new(enabled)
     }
 
     fn push(command: NativeCommand) {
@@ -263,6 +360,34 @@ mod platform {
             sel!(selectPreviousTab:),
             select_previous_tab,
         );
+        install_action(delegate_class, sel!(editCut:), edit_cut);
+        install_action(delegate_class, sel!(editCopy:), edit_copy);
+        install_action(delegate_class, sel!(editPaste:), edit_paste);
+        install_action(delegate_class, sel!(goToDefinition:), go_to_definition);
+        install_action(delegate_class, sel!(renameSymbol:), rename_symbol);
+        let validate = unsafe {
+            std::mem::transmute::<
+                extern "C-unwind" fn(&AnyObject, Sel, Option<&AnyObject>) -> Bool,
+                objc2::runtime::Imp,
+            >(validate_menu_item)
+        };
+        // BOOL is `bool` ("B") on Apple silicon and `signed char` ("c") on Intel.
+        #[cfg(target_arch = "aarch64")]
+        let signature = c"B@:@";
+        #[cfg(not(target_arch = "aarch64"))]
+        let signature = c"c@:@";
+        let added = unsafe {
+            ffi::class_addMethod(
+                delegate_class as *const AnyClass as *mut AnyClass,
+                sel!(validateMenuItem:),
+                validate,
+                signature.as_ptr(),
+            )
+        };
+        assert!(
+            added.as_bool(),
+            "delegate already implements validateMenuItem:"
+        );
     }
 
     fn install_action(
@@ -355,6 +480,44 @@ mod platform {
         file_menu.addItem(&save_layout);
         file_item.setSubmenu(Some(&file_menu));
         menubar.addItem(&file_item);
+
+        // Edit: the code editor's clipboard and navigation. Items are grey (and their keys left to
+        // the window) unless a Script Manager editor has the keyboard; see `EditMenu`.
+        let edit_item = NSMenuItem::new(mtm);
+        let edit_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Edit"));
+        for (title, selector, key) in [
+            (ns_string!("Cut"), sel!(editCut:), ns_string!("x")),
+            (ns_string!("Copy"), sel!(editCopy:), ns_string!("c")),
+            (ns_string!("Paste"), sel!(editPaste:), ns_string!("v")),
+        ] {
+            let item = menu_item(mtm, title, Some(selector), key);
+            unsafe { item.setTarget(Some(delegate)) };
+            edit_menu.addItem(&item);
+        }
+        edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
+        // Xcode's chords: F12 and F2 are media keys on a Mac keyboard. The editor answers the
+        // F-keys itself.
+        for (title, selector, key) in [
+            (
+                ns_string!("Go to Definition"),
+                sel!(goToDefinition:),
+                ns_string!("j"),
+            ),
+            (
+                ns_string!("Rename Symbol…"),
+                sel!(renameSymbol:),
+                ns_string!("e"),
+            ),
+        ] {
+            let item = menu_item(mtm, title, Some(selector), key);
+            item.setKeyEquivalentModifierMask(
+                NSEventModifierFlags::Control | NSEventModifierFlags::Command,
+            );
+            unsafe { item.setTarget(Some(delegate)) };
+            edit_menu.addItem(&item);
+        }
+        edit_item.setSubmenu(Some(&edit_menu));
+        menubar.addItem(&edit_item);
 
         let window_item = NSMenuItem::new(mtm);
         let window_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Window"));
@@ -611,6 +774,18 @@ pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
         }
     }
     String::from_utf8(bytes).ok().map(std::path::PathBuf::from)
+}
+
+#[cfg(test)]
+mod edit_menu_tests {
+    use super::*;
+
+    #[test]
+    fn the_menu_survives_its_trip_through_an_atomic() {
+        for bits in 0..32u8 {
+            assert_eq!(EditMenu::from_bits(bits).bits(), bits);
+        }
+    }
 }
 
 #[cfg(test)]
