@@ -218,6 +218,27 @@ matrix.set(grid, 1, 1, close)
 plot(total / array.size(arr) + map.get(counts, \"last\") + matrix.get(grid, 1, 1))
 ";
 
+/// The accumulate-into-a-bucket idiom: three map calls per iteration, fifty buckets per bar.
+pub(crate) const MAP_COUNTING: &str = "//@version=6
+indicator(\"Map counting\")
+var m = map.new<int, float>()
+per = close / 50.0
+for b = 0 to 49
+    map.put(m, b, (map.contains(m, b) ? map.get(m, b) : 0.0) + per)
+plot(map.get(m, 7))
+";
+
+/// `MAP_COUNTING` with string keys, which also pays for cloning the key.
+pub(crate) const MAP_COUNTING_STRINGS: &str = "//@version=6
+indicator(\"Map counting, string keys\")
+var m = map.new<string, float>()
+per = close / 50.0
+for b = 0 to 49
+    key = \"bucket\" + str.tostring(b)
+    map.put(m, key, (map.contains(m, key) ? map.get(m, key) : 0.0) + per)
+plot(map.get(m, \"bucket7\"))
+";
+
 pub(crate) const NESTED_FUNCTIONS: &str = "//@version=6
 indicator(\"Functions\")
 leaf(x) =>
@@ -431,6 +452,20 @@ fn workloads() -> Vec<Workload> {
         add(
             "containers",
             Box::new(move || evaluate(CONTAINERS, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "map_counting",
+            Box::new(move || evaluate(MAP_COUNTING, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "map_counting_strings",
+            Box::new(move || evaluate(MAP_COUNTING_STRINGS, &data, false)),
         );
     }
     {
