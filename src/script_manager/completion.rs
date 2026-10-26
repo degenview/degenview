@@ -7,7 +7,7 @@
 use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
-use crate::pine::{math, strings, ta, ta_extra};
+use crate::pine::{array_builtins, map_builtins, math, strings, ta, ta_extra};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -195,42 +195,6 @@ const COLORS: [&str; 19] = [
     "color.rgb",
 ];
 
-const COLLECTIONS: [&str; 33] = [
-    "array.new_float",
-    "array.new_int",
-    "array.new_bool",
-    "array.new_string",
-    "array.new_color",
-    "array.from",
-    "array.push",
-    "array.pop",
-    "array.shift",
-    "array.unshift",
-    "array.get",
-    "array.set",
-    "array.size",
-    "array.insert",
-    "array.remove",
-    "array.clear",
-    "array.includes",
-    "array.indexof",
-    "array.first",
-    "array.last",
-    "array.sum",
-    "array.avg",
-    "array.min",
-    "array.max",
-    "array.slice",
-    "array.copy",
-    "array.sort",
-    "array.reverse",
-    "array.join",
-    "map.new",
-    "map.put",
-    "map.get",
-    "map.contains",
-];
-
 const DRAWINGS: [&str; 14] = [
     "line.new",
     "line.delete",
@@ -311,7 +275,8 @@ pub fn builtins() -> &'static [Item] {
             .chain(&math::SUPPORTED)
             .chain(&strings::SUPPORTED)
             .chain(&INPUTS)
-            .chain(&COLLECTIONS)
+            .chain(&array_builtins::KNOWN)
+            .chain(&map_builtins::NAMES)
             .chain(&DRAWINGS)
             .chain(&ACTIONS)
         {
@@ -444,7 +409,7 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::{alert_builtins, array_builtins, drawings, map_builtins, strategy_builtins};
+    use crate::pine::{alert_builtins, drawings, strategy_builtins};
 
     fn labels(completion: &Completion) -> Vec<&str> {
         completion.items.iter().map(|i| i.label.as_str()).collect()
@@ -484,12 +449,6 @@ mod tests {
                     || matches!(name, "color.new" | "color.rgb"),
             );
         }
-        for name in COLLECTIONS {
-            check(
-                name,
-                array_builtins::handles(name) || map_builtins::handles(name),
-            );
-        }
         for name in DRAWINGS {
             check(name, drawings::handles(name));
         }
@@ -507,6 +466,22 @@ mod tests {
             );
         }
         assert!(unsupported.is_empty(), "{unsupported:?}");
+    }
+
+    #[test]
+    fn every_array_and_map_function_the_engine_handles_is_offered() {
+        let offered: Vec<&str> = builtins().iter().map(|i| i.label.as_str()).collect();
+        for name in array_builtins::KNOWN.iter().chain(&map_builtins::NAMES) {
+            assert!(offered.contains(name), "{name}");
+        }
+        for name in [
+            "array.percentrank",
+            "array.every",
+            "array.some",
+            "map.put_all",
+        ] {
+            assert!(offered.contains(&name), "{name}");
+        }
     }
 
     #[test]

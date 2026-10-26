@@ -93,6 +93,7 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
             &["id", "percentage"]
         }
         "array.covariance" => &["id", "id2", "biased"],
+        "array.percentrank" => &["id", "index"],
         _ => &["id"],
     }
 }
@@ -104,7 +105,9 @@ pub fn handles(name: &str) -> bool {
         && (name.starts_with("array.new_") || name == "array.from" || KNOWN.contains(&name))
 }
 
-const KNOWN: [&str; 47] = [
+/// Every `array.*` name this module handles besides the `array.new_<type>` family it matches by
+/// prefix. The editor offers exactly these.
+pub const KNOWN: [&str; 50] = [
     "array.fill",
     "array.lastindexof",
     "array.abs",
@@ -145,6 +148,9 @@ const KNOWN: [&str; 47] = [
     "array.percentile_nearest_rank",
     "array.percentile_linear_interpolation",
     "array.covariance",
+    "array.percentrank",
+    "array.every",
+    "array.some",
     // The two constructors are matched by prefix and name above; kept here so `handles` is total.
     "array.from",
     "array.new",
@@ -438,6 +444,9 @@ impl Context<'_> {
             | "array.percentile_nearest_rank"
             | "array.percentile_linear_interpolation" => statistic(self.name, self.bound, items),
             "array.covariance" => self.covariance(state, items)?,
+            "array.percentrank" => self.percentrank(items)?,
+            "array.every" => RuntimeValue::Bool(items.iter().all(is_truthy)),
+            "array.some" => RuntimeValue::Bool(items.iter().any(is_truthy)),
             _ => return Ok(None),
         }))
     }
@@ -461,6 +470,24 @@ impl Context<'_> {
             ));
         }
         Ok(new_array(state, items[from..to as usize].to_vec()))
+    }
+
+    /// `array.percentrank(id, index)`: the share of the numbers in the array that are at most the
+    /// element at `index`, as a percentage. `na` for an empty array or a `na` element; `na` entries
+    /// count on neither side, as in the other statistics here.
+    fn percentrank(&self, items: &[RuntimeValue]) -> Result<RuntimeValue, Diagnostic> {
+        if items.is_empty() {
+            return Ok(RuntimeValue::Na);
+        }
+        let index = self.index(self.bound.get("index"), items.len(), false)?;
+        let Some(reference) = items[index].number() else {
+            return Ok(RuntimeValue::Na);
+        };
+        let numbers = || items.iter().filter_map(RuntimeValue::number);
+        let at_most = numbers().filter(|number| *number <= reference).count();
+        Ok(RuntimeValue::Float(
+            at_most as f64 / numbers().count() as f64 * 100.0,
+        ))
     }
 
     /// `array.covariance(id1, id2, biased)` over the first `min(size)` pairs.
@@ -559,6 +586,15 @@ fn binary_search(name: &str, items: &[RuntimeValue], target: &RuntimeValue) -> R
             }
         }
     })
+}
+
+/// What `array.every` / `array.some` take an element to be: a bool as it is, a number by being
+/// non-zero, and `na` as false.
+fn is_truthy(item: &RuntimeValue) -> bool {
+    match item {
+        RuntimeValue::Bool(value) => *value,
+        other => other.number().is_some_and(|number| number != 0.0),
+    }
 }
 
 fn aggregate(name: &str, items: &[RuntimeValue]) -> RuntimeValue {
@@ -1089,6 +1125,75 @@ mod tests {
             f.run("array.covariance", &[x, Na]).unwrap_err().code,
             "PINE4011"
         );
+    }
+
+    #[test]
+    fn percentrank_is_the_share_of_numbers_at_most_the_element() {
+        let mut f = Fixture::new();
+        let a = f.array(&ints(&[10, 20, 30, 40]));
+        assert_eq!(f.ok("array.percentrank", &[a.clone(), Int(0)]), Float(25.0));
+        assert_eq!(f.ok("array.percentrank", &[a.clone(), Int(2)]), Float(75.0));
+        assert_eq!(
+            f.ok("array.percentrank", &[a.clone(), Int(3)]),
+            Float(100.0)
+        );
+        // Ties count as "at most": both 5s rank at 100 of three numbers 1, 5, 5.
+        let ties = f.array(&ints(&[5, 1, 5]));
+        let rank = f.ok("array.percentrank", &[ties, Int(0)]);
+        assert_eq!(rank, Float(100.0));
+        // `na` entries are in neither the count nor the total.
+        let gappy = f.array(&[Int(1), Na, Int(3)]);
+        assert_eq!(
+            f.ok("array.percentrank", &[gappy.clone(), Int(0)]),
+            Float(50.0)
+        );
+        assert_eq!(f.ok("array.percentrank", &[gappy.clone(), Int(1)]), Na);
+        let empty = f.array(&[]);
+        assert_eq!(f.ok("array.percentrank", &[empty, Int(0)]), Na);
+        assert_eq!(
+            f.run("array.percentrank", &[a, Int(4)]).unwrap_err().code,
+            "PINE4010"
+        );
+    }
+
+    #[test]
+    fn every_and_some_test_the_elements_as_bools() {
+        let mut f = Fixture::new();
+        let all = f.array(&[Bool(true), Bool(true)]);
+        let mixed = f.array(&[Bool(true), Bool(false)]);
+        let none = f.array(&[Bool(false), Na]);
+        assert_eq!(f.ok("array.every", std::slice::from_ref(&all)), Bool(true));
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&mixed)),
+            Bool(false)
+        );
+        assert_eq!(f.ok("array.some", &[mixed]), Bool(true));
+        assert_eq!(f.ok("array.some", std::slice::from_ref(&none)), Bool(false));
+        assert_eq!(f.ok("array.every", &[none]), Bool(false));
+        // Numbers: zero is false, anything else true.
+        let numbers = f.array(&[Int(3), Float(0.5)]);
+        let zeroed = f.array(&[Int(3), Int(0)]);
+        assert_eq!(f.ok("array.every", &[numbers]), Bool(true));
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&zeroed)),
+            Bool(false)
+        );
+        assert_eq!(f.ok("array.some", &[zeroed]), Bool(true));
+        // An empty array: every element qualifies, none does.
+        let empty = f.array(&[]);
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&empty)),
+            Bool(true)
+        );
+        assert_eq!(f.ok("array.some", &[empty]), Bool(false));
+        assert_eq!(f.run("array.some", &[Na]).unwrap_err().code, "PINE4011");
+    }
+
+    #[test]
+    fn every_known_name_is_handled() {
+        for name in KNOWN {
+            assert!(handles(name), "{name}");
+        }
     }
 
     #[test]

@@ -1021,3 +1021,20 @@ fn linefill_and_polyline_names_are_spelled_in_diagnostics() {
     .unwrap_or_default();
     assert!(message.contains("linefill"), "{message}");
 }
+
+#[test]
+fn array_percentrank_every_and_some_work_as_functions_and_methods() {
+    let session = run(
+        "a = array.from(10, 20, 30, 40)\n\
+         flags = array.from(true, false)\n\
+         rank = array.percentrank(a, 1)\n\
+         method_rank = a.percentrank(3)\n\
+         all_flags = flags.every()\n\
+         any_flags = array.some(flags)",
+        2,
+    );
+    assert_eq!(value(&session, "rank"), RuntimeValue::Float(50.0));
+    assert_eq!(value(&session, "method_rank"), RuntimeValue::Float(100.0));
+    assert_eq!(value(&session, "all_flags"), RuntimeValue::Bool(false));
+    assert_eq!(value(&session, "any_flags"), RuntimeValue::Bool(true));
+}

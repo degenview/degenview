@@ -53,6 +53,8 @@
   decide editor indentation because incomplete parentheses erase them.
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
   catalog and signatures from `script_manager::signature`. Add new builtins to both tables.
+  `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
+  (and their signatures from `parameters()`), so a new one needs no editor edit.
   The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
   events are consumed by `completion_keys` before the list is drawn, so it sets
   `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with
