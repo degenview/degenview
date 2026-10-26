@@ -109,6 +109,7 @@ fn key_name(key: Key) -> &'static str {
         Key::B => "B",
         Key::C => "C",
         Key::D => "D",
+        Key::E => "E",
         Key::F => "F",
         Key::G => "G",
         Key::H => "H",
@@ -298,12 +299,19 @@ pub const COMPLETE: Shortcut = Shortcut::new(
     &[Chord::new(Key::Space).control()],
 );
 
-/// Jump from a name to where it is declared (the editor also does it on ⌘-click).
-pub const GO_TO_DEFINITION: Shortcut =
-    Shortcut::new(&[Chord::new(Key::F12)], &[Chord::new(Key::F12)]);
+/// Jump from a name to where it is declared (the editor also does it on ⌘-click). The Mac chord is
+/// Xcode's: F12 and F2 are media keys there unless Fn is held.
+pub const GO_TO_DEFINITION: Shortcut = Shortcut::new(
+    &[Chord::new(Key::J).control().primary(), Chord::new(Key::F12)],
+    &[Chord::new(Key::F12)],
+);
 
-/// Rename the declared name at the caret, and every use of it.
-pub const RENAME_SYMBOL: Shortcut = Shortcut::new(&[Chord::new(Key::F2)], &[Chord::new(Key::F2)]);
+/// Rename the declared name at the caret, and every use of it. The Mac chord is Xcode's Edit All in
+/// Scope.
+pub const RENAME_SYMBOL: Shortcut = Shortcut::new(
+    &[Chord::new(Key::E).control().primary(), Chord::new(Key::F2)],
+    &[Chord::new(Key::F2)],
+);
 
 /// Multiple carets, as in Sublime Text. The first adds the next match of the selection (the word
 /// at a bare caret); ⌘D is also Duplicate on the chart, which is never under a focused editor.
@@ -649,7 +657,9 @@ mod tests {
         assert_eq!(SELECT_ALL_OCCURRENCES.label_for(false), "Alt+F3");
         assert_eq!(ADD_CURSOR_ABOVE.label_for(true), "⌃⇧↑");
         assert_eq!(ADD_CURSOR_BELOW.label_for(false), "Ctrl+Alt+↓");
-        assert_eq!(GO_TO_DEFINITION.label_for(true), "F12");
+        assert_eq!(GO_TO_DEFINITION.label_for(true), "⌃⌘J");
+        assert_eq!(GO_TO_DEFINITION.label_for(false), "F12");
+        assert_eq!(RENAME_SYMBOL.label_for(true), "⌃⌘E");
         assert_eq!(RENAME_SYMBOL.label_for(false), "F2");
     }
 

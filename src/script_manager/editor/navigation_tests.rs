@@ -207,7 +207,10 @@ fn undo_drops_the_extra_carets_and_reverts_the_text() {
     h.frame(vec![]);
     h.frame(vec![key(Key::Z, cmd())]);
     assert!(h.state.extra_carets().is_empty());
-    assert_ne!(h.state.source, "ax\nbx\n", "the typing was undone");
+    assert_eq!(
+        h.state.source, "a\nb\n",
+        "both carets' typing is one undo step"
+    );
 }
 
 #[test]
@@ -373,4 +376,30 @@ fn ctrl_shift_arrows_add_carets_above_and_below() {
     assert_eq!(h.state.extra_carets().len(), 2);
     h.type_text("!");
     assert_eq!(h.state.source, "ab!c\nab!c\nab!c\n");
+}
+
+#[test]
+fn a_right_click_on_a_name_opens_the_menu_for_that_name() {
+    let mut h = Harness::new(SCRIPT);
+    h.place(0, 0);
+    let on_use = h.at(3, 20);
+    h.frame(vec![Event::PointerMoved(on_use)]);
+    for pressed in [true, false] {
+        h.frame(vec![Event::PointerButton {
+            pos: on_use,
+            button: PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::default(),
+        }]);
+    }
+    h.frame(vec![]);
+    let name = h.index(3, 19);
+    assert!(
+        h.state
+            .menu_target()
+            .is_some_and(|at| (name..=name + 3).contains(&at)),
+        "{:?}",
+        h.state.menu_target()
+    );
+    assert!(egui::Popup::is_any_open(&h.ctx), "the menu is up");
 }

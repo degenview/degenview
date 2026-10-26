@@ -115,6 +115,12 @@ impl EditorState {
             .and_then(|rename| rename.error.clone())
     }
 
+    /// The character the context menu was opened on.
+    #[cfg(test)]
+    pub fn menu_target(&self) -> Option<usize> {
+        self.nav.menu_target
+    }
+
     #[cfg(test)]
     pub fn rename_open(&self) -> bool {
         self.nav.rename.is_some()
