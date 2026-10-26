@@ -692,24 +692,32 @@ fn list(
             vec2(92.0, 26.0),
         );
         let response = ui.interact(pill, ui.id().with("jump-to-latest"), Sense::click());
+        // Opaque, since it floats over the messages: the raised neutral plate, not the accent.
         let fill = if response.hovered() {
-            kit::ACCENT
+            theme::selected_plate().gamma_multiply(1.12)
         } else {
-            kit::ACCENT.gamma_multiply(0.85)
+            theme::selected_plate()
         };
+        let color = theme::on_selected_plate();
         ui.painter().rect_filled(pill, 13.0, fill);
+        ui.painter().rect_stroke(
+            pill,
+            13.0,
+            egui::Stroke::new(1.0, theme::border()),
+            egui::StrokeKind::Inside,
+        );
         icons::paint(
             ui.painter(),
             Rect::from_center_size(pos2(pill.left() + 17.0, pill.center().y), vec2(10.0, 10.0)),
             Icon::ArrowDown,
-            Color32::WHITE,
+            color,
         );
         ui.painter().text(
             pos2(pill.left() + 30.0, pill.center().y),
             egui::Align2::LEFT_CENTER,
             "Latest",
             FontId::proportional(11.5),
-            Color32::WHITE,
+            color,
         );
         if accessibility::label(response, "Scroll to the latest message").clicked() {
             state.jump_to_latest = true;
