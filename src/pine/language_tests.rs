@@ -645,18 +645,15 @@ fn calls_on_a_drawing_variable_that_is_still_na_do_nothing() {
 
 #[test]
 fn a_script_may_declare_a_name_a_builtin_variable_has() {
-    // `low` is the builtin until the declaration on the third line and the script's after it, on
-    // every bar: the earlier read must not see the previous bar's value.
+    // `low` is the script's from the declaration on, on every bar.
     let session = run(
-        "before = low\n\
-         dummy = 1\n\
+        "dummy = 1\n\
          low = high - 1000.0\n\
          after = low\n\
          lagged = low[1]",
         3,
     );
     // The bars are low = price - 2 (98 + index): the third bar's builtin low is 100.
-    assert_eq!(value(&session, "before"), RuntimeValue::Float(100.0));
     assert_eq!(
         value(&session, "after"),
         RuntimeValue::Float(104.0 - 1000.0)
@@ -665,6 +662,29 @@ fn a_script_may_declare_a_name_a_builtin_variable_has() {
     assert_eq!(value(&session, "lagged"), RuntimeValue::Float(99.0));
     let codes = diagnostic_codes("low = high - 1\nplot(low)");
     assert_eq!(codes, ["PINE7006"]);
+}
+
+#[test]
+fn a_builtin_variable_read_above_its_declaration_cannot_be_shadowed() {
+    // As in TradingView: once the script has used the builtin, the name cannot also be its own.
+    let source = "//@version=6\nindicator(\"T\")\nx = open\nopen = 1\nplot(x + open)";
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    let error = program
+        .diagnostics
+        .iter()
+        .find(|d| d.code == "CE10190")
+        .unwrap_or_else(|| panic!("{:?}", program.diagnostics));
+    assert_eq!(
+        error.message,
+        "Cannot shadow the built-in variable \"open\" because it has already been used as a built-in."
+    );
+    assert_eq!(
+        error.severity,
+        crate::pine::token::DiagnosticSeverity::Error
+    );
+    assert_eq!(error.range.start.line, 4, "on the declaration");
+    // Declared before any read, it stays the warning.
+    assert_eq!(diagnostic_codes("open = 1\nplot(open)"), ["PINE7006"]);
 }
 
 #[test]

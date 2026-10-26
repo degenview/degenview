@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use super::ast::{Expression, Literal, Parameter, Statement};
 use super::identifier_rules;
 use super::symbol_catalog;
-use super::traversal::{for_each_call, nested_blocks};
+use super::traversal::{for_each_call, for_each_identifier, nested_blocks};
 use crate::pine::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, ValueType};
 
 /// Validates `statements`. `methods` is the set of names declared with `method`, which may be
@@ -24,6 +24,7 @@ pub fn validate(
         methods,
         source,
         signatures: HashMap::new(),
+        first_reads: first_reads(statements),
     };
     validator.validate(statements, &HashSet::new(), &HashSet::new(), false, false);
     for_each_call(statements, &mut |name, range| {
@@ -54,6 +55,21 @@ struct Validator<'a> {
     methods: &'a HashSet<String>,
     source: &'a str,
     signatures: HashMap<String, Vec<Signature>>,
+    /// Where each name is first read, as a source offset.
+    first_reads: HashMap<String, usize>,
+}
+
+/// The source offset of the first read of every name in the script.
+fn first_reads(statements: &[Statement]) -> HashMap<String, usize> {
+    let mut first = HashMap::new();
+    for_each_identifier(statements, &mut |name, range| {
+        let at = range.start.offset;
+        first
+            .entry(name.to_owned())
+            .and_modify(|seen: &mut usize| *seen = (*seen).min(at))
+            .or_insert(at);
+    });
+    first
 }
 
 impl Validator<'_> {
@@ -280,6 +296,23 @@ impl Validator<'_> {
         // Pine lets a script declare a name that a builtin variable has (`low = shareZ < limit`): from
         // that line on the name is the script's, which is worth a warning but not a refusal.
         if symbol_catalog::is_variable(name) {
+            // TradingView refuses it once the script has read the builtin above the declaration:
+            // the name would mean two things.
+            if self
+                .first_reads
+                .get(name)
+                .is_some_and(|&read| read < range.start.offset)
+            {
+                self.report(
+                    "CE10190",
+                    DiagnosticCategory::Semantic,
+                    format!(
+                        "Cannot shadow the built-in variable \"{name}\" because it has already been used as a built-in."
+                    ),
+                    range,
+                );
+                return;
+            }
             self.diagnostics.push(Diagnostic {
                 code: "PINE7006".to_owned(),
                 severity: DiagnosticSeverity::Warning,
