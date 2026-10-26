@@ -49,6 +49,11 @@
   decide editor indentation because incomplete parentheses erase them.
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
   catalog and signatures from `script_manager::signature`. Add new builtins to both tables.
+  The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
+  events are consumed by `completion_keys` before the list is drawn, so it sets
+  `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with
+  `callable` set (builtin functions, user `name(args) =>` definitions) writes `name()` with the caret
+  between the parentheses, unless a `(` already follows.
 - `script_manager::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
   gutter, status, popover, and revert; never diff while painting. Hunks use zero-based half-open
   ranges and preserve terminators. Deleted hunks sit at `new_lines.start`, without fake rows;

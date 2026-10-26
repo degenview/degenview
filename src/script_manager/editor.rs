@@ -125,7 +125,13 @@ pub struct EditorState {
 struct CompletionView {
     completion: Completion,
     selected: usize,
+    /// An arrow key moved the highlight: scroll it into view when the list is next drawn.
+    scroll_to_selected: bool,
 }
+
+/// Suggestion rows visible at once; longer lists scroll.
+const COMPLETION_ROWS: usize = 10;
+const COMPLETION_ROW_HEIGHT: f32 = 22.0;
 
 #[derive(Default)]
 pub struct EditorOutput {
@@ -482,8 +488,14 @@ fn completion_keys(ctx: &egui::Context, state: &mut EditorState) -> bool {
             };
             let count = view.completion.items.len();
             match key {
-                Key::ArrowDown => view.selected = (view.selected + 1) % count,
-                Key::ArrowUp => view.selected = (view.selected + count - 1) % count,
+                Key::ArrowDown => {
+                    view.selected = (view.selected + 1) % count;
+                    view.scroll_to_selected = true;
+                }
+                Key::ArrowUp => {
+                    view.selected = (view.selected + count - 1) % count;
+                    view.scroll_to_selected = true;
+                }
                 Key::Enter | Key::Tab => accept = true,
                 Key::Escape => {
                     state.completion = None;
@@ -508,12 +520,20 @@ fn accept_completion(ctx: &egui::Context, state: &mut EditorState) -> bool {
         return false;
     };
     let range = view.completion.replace;
+    let name_end = range.start + item.label.chars().count();
+    // A function gets its call parentheses and the caret between them, unless the name is
+    // already followed by a call.
+    let call = item.callable && state.source.chars().nth(range.end) != Some('(');
     let edit = Edit {
         range: range.clone(),
-        replacement: item.label.clone(),
+        replacement: if call {
+            format!("{}()", item.label)
+        } else {
+            item.label.clone()
+        },
         selection: {
-            let end = range.start + item.label.chars().count();
-            end..end
+            let caret = name_end + usize::from(call);
+            caret..caret
         },
     };
     state.source = edit.apply(&state.source);
@@ -563,12 +583,14 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                 } else {
                     0
                 },
+                scroll_to_selected: old.scroll_to_selected || !same,
                 completion: next,
             })
         }
         (Some(next), None) => Some(CompletionView {
             completion: next,
             selected: 0,
+            scroll_to_selected: false,
         }),
         (None, _) => None,
     };
@@ -577,6 +599,9 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
     };
     let mut clicked = None;
     let selected = view.selected;
+    let scroll_to_selected = view.scroll_to_selected;
+    let visible_height =
+        view.completion.items.len().min(COMPLETION_ROWS) as f32 * COMPLETION_ROW_HEIGHT;
     egui::Area::new(Id::new("script-completion"))
         .order(egui::Order::Foreground)
         .fixed_pos(egui::pos2(caret_rect.left(), caret_rect.bottom() + 4.0))
@@ -589,18 +614,19 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                 .show(ui, |ui| {
                     ui.set_width(412.0);
                     egui::ScrollArea::vertical()
-                        .max_height(8.0 * 22.0)
+                        .min_scrolled_height(visible_height)
+                        .max_height(visible_height)
                         .show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = 0.0;
                             for (index, item) in view.completion.items.iter().enumerate() {
-                                let (rect, response) =
-                                    ui.allocate_exact_size(Vec2::new(412.0, 22.0), Sense::click());
+                                let (rect, response) = ui.allocate_exact_size(
+                                    Vec2::new(412.0, COMPLETION_ROW_HEIGHT),
+                                    Sense::click(),
+                                );
                                 let on = index == selected;
                                 if on {
                                     ui.painter().rect_filled(rect, 4.0, theme::SYSTEM_ACCENT);
-                                    if ui.input(|i| {
-                                        i.key_pressed(Key::ArrowDown) || i.key_pressed(Key::ArrowUp)
-                                    }) {
+                                    if scroll_to_selected {
                                         ui.scroll_to_rect(rect, None);
                                     }
                                 } else if response.hovered() {
@@ -654,6 +680,9 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                         });
                 });
         });
+    if let Some(view) = state.completion.as_mut() {
+        view.scroll_to_selected = false;
+    }
     match clicked {
         Some(index) => {
             if let Some(view) = state.completion.as_mut() {
@@ -2438,10 +2467,11 @@ mod tests {
         state.completion = Some(CompletionView {
             completion,
             selected: 1,
+            scroll_to_selected: false,
         });
         let ctx = egui::Context::default();
         assert!(accept_completion(&ctx, &mut state));
-        assert_eq!(state.source, "x = ta.pivotlow");
+        assert_eq!(state.source, "x = ta.pivotlow()");
         assert!(state.completion.is_none());
         assert!(
             !accept_completion(&ctx, &mut state),
@@ -2459,6 +2489,179 @@ mod tests {
                 show(ui, &mut state);
             });
             output.textures_delta.clear();
+        }
+    }
+
+    /// Accepts the suggestion `label` for `source` (caret at its end); returns the new text and caret.
+    fn accept(source: &str, label: &str) -> (String, usize) {
+        let mut state = EditorState::new("s", source, "");
+        let caret = source.chars().count();
+        let completion = completion::complete(source, caret, true).expect("suggestions");
+        let selected = completion
+            .items
+            .iter()
+            .position(|item| item.label == label)
+            .expect("the suggestion is offered");
+        state.completion = Some(CompletionView {
+            completion,
+            selected,
+            scroll_to_selected: false,
+        });
+        let ctx = egui::Context::default();
+        TextEditState::default().store(&ctx, state.id);
+        assert!(accept_completion(&ctx, &mut state));
+        let caret = TextEditState::load(&ctx, state.id)
+            .and_then(|edit| edit.cursor.char_range())
+            .map(|range| range.primary.index.0);
+        (state.source, caret.unwrap_or(usize::MAX))
+    }
+
+    #[test]
+    fn accepting_a_function_adds_parentheses_with_the_caret_between() {
+        assert_eq!(accept("x = ta.sm", "ta.sma"), ("x = ta.sma()".into(), 11));
+        assert_eq!(
+            accept("c = color.ne", "color.new"),
+            ("c = color.new()".into(), 14)
+        );
+        let own = "half(x) => x / 2\nha";
+        assert_eq!(accept(own, "half"), ("half(x) => x / 2\nhalf()".into(), 22));
+    }
+
+    #[test]
+    fn accepting_anything_else_adds_no_parentheses() {
+        assert_eq!(
+            accept("c = color.re", "color.red"),
+            ("c = color.red".into(), 13)
+        );
+        assert_eq!(accept("x = ba", "barstate"), ("x = barstate".into(), 12));
+        assert_eq!(accept("x = clo", "close"), ("x = close".into(), 9));
+        // The call is already there: only the name is replaced.
+        let (text, caret) = accept("ta.sm", "ta.sma");
+        assert_eq!((text.as_str(), caret), ("ta.sma()", 7));
+        let ctx = egui::Context::default();
+        let mut state = EditorState::new("s", "ta.sm(close, 3)", "");
+        let completion = completion::complete(&state.source, 5, true).expect("suggestions");
+        let selected = completion
+            .items
+            .iter()
+            .position(|i| i.label == "ta.sma")
+            .unwrap();
+        state.completion = Some(CompletionView {
+            completion,
+            selected,
+            scroll_to_selected: false,
+        });
+        assert!(accept_completion(&ctx, &mut state));
+        assert_eq!(state.source, "ta.sma(close, 3)");
+    }
+
+    /// Draws the editor with `source` focused and the caret at its end, `frames` times, sending
+    /// `events` on the first of them; returns the last frame's shapes.
+    fn draw_suggestions(
+        ctx: &egui::Context,
+        state: &mut EditorState,
+        clock: &mut f64,
+        events: Vec<Event>,
+    ) -> Vec<egui::epaint::ClippedShape> {
+        let mut shapes = Vec::new();
+        for frame in 0..3 {
+            let raw = egui::RawInput {
+                time: Some(*clock),
+                events: if frame == 0 {
+                    events.clone()
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                show(ui, state);
+            });
+            output.textures_delta.clear();
+            shapes = output.shapes;
+            // Long scrolls animate: leave time for them to land.
+            *clock += 1.0;
+        }
+        shapes
+    }
+
+    /// The rect of the highlighted suggestion and the clip it is drawn through.
+    fn highlighted_row(shapes: &[egui::epaint::ClippedShape]) -> Option<(Rect, Rect)> {
+        shapes.iter().find_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect)
+                if rect.fill == theme::SYSTEM_ACCENT
+                    && rect.rect.height() == COMPLETION_ROW_HEIGHT =>
+            {
+                Some((rect.rect, clipped.clip_rect))
+            }
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn the_suggestion_list_shows_ten_rows_and_follows_the_arrow_keys() {
+        let ctx = egui::Context::default();
+        let mut state = EditorState::new("s", "color.", "");
+        let mut clock = 0.0;
+        let mut edit = TextEditState::default();
+        edit.cursor
+            .set_char_range(Some(CCursorRange::one(CCursor::new(6usize))));
+        edit.store(&ctx, state.id);
+        ctx.memory_mut(|memory| memory.request_focus(state.id));
+        state.completion_wanted = true;
+        state.last_caret = Some(6);
+        draw_suggestions(&ctx, &mut state, &mut clock, Vec::new());
+        let count = state
+            .completion
+            .as_ref()
+            .expect("suggestions")
+            .completion
+            .items
+            .len();
+        assert!(count > COMPLETION_ROWS, "color. offers {count}");
+        let area = ctx
+            .memory(|memory| memory.area_rect(Id::new("script-completion")))
+            .expect("the list was laid out");
+        let rows = COMPLETION_ROWS as f32 * COMPLETION_ROW_HEIGHT;
+        assert!(
+            area.height() >= rows && area.height() < rows + 40.0,
+            "the list is {} tall for {rows} of rows",
+            area.height()
+        );
+
+        // Down through more rows than fit: the highlight stays inside what the list shows.
+        for step in 1..=count + 2 {
+            let shapes = draw_suggestions(
+                &ctx,
+                &mut state,
+                &mut clock,
+                vec![key_press(Key::ArrowDown)],
+            );
+            let (row, clip) = highlighted_row(&shapes).expect("a highlighted row");
+            assert!(
+                clip.contains_rect(row),
+                "step {step}: the highlight {row:?} is outside the list {clip:?}"
+            );
+        }
+        // Up wraps to the last row and scrolls back through the list.
+        for step in 1..=count + 2 {
+            let shapes =
+                draw_suggestions(&ctx, &mut state, &mut clock, vec![key_press(Key::ArrowUp)]);
+            let (row, clip) = highlighted_row(&shapes).expect("a highlighted row");
+            assert!(
+                clip.contains_rect(row),
+                "up step {step}: the highlight {row:?} is outside the list {clip:?}"
+            );
+        }
+    }
+
+    fn key_press(key: Key) -> Event {
+        Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
         }
     }
 

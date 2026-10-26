@@ -56,6 +56,8 @@ impl Kind {
 pub struct Item {
     pub label: String,
     pub kind: Kind,
+    /// A function: accepting it also writes the call parentheses.
+    pub callable: bool,
 }
 
 /// What to show for the caret's position: the char range the choice replaces and the ranked items.
@@ -334,7 +336,11 @@ pub fn builtins() -> &'static [Item] {
         }
         names
             .into_iter()
-            .map(|(label, kind)| Item { label, kind })
+            .map(|(label, kind)| Item {
+                callable: kind == Kind::Function,
+                label,
+                kind,
+            })
             .collect()
     })
 }
@@ -390,17 +396,20 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
             items.push(Item {
                 label: head,
                 kind: Kind::Namespace,
+                callable: false,
             });
         }
     }
     if !dotted {
         // Your own names shadow builtins of the same spelling.
         let user = syntax::declared_symbols(source);
+        let functions = syntax::declared_functions(source);
         items.retain(|i| !user.contains(&i.label));
         items.extend(
             user.into_iter()
                 .filter(|name| name.to_lowercase().starts_with(&lower))
                 .map(|label| Item {
+                    callable: functions.contains(&label),
                     label,
                     kind: Kind::User,
                 }),
@@ -561,6 +570,50 @@ mod tests {
         assert!(complete("// clo", 6, false).is_none(), "comments are text");
         assert!(complete("s = \"clo", 8, false).is_none(), "so are strings");
         assert!(complete("12", 2, false).is_none(), "numbers are not names");
+    }
+
+    #[test]
+    fn functions_are_callable_and_other_names_are_not() {
+        let found = complete("color.", 6, false).unwrap();
+        let callable = |label: &str| {
+            found
+                .items
+                .iter()
+                .find(|i| i.label == label)
+                .unwrap()
+                .callable
+        };
+        assert!(callable("color.new") && callable("color.rgb"));
+        assert!(!callable("color.red"));
+        let namespaces = complete("ta", 2, false).unwrap();
+        assert!(
+            namespaces
+                .items
+                .iter()
+                .all(|i| i.kind != Kind::Namespace || !i.callable)
+        );
+        let own = complete(
+            "half(x) => x / 2
+level = 1
+hal",
+            30,
+            false,
+        )
+        .unwrap();
+        assert!(own.items.iter().any(|i| i.label == "half" && i.callable));
+        let value = complete(
+            "level = 1
+lev",
+            13,
+            false,
+        )
+        .unwrap();
+        assert!(
+            value
+                .items
+                .iter()
+                .any(|i| i.label == "level" && !i.callable)
+        );
     }
 
     #[test]
