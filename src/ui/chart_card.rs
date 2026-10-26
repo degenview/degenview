@@ -348,6 +348,8 @@ pub struct ChartCard {
     /// The time a vertical cursor line is locked at (context menu). View state, not saved: it is
     /// not a drawing, and it follows neither templates nor linked charts.
     time_lock: Option<i64>,
+    /// The bars the logs pane lists, shown as a band. View state, not saved.
+    logs_range: Option<(i64, i64)>,
     /// The bar "Scroll to bar" went to and when: a marker shown for a few seconds. View state.
     bar_marker: Option<(i64, std::time::Instant)>,
     /// Where the view was before a scroll the workspace made outside a frame, until the next frame
@@ -661,6 +663,7 @@ impl Default for ChartCard {
             pane_ids: Vec::new(),
             time_lock: None,
             bar_marker: None,
+            logs_range: None,
             scroll_from: None,
             table_wanted: false,
             table_feed: None,
@@ -2254,6 +2257,10 @@ impl ChartCard {
         view: &View,
         replay: &mut ReplayChartFrame,
     ) {
+        if self.pick_kind == replay_overlay::PickKind::LogsRange {
+            self.handle_range_pick(ui, response, painter, plot, time_of, view, replay);
+            return;
+        }
         let Some(position) = response.hover_pos().filter(|point| plot.contains(*point)) else {
             return;
         };
@@ -3118,6 +3125,7 @@ mod snapshot;
 mod sync;
 mod table;
 pub use bar_marker::Scrolled;
+mod logs_range;
 mod time_lock;
 
 #[cfg(test)]

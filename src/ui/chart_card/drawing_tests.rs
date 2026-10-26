@@ -100,6 +100,7 @@ impl Chart {
                 selecting: false,
                 active: false,
                 picked_ms: None,
+                picked_range: None,
             };
             card.body(
                 ui,

@@ -138,6 +138,7 @@ impl Harness {
                 selecting: false,
                 active: replay_active,
                 picked_ms: None,
+                picked_range: None,
             };
             pointer = card.body(
                 ui,

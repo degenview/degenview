@@ -411,19 +411,113 @@ fn a_regex_that_does_not_compile_is_flagged_and_lists_everything() {
     assert!(rig.state.filtered.search().is_invalid());
 }
 
+fn on_bar(sequence: u64, message: &str, bar_time_ms: i64) -> LogEvent {
+    LogEvent {
+        bar_time_ms,
+        ..event(sequence, LogLevel::Info, message)
+    }
+}
+
 #[test]
-fn the_start_date_shows_as_a_tag_and_filters_by_absolute_time() {
+fn the_bar_range_filters_by_the_bar_a_message_was_written_on() {
     let mut rig = Rig::new(history(vec![
-        event(0, LogLevel::Info, "early"),
-        event(1, LogLevel::Info, "late"),
+        on_bar(0, "early", 1_700_000_000_000),
+        on_bar(1, "inside", 1_700_000_300_000),
+        on_bar(2, "late", 1_700_000_900_000),
     ]));
-    rig.state.filter.start_ms = Some(1_700_000_030_000);
+    // The wall-clock time (`time_ms`) of all three is within minutes; the bars are what differ.
+    rig.state.set_range(1_700_000_600_000, 1_700_000_300_000);
     rig.settle();
     let text = rig.text();
-    // At this width the pill is only its icon; its words are what a wider pane shows.
-    assert_eq!(date_label(&rig.state), "From 2023-11-14 22:13");
-    assert_eq!(date_label(&LogsState::default()), "Any time");
-    assert!(text.contains("late") && !text.contains("early"), "{text}");
+    assert!(
+        text.contains("inside") && !text.contains("early") && !text.contains("late"),
+        "{text}"
+    );
+    rig.state.clear_filters();
+    assert_eq!(rig.state.filter.range, None);
+}
+
+#[test]
+fn the_range_pill_says_what_it_waits_for_and_what_it_keeps() {
+    let mut state = LogsState::default();
+    assert_eq!(range_label(&state), "All bars");
+    state.picking = true;
+    assert_eq!(range_label(&state), "Drag on the chart");
+    state.picking = false;
+    let at = 1_700_000_000_000;
+    state.set_range(at, at);
+    assert!(
+        range_label(&state).starts_with("Bar "),
+        "{}",
+        range_label(&state)
+    );
+    state.set_range(at, at + 3_600_000);
+    let one_day = range_label(&state);
+    assert_eq!(one_day.matches(", ").count(), 1, "{one_day}");
+    assert!(one_day.contains(" – "), "{one_day}");
+    state.set_range(at, at + 2 * 86_400_000);
+    assert_eq!(range_label(&state).matches(", ").count(), 2);
+}
+
+/// The pill alone, 26 high at the top left, and what a click at `at` on it asks for.
+fn click_pill(state: &mut LogsState, width: f32, narrow: bool, at: egui::Pos2) -> Vec<LogsAction> {
+    let ctx = egui::Context::default();
+    crate::ui::theme::install_offscreen(&ctx);
+    let mut actions = Vec::new();
+    for events in [
+        Vec::new(),
+        vec![Event::PointerMoved(at)],
+        vec![Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Default::default(),
+        }],
+        vec![Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Default::default(),
+        }],
+    ] {
+        let input = RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(WIDTH, HEIGHT))),
+            events,
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| range_pill(ui, state, width, narrow, &mut actions));
+        });
+        output.textures_delta.clear();
+    }
+    actions
+}
+
+#[test]
+fn clicking_the_range_pill_asks_for_the_drag_and_clicking_it_again_cancels() {
+    let mut state = LogsState::default();
+    let at = pos2(13.0, 13.0);
+    assert_eq!(
+        click_pill(&mut state, 26.0, true, at),
+        [LogsAction::PickRange]
+    );
+    state.picking = true;
+    assert_eq!(
+        click_pill(&mut state, 26.0, true, at),
+        [LogsAction::CancelPick]
+    );
+}
+
+#[test]
+fn the_cross_on_a_set_range_removes_it_without_asking_for_a_pick() {
+    let mut state = LogsState::default();
+    state.set_range(1_000, 2_000);
+    // A 220-wide pill keeps its cross 14 from the right edge.
+    let actions = click_pill(&mut state, 220.0, false, pos2(220.0 - 14.0, 13.0));
+    assert!(actions.is_empty(), "{actions:?}");
+    assert_eq!(state.filter.range, None);
 }
 
 #[test]
@@ -602,6 +696,17 @@ fn a_filter_that_keeps_the_row_count_still_relays_the_rows_out() {
 
 // MARK: Gallery
 
+/// The same messages, each written on the bar its time names.
+fn mixed_on_bars() -> Vec<LogEvent> {
+    mixed_messages()
+        .into_iter()
+        .map(|event| LogEvent {
+            bar_time_ms: event.time_ms,
+            ..event
+        })
+        .collect()
+}
+
 fn mixed_messages() -> Vec<LogEvent> {
     let mut events = vec![event(0, LogLevel::Info, "Script initialized")];
     for bar in 1..6u64 {
@@ -667,9 +772,16 @@ fn gallery_of_the_pane() {
             state.filter.options.regex = true;
             state.filter.query = "(bar".to_owned();
         }),
-        ("date", 320.0, |state, history, _| {
-            *history = history_of(mixed_messages());
-            state.filter.start_ms = Some(1_700_000_000_000 + 20 * 60_000);
+        ("range", 520.0, |state, history, _| {
+            *history = history_of(mixed_on_bars());
+            state.set_range(
+                1_700_000_000_000 + 20 * 60_000,
+                1_700_000_000_000 + 50 * 60_000,
+            );
+        }),
+        ("range-picking", 520.0, |state, history, _| {
+            *history = history_of(mixed_on_bars());
+            state.picking = true;
         }),
         ("errors-only", 320.0, |state, history, _| {
             *history = history_of(mixed_messages());

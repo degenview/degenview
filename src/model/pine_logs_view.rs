@@ -217,25 +217,50 @@ pub struct LogsPrefs {
     pub search: SearchOptions,
 }
 
+/// The bars the user marked on the chart: open times (ms), both ends included.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct BarRange {
+    pub from_ms: i64,
+    pub to_ms: i64,
+}
+
+impl BarRange {
+    /// The range between two bars, whichever was marked first.
+    pub fn between(a_ms: i64, b_ms: i64) -> Self {
+        Self {
+            from_ms: a_ms.min(b_ms),
+            to_ms: a_ms.max(b_ms),
+        }
+    }
+
+    pub fn contains(self, bar_time_ms: i64) -> bool {
+        (self.from_ms..=self.to_ms).contains(&bar_time_ms)
+    }
+}
+
 /// What a message must satisfy to be listed. Filtering never touches the messages themselves.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LogFilter {
     pub levels: Levels,
-    /// Only messages at or after this instant (ms since the epoch).
-    pub start_ms: Option<i64>,
+    /// Only messages written on these bars: the open time of the bar the call ran on, which for a
+    /// `request.*` call is the requested bar's.
+    pub range: Option<BarRange>,
     pub query: String,
     pub options: SearchOptions,
 }
 
 impl LogFilter {
     fn admits(&self, event: &LogEvent) -> bool {
-        self.levels.shows(event.level) && self.start_ms.is_none_or(|start| event.time_ms >= start)
+        self.levels.shows(event.level)
+            && self
+                .range
+                .is_none_or(|range| range.contains(event.bar_time_ms))
     }
 
     fn fingerprint(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.levels.hash(&mut hasher);
-        self.start_ms.hash(&mut hasher);
+        self.range.hash(&mut hasher);
         self.query.hash(&mut hasher);
         self.options.hash(&mut hasher);
         hasher.finish()
@@ -628,19 +653,52 @@ mod tests {
     }
 
     #[test]
-    fn the_start_instant_compares_absolute_times() {
-        let data = buffer(&[
+    fn the_bar_range_keeps_the_messages_written_on_those_bars_ends_included() {
+        let mut data = buffer(&[
             (LogLevel::Info, "a"),
             (LogLevel::Info, "b"),
             (LogLevel::Info, "c"),
+            (LogLevel::Info, "d"),
         ]);
+        // A realtime message: its time is the wall clock, its bar is the one it ran on.
+        let mut live = event(4, LogLevel::Info, "live", 9_999_999);
+        live.realtime = true;
+        live.bar_time_ms = 2_000;
+        data.push(live);
         let mut filtered = FilteredLogs::default();
         let filter = LogFilter {
-            start_ms: Some(1_000),
+            range: Some(BarRange::between(2_000, 1_000)),
             ..LogFilter::default()
         };
         filtered.refresh(1, &data, &filter);
-        assert_eq!(listed(&filtered), [1, 2]);
+        assert_eq!(listed(&filtered), [1, 2, 4]);
+    }
+
+    #[test]
+    fn a_range_of_one_bar_lists_that_bar_alone() {
+        let data = buffer(&[(LogLevel::Info, "a"), (LogLevel::Info, "b")]);
+        let mut filtered = FilteredLogs::default();
+        let filter = LogFilter {
+            range: Some(BarRange::between(1_000, 1_000)),
+            ..LogFilter::default()
+        };
+        filtered.refresh(1, &data, &filter);
+        assert_eq!(listed(&filtered), [1]);
+    }
+
+    #[test]
+    fn changing_the_range_rebuilds_the_list() {
+        let data = buffer(&[(LogLevel::Info, "a"), (LogLevel::Info, "b")]);
+        let mut filtered = FilteredLogs::default();
+        let mut filter = LogFilter::default();
+        filtered.refresh(1, &data, &filter);
+        assert_eq!(listed(&filtered), [0, 1]);
+        filter.range = Some(BarRange::between(0, 0));
+        assert!(filtered.refresh(1, &data, &filter));
+        assert_eq!(listed(&filtered), [0]);
+        filter.range = None;
+        assert!(filtered.refresh(1, &data, &filter));
+        assert_eq!(listed(&filtered), [0, 1]);
     }
 
     #[test]
@@ -656,7 +714,7 @@ mod tests {
                 info: false,
                 ..Levels::default()
             },
-            start_ms: Some(2_000),
+            range: Some(BarRange::between(2_000, 9_000)),
             query: "bar".into(),
             options: SearchOptions::default(),
         };

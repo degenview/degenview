@@ -529,6 +529,16 @@ impl ChartCard {
             );
         }
         if decor.time_lock {
+            self.draw_logs_range(
+                painter,
+                &projection,
+                plot,
+                &layout.pane_rects,
+                style,
+                main_visible,
+            );
+        }
+        if decor.time_lock {
             self.draw_bar_marker(
                 painter,
                 &projection,

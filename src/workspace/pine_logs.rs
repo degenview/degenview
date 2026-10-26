@@ -20,6 +20,9 @@ pub(super) struct PineLogsPane {
     /// The chart the pane shows, when open.
     pub(super) chart: Option<u64>,
     pub(super) view: logs_view::LogsState,
+    /// The pane's chart is waiting for a drag over the bars to list (`ReplayChartFrame::selecting`
+    /// with `PickKind::LogsRange`). Never together with a replay's "click a candle".
+    pub(super) picking: bool,
     prefs_loaded: bool,
     prefs_saved: LogsPrefs,
     /// What the pane asks of the app (open the Script Manager), handed on with the frame's actions.
@@ -139,6 +142,7 @@ impl ChartWorkspace {
                 logging: card.pine_logging(id),
             },
         });
+        self.context.logs.view.picking = self.context.logs.picking;
         let actions = logs_view::show(ui, &mut self.context.logs.view, &scripts, feed);
         for action in actions {
             self.apply_logs_action(chart_id, action);
@@ -148,7 +152,18 @@ impl ChartWorkspace {
 
     fn apply_logs_action(&mut self, chart_id: u64, action: LogsAction) {
         match action {
-            LogsAction::Close => self.context.logs.chart = None,
+            LogsAction::Close => {
+                self.context.logs.chart = None;
+                self.context.logs.picking = false;
+            }
+            LogsAction::PickRange => {
+                // One "click a candle" at a time: the bars win over a replay's start.
+                if self.replay.status == ReplayStatus::SelectingStart {
+                    self.replay.cancel_selection();
+                }
+                self.context.logs.picking = true;
+            }
+            LogsAction::CancelPick => self.context.logs.picking = false,
             LogsAction::Select(id) => self.context.logs.view.selected = Some(id),
             LogsAction::SetLogging(id, enabled) => {
                 if let Some(index) = self.chart_index(chart_id) {

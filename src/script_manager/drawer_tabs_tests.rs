@@ -269,7 +269,7 @@ fn logs_fit_the_drawer() {
             view.embedded = true;
             if search {
                 view.filter.query = "signal".to_owned();
-                view.filter.start_ms = Some(1_700_000_000_000);
+                view.set_range(1_700_000_000_000, 1_700_000_600_000);
             }
             view.select_valid(&scripts);
             fits("logs", state, size, |ui| {

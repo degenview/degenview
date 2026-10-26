@@ -12,6 +12,8 @@ pub enum PickKind {
     Replay,
     /// "Stop here": the bar the debugger should stop at.
     StopAtBar,
+    /// A drag over the bars whose Pine log messages the logs pane lists (`chart_card::logs_range`).
+    LogsRange,
 }
 
 /// Per-frame exchange between the workspace and one chart card's replay overlay.
@@ -23,6 +25,14 @@ pub struct ReplayChartFrame {
     pub active: bool,
     /// Out: `open_time` (ms) of the candle clicked while selecting.
     pub picked_ms: Option<i64>,
+    /// Out: the open times (ms, first and last) of the bars dragged over in
+    /// [`PickKind::LogsRange`] mode.
+    pub picked_range: Option<(i64, i64)>,
+}
+
+/// The colour of the bar range the logs pane lists, on the chart and on its pill.
+pub fn range_accent() -> Color32 {
+    crate::ui::kit::ACCENT
 }
 
 /// Index of the candle whose slot contains `x`, or `None` over blank space.
@@ -53,6 +63,7 @@ pub(super) fn paint_selection(
     let (words, accent) = match kind {
         PickKind::Replay => ("Start here", theme::REPLAY),
         PickKind::StopAtBar => ("Stop here", theme::editor_debug_line()),
+        PickKind::LogsRange => ("Logs", range_accent()),
     };
     let clipped = painter.with_clip_rect(plot);
     clipped.rect_filled(

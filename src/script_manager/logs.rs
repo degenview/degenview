@@ -98,9 +98,31 @@ impl ScriptManager {
         }
     }
 
+    /// Once a frame, before the panes draw: tells the tab whether the chart waits for a drag, takes
+    /// the bars the drag marked, and hands the chart the band to show.
+    pub(super) fn sync_logs_range(&mut self) {
+        self.logs.view.picking = self.preview.is_picking_range();
+        if let Some((from_ms, to_ms)) = self.preview.take_picked_range() {
+            self.logs.view.set_range(from_ms, to_ms);
+        }
+        self.preview.set_logs_range(
+            self.logs
+                .view
+                .filter
+                .range
+                .map(|range| (range.from_ms, range.to_ms)),
+        );
+    }
+
     pub(super) fn apply_logs_action(&mut self, action: LogsAction) {
         match action {
             LogsAction::Close | LogsAction::Select(_) => {}
+            LogsAction::PickRange => {
+                // The chart has to be there to be dragged on.
+                self.prefs.chart_visible = true;
+                self.preview.begin_range_pick();
+            }
+            LogsAction::CancelPick => self.preview.cancel_range_pick(),
             LogsAction::Clear if self.debug.has_logs() => self.debug.logs.clear(),
             LogsAction::Clear => self.preview.clear_logs(),
             LogsAction::SetLogging(_, enabled) => self.preview.set_logging(enabled),
