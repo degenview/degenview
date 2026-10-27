@@ -99,6 +99,9 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
+    /// Tests only: ignore every call's `route`, so a run can be compared with the chain's.
+    #[cfg(any(test, feature = "corpus"))]
+    pub(crate) ignore_routes: bool,
     /// How many `request.*` expressions the running code is inside of.
     pub security_depth: usize,
     pub last_bar_index: i64,
@@ -124,7 +127,7 @@ pub struct Session {
     /// The length of the chart's own bars when it cannot be read off their open times: a
     /// price-based chart's bars follow price, not time.
     pub fixed_bar_seconds: Option<f64>,
-    drawing_limits: drawings::DrawingLimits,
+    pub(crate) drawing_limits: drawings::DrawingLimits,
     supplied_mintick: Option<f64>,
     pub(crate) deadline_at: Option<Instant>,
     cancellation: Option<Arc<AtomicBool>>,
@@ -239,6 +242,8 @@ impl Session {
         security_data: Option<Box<dyn SecurityDataProvider>>,
         visible_range: Option<(i64, i64)>,
     ) -> Self {
+        let mut program = program;
+        super::call_binding::bind(&mut program);
         let supplied_mintick = mintick.filter(|m| *m > 0.0 && m.is_finite());
         let drawing_limits = drawings::DrawingLimits {
             max_lines: program.declaration.max_lines_count,
@@ -357,6 +362,8 @@ impl Session {
             theme: super::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,
+            #[cfg(any(test, feature = "corpus"))]
+            ignore_routes: false,
             last_bar_index: -1,
             last_bar_time: None,
             first_bar_time: None,
@@ -861,7 +868,8 @@ impl Session {
                 arguments,
                 site,
                 range,
-            } => self.call(name, arguments, *site, *range, context),
+                route,
+            } => self.call(name, arguments, *route, *site, *range, context),
         }
     }
 
@@ -992,7 +1000,7 @@ impl Session {
         Ok(Some(value))
     }
 
-    fn market(&self, name: &str, context: &RuntimeContext) -> Option<RuntimeValue> {
+    pub(crate) fn market(&self, name: &str, context: &RuntimeContext) -> Option<RuntimeValue> {
         let bar = &context.bar;
         match name {
             "open" => Some(RuntimeValue::Float(bar.open)),
@@ -1902,10 +1910,20 @@ impl Session {
         &mut self,
         name: &str,
         arguments: &[super::ast::Argument],
+        route: Option<super::ast::Route>,
         site: usize,
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        // A call nothing the script declares can capture goes straight to the family that evaluates
+        // it (`call_binding`). A family that does not take it hands it back, to the chain below.
+        #[cfg(any(test, feature = "corpus"))]
+        let route = if self.ignore_routes { None } else { route };
+        if let Some(route) = route
+            && let Some(value) = self.call_routed(route, name, arguments, site, range, context)?
+        {
+            return Ok(value);
+        }
         // A script-defined (or library) type constructor: `Type.new(...)` / `alias.Type.new(...)`.
         if let Some(object) = self.constructor_call(name, arguments, range, context)? {
             return Ok(object);
@@ -1934,12 +1952,8 @@ impl Session {
             return self.invoke(function, name, arguments, site, range, context);
         }
         // The declaration and input builtins are no-ops here (their values are read at compile time).
-        match name {
-            "indicator" | "strategy" | "library" => return Ok(RuntimeValue::Na),
-            _ if name.starts_with("input.") || name == "input" => {
-                return self.input_value(site, range, context);
-            }
-            _ => {}
+        if super::call_binding::is_input_call(name) {
+            return self.input_call(name, site, range, context);
         }
         if let Some(value) = self.scalar_call(name, arguments, range, context)? {
             return Ok(value);
@@ -1964,196 +1978,16 @@ impl Session {
             return Ok(array_builtins::new_array(&mut self.working, pieces));
         }
         if math::SUPPORTED.contains(&name) && name != "math.sum" {
-            let values = self.eval_all(arguments, context)?;
-            return Ok(math::call(name, &values, self.mintick));
+            return self.math_call(name, arguments, context);
         }
         if strings::SUPPORTED.contains(&name) && name != "str.tostring" {
-            let values = self.eval_all(arguments, context)?;
-            return strings::call(name, &values, range, self.mintick);
+            return self.strings_call(name, arguments, range, context);
         }
-        if matches!(name, "ta.sar" | "ta.supertrend") {
-            let values = self.eval_all(arguments, context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_price(name, &values, &context.bar, state));
-        }
-        if name == "fixnan" {
-            let source = self.arg_value(arguments, 0, Some("source"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_fixnan(&source, state));
-        }
-        if name == "ta.tr" {
-            // `ta.tr(handle_na)` reads like the `ta.tr` variable.
-            return Ok(self.market("ta.tr", context).unwrap_or(RuntimeValue::Na));
-        }
-        if name == "runtime.error" {
-            let message = self.arg_value(arguments, 0, Some("message"), context)?;
-            let text = match message {
-                RuntimeValue::String(text) => text,
-                _ => "runtime.error()".to_owned(),
-            };
-            return Err(Diagnostic::error(
-                "PINE4030",
-                DiagnosticCategory::Runtime,
-                text,
-                range,
-            ));
-        }
-        if name == "ta.barssince" {
-            let condition = self.arg_value(arguments, 0, Some("condition"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_barssince(&condition, state));
-        }
-        if name == "ta.vwap" {
-            let bound = self.bind_named(arguments, &["source", "anchor", "stdev_mult"], context)?;
-            let price = bound
-                .get("source")
-                .and_then(RuntimeValue::number)
-                .unwrap_or(context.bar.close);
-            let anchor = bound.get("anchor").and_then(RuntimeValue::bool);
-            let multiplier = bound.get("stdev_mult").and_then(RuntimeValue::number);
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_vwap(
-                price,
-                &context.bar,
-                anchor,
-                multiplier,
-                state,
-            ));
-        }
-        if name == "ta.dmi" {
-            let di = self.arg_value(arguments, 0, Some("diLength"), context)?;
-            let smoothing = self.arg_value(arguments, 1, Some("adxSmoothing"), context)?;
-            let key = self.site_key(site, context);
-            return Ok(ta::evaluate_dmi(
-                &mut self.working.ta_states,
-                key,
-                &context.bar,
-                di.int_value().unwrap_or(0),
-                smoothing.int_value().unwrap_or(0),
-            ));
-        }
-        if name == "ta.cum" {
-            let source = self.arg_value(arguments, 0, Some("source"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_cum(&source, state));
-        }
-        if name == "ta.correlation" {
-            let first = self.arg_value(arguments, 0, Some("source1"), context)?;
-            let second = self.arg_value(arguments, 1, Some("source2"), context)?;
-            let length = self.arg_value(arguments, 2, Some("length"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_correlation(
-                &first,
-                &second,
-                length.int_value().unwrap_or(0),
-                state,
-            ));
-        }
-        if name == "ta.atr" {
-            let length = self.arg_value(arguments, 0, Some("length"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_atr(
-                state,
-                &context.bar,
-                length.int_value().unwrap_or(14),
-            ));
-        }
-        if name == "ta.bb" {
-            let source = self.arg_value(arguments, 0, Some("series"), context)?;
-            let length = self.arg_value(arguments, 1, Some("length"), context)?;
-            let multiplier = self.arg_value(arguments, 2, Some("mult"), context)?;
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_bb(
-                &source,
-                length.int_value().unwrap_or(0),
-                multiplier.number().unwrap_or(2.0),
-                state,
-            ));
-        }
-        if matches!(name, "ta.pivothigh" | "ta.pivotlow") {
-            let high = name == "ta.pivothigh";
-            // `(source, leftbars, rightbars)`, or `(leftbars, rightbars)` reading the bar's own
-            // high or low.
-            let positional = arguments.iter().filter(|a| a.name.is_none()).count();
-            let (source, left, right) = if positional >= 3
-                || arguments
-                    .iter()
-                    .any(|a| a.name.as_deref() == Some("source"))
-            {
-                (
-                    self.arg_value(arguments, 0, Some("source"), context)?,
-                    self.arg_value(arguments, 1, Some("leftbars"), context)?,
-                    self.arg_value(arguments, 2, Some("rightbars"), context)?,
-                )
-            } else {
-                let own = if high {
-                    context.bar.high
-                } else {
-                    context.bar.low
-                };
-                (
-                    RuntimeValue::Float(own),
-                    self.arg_value(arguments, 0, Some("leftbars"), context)?,
-                    self.arg_value(arguments, 1, Some("rightbars"), context)?,
-                )
-            };
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate_pivot(
-                &source,
-                left.int_value().unwrap_or(0),
-                right.int_value().unwrap_or(0),
-                high,
-                state,
-            ));
-        }
-        if name == "ta.linreg" {
-            let bound = self.bind_named(arguments, &["source", "length", "offset"], context)?;
-            let source = bound.get("source").cloned().unwrap_or(RuntimeValue::Na);
-            let length = bound
-                .get("length")
-                .and_then(RuntimeValue::int_value)
-                .unwrap_or(0);
-            let offset = bound.get("offset").cloned().unwrap_or(RuntimeValue::Na);
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate(name, &source, &offset, length, state));
+        if super::call_binding::INLINE.contains(&name) {
+            return self.inline_call(name, arguments, site, range, context);
         }
         if ta::is_supported(name) {
-            let default_source = match name {
-                "ta.highest" | "ta.highestbars" => Some("high"),
-                "ta.lowest" | "ta.lowestbars" => Some("low"),
-                _ => None,
-            };
-            let uses_default_source = default_source.is_some()
-                && arguments.len() == 1
-                && !arguments
-                    .iter()
-                    .any(|argument| argument.name.as_deref() == Some("source"));
-            let (source, second) = if uses_default_source {
-                (
-                    self.market(default_source.unwrap_or_default(), context)
-                        .unwrap_or(RuntimeValue::Na),
-                    self.arg_value(arguments, 0, Some("length"), context)?,
-                )
-            } else {
-                (
-                    self.arg_value(arguments, 0, Some("source"), context)?,
-                    self.arg_value(arguments, 1, Some("length"), context)?,
-                )
-            };
-            let length = second.int_value().unwrap_or(0);
-            let key = self.site_key(site, context);
-            let state = self.working.ta_states.entry(key).or_default();
-            return Ok(ta::evaluate(name, &source, &second, length, state));
+            return self.ta_table_call(name, arguments, site, context);
         }
         if let Some(value) = self.extra_ta_call(name, arguments, site, range, context)? {
             return Ok(value);
@@ -2162,64 +1996,19 @@ impl Session {
             return Ok(value);
         }
         if drawings::handles(name) {
-            let args = self.eval_args(arguments, context)?;
-            return drawings::call(
-                name,
-                &args,
-                &mut self.working,
-                &context.bar,
-                self.bar_seconds,
-                &self.drawing_limits,
-                range,
-            );
+            return self.drawings_call(name, arguments, range, context);
         }
         if visuals::handles(name) {
-            let args = self.eval_args(arguments, context)?;
-            let key = self.site_key(site, context);
-            return visuals::call(name, &args, key, &mut self.working, range);
+            return self.visuals_call(name, arguments, site, range, context);
         }
         if name.starts_with("strategy.closedtrades.") || name.starts_with("strategy.opentrades.") {
-            let number = self.arg_value(arguments, 0, Some("trade_num"), context)?;
-            return strategy_builtins::trade_property(
-                name,
-                number.int_value(),
-                &self.working.broker,
-                context.bar.close,
-            )
-            .ok_or_else(|| {
-                Diagnostic::error(
-                    "PINE4007",
-                    DiagnosticCategory::Runtime,
-                    format!("Unknown or unsupported function '{name}'."),
-                    range,
-                )
-            });
+            return self.strategy_trade_call(name, arguments, range, context);
         }
         if strategy_builtins::handles(name) {
-            let args = self.eval_args(arguments, context)?;
-            let is_strategy =
-                self.program.declaration.script_type == super::program::ScriptType::Strategy;
-            return strategy_builtins::call(name, &args, &mut self.working, is_strategy, range);
+            return self.strategy_call(name, arguments, range, context);
         }
         if alert_builtins::handles(name) {
-            let args = self.eval_args(arguments, context)?;
-            let key = self.site_key(site, context);
-            if let Some(event) = alert_builtins::call(
-                name,
-                &args,
-                key,
-                &mut self.working,
-                &context.flags,
-                &mut self.once_per_bar_ledger,
-                &self.symbol,
-                self.mintick,
-                self.bar_seconds,
-                &context.bar,
-                range,
-            )? {
-                self.emit(event);
-            }
-            return Ok(RuntimeValue::Void);
+            return self.alert_call(name, arguments, site, range, context);
         }
         if name == "request.security" {
             return self.security_call(arguments, site, range, context);
@@ -2275,7 +2064,7 @@ impl Session {
 
     /// The value an `input.*` call stands for: the user's override, or the declared default, of
     /// the variable it is assigned to. A call that isn't a plain declaration reads `na`.
-    fn input_value(
+    pub(crate) fn input_value(
         &mut self,
         site: usize,
         range: SourceRange,
@@ -2326,7 +2115,7 @@ impl Session {
 
     /// Evaluates arguments as source-ordered `drawings::Arg`s (name + value), for the handlers
     /// that bind overloads themselves.
-    fn eval_args(
+    pub(crate) fn eval_args(
         &mut self,
         arguments: &[super::ast::Argument],
         context: &mut RuntimeContext,
@@ -2414,7 +2203,7 @@ impl Session {
     }
 
     /// Runs one `array.*`/`map.*`/`matrix.*` call, or `None` when the name is none of them.
-    fn collection_call(
+    pub(crate) fn collection_call(
         &mut self,
         name: &str,
         arguments: &[super::ast::Argument],
@@ -2459,7 +2248,7 @@ impl Session {
         Ok(Some(value))
     }
 
-    fn scalar_call(
+    pub(crate) fn scalar_call(
         &mut self,
         name: &str,
         arguments: &[super::ast::Argument],

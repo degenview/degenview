@@ -14,6 +14,28 @@ pub enum Literal {
     Na,
 }
 
+/// The family of builtins that evaluates a call, so that the interpreter can go straight to it
+/// instead of asking each family in turn (`call_binding`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Route {
+    Scalar,
+    Collection,
+    Math,
+    Strings,
+    TaTable,
+    TaExtra,
+    /// The `ta.*` functions and `fixnan` that the session evaluates inline (`call_binding::INLINE`).
+    TaInline,
+    Drawings,
+    Visuals,
+    Strategy,
+    /// `strategy.closedtrades.<property>(n)` and `strategy.opentrades.<property>(n)`.
+    StrategyTrade,
+    Alert,
+    /// `indicator()`, `strategy()`, `library()` and the `input` functions.
+    Input,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expression {
     Literal(Literal, SourceRange),
@@ -35,12 +57,14 @@ pub enum Expression {
         when_false: Box<Expression>,
         range: SourceRange,
     },
-    /// `site` numbers each call in source order; it keys per-call-site runtime state.
+    /// `site` numbers each call in source order; it keys per-call-site runtime state. `route` is
+    /// set when the session is built, for a call nothing the script declares can capture.
     Call {
         name: String,
         arguments: Vec<Argument>,
         site: usize,
         range: SourceRange,
+        route: Option<Route>,
     },
     History {
         base: Box<Expression>,

@@ -12,6 +12,10 @@ pub mod broker;
 pub mod builtin_types;
 pub mod builtins;
 pub mod calendar;
+pub mod call_binding;
+#[cfg(test)]
+mod call_binding_tests;
+mod call_routes;
 #[cfg(test)]
 mod chart_type_tests;
 pub mod compiler;

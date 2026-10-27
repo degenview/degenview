@@ -182,6 +182,32 @@ fn corpus_limits() -> Limits {
 }
 
 /// Compiles `source` and, when it is valid, runs it over `bars` with default inputs.
+/// A session for `program` the way the corpus runs it.
+fn corpus_session(program: crate::pine::program::CompiledProgram, bars: &[Kline]) -> Session {
+    let symbol = SymbolInfo {
+        ticker: "BTCUSDT".to_owned(),
+        ticker_id: "BINANCE:BTCUSDT".to_owned(),
+        currency: "USD".to_owned(),
+        kind: "crypto".to_owned(),
+        base_currency: None,
+        ..SymbolInfo::default()
+    };
+    let security = SyntheticSecurityData {
+        range_start_ms: bars[0].open_time,
+        range_end_ms: bars.last().map_or(bars[0].open_time, |bar| bar.open_time),
+    };
+    Session::new(
+        program,
+        HashMap::new(),
+        corpus_limits(),
+        // The synthetic prices have many decimals; real symbols trade on a tick like this one.
+        Some(0.01),
+        symbol,
+        Some(Box::new(security)),
+        None,
+    )
+}
+
 fn run(source: &str, bars: &[Kline], libraries: &dyn LibraryResolver) -> Outcome {
     let program = compiler::compile(source, corpus_limits(), libraries);
     let compile_errors: Vec<&Diagnostic> = program
@@ -203,31 +229,30 @@ fn run(source: &str, bars: &[Kline], libraries: &dyn LibraryResolver) -> Outcome
     if program.statements.is_empty() {
         return Outcome::ok(warnings);
     }
-    let symbol = SymbolInfo {
-        ticker: "BTCUSDT".to_owned(),
-        ticker_id: "BINANCE:BTCUSDT".to_owned(),
-        currency: "USD".to_owned(),
-        kind: "crypto".to_owned(),
-        base_currency: None,
-        ..SymbolInfo::default()
-    };
-    let security = SyntheticSecurityData {
-        range_start_ms: bars[0].open_time,
-        range_end_ms: bars.last().map_or(bars[0].open_time, |bar| bar.open_time),
-    };
-    let mut session = Session::new(
-        program,
-        HashMap::new(),
-        corpus_limits(),
-        // The synthetic prices have many decimals; real symbols trade on a tick like this one.
-        Some(0.01),
-        symbol,
-        Some(Box::new(security)),
-        None,
-    );
+    let mut session = corpus_session(program, bars);
+    // `PINE_CORPUS_DUAL=1`: run the script again with every call on the chain and require the same
+    // output, which checks the routing of builtin calls (`call_binding`) on real scripts.
+    // A script that shows the wall clock (`timenow`) differs between any two runs.
+    let chained = std::env::var_os("PINE_CORPUS_DUAL")
+        .filter(|_| !source.contains("timenow"))
+        .map(|_| {
+            let mut other =
+                corpus_session(compiler::compile(source, corpus_limits(), libraries), bars);
+            other.ignore_routes = true;
+            other
+                .evaluate(bars)
+                .map(|result| format!("{:?}", result.output))
+        });
     match session.evaluate(bars) {
         Ok(result) => {
             let output = &result.output;
+            if let Some(Ok(chained)) = &chained {
+                assert_eq!(
+                    &format!("{output:?}"),
+                    chained,
+                    "routed and chained runs differ"
+                );
+            }
             let plotted: usize = output
                 .plots
                 .iter()

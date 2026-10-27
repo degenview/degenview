@@ -460,6 +460,7 @@ mod tests {
             name: "plot".to_owned(),
             arguments: vec![],
             site: 0,
+            route: None,
             range: SourceRange::ZERO,
         })];
         assert!(run(&statements).is_empty());
@@ -477,6 +478,7 @@ mod tests {
             name: "request.volume_flow".to_owned(),
             arguments: vec![],
             site: 0,
+            route: None,
             range: SourceRange::ZERO,
         })];
         assert_eq!(codes(&run(&statements)), ["PINE9003"]);
