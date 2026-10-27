@@ -202,6 +202,52 @@ u = nz(t[100]) + nz(close[500])
 plot(u)
 ";
 
+/// Twelve `math.*` calls per bar: the end of the dispatch chain `many_ta` never reaches.
+pub(crate) const MANY_MATH: &str = "//@version=6
+indicator(\"Many math\")
+a = math.max(close, open)
+b = math.min(high, low)
+c = math.abs(close - open)
+d = math.sqrt(high)
+e = math.log(close)
+f = math.exp(c / 100)
+g = math.floor(close)
+h = math.ceil(open)
+i = math.round(high)
+j = math.pow(close, 2) / close
+k = math.sign(close - open)
+l = math.avg(a, b, c)
+plot(a + b + c + d + e + f + g + h + i + j + k + l)
+";
+
+/// Six `str.*` calls per bar.
+pub(crate) const MANY_STR: &str = "//@version=6
+indicator(\"Many str\")
+text = str.tostring(close)
+n = str.length(text)
+up = str.upper(text)
+has = str.contains(up, \"1\") ? 1 : 0
+swapped = str.replace_all(text, \".\", \",\")
+tail = str.substring(text, 0, 1)
+plot(n + has + str.length(swapped) + str.length(tail))
+";
+
+/// Plots, a fill, shapes and (every 50th bar) drawings: the visual and drawing families sit at the
+/// far end of the dispatch chain.
+pub(crate) const PLOTS_AND_DRAWINGS: &str = "//@version=6
+indicator(\"Plots and drawings\", overlay = true)
+plot(close, \"close\")
+plot(open, \"open\")
+plot(high, \"high\")
+plot(low, \"low\")
+hline(0)
+plotshape(close > open, \"up\", shape.triangleup)
+bgcolor(close > open ? color.new(color.green, 90) : na)
+if bar_index % 50 == 0
+    line.new(bar_index, close, bar_index + 5, close)
+    label.new(bar_index, high, str.tostring(close))
+";
+
 pub(crate) const CONTAINERS: &str = "//@version=6
 indicator(\"Containers\")
 var arr = array.new_float(0)
@@ -445,6 +491,27 @@ fn workloads() -> Vec<Workload> {
         add(
             "long_history",
             Box::new(move || evaluate(LONG_HISTORY, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "many_math",
+            Box::new(move || evaluate(MANY_MATH, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "many_str",
+            Box::new(move || evaluate(MANY_STR, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "plots_and_drawings",
+            Box::new(move || evaluate(PLOTS_AND_DRAWINGS, &data, false)),
         );
     }
     {
