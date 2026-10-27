@@ -18,7 +18,8 @@
 use crate::model::Kline;
 use crate::model::chart_look::drawn_extremes;
 use crate::pine::outputs::{
-    DISPLAY_PANE, MarkerKind, MarkerLocation, MarkerShape, PlotOutput, PlotStyle, TableOutput,
+    DISPLAY_PANE, LabelOutput, MarkerKind, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
+    TableOutput, YLocation,
 };
 use crate::pine::program::VisualOutput;
 use crate::pine::strategy::StrategyReport;
@@ -789,7 +790,10 @@ impl PineLayer<'_> {
     /// leaves just text.
     pub fn draw_labels(&self, painter: &Painter) {
         for label in self.pine.labels.iter().filter(|l| l.is_complete()) {
-            let anchor = self.point_bar(label.x, label.y);
+            let Some(y) = self.label_y(label) else {
+                continue;
+            };
+            let anchor = Pos2::new(self.x_bar(label.x), y);
             let size = font_size(label.size);
             let text = rgba(label.text_color);
             let measured = measure(painter, &label.text, size);
@@ -806,6 +810,35 @@ impl PineLayer<'_> {
                 Align2::CENTER_CENTER,
             );
         }
+    }
+
+    /// Where a label's anchor sits vertically: its own price, or just above the high / below the low
+    /// of its bar for `yloc.abovebar` / `yloc.belowbar` (pinned to the pane's edges in a script
+    /// pane, which has no candles). None when the bar is not on screen.
+    fn label_y(&self, label: &LabelOutput) -> Option<f32> {
+        let below = match label.yloc {
+            YLocation::Price => return Some(self.y(label.y)),
+            YLocation::AboveBar => false,
+            YLocation::BelowBar => true,
+        };
+        if self.in_pane {
+            return Some(if below {
+                self.plot.max.y - MARKER_OFFSET
+            } else {
+                self.plot.min.y + MARKER_OFFSET
+            });
+        }
+        let slot = geometry::candle_index_for_bar(
+            label.x,
+            self.pine.bar_count.saturating_sub(self.tail),
+            self.count(),
+        );
+        let candle = self.candles.get(usize::try_from(slot).ok()?)?;
+        Some(if below {
+            self.y(candle.low) + MARKER_OFFSET
+        } else {
+            self.y(candle.high) - MARKER_OFFSET
+        })
     }
 
     // MARK: Markers
@@ -1112,7 +1145,7 @@ mod tests {
     use super::*;
     use crate::pine::outputs::{
         BoxOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput, LabelStyle, LineExtend,
-        LineOutput, LineStyle, MarkerOutput, Size, TableCell, TablePosition, TextAlign,
+        LineOutput, LineStyle, MarkerOutput, Size, TableCell, TablePosition, TextAlign, YLocation,
     };
 
     fn candles(count: usize) -> Vec<Kline> {
@@ -1343,6 +1376,7 @@ mod tests {
             size: Size::Normal,
             tooltip: None,
             text_align: TextAlign::Center,
+            yloc: YLocation::Price,
             time_anchored: false,
         });
         let layer = layer(&output, &candles, &x, &y);
@@ -1362,6 +1396,59 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn a_label_above_or_below_its_bar_sits_at_the_bars_high_or_low() {
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        let label = |yloc, price| LabelOutput {
+            id: 1,
+            x: 1,
+            y: price,
+            text: "go".into(),
+            color: Some(0xFF00_00FF),
+            text_color: 0xFFFF_FFFF,
+            style: LabelStyle::LabelDown,
+            size: Size::Normal,
+            tooltip: None,
+            text_align: TextAlign::Center,
+            yloc,
+            time_anchored: false,
+        };
+        // The price is ignored (here it is `na`) once the label hangs off its bar.
+        output.labels.push(label(YLocation::AboveBar, f64::NAN));
+        output.labels.push(label(YLocation::BelowBar, f64::NAN));
+        output.labels.push(label(YLocation::Price, 120.0));
+        let layer = layer(&output, &candles, &x, &y);
+        let high = y_of(candles[1].high);
+        let low = y_of(candles[1].low);
+        assert_eq!(layer.label_y(&output.labels[0]), Some(high - MARKER_OFFSET));
+        assert_eq!(layer.label_y(&output.labels[1]), Some(low + MARKER_OFFSET));
+        assert_eq!(layer.label_y(&output.labels[2]), Some(y_of(120.0)));
+        assert!(
+            shapes_drawn(|painter| layer.draw_labels(painter)) >= 6,
+            "all three labels draw: bubble, pointer and text each"
+        );
+        // A bar that is not on screen has no high to hang from.
+        let mut offscreen = output.labels[0].clone();
+        offscreen.x = 40;
+        assert_eq!(layer.label_y(&offscreen), None);
+        // In a script pane the label pins to the edge of the pane.
+        let mut pane = self::layer(&output, &candles, &x, &y);
+        pane.in_pane = true;
+        assert_eq!(
+            pane.label_y(&output.labels[0]),
+            Some(pane.plot.min.y + MARKER_OFFSET)
+        );
+        assert_eq!(
+            pane.label_y(&output.labels[1]),
+            Some(pane.plot.max.y - MARKER_OFFSET)
+        );
     }
 
     #[test]

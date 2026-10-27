@@ -10,7 +10,7 @@
 use crate::pine::outputs::{
     BoxOutput, DISPLAY_PANE, Horizontal, LabelOutput, LabelStyle, LineExtend, LineOutput,
     LineStyle, MISSING_INDEX, PlotStyle, PolylineOutput, Size, TableCell, TableOutput,
-    TablePosition, TextAlign, Vertical, index_is_known,
+    TablePosition, TextAlign, Vertical, YLocation, index_is_known,
 };
 use crate::pine::program::VisualOutput;
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
@@ -571,7 +571,7 @@ pub fn drawing_values(pine: &VisualOutput, candle_count: usize, future_bars: usi
     for item in pine
         .labels
         .iter()
-        .filter(|l| l.is_complete() && (first..=last).contains(&l.x))
+        .filter(|l| l.is_complete() && l.yloc == YLocation::Price && (first..=last).contains(&l.x))
     {
         values.push(item.y);
     }

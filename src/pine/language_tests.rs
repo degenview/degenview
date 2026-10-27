@@ -1091,3 +1091,173 @@ fn a_matrix_runtime_error_names_the_function() {
     };
     assert!(format!("{error:?}").contains("PINE4037"), "{error:?}");
 }
+
+#[test]
+fn copies_of_a_line_label_and_box_are_independent_objects() {
+    let session = run(
+        "var line l = na\nvar label t = na\nvar box b = na\n\
+         var line lc = na\nvar label tc = na\nvar box bc = na\n\
+         if barstate.islast\n\
+         \x20   l := line.new(0, 10.0, 4, 18.0)\n\
+         \x20   lc := line.copy(l)\n\
+         \x20   lc.set_x2(8)\n\
+         \x20   t := label.new(1, 5.0, \"hi\")\n\
+         \x20   tc := label.copy(t)\n\
+         \x20   tc.set_text(\"copy\")\n\
+         \x20   b := box.new(0, 9.0, 3, 2.0)\n\
+         \x20   bc := box.copy(b)\n\
+         \x20   bc.set_right(7)\n\
+         original = l.get_x2()\ncopied = lc.get_x2()\n\
+         texts = t.get_text() + \"/\" + tc.get_text()\n\
+         right_original = b.get_right()\nright_copied = bc.get_right()\n\
+         lines = array.size(line.all)\nlabels = array.size(label.all)\nboxes = array.size(box.all)\n\
+         gone = line.copy(na)",
+        2,
+    );
+    assert_eq!(value(&session, "original"), RuntimeValue::Int(4));
+    assert_eq!(value(&session, "copied"), RuntimeValue::Int(8));
+    assert_eq!(
+        value(&session, "texts"),
+        RuntimeValue::String("hi/copy".into())
+    );
+    assert_eq!(value(&session, "right_original"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "right_copied"), RuntimeValue::Int(7));
+    assert_eq!(value(&session, "lines"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "labels"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "boxes"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "gone"), RuntimeValue::Na);
+}
+
+#[test]
+fn copying_respects_the_declared_cap_on_drawings() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\", max_lines_count = 2)\n\
+         l = line.new(0, 1.0, 1, 2.0)\n\
+         line.copy(l)\nline.copy(l)\n\
+         n = array.size(line.all)",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(1)).expect("runs");
+    assert_eq!(value(&session, "n"), RuntimeValue::Int(2));
+}
+
+#[test]
+fn a_chart_point_copy_is_a_new_point_with_the_same_fields() {
+    let session = run(
+        "p = chart.point.from_index(3, 12.5)\n\
+         q = chart.point.copy(p)\n\
+         same_price = q.price == 12.5\n\
+         same_index = q.index == 3\n\
+         p.price := 99.0\n\
+         kept = q.price",
+        2,
+    );
+    assert_eq!(value(&session, "same_price"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "same_index"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "kept"), RuntimeValue::Float(12.5));
+}
+
+#[test]
+fn line_get_price_extends_the_line_both_ways() {
+    let session = run(
+        "l = line.new(0, 10.0, 4, 18.0)\n\
+         inside = l.get_price(2)\n\
+         ahead = line.get_price(l, 10)\n\
+         behind = l.get_price(-2)\n\
+         vertical = line.get_price(line.new(3, 1.0, 3, 5.0), 3)",
+        2,
+    );
+    assert_eq!(value(&session, "inside"), RuntimeValue::Float(14.0));
+    assert_eq!(value(&session, "ahead"), RuntimeValue::Float(30.0));
+    assert_eq!(value(&session, "behind"), RuntimeValue::Float(6.0));
+    assert_eq!(value(&session, "vertical"), RuntimeValue::Na);
+}
+
+#[test]
+fn line_get_price_is_an_error_for_a_line_placed_by_time() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\n\
+         l = line.new(0, 1.0, 60000, 2.0, xloc = xloc.bar_time)\n\
+         p = l.get_price(1)",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(error) = session.evaluate(&bars(3)) else {
+        panic!("a time-placed line has no price by bar index");
+    };
+    assert!(format!("{error:?}").contains("PINE4038"), "{error:?}");
+}
+
+#[test]
+fn set_xloc_changes_how_the_coordinates_are_read() {
+    let session = run(
+        "var line l = na\nvar box b = na\nvar label t = na\n\
+         if barstate.islast\n\
+         \x20   l := line.new(0, 1.0, 1, 2.0)\n\
+         \x20   b := box.new(0, 9.0, 1, 2.0)\n\
+         \x20   t := label.new(0, 5.0, \"x\")\n\
+         \x20   l.set_xloc(120000, 240000, xloc.bar_time)\n\
+         \x20   b.set_xloc(60000, 180000, xloc.bar_time)\n\
+         \x20   t.set_xloc(300000, xloc.bar_time)\n\
+         l_from = l.get_x1()\nl_to = l.get_x2()\n\
+         b_left = b.get_left()\nb_right = b.get_right()\n\
+         t_at = t.get_x()\n\
+         if barstate.islast\n\
+         \x20   l.set_xloc(1, 3, xloc.bar_index)\n\
+         \x20   l.set_x2(4)\n\
+         back = l.get_x1()\nend = l.get_x2()",
+        6,
+    );
+    assert_eq!(value(&session, "l_from"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "l_to"), RuntimeValue::Int(4));
+    assert_eq!(value(&session, "b_left"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "b_right"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "t_at"), RuntimeValue::Int(5));
+    assert_eq!(value(&session, "back"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "end"), RuntimeValue::Int(4));
+}
+
+#[test]
+fn a_labels_yloc_is_kept_and_can_be_changed() {
+    let session = run(
+        "var label a = na\nvar label b = na\n\
+         if barstate.islast\n\
+         \x20   a := label.new(bar_index, na, \"up\", yloc = yloc.abovebar)\n\
+         \x20   b := label.new(bar_index, 7.0, \"price\")\n\
+         \x20   b.set_yloc(yloc.belowbar)",
+        3,
+    );
+    let labels = session.output().labels;
+    let yloc = |text: &str| labels.iter().find(|l| l.text == text).map(|l| l.yloc);
+    assert_eq!(
+        yloc("up"),
+        Some(crate::pine::outputs::YLocation::AboveBar),
+        "a price of na is fine above the bar"
+    );
+    assert_eq!(
+        yloc("price"),
+        Some(crate::pine::outputs::YLocation::BelowBar)
+    );
+    assert!(labels.iter().all(|label| label.is_complete()));
+}

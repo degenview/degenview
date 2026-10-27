@@ -19,7 +19,7 @@ use super::fast_hash::FastMap;
 use super::outputs::{
     BoxOutput, LabelOutput, LabelStyle, LineExtend, LineOutput, LineStyle, LinefillOutput,
     MISSING_INDEX, PolylineOutput, PolylinePoint, Size, TableCell, TableOutput, TablePosition,
-    TextAlign, index_is_known, price_is_known,
+    TextAlign, YLocation, index_is_known, price_is_known,
 };
 use super::runtime_value::{RefKind, RuntimeValue, color_value};
 use super::state::RuntimeState;
@@ -142,6 +142,17 @@ impl FromName for TextAlign {
     }
 }
 
+impl FromName for YLocation {
+    fn from_name(name: &str) -> Option<Self> {
+        match name {
+            "yloc.price" => Some(Self::Price),
+            "yloc.abovebar" => Some(Self::AboveBar),
+            "yloc.belowbar" => Some(Self::BelowBar),
+            _ => None,
+        }
+    }
+}
+
 impl FromName for TablePosition {
     fn from_name(name: &str) -> Option<Self> {
         match name {
@@ -159,27 +170,140 @@ impl FromName for TablePosition {
     }
 }
 
+/// Every `line.*` function this module handles, without the prefix.
+pub const LINE_MEMBERS: &[&str] = &[
+    "new",
+    "delete",
+    "copy",
+    "set_x1",
+    "set_y1",
+    "set_x2",
+    "set_y2",
+    "set_xy1",
+    "set_xy2",
+    "set_first_point",
+    "set_second_point",
+    "set_xloc",
+    "set_color",
+    "set_width",
+    "set_style",
+    "set_extend",
+    "get_x1",
+    "get_y1",
+    "get_x2",
+    "get_y2",
+    "get_price",
+];
+
+/// Every `label.*` function, without the prefix.
+pub const LABEL_MEMBERS: &[&str] = &[
+    "new",
+    "delete",
+    "copy",
+    "set_x",
+    "set_y",
+    "set_xy",
+    "set_point",
+    "set_xloc",
+    "set_yloc",
+    "set_text",
+    "set_color",
+    "set_textcolor",
+    "set_style",
+    "set_size",
+    "set_tooltip",
+    "set_textalign",
+    "set_text_font_family",
+    "set_text_formatting",
+    "get_x",
+    "get_y",
+    "get_text",
+];
+
+/// Every `box.*` function, without the prefix.
+pub const BOX_MEMBERS: &[&str] = &[
+    "new",
+    "delete",
+    "copy",
+    "set_left",
+    "set_right",
+    "set_top",
+    "set_bottom",
+    "set_lefttop",
+    "set_rightbottom",
+    "set_top_left_point",
+    "set_bottom_right_point",
+    "set_xloc",
+    "set_bgcolor",
+    "set_border_color",
+    "set_border_width",
+    "set_border_style",
+    "set_extend",
+    "set_text",
+    "set_text_color",
+    "set_text_size",
+    "set_text_halign",
+    "set_text_valign",
+    "set_text_wrap",
+    "set_text_font_family",
+    "set_text_formatting",
+    "get_left",
+    "get_right",
+    "get_top",
+    "get_bottom",
+];
+
+/// Every `linefill.*` function, without the prefix.
+pub const LINEFILL_MEMBERS: &[&str] = &["new", "delete", "set_color", "get_line1", "get_line2"];
+
+/// Every `table.*` function, without the prefix.
+pub const TABLE_MEMBERS: &[&str] = &[
+    "new",
+    "delete",
+    "cell",
+    "merge_cells",
+    "clear",
+    "set_position",
+    "set_bgcolor",
+    "set_border_color",
+    "set_border_width",
+    "set_frame_color",
+    "set_frame_width",
+];
+
+/// Every `polyline.*` function, without the prefix.
+pub const POLYLINE_MEMBERS: &[&str] = &["new", "delete"];
+
+/// Every `chart.point` function with its prefix (the bare name is the type's constructor).
+pub const CHART_POINT_NAMES: &[&str] = &[
+    "chart.point.new",
+    "chart.point.from_index",
+    "chart.point.from_time",
+    "chart.point.now",
+    "chart.point.copy",
+];
+
+/// The drawing namespaces and their functions, which the editor offers as written.
+pub const NAMESPACES: [(&str, &[&str]); 6] = [
+    ("line", LINE_MEMBERS),
+    ("label", LABEL_MEMBERS),
+    ("box", BOX_MEMBERS),
+    ("linefill", LINEFILL_MEMBERS),
+    ("table", TABLE_MEMBERS),
+    ("polyline", POLYLINE_MEMBERS),
+];
+
 /// Whether `name` is a drawing or `chart.point` function this module handles.
 pub fn handles(name: &str) -> bool {
-    if let Some(rest) = name.strip_prefix("chart.point") {
-        return rest.is_empty() || matches!(rest, ".new" | ".from_index" | ".from_time" | ".now");
+    if name == "chart.point" || CHART_POINT_NAMES.contains(&name) {
+        return true;
     }
     let Some((namespace, member)) = name.split_once('.') else {
         return false;
     };
-    match namespace {
-        "line" | "label" | "box" | "linefill" => {
-            matches!(member, "new" | "delete")
-                || member.starts_with("set_")
-                || member.starts_with("get_")
-        }
-        "table" => {
-            matches!(member, "new" | "delete" | "cell" | "merge_cells" | "clear")
-                || member.starts_with("set_")
-        }
-        "polyline" => matches!(member, "new" | "delete"),
-        _ => false,
-    }
+    NAMESPACES
+        .iter()
+        .any(|(candidate, members)| *candidate == namespace && members.contains(&member))
 }
 
 /// Runs one drawing call. `args` are the evaluated arguments in source order; the current bar and
@@ -204,6 +328,12 @@ pub fn call(
         "table.clear" => clear_table_cells(args, state),
         "polyline.new" => new_polyline(args, state, bar, bar_seconds, limits),
         "polyline.delete" => delete_polyline(args, state),
+        "line.copy" | "label.copy" | "box.copy" => copy_drawing(name, args, state, limits),
+        "chart.point.copy" => copy_chart_point(args, state),
+        "line.get_price" => line_price(args, state, range),
+        "line.set_xloc" | "label.set_xloc" | "box.set_xloc" => {
+            set_xloc(name, args, state, bar, bar_seconds)
+        }
         "chart.point"
         | "chart.point.new"
         | "chart.point.from_index"
@@ -614,6 +744,11 @@ fn new_label(
                 b.get("textalign").and_then(RuntimeValue::text_value),
                 TextAlign::Center,
                 TextAlign::Center,
+            ),
+            yloc: parse(
+                b.get("yloc").and_then(RuntimeValue::text_value),
+                YLocation::Price,
+                YLocation::Price,
             ),
             time_anchored: timed,
         },
@@ -1146,6 +1281,153 @@ fn chart_point(
     Ok(RuntimeValue::Ref(RefKind::Object, id))
 }
 
+// MARK: Copying
+
+/// `line.copy`, `label.copy` and `box.copy`: a new object with the same properties, its own id and
+/// the same cap on how many a script keeps. `na` for a missing or deleted original.
+fn copy_drawing(
+    name: &str,
+    args: &[Arg],
+    state: &mut RuntimeState,
+    limits: &DrawingLimits,
+) -> Result<RuntimeValue, Diagnostic> {
+    let target = args.first().map(|arg| &arg.value);
+    let copied = match (name, target) {
+        ("line.copy", Some(RuntimeValue::Ref(RefKind::Line, id))) => {
+            let fresh = allocate(state);
+            let copy = clone_into(&mut state.lines, *id, fresh, |line, id| line.id = id);
+            cap(&mut state.lines, limits.max_lines);
+            copy.then_some(RuntimeValue::Ref(RefKind::Line, fresh))
+        }
+        ("label.copy", Some(RuntimeValue::Ref(RefKind::Label, id))) => {
+            let fresh = allocate(state);
+            let copy = clone_into(&mut state.labels, *id, fresh, |label, id| label.id = id);
+            cap(&mut state.labels, limits.max_labels);
+            copy.then_some(RuntimeValue::Ref(RefKind::Label, fresh))
+        }
+        ("box.copy", Some(RuntimeValue::Ref(RefKind::Box, id))) => {
+            let fresh = allocate(state);
+            let copy = clone_into(&mut state.boxes, *id, fresh, |boxed, id| boxed.id = id);
+            cap(&mut state.boxes, limits.max_boxes);
+            copy.then_some(RuntimeValue::Ref(RefKind::Box, fresh))
+        }
+        _ => None,
+    };
+    Ok(copied.unwrap_or(RuntimeValue::Na))
+}
+
+/// Stores a copy of `objects[id]` as `fresh`; false when there is no `id`.
+fn clone_into<T: Clone>(
+    objects: &mut FastMap<usize, T>,
+    id: usize,
+    fresh: usize,
+    set_id: impl FnOnce(&mut T, usize),
+) -> bool {
+    let Some(mut copy) = objects.get(&id).cloned() else {
+        return false;
+    };
+    set_id(&mut copy, fresh);
+    objects.insert(fresh, copy);
+    true
+}
+
+/// `chart.point.copy`: a new point with the same `time`, `index` and `price`.
+fn copy_chart_point(args: &[Arg], state: &mut RuntimeState) -> Result<RuntimeValue, Diagnostic> {
+    let Some(RuntimeValue::Ref(RefKind::Object, id)) = args.first().map(|arg| &arg.value) else {
+        return Ok(RuntimeValue::Na);
+    };
+    if !state
+        .instances
+        .get(id)
+        .is_some_and(|object| object.type_name == CHART_POINT_TYPE)
+    {
+        return Ok(RuntimeValue::Na);
+    }
+    let fresh = allocate(state);
+    clone_into(&mut state.instances, *id, fresh, |_, _| {});
+    Ok(RuntimeValue::Ref(RefKind::Object, fresh))
+}
+
+// MARK: Price and x-location
+
+/// `line.get_price(id, x)`: the price of the line, extended both ways, at bar index `x`. `na` for a
+/// vertical line, which has no price along it. Only a line placed by bar index has one: the
+/// reference makes it an error for a line placed by time.
+fn line_price(
+    args: &[Arg],
+    state: &RuntimeState,
+    range: SourceRange,
+) -> Result<RuntimeValue, Diagnostic> {
+    let Some(RuntimeValue::Ref(RefKind::Line, id)) = args.first().map(|arg| &arg.value) else {
+        return Ok(RuntimeValue::Na);
+    };
+    let Some(line) = state.lines.get(id) else {
+        return Ok(RuntimeValue::Na);
+    };
+    if line.time_anchored {
+        return Err(runtime_error(
+            "PINE4038",
+            "line.get_price can only be called for a line created with xloc.bar_index.".to_owned(),
+            range,
+        ));
+    }
+    let Some(x) = args.get(1).and_then(|arg| arg.value.number()) else {
+        return Ok(RuntimeValue::Na);
+    };
+    if !line.is_complete() || line.x1 == line.x2 {
+        return Ok(RuntimeValue::Na);
+    }
+    let slope = (line.y2 - line.y1) / (line.x2 - line.x1) as f64;
+    Ok(RuntimeValue::Float(line.y1 + slope * (x - line.x1 as f64)))
+}
+
+/// `line.set_xloc(id, x1, x2, xloc)`, `box.set_xloc(id, left, right, xloc)` and
+/// `label.set_xloc(id, x, xloc)`: new x coordinates read as bar indexes or times as `xloc` says,
+/// which is also how the drawing is placed from then on.
+fn set_xloc(
+    name: &str,
+    args: &[Arg],
+    state: &mut RuntimeState,
+    bar: &Kline,
+    bar_seconds: f64,
+) -> Result<RuntimeValue, Diagnostic> {
+    let value = |position: usize| {
+        args.get(position)
+            .map_or(RuntimeValue::Na, |arg| arg.value.clone())
+    };
+    let target = value(0);
+    let has_two_x = name != "label.set_xloc";
+    let xloc = value(if has_two_x { 3 } else { 2 });
+    let timed = xloc.text_value() == Some("xloc.bar_time");
+    let resolve =
+        |state: &RuntimeState, x: RuntimeValue| x_index(x, timed, bar, bar_seconds, state);
+    let (first, second) = (resolve(state, value(1)), resolve(state, value(2)));
+    match target {
+        RuntimeValue::Ref(RefKind::Line, id) => {
+            if let Some(line) = state.lines.get_mut(&id) {
+                line.x1 = first.int_value().unwrap_or(line.x1);
+                line.x2 = second.int_value().unwrap_or(line.x2);
+                line.time_anchored = timed;
+            }
+        }
+        RuntimeValue::Ref(RefKind::Box, id) => {
+            if let Some(boxed) = state.boxes.get_mut(&id) {
+                boxed.left = first.int_value().unwrap_or(boxed.left);
+                boxed.right = second.int_value().unwrap_or(boxed.right);
+                boxed.time_anchored = timed;
+            }
+        }
+        RuntimeValue::Ref(RefKind::Label, id) => {
+            if let Some(label) = state.labels.get_mut(&id) {
+                label.x = first.int_value().unwrap_or(label.x);
+                label.time_anchored = timed;
+            }
+        }
+        _ => {}
+    }
+    Ok(RuntimeValue::Void)
+}
+
 // MARK: Mutation
 
 /// `line.set_*`, `label.set_*`, `box.set_*`, `table.set_*`, `linefill.*` getters and `*.delete`.
@@ -1433,6 +1715,7 @@ fn mutate_label(
         "set_textalign" => {
             label.text_align = parse(a.text_value(), label.text_align, label.text_align);
         }
+        "set_yloc" => label.yloc = parse(a.text_value(), label.yloc, label.yloc),
         "set_text_font_family" | "set_text_formatting" => {}
         "get_x" => return Ok(known_index(label.x)),
         "get_y" => return Ok(known_price(label.y)),

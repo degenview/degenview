@@ -51,6 +51,12 @@
   `na`, so a script is never stopped by data. The eigen-decomposition only exists for a symmetric matrix;
   anything else is `PINE4037` (TradingView names the same QL algorithm and does not say what it does
   for other matrices).
+- Drawing functions are the exact lists `drawings::{LINE,LABEL,BOX,LINEFILL,TABLE,POLYLINE}_MEMBERS` and
+  `CHART_POINT_NAMES`: `handles` no longer takes any `set_*`/`get_*`, so a misspelt member is a compile
+  error and the editor offers each name from these tables. A drawing stores bar indexes and remembers
+  whether it was placed by time (`time_anchored`); `set_xloc` re-reads the new coordinates and flips the
+  flag. A label's `yloc` is stored with its price, which is ignored (and may be `na`) above or below the
+  bar; `PineLayer::label_y` resolves it against the candle, so the price scale is not affected.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

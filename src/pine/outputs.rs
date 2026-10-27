@@ -79,6 +79,26 @@ impl TextAlign {
     }
 }
 
+/// `yloc.*`: where a label's y comes from. `price` is its own `y`; above or below the bar it sits at
+/// the bar's high or low and `y` is ignored.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum YLocation {
+    #[default]
+    Price,
+    AboveBar,
+    BelowBar,
+}
+
+impl YLocation {
+    pub fn pine_name(self) -> &'static str {
+        match self {
+            Self::Price => "yloc.price",
+            Self::AboveBar => "yloc.abovebar",
+            Self::BelowBar => "yloc.belowbar",
+        }
+    }
+}
+
 /// `extend.*`: how far a line or box runs on.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum LineExtend {
@@ -374,12 +394,14 @@ pub struct LabelOutput {
     pub size: Size,
     pub tooltip: Option<String>,
     pub text_align: TextAlign,
+    pub yloc: YLocation,
     pub time_anchored: bool,
 }
 
 impl LabelOutput {
+    /// A label placed above or below its bar needs no price.
     pub fn is_complete(&self) -> bool {
-        index_is_known(self.x) && price_is_known(self.y)
+        index_is_known(self.x) && (self.yloc != YLocation::Price || price_is_known(self.y))
     }
 }
 
