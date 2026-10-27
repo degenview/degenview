@@ -2267,3 +2267,22 @@ fn the_input_arguments_that_change_nothing_are_warned_about() {
         "{codes:?}"
     );
 }
+
+#[test]
+fn array_functions_take_the_reference_parameter_names() {
+    let session = run(
+        "a = array.from(1, 3, 5, 7)\nb = array.from(9)\n\
+         index = array.binary_search(a, val = 5)\n\
+         second_largest = array.max(a, nth = 1)\n\
+         third_smallest = a.min(2)\n\
+         array.concat(id1 = a, id2 = b)\n\
+         size = array.size(a)\n\
+         cov = array.covariance(id1 = array.from(1, 2, 3), id2 = array.from(3, 2, 1))",
+        2,
+    );
+    assert_eq!(value(&session, "index"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "second_largest"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "third_smallest"), RuntimeValue::Float(5.0));
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(5));
+    assert!(value(&session, "cov").number().unwrap() < 0.0);
+}
