@@ -100,6 +100,8 @@ struct Failure {
     /// The script could not be run at all (it does not compile): the attempt is worth repeating when
     /// its text changes.
     not_runnable: bool,
+    /// How the script failed, when it ran and then failed: the Problems list shows it too.
+    error: Option<Diagnostic>,
 }
 
 /// What the toolbar and the drawer say.
@@ -116,7 +118,7 @@ pub enum Status {
         cancelling: bool,
     },
     Ready,
-    /// A profile of part of the run: cancelled, failed or out of time.
+    /// A profile of part of the run: cancelled or out of time.
     Partial,
     /// A profile of other text, inputs or data than what is on screen.
     Stale,
@@ -210,6 +212,7 @@ impl Profiler {
             key,
             message: message.to_owned(),
             not_runnable,
+            error: None,
         });
     }
 
@@ -242,6 +245,7 @@ impl Profiler {
                     key,
                     message: message.clone(),
                     not_runnable: false,
+                    error: None,
                 });
                 Err(message)
             }
@@ -270,6 +274,29 @@ impl Profiler {
 
     fn finish(&mut self, run: Run, outcome: ProfileOutcome) {
         match outcome.result {
+            // A script that fails when it runs has no profile: what it measured up to the failure
+            // leaves out the failing bar and everything after it, and an older profile of other text
+            // is no better. Only a run that was cancelled or ran out of time keeps its partial data.
+            Ok(report)
+                if matches!(
+                    report.completeness,
+                    Completeness::Partial(Interruption::Failed(_))
+                ) =>
+            {
+                let Completeness::Partial(Interruption::Failed(error)) = report.completeness else {
+                    unreachable!("matched above")
+                };
+                self.profile = None;
+                self.failure = Some(Failure {
+                    key: run.key,
+                    message: format!(
+                        "The script failed after {} bars: {}",
+                        report.summary.bars, error.message
+                    ),
+                    not_runnable: false,
+                    error: Some(error),
+                });
+            }
             Ok(report) => {
                 let marks = ProfileMarks::build(&report, &run.source, outcome.compile_ns);
                 self.profile = Some(Profile {
@@ -285,6 +312,7 @@ impl Profiler {
                     key: run.key,
                     message: error.message,
                     not_runnable: false,
+                    error: None,
                 });
             }
         }
@@ -346,15 +374,14 @@ impl Profiler {
         }
     }
 
-    /// How the script failed in the profile on screen, if it did and the profile is of the text in the
-    /// editor. A run that was cancelled or ran out of time did not fail.
+    /// How the script failed in the profile run for the text in the editor, if it did. A run that
+    /// was cancelled or ran out of time did not fail.
     pub fn failure(&self, current: Option<&ProfileKey>) -> Option<&Diagnostic> {
-        if !self.lines_match(current) {
-            return None;
-        }
-        match &self.profile.as_ref()?.report.completeness {
-            Completeness::Partial(Interruption::Failed(error)) => Some(error),
-            _ => None,
+        let failure = self.failure.as_ref()?;
+        if failure.key.same_text(current?) {
+            failure.error.as_ref()
+        } else {
+            None
         }
     }
 

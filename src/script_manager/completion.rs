@@ -412,7 +412,7 @@ mod tests {
     fn no_offered_function_is_reported_as_unknown() {
         use crate::pine::compiler::{NoLibraries, compile};
         use crate::pine::name_check::UNKNOWN_MEMBER;
-        let prefixes = ["array.", "map.", "matrix.", "math.", "str."];
+        let prefixes = ["array.", "map.", "matrix.", "math.", "str.", "ta."];
         let mut wrongly_unknown = Vec::new();
         for item in builtins() {
             if item.kind != Kind::Function || !prefixes.iter().any(|p| item.label.starts_with(p)) {

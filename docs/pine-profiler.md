@@ -92,8 +92,12 @@ script does with the candles afterwards is timed like anything else.
 * The deadline: a profiled run is slower than a normal one, so each bar extends the deadline by its
   estimated overhead; a script that would have finished in time normally finishes in time profiled.
   The instruction and call-depth limits are untouched.
-* A run that fails, is cancelled or runs out of time keeps what it measured, labelled **partial**
-  with the reason; a partial profile is never presented as complete.
+* A run that is cancelled or runs out of time keeps what it measured, labelled **partial** with the
+  reason; a partial profile is never presented as complete. A run that **fails** has no profile: what
+  it measured leaves out the failing bar and everything after it, so the Profile tab says "Profile
+  failed: the script failed after N bars: …", nothing is drawn beside the code, and a profile of the
+  text before is dropped too. The engine still returns the partial report
+  (`Completeness::Partial(Interruption::Failed)`); `Profiler::finish` turns it into a failure.
 
 ## In the window
 
@@ -102,7 +106,7 @@ script does with the candles afterwards is timed like anything else.
   amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
   Turning it on opens the drawer's **Profile** tab.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
-  index out of range) ends the profile as *partial* ("the script failed after N bars: …"), and the
+  index out of range) ends the profile with no data ("the script failed after N bars: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
   underlined at the failing call, exactly as the chart's own run reports it (`script_manager::problems`).
   Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.
@@ -206,8 +210,8 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   recursion, an open region closed by the end of a bar, a refused bar), the same outputs, trades and
   alerts with and without the recorder across seven workloads including a strategy and
   `request.security`, a failing script failing the same way, and sessions (own thread, a script that
-  does not compile, no bars, cancelling keeps a labelled partial profile, a failing script keeps what
-  ran before it, dropping a session ends its thread, two sessions are independent).
+  does not compile, no bars, cancelling keeps a labelled partial profile, a failing script engine-side
+  keeps what ran before it (the window then shows none of it), dropping a session ends its thread, two sessions are independent).
 * `cargo test --lib script_manager::profile` (and the editor's tests): the words (units, percentages,
   separators), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
   and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
