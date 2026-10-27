@@ -31,6 +31,8 @@ pub struct State {
     pub supertrend: Option<Supertrend>,
     /// Series a function derives from its inputs, with their own moving averages (`ta.kc`, `ta.tsi`).
     pub derived: Vec<super::ta_extra::Derived>,
+    /// `ta.pivot_point_levels` state: the period since the last anchor and the levels it last set.
+    pub pivot: Option<super::ta_extra::PivotPeriod>,
 }
 
 /// `ta.supertrend` between bars: the final upper/lower bands, the trend direction (1 up, -1 down),

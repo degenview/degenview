@@ -186,7 +186,9 @@ fn series_result(name: &str) -> Option<ValueType> {
         "table.new" => Some(ValueType::Table),
         "linefill.new" => Some(ValueType::Linefill),
         "polyline.new" => Some(ValueType::Polyline),
-        "array.from" | "array.copy" | "array.slice" => Some(ValueType::Array),
+        "array.from" | "array.copy" | "array.slice" | "ta.pivot_point_levels" => {
+            Some(ValueType::Array)
+        }
         _ if is_ta_float(name) => Some(ValueType::Float),
         _ if is_ta_bool(name) => Some(ValueType::Bool),
         _ => None,
@@ -222,6 +224,7 @@ fn is_ta_float(name: &str) -> bool {
             | "ta.percentrank"
             | "ta.correlation"
             | "ta.linreg"
+            | "ta.rci"
     )
 }
 

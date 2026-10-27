@@ -1453,3 +1453,67 @@ fn the_stepline_diamond_style_is_a_style_of_its_own() {
         "it is no longer drawn as something else"
     );
 }
+
+#[test]
+fn pivot_point_levels_come_back_as_an_array_in_the_documented_order() {
+    // Bars 0 and 1 are the period (O 100, H 103, L 98, C 102); bar 2 is the anchor.
+    let session = run(
+        "levels = ta.pivot_point_levels(\"Traditional\", bar_index == 2)\n\
+         p = array.get(levels, 0)\nr1 = array.get(levels, 1)\ns1 = array.get(levels, 2)\n\
+         r5 = array.get(levels, 9)\ns5 = array.get(levels, 10)\n\
+         size = array.size(levels)\n\
+         dm = ta.pivot_point_levels(\"DM\", bar_index == 2)\n\
+         dm_r2 = array.get(dm, 3)\n\
+         developing = ta.pivot_point_levels(\"Traditional\", bar_index == 2, true)\n\
+         running = array.get(developing, 0)",
+        3,
+    );
+    // P = (103 + 98 + 102) / 3 = 101.
+    assert_eq!(value(&session, "p"), RuntimeValue::Float(101.0));
+    assert_eq!(value(&session, "r1"), RuntimeValue::Float(104.0));
+    assert_eq!(value(&session, "s1"), RuntimeValue::Float(99.0));
+    assert_eq!(value(&session, "r5"), RuntimeValue::Float(115.0));
+    assert_eq!(value(&session, "s5"), RuntimeValue::Float(90.0));
+    assert_eq!(value(&session, "size"), RuntimeValue::Int(11));
+    assert_eq!(
+        value(&session, "dm_r2"),
+        RuntimeValue::Na,
+        "DM stops at R1 and S1"
+    );
+    // The anchor bar alone: H 104, L 100, C 103.
+    close_to(&session, "running", (104.0 + 100.0 + 103.0) / 3.0);
+}
+
+#[test]
+fn an_unknown_pivot_type_stops_the_script() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\nlevels = ta.pivot_point_levels(\"Nope\", true)",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(error) = session.evaluate(&bars(2)) else {
+        panic!("an unknown type must fail");
+    };
+    assert!(format!("{error:?}").contains("Traditional"), "{error:?}");
+}
+
+#[test]
+fn the_rank_correlation_index_follows_a_trend() {
+    let session = run(
+        "rising = ta.rci(close, 4)\nfalling = ta.rci(-close, 4)\nshort = ta.rci(close, 9)",
+        6,
+    );
+    close_to(&session, "rising", 100.0);
+    close_to(&session, "falling", -100.0);
+    assert_eq!(value(&session, "short"), RuntimeValue::Na);
+}

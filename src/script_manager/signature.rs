@@ -47,6 +47,11 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
         "",
     ),
     (
+        "ta.pivot_point_levels",
+        "type, anchor, developing",
+        "array<float>",
+    ),
+    (
         "plotarrow",
         "series, title, colorup, colordown, offset, minheight, maxheight, editable, show_last, display, format, precision, force_overlay",
         "",

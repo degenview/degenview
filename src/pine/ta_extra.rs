@@ -12,7 +12,7 @@ use super::ta::{self, State};
 use crate::model::Kline;
 
 /// The `ta.*` functions this module computes (parameters in `ta_call::parameters`).
-pub const FUNCTIONS: [&str; 14] = [
+pub const FUNCTIONS: [&str; 16] = [
     "ta.alma",
     "ta.cog",
     "ta.mode",
@@ -27,6 +27,8 @@ pub const FUNCTIONS: [&str; 14] = [
     "ta.kcw",
     "ta.bbw",
     "ta.tsi",
+    "ta.rci",
+    "ta.pivot_point_levels",
 ];
 
 /// The `ta.*` variables [`cumulative`] computes. A variable's position is where its state lives.
@@ -78,6 +80,225 @@ impl Derived {
         let start = self.values.len().checked_sub(length)?;
         self.values[start..].iter().copied().collect()
     }
+}
+
+/// The pivot point levels of `ta.pivot_point_levels`, in the order the function returns them.
+pub const PIVOT_LEVELS: [&str; 11] = [
+    "P", "R1", "S1", "R2", "S2", "R3", "S3", "R4", "S4", "R5", "S5",
+];
+
+/// The kinds of pivot point `ta.pivot_point_levels` takes as its `type`.
+pub const PIVOT_TYPES: [&str; 6] = [
+    "Traditional",
+    "Fibonacci",
+    "Woodie",
+    "Classic",
+    "DM",
+    "Camarilla",
+];
+
+/// The open, high, low and close of the bars since an anchor, and the levels last worked out from
+/// a finished period.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PivotPeriod {
+    open: f64,
+    high: f64,
+    low: f64,
+    close: f64,
+    levels: [Option<f64>; 11],
+}
+
+impl PivotPeriod {
+    fn starting_with(bar: &Kline) -> Self {
+        Self {
+            open: bar.open,
+            high: bar.high,
+            low: bar.low,
+            close: bar.close,
+            levels: [None; 11],
+        }
+    }
+
+    fn take(&mut self, bar: &Kline) {
+        self.high = self.high.max(bar.high);
+        self.low = self.low.min(bar.low);
+        self.close = bar.close;
+    }
+}
+
+/// `ta.pivot_point_levels(type, anchor, developing)`: `[P, R1, S1, R2, S2, R3, S3, R4, S4, R5, S5]`
+/// for the period that ran from the previous anchor to this one, with `na` for a level the `type`
+/// has none of. A period starts at each bar where `anchor` is true (and at the first bar); the
+/// levels set when one ends hold until the next ends, and are `na` before the first. With
+/// `developing` they are instead worked out from the bars of the running period so far, this bar
+/// included. Woodie's pivot weighs the open of the period that follows (the bar that sets the levels)
+/// in the same way, so a developing Woodie uses the running period's own open.
+///
+/// `None` when `kind` is not one of [`PIVOT_TYPES`].
+pub fn pivot_point_levels(
+    kind: &str,
+    anchor: bool,
+    developing: bool,
+    bar: &Kline,
+    state: &mut State,
+) -> Option<[Option<f64>; 11]> {
+    if !PIVOT_TYPES.contains(&kind) {
+        return None;
+    }
+    match state.pivot.as_mut() {
+        Some(period) if anchor => {
+            let levels = pivot_levels(kind, period, bar.open);
+            let mut next = PivotPeriod::starting_with(bar);
+            next.levels = levels;
+            *period = next;
+        }
+        Some(period) => period.take(bar),
+        None => state.pivot = Some(PivotPeriod::starting_with(bar)),
+    }
+    let period = state.pivot.as_ref()?;
+    Some(if developing {
+        pivot_levels(kind, period, period.open)
+    } else {
+        period.levels
+    })
+}
+
+/// The levels of `kind` for a period; `next_open` is the open Woodie's pivot uses.
+fn pivot_levels(kind: &str, period: &PivotPeriod, next_open: f64) -> [Option<f64>; 11] {
+    let (open, high, low, close) = (period.open, period.high, period.low, period.close);
+    let range = high - low;
+    let mut levels = [None; 11];
+    let mut set = |name: &str, value: f64| {
+        if let Some(slot) = PIVOT_LEVELS.iter().position(|level| *level == name) {
+            levels[slot] = Some(value);
+        }
+    };
+    let typical = (high + low + close) / 3.0;
+    match kind {
+        "Traditional" => {
+            set("P", typical);
+            set("R1", typical * 2.0 - low);
+            set("S1", typical * 2.0 - high);
+            set("R2", typical + range);
+            set("S2", typical - range);
+            set("R3", typical * 2.0 + (high - 2.0 * low));
+            set("S3", typical * 2.0 - (2.0 * high - low));
+            set("R4", typical * 3.0 + (high - 3.0 * low));
+            set("S4", typical * 3.0 - (3.0 * high - low));
+            set("R5", typical * 4.0 + (high - 4.0 * low));
+            set("S5", typical * 4.0 - (4.0 * high - low));
+        }
+        "Fibonacci" => {
+            set("P", typical);
+            set("R1", typical + 0.382 * range);
+            set("S1", typical - 0.382 * range);
+            set("R2", typical + 0.618 * range);
+            set("S2", typical - 0.618 * range);
+            set("R3", typical + range);
+            set("S3", typical - range);
+        }
+        "Woodie" => {
+            let pivot = (high + low + 2.0 * next_open) / 4.0;
+            set("P", pivot);
+            set("R1", pivot * 2.0 - low);
+            set("S1", pivot * 2.0 - high);
+            set("R2", pivot + range);
+            set("S2", pivot - range);
+            let (third_up, third_down) = (high + 2.0 * (pivot - low), low - 2.0 * (high - pivot));
+            set("R3", third_up);
+            set("S3", third_down);
+            set("R4", third_up + range);
+            set("S4", third_down - range);
+        }
+        "Classic" => {
+            set("P", typical);
+            set("R1", typical * 2.0 - low);
+            set("S1", typical * 2.0 - high);
+            for (multiple, up, down) in [(1.0, "R2", "S2"), (2.0, "R3", "S3"), (3.0, "R4", "S4")] {
+                set(up, typical + multiple * range);
+                set(down, typical - multiple * range);
+            }
+        }
+        "DM" => {
+            let x = if close < open {
+                high + 2.0 * low + close
+            } else if close > open {
+                2.0 * high + low + close
+            } else {
+                high + low + 2.0 * close
+            };
+            set("P", x / 4.0);
+            set("R1", x / 2.0 - low);
+            set("S1", x / 2.0 - high);
+        }
+        _ => {
+            // Camarilla.
+            set("P", typical);
+            for (fraction, up, down) in [
+                (1.1 / 12.0, "R1", "S1"),
+                (1.1 / 6.0, "R2", "S2"),
+                (1.1 / 4.0, "R3", "S3"),
+                (1.1 / 2.0, "R4", "S4"),
+            ] {
+                set(up, close + range * fraction);
+                set(down, close - range * fraction);
+            }
+            let upper = high / low * close;
+            set("R5", upper);
+            set("S5", close - (upper - close));
+        }
+    }
+    levels
+}
+
+/// `ta.rci(source, length)`: Spearman's rank correlation between the last `length` values of the
+/// source and their bar order, from -100 (always falling) to 100 (always rising). Equal values
+/// share the mean of the ranks they span. `na` while the window is short or holds a `na`, and when
+/// every value is equal (the correlation is undefined).
+pub fn rci(source: &RuntimeValue, length: i64, state: &mut State) -> RuntimeValue {
+    state.inputs.push(source.clone());
+    let length = count(length);
+    let Some(values) = window(&state.inputs, length) else {
+        return RuntimeValue::Na;
+    };
+    if length < 2 {
+        return RuntimeValue::Na;
+    }
+    let ranks = mean_ranks(&values);
+    // The bar order is 1…n and has the same mean and spread as any ranking without ties.
+    let n = length as f64;
+    let mean = (n + 1.0) / 2.0;
+    let (mut covariance, mut spread_time, mut spread_value) = (0.0, 0.0, 0.0);
+    for (index, rank) in ranks.iter().enumerate() {
+        let time = index as f64 + 1.0 - mean;
+        covariance += time * (rank - mean);
+        spread_time += time * time;
+        spread_value += (rank - mean) * (rank - mean);
+    }
+    out(Some(
+        covariance / (spread_time * spread_value).sqrt() * 100.0,
+    ))
+}
+
+/// The rank of each value among them, counting from 1 for the smallest; equal values get the mean
+/// of the ranks they occupy.
+fn mean_ranks(values: &[f64]) -> Vec<f64> {
+    let mut order: Vec<usize> = (0..values.len()).collect();
+    order.sort_by(|a, b| values[*a].total_cmp(&values[*b]));
+    let mut ranks = vec![0.0; values.len()];
+    let mut start = 0;
+    while start < order.len() {
+        let mut end = start;
+        while end + 1 < order.len() && values[order[end + 1]] == values[order[start]] {
+            end += 1;
+        }
+        let mean = (start + end) as f64 / 2.0 + 1.0;
+        for position in start..=end {
+            ranks[order[position]] = mean;
+        }
+        start = end + 1;
+    }
+    ranks
 }
 
 fn derived(state: &mut State, slot: usize) -> &mut Derived {
@@ -560,5 +781,286 @@ fn fold(name: &str, bar: &Kline, before: Option<&Kline>, prior: Option<f64>) -> 
                 (bar.close - bar.open) / span * bar.volume
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pivot_and_rank_tests {
+    use super::*;
+
+    fn kline(open: f64, high: f64, low: f64, close: f64) -> Kline {
+        Kline {
+            open_time: 0,
+            close_time: 0,
+            open,
+            high,
+            low,
+            close,
+            volume: 1.0,
+        }
+    }
+
+    fn rank(values: &[f64], length: i64) -> RuntimeValue {
+        let mut state = State::default();
+        let mut last = RuntimeValue::Na;
+        for value in values {
+            last = rci(&RuntimeValue::Float(*value), length, &mut state);
+        }
+        last
+    }
+
+    fn close_to(actual: &RuntimeValue, expected: f64) {
+        let value = actual.number().unwrap_or_else(|| panic!("{actual:?}"));
+        assert!((value - expected).abs() < 1e-9, "{value} vs {expected}");
+    }
+
+    #[test]
+    fn rci_is_100_for_a_rise_minus_100_for_a_fall_and_in_between_otherwise() {
+        close_to(&rank(&[1.0, 2.0, 3.0, 4.0], 4), 100.0);
+        close_to(&rank(&[9.0, 7.0, 4.0, 1.0], 4), -100.0);
+        // Ranks 1, 3, 2, 4 against 1…4: 1 - 6·2 / (4·15) = 0.8.
+        close_to(&rank(&[10.0, 30.0, 20.0, 40.0], 4), 80.0);
+        // Only the last `length` values count.
+        close_to(&rank(&[100.0, 1.0, 2.0, 3.0, 4.0], 4), 100.0);
+    }
+
+    #[test]
+    fn rci_gives_equal_values_the_mean_of_their_ranks() {
+        // Ranks 1.5, 1.5, 3, 4 against 1…4: 4.5 / sqrt(5 · 4.5).
+        close_to(
+            &rank(&[1.0, 1.0, 2.0, 3.0], 4),
+            4.5 / 22.5_f64.sqrt() * 100.0,
+        );
+        assert_eq!(
+            rank(&[5.0, 5.0, 5.0], 3),
+            RuntimeValue::Na,
+            "undefined when all are equal"
+        );
+    }
+
+    #[test]
+    fn rci_waits_for_a_full_window_without_gaps() {
+        assert_eq!(rank(&[1.0, 2.0], 3), RuntimeValue::Na);
+        assert_eq!(
+            rank(&[1.0, 2.0, 3.0], 1),
+            RuntimeValue::Na,
+            "one value has no order"
+        );
+        let mut state = State::default();
+        for value in [
+            RuntimeValue::Float(1.0),
+            RuntimeValue::Na,
+            RuntimeValue::Float(3.0),
+        ] {
+            assert_eq!(rci(&value, 3, &mut state), RuntimeValue::Na);
+        }
+    }
+
+    /// One period of two bars (O 100, H 110, L 90, C 100 after the second), then the anchor bar,
+    /// whose open is 104.
+    fn levels_after_a_period(kind: &str) -> [Option<f64>; 11] {
+        let mut state = State::default();
+        assert_eq!(
+            pivot_point_levels(
+                kind,
+                false,
+                false,
+                &kline(100.0, 105.0, 95.0, 102.0),
+                &mut state
+            ),
+            Some([None; 11]),
+            "no period has ended yet"
+        );
+        pivot_point_levels(
+            kind,
+            false,
+            false,
+            &kline(102.0, 110.0, 90.0, 100.0),
+            &mut state,
+        );
+        pivot_point_levels(
+            kind,
+            true,
+            false,
+            &kline(104.0, 106.0, 101.0, 105.0),
+            &mut state,
+        )
+        .expect("a known type")
+    }
+
+    fn levels(kind: &str) -> Vec<(&'static str, f64)> {
+        PIVOT_LEVELS
+            .iter()
+            .zip(levels_after_a_period(kind))
+            .filter_map(|(name, value)| value.map(|value| (*name, value)))
+            .collect()
+    }
+
+    fn assert_levels(kind: &str, expected: &[(&str, f64)]) {
+        let actual = levels(kind);
+        assert_eq!(actual.len(), expected.len(), "{kind}: {actual:?}");
+        for ((name, value), (expected_name, expected_value)) in actual.iter().zip(expected) {
+            assert_eq!(name, expected_name, "{kind}");
+            assert!(
+                (value - expected_value).abs() < 1e-9,
+                "{kind} {name}: {value} vs {expected_value}"
+            );
+        }
+    }
+
+    #[test]
+    fn traditional_levels_run_to_five_each_side() {
+        assert_levels(
+            "Traditional",
+            &[
+                ("P", 100.0),
+                ("R1", 110.0),
+                ("S1", 90.0),
+                ("R2", 120.0),
+                ("S2", 80.0),
+                ("R3", 130.0),
+                ("S3", 70.0),
+                ("R4", 140.0),
+                ("S4", 60.0),
+                ("R5", 150.0),
+                ("S5", 50.0),
+            ],
+        );
+    }
+
+    #[test]
+    fn the_other_types_have_the_levels_their_formulas_give() {
+        assert_levels(
+            "Fibonacci",
+            &[
+                ("P", 100.0),
+                ("R1", 107.64),
+                ("S1", 92.36),
+                ("R2", 112.36),
+                ("S2", 87.64),
+                ("R3", 120.0),
+                ("S3", 80.0),
+            ],
+        );
+        assert_levels(
+            "Classic",
+            &[
+                ("P", 100.0),
+                ("R1", 110.0),
+                ("S1", 90.0),
+                ("R2", 120.0),
+                ("S2", 80.0),
+                ("R3", 140.0),
+                ("S3", 60.0),
+                ("R4", 160.0),
+                ("S4", 40.0),
+            ],
+        );
+        // Open and close of the period are both 100: X = H + L + 2C = 400.
+        assert_levels("DM", &[("P", 100.0), ("R1", 110.0), ("S1", 90.0)]);
+        // Woodie weighs the open of the bar that sets the levels, here 104.
+        assert_levels(
+            "Woodie",
+            &[
+                ("P", 102.0),
+                ("R1", 114.0),
+                ("S1", 94.0),
+                ("R2", 122.0),
+                ("S2", 82.0),
+                ("R3", 134.0),
+                ("S3", 74.0),
+                ("R4", 154.0),
+                ("S4", 54.0),
+            ],
+        );
+        let range = 20.0;
+        assert_levels(
+            "Camarilla",
+            &[
+                ("P", 100.0),
+                ("R1", 100.0 + range * 1.1 / 12.0),
+                ("S1", 100.0 - range * 1.1 / 12.0),
+                ("R2", 100.0 + range * 1.1 / 6.0),
+                ("S2", 100.0 - range * 1.1 / 6.0),
+                ("R3", 100.0 + range * 1.1 / 4.0),
+                ("S3", 100.0 - range * 1.1 / 4.0),
+                ("R4", 100.0 + range * 1.1 / 2.0),
+                ("S4", 100.0 - range * 1.1 / 2.0),
+                ("R5", 110.0 / 90.0 * 100.0),
+                ("S5", 100.0 - (110.0 / 90.0 * 100.0 - 100.0)),
+            ],
+        );
+    }
+
+    #[test]
+    fn dm_pivots_lean_on_the_direction_of_the_period() {
+        let mut up = State::default();
+        pivot_point_levels(
+            "DM",
+            false,
+            false,
+            &kline(100.0, 110.0, 90.0, 108.0),
+            &mut up,
+        );
+        let up =
+            pivot_point_levels("DM", true, false, &kline(0.0, 0.0, 0.0, 0.0), &mut up).unwrap();
+        // Close above open: X = 2H + L + C = 418.
+        assert_eq!(up[0], Some(418.0 / 4.0));
+        let mut down = State::default();
+        pivot_point_levels(
+            "DM",
+            false,
+            false,
+            &kline(108.0, 110.0, 90.0, 100.0),
+            &mut down,
+        );
+        let down =
+            pivot_point_levels("DM", true, false, &kline(0.0, 0.0, 0.0, 0.0), &mut down).unwrap();
+        // Close below open: X = H + 2L + C = 390.
+        assert_eq!(down[0], Some(390.0 / 4.0));
+    }
+
+    #[test]
+    fn levels_hold_between_anchors_and_developing_levels_follow_the_bars() {
+        let mut state = State::default();
+        let at = |state: &mut State, anchor, developing, bar: Kline| {
+            pivot_point_levels("Traditional", anchor, developing, &bar, state).unwrap()[0]
+        };
+        assert_eq!(
+            at(&mut state, true, false, kline(100.0, 110.0, 90.0, 100.0)),
+            None
+        );
+        assert_eq!(
+            at(&mut state, false, false, kline(100.0, 120.0, 80.0, 100.0)),
+            None
+        );
+        // The anchor ends the period of those two bars: H 120, L 80, C 100.
+        assert_eq!(
+            at(&mut state, true, false, kline(100.0, 130.0, 70.0, 130.0)),
+            Some(100.0)
+        );
+        // It holds while the new period runs …
+        assert_eq!(
+            at(&mut state, false, false, kline(130.0, 140.0, 125.0, 135.0)),
+            Some(100.0)
+        );
+        // … but a developing pivot is the running period's own: bars (130,70,130) and (140,125,135).
+        let developing = at(&mut state, false, true, kline(135.0, 136.0, 134.0, 135.0));
+        assert_eq!(developing, Some((140.0 + 70.0 + 135.0) / 3.0));
+    }
+
+    #[test]
+    fn an_unknown_type_has_no_levels() {
+        let mut state = State::default();
+        assert_eq!(
+            pivot_point_levels(
+                "Pythagorean",
+                true,
+                false,
+                &kline(1.0, 2.0, 0.5, 1.5),
+                &mut state
+            ),
+            None
+        );
     }
 }

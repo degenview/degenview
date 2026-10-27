@@ -68,6 +68,11 @@
   high. `plot.style_stepline_diamond` is `PlotStyle::SteplineDiamond`: a step line with a diamond where the
   value changes. Shapes are in `pine_geometry` (`arrow_shape`, `diamond_points`), which is where to test them.
   `ignored_features::ignored_values` (PINE7004) has no entry today but stays for the next unsupported constant.
+- `ta.pivot_point_levels` keeps the running period's OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`): a
+  period starts at each anchor bar, the levels set when one ends hold until the next ends, and
+  `developing` recomputes from the running period instead. The type formulas are the classic published
+  ones (the reference lists none) and Woodie's uses the open of the bar that sets the levels, so none of it
+  is checked against TradingView's output. `ta.rci` is Spearman's coefficient (Pearson on mid-ranks) x 100.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
