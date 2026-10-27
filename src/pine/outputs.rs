@@ -41,18 +41,32 @@ pub enum Size {
     Normal,
     Large,
     Huge,
+    /// A text size given as a number: TradingView's point size, where `size.normal` is 14.
+    Points(u16),
 }
 
 impl Size {
-    pub fn pine_name(self) -> &'static str {
-        match self {
+    /// The sizes `size.*` names.
+    pub const NAMED: [Size; 6] = [
+        Self::Auto,
+        Self::Tiny,
+        Self::Small,
+        Self::Normal,
+        Self::Large,
+        Self::Huge,
+    ];
+
+    /// The `size.*` constant, or None for a size given as a number.
+    pub fn pine_name(self) -> Option<&'static str> {
+        Some(match self {
             Self::Auto => "size.auto",
             Self::Tiny => "size.tiny",
             Self::Small => "size.small",
             Self::Normal => "size.normal",
             Self::Large => "size.large",
             Self::Huge => "size.huge",
-        }
+            Self::Points(_) => return None,
+        })
     }
 }
 

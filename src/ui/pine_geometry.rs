@@ -51,6 +51,8 @@ pub fn marker_radius(size: Size) -> f32 {
         Size::Normal => 7.0,
         Size::Large => 10.0,
         Size::Huge => 14.0,
+        // Only `size.*` names size a marker; a number reads as the default.
+        Size::Points(_) => 7.0,
     }
 }
 
@@ -62,6 +64,8 @@ pub fn font_size(size: Size) -> f32 {
         Size::Large => 15.0,
         Size::Huge => 20.0,
         Size::Normal | Size::Auto => 12.0,
+        // TradingView's `size.normal` is 14 points and is 12 here.
+        Size::Points(points) => f32::from(points) * 12.0 / 14.0,
     }
 }
 
@@ -776,6 +780,12 @@ mod tests {
         assert_eq!(faded(0xFF00_00FF, 0.5).a(), 128);
         assert_eq!(font_size(Size::Auto), 12.0);
         assert_eq!(font_size(Size::Huge), 20.0);
+        assert_eq!(
+            font_size(Size::Points(14)),
+            12.0,
+            "size.normal is 14 points in Pine"
+        );
+        assert_eq!(font_size(Size::Points(28)), 24.0);
         assert_eq!(marker_radius(Size::Tiny), 3.0);
         assert_eq!(marker_radius(Size::Auto), 5.0);
     }

@@ -52,6 +52,19 @@ pub trait FromName: Copy {
     fn from_name(name: &str) -> Option<Self>;
 }
 
+/// A text size given as a `size.*` constant or as a number of points (0 is `size.auto`); `fallback`
+/// when the script passed nothing or something that is neither.
+fn size_of(value: Option<&RuntimeValue>, fallback: Size) -> Size {
+    match value {
+        Some(RuntimeValue::Int(0)) => Size::Auto,
+        Some(RuntimeValue::Int(points)) if *points > 0 => {
+            Size::Points(u16::try_from(*points).unwrap_or(u16::MAX))
+        }
+        Some(value) => parse(value.text_value(), fallback, fallback),
+        None => fallback,
+    }
+}
+
 /// `absent` when the script passed nothing, `unknown` for a name this enum does not list.
 pub fn parse<T: FromName>(name: Option<&str>, absent: T, unknown: T) -> T {
     match name {
@@ -263,6 +276,17 @@ pub const TABLE_MEMBERS: &[&str] = &[
     "cell",
     "merge_cells",
     "clear",
+    "cell_set_text",
+    "cell_set_text_color",
+    "cell_set_bgcolor",
+    "cell_set_width",
+    "cell_set_height",
+    "cell_set_text_halign",
+    "cell_set_text_valign",
+    "cell_set_text_size",
+    "cell_set_tooltip",
+    "cell_set_text_font_family",
+    "cell_set_text_formatting",
     "set_position",
     "set_bgcolor",
     "set_border_color",
@@ -734,11 +758,7 @@ fn new_label(
                 LabelStyle::LabelDown,
                 LabelStyle::LabelCenter,
             ),
-            size: parse(
-                b.get("size").and_then(RuntimeValue::text_value),
-                Size::Normal,
-                Size::Normal,
-            ),
+            size: size_of(b.get("size"), Size::Normal),
             tooltip: text(&b, "tooltip"),
             text_align: parse(
                 b.get("textalign").and_then(RuntimeValue::text_value),
@@ -870,11 +890,7 @@ fn new_box(
             ),
             text: text(&b, "text").unwrap_or_default(),
             text_color: color_value(b.get("text_color"), Some(OPAQUE_BLACK)).unwrap_or(0),
-            text_size: parse(
-                b.get("text_size").and_then(RuntimeValue::text_value),
-                Size::Normal,
-                Size::Normal,
-            ),
+            text_size: size_of(b.get("text_size"), Size::Normal),
             text_horizontal_align: parse(
                 b.get("text_halign").and_then(RuntimeValue::text_value),
                 TextAlign::Center,
@@ -976,6 +992,9 @@ fn set_table_cell(
             "text_valign",
             "text_size",
             "bgcolor",
+            "tooltip",
+            "text_font_family",
+            "text_formatting",
         ],
     );
     let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
@@ -1003,41 +1022,120 @@ fn set_table_cell(
     table
         .cells
         .retain(|cell| cell.column != column as usize || cell.row != row as usize);
-    table.cells.push(TableCell {
-        column: column as usize,
-        row: row as usize,
-        text: text(&b, "text").unwrap_or_default(),
-        text_color: color_value(b.get("text_color"), Some(OPAQUE_BLACK)).unwrap_or(0),
-        background_color: color_value(b.get("bgcolor"), None),
-        text_size: parse(
-            b.get("text_size").and_then(RuntimeValue::text_value),
-            Size::Normal,
-            Size::Normal,
-        ),
+    let mut cell = blank_cell(column as usize, row as usize);
+    for property in CELL_PROPERTIES {
+        if let Some(value) = b.get(property) {
+            set_cell_property(&mut cell, property, value);
+        }
+    }
+    table.cells.push(cell);
+    state.tables.insert(*id, table);
+    Ok(RuntimeValue::Void)
+}
+
+/// The cell properties `table.cell` takes, by argument name; `table.cell_set_<name>` changes one.
+const CELL_PROPERTIES: [&str; 8] = [
+    "text",
+    "width",
+    "height",
+    "text_color",
+    "text_halign",
+    "text_valign",
+    "text_size",
+    "bgcolor",
+];
+
+/// A cell `table.cell` was given nothing for.
+fn blank_cell(column: usize, row: usize) -> TableCell {
+    TableCell {
+        column,
+        row,
+        text: String::new(),
+        text_color: OPAQUE_BLACK,
+        background_color: None,
+        text_size: Size::Normal,
         column_span: 1,
         row_span: 1,
-        text_horizontal_align: parse(
-            b.get("text_halign").and_then(RuntimeValue::text_value),
-            TextAlign::Center,
-            TextAlign::Center,
-        ),
-        text_vertical_align: parse(
-            b.get("text_valign").and_then(RuntimeValue::text_value),
-            TextAlign::Center,
-            TextAlign::Center,
-        ),
-        width: b
-            .get("width")
-            .and_then(RuntimeValue::number)
-            .unwrap_or(0.0)
-            .max(0.0),
-        height: b
-            .get("height")
-            .and_then(RuntimeValue::number)
-            .unwrap_or(0.0)
-            .max(0.0),
+        text_horizontal_align: TextAlign::Center,
+        text_vertical_align: TextAlign::Center,
+        width: 0.0,
+        height: 0.0,
+    }
+}
+
+/// Sets one property of a cell from a script value; `na` gives the property's default.
+fn set_cell_property(cell: &mut TableCell, property: &str, value: &RuntimeValue) {
+    let size = |value: &RuntimeValue| value.number().unwrap_or(0.0).max(0.0);
+    match property {
+        "text" => cell.text = value.text_value().unwrap_or_default().to_owned(),
+        "width" => cell.width = size(value),
+        "height" => cell.height = size(value),
+        "text_color" => {
+            cell.text_color = color_value(Some(value), Some(OPAQUE_BLACK)).unwrap_or(0);
+        }
+        "bgcolor" => cell.background_color = color_value(Some(value), None),
+        "text_halign" => {
+            cell.text_horizontal_align =
+                parse(value.text_value(), TextAlign::Center, TextAlign::Center);
+        }
+        "text_valign" => {
+            cell.text_vertical_align =
+                parse(value.text_value(), TextAlign::Center, TextAlign::Center);
+        }
+        "text_size" => cell.text_size = size_of(Some(value), Size::Normal),
+        _ => {}
+    }
+}
+
+/// `table.cell_set_text`, `cell_set_bgcolor` and the other `table.cell_set_*` setters:
+/// `(table_id, column, row, value)`. A cell `table.cell` has not defined yet is created blank first,
+/// so the setter does not lose what it was given. `cell_set_tooltip`, `cell_set_text_font_family`
+/// and `cell_set_text_formatting` change nothing the chart draws; a script is warned at compile time.
+fn set_cell_setter(
+    member: &str,
+    args: &[Arg],
+    state: &mut RuntimeState,
+    range: SourceRange,
+) -> Result<RuntimeValue, Diagnostic> {
+    let property = member.strip_prefix("cell_set_").unwrap_or(member);
+    let b = bind(args, &["table_id", "column", "row", property]);
+    let Some(RuntimeValue::Ref(RefKind::Table, id)) = b.get("table_id") else {
+        return Ok(RuntimeValue::Void);
+    };
+    let Some(table) = state.tables.get_mut(id) else {
+        return Ok(RuntimeValue::Void);
+    };
+    let (Some(column), Some(row)) = (
+        b.get("column").and_then(RuntimeValue::int_value),
+        b.get("row").and_then(RuntimeValue::int_value),
+    ) else {
+        return Ok(RuntimeValue::Void);
+    };
+    if column < 0 || row < 0 || column as usize >= table.columns || row as usize >= table.rows {
+        return Err(runtime_error(
+            "PINE4013",
+            format!(
+                "table.{member} position is outside the table's {}×{} grid.",
+                table.columns, table.rows
+            ),
+            range,
+        ));
+    }
+    let Some(value) = b.get(property) else {
+        return Ok(RuntimeValue::Void);
+    };
+    if !CELL_PROPERTIES.contains(&property) {
+        return Ok(RuntimeValue::Void);
+    }
+    let at = table
+        .cells
+        .iter()
+        .position(|cell| cell.column == column as usize && cell.row == row as usize);
+    let at = at.unwrap_or_else(|| {
+        table.cells.push(blank_cell(column as usize, row as usize));
+        table.cells.len() - 1
     });
-    state.tables.insert(*id, table);
+    set_cell_property(&mut table.cells[at], property, value);
     Ok(RuntimeValue::Void)
 }
 
@@ -1451,6 +1549,9 @@ fn mutate_drawing(
         }
         return Ok(RuntimeValue::Void);
     }
+    if namespace == "table" && member.starts_with("cell_set_") {
+        return set_cell_setter(member, args, state, range);
+    }
     match namespace {
         "line" => with_line(target, member, a, b, state, bar, bar_seconds, range),
         "label" => with_label(target, member, a, b, state, bar, bar_seconds, range),
@@ -1706,11 +1807,7 @@ fn mutate_label(
                 label.style = LabelStyle::from_name(text).unwrap_or(LabelStyle::LabelCenter);
             }
         }
-        "set_size" => {
-            if let Some(size) = a.text_value().and_then(Size::from_name) {
-                label.size = size;
-            }
-        }
+        "set_size" => label.size = size_of(Some(a), label.size),
         "set_tooltip" => label.tooltip = a.text_value().map(str::to_owned),
         "set_textalign" => {
             label.text_align = parse(a.text_value(), label.text_align, label.text_align);
@@ -1760,9 +1857,7 @@ fn mutate_box(
         }
         "set_text" => boxed.text = a.text_value().unwrap_or("").to_owned(),
         "set_text_color" => boxed.text_color = color_value(Some(a), None).unwrap_or(0),
-        "set_text_size" => {
-            boxed.text_size = parse(a.text_value(), boxed.text_size, boxed.text_size);
-        }
+        "set_text_size" => boxed.text_size = size_of(Some(a), boxed.text_size),
         "set_text_halign" => {
             boxed.text_horizontal_align = parse(
                 a.text_value(),

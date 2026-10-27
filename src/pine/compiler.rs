@@ -1095,15 +1095,7 @@ pub fn is_named_constant(name: &str) -> bool {
     if builtins::color(name).is_some() || builtins::constant(name).is_some() {
         return true;
     }
-    let sizes = [
-        Size::Auto,
-        Size::Tiny,
-        Size::Small,
-        Size::Normal,
-        Size::Large,
-        Size::Huge,
-    ];
-    if sizes.iter().any(|s| s.pine_name() == name) {
+    if Size::NAMED.iter().any(|s| s.pine_name() == Some(name)) {
         return true;
     }
     let line_styles = [

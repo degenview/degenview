@@ -288,6 +288,49 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
         "left, top, right, bottom, border_color, border_width, border_style, extend, xloc, bgcolor",
         "series box",
     ),
+    ("table.cell_set_text", "table_id, column, row, text", ""),
+    (
+        "table.cell_set_text_color",
+        "table_id, column, row, text_color",
+        "",
+    ),
+    (
+        "table.cell_set_bgcolor",
+        "table_id, column, row, bgcolor",
+        "",
+    ),
+    ("table.cell_set_width", "table_id, column, row, width", ""),
+    ("table.cell_set_height", "table_id, column, row, height", ""),
+    (
+        "table.cell_set_text_halign",
+        "table_id, column, row, text_halign",
+        "",
+    ),
+    (
+        "table.cell_set_text_valign",
+        "table_id, column, row, text_valign",
+        "",
+    ),
+    (
+        "table.cell_set_text_size",
+        "table_id, column, row, text_size",
+        "",
+    ),
+    (
+        "table.cell_set_tooltip",
+        "table_id, column, row, tooltip",
+        "",
+    ),
+    (
+        "table.cell_set_text_font_family",
+        "table_id, column, row, text_font_family",
+        "",
+    ),
+    (
+        "table.cell_set_text_formatting",
+        "table_id, column, row, text_formatting",
+        "",
+    ),
     ("box.copy", "id", "series box"),
     ("box.set_xloc", "id, left, right, xloc", ""),
     ("chart.point.copy", "id", "chart.point"),
@@ -298,7 +341,7 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ),
     (
         "table.cell",
-        "table_id, column, row, text, width, height, text_color, text_halign, text_valign, text_size, bgcolor",
+        "table_id, column, row, text, width, height, text_color, text_halign, text_valign, text_size, bgcolor, tooltip, text_font_family, text_formatting",
         "",
     ),
     (

@@ -1261,3 +1261,105 @@ fn a_labels_yloc_is_kept_and_can_be_changed() {
     );
     assert!(labels.iter().all(|label| label.is_complete()));
 }
+
+#[test]
+fn the_cell_setters_change_one_property_of_a_cell() {
+    let session = run(
+        "var table t = na\n\
+         if barstate.islast\n\
+         \x20   t := table.new(position.top_right, 2, 2)\n\
+         \x20   table.cell(t, 0, 0, \"one\", text_color = color.red, bgcolor = color.blue)\n\
+         \x20   table.cell_set_text(t, 0, 0, \"first\")\n\
+         \x20   table.cell_set_text_color(t, 0, 0, color.green)\n\
+         \x20   table.cell_set_bgcolor(t, 0, 0, color.yellow)\n\
+         \x20   table.cell_set_width(t, 0, 0, 25)\n\
+         \x20   table.cell_set_height(t, 0, 0, 10.5)\n\
+         \x20   table.cell_set_text_halign(t, 0, 0, text.align_left)\n\
+         \x20   table.cell_set_text_valign(t, 0, 0, text.align_top)\n\
+         \x20   table.cell_set_text_size(t, 0, 0, size.large)\n\
+         \x20   t.cell_set_text(1, 1, \"made by the setter\")\n\
+         \x20   table.cell_set_text_size(t, 1, 1, 20)",
+        2,
+    );
+    let tables = session.output().tables;
+    let cells = &tables[0].cells;
+    let first = cells.iter().find(|c| (c.column, c.row) == (0, 0)).unwrap();
+    assert_eq!(first.text, "first");
+    let color = |name: &str| crate::pine::builtins::color(name).unwrap();
+    assert_eq!(first.text_color, color("color.green"), "set over red");
+    assert_eq!(
+        first.background_color,
+        Some(color("color.yellow")),
+        "set over blue"
+    );
+    assert_eq!((first.width, first.height), (25.0, 10.5));
+    assert_eq!(
+        first.text_horizontal_align,
+        crate::pine::outputs::TextAlign::Left
+    );
+    assert_eq!(
+        first.text_vertical_align,
+        crate::pine::outputs::TextAlign::Top
+    );
+    assert_eq!(first.text_size, crate::pine::outputs::Size::Large);
+    let made = cells.iter().find(|c| (c.column, c.row) == (1, 1)).unwrap();
+    assert_eq!(made.text, "made by the setter");
+    assert_eq!(made.text_size, crate::pine::outputs::Size::Points(20));
+    assert_eq!(cells.len(), 2, "no other cell appears");
+}
+
+#[test]
+fn a_cell_setter_outside_the_grid_is_an_error() {
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\nt = table.new(position.top_left, 2, 2)\ntable.cell_set_text(t, 2, 0, \"x\")",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let Err(error) = session.evaluate(&bars(2)) else {
+        panic!("a cell outside the grid must fail");
+    };
+    assert!(format!("{error:?}").contains("PINE4013"), "{error:?}");
+}
+
+#[test]
+fn text_sizes_may_be_numbers_of_points() {
+    let session = run(
+        "var label a = na\nvar label b = na\nvar box c = na\n\
+         if barstate.islast\n\
+         \x20   a := label.new(bar_index, 1.0, \"a\", size = 20)\n\
+         \x20   b := label.new(bar_index, 1.0, \"b\", size = size.huge)\n\
+         \x20   b.set_size(0)\n\
+         \x20   c := box.new(0, 2.0, 1, 1.0, text = \"c\", text_size = 8)\n\
+         \x20   c.set_text_size(14)",
+        2,
+    );
+    use crate::pine::outputs::Size;
+    let output = session.output();
+    let size = |text: &str| output.labels.iter().find(|l| l.text == text).unwrap().size;
+    assert_eq!(size("a"), Size::Points(20));
+    assert_eq!(size("b"), Size::Auto, "0 is size.auto");
+    assert_eq!(output.boxes[0].text_size, Size::Points(14));
+}
+
+#[test]
+fn the_cell_properties_the_chart_cannot_draw_are_warned_about() {
+    let codes = diagnostic_codes(
+        "t = table.new(position.top_left, 1, 1)\n\
+         table.cell(t, 0, 0, \"x\", tooltip = \"tip\", text_font_family = font.family_monospace)\n\
+         table.cell_set_tooltip(t, 0, 0, \"tip\")\n\
+         table.cell_set_text_formatting(t, 0, 0, text.format_bold)\n\
+         table.cell_set_text_font_family(t, 0, 0, font.family_monospace)",
+    );
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 2);
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 3);
+}

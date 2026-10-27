@@ -46,6 +46,7 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("fill", fill());
     table.insert("plotcandle", plotcandle());
     table.insert("box.new", box_new());
+    table.insert("table.cell", table_cell());
     let mut request_security = request();
     request_security.insert("calc_bars_count", "The whole history is always requested.");
     table.insert("request.security", request_security);
@@ -53,6 +54,20 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("plotshape", marker());
     table.insert("plotchar", marker());
     table
+}
+
+fn table_cell() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        ("tooltip", "Cell tooltips are not shown."),
+        (
+            "text_font_family",
+            "Cell text is always drawn in the chart's own font.",
+        ),
+        (
+            "text_formatting",
+            "Cell text is never drawn bold or italic.",
+        ),
+    ])
 }
 
 fn declaration() -> HashMap<&'static str, &'static str> {
@@ -251,6 +266,15 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
             "No exchange rates are available: the amount is returned unchanged, which is right only while the account and the symbol share a currency.",
         ));
     }
+    table.push(("table.cell_set_tooltip", "Cell tooltips are not shown."));
+    table.push((
+        "table.cell_set_text_font_family",
+        "Cell text is always drawn in the chart's own font.",
+    ));
+    table.push((
+        "table.cell_set_text_formatting",
+        "Cell text is never drawn bold or italic.",
+    ));
     table.push((
         "ticker.modify",
         "Session and adjustment modifiers are not applied; the symbol is used as given.",

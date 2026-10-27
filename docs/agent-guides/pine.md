@@ -57,6 +57,10 @@
   whether it was placed by time (`time_anchored`); `set_xloc` re-reads the new coordinates and flips the
   flag. A label's `yloc` is stored with its price, which is ignored (and may be `na`) above or below the
   bar; `PineLayer::label_y` resolves it against the candle, so the price scale is not affected.
+- `table.cell_set_*` creates a blank cell when the cell was never defined (inferred; the reference does not
+  say). A text size is `Size::Points(n)` when a script gives a number (`font_size` scales TradingView's 14
+  points to this app's 12). Properties the chart cannot draw (cell tooltips, font family, bold/italic) are
+  accepted and warned about through `ignored_features`, never silently dropped.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
