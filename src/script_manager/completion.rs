@@ -406,6 +406,27 @@ mod tests {
         completion.items.iter().map(|i| i.label.as_str()).collect()
     }
 
+    /// The editor offers a name, so the compiler must not call it unknown: `str.format_time` was
+    /// computed by the session and missing from the `str` table the check reads.
+    #[test]
+    fn no_offered_function_is_reported_as_unknown() {
+        use crate::pine::compiler::{NoLibraries, compile};
+        use crate::pine::name_check::UNKNOWN_MEMBER;
+        let prefixes = ["array.", "map.", "matrix.", "math.", "str."];
+        let mut wrongly_unknown = Vec::new();
+        for item in builtins() {
+            if item.kind != Kind::Function || !prefixes.iter().any(|p| item.label.starts_with(p)) {
+                continue;
+            }
+            let source = format!("//@version=6\nindicator(\"T\")\nx = {}()\n", item.label);
+            let program = compile(&source, crate::pine::Limits::default(), &NoLibraries);
+            if program.diagnostics.iter().any(|d| d.code == UNKNOWN_MEMBER) {
+                wrongly_unknown.push(item.label.clone());
+            }
+        }
+        assert!(wrongly_unknown.is_empty(), "{wrongly_unknown:?}");
+    }
+
     #[test]
     fn every_listed_name_is_supported() {
         let mut unsupported = Vec::new();

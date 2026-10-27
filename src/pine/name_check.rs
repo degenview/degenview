@@ -5,9 +5,9 @@
 //! A report is an error: the script would fail the run at that name anyway, and showing it as a
 //! warning first made the Problems tab flip from yellow to red once the run failed.
 //!
-//! The one warning is a member of a namespace whose functions are all listed (`array.resize`): the
-//! script compiles, and fails only if the line is reached, so it is a warning until the run says
-//! otherwise (see `UNKNOWN_MEMBER`).
+//! That includes a member of a namespace whose functions are all listed (`array.resize`,
+//! `UNKNOWN_MEMBER`): it was a warning first, but a script with one cannot run correctly, and the
+//! chart then ran it up to the line and failed there.
 //!
 //! It is deliberately lenient, because a false report on a script that runs is worse than a
 //! missed typo: a name counts as defined when it is declared *anywhere* in the script (scope and
@@ -20,9 +20,9 @@ use std::collections::HashSet;
 use super::ast::{Expression, Statement};
 use super::traversal::{expressions, for_each_call, for_each_identifier, nested_blocks};
 use super::{
-    Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, alert_builtins,
-    array_builtins, builtins, compiler, drawings, map_builtins, math, matrix_builtins,
-    misc_builtins, strategy_builtins, strings, symbol_catalog, ta, ta_extra, visuals,
+    Diagnostic, DiagnosticCategory, SourceRange, alert_builtins, array_builtins, builtins,
+    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, strategy_builtins,
+    strings, symbol_catalog, ta, ta_extra, visuals,
 };
 
 pub const UNDEFINED_VARIABLE: &str = "PINE3050";
@@ -58,13 +58,7 @@ pub fn validate(
                 range,
             ));
         } else if let Some(message) = unknown_member(name, &declared) {
-            diagnostics.push(Diagnostic {
-                code: UNKNOWN_MEMBER.to_owned(),
-                severity: DiagnosticSeverity::Warning,
-                category: DiagnosticCategory::Semantic,
-                message,
-                range,
-            });
+            diagnostics.push(error(UNKNOWN_MEMBER, message, range));
         }
     });
     diagnostics.sort_by_key(|diagnostic| diagnostic.range.start.offset);
@@ -113,22 +107,27 @@ fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
             math::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
         ),
         "str" => (
-            strings::SUPPORTED.contains(&name),
-            strings::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
+            strings::SUPPORTED.contains(&name) || STR_INLINE.contains(&name),
+            strings::SUPPORTED
+                .iter()
+                .chain(&STR_INLINE)
+                .map(|n| (*n).to_owned())
+                .collect(),
         ),
         _ => return None,
     };
     if listed {
         return None;
     }
-    let mut message = format!(
-        "'{name}' is not a function DegenView runs; the script fails if this line is reached."
-    );
+    let mut message = format!("'{name}' is not a function DegenView runs.");
     if let Some(close) = closest(name, &known) {
         message.push_str(&format!(" Did you mean '{close}'?"));
     }
     Some(message)
 }
+
+/// `str.*` functions the session evaluates inline rather than from `strings::SUPPORTED`.
+const STR_INLINE: [&str; 1] = ["str.format_time"];
 
 /// The listed name nearest to `name`, if one is a typo away (two edits or fewer).
 fn closest<'a>(name: &str, known: &'a [String]) -> Option<&'a str> {
@@ -301,6 +300,7 @@ const UNDOTTED_BUILTINS: &[&str] = &["time", "time_close", "max_bars_back", "fix
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::DiagnosticSeverity;
     use crate::pine::compiler::compile;
     use crate::pine::{Limits, compiler::NoLibraries};
 
@@ -324,11 +324,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_array_function_is_a_warning_on_the_whole_name() {
+    fn an_unknown_array_function_is_an_error_on_the_whole_name() {
         let body = "var a = array.new_float()\nif barstate.islast\n    array.resize(a, 5)\n";
         let found = unknown_members(body);
         assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!(found[0].severity, DiagnosticSeverity::Warning);
+        assert_eq!(found[0].severity, DiagnosticSeverity::Error);
         assert!(
             found[0]
                 .message
@@ -339,16 +339,6 @@ mod tests {
         assert_eq!(
             &source[range.start.offset..range.end.offset],
             "array.resize"
-        );
-        // Not an error: the script still compiles and runs until it reaches the line.
-        let program = compile(&source, Limits::default(), &NoLibraries);
-        assert!(
-            program
-                .diagnostics
-                .iter()
-                .all(|d| d.severity != DiagnosticSeverity::Error),
-            "{:?}",
-            program.diagnostics
         );
     }
 

@@ -206,13 +206,12 @@
   a failure must not be handled in one place only. `ExecutionController` remembers its last failure
   (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
   read as a success.
-- `name_check` warns (`PINE3053`) on a call into `array`, `map`, `matrix`, `math` or `str` that their one
-  dispatch table does not list (`array.resize`), with a "Did you mean" for a name two edits away. It is a
-  warning, not an error, because the script runs until the line is reached; when the run then fails at
-  that call, `problems::visible` drops the warning so the mistake is listed once, as the error. Add a
-  namespace to `unknown_member` only if every function the runtime accepts comes from one table: `ta`,
-  `request`, `color` and the drawing namespaces are dispatched from several places and stay unchecked. A
-  false warning on a script that runs is worse than a missed typo.
+- `name_check` reports `PINE3053`, an error, on a call into `array`, `map`, `matrix`, `math` or `str` that
+  their one dispatch table does not list (`array.resize`), with a "Did you mean" for a name two edits
+  away. Add a namespace to `unknown_member` only if every function the runtime accepts comes from one
+  table: `ta`, `request`, `color` and the drawing namespaces are dispatched from several places and stay
+  unchecked. A false error on a script that runs is worse than a missed typo; the Pine corpus must stay
+  free of `PINE3053`.
 - Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
   use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.

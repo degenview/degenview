@@ -18,12 +18,12 @@ var values = array.new_float()
 if barstate.islast
     cells = length * 4
     if values.size() != cells
-        array.resize(values, cells)
-    array.fill(values, 0.0)
+        array.push(values, 1.0)
+    array.get(values, cells)
 plot(ta.sma(close, length))
 ";
 
-/// A typo on a line that never runs: the compiler warns, and nothing has failed.
+/// A typo on a line that never runs: the compiler rejects it, so nothing runs.
 const TYPO: &str = "//@version=6
 indicator(\"Typo\")
 var values = array.new_float()
@@ -84,16 +84,16 @@ fn gallery_of_a_runtime_failure() {
         let output = frames(&mut rig, &mut screen, 4);
         screen.save(&format!("profile-{name}"), output);
 
-        // Before any run fails: a warning with a hint, and the chip says so.
+        // A compile error with a hint, before anything runs.
         rig.set_source(TYPO);
         rig.manager.prefs.drawer_tab = DrawerTab::Problems;
-        until(&mut rig, &mut screen, "the warning", |rig| {
+        until(&mut rig, &mut screen, "the error", |rig| {
             rig.manager
                 .open
                 .as_ref()
                 .is_some_and(|open| !open.editor.diagnostics.is_empty())
         });
         let output = frames(&mut rig, &mut screen, 6);
-        screen.save(&format!("warning-{name}"), output);
+        screen.save(&format!("typo-{name}"), output);
     }
 }
