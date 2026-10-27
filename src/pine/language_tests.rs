@@ -1945,3 +1945,90 @@ fn the_margin_liquidation_price_is_na_with_a_warning() {
     );
     assert_eq!(value(&session, "price"), RuntimeValue::Na);
 }
+
+#[test]
+fn order_comments_and_trade_excursions_are_readable_per_trade() {
+    let source = "//@version=6\n\
+        strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
+        if bar_index == 0\n    strategy.entry(\"L\", strategy.long, comment = \"go\")\n\
+        if bar_index == 2\n    strategy.close(\"L\", comment = \"done\")\n\
+        if bar_index == 4\n    strategy.entry(\"S\", strategy.short, comment = \"fade\")\n\
+        entry_comment = strategy.closedtrades.entry_comment(0)\n\
+        exit_comment = strategy.closedtrades.exit_comment(0)\n\
+        runup = strategy.closedtrades.max_runup(0)\n\
+        runup_pct = strategy.closedtrades.max_runup_percent(0)\n\
+        drawdown = strategy.closedtrades.max_drawdown(0)\n\
+        drawdown_pct = strategy.closedtrades.max_drawdown_percent(0)\n\
+        missing_comment = strategy.closedtrades.entry_comment(9)\n\
+        open_comment = strategy.opentrades.entry_comment(0)\n\
+        open_runup = strategy.opentrades.max_runup(0)\n\
+        open_drawdown_pct = strategy.opentrades.max_drawdown_percent(0)\n\
+        no_open = strategy.opentrades.max_runup(3)";
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session
+        .evaluate(&flat_bars(&STRATEGY_PRICES[..7]))
+        .expect("runs");
+    let text = |name: &str| value(&session, name);
+    assert_eq!(text("entry_comment"), RuntimeValue::String("go".into()));
+    assert_eq!(text("exit_comment"), RuntimeValue::String("done".into()));
+    // Long from 100, the bars reached 111 and 99 before it closed at the open of the next bar.
+    assert_eq!(text("runup"), RuntimeValue::Float(11.0));
+    assert_eq!(text("drawdown"), RuntimeValue::Float(1.0));
+    assert!((text("runup_pct").number().unwrap() - 11.0).abs() < 1e-9);
+    assert!((text("drawdown_pct").number().unwrap() - 1.0).abs() < 1e-9);
+    assert_eq!(text("missing_comment"), RuntimeValue::Na);
+    // The short from 100 is open: it fell to 89 and rose to 101.
+    assert_eq!(text("open_comment"), RuntimeValue::String("fade".into()));
+    assert_eq!(text("open_runup"), RuntimeValue::Float(11.0));
+    assert!((text("open_drawdown_pct").number().unwrap() - 1.0).abs() < 1e-9);
+    assert_eq!(text("no_open"), RuntimeValue::Na);
+}
+
+#[test]
+fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
+    let source = "//@version=6\n\
+        strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
+        if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
+        if bar_index == 1\n    strategy.exit(\"X\", \"L\", limit = 105, stop = 95, comment = \"plain\", comment_profit = \"target\", comment_loss = \"stopped\")\n\
+        text = strategy.closedtrades.exit_comment(0)";
+    let session = {
+        let program = compiler::compile(source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        // Bar 2 reaches 106 (the target) before it falls anywhere near the stop.
+        let mut bars = flat_bars(&[100.0, 100.0, 100.0]);
+        bars[2].high = 106.0;
+        bars[2].open = 100.0;
+        session.evaluate(&bars).expect("runs");
+        session
+    };
+    assert_eq!(
+        value(&session, "text"),
+        RuntimeValue::String("target".into())
+    );
+}
+
+#[test]
+fn gross_loss_percent_is_the_losses_over_the_initial_capital() {
+    let session = run_strategy("pct = strategy.grossloss_percent", &STRATEGY_PRICES);
+    // 40 of loss on 1000.
+    assert!((value(&session, "pct").number().unwrap() - 4.0).abs() < 1e-9);
+}

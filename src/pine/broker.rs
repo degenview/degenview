@@ -36,6 +36,11 @@ pub struct Order {
     pub profit_ticks: Option<f64>,
     pub loss_ticks: Option<f64>,
     pub sequence: usize,
+    /// `comment`: shown with the order's trade; an exit's `comment_profit` and `comment_loss` take
+    /// its place when the profit or the loss level fills it.
+    pub comment: String,
+    pub comment_profit: Option<String>,
+    pub comment_loss: Option<String>,
 }
 
 impl Order {
@@ -225,8 +230,23 @@ impl Broker {
 
     // MARK: Filling
 
+    /// Lets every open trade see the highest and lowest prices of `bar`.
+    fn touch_bar(&mut self, bar: &Kline) {
+        self.touch(bar.high);
+        self.touch(bar.low);
+    }
+
+    /// Records that the market reached `price` for every open trade, for its run-up and drawdown.
+    fn touch(&mut self, price: f64) {
+        for trade in &mut self.open_trades {
+            trade.highest_price = trade.highest_price.max(price);
+            trade.lowest_price = trade.lowest_price.min(price);
+        }
+    }
+
     pub fn process(&mut self, bar: Kline, bar_index: usize, mintick: f64) {
         if self.orders.is_empty() {
+            self.touch_bar(&bar);
             return;
         }
         let open = bar.open;
@@ -235,6 +255,7 @@ impl Broker {
             bar_index,
             mintick,
         };
+        self.touch(open);
         self.fill_market_orders(open, &context);
         let path = Self::price_path(&context.bar);
         for index in 0..path.len().saturating_sub(1) {
@@ -247,9 +268,12 @@ impl Broker {
                 };
                 fills += 1;
                 let trigger_price = trigger.price;
+                // The trades open now have been this far; one this trigger opens starts here.
+                self.touch(trigger_price);
                 self.apply(trigger, &context);
                 start = trigger_price;
             }
+            self.touch(end);
         }
         self.cull_exits();
     }
@@ -389,6 +413,7 @@ impl Broker {
                         None,
                         price,
                         &order.id,
+                        &order.comment,
                         context,
                     );
                 } else {
@@ -417,6 +442,7 @@ impl Broker {
                         Some(reduce),
                         price,
                         &order.id,
+                        &order.comment,
                         context,
                     );
                     remaining -= reduce;
@@ -433,6 +459,9 @@ impl Broker {
         }
         self.open_trades.push(OpenTrade {
             entry_id: order.id.clone(),
+            entry_comment: order.comment.clone(),
+            highest_price: price,
+            lowest_price: price,
             is_long: order.is_long,
             quantity,
             entry_bar: context.bar_index,
@@ -460,6 +489,7 @@ impl Broker {
             quantity,
             self.slipped(price, !is_long, context.mintick),
             &format!("Close entry(s) order {}", order.id),
+            &order.comment,
             context,
         );
     }
@@ -471,6 +501,7 @@ impl Broker {
             None,
             self.slipped(price, !is_long, context.mintick),
             &order.id,
+            &order.comment,
             context,
         );
     }
@@ -482,17 +513,21 @@ impl Broker {
         quantity: Option<f64>,
         price: f64,
         exit_id: &str,
+        exit_comment: &str,
         context: &BarContext,
     ) {
         let mut remaining = quantity.unwrap_or(f64::INFINITY);
         let mut charged_order = false;
         let mut index = 0;
         while index < self.open_trades.len() && remaining > EPSILON {
-            let trade = self.open_trades[index].clone();
+            let mut trade = self.open_trades[index].clone();
             if !selects(&trade) {
                 index += 1;
                 continue;
             }
+            // The price it closes at is one the trade has seen.
+            trade.highest_price = trade.highest_price.max(price);
+            trade.lowest_price = trade.lowest_price.min(price);
             let closing = trade.quantity.min(remaining);
             let entry_share = trade.entry_commission * (closing / trade.quantity);
             let exit_commission = self.commission(closing, price, !charged_order);
@@ -500,9 +535,20 @@ impl Broker {
             let direction = if trade.is_long { 1.0 } else { -1.0 };
             let profit =
                 (price - trade.entry_price) * direction * closing - entry_share - exit_commission;
+            let (max_runup, max_drawdown) = super::strategy::excursions(
+                trade.is_long,
+                trade.entry_price,
+                closing,
+                trade.highest_price,
+                trade.lowest_price,
+            );
             self.closed_trades.push(Trade {
                 id: self.closed_trades.len() + 1,
                 entry_id: trade.entry_id.clone(),
+                entry_comment: trade.entry_comment.clone(),
+                exit_comment: exit_comment.to_owned(),
+                max_runup,
+                max_drawdown,
                 exit_id: exit_id.to_owned(),
                 is_long: trade.is_long,
                 quantity: closing,
@@ -620,11 +666,19 @@ impl Broker {
         } else {
             trigger_price
         };
+        // The level that filled the order picks the comment: the loss level is the stop.
+        let specific = if via_stop {
+            order.comment_loss.as_ref()
+        } else {
+            order.comment_profit.as_ref()
+        };
+        let comment = specific.unwrap_or(&order.comment).clone();
         self.close(
             &|t| t.entry_id == trade.entry_id && t.entry_bar == trade.entry_bar,
             Some(requested.unwrap_or(trade.quantity).min(trade.quantity)),
             price,
             &order.id,
+            &comment,
             context,
         );
         if !self.open_trades.iter().any(|t| order.protects(&t.entry_id)) {
@@ -742,6 +796,9 @@ mod tests {
             profit_ticks: None,
             loss_ticks: None,
             sequence: 0,
+            comment: String::new(),
+            comment_profit: None,
+            comment_loss: None,
         }
     }
 
@@ -792,5 +849,92 @@ mod tests {
         broker.process(bar(95.0, 96.0, 88.0, 94.0), 1, 0.01);
         assert_eq!(broker.position_size(), 1.0);
         assert_eq!(broker.open_trades[0].entry_price, 90.0);
+    }
+
+    #[test]
+    fn a_trades_run_up_and_drawdown_follow_the_prices_it_saw() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "L", true, Some(2.0)));
+        // Opened at the open of a bar that ranged 90 to 110.
+        broker.process(bar(100.0, 110.0, 90.0, 105.0), 0, 0.01);
+        assert_eq!(broker.open_trades[0].excursions(), (20.0, 20.0));
+        // A bar with no orders pending still widens them: this one reached 120 and 85.
+        broker.process(bar(105.0, 120.0, 85.0, 118.0), 1, 0.01);
+        assert_eq!(broker.open_trades[0].excursions(), (40.0, 30.0));
+        // Closed at the next open (112): the bar's own range is not counted, the close price is.
+        broker.place(order(OrderKind::CloseAll, "close", true, None));
+        broker.process(bar(112.0, 130.0, 60.0, 125.0), 2, 0.01);
+        let trade = &broker.closed_trades[0];
+        assert_eq!((trade.max_runup, trade.max_drawdown), (40.0, 30.0));
+        assert!((trade.profit - 24.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_shorts_run_up_is_how_far_it_fell() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "S", false, Some(1.0)));
+        broker.process(bar(100.0, 104.0, 92.0, 95.0), 0, 0.01);
+        assert_eq!(broker.open_trades[0].excursions(), (8.0, 4.0));
+    }
+
+    #[test]
+    fn a_partial_close_gives_each_part_its_own_size_of_the_excursions() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "L", true, Some(4.0)));
+        broker.process(bar(100.0, 110.0, 90.0, 105.0), 0, 0.01);
+        let mut close = order(OrderKind::Close, "L", true, Some(1.0));
+        close.quantity = Some(1.0);
+        broker.place(close);
+        broker.process(bar(105.0, 105.0, 105.0, 105.0), 1, 0.01);
+        let closed = &broker.closed_trades[0];
+        assert_eq!(
+            (closed.quantity, closed.max_runup, closed.max_drawdown),
+            (1.0, 10.0, 10.0)
+        );
+        assert_eq!(broker.open_trades[0].excursions(), (30.0, 30.0));
+    }
+
+    #[test]
+    fn comments_travel_from_the_orders_to_the_trade() {
+        let mut broker = Broker::new(settings());
+        let mut entry = order(OrderKind::Entry, "L", true, Some(1.0));
+        entry.comment = "breakout".to_owned();
+        broker.place(entry);
+        broker.process(bar(100.0, 101.0, 99.0, 100.0), 0, 0.01);
+        assert_eq!(broker.open_trades[0].entry_comment, "breakout");
+        let mut exit = order(OrderKind::Exit, "X", true, None);
+        exit.stop = Some(95.0);
+        exit.limit = Some(110.0);
+        exit.comment = "plain".to_owned();
+        exit.comment_loss = Some("stopped out".to_owned());
+        exit.comment_profit = Some("target hit".to_owned());
+        broker.place(exit.clone());
+        // Falls through the stop first.
+        broker.process(bar(100.0, 100.0, 94.0, 96.0), 1, 0.01);
+        let trade = &broker.closed_trades[0];
+        assert_eq!(trade.entry_comment, "breakout");
+        assert_eq!(trade.exit_comment, "stopped out");
+        assert_eq!(trade.comments(), "Entry: breakout\nExit: stopped out");
+        // The same exit meets the limit on the next trade; without a specific comment it uses `comment`.
+        let mut again = order(OrderKind::Entry, "L", true, Some(1.0));
+        again.comment = String::new();
+        broker.place(again);
+        broker.process(bar(100.0, 101.0, 99.0, 100.0), 2, 0.01);
+        exit.comment_profit = None;
+        broker.place(exit);
+        broker.process(bar(100.0, 112.0, 99.0, 111.0), 3, 0.01);
+        assert_eq!(broker.closed_trades[1].exit_comment, "plain");
+        assert_eq!(broker.closed_trades[1].comments(), "Exit: plain");
+        // A close order and a close-all carry their own comments.
+        let mut third = order(OrderKind::Entry, "L", true, Some(1.0));
+        third.comment = "again".to_owned();
+        broker.place(third);
+        broker.process(bar(100.0, 101.0, 99.0, 100.0), 4, 0.01);
+        let mut close = order(OrderKind::Close, "L", true, None);
+        close.comment = "flat".to_owned();
+        broker.place(close);
+        broker.process(bar(100.0, 101.0, 99.0, 100.0), 5, 0.01);
+        assert_eq!(broker.closed_trades[2].exit_comment, "flat");
+        assert_eq!(broker.closed_trades[2].entry_comment, "again");
     }
 }

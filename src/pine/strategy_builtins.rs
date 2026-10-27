@@ -46,10 +46,10 @@ pub fn call(
         "strategy.exit" => place_exit(args, state, range),
         "strategy.close" => place_close(args, state),
         "strategy.close_all" => {
-            state.broker.place(order(
-                OrderKind::CloseAll,
-                "Close position order".to_owned(),
-            ));
+            let mut placed = order(OrderKind::CloseAll, "Close position order".to_owned());
+            placed.comment =
+                comment_of(bind(args, &["comment"]).get("comment")).unwrap_or_default();
+            state.broker.place(placed);
             Ok(RuntimeValue::Void)
         }
         "strategy.cancel" => {
@@ -106,6 +106,12 @@ pub fn trade_property(
                 | "profit"
                 | "profit_percent"
                 | "commission"
+                | "entry_comment"
+                | "exit_comment"
+                | "max_runup"
+                | "max_runup_percent"
+                | "max_drawdown"
+                | "max_drawdown_percent"
         );
         if !known {
             return None;
@@ -125,6 +131,14 @@ pub fn trade_property(
             "size" => float(signed(trade.is_long, trade.quantity)),
             "profit" => float(trade.profit),
             "profit_percent" => percent(trade.profit, trade.entry_price, trade.quantity),
+            "entry_comment" => RuntimeValue::String(trade.entry_comment.clone()),
+            "exit_comment" => RuntimeValue::String(trade.exit_comment.clone()),
+            "max_runup" => float(trade.max_runup),
+            "max_runup_percent" => percent(trade.max_runup, trade.entry_price, trade.quantity),
+            "max_drawdown" => float(trade.max_drawdown),
+            "max_drawdown_percent" => {
+                percent(trade.max_drawdown, trade.entry_price, trade.quantity)
+            }
             _ => float(trade.commission),
         });
     }
@@ -139,6 +153,11 @@ pub fn trade_property(
             | "profit"
             | "profit_percent"
             | "commission"
+            | "entry_comment"
+            | "max_runup"
+            | "max_runup_percent"
+            | "max_drawdown"
+            | "max_drawdown_percent"
     ) {
         return None;
     }
@@ -155,6 +174,20 @@ pub fn trade_property(
         "size" => float(signed(trade.is_long, trade.quantity)),
         "profit" => float(profit),
         "profit_percent" => percent(profit, trade.entry_price, trade.quantity),
+        "entry_comment" => RuntimeValue::String(trade.entry_comment.clone()),
+        "max_runup" | "max_runup_percent" | "max_drawdown" | "max_drawdown_percent" => {
+            let (runup, drawdown) = trade.excursions();
+            let amount = if property.contains("runup") {
+                runup
+            } else {
+                drawdown
+            };
+            if property.ends_with("percent") {
+                percent(amount, trade.entry_price, trade.quantity)
+            } else {
+                float(amount)
+            }
+        }
         _ => float(trade.entry_commission),
     })
 }
@@ -209,6 +242,9 @@ fn statistic(name: &str, broker: &Broker, close: f64) -> Option<RuntimeValue> {
         }
         "strategy.grossprofit_percent" => share(wins().map(|trade| trade.profit).sum(), initial),
         "strategy.netprofit_percent" => share(broker.net_profit, initial),
+        "strategy.grossloss_percent" => {
+            share(-losses().map(|trade| trade.profit).sum::<f64>(), initial)
+        }
         // Unrealized profit against the equity the closed trades have realized.
         "strategy.openprofit_percent" => {
             share(broker.open_profit(close), initial + broker.net_profit)
@@ -343,7 +379,15 @@ fn order(kind: OrderKind, id: String) -> Order {
         profit_ticks: None,
         loss_ticks: None,
         sequence: 0,
+        comment: String::new(),
+        comment_profit: None,
+        comment_loss: None,
     }
+}
+
+/// A comment argument: its text, or None when the script gave none.
+fn comment_of(value: Option<&RuntimeValue>) -> Option<String> {
+    value.and_then(RuntimeValue::text_value).map(str::to_owned)
 }
 
 fn place_entry(
@@ -384,6 +428,7 @@ fn place_entry(
         id,
     );
     placed.is_long = direction == "strategy.long";
+    placed.comment = comment_of(b.get("comment")).unwrap_or_default();
     placed.quantity = positive(b.get("qty"));
     placed.limit = b.get("limit").and_then(RuntimeValue::number);
     placed.stop = b.get("stop").and_then(RuntimeValue::number);
@@ -410,6 +455,11 @@ fn place_exit(
             "trail_price",
             "trail_points",
             "trail_offset",
+            "oca_name",
+            "comment",
+            "comment_profit",
+            "comment_loss",
+            "comment_trailing",
         ],
     );
     if b.get("trail_price")
@@ -444,6 +494,9 @@ fn place_exit(
         .map(str::to_owned);
     placed.profit_ticks = positive(b.get("profit"));
     placed.loss_ticks = positive(b.get("loss"));
+    placed.comment = comment_of(b.get("comment")).unwrap_or_default();
+    placed.comment_profit = comment_of(b.get("comment_profit"));
+    placed.comment_loss = comment_of(b.get("comment_loss"));
     state.broker.place(placed);
     Ok(RuntimeValue::Void)
 }
@@ -458,6 +511,7 @@ fn place_close(args: &[Arg], state: &mut RuntimeState) -> Result<RuntimeValue, D
         return Ok(RuntimeValue::Void);
     };
     let mut placed = order(OrderKind::Close, id);
+    placed.comment = comment_of(b.get("comment")).unwrap_or_default();
     placed.quantity = positive(b.get("qty"));
     placed.quantity_percent = positive(b.get("qty_percent"));
     state.broker.place(placed);

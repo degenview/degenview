@@ -746,12 +746,7 @@ fn trade_row(ui: &mut Ui, trade: &Trade) {
             theme::text_secondary(),
         );
     }
-    response.on_hover_text(format!(
-        "{} \u{2192} {} \u{b7} qty {}",
-        trade.entry_id,
-        trade.exit_id,
-        PineReportFormat::price(trade.quantity)
-    ));
+    response.on_hover_text(crate::ui::pine_report::trade_summary(trade));
 }
 
 /// The alerts the script raised, newest first, with how many were live.

@@ -106,26 +106,12 @@ fn entry() -> HashMap<&'static str, &'static str> {
             "oca_type",
             "Orders are never grouped; each fills on its own.",
         ),
-        ("comment", "Order comments are not shown in the trade list."),
         ("alert_message", "Order fill alerts are not sent."),
     ])
 }
 
 fn exit() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("comment", "Exit comments are not shown in the trade list."),
-        (
-            "comment_profit",
-            "Exit comments are not shown in the trade list.",
-        ),
-        (
-            "comment_loss",
-            "Exit comments are not shown in the trade list.",
-        ),
-        (
-            "comment_trailing",
-            "Exit comments are not shown in the trade list.",
-        ),
         ("alert_message", "Order fill alerts are not sent."),
         ("alert_profit", "Order fill alerts are not sent."),
         ("alert_loss", "Order fill alerts are not sent."),
@@ -139,7 +125,6 @@ fn exit() -> HashMap<&'static str, &'static str> {
 
 fn close() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("comment", "Order comments are not shown in the trade list."),
         ("alert_message", "Order fill alerts are not sent."),
         (
             "immediately",

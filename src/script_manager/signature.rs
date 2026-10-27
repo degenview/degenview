@@ -366,7 +366,7 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
     ),
     (
         "strategy.exit",
-        "id, from_entry, qty, qty_percent, profit, limit, loss, stop, comment",
+        "id, from_entry, qty, qty_percent, profit, limit, loss, stop, trail_price, trail_points, trail_offset, oca_name, comment, comment_profit, comment_loss, comment_trailing, alert_message, alert_profit, alert_loss, alert_trailing",
         "",
     ),
     ("runtime.error", "message", ""),

@@ -48,15 +48,21 @@ impl Default for StrategySettings {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct OpenTrade {
     pub entry_id: String,
+    /// The `comment` of the order that opened it.
+    pub entry_comment: String,
     pub is_long: bool,
     pub quantity: f64,
     pub entry_bar: usize,
     pub entry_time: i64,
     pub entry_price: f64,
     pub entry_commission: f64,
+    /// The highest and lowest price the market has reached since the trade opened, from which its
+    /// run-up and drawdown follow.
+    pub highest_price: f64,
+    pub lowest_price: f64,
 }
 
 impl OpenTrade {
@@ -65,11 +71,60 @@ impl OpenTrade {
     }
 }
 
+impl OpenTrade {
+    /// The most the trade has been ahead and the most it has been behind (both as positive amounts
+    /// of money, before commission) at the best and the worst price it has seen.
+    pub fn excursions(&self) -> (f64, f64) {
+        excursions(
+            self.is_long,
+            self.entry_price,
+            self.quantity,
+            self.highest_price,
+            self.lowest_price,
+        )
+    }
+}
+
+impl Trade {
+    /// What the trade's orders said about it: their comments, one per line, empty when neither
+    /// gave one. Shown with the trade next to its ids.
+    pub fn comments(&self) -> String {
+        let mut lines = Vec::new();
+        if !self.entry_comment.is_empty() {
+            lines.push(format!("Entry: {}", self.entry_comment));
+        }
+        if !self.exit_comment.is_empty() {
+            lines.push(format!("Exit: {}", self.exit_comment));
+        }
+        lines.join("\n")
+    }
+}
+
+/// `(run-up, drawdown)` of `quantity` units entered at `entry` that the market has since taken to
+/// `highest` and `lowest`: how far the trade could have been in profit and how far in loss.
+pub fn excursions(
+    is_long: bool,
+    entry: f64,
+    quantity: f64,
+    highest: f64,
+    lowest: f64,
+) -> (f64, f64) {
+    let (favourable, adverse) = if is_long {
+        (highest - entry, entry - lowest)
+    } else {
+        (entry - lowest, highest - entry)
+    };
+    (favourable.max(0.0) * quantity, adverse.max(0.0) * quantity)
+}
+
 /// A round trip closed by the broker emulator. `profit` is net of both commissions.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trade {
     pub id: usize,
     pub entry_id: String,
+    /// The `comment` of the order that opened it, and of the one that closed it.
+    pub entry_comment: String,
+    pub exit_comment: String,
     pub exit_id: String,
     pub is_long: bool,
     pub quantity: f64,
@@ -81,6 +136,10 @@ pub struct Trade {
     pub exit_price: f64,
     pub commission: f64,
     pub profit: f64,
+    /// How far the trade was in profit at best and in loss at worst, as positive amounts of money
+    /// before commission.
+    pub max_runup: f64,
+    pub max_drawdown: f64,
 }
 
 /// The extremes of the equity curve, kept as its points arrive: the largest fall from a peak and the

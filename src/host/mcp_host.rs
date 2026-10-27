@@ -1138,6 +1138,10 @@ fn report_of(
                 exit_price: trade.exit_price,
                 commission: trade.commission,
                 profit: trade.profit,
+                entry_comment: trade.entry_comment.clone(),
+                exit_comment: trade.exit_comment.clone(),
+                max_runup: trade.max_runup,
+                max_drawdown: trade.max_drawdown,
             })
             .collect(),
         trades_total: report.trades.len(),
@@ -1148,6 +1152,7 @@ fn report_of(
             .take(MAX_TRADES_PAGE)
             .map(|trade| PineOpenTradeInfo {
                 entry_id: trade.entry_id.clone(),
+                entry_comment: trade.entry_comment.clone(),
                 direction: direction(trade.is_long),
                 quantity: trade.quantity,
                 entry_bar: trade.entry_bar,
@@ -2444,6 +2449,7 @@ mod tests {
             exit_price: 100.0 + profit,
             commission: 0.0,
             profit,
+            ..Trade::default()
         }
     }
 
@@ -2459,6 +2465,7 @@ mod tests {
                 entry_time: NOW,
                 entry_price: 101.0,
                 entry_commission: 0.0,
+                ..OpenTrade::default()
             }],
             equity,
             open_profit: 3.5,

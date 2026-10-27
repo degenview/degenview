@@ -91,6 +91,13 @@
   (`avg_losing_trade`) but positive in `grossloss`; a drawdown is measured from the running peak (starting at
   the initial capital) and a run-up from the running trough; the percentages are against that peak / trough.
   `margin_liquidation_price` stays a warned `na`: there is no margin model.
+- A trade carries its orders' comments (`OpenTrade::entry_comment`, `Trade::{entry,exit}_comment`; an exit's
+  `comment_profit` / `comment_loss` replace `comment` when its limit / stop fills it) and the highest and
+  lowest price it has seen, from which `strategy.{closed,open}trades.max_runup/max_drawdown(_percent)` follow
+  (positive amounts, before commission, sized to the quantity that closed). `Broker::process` touches the
+  open trades at the bar's open, at every price a trigger fires at and at each vertex of the intrabar path, so
+  a trade closed at the next open does not count that bar's range; a bar with no orders pending touches its
+  high and low. Comments show in the trade list's hover text (`Trade::comments`) and over MCP.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

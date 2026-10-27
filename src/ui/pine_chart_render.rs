@@ -1799,6 +1799,7 @@ mod tests {
                 exit_price: 110.0,
                 commission: 0.0,
                 profit: 10.0,
+                ..Trade::default()
             }],
             open_trades: vec![OpenTrade {
                 entry_id: "S".into(),
@@ -1808,6 +1809,7 @@ mod tests {
                 entry_time: 0,
                 entry_price: 108.0,
                 entry_commission: 0.0,
+                ..OpenTrade::default()
             }],
             equity: Vec::new(),
             open_profit: 0.0,
