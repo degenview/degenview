@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use super::ai_panel::PanelAction;
 use super::ai_prompt::Mode;
+use super::ai_review_view::ReviewAction;
 use super::debug_tests::Rig;
 use super::*;
 use crate::service::llm::mock::MockProvider;
@@ -366,4 +367,253 @@ fn the_panel_draws_a_plan_reply_with_code_and_the_implement_button() {
     rig.frame();
     rig.frame();
     assert!(rig.manager.ai.can_implement());
+}
+
+/// A script of 33 lines, and the same with three changes far enough apart to be three hunks.
+fn base_and_three_changes() -> (String, String) {
+    let mut lines: Vec<String> = vec!["//@version=6".into(), "indicator(\"t\")".into()];
+    lines.extend((1..=30).map(|i| format!("v{i} = {i}")));
+    lines.push("plot(v1)".into());
+    let base = lines.join("\n") + "\n";
+    let new = base
+        .replace("v3 = 3\n", "v3 = 33\n")
+        .replace("v15 = 15\n", "v15 = 1500\n")
+        .replace("v28 = 28\n", "v28 = 2800\n");
+    (base, new)
+}
+
+/// A rig with the assistant panel open and `new` proposed over `base`.
+fn proposing(tag: &str, base: &str, new: &str) -> Rig {
+    let mut rig = Rig::new(tag);
+    open_panel(&mut rig);
+    rig.set_source(base);
+    ask(&mut rig, script_reply(new));
+    assert_eq!(
+        rig.manager
+            .ai
+            .proposal
+            .as_ref()
+            .unwrap()
+            .changes
+            .hunks()
+            .len(),
+        3
+    );
+    rig
+}
+
+fn review(rig: &mut Rig, action: ReviewAction) {
+    let ctx = rig.ctx.clone();
+    rig.manager.ai_review_action(action, &ctx);
+}
+
+fn open_review(rig: &mut Rig) {
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Review));
+    rig.frame();
+    assert!(rig.manager.ai.review.is_some());
+}
+
+#[test]
+fn the_review_sheet_opens_over_a_proposal_and_draws_at_both_sizes() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-open", &base, &new);
+    for size in [egui::vec2(1400.0, 900.0), egui::vec2(700.0, 420.0)] {
+        rig.screen = Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size));
+        open_review(&mut rig);
+        rig.frame();
+        rig.frame();
+        let review = rig.manager.ai.review.as_ref().unwrap();
+        assert_eq!(review.accepted, vec![true; 3]);
+        assert!(!review.rows.is_empty());
+        rig.manager.ai.review = None;
+    }
+    assert_eq!(source(&rig), base, "looking changes nothing");
+}
+
+#[test]
+fn applying_a_subset_applies_only_the_accepted_changes() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-subset", &base, &new);
+    open_review(&mut rig);
+    review(&mut rig, ReviewAction::Toggle(1));
+    review(&mut rig, ReviewAction::Apply);
+    let expected = base
+        .replace("v3 = 3\n", "v3 = 33\n")
+        .replace("v28 = 28\n", "v28 = 2800\n");
+    assert_eq!(
+        source(&rig),
+        expected,
+        "the rejected middle change is not applied"
+    );
+    assert!(rig.manager.ai.proposal.is_none() && rig.manager.ai.review.is_none());
+    let notice = rig.manager.ai.notice.clone().unwrap();
+    assert!(
+        !notice.error && notice.text.contains("2 of 3"),
+        "{}",
+        notice.text
+    );
+}
+
+#[test]
+fn accepting_everything_in_the_sheet_equals_apply_all() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-all", &base, &new);
+    open_review(&mut rig);
+    review(&mut rig, ReviewAction::Apply);
+    assert_eq!(source(&rig), new);
+    assert!(
+        rig.manager
+            .ai
+            .notice
+            .as_ref()
+            .unwrap()
+            .text
+            .contains("all changes")
+    );
+}
+
+#[test]
+fn a_partly_applied_review_is_one_undo_step() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-undo", &base, &new);
+    open_review(&mut rig);
+    review(&mut rig, ReviewAction::Toggle(0));
+    review(&mut rig, ReviewAction::Apply);
+    let applied = source(&rig);
+    assert_ne!(applied, base);
+    rig.frame();
+    rig.frame();
+    rig.frame_with(vec![egui::Event::Key {
+        key: egui::Key::Z,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    }]);
+    assert_eq!(source(&rig), base, "one undo brings back the whole base");
+}
+
+#[test]
+fn rejecting_everything_leaves_apply_with_nothing_to_do() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-none", &base, &new);
+    open_review(&mut rig);
+    review(&mut rig, ReviewAction::SetAll(false));
+    review(&mut rig, ReviewAction::Apply);
+    assert_eq!(source(&rig), base);
+    assert!(rig.manager.ai.review.is_some(), "the sheet stays open");
+    assert!(rig.manager.ai.proposal.is_some());
+}
+
+#[test]
+fn the_sheet_refuses_to_apply_over_text_typed_since() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-stale", &base, &new);
+    open_review(&mut rig);
+    let typed = format!("{base}// typed meanwhile\n");
+    rig.set_source(&typed);
+    review(&mut rig, ReviewAction::Apply);
+    assert_eq!(source(&rig), typed);
+    assert!(rig.manager.ai.proposal.is_none() && rig.manager.ai.review.is_none());
+    assert!(rig.manager.ai.notice.as_ref().unwrap().error);
+}
+
+#[test]
+fn escape_closes_the_sheet_and_keeps_the_proposal() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-esc", &base, &new);
+    open_review(&mut rig);
+    rig.press(egui::Key::Escape);
+    assert!(rig.manager.ai.review.is_none());
+    assert!(rig.manager.ai.proposal.is_some());
+    assert_eq!(source(&rig), base);
+}
+
+#[test]
+fn discard_all_in_the_sheet_drops_the_proposal() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-discard", &base, &new);
+    open_review(&mut rig);
+    review(&mut rig, ReviewAction::DiscardAll);
+    assert!(rig.manager.ai.proposal.is_none() && rig.manager.ai.review.is_none());
+    assert_eq!(source(&rig), base);
+}
+
+#[test]
+fn keys_move_between_changes_and_toggle_without_typing_into_the_editor() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-keys", &base, &new);
+    open_review(&mut rig);
+    rig.press(egui::Key::J);
+    assert_eq!(rig.manager.ai.review.as_ref().unwrap().current, 1);
+    rig.press(egui::Key::ArrowDown);
+    assert_eq!(rig.manager.ai.review.as_ref().unwrap().current, 2);
+    rig.press(egui::Key::K);
+    assert_eq!(rig.manager.ai.review.as_ref().unwrap().current, 1);
+    rig.press(egui::Key::Space);
+    assert_eq!(
+        rig.manager.ai.review.as_ref().unwrap().accepted,
+        vec![true, false, true]
+    );
+    assert_eq!(source(&rig), base, "no key reached the editor");
+}
+
+#[test]
+fn the_footer_recounts_compile_errors_for_the_selection() {
+    let (base, new) = base_and_three_changes();
+    // The middle change breaks the script; the others are harmless.
+    let new = new.replace("v15 = 1500\n", "v15 = (1500\n");
+    let mut rig = proposing("ai-review-recount", &base, &new);
+    open_review(&mut rig);
+    assert!(rig.manager.ai.review.as_ref().unwrap().errors > 0);
+    review(&mut rig, ReviewAction::Toggle(1));
+    assert_eq!(rig.manager.ai.review.as_ref().unwrap().errors, 0);
+    review(&mut rig, ReviewAction::Toggle(1));
+    assert!(rig.manager.ai.review.as_ref().unwrap().errors > 0);
+}
+
+#[test]
+fn opening_a_fold_adds_the_hidden_lines() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-fold", &base, &new);
+    open_review(&mut rig);
+    let (before, key) = {
+        let review = rig.manager.ai.review.as_ref().unwrap();
+        let key = review
+            .rows
+            .iter()
+            .find_map(|row| match row {
+                super::ai_review::Row::Collapsed { key, .. } => Some(*key),
+                _ => None,
+            })
+            .expect("a long script folds");
+        (review.rows.len(), key)
+    };
+    review(&mut rig, ReviewAction::Expand(key));
+    assert!(rig.manager.ai.review.as_ref().unwrap().rows.len() > before);
+}
+
+#[test]
+fn the_sheet_does_not_open_in_plan_mode_or_without_a_proposal() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-plan", &base, &new);
+    rig.manager.ai.mode = Mode::Plan;
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Review));
+    rig.frame();
+    assert!(rig.manager.ai.review.is_none());
+
+    let mut bare = Rig::new("ai-review-bare");
+    open_panel(&mut bare);
+    bare.manager.cmds.push(Cmd::Ai(PanelAction::Review));
+    bare.frame();
+    assert!(bare.manager.ai.review.is_none());
+}
+
+#[test]
+fn a_new_request_or_start_over_closes_the_sheet() {
+    let (base, new) = base_and_three_changes();
+    let mut rig = proposing("ai-review-close", &base, &new);
+    open_review(&mut rig);
+    rig.manager.ai.clear();
+    assert!(rig.manager.ai.review.is_none() && rig.manager.ai.proposal.is_none());
 }

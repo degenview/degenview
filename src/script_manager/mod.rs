@@ -12,6 +12,8 @@ mod ai_gallery;
 mod ai_host;
 mod ai_panel;
 mod ai_prompt;
+mod ai_review;
+mod ai_review_view;
 #[cfg(test)]
 mod ai_tests;
 mod bottom_bar;

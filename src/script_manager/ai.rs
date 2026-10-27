@@ -7,6 +7,7 @@
 //! accepts or discards, and accepting goes through the editor as one undo step.
 
 use super::ai_prompt::{self, Mode, Turn};
+use super::ai_review::Review;
 use super::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
@@ -92,6 +93,8 @@ pub struct Assistant {
     /// The reply so far, while one streams.
     pub streaming: String,
     pub proposal: Option<Proposal>,
+    /// The review sheet over `proposal`, while it is open.
+    pub review: Option<Review>,
     pub notice: Option<Notice>,
     /// The input box takes the keyboard on the next frame.
     pub focus_input: bool,
@@ -128,6 +131,7 @@ impl Assistant {
         self.turns.clear();
         self.streaming.clear();
         self.proposal = None;
+        self.review = None;
         self.notice = None;
     }
 
@@ -178,6 +182,7 @@ impl Assistant {
             return;
         }
         self.proposal = None;
+        self.review = None;
         self.notice = None;
         self.streaming.clear();
         self.input.clear();

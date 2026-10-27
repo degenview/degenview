@@ -105,6 +105,29 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - The user's message shows from the moment it is sent (`Assistant::pending_request`), not only
   when the reply ends, and the transcript scrolls to the end when a request starts or finishes.
 
+## The review sheet
+
+A proposal is a whole new script, but it is reviewed as separate changes. The panel's card is a
+summary (counts, whether it compiles, up to three changes) with **Review changes**, **Apply all** and
+**Discard**. Review changes opens a large sheet (`ai_review_view`, drawn by `sheets_ui`):
+
+- A list of changes on the left (hidden under about 760 pt of sheet width) with an accept box each,
+  and the whole file's diff on the right: old and new line numbers, syntax colour, the changed words
+  marked, and unchanged stretches folded (three lines of context; a fold must hide at least four).
+- Each change can be accepted or rejected. **Apply N of M** applies only the accepted ones
+  (`diff::merge_selected`) as one undo step through `editor::apply_script`, refused if the editor no
+  longer holds `proposal.base`. The footer says whether *the current selection* compiles, recompiled on
+  every toggle. With nothing selected Apply does nothing.
+- Keys: ↑ ↓ or K J move between changes, Space toggles the current one, ⌘↩ applies, Esc closes (the
+  proposal stays). The editor and composer give up the keyboard when the sheet opens, because they
+  draw before it and would otherwise get those keys.
+- `ai_review` is pure (rows, folds, `Review` state); `diff::word_ranges` marks words with
+  `capture_diff_slices` on tokens (no new `similar` feature), skipped for lines over 300 characters and
+  for lines that changed almost entirely.
+- Dimming a rejected change must scale the tint's alpha (`gamma_multiply`), not replace it: the diff
+  backgrounds are already translucent, and `theme::with_alpha` replaces alpha. This went wrong once,
+  and only the light theme showed it.
+
 ## Reply rendering
 
 `ui/markdown_view.rs` renders replies: paragraphs, headings, bullet and numbered items, quotes,
@@ -125,7 +148,8 @@ Also verified headlessly: a scripted provider driving the whole window (reply to
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
 
-**Not verified**: clicking a link or the Copy button in a real window (the character-under-pointer
+**Not verified**: the review sheet in a real window (clicking rows and toggles, scrolling a very long
+file, a very small window); clicking a link or the Copy button in a real window (the character-under-pointer
 mapping for links is tested, the click itself is not); using the panel in a real window (typing, Enter to send, focus, scroll feel, the
 Keychain prompt on Send); any request to the real OpenAI or Anthropic API (no keys were used), so the frame
 shapes come from the providers' documentation rather than recorded traffic, and the suggested

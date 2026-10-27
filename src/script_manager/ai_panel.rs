@@ -4,20 +4,17 @@
 
 use super::ai::{Assistant, Notice, Proposal};
 use super::ai_prompt::{self, Mode, Turn};
-use super::diff::DiffHunk;
 use super::diff_view;
 use crate::ui::icons::{self, Icon};
 use crate::ui::markdown_view;
 use crate::ui::{kit, theme};
 use eframe::egui::{
-    self, Align, Color32, FontId, Id, Key, Layout, Margin, Modifiers, RichText, Sense, Ui, vec2,
+    self, Align, Color32, FontId, Id, Key, Layout, Margin, Modifiers, Sense, Ui, vec2,
 };
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INPUT_HEIGHT: f32 = 62.0;
 const FOOTER_HEIGHT: f32 = 66.0;
-const CODE_SIZE: f32 = 11.5;
-const MAX_HUNK_LINES: usize = 40;
 
 /// Starting points for an empty conversation, for each mode.
 const PLAN_EXAMPLES: [&str; 3] = [
@@ -51,6 +48,8 @@ pub enum PanelAction {
     SetMode(Mode),
     /// Carry out the plan in the last reply: switch to Edit and ask for it.
     Implement,
+    /// Open the review sheet over the proposed change.
+    Review,
 }
 
 pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
@@ -394,15 +393,17 @@ fn notice_row(ui: &mut Ui, notice: &Notice) {
 }
 
 fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction>) {
-    let added: usize = proposal.changes.lines_added();
-    let removed: usize = proposal.changes.lines_removed();
+    let hunks = proposal.changes.hunks();
+    let added = proposal.changes.lines_added();
+    let removed = proposal.changes.lines_removed();
     egui::Frame::new()
         .fill(theme::with_alpha(theme::text_primary(), 0.04))
         .stroke(egui::Stroke::new(1.0, kit::hairline()))
-        .corner_radius(8.0)
-        .inner_margin(Margin::same(10))
+        .corner_radius(10.0)
+        .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 6.0;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.label(kit::text(
@@ -410,6 +411,22 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
                     kit::size::BODY,
                     kit::SEMIBOLD,
                     theme::text_primary(),
+                ));
+                let (text, color) = compile_summary(proposal);
+                ui.label(kit::text(text, kit::size::SUBHEADLINE, kit::MEDIUM, color));
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                let noun = if hunks.len() == 1 {
+                    "change"
+                } else {
+                    "changes"
+                };
+                ui.label(kit::text(
+                    format!("{} {noun}", hunks.len()),
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    theme::text_secondary(),
                 ));
                 ui.label(kit::text(
                     format!("+{added}"),
@@ -423,40 +440,54 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
                     kit::MEDIUM,
                     kit::RED,
                 ));
-                let (text, color) = compile_summary(proposal);
-                ui.label(kit::text(text, kit::size::SUBHEADLINE, kit::MEDIUM, color));
             });
-            ui.add_space(6.0);
-            egui::ScrollArea::vertical()
-                .id_salt("ai-diff")
-                .max_height(220.0)
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.y = 6.0;
-                    for hunk in proposal.changes.hunks() {
-                        hunk_view(ui, hunk);
-                    }
+            // A glance at what changes; the sheet is where it is read.
+            for hunk in hunks.iter().take(3) {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 6.0;
+                    let color = match hunk.kind {
+                        super::diff::ChangeKind::Added => theme::editor_diff_added(),
+                        super::diff::ChangeKind::Deleted => theme::editor_diff_deleted(),
+                        super::diff::ChangeKind::Modified => theme::editor_diff_modified(),
+                    };
+                    let (dot, _) = ui.allocate_exact_size(vec2(8.0, 14.0), Sense::hover());
+                    ui.painter().circle_filled(dot.center(), 3.0, color);
+                    ui.label(kit::text(
+                        diff_view::title(hunk),
+                        kit::size::SUBHEADLINE,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    ));
                 });
-            ui.add_space(8.0);
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
+            }
+            if hunks.len() > 3 {
+                ui.label(kit::text(
+                    format!("and {} more", hunks.len() - 3),
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    theme::text_tertiary(),
+                ));
+            }
+            ui.add_space(4.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+                if kit::sheet_button(ui, "Review changes", true, true).clicked() {
+                    actions.push(PanelAction::Review);
+                }
                 let label = if proposal.errors > 0 {
                     "Apply anyway"
                 } else {
-                    "Apply"
+                    "Apply all"
                 };
-                if kit::sheet_button(ui, label, proposal.errors == 0, true).clicked() {
+                if kit::sheet_button(ui, label, false, true)
+                    .on_hover_text("Applies every change as one undo step")
+                    .clicked()
+                {
                     actions.push(PanelAction::Accept);
                 }
                 if kit::sheet_button(ui, "Discard", false, true).clicked() {
                     actions.push(PanelAction::Discard);
                 }
-                ui.label(kit::text(
-                    "⌘Z undoes it",
-                    kit::size::CAPTION + 0.5,
-                    kit::REGULAR,
-                    theme::text_tertiary(),
-                ));
             });
         });
 }
@@ -472,41 +503,6 @@ fn compile_summary(proposal: &Proposal) -> (String, Color32) {
         )
     } else {
         ("Compiles".to_owned(), kit::GREEN)
-    }
-}
-
-fn hunk_view(ui: &mut Ui, hunk: &DiffHunk) {
-    ui.label(kit::text(
-        diff_view::title(hunk),
-        kit::size::CAPTION + 0.5,
-        kit::SEMIBOLD,
-        theme::text_tertiary(),
-    ));
-    code_lines(ui, &hunk.old_text, "−", kit::RED);
-    code_lines(ui, &hunk.new_text, "+", kit::GREEN);
-}
-
-fn code_lines(ui: &mut Ui, text: &str, sign: &str, color: Color32) {
-    let lines: Vec<&str> = text.lines().collect();
-    ui.spacing_mut().item_spacing.y = 0.0;
-    for line in lines.iter().take(MAX_HUNK_LINES) {
-        ui.add(
-            egui::Label::new(
-                RichText::new(format!("{sign} {line}"))
-                    .font(FontId::monospace(CODE_SIZE))
-                    .color(theme::text_primary())
-                    .background_color(theme::with_alpha(color, 0.16)),
-            )
-            .wrap_mode(egui::TextWrapMode::Truncate),
-        );
-    }
-    if lines.len() > MAX_HUNK_LINES {
-        ui.label(kit::text(
-            format!("… {} more lines", lines.len() - MAX_HUNK_LINES),
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            theme::text_tertiary(),
-        ));
     }
 }
 

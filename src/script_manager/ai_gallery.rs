@@ -161,15 +161,33 @@ fn gallery_of_the_assistant() {
             scene.save("writing");
             scene.rig.manager.ai.stop();
 
-            // A proposal with a diff.
-            let changed = base.replacen(
-                "plot(value)",
-                "plot(value, color = color.orange)\nplot(value * 2)",
-                1,
-            );
+            // A proposal with several kinds of change over a longer script.
+            let rsi = super::demo::BUNDLED
+                .iter()
+                .find(|demo| demo.name == "RSI Zones")
+                .unwrap()
+                .source;
+            let padding: String = (1..=22).map(|n| format!("// note {n}\n")).collect();
+            let base = format!("{rsi}\n{padding}plot(close)\n");
+            scene.rig.set_source(&base);
+            let changed = base
+                .replace("input.int(14, \"Length\"", "input.int(21, \"Length\"")
+                .replace(
+                    "value = ta.rsi(source, length)\n",
+                    "value = ta.rsi(source, length)\nsmooth = ta.ema(value, 3)\n",
+                )
+                .replace(
+                    "color = color.purple, linewidth = 2",
+                    "color = color.orange, linewidth = 3",
+                )
+                .replace("hline(50, \"Midline\", color = color.gray)\n", "")
+                .replace(
+                    "plot(close)\n",
+                    "plot(close)\nalertcondition(value > overbought, \"Overbought\")\n",
+                );
             let mock = crate::service::llm::mock::MockProvider::replying(vec![
                 crate::service::llm::mock::MockProvider::text(&[&format!(
-                    "I made the line orange and added a doubled copy.\n```pine\n{changed}```\n"
+                    "I made the length 21, added a smoothed line, restyled the plot, dropped the midline and added an alert.\n```pine\n{changed}```\n"
                 )]),
             ]);
             scene.rig.manager.ai.start(
@@ -180,13 +198,34 @@ fn gallery_of_the_assistant() {
                     messages: vec![ChatMessage::user("x")],
                     max_tokens: 10,
                 },
-                "Make the plot orange and add a doubled copy".to_owned(),
+                "Use 21, smooth it, restyle the plot, drop the midline, add an alert".to_owned(),
                 base,
                 Mode::Edit,
                 Arc::new(|| {}),
             );
             scene.frames(12);
             scene.save("proposal");
+
+            // The review sheet: everything accepted, then one rejected and another selected.
+            scene.rig.manager.cmds.push(Cmd::Ai(PanelAction::Review));
+            scene.frames(6);
+            scene.save("review");
+            let ctx = scene.screen.ctx.clone();
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::ai_review_view::ReviewAction::Toggle(2), &ctx);
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::ai_review_view::ReviewAction::Select(3), &ctx);
+            scene.frames(6);
+            scene.save("review-rejected");
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::ai_review_view::ReviewAction::Close, &ctx);
+            scene.frames(3);
 
             // The result of Apply.
             scene.rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));

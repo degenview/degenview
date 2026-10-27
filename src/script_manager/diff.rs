@@ -174,6 +174,131 @@ impl DiffSnapshot {
     }
 }
 
+/// `base` with only the accepted hunks applied: unchanged lines from `base`, and for each hunk its
+/// new lines if accepted, else its old ones. `hunks` must come from `DiffSnapshot::compute(base, ..)`.
+/// With every hunk accepted this is the new text; with none, `base`.
+pub fn merge_selected(base: &str, hunks: &[DiffHunk], accepted: &[bool]) -> String {
+    let old = lines(base);
+    let mut out = String::with_capacity(base.len());
+    let mut position = 0;
+    for (hunk, accept) in hunks.iter().zip(accepted) {
+        out.extend(old[position..hunk.old_lines.start].iter().copied());
+        out.push_str(if *accept {
+            &hunk.new_text
+        } else {
+            &hunk.old_text
+        });
+        position = hunk.old_lines.end;
+    }
+    out.extend(old[position..].iter().copied());
+    out
+}
+
+/// A line longer than this is not compared word by word; the line tint is enough.
+const MAX_WORD_DIFF_LINE: usize = 300;
+const WORD_DEADLINE: Duration = Duration::from_millis(10);
+
+/// The words that differ between a line and its replacement, as byte ranges into each.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct WordRanges {
+    pub old: Vec<Range<usize>>,
+    pub new: Vec<Range<usize>>,
+}
+
+/// Identifier-like runs, whitespace runs, and every other character on its own.
+fn tokens(line: &str) -> Vec<Range<usize>> {
+    #[derive(PartialEq)]
+    enum Kind {
+        Word,
+        Space,
+        Other,
+    }
+    let kind = |c: char| {
+        if c.is_alphanumeric() || c == '_' {
+            Kind::Word
+        } else if c.is_whitespace() {
+            Kind::Space
+        } else {
+            Kind::Other
+        }
+    };
+    let mut out: Vec<Range<usize>> = Vec::new();
+    let mut last: Option<Kind> = None;
+    for (index, c) in line.char_indices() {
+        let k = kind(c);
+        let end = index + c.len_utf8();
+        match (&last, out.last_mut()) {
+            (Some(previous), Some(range)) if *previous == k && k != Kind::Other => range.end = end,
+            _ => out.push(index..end),
+        }
+        last = Some(k);
+    }
+    out
+}
+
+/// Joins ranges that touch or are separated only by whitespace in `line`.
+fn coalesce(line: &str, ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
+    let mut out: Vec<Range<usize>> = Vec::new();
+    for range in ranges {
+        match out.last_mut() {
+            Some(last) if line[last.end..range.start].trim().is_empty() => last.end = range.end,
+            _ => out.push(range),
+        }
+    }
+    out
+}
+
+/// Which words changed from `old` to `new` (both without line terminators). Empty when the lines
+/// are equal, too long, or so different that highlighting words would paint the whole line.
+pub fn word_ranges(old: &str, new: &str) -> WordRanges {
+    if old == new || old.len() > MAX_WORD_DIFF_LINE || new.len() > MAX_WORD_DIFF_LINE {
+        return WordRanges::default();
+    }
+    let (old_tokens, new_tokens) = (tokens(old), tokens(new));
+    let old_text: Vec<&str> = old_tokens.iter().map(|r| &old[r.clone()]).collect();
+    let new_text: Vec<&str> = new_tokens.iter().map(|r| &new[r.clone()]).collect();
+    let ops = similar::capture_diff_slices_deadline(
+        Algorithm::Myers,
+        &old_text,
+        &new_text,
+        Some(Instant::now() + WORD_DEADLINE),
+    );
+    let span = |tokens: &[Range<usize>], from: usize, len: usize| {
+        (len > 0).then(|| tokens[from].start..tokens[from + len - 1].end)
+    };
+    let (mut old_out, mut new_out) = (Vec::new(), Vec::new());
+    for op in ops {
+        match op {
+            DiffOp::Equal { .. } => {}
+            DiffOp::Delete {
+                old_index, old_len, ..
+            } => old_out.extend(span(&old_tokens, old_index, old_len)),
+            DiffOp::Insert {
+                new_index, new_len, ..
+            } => new_out.extend(span(&new_tokens, new_index, new_len)),
+            DiffOp::Replace {
+                old_index,
+                old_len,
+                new_index,
+                new_len,
+            } => {
+                old_out.extend(span(&old_tokens, old_index, old_len));
+                new_out.extend(span(&new_tokens, new_index, new_len));
+            }
+        }
+    }
+    let (old_out, new_out) = (coalesce(old, old_out), coalesce(new, new_out));
+    let changed = |ranges: &[Range<usize>]| ranges.iter().map(Range::len).sum::<usize>();
+    // Most of the line changed: the line tint says so already.
+    if changed(&old_out) * 10 > old.len() * 7 || changed(&new_out) * 10 > new.len() * 7 {
+        return WordRanges::default();
+    }
+    WordRanges {
+        old: old_out,
+        new: new_out,
+    }
+}
+
 /// Char offset (what egui's cursor counts) of the start of every line of `text`, plus the total.
 fn line_starts(text: &str) -> Vec<usize> {
     let mut starts = vec![0];
@@ -607,6 +732,107 @@ mod tests {
             assert_eq!(snapshot.hunks().len(), 20);
             // Loose: unoptimised test builds are an order slower than release.
             assert!(took < Duration::from_millis(250), "{took:?}");
+        }
+    }
+
+    #[test]
+    fn merging_every_hunk_gives_the_new_text_and_none_gives_the_base() {
+        let base = "a\nb\nc\nd\ne\n";
+        let new = "a\nB\nc\ne\nf\n";
+        let snapshot = DiffSnapshot::compute(base, new);
+        let hunks = snapshot.hunks();
+        assert!(hunks.len() >= 2);
+        assert_eq!(merge_selected(base, hunks, &vec![true; hunks.len()]), new);
+        assert_eq!(merge_selected(base, hunks, &vec![false; hunks.len()]), base);
+    }
+
+    #[test]
+    fn merging_a_subset_applies_only_those_hunks() {
+        let base = "one\ntwo\nthree\nfour\nfive\nsix\nseven\n";
+        let new = "ONE\ntwo\nthree\nfour\nfive\nsix\nSEVEN\nextra\n";
+        let snapshot = DiffSnapshot::compute(base, new);
+        let hunks = snapshot.hunks();
+        assert_eq!(hunks.len(), 2);
+        assert_eq!(
+            merge_selected(base, hunks, &[true, false]),
+            "ONE\ntwo\nthree\nfour\nfive\nsix\nseven\n"
+        );
+        assert_eq!(
+            merge_selected(base, hunks, &[false, true]),
+            "one\ntwo\nthree\nfour\nfive\nsix\nSEVEN\nextra\n"
+        );
+    }
+
+    #[test]
+    fn merging_handles_additions_deletions_crlf_and_a_missing_final_newline() {
+        for (base, new) in [
+            ("a\nb\n", "a\nx\ny\nb\n"),
+            ("a\nb\nc\n", "a\nc\n"),
+            ("a\r\nb\r\n", "a\r\nB\r\n"),
+            ("a\nb", "a\nb\nc"),
+            ("", "a\n"),
+            ("a\n", ""),
+            ("日本\n語\n", "日本\n🙂\n"),
+        ] {
+            let snapshot = DiffSnapshot::compute(base, new);
+            let hunks = snapshot.hunks();
+            assert_eq!(
+                merge_selected(base, hunks, &vec![true; hunks.len()]),
+                new,
+                "{base:?} -> {new:?}"
+            );
+            assert_eq!(
+                merge_selected(base, hunks, &vec![false; hunks.len()]),
+                base,
+                "{base:?} -> {new:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn word_ranges_mark_just_the_changed_words() {
+        let ranges = word_ranges(
+            "plot(value, color = color.red)",
+            "plot(value, color = color.orange)",
+        );
+        assert_eq!(ranges.old.len(), 1);
+        assert_eq!(
+            &"plot(value, color = color.red)"[ranges.old[0].clone()],
+            "red"
+        );
+        assert_eq!(
+            &"plot(value, color = color.orange)"[ranges.new[0].clone()],
+            "orange"
+        );
+        let ranges = word_ranges("x = ta.sma(close, 14)", "x = ta.sma(close, length)");
+        assert_eq!(
+            &"x = ta.sma(close, length)"[ranges.new[0].clone()],
+            "length"
+        );
+    }
+
+    #[test]
+    fn word_ranges_are_empty_for_equal_long_or_wholly_different_lines() {
+        assert_eq!(word_ranges("same", "same"), WordRanges::default());
+        let long = "a".repeat(400);
+        assert_eq!(
+            word_ranges(&long, &format!("{long}b")),
+            WordRanges::default()
+        );
+        assert_eq!(word_ranges("foo", "bar"), WordRanges::default());
+        assert_eq!(word_ranges("", "x"), WordRanges::default());
+    }
+
+    #[test]
+    fn word_ranges_land_on_char_boundaries_in_unicode_lines() {
+        let old = "label = \"日本語\" + x";
+        let new = "label = \"日本人\" + x";
+        let ranges = word_ranges(old, new);
+        for range in &ranges.old {
+            let _ = &old[range.clone()];
+        }
+        for range in &ranges.new {
+            let _ = &new[range.clone()];
         }
     }
 }

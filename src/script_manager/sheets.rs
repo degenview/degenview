@@ -21,6 +21,8 @@ impl ScriptManager {
             if let Some(choice) = unsaved::show(ctx, &prompt) {
                 self.resolve_exit(&prompt, choice);
             }
+        } else if self.ai.review.is_some() {
+            self.ai_review_sheet(ctx);
         } else if let Some(sheet) = self.sheet.take() {
             self.sheet = match sheet {
                 Sheet::New {

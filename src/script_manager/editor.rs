@@ -253,6 +253,11 @@ impl EditorState {
     }
 
     /// Notes that the text changed and `diagnostics` no longer match it.
+    /// Lets go of the keyboard, so a sheet drawn over the editor does not have its keys typed here.
+    pub fn surrender_focus(&self, ctx: &egui::Context) {
+        ctx.memory_mut(|memory| memory.surrender_focus(self.id));
+    }
+
     pub fn request_compile(&mut self) {
         self.compile_requested = Some(Instant::now());
     }

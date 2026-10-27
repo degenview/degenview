@@ -5,6 +5,8 @@
 use super::ai::Notice;
 use super::ai_panel::{PanelAction, Setup};
 use super::ai_prompt::{self, IMPLEMENT_MESSAGE, MAX_SOURCE_CHARS, Mode};
+use super::ai_review::Review;
+use super::ai_review_view::{self, ReviewAction};
 use super::registry::LibraryRegistry;
 use super::{ScriptManager, ScriptManagerAction, editor};
 use crate::pine::compiler;
@@ -92,7 +94,11 @@ impl ScriptManager {
             PanelAction::Send => self.ai_send(ctx),
             PanelAction::Stop => self.ai.stop(),
             PanelAction::Accept => self.ai_accept(ctx),
-            PanelAction::Discard => self.ai.proposal = None,
+            PanelAction::Discard => {
+                self.ai.proposal = None;
+                self.ai.review = None;
+            }
+            PanelAction::Review => self.ai_open_review(ctx),
             PanelAction::Clear => self.ai.clear(),
             PanelAction::SetMode(mode) => {
                 self.ai.set_mode(mode);
@@ -153,6 +159,124 @@ impl ScriptManager {
             .start(Box::new(provider), request, typed, source, mode, wake);
     }
 
+    /// Opens the review sheet over the waiting proposal. The editor and the composer let go of the
+    /// keyboard first, or the sheet's keys (J, K, space) would be typed into them.
+    pub(super) fn ai_open_review(&mut self, ctx: &egui::Context) {
+        if self.ai.mode != Mode::Edit {
+            return;
+        }
+        let Some(proposal) = self.ai.proposal.as_ref() else {
+            return;
+        };
+        self.ai.review = Some(Review::open(
+            &proposal.base,
+            &proposal.script,
+            proposal.changes.hunks(),
+            proposal.errors,
+            proposal.warnings,
+        ));
+        if let Some(open) = self.open.as_ref() {
+            open.editor.surrender_focus(ctx);
+        }
+        ctx.memory_mut(|memory| memory.surrender_focus(egui::Id::new("ai-input")));
+    }
+
+    /// Draws the review sheet and acts on what it reported this frame.
+    pub(super) fn ai_review_sheet(&mut self, ctx: &egui::Context) {
+        let (Some(review), Some(proposal)) = (self.ai.review.as_ref(), self.ai.proposal.as_ref())
+        else {
+            self.ai.review = None;
+            return;
+        };
+        let mut actions = ai_review_view::show(ctx, review, proposal);
+        if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+            actions.push(ReviewAction::Close);
+        }
+        if let Some(review) = self.ai.review.as_mut() {
+            review.scroll_to_current = false;
+        }
+        for action in actions {
+            self.ai_review_action(action, ctx);
+        }
+    }
+
+    pub(super) fn ai_review_action(&mut self, action: ReviewAction, ctx: &egui::Context) {
+        let (Some(review), Some(proposal)) = (self.ai.review.as_mut(), self.ai.proposal.as_ref())
+        else {
+            return;
+        };
+        match action {
+            ReviewAction::Select(change) => review.select(change),
+            ReviewAction::Step(forward) => review.step(forward),
+            ReviewAction::Toggle(change) => {
+                review.toggle(change);
+                Self::recount(review, proposal);
+            }
+            ReviewAction::SetAll(accepted) => {
+                review.set_all(accepted);
+                Self::recount(review, proposal);
+            }
+            ReviewAction::Expand(key) => {
+                review.expanded.insert(key);
+                review.refresh_rows(&proposal.base, &proposal.script, proposal.changes.hunks());
+            }
+            ReviewAction::Close => self.ai.review = None,
+            ReviewAction::DiscardAll => {
+                self.ai.review = None;
+                self.ai.proposal = None;
+            }
+            ReviewAction::Apply => self.ai_apply_review(ctx),
+        }
+    }
+
+    /// What the selection would compile to, for the sheet's footer.
+    fn recount(review: &mut Review, proposal: &super::ai::Proposal) {
+        let merged = review.merged(&proposal.base, proposal.changes.hunks());
+        let diagnostics = diagnostics_of(&merged);
+        review.errors = diagnostics
+            .iter()
+            .filter(|d| d.severity == crate::pine::token::DiagnosticSeverity::Error)
+            .count();
+        review.warnings = diagnostics.len() - review.errors;
+    }
+
+    /// Applies only the accepted changes, as one undo step, unless the editor has moved on from the
+    /// script the model was shown.
+    fn ai_apply_review(&mut self, ctx: &egui::Context) {
+        if self.ai.mode != Mode::Edit {
+            return;
+        }
+        let (Some(review), Some(proposal), Some(open)) = (
+            self.ai.review.as_ref(),
+            self.ai.proposal.as_ref(),
+            self.open.as_mut(),
+        ) else {
+            return;
+        };
+        let (selected, total) = (review.selected(), review.accepted.len());
+        if selected == 0 {
+            return;
+        }
+        if open.editor.source != proposal.base {
+            self.ai.review = None;
+            self.ai.proposal = None;
+            self.ai.notice = Some(Notice::error(
+                "The script changed while the assistant was writing. Ask again to base the change on the current text.",
+            ));
+            return;
+        }
+        let merged = review.merged(&proposal.base, proposal.changes.hunks());
+        editor::apply_script(ctx, &mut open.editor, &merged);
+        open.editor.request_compile();
+        self.ai.review = None;
+        self.ai.proposal = None;
+        self.ai.notice = Some(Notice::info(if selected == total {
+            "Applied all changes. Undo brings the old script back.".to_owned()
+        } else {
+            format!("Applied {selected} of {total} changes. Undo brings the old script back.")
+        }));
+    }
+
     /// Puts the proposed script in the editor as one undo step, unless the editor has moved on
     /// from the script the model was shown.
     fn ai_accept(&mut self, ctx: &egui::Context) {
@@ -174,6 +298,7 @@ impl ScriptManager {
         editor::apply_script(ctx, &mut open.editor, &proposal.script);
         open.editor.request_compile();
         self.ai.proposal = None;
+        self.ai.review = None;
         self.ai.notice = Some(Notice::info("Applied. Undo brings the old script back."));
     }
 }
