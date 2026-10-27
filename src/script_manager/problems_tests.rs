@@ -9,14 +9,15 @@ use super::editor::status_chip_with_runtime;
 use super::*;
 use crate::pine::token::DiagnosticSeverity;
 
-/// `array.resize` is not Pine v6; the compiler only warns about the call and the run rejects it, on
-/// the last bar only: the shape of a failure that no compile error announces.
+/// An index past the end of an empty array: the compiler cannot know the size, and the run rejects
+/// the read on the last bar only: the shape of a failure that no compile error announces.
 const FAILS_ON_THE_LAST_BAR: &str = "//@version=6
 indicator(\"Fails\")
 var values = array.new_float()
+x = 0.0
 if barstate.islast
-    array.resize(values, 5)
-plot(close)
+    x := array.get(values, 5)
+plot(close + x)
 ";
 
 const FINE: &str = "//@version=6
@@ -61,13 +62,14 @@ fn failing(tag: &str) -> Rig {
 }
 
 #[test]
-fn the_failing_script_compiles_with_a_warning_and_no_error() {
+fn the_failing_script_compiles_clean() {
     let rig = failing("problems-compiles");
-    let diagnostics = &editor(&rig).diagnostics;
-    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
-    assert_eq!(diagnostics[0].code, crate::pine::name_check::UNKNOWN_MEMBER);
-    assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Warning);
-    assert_eq!(editor(&rig).status, CompileStatus::Warning);
+    assert!(
+        editor(&rig).diagnostics.is_empty(),
+        "{:?}",
+        editor(&rig).diagnostics
+    );
+    assert_eq!(editor(&rig).status, CompileStatus::Valid);
 }
 
 #[test]
@@ -76,17 +78,15 @@ fn a_failure_is_in_the_list_the_chip_and_the_editor() {
     let failures = runtime(&rig);
     assert_eq!(failures.len(), 1, "{failures:?}");
     assert!(
-        failures[0].message.contains("array.resize"),
+        failures[0].message.contains("array.get"),
         "{}",
         failures[0].message
     );
     assert_eq!(failures[0].severity, DiagnosticSeverity::Error);
 
-    // The Problems tab and its count read this list: the failure, and not also the compiler's
-    // warning about the same call.
+    // The Problems tab and its count read this list.
     let list = problems::combined(&editor(&rig).diagnostics, &failures);
-    assert_eq!(list.len(), 1, "{list:?}");
-    assert_eq!(list[0].severity, DiagnosticSeverity::Error);
+    assert_eq!(list.len(), 1);
 
     // The editor was handed the failure this frame, and the chip counts it.
     assert_eq!(editor(&rig).runtime_problems().len(), 1);
@@ -106,8 +106,8 @@ fn the_failure_points_at_the_whole_failing_name() {
     let from = syntax::compiled_utf16_to_char_index(&text, failure.range.start.offset);
     let to = syntax::compiled_utf16_to_char_index(&text, failure.range.end.offset);
     let marked: String = text.chars().skip(from).take(to - from).collect();
-    // Not only `array`: the name that is not a function is `array.resize`.
-    assert_eq!(marked, "array.resize");
+    // Not only `array`: the call that failed is `array.get`.
+    assert_eq!(marked, "array.get");
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn a_profile_that_failed_is_listed_once_beside_the_charts_failure() {
         1,
         "the chart and the profile saw one failure: {failures:?}"
     );
-    assert!(failures[0].message.contains("array.resize"));
+    assert!(failures[0].message.contains("array.get"));
 }
 
 #[test]
