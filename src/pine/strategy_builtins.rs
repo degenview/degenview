@@ -5,25 +5,33 @@
 //! (`strategy.position_size`, …) are read through [`strategy_value`], which the session's
 //! identifier resolver calls — they are not function calls.
 
-use super::broker::{Broker, Order, OrderKind};
+use super::broker::{Broker, OcaKind, Order, OrderKind, RiskLimit};
 use super::drawings::{Arg, bind};
 use super::runtime_value::RuntimeValue;
 use super::state::RuntimeState;
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 
+/// Every `strategy.*` function this module handles, which the editor offers.
+pub const NAMES: [&str; 14] = [
+    "strategy.entry",
+    "strategy.order",
+    "strategy.exit",
+    "strategy.close",
+    "strategy.close_all",
+    "strategy.cancel",
+    "strategy.cancel_all",
+    "strategy.default_entry_qty",
+    "strategy.risk.allow_entry_in",
+    "strategy.risk.max_position_size",
+    "strategy.risk.max_drawdown",
+    "strategy.risk.max_intraday_loss",
+    "strategy.risk.max_intraday_filled_orders",
+    "strategy.risk.max_cons_loss_days",
+];
+
 /// Whether `name` is a `strategy.*` function this module handles.
 pub fn handles(name: &str) -> bool {
-    name.starts_with("strategy.risk.")
-        || matches!(
-            name,
-            "strategy.entry"
-                | "strategy.order"
-                | "strategy.exit"
-                | "strategy.close"
-                | "strategy.close_all"
-                | "strategy.cancel"
-                | "strategy.cancel_all"
-        )
+    NAMES.contains(&name)
 }
 
 /// Runs one `strategy.*` call. `is_strategy` is the session's `is_strategy()` flag.
@@ -65,13 +73,85 @@ pub fn call(
             state.broker.cancel_all();
             Ok(RuntimeValue::Void)
         }
-        _ if name.starts_with("strategy.risk.") => Ok(RuntimeValue::Void),
+        "strategy.default_entry_qty" => {
+            let price = bind(args, &["fill_price"])
+                .get("fill_price")
+                .and_then(RuntimeValue::number);
+            Ok(price.map_or(RuntimeValue::Na, |price| {
+                RuntimeValue::Float(state.broker.default_quantity(price))
+            }))
+        }
+        _ if name.starts_with("strategy.risk.") => Ok(set_risk_rule(name, args, state)),
         _ => Err(runtime_error(
             "PINE4007",
             format!("Unknown or unsupported function '{name}'."),
             range,
         )),
     }
+}
+
+/// A `strategy.risk.*` call: states the rule from now on, replacing what an earlier call set. A call
+/// with an argument that is missing or out of range leaves the rule as it was.
+fn set_risk_rule(name: &str, args: &[Arg], state: &mut RuntimeState) -> RuntimeValue {
+    let rules = &mut state.broker.risk;
+    let limit = |args: &[Arg]| {
+        let b = bind(args, &["value", "type"]);
+        let value = b.get("value").and_then(RuntimeValue::number)?;
+        if !value.is_finite() || value < 0.0 {
+            return None;
+        }
+        match b.get("type").and_then(RuntimeValue::text_value)? {
+            "strategy.cash" => Some(RiskLimit::Cash(value)),
+            "strategy.percent_of_equity" if value <= 100.0 => {
+                Some(RiskLimit::PercentOfEquity(value))
+            }
+            _ => None,
+        }
+    };
+    let count = |args: &[Arg]| {
+        let count = bind(args, &["count"]).get("count")?.int_value()?;
+        usize::try_from(count).ok()
+    };
+    match name {
+        "strategy.risk.allow_entry_in" => {
+            match bind(args, &["value"])
+                .get("value")
+                .and_then(RuntimeValue::text_value)
+            {
+                Some("strategy.direction.long") => rules.allowed_direction = Some(true),
+                Some("strategy.direction.short") => rules.allowed_direction = Some(false),
+                Some("strategy.direction.all") => rules.allowed_direction = None,
+                _ => {}
+            }
+        }
+        "strategy.risk.max_position_size" => {
+            if let Some(contracts) = positive(bind(args, &["contracts"]).get("contracts")) {
+                rules.max_position_size = Some(contracts);
+            }
+        }
+        "strategy.risk.max_drawdown" => {
+            if let Some(limit) = limit(args) {
+                rules.max_drawdown = Some(limit);
+            }
+        }
+        "strategy.risk.max_intraday_loss" => {
+            if let Some(limit) = limit(args) {
+                rules.max_intraday_loss = Some(limit);
+            }
+        }
+        "strategy.risk.max_intraday_filled_orders" => {
+            if let Some(count) = count(args) {
+                rules.max_intraday_filled_orders = Some(count);
+            }
+        }
+        "strategy.risk.max_cons_loss_days" => {
+            if let Some(count) = count(args) {
+                rules.max_consecutive_loss_days = Some(count);
+            }
+        }
+        _ => {}
+    }
+    RuntimeValue::Void
 }
 
 /// `strategy.closedtrades.exit_price(n)`, `strategy.opentrades.profit(n)`, …: one property of the
@@ -382,7 +462,20 @@ fn order(kind: OrderKind, id: String) -> Order {
         comment: String::new(),
         comment_profit: None,
         comment_loss: None,
+        oca: None,
     }
+}
+
+/// The OCA group of an entry: its name and, unless the type is `strategy.oca.none` (the default), how
+/// the group reacts to a fill.
+fn oca_of(name: Option<&RuntimeValue>, kind: Option<&RuntimeValue>) -> Option<(String, OcaKind)> {
+    let name = name?.text_value().filter(|name| !name.is_empty())?;
+    let kind = match kind?.text_value()? {
+        "strategy.oca.cancel" => OcaKind::Cancel,
+        "strategy.oca.reduce" => OcaKind::Reduce,
+        _ => return None,
+    };
+    Some((name.to_owned(), kind))
 }
 
 /// A comment argument: its text, or None when the script gave none.
@@ -429,6 +522,7 @@ fn place_entry(
     );
     placed.is_long = direction == "strategy.long";
     placed.comment = comment_of(b.get("comment")).unwrap_or_default();
+    placed.oca = oca_of(b.get("oca_name"), b.get("oca_type"));
     placed.quantity = positive(b.get("qty"));
     placed.limit = b.get("limit").and_then(RuntimeValue::number);
     placed.stop = b.get("stop").and_then(RuntimeValue::number);

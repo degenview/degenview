@@ -41,6 +41,17 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("strategy.close_all", close());
     table.insert("plot", plot());
     table.insert("plotarrow", plotarrow());
+    for rule in [
+        "strategy.risk.max_drawdown",
+        "strategy.risk.max_intraday_loss",
+        "strategy.risk.max_intraday_filled_orders",
+        "strategy.risk.max_cons_loss_days",
+    ] {
+        table.insert(
+            rule,
+            HashMap::from([("alert_message", "Order fill alerts are not sent.")]),
+        );
+    }
     table.insert("hline", hline());
     table.insert("bgcolor", color_series());
     table.insert("barcolor", color_series());
@@ -97,17 +108,7 @@ fn declaration() -> HashMap<&'static str, &'static str> {
 }
 
 fn entry() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
-        (
-            "oca_name",
-            "Orders are never grouped; each fills on its own.",
-        ),
-        (
-            "oca_type",
-            "Orders are never grouped; each fills on its own.",
-        ),
-        ("alert_message", "Order fill alerts are not sent."),
-    ])
+    HashMap::from([("alert_message", "Order fill alerts are not sent.")])
 }
 
 fn exit() -> HashMap<&'static str, &'static str> {
@@ -238,12 +239,9 @@ fn marker() -> HashMap<&'static str, &'static str> {
     ])
 }
 
-/// Whole functions that do nothing, by name prefix.
-fn function_prefixes() -> [(&'static str, &'static str); 1] {
-    [(
-        "strategy.risk.",
-        "Risk limits are never enforced, so a drawdown or loss limit does not stop the strategy.",
-    )]
+/// Whole functions that do nothing, by name prefix. None today: the risk rules are enforced.
+fn function_prefixes() -> [(&'static str, &'static str); 0] {
+    []
 }
 
 /// Functions the engine accepts but cannot honour: what they return instead, by exact name.

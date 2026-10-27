@@ -167,6 +167,11 @@ impl EquityExtremes {
         }
     }
 
+    /// The highest equity so far (at least the initial capital).
+    pub fn peak(&self) -> f64 {
+        self.peak
+    }
+
     /// Takes the next point of the curve into account.
     pub fn include(&mut self, equity: f64) {
         self.peak = self.peak.max(equity);

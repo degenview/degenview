@@ -2032,3 +2032,118 @@ fn gross_loss_percent_is_the_losses_over_the_initial_capital() {
     // 40 of loss on 1000.
     assert!((value(&session, "pct").number().unwrap() - 4.0).abs() < 1e-9);
 }
+
+/// Runs a strategy `body` (after its declaration, 1 unit per entry) over bars at `prices`.
+fn run_priced_strategy(declaration: &str, body: &str, prices: &[f64]) -> Session {
+    let source = format!("//@version=6\n{declaration}\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    if let Err(error) = session.evaluate(&flat_bars(prices)) {
+        panic!("{error:?}");
+    }
+    session
+}
+
+const ONE_UNIT: &str = "strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)";
+
+#[test]
+fn default_entry_qty_is_what_an_entry_would_get_at_a_price() {
+    let cash = run_priced_strategy(
+        "strategy(\"S\", default_qty_type = strategy.cash, default_qty_value = 500)",
+        "qty = strategy.default_entry_qty(50)\nnone = strategy.default_entry_qty(na)",
+        &[100.0, 100.0],
+    );
+    assert_eq!(value(&cash, "qty"), RuntimeValue::Float(10.0));
+    assert_eq!(value(&cash, "none"), RuntimeValue::Na);
+    let fixed = run_priced_strategy(
+        "strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 3)",
+        "qty = strategy.default_entry_qty(close)",
+        &[100.0, 100.0],
+    );
+    assert_eq!(value(&fixed, "qty"), RuntimeValue::Float(3.0));
+}
+
+#[test]
+fn a_drawdown_rule_closes_the_position_and_ends_the_orders() {
+    let session = run_priced_strategy(
+        ONE_UNIT,
+        "strategy.risk.max_drawdown(30, strategy.cash)\n\
+         strategy.entry(\"L\", strategy.long)\n\
+         size = strategy.position_size\ncount = strategy.closedtrades",
+        &[100.0, 100.0, 100.0, 60.0, 60.0, 60.0, 60.0],
+    );
+    // The entry fills at 100 on bar 1; bar 3 closes 40 lower, past the 30 limit, so the position
+    // is closed there and the entries of the later bars are ignored.
+    assert_eq!(value(&session, "size"), RuntimeValue::Float(0.0));
+    assert_eq!(value(&session, "count"), RuntimeValue::Int(1));
+    assert_eq!(session.working.broker.closed_trades[0].exit_price, 60.0);
+}
+
+#[test]
+fn the_direction_rule_keeps_a_strategy_long_only() {
+    let session = run_priced_strategy(
+        ONE_UNIT,
+        "strategy.risk.allow_entry_in(strategy.direction.long)\n\
+         if bar_index == 0\n    strategy.entry(\"S\", strategy.short)\n\
+         if bar_index == 2\n    strategy.entry(\"L\", strategy.long)\n\
+         size = strategy.position_size",
+        &[100.0; 5],
+    );
+    assert_eq!(value(&session, "size"), RuntimeValue::Float(1.0));
+    assert_eq!(session.working.broker.open_trades[0].entry_id, "L");
+}
+
+#[test]
+fn a_position_size_rule_trims_the_entries() {
+    let session = run_priced_strategy(
+        "strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 4, pyramiding = 3)",
+        "strategy.risk.max_position_size(5)\n\
+         if bar_index == 0\n    strategy.entry(\"A\", strategy.long)\n\
+         if bar_index == 1\n    strategy.entry(\"B\", strategy.long)\n\
+         size = strategy.position_size",
+        &[100.0; 5],
+    );
+    assert_eq!(value(&session, "size"), RuntimeValue::Float(5.0));
+}
+
+#[test]
+fn an_oca_group_cancels_the_orders_that_did_not_fill() {
+    let session = run_priced_strategy(
+        ONE_UNIT,
+        "if bar_index == 0\n\
+         \x20   strategy.entry(\"A\", strategy.long, limit = 95, oca_name = \"g\", oca_type = strategy.oca.cancel)\n\
+         \x20   strategy.entry(\"B\", strategy.long, limit = 80, oca_name = \"g\", oca_type = strategy.oca.cancel)\n\
+         size = strategy.position_size",
+        // Bar 2 reaches A's limit; bar 4 would reach B's if it were still there.
+        &[100.0, 100.0, 94.0, 94.0, 79.0, 79.0],
+    );
+    assert_eq!(value(&session, "size"), RuntimeValue::Float(1.0));
+    assert_eq!(session.working.broker.open_trades.len(), 1);
+}
+
+#[test]
+fn the_risk_and_oca_arguments_the_chart_cannot_honour_are_warned_about() {
+    let codes = diagnostic_codes(
+        "strategy.risk.max_drawdown(10, strategy.percent_of_equity, alert_message = \"stop\")\n\
+         strategy.risk.allow_entry_in(strategy.direction.long)\n\
+         strategy.entry(\"L\", strategy.long, oca_name = \"g\", oca_type = strategy.oca.reduce)",
+    );
+    assert!(
+        !codes.contains(&"PINE7002".to_owned()),
+        "risk rules are enforced now: {codes:?}"
+    );
+    assert_eq!(
+        codes.iter().filter(|c| *c == "PINE7001").count(),
+        1,
+        "only the alert message: {codes:?}"
+    );
+}

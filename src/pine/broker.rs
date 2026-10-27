@@ -16,6 +16,68 @@ pub enum OrderKind {
     CloseAll,
 }
 
+/// How an order in an OCA group (the orders sharing an `oca_name`) reacts when another of them fills.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OcaKind {
+    /// The other orders of the group are cancelled.
+    Cancel,
+    /// The other orders of the group shrink by the quantity that filled, and go when none is left.
+    Reduce,
+}
+
+/// A limit a risk rule measures, in money or as a percentage of the equity it is measured from.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RiskLimit {
+    Cash(f64),
+    PercentOfEquity(f64),
+}
+
+impl RiskLimit {
+    /// Whether a fall of `loss` from an equity of `peak` has reached the limit.
+    fn reached(self, loss: f64, peak: f64) -> bool {
+        match self {
+            Self::Cash(amount) => loss >= amount - EPSILON,
+            Self::PercentOfEquity(percent) => {
+                peak > 0.0 && loss / peak * 100.0 >= percent - EPSILON
+            }
+        }
+    }
+}
+
+/// What the script's `strategy.risk.*` calls set. Each call states its rule afresh, so the values
+/// are simply the latest.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RiskRules {
+    /// `allow_entry_in`: Some(true) allows only long entries, Some(false) only short ones.
+    pub allowed_direction: Option<bool>,
+    /// `max_position_size`: the most contracts a position may hold.
+    pub max_position_size: Option<f64>,
+    pub max_drawdown: Option<RiskLimit>,
+    pub max_intraday_loss: Option<RiskLimit>,
+    pub max_intraday_filled_orders: Option<usize>,
+    pub max_consecutive_loss_days: Option<usize>,
+}
+
+/// Whether a risk rule has stopped the strategy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Halt {
+    Running,
+    /// Until the day ends (`max_intraday_loss`, `max_intraday_filled_orders`).
+    ForTheDay,
+    /// For good (`max_drawdown`, `max_cons_loss_days`).
+    Forever,
+}
+
+/// What the broker keeps of the trading day a risk rule measures.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Day {
+    number: i64,
+    start_equity: f64,
+    peak_equity: f64,
+    last_equity: f64,
+    fills: usize,
+}
+
 impl OrderKind {
     pub fn is_entry_like(self) -> bool {
         matches!(self, Self::Entry | Self::Order)
@@ -41,6 +103,8 @@ pub struct Order {
     pub comment: String,
     pub comment_profit: Option<String>,
     pub comment_loss: Option<String>,
+    /// The OCA group the order belongs to, and how it reacts to a fill of another member.
+    pub oca: Option<(String, OcaKind)>,
 }
 
 impl Order {
@@ -94,6 +158,12 @@ pub struct Broker {
     extremes: super::strategy::EquityExtremes,
     last_close: f64,
     next_sequence: usize,
+    pub risk: RiskRules,
+    halt: Halt,
+    day: Option<Day>,
+    consecutive_loss_days: usize,
+    /// The time zone the trading days are counted in (the exchange's).
+    pub zone: Option<&'static str>,
 }
 
 impl Broker {
@@ -109,6 +179,11 @@ impl Broker {
             extremes,
             last_close: 0.0,
             next_sequence: 0,
+            risk: RiskRules::default(),
+            halt: Halt::Running,
+            day: None,
+            consecutive_loss_days: 0,
+            zone: None,
         }
     }
 
@@ -189,10 +264,115 @@ impl Broker {
         }
     }
 
+    // MARK: Risk rules
+
+    /// The number of the trading day `millis` falls in, in the broker's zone.
+    fn local_day(&self, millis: i64) -> i64 {
+        let offset = super::time::zone_offset_secs(self.zone, millis);
+        (millis + offset * 1_000).div_euclid(86_400_000)
+    }
+
+    /// Starts a new trading day when the bar opens in one: the last day's result counts towards the
+    /// run of losing days, and a halt that lasted the day is lifted.
+    fn roll_day(&mut self, open_time: i64) {
+        let number = self.local_day(open_time);
+        if self.day.is_some_and(|day| day.number == number) {
+            return;
+        }
+        let start_equity = match self.day {
+            Some(previous) => {
+                if previous.last_equity < previous.start_equity - EPSILON {
+                    self.consecutive_loss_days += 1;
+                } else {
+                    self.consecutive_loss_days = 0;
+                }
+                previous.last_equity
+            }
+            None => self.settings.initial_capital,
+        };
+        self.day = Some(Day {
+            number,
+            start_equity,
+            peak_equity: start_equity,
+            last_equity: start_equity,
+            fills: 0,
+        });
+        if self.halt == Halt::ForTheDay {
+            self.halt = Halt::Running;
+        }
+    }
+
+    /// Counts a filled order against the day's limit.
+    fn note_fill(&mut self) {
+        if let Some(day) = self.day.as_mut() {
+            day.fills += 1;
+        }
+    }
+
+    /// After the bar's equity is known: stops the strategy when a risk rule's limit has been reached.
+    /// Stopping cancels every pending order and closes every open trade at the bar's close.
+    pub fn check_risk(&mut self, bar: &Kline, bar_index: usize, mintick: f64) {
+        let equity = self.equity(bar.close);
+        let Some(day) = self.day.as_mut() else {
+            return;
+        };
+        day.peak_equity = day.peak_equity.max(equity);
+        day.last_equity = equity;
+        let day = *day;
+        if self.halt == Halt::Forever {
+            return;
+        }
+        let drawdown = self.extremes.peak() - equity;
+        let forever = self
+            .risk
+            .max_drawdown
+            .is_some_and(|limit| limit.reached(drawdown, self.extremes.peak()))
+            || self.risk.max_consecutive_loss_days.is_some_and(|days| {
+                // Today counts when it is a loss so far.
+                let today = usize::from(equity < day.start_equity - EPSILON);
+                days > 0 && self.consecutive_loss_days + today >= days
+            });
+        let for_the_day = self.halt == Halt::Running
+            && (self
+                .risk
+                .max_intraday_loss
+                .is_some_and(|limit| limit.reached(day.peak_equity - equity, day.peak_equity))
+                || self
+                    .risk
+                    .max_intraday_filled_orders
+                    .is_some_and(|count| day.fills >= count));
+        let halt = if forever {
+            Halt::Forever
+        } else if for_the_day {
+            Halt::ForTheDay
+        } else {
+            return;
+        };
+        self.orders.clear();
+        let context = BarContext {
+            bar: bar.clone(),
+            bar_index,
+            mintick,
+        };
+        let _ = self.close(
+            &|_| true,
+            None,
+            bar.close,
+            "Close position order",
+            "",
+            &context,
+        );
+        self.halt = halt;
+    }
+
     // MARK: Order book
 
     /// Placing an order with the id of a pending one of the same family replaces it.
     pub fn place(&mut self, mut order: Order) {
+        // A risk rule has stopped the strategy: it can place nothing until the rule lets it.
+        if self.halt != Halt::Running {
+            return;
+        }
         order.sequence = self.next_sequence;
         self.next_sequence += 1;
         match order.kind {
@@ -245,6 +425,7 @@ impl Broker {
     }
 
     pub fn process(&mut self, bar: Kline, bar_index: usize, mintick: f64) {
+        self.roll_day(bar.open_time);
         if self.orders.is_empty() {
             self.touch_bar(&bar);
             return;
@@ -353,7 +534,8 @@ impl Broker {
         }
     }
 
-    fn default_quantity(&self, price: f64) -> f64 {
+    /// The quantity an entry gets when the script gives none, if it filled at `price`.
+    pub fn default_quantity(&self, price: f64) -> f64 {
         if price <= 0.0 {
             return 0.0;
         }
@@ -407,8 +589,14 @@ impl Broker {
 
         match order.kind {
             OrderKind::Entry => {
+                let mut filled = false;
+                // `allow_entry_in`: an entry against the allowed direction only closes the other side.
+                let forbidden = self
+                    .risk
+                    .allowed_direction
+                    .is_some_and(|long| long != order.is_long);
                 if opposes_position {
-                    self.close(
+                    filled |= self.close(
                         &|trade| trade.is_long != order.is_long,
                         None,
                         price,
@@ -416,7 +604,7 @@ impl Broker {
                         &order.comment,
                         context,
                     );
-                } else {
+                } else if !forbidden {
                     let same_side = self
                         .open_trades
                         .iter()
@@ -426,18 +614,37 @@ impl Broker {
                         return;
                     }
                 }
-                let quantity = order
-                    .quantity
-                    .unwrap_or_else(|| self.default_quantity(price));
-                self.open(&order, quantity, price, context);
+                let mut quantity = 0.0;
+                if !forbidden {
+                    quantity = order
+                        .quantity
+                        .unwrap_or_else(|| self.default_quantity(price));
+                    // `max_position_size`: the position may not grow past it.
+                    if let Some(most) = self.risk.max_position_size {
+                        let held: f64 = self
+                            .open_trades
+                            .iter()
+                            .filter(|trade| trade.is_long == order.is_long)
+                            .map(|trade| trade.quantity)
+                            .sum();
+                        quantity = quantity.min((most - held).max(0.0));
+                    }
+                    filled |= self.open(&order, quantity, price, context);
+                }
+                if filled {
+                    self.note_fill();
+                    self.apply_oca(&order, quantity, price);
+                }
             }
             OrderKind::Order => {
                 let mut remaining = order
                     .quantity
                     .unwrap_or_else(|| self.default_quantity(price));
+                let total = remaining;
+                let mut filled = false;
                 if opposes_position {
                     let reduce = remaining.min(position.abs());
-                    self.close(
+                    filled |= self.close(
                         &|trade| trade.is_long != order.is_long,
                         Some(reduce),
                         price,
@@ -447,15 +654,19 @@ impl Broker {
                     );
                     remaining -= reduce;
                 }
-                self.open(&order, remaining, price, context);
+                filled |= self.open(&order, remaining, price, context);
+                if filled {
+                    self.note_fill();
+                    self.apply_oca(&order, total, price);
+                }
             }
             OrderKind::Exit | OrderKind::Close | OrderKind::CloseAll => {}
         }
     }
 
-    fn open(&mut self, order: &Order, quantity: f64, price: f64, context: &BarContext) {
+    fn open(&mut self, order: &Order, quantity: f64, price: f64, context: &BarContext) -> bool {
         if !quantity.is_finite() || quantity <= EPSILON {
-            return;
+            return false;
         }
         self.open_trades.push(OpenTrade {
             entry_id: order.id.clone(),
@@ -469,6 +680,48 @@ impl Broker {
             entry_price: price,
             entry_commission: self.commission(quantity, price, true),
         });
+        true
+    }
+
+    /// When an order of an OCA group fills `filled` contracts at `price`: the group's other pending
+    /// entries are cancelled, or (for the reducing kind) shrink by the quantity and go at zero.
+    fn apply_oca(&mut self, order: &Order, filled: f64, price: f64) {
+        let Some((name, kind)) = order.oca.as_ref() else {
+            return;
+        };
+        let in_group = |other: &Order| {
+            other.kind.is_entry_like() && other.oca.as_ref().is_some_and(|(n, _)| n == name)
+        };
+        match kind {
+            OcaKind::Cancel => self.orders.retain(|other| !in_group(other)),
+            OcaKind::Reduce => {
+                let defaults: Vec<(usize, f64)> = self
+                    .orders
+                    .iter()
+                    .filter(|other| in_group(other))
+                    .map(|other| {
+                        (
+                            other.sequence,
+                            other
+                                .quantity
+                                .unwrap_or_else(|| self.default_quantity(price)),
+                        )
+                    })
+                    .collect();
+                for (sequence, quantity) in defaults {
+                    let left = quantity - filled;
+                    if left <= EPSILON {
+                        self.orders.retain(|other| other.sequence != sequence);
+                    } else if let Some(other) = self
+                        .orders
+                        .iter_mut()
+                        .find(|other| other.sequence == sequence)
+                    {
+                        other.quantity = Some(left);
+                    }
+                }
+            }
+        }
     }
 
     // MARK: Orders that close
@@ -484,7 +737,7 @@ impl Broker {
             .quantity
             .or_else(|| order.quantity_percent.map(|p| total * p / 100.0));
         let is_long = matching.first().is_none_or(|trade| trade.is_long);
-        self.close(
+        let closed = self.close(
             &|trade| trade.entry_id == order.id,
             quantity,
             self.slipped(price, !is_long, context.mintick),
@@ -492,11 +745,14 @@ impl Broker {
             &order.comment,
             context,
         );
+        if closed {
+            self.note_fill();
+        }
     }
 
     fn execute_close_all(&mut self, order: Order, price: f64, context: &BarContext) {
         let is_long = self.position_size() > 0.0;
-        self.close(
+        let closed = self.close(
             &|_| true,
             None,
             self.slipped(price, !is_long, context.mintick),
@@ -504,6 +760,9 @@ impl Broker {
             &order.comment,
             context,
         );
+        if closed {
+            self.note_fill();
+        }
     }
 
     /// Closes up to `quantity` (None = everything) of the open trades `selects` chooses.
@@ -515,7 +774,7 @@ impl Broker {
         exit_id: &str,
         exit_comment: &str,
         context: &BarContext,
-    ) {
+    ) -> bool {
         let mut remaining = quantity.unwrap_or(f64::INFINITY);
         let mut charged_order = false;
         let mut index = 0;
@@ -571,6 +830,7 @@ impl Broker {
                 index += 1;
             }
         }
+        charged_order
     }
 
     // MARK: Triggers
@@ -673,7 +933,7 @@ impl Broker {
             order.comment_profit.as_ref()
         };
         let comment = specific.unwrap_or(&order.comment).clone();
-        self.close(
+        let closed = self.close(
             &|t| t.entry_id == trade.entry_id && t.entry_bar == trade.entry_bar,
             Some(requested.unwrap_or(trade.quantity).min(trade.quantity)),
             price,
@@ -681,6 +941,9 @@ impl Broker {
             &comment,
             context,
         );
+        if closed {
+            self.note_fill();
+        }
         if !self.open_trades.iter().any(|t| order.protects(&t.entry_id)) {
             self.orders.retain(|o| o.sequence != order.sequence);
         }
@@ -799,6 +1062,7 @@ mod tests {
             comment: String::new(),
             comment_profit: None,
             comment_loss: None,
+            oca: None,
         }
     }
 
@@ -936,5 +1200,253 @@ mod tests {
         broker.process(bar(100.0, 101.0, 99.0, 100.0), 5, 0.01);
         assert_eq!(broker.closed_trades[2].exit_comment, "flat");
         assert_eq!(broker.closed_trades[2].entry_comment, "again");
+    }
+
+    const DAY_MS: i64 = 86_400_000;
+
+    /// A bar on day `day` (from 0) that opens, and closes, at `price`.
+    fn day_bar(day: i64, price: f64) -> Kline {
+        Kline {
+            open_time: day * DAY_MS,
+            close_time: day * DAY_MS + 3_599_999,
+            ..bar(price, price, price, price)
+        }
+    }
+
+    /// One bar the way a strategy run does it: orders fill, the equity is recorded, the rules are checked.
+    fn step(broker: &mut Broker, bar: Kline, index: usize) {
+        broker.process(bar.clone(), index, 0.01);
+        broker.record_equity(bar.close);
+        broker.check_risk(&bar, index, 0.01);
+    }
+
+    fn oca(name: &str, kind: OcaKind) -> Option<(String, OcaKind)> {
+        Some((name.to_owned(), kind))
+    }
+
+    #[test]
+    fn allow_entry_in_turns_the_other_side_into_a_close() {
+        let mut broker = Broker::new(settings());
+        broker.risk.allowed_direction = Some(true);
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        assert_eq!(broker.position_size(), 1.0);
+        // A short entry may not open a short: it only closes the long.
+        broker.place(order(OrderKind::Entry, "S", false, Some(1.0)));
+        step(&mut broker, day_bar(0, 110.0), 1);
+        assert_eq!(broker.position_size(), 0.0);
+        assert_eq!(broker.closed_trades.len(), 1);
+        broker.place(order(OrderKind::Entry, "S", false, Some(1.0)));
+        step(&mut broker, day_bar(0, 110.0), 2);
+        assert_eq!(
+            broker.position_size(),
+            0.0,
+            "and with nothing to close it does nothing"
+        );
+        // Short only is the mirror image; all lifts the rule.
+        broker.risk.allowed_direction = Some(false);
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 110.0), 3);
+        assert_eq!(broker.position_size(), 0.0);
+        broker.risk.allowed_direction = None;
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 110.0), 4);
+        assert_eq!(broker.position_size(), 1.0);
+    }
+
+    #[test]
+    fn max_position_size_caps_what_an_entry_adds() {
+        let mut broker = Broker::new(StrategySettings {
+            pyramiding: 3,
+            ..settings()
+        });
+        broker.risk.max_position_size = Some(5.0);
+        broker.place(order(OrderKind::Entry, "A", true, Some(4.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        broker.place(order(OrderKind::Entry, "B", true, Some(4.0)));
+        step(&mut broker, day_bar(0, 100.0), 1);
+        assert_eq!(
+            broker.position_size(),
+            5.0,
+            "the second entry is cut to what is left"
+        );
+        broker.place(order(OrderKind::Entry, "C", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 2);
+        assert_eq!(broker.position_size(), 5.0);
+        assert_eq!(broker.open_trades.len(), 2, "no empty trade is opened");
+    }
+
+    #[test]
+    fn an_oca_cancel_group_loses_its_other_orders_when_one_fills() {
+        let mut broker = Broker::new(settings());
+        let mut first = order(OrderKind::Entry, "A", true, Some(1.0));
+        first.limit = Some(95.0);
+        first.oca = oca("g", OcaKind::Cancel);
+        let mut second = order(OrderKind::Entry, "B", false, Some(1.0));
+        second.limit = Some(120.0);
+        second.oca = oca("g", OcaKind::Cancel);
+        let mut apart = order(OrderKind::Entry, "C", true, Some(1.0));
+        apart.limit = Some(80.0);
+        broker.place(first);
+        broker.place(second);
+        broker.place(apart);
+        step(&mut broker, bar(100.0, 101.0, 94.0, 96.0), 0);
+        assert_eq!(broker.open_trades.len(), 1);
+        assert_eq!(broker.open_trades[0].entry_id, "A");
+        let pending: Vec<&str> = broker.orders.iter().map(|o| o.id.as_str()).collect();
+        assert_eq!(
+            pending,
+            ["C"],
+            "B went with A's fill, C was never in the group"
+        );
+    }
+
+    #[test]
+    fn an_oca_reduce_group_shrinks_by_what_filled() {
+        let mut broker = Broker::new(StrategySettings {
+            pyramiding: 3,
+            ..settings()
+        });
+        let mut first = order(OrderKind::Entry, "A", true, Some(5.0));
+        first.limit = Some(95.0);
+        first.oca = oca("g", OcaKind::Reduce);
+        let mut second = order(OrderKind::Entry, "B", true, Some(8.0));
+        second.limit = Some(90.0);
+        second.oca = oca("g", OcaKind::Reduce);
+        let mut third = order(OrderKind::Entry, "C", true, Some(4.0));
+        third.limit = Some(85.0);
+        third.oca = oca("g", OcaKind::Reduce);
+        broker.place(first);
+        broker.place(second);
+        broker.place(third);
+        step(&mut broker, bar(100.0, 101.0, 94.0, 96.0), 0);
+        let left: Vec<(&str, Option<f64>)> = broker
+            .orders
+            .iter()
+            .map(|o| (o.id.as_str(), o.quantity))
+            .collect();
+        // A filled 5: B has 3 left, C (4) is used up.
+        assert_eq!(left, [("B", Some(3.0))]);
+        step(&mut broker, bar(96.0, 97.0, 89.0, 90.0), 1);
+        let held: f64 = broker.open_trades.iter().map(|t| t.quantity).sum();
+        assert_eq!(held, 8.0, "5 and then the 3 B had left");
+        assert!(broker.orders.is_empty());
+    }
+
+    #[test]
+    fn max_drawdown_stops_the_strategy_for_good() {
+        let mut broker = Broker::new(settings());
+        broker.risk.max_drawdown = Some(RiskLimit::Cash(50.0));
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        // A pending order that the halt cancels.
+        let mut waiting = order(OrderKind::Entry, "W", true, Some(1.0));
+        waiting.limit = Some(1.0);
+        broker.place(waiting);
+        step(&mut broker, day_bar(0, 70.0), 1);
+        assert!(
+            broker.open_trades.len() == 1 && broker.orders.len() == 1,
+            "30 down: not yet"
+        );
+        step(&mut broker, day_bar(0, 40.0), 2);
+        assert!(broker.open_trades.is_empty(), "60 down closes the position");
+        assert!(broker.orders.is_empty(), "and cancels what was waiting");
+        assert_eq!(broker.closed_trades.len(), 1);
+        broker.place(order(OrderKind::Entry, "again", true, Some(1.0)));
+        assert!(broker.orders.is_empty(), "nothing can be placed any more");
+        // Not even on a later day.
+        step(&mut broker, day_bar(5, 40.0), 3);
+        broker.place(order(OrderKind::Entry, "later", true, Some(1.0)));
+        assert!(broker.orders.is_empty());
+    }
+
+    #[test]
+    fn max_drawdown_as_a_percentage_of_the_peak_equity() {
+        let mut broker = Broker::new(StrategySettings {
+            initial_capital: 1000.0,
+            ..settings()
+        });
+        broker.risk.max_drawdown = Some(RiskLimit::PercentOfEquity(10.0));
+        broker.place(order(OrderKind::Entry, "L", true, Some(10.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        step(&mut broker, day_bar(0, 110.0), 1); // equity 1100: the peak
+        step(&mut broker, day_bar(0, 101.0), 2); // 1010: 90 down, 8.2 %
+        assert_eq!(broker.open_trades.len(), 1);
+        step(&mut broker, day_bar(0, 99.0), 3); // 990: 110 down, 10 % of 1100
+        assert!(broker.open_trades.is_empty());
+    }
+
+    #[test]
+    fn max_intraday_loss_is_measured_from_the_days_best_equity_and_a_new_day_lifts_it() {
+        let mut broker = Broker::new(settings());
+        broker.risk.max_intraday_loss = Some(RiskLimit::Cash(20.0));
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        step(&mut broker, day_bar(0, 110.0), 1);
+        step(&mut broker, day_bar(0, 95.0), 2);
+        assert_eq!(broker.open_trades.len(), 1, "15 off the best, not yet");
+        step(&mut broker, day_bar(0, 89.0), 3);
+        assert!(broker.open_trades.is_empty(), "21 off the best: stopped");
+        broker.place(order(OrderKind::Entry, "L2", true, Some(1.0)));
+        assert!(broker.orders.is_empty(), "no new orders today");
+        // The next day lifts the stop.
+        step(&mut broker, day_bar(1, 89.0), 4);
+        broker.place(order(OrderKind::Entry, "L3", true, Some(1.0)));
+        assert_eq!(broker.orders.len(), 1);
+    }
+
+    #[test]
+    fn max_intraday_filled_orders_counts_each_filled_order_once() {
+        let mut broker = Broker::new(settings());
+        broker.risk.max_intraday_filled_orders = Some(2);
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0); // one filled order
+        broker.place(order(OrderKind::CloseAll, "close", true, None));
+        step(&mut broker, day_bar(0, 100.0), 1); // two: the limit
+        broker.place(order(OrderKind::Entry, "L2", true, Some(1.0)));
+        assert!(broker.orders.is_empty(), "stopped for the day");
+        step(&mut broker, day_bar(1, 100.0), 2);
+        broker.place(order(OrderKind::Entry, "L3", true, Some(1.0)));
+        assert_eq!(broker.orders.len(), 1, "a new day, a new count");
+    }
+
+    #[test]
+    fn max_cons_loss_days_stops_the_strategy_after_that_many_losing_days() {
+        let mut broker = Broker::new(settings());
+        broker.risk.max_consecutive_loss_days = Some(2);
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        step(&mut broker, day_bar(0, 98.0), 1);
+        step(&mut broker, day_bar(1, 98.0), 2);
+        step(&mut broker, day_bar(1, 96.0), 3);
+        // Day 0 lost 2 and day 1 is losing 2 more: that is the second losing day.
+        assert!(broker.open_trades.is_empty());
+        broker.place(order(OrderKind::Entry, "again", true, Some(1.0)));
+        assert!(broker.orders.is_empty());
+    }
+
+    #[test]
+    fn a_winning_day_breaks_the_run_of_losing_days() {
+        let mut broker = Broker::new(settings());
+        broker.risk.max_consecutive_loss_days = Some(2);
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        step(&mut broker, day_bar(0, 100.0), 0);
+        step(&mut broker, day_bar(0, 98.0), 1); // day 0 loses
+        step(&mut broker, day_bar(1, 98.0), 2);
+        step(&mut broker, day_bar(1, 101.0), 3); // day 1 wins
+        step(&mut broker, day_bar(2, 101.0), 4);
+        step(&mut broker, day_bar(2, 100.0), 5); // day 2 loses: one day in a row
+        assert_eq!(broker.open_trades.len(), 1);
+    }
+
+    #[test]
+    fn the_default_entry_quantity_is_the_strategys_for_a_price() {
+        let broker = Broker::new(StrategySettings {
+            quantity_type: crate::pine::strategy::QuantityType::Cash,
+            quantity_value: 1000.0,
+            ..settings()
+        });
+        assert_eq!(broker.default_quantity(50.0), 20.0);
+        assert_eq!(broker.default_quantity(0.0), 0.0);
     }
 }

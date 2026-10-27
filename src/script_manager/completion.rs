@@ -8,7 +8,8 @@ use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
 use crate::pine::{
-    array_builtins, drawings, map_builtins, math, matrix_builtins, strings, ta, ta_extra,
+    array_builtins, drawings, map_builtins, math, matrix_builtins, strategy_builtins, strings, ta,
+    ta_extra,
 };
 use std::collections::BTreeSet;
 use std::ops::Range;
@@ -267,6 +268,7 @@ pub fn builtins() -> &'static [Item] {
             .chain(&array_builtins::KNOWN)
             .chain(&map_builtins::NAMES)
             .chain(&ACTIONS)
+            .chain(&strategy_builtins::NAMES)
         {
             add(name, Kind::Function);
         }

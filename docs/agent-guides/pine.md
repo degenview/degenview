@@ -98,6 +98,15 @@
   open trades at the bar's open, at every price a trigger fires at and at each vertex of the intrabar path, so
   a trade closed at the next open does not count that bar's range; a bar with no orders pending touches its
   high and low. Comments show in the trade list's hover text (`Trade::comments`) and over MCP.
+- `strategy.risk.*` calls state rules on `Broker::risk` (the latest call wins; an invalid call changes nothing).
+  `Broker::process` rolls the trading day (in the exchange zone, `Broker::zone`) and `check_risk`, called after
+  each bar's equity is recorded, compares it with the limits. A reached limit cancels every pending order and
+  closes every open trade at the bar's close, then `place` ignores orders: `max_drawdown` (from the peak
+  equity, cash or % of it) and `max_cons_loss_days` stop for good, `max_intraday_loss` (from the day's best
+  equity) and `max_intraday_filled_orders` (one per filled order, a reversal counting once) until the next
+  day. `allow_entry_in` and `max_position_size` act on `strategy.entry` only. Rules are checked at bars'
+  closes, so a limit can be passed within a bar before it is seen. OCA groups (`oca_name` with `oca_type`
+  cancel or reduce) apply to entries and orders; an exit's own `oca_name` is still ignored.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

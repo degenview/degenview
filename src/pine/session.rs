@@ -383,14 +383,18 @@ impl Session {
     }
 
     fn fresh_state(&self) -> RuntimeState {
+        let mut broker = Broker::new(
+            self.program
+                .declaration
+                .strategy
+                .clone()
+                .unwrap_or_default(),
+        );
+        // The trading days the risk rules count are the exchange's.
+        broker.zone =
+            Some(super::trading_session::MarketSessions::for_kind(&self.symbol.kind).zone());
         RuntimeState {
-            broker: Broker::new(
-                self.program
-                    .declaration
-                    .strategy
-                    .clone()
-                    .unwrap_or_default(),
-            ),
+            broker,
             // The first bar executes as bar 0.
             bar_index: -1,
             ..RuntimeState::default()
@@ -693,6 +697,7 @@ impl Session {
 
     fn finish_strategy_bar(&mut self, candle: Kline) {
         let close = candle.close;
+        let candle_for_risk = candle.clone();
         if self
             .program
             .declaration
@@ -706,7 +711,11 @@ impl Session {
                 self.mintick,
             );
         }
+        let bar_index = self.working.bar_index as usize;
         self.working.broker.record_equity(close);
+        self.working
+            .broker
+            .check_risk(&candle_for_risk, bar_index, self.mintick);
     }
 
     pub fn emit(&mut self, alert: AlertEvent) {
