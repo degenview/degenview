@@ -551,6 +551,19 @@ impl PreviewState {
         self.card.pine_error()
     }
 
+    /// The chart's runtime failure, if its run was of `source`. A run of older text has offsets
+    /// that mean nothing in the text now in the editor, so it is not reported against it.
+    pub(super) fn runtime_error_for(
+        &self,
+        source: &str,
+    ) -> Option<&crate::pine::token::Diagnostic> {
+        if self.applied_source.as_deref() == Some(source) {
+            self.runtime_error()
+        } else {
+            None
+        }
+    }
+
     /// The messages the preview's script wrote with `log.*()` in its current run.
     pub(super) fn logs(&self) -> Option<crate::ui::PineLogs<'_>> {
         self.card.pine_logs(PREVIEW_INSTANCE)
@@ -1554,6 +1567,7 @@ mod tests {
             name: "Demo".into(),
             script_type: ScriptType::Indicator,
             source: source.into(),
+            problems: Vec::new(),
             diagnostics: if errors {
                 vec![Diagnostic {
                     code: "PINE1".into(),

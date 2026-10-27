@@ -199,6 +199,20 @@
 - `ScriptManager` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
   debounced apply and stale output; it has no alert coordinator. `script_manager::inputs` renders a
   precompiled `InputSchema` and is shared with chart settings.
+- A script can fail at run time after it compiles (the compiler judges some names only when they run).
+  `script_manager::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
+  and the profile's failure, each only if its run was of the text now in the editor and never beside a
+  compile error. The Problems tab and its badge, the editor's chip and the red underline all read it, so
+  a failure must not be handled in one place only. `ExecutionController` remembers its last failure
+  (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
+  read as a success.
+- `name_check` warns (`PINE3053`) on a call into `array`, `map`, `matrix`, `math` or `str` that their one
+  dispatch table does not list (`array.resize`), with a "Did you mean" for a name two edits away. It is a
+  warning, not an error, because the script runs until the line is reached; when the run then fails at
+  that call, `problems::visible` drops the warning so the mistake is listed once, as the error. Add a
+  namespace to `unknown_member` only if every function the runtime accepts comes from one table: `ta`,
+  `request`, `color` and the drawing namespaces are dispatched from several places and stay unchecked. A
+  false warning on a script that runs is worse than a missed typo.
 - Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
   use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.

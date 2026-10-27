@@ -101,6 +101,11 @@ script does with the candles afterwards is timed like anything else.
   turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is blue while the profiler is on,
   amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
   Turning it on opens the drawer's **Profile** tab.
+* **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
+  index out of range) ends the profile as *partial* ("the script failed after N bars: …"), and the
+  same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
+  underlined at the failing call, exactly as the chart's own run reports it (`script_manager::problems`).
+  Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.
 * **The column** beside the line numbers, present only while the profiler is on, so the text moves
   once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
   line's share of the script's time as a number, and, for the three hottest lines (if at least four

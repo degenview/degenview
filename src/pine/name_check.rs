@@ -5,6 +5,10 @@
 //! A report is an error: the script would fail the run at that name anyway, and showing it as a
 //! warning first made the Problems tab flip from yellow to red once the run failed.
 //!
+//! The one warning is a member of a namespace whose functions are all listed (`array.resize`): the
+//! script compiles, and fails only if the line is reached, so it is a warning until the run says
+//! otherwise (see `UNKNOWN_MEMBER`).
+//!
 //! It is deliberately lenient, because a false report on a script that runs is worse than a
 //! missed typo: a name counts as defined when it is declared *anywhere* in the script (scope and
 //! declaration order are not checked), and a dotted name whose head is a builtin namespace is left
@@ -16,13 +20,15 @@ use std::collections::HashSet;
 use super::ast::{Expression, Statement};
 use super::traversal::{expressions, for_each_call, for_each_identifier, nested_blocks};
 use super::{
-    Diagnostic, DiagnosticCategory, SourceRange, alert_builtins, array_builtins, builtins,
-    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, strategy_builtins,
-    strings, symbol_catalog, ta, ta_extra, visuals,
+    Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, alert_builtins,
+    array_builtins, builtins, compiler, drawings, map_builtins, math, matrix_builtins,
+    misc_builtins, strategy_builtins, strings, symbol_catalog, ta, ta_extra, visuals,
 };
 
 pub const UNDEFINED_VARIABLE: &str = "PINE3050";
 pub const UNDEFINED_FUNCTION: &str = "PINE3051";
+/// A call to a name in `array`, `map`, `matrix`, `math` or `str` that DegenView does not run.
+pub const UNKNOWN_MEMBER: &str = "PINE3053";
 
 /// Reports each variable read and function call whose name nothing defines. `import_aliases` are
 /// the aliases of the script's `import` lines; `methods` the names declared with `method`.
@@ -51,6 +57,14 @@ pub fn validate(
                 format!("Undefined function '{name}'."),
                 range,
             ));
+        } else if let Some(message) = unknown_member(name, &declared) {
+            diagnostics.push(Diagnostic {
+                code: UNKNOWN_MEMBER.to_owned(),
+                severity: DiagnosticSeverity::Warning,
+                category: DiagnosticCategory::Semantic,
+                message,
+                range,
+            });
         }
     });
     diagnostics.sort_by_key(|diagnostic| diagnostic.range.start.offset);
@@ -59,6 +73,89 @@ pub fn validate(
 
 fn error(code: &str, message: String, range: SourceRange) -> Diagnostic {
     Diagnostic::error(code, DiagnosticCategory::Semantic, message, range)
+}
+
+/// The message for a call into a namespace whose every function is listed, when `name` is not one.
+///
+/// Only the namespaces below qualify: each has one table the runtime dispatches from, so a name
+/// missing from it fails when the line runs. The others (`ta`, `request`, `color`, the drawing
+/// namespaces) are dispatched from several places and are left to the runtime. A script's own
+/// `array` or `str` (a variable, an import alias) is left alone, as it is for `log`.
+fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
+    let (namespace, _) = name.split_once('.')?;
+    if name.matches('.').count() != 1 || declared.contains(namespace) || declared.contains(name) {
+        return None;
+    }
+    let (listed, known): (bool, Vec<String>) = match namespace {
+        "array" => (
+            array_builtins::handles(name),
+            array_builtins::KNOWN
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect(),
+        ),
+        "map" => (
+            map_builtins::handles(name),
+            map_builtins::NAMES
+                .iter()
+                .map(|n| (*n).to_owned())
+                .collect(),
+        ),
+        "matrix" => (
+            matrix_builtins::handles(name),
+            matrix_builtins::MEMBERS
+                .iter()
+                .map(|member| format!("matrix.{member}"))
+                .collect(),
+        ),
+        "math" => (
+            math::SUPPORTED.contains(&name),
+            math::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
+        ),
+        "str" => (
+            strings::SUPPORTED.contains(&name),
+            strings::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
+        ),
+        _ => return None,
+    };
+    if listed {
+        return None;
+    }
+    let mut message = format!(
+        "'{name}' is not a function DegenView runs; the script fails if this line is reached."
+    );
+    if let Some(close) = closest(name, &known) {
+        message.push_str(&format!(" Did you mean '{close}'?"));
+    }
+    Some(message)
+}
+
+/// The listed name nearest to `name`, if one is a typo away (two edits or fewer).
+fn closest<'a>(name: &str, known: &'a [String]) -> Option<&'a str> {
+    known
+        .iter()
+        .map(|candidate| (edit_distance(name, candidate), candidate))
+        .filter(|(distance, _)| *distance <= 2)
+        .min_by_key(|(distance, _)| *distance)
+        .map(|(_, candidate)| candidate.as_str())
+}
+
+/// Levenshtein distance between two names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut diagonal = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let above = row[j + 1];
+            row[j + 1] = (diagonal + usize::from(ca != *cb))
+                .min(row[j] + 1)
+                .min(above + 1);
+            diagonal = above;
+        }
+    }
+    row[b.len()]
 }
 
 /// Every name the script itself introduces, at any depth: variables, tuple parts, loop counters,
@@ -215,6 +312,86 @@ mod tests {
             .filter(|d| d.code == UNDEFINED_VARIABLE || d.code == UNDEFINED_FUNCTION)
             .map(|d| format!("{}:{}", d.code, d.message))
             .collect()
+    }
+
+    fn unknown_members(body: &str) -> Vec<Diagnostic> {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        compile(&source, Limits::default(), &NoLibraries)
+            .diagnostics
+            .into_iter()
+            .filter(|d| d.code == UNKNOWN_MEMBER)
+            .collect()
+    }
+
+    #[test]
+    fn an_unknown_array_function_is_a_warning_on_the_whole_name() {
+        let body = "var a = array.new_float()\nif barstate.islast\n    array.resize(a, 5)\n";
+        let found = unknown_members(body);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, DiagnosticSeverity::Warning);
+        assert!(
+            found[0]
+                .message
+                .starts_with("'array.resize' is not a function")
+        );
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        let range = found[0].range;
+        assert_eq!(
+            &source[range.start.offset..range.end.offset],
+            "array.resize"
+        );
+        // Not an error: the script still compiles and runs until it reaches the line.
+        let program = compile(&source, Limits::default(), &NoLibraries);
+        assert!(
+            program
+                .diagnostics
+                .iter()
+                .all(|d| d.severity != DiagnosticSeverity::Error),
+            "{:?}",
+            program.diagnostics
+        );
+    }
+
+    #[test]
+    fn a_typo_of_a_listed_function_names_the_one_meant() {
+        let hint = |body: &str| unknown_members(body).remove(0).message;
+        assert!(
+            hint("a = array.new_float()\narray.pusj(a, 1)").ends_with("Did you mean 'array.push'?")
+        );
+        assert!(hint("plot(math.sqr(close))").ends_with("Did you mean 'math.sqrt'?"));
+        assert!(hint("x = str.upperr(\"a\")").ends_with("Did you mean 'str.upper'?"));
+        assert!(
+            hint("m = map.new<string, float>()\nmap.putt(m, \"a\", 1.0)")
+                .ends_with("Did you mean 'map.put'?")
+        );
+        // Nothing near it: no guess.
+        assert!(!hint("a = array.new_float()\narray.resize1(a, 5)").contains("Did you mean"));
+    }
+
+    #[test]
+    fn listed_functions_and_generic_forms_are_not_warned() {
+        let body = "\
+a = array.new<float>(3)
+b = array.new_float()
+c = array.from(1.0, 2.0)
+array.push(b, 1.0)
+m = map.new<string, float>()
+map.put(m, \"k\", 1.0)
+x = matrix.new<float>(2, 2, 0.0)
+y = math.max(1, 2) + math.sqrt(4) + math.sum(close, 3)
+s = str.format(\"{0}\", 1) + str.tostring(2)
+";
+        assert!(
+            unknown_members(body).is_empty(),
+            "{:?}",
+            unknown_members(body)
+        );
+    }
+
+    #[test]
+    fn other_namespaces_are_left_to_the_runtime() {
+        assert!(unknown_members("plot(ta.nosuch(close, 3))").is_empty());
+        assert!(unknown_members("c = color.nosuch(1)").is_empty());
     }
 
     #[test]

@@ -85,6 +85,9 @@ pub struct EditorState {
     /// The line a stopped script is at, to bring into view next frame unless it already is.
     reveal_stop: Option<usize>,
     pub diagnostics: Vec<Diagnostic>,
+    /// Failures of text that compiled but failed when it ran, drawn and counted like `diagnostics`
+    /// (the workspace sets them each frame; they are never part of the compile result).
+    runtime_problems: Vec<Diagnostic>,
     pub status: CompileStatus,
     highlighted: Option<(u64, Arc<Vec<Span>>)>,
     /// A UTF-16 offset to move the caret to on the next frame (a Problems row was clicked).
@@ -162,6 +165,7 @@ impl EditorState {
             scroll_to_line: None,
             reveal_stop: None,
             diagnostics: Vec::new(),
+            runtime_problems: Vec::new(),
             status: CompileStatus::NotCompiled,
             highlighted: None,
             jump_to: None,
@@ -284,6 +288,16 @@ impl EditorState {
         self.jump_to = Some(offset);
     }
 
+    /// The runtime failures being shown with the compile diagnostics.
+    pub fn runtime_problems(&self) -> &[Diagnostic] {
+        &self.runtime_problems
+    }
+
+    /// Hands the editor the runtime failures of the script to draw and count this frame.
+    pub fn set_runtime_problems(&mut self, problems: Vec<Diagnostic>) {
+        self.runtime_problems = problems;
+    }
+
     /// Hands the editor the debugger's marks to draw this frame.
     pub fn set_debug_marks(&mut self, marks: DebugMarks) {
         self.debug = marks;
@@ -389,6 +403,23 @@ pub fn status_chip(status: CompileStatus, diagnostics: &[Diagnostic]) -> (Icon, 
             plural(errors.max(1), "error"),
         ),
     }
+}
+
+/// `status_chip`, counting the script's runtime failures too: text that compiles but fails when it
+/// runs is not "No problems".
+pub fn status_chip_with_runtime(
+    status: CompileStatus,
+    diagnostics: &[Diagnostic],
+    runtime: &[Diagnostic],
+) -> (Icon, Color32, String) {
+    if runtime
+        .iter()
+        .any(|d| d.severity == DiagnosticSeverity::Error)
+    {
+        let all: Vec<Diagnostic> = super::problems::combined(diagnostics, runtime);
+        return status_chip(CompileStatus::Error, &all);
+    }
+    status_chip(status, diagnostics)
 }
 
 pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
@@ -1127,7 +1158,15 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             ui.painter().extend(extra_over);
 
             // Diagnostic underlines and their merged hover messages (over the text).
-            for diagnostic in &state.diagnostics {
+            let marked = super::problems::visible(&state.diagnostics, &state.runtime_problems)
+                .into_iter()
+                .map(|diagnostic| (diagnostic, false))
+                .chain(state.runtime_problems.iter().map(|d| (d, true)));
+            for (diagnostic, runtime) in marked {
+                // A failure with no place in the text has nothing to underline.
+                if runtime && diagnostic.range.end.offset == 0 {
+                    continue;
+                }
                 if let Some(rect) = underline_rect(&state.source, galley, origin, diagnostic) {
                     let color = match diagnostic.severity {
                         DiagnosticSeverity::Error => theme::syntax::string(),
@@ -2255,12 +2294,17 @@ fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapsho
             .max_rect(bar.shrink2(Vec2::new(12.0, 0.0)))
             .layout(egui::Layout::left_to_right(Align::Center)),
     );
-    let (icon, color, text) = status_chip(state.status, &state.diagnostics);
+    let (icon, color, text) =
+        status_chip_with_runtime(state.status, &state.diagnostics, &state.runtime_problems);
     inner.spacing_mut().item_spacing.x = 5.0;
     icons::inline(&mut inner, icon, 12.0, color);
+    let hover = match state.runtime_problems.first() {
+        Some(failure) => format!("The script failed when it ran: {}", failure.message),
+        None => "Compile status of the code in the editor".to_owned(),
+    };
     inner
         .label(egui::RichText::new(text).size(10.0).color(color))
-        .on_hover_text("Compile status of the code in the editor");
+        .on_hover_text(hover);
     if !changes.is_clean() {
         let (added, removed) = (changes.lines_added(), changes.lines_removed());
         inner.add_space(6.0);

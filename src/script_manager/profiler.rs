@@ -11,8 +11,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::pine::profile::{ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession};
+use crate::pine::profile::{
+    Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
+};
 use crate::pine::program::InputValue;
+use crate::pine::token::Diagnostic;
 
 use super::profile_marks::{ProfileColumn, ProfileMarks};
 
@@ -340,6 +343,18 @@ impl Profiler {
         match self.waiting {
             Some(why) => Status::Waiting(why),
             None => Status::Idle,
+        }
+    }
+
+    /// How the script failed in the profile on screen, if it did and the profile is of the text in the
+    /// editor. A run that was cancelled or ran out of time did not fail.
+    pub fn failure(&self, current: Option<&ProfileKey>) -> Option<&Diagnostic> {
+        if !self.lines_match(current) {
+            return None;
+        }
+        match &self.profile.as_ref()?.report.completeness {
+            Completeness::Partial(Interruption::Failed(error)) => Some(error),
+            _ => None,
         }
     }
 

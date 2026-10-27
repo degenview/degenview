@@ -36,6 +36,10 @@ pub struct ExecutionController {
     bars: Vec<Kline>,
     visible_range: Option<(i64, i64)>,
     live_open_time: Option<i64>,
+    /// How the script last failed, until it runs again and succeeds. An update that changes nothing
+    /// does not run the script, so it must still say the script is failing: otherwise a failure
+    /// would be reported once and then read as a success.
+    last_error: Option<Diagnostic>,
 }
 
 impl ExecutionController {
@@ -83,6 +87,7 @@ impl ExecutionController {
             bars: Vec::new(),
             visible_range,
             live_open_time: None,
+            last_error: None,
         })
     }
 
@@ -164,7 +169,8 @@ impl ExecutionController {
         let live_bar_has_closed =
             self.live_open_time.is_some() && bars.last().is_some_and(|bar| is_closed(bar, now_ms));
         if self.bars == bars && self.visible_range == visible_range && !live_bar_has_closed {
-            return self.result(Vec::new(), None, false, false);
+            let standing = self.last_error.clone();
+            return self.result(Vec::new(), standing, false, false);
         }
         if bars.is_empty() {
             self.bars.clear();
@@ -172,6 +178,7 @@ impl ExecutionController {
             self.visible_range = visible_range;
             self.session.visible_range = visible_range;
             self.session.reset(None);
+            self.last_error = None;
             return self.result(Vec::new(), None, true, true);
         }
 
@@ -186,6 +193,8 @@ impl ExecutionController {
 
         let mut alerts = Vec::new();
         let mut error = None;
+        // Whether the script ran at all: a tick a strategy skips tells nothing new about a failure.
+        let mut ran = false;
         let old_last = self.bars.last().cloned().expect("non-empty snapshot");
         let new_last = bars.last().cloned().expect("non-empty snapshot");
         if old_last.open_time == new_last.open_time {
@@ -194,7 +203,7 @@ impl ExecutionController {
             } else {
                 BarPhase::RealtimeTick { is_new: false }
             };
-            self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
+            ran |= self.execute_event(new_last.clone(), phase, &mut alerts, &mut error);
             if phase.is_confirmed() {
                 self.live_open_time = None;
             }
@@ -206,7 +215,7 @@ impl ExecutionController {
                     .find(|bar| bar.open_time == old_last.open_time)
                     .cloned()
                     .unwrap_or(old_last);
-                self.execute_event(
+                ran |= self.execute_event(
                     closed,
                     BarPhase::RealtimeClose { is_new: false },
                     &mut alerts,
@@ -216,14 +225,14 @@ impl ExecutionController {
             }
             if error.is_none() {
                 if is_closed(&new_last, now_ms) {
-                    self.execute_event(
+                    ran |= self.execute_event(
                         new_last.clone(),
                         BarPhase::Historical,
                         &mut alerts,
                         &mut error,
                     );
                 } else {
-                    self.execute_event(
+                    ran |= self.execute_event(
                         new_last.clone(),
                         BarPhase::RealtimeTick { is_new: true },
                         &mut alerts,
@@ -234,6 +243,11 @@ impl ExecutionController {
             }
         }
         self.bars = bars.to_vec();
+        if ran {
+            self.last_error = error.clone();
+        } else {
+            error = self.last_error.clone();
+        }
         self.result(alerts, error, false, true)
     }
 
@@ -261,6 +275,7 @@ impl ExecutionController {
             self.live_open_time = None;
         }
         self.bars = bars.to_vec();
+        self.last_error = error.clone();
         self.result(alerts, error, true, true)
     }
 
@@ -288,14 +303,15 @@ impl ExecutionController {
         phase: BarPhase,
         alerts: &mut Vec<AlertEvent>,
         error: &mut Option<Diagnostic>,
-    ) {
+    ) -> bool {
         if !should_execute(&self.session, phase) {
-            return;
+            return false;
         }
         match self.session.execute(BarEvent { candle, phase }, true, None) {
             Ok(_) => alerts.extend(self.session.emitted_alerts.clone()),
             Err(run_error) => *error = script_error(run_error),
         }
+        true
     }
 
     fn result(
@@ -416,5 +432,69 @@ mod tests {
         assert!(tick.output.plots.is_empty());
         let close = controller.update(&[bar(0, 12.0)], None, 60_000);
         assert_eq!(close.output.plots[0].values.last(), Some(&Some(12.0)));
+    }
+
+    /// 60-second bars, `count` of them, all long closed by the time `AFTER` comes.
+    fn history(count: i64) -> Vec<Kline> {
+        (0..count)
+            .map(|i| bar(i * 60_000, 10.0 + i as f64))
+            .collect()
+    }
+
+    const AFTER: i64 = 1_000_000_000;
+    const FAILS_ON_THE_LAST_BAR: &str = "//@version=6\nindicator(\"T\")\nif barstate.islast\n    runtime.error(\"boom\")\nplot(close)";
+
+    #[test]
+    fn a_failure_is_still_reported_by_an_update_that_changes_nothing() {
+        let mut controller = controller(FAILS_ON_THE_LAST_BAR);
+        let bars = history(3);
+        let first = controller.update(&bars, None, AFTER);
+        assert_eq!(
+            first.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        // The same bars again: nothing runs, and the script is still failing.
+        let again = controller.update(&bars, None, AFTER);
+        assert!(!again.changed);
+        assert_eq!(
+            again.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        let and_again = controller.update(&bars, None, AFTER);
+        assert!(and_again.error.is_some());
+    }
+
+    #[test]
+    fn a_failure_clears_once_the_script_runs_clean() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nif bar_index == 1\n    runtime.error(\"boom\")\nplot(close)",
+        );
+        assert!(controller.update(&history(2), None, AFTER).error.is_some());
+        // Another closed bar arrives and runs without failing.
+        let next = controller.update(&history(3), None, AFTER);
+        assert!(next.error.is_none(), "{:?}", next.error);
+        // And it stays clear for an update that changes nothing.
+        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+    }
+
+    #[test]
+    fn an_empty_snapshot_forgets_the_failure() {
+        let mut controller = controller(FAILS_ON_THE_LAST_BAR);
+        assert!(controller.update(&history(3), None, AFTER).error.is_some());
+        assert!(controller.update(&[], None, AFTER).error.is_none());
+        assert!(controller.update(&[], None, AFTER).error.is_none());
+    }
+
+    #[test]
+    fn a_rebuild_replaces_the_standing_failure() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nif barstate.islast and bar_index > 2\n    runtime.error(\"boom\")\nplot(close)",
+        );
+        // Three bars: the last has index 2, so the script is fine.
+        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+        // Five bars is a different snapshot, rebuilt: the last bar fails now.
+        assert!(controller.update(&history(5), None, AFTER).error.is_some());
+        // Back to three bars: rebuilt, and fine again.
+        assert!(controller.update(&history(3), None, AFTER).error.is_none());
     }
 }

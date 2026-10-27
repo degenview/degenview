@@ -31,11 +31,23 @@ pub(crate) struct PreviewInput {
     pub script_type: super::model::ScriptType,
     pub source: String,
     pub diagnostics: Vec<Diagnostic>,
+    /// `diagnostics` and the script's runtime failures: what the Problems tab lists and counts.
+    pub problems: Vec<Diagnostic>,
     /// The source changed after `diagnostics` were made; the preview waits for them to catch up.
     pub compile_pending: bool,
 }
 
 impl ScriptManager {
+    /// How the script of `source`, whose compile result is `compile`, failed when it ran: on the
+    /// chart or in the profile, and only if that run was of this very text.
+    pub(super) fn runtime_problems(&self, source: &str, compile: &[Diagnostic]) -> Vec<Diagnostic> {
+        super::problems::runtime_problems(
+            compile,
+            self.preview.runtime_error_for(source),
+            self.profiler.failure(self.profiler_now.as_ref()),
+        )
+    }
+
     pub(super) fn detail_ui(&mut self, ui: &mut Ui) {
         if self.open.is_some() {
             self.workspace_ui(ui);
@@ -159,11 +171,19 @@ impl ScriptManager {
             script_type: open.script_type,
             source: open.editor.source.clone(),
             diagnostics: open.editor.diagnostics.clone(),
+            problems: Vec::new(),
             compile_pending: open.editor.compile_pending(),
         });
-        let Some(input) = input else {
+        let Some(mut input) = input else {
             return;
         };
+        // One list of problems for the tab, its count and the editor: what the compiler said plus
+        // how the script failed when it ran, on the chart or in the profile.
+        let runtime = self.runtime_problems(&input.source, &input.diagnostics);
+        input.problems = super::problems::combined(&input.diagnostics, &runtime);
+        if let Some(open) = self.open.as_mut() {
+            open.editor.set_runtime_problems(runtime);
+        }
 
         let cmds = RefCell::new(Vec::new());
         let changed = Cell::new(false);
@@ -405,18 +425,7 @@ fn preview_pane(
     middle_ui.set_clip_rect(middle.intersect(ui.clip_rect()));
     let copied = RefCell::new(*copied_at);
     let tab = drawer_tab;
-    // The Problems tab lists the editor's diagnostics, plus the chart's runtime failure once
-    // the text compiles.
-    let problems = {
-        let mut list = input.diagnostics.clone();
-        let compile_errors = list
-            .iter()
-            .any(|d| d.severity == crate::pine::token::DiagnosticSeverity::Error);
-        if !compile_errors && let Some(error) = preview.borrow().runtime_error() {
-            list.push(error.clone());
-        }
-        list
-    };
+    let problems = input.problems.clone();
     split::show(
         &mut middle_ui,
         Id::new("script-preview-drawer"),
@@ -470,7 +479,7 @@ fn preview_pane(
         bar_rect,
         drawer_tab,
         drawer_open,
-        &input.diagnostics,
+        &input.problems,
         &status,
     );
     if let Some(tab) = output.tab {

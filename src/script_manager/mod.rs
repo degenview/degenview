@@ -46,6 +46,11 @@ pub mod multi_cursor;
 pub mod name;
 pub mod prefs;
 mod preview;
+mod problems;
+#[cfg(test)]
+mod problems_gallery;
+#[cfg(test)]
+mod problems_tests;
 mod profile_marks;
 mod profile_ui;
 mod profiler;
