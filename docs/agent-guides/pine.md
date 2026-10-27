@@ -119,6 +119,14 @@
   folds comparisons, `and`/`or`/`not` and `?:`. The form draws a card whose condition fails disabled; the
   input keeps its value and the script reads it. Anything else (a series, a call, a later input, a
   non-bool) is warned (`PINE7001`) and leaves the input editable. The MCP input tools do not honour it.
+- Declaring a name a builtin variable has (`open = 1`, a local `float hl2 = ...`, a loop counter) is the
+  `PINE7006` warning unless the script read the builtin above the declaration, then `CE10190`
+  (`structure_validator::check_name`). The manual calls it a warning that becomes an error once the script uses
+  the builtin "anywhere"; the corpus shows that a read below a local shadow, outside its block, is accepted
+  (`aVFtPnUh`), and that scripts shadow `low`, `hl2` and `second` with no read of the builtin
+  (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`), so the rule is not "always an error" nor "any read anywhere". A
+  parameter may reuse the name inside its function with a warning. TradingView's own message text is not
+  documented.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
