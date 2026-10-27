@@ -26,7 +26,7 @@ const MENU_WIDTH: f32 = 300.0;
 const COPIED_FOR: Duration = Duration::from_millis(1400);
 
 /// Starting points for an empty conversation, for each mode.
-const PLAN_EXAMPLES: [&str; 3] = [
+const ASK_EXAMPLES: [&str; 3] = [
     "Explain what this script does",
     "What could go wrong with this logic?",
     "How would I add an alert to this?",
@@ -416,9 +416,9 @@ fn setup_card(ui: &mut Ui, problem: &str) -> bool {
 fn empty_state(ui: &mut Ui, ai: &mut Assistant, script_name: &str) {
     ui.add_space(6.0);
     let (line, examples) = match ai.mode {
-        Mode::Plan => (
-            format!("Ask about {script_name}, or plan a change. Nothing is edited in Plan mode."),
-            PLAN_EXAMPLES,
+        Mode::Ask => (
+            format!("Ask about {script_name}, or plan a change. Nothing is edited in Ask mode."),
+            ASK_EXAMPLES,
         ),
         Mode::Edit => (
             format!("Describe a change to {script_name}."),
@@ -548,14 +548,14 @@ fn thinking(ui: &mut Ui) {
     });
 }
 
-/// A reply. A Plan reply is shown whole, code blocks and all. An Edit reply's script is not shown
+/// A reply. An Ask reply is shown whole, code blocks and all. An Edit reply's script is not shown
 /// in the transcript (the proposal below it is where it is read), only a line saying it was written.
 fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
     if text.trim().is_empty() {
         thinking(ui);
         return;
     }
-    if mode == Mode::Plan {
+    if mode == Mode::Ask {
         markdown_view::show(ui, id, &markdown_view::parse(text));
         return;
     }
@@ -807,7 +807,7 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                             .text_color(theme::text_primary())
                             .hint_text(kit::text(
                                 match ai.mode {
-                                    Mode::Plan => "Ask a question or plan a change",
+                                    Mode::Ask => "Ask a question or plan a change",
                                     Mode::Edit => "Describe a change",
                                 },
                                 kit::size::BODY,
@@ -832,7 +832,7 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                         ui,
                         Id::new("ai-mode"),
                         &[
-                            (Mode::Plan, Mode::Plan.title()),
+                            (Mode::Ask, Mode::Ask.title()),
                             (Mode::Edit, Mode::Edit.title()),
                         ],
                         &mut mode,
@@ -848,9 +848,14 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                         if kit::sheet_button(ui, "Stop", false, true).clicked() {
                             actions.push(PanelAction::Stop);
                         }
-                    } else if kit::sheet_button(ui, "Send", true, can_send)
-                        .on_hover_text("Enter")
-                        .clicked()
+                    } else if ui
+                        .add_enabled_ui(can_send, |ui| {
+                            // Gray, like Stop and Discard; the dimming says there is nothing to send.
+                            kit::sheet_button(ui, "Send", false, true)
+                                .on_hover_text("Enter")
+                                .clicked()
+                        })
+                        .inner
                     {
                         actions.push(PanelAction::Send);
                     }
@@ -862,8 +867,8 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
         egui::Label::new(kit::text(
             // What leaves this Mac comes first: a narrow panel cuts the end of the line.
             match ai.mode {
-                Mode::Plan => format!(
-                    "Sent to {}  ·  Plan never edits  ·  {}",
+                Mode::Ask => format!(
+                    "Sent to {}  ·  Ask never edits  ·  {}",
                     setup.provider, setup.context
                 ),
                 Mode::Edit => format!("Sent to {}  ·  {}", setup.provider, setup.context),

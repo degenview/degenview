@@ -91,7 +91,7 @@ pub struct Assistant {
     /// The script this conversation is about; a different open script starts a new one.
     pub script_id: Option<ScriptId>,
     pub turns: Vec<Turn>,
-    /// Whether a request may propose a change. Plan, until the user switches to Edit.
+    /// Whether a request may propose a change. Ask, until the user switches to Edit.
     pub mode: Mode,
     /// The message being typed.
     pub input: String,
@@ -128,10 +128,10 @@ impl Assistant {
     }
 
     /// Starts a new conversation about another script: the old one is forgotten, any request
-    /// stops, and the mode goes back to Plan. The typed message stays.
+    /// stops, and the mode goes back to Ask. The typed message stays.
     pub fn reset(&mut self, script_id: Option<ScriptId>) {
         self.script_id = script_id;
-        self.mode = Mode::Plan;
+        self.mode = Mode::Ask;
         self.clear();
     }
 
@@ -145,7 +145,7 @@ impl Assistant {
         self.notice = None;
     }
 
-    /// Switches mode. Refused while a request is running or a proposal waits, so Plan can never
+    /// Switches mode. Refused while a request is running or a proposal waits, so Ask can never
     /// sit beside an Apply button.
     pub fn set_mode(&mut self, mode: Mode) -> bool {
         if self.run.is_some() || self.proposal.is_some() {
@@ -216,7 +216,7 @@ impl Assistant {
         self.run.is_none()
             && matches!(
                 self.turns.last(),
-                Some(Turn::Assistant { text, mode: Mode::Plan }) if ai_prompt::looks_like_plan(text)
+                Some(Turn::Assistant { text, mode: Mode::Ask }) if ai_prompt::looks_like_plan(text)
             )
     }
 
@@ -332,8 +332,8 @@ impl Assistant {
                     text: text.clone(),
                     mode,
                 });
-                // Plan only talks. Whatever the model wrote, no proposal comes of it.
-                if mode == Mode::Plan {
+                // Ask only talks. Whatever the model wrote, no proposal comes of it.
+                if mode == Mode::Ask {
                     return;
                 }
                 let reply = ai_prompt::split_reply(&text);
@@ -640,22 +640,22 @@ mod tests {
     }
 
     #[test]
-    fn a_new_conversation_starts_in_plan() {
-        assert_eq!(Assistant::default().mode, Mode::Plan);
+    fn a_new_conversation_starts_in_ask() {
+        assert_eq!(Assistant::default().mode, Mode::Ask);
     }
 
     #[test]
-    fn plan_never_proposes_even_when_the_model_writes_a_whole_script() {
+    fn ask_never_proposes_even_when_the_model_writes_a_whole_script() {
         let new = "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n";
-        let assistant = run_in(Mode::Plan, vec![reply_with(new)], BASE);
-        assert!(assistant.proposal.is_none(), "Plan must never offer Apply");
+        let assistant = run_in(Mode::Ask, vec![reply_with(new)], BASE);
+        assert!(assistant.proposal.is_none(), "Ask must never offer Apply");
         assert!(assistant.notice.is_none());
         // The reply is still kept, with the mode it was made in, so it shows as code.
         assert_eq!(
             assistant.turns.last(),
             Some(&Turn::Assistant {
                 text: format!("Made it red.\n```pine\n{new}```\n"),
-                mode: Mode::Plan
+                mode: Mode::Ask
             })
         );
     }
@@ -680,9 +680,9 @@ mod tests {
             Mode::Edit,
             wake(),
         );
-        assert!(!assistant.set_mode(Mode::Plan), "refused while running");
+        assert!(!assistant.set_mode(Mode::Ask), "refused while running");
         assistant.stop();
-        assert!(assistant.set_mode(Mode::Plan));
+        assert!(assistant.set_mode(Mode::Ask));
 
         let mut with_proposal = run_in(
             Mode::Edit,
@@ -692,7 +692,7 @@ mod tests {
         assert!(with_proposal.proposal.is_some());
         with_proposal.mode = Mode::Edit;
         assert!(
-            !with_proposal.set_mode(Mode::Plan),
+            !with_proposal.set_mode(Mode::Ask),
             "refused while a change waits"
         );
         assert_eq!(with_proposal.mode, Mode::Edit);
@@ -702,33 +702,29 @@ mod tests {
     fn a_plan_reply_with_numbered_steps_can_be_implemented() {
         let plan =
             MockProvider::text(&["Here is the plan:\n1. Add an input\n2. Use it in the average\n"]);
-        let assistant = run_in(Mode::Plan, vec![plan], BASE);
+        let assistant = run_in(Mode::Ask, vec![plan], BASE);
         assert!(assistant.can_implement());
 
         let answer = MockProvider::text(&["The RSI measures momentum."]);
-        assert!(!run_in(Mode::Plan, vec![answer], BASE).can_implement());
+        assert!(!run_in(Mode::Ask, vec![answer], BASE).can_implement());
 
         // Steps in an edit reply, or while a request is running, do not offer it.
         let steps = MockProvider::text(&["1. a\n2. b\n"]);
         assert!(!run_in(Mode::Edit, vec![steps], BASE).can_implement());
-        let mut running = run_in(
-            Mode::Plan,
-            vec![MockProvider::text(&["1. a\n2. b\n"])],
-            BASE,
-        );
+        let mut running = run_in(Mode::Ask, vec![MockProvider::text(&["1. a\n2. b\n"])], BASE);
         running.start(
             Box::new(MockProvider::replying(vec![])),
             request(),
             "again".to_owned(),
             BASE.to_owned(),
-            Mode::Plan,
+            Mode::Ask,
             wake(),
         );
         assert!(!running.can_implement());
     }
 
     #[test]
-    fn a_new_script_goes_back_to_plan_but_start_over_keeps_the_mode() {
+    fn a_new_script_goes_back_to_ask_but_start_over_keeps_the_mode() {
         let mut assistant = run_in(
             Mode::Edit,
             vec![reply_with("//@version=6\nplot(close)\n")],
@@ -739,7 +735,7 @@ mod tests {
         assert_eq!(assistant.mode, Mode::Edit, "Start over keeps the mode");
         assert!(assistant.turns.is_empty());
         assistant.reset(Some("other".into()));
-        assert_eq!(assistant.mode, Mode::Plan);
+        assert_eq!(assistant.mode, Mode::Ask);
     }
 
     #[test]
@@ -767,7 +763,7 @@ mod tests {
             vec![reply_with("//@version=6\nplot(close)\n")],
             BASE,
         );
-        assistant.mode = Mode::Plan;
+        assistant.mode = Mode::Ask;
         assert!(assistant.proposal.is_some());
         let text = assistant.rewind_last();
         assert_eq!(text.as_deref(), Some("a question"));
@@ -778,11 +774,11 @@ mod tests {
 
     #[test]
     fn rewinding_only_undoes_the_last_exchange() {
-        let mut assistant = run_in(Mode::Plan, vec![MockProvider::text(&["one"])], BASE);
+        let mut assistant = run_in(Mode::Ask, vec![MockProvider::text(&["one"])], BASE);
         assistant.turns.push(Turn::User("second".into()));
         assistant.turns.push(Turn::Assistant {
             text: "two".into(),
-            mode: Mode::Plan,
+            mode: Mode::Ask,
         });
         assert_eq!(assistant.rewind_last().as_deref(), Some("second"));
         assert_eq!(assistant.turns.len(), 2, "the first exchange stays");
@@ -792,13 +788,13 @@ mod tests {
 
     #[test]
     fn nothing_rewinds_while_a_request_runs() {
-        let mut assistant = run_in(Mode::Plan, vec![MockProvider::text(&["one"])], BASE);
+        let mut assistant = run_in(Mode::Ask, vec![MockProvider::text(&["one"])], BASE);
         assistant.start(
             Box::new(MockProvider::replying(vec![])),
             request(),
             "again".to_owned(),
             BASE.to_owned(),
-            Mode::Plan,
+            Mode::Ask,
             wake(),
         );
         assert_eq!(assistant.rewind_last(), None);

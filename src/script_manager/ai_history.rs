@@ -191,7 +191,7 @@ mod tests {
                     Turn::User(format!("question {i}")),
                     Turn::Assistant {
                         text: format!("answer {i}"),
-                        mode: Mode::Plan,
+                        mode: Mode::Ask,
                     },
                 ]
             })
@@ -271,7 +271,7 @@ mod tests {
                     Turn::User(chunk.clone()),
                     Turn::Assistant {
                         text: chunk.clone(),
-                        mode: Mode::Plan,
+                        mode: Mode::Ask,
                     },
                 ]
             })
@@ -310,7 +310,7 @@ mod tests {
                     Turn::User(chunk.clone()),
                     Turn::Assistant {
                         text: chunk.clone(),
-                        mode: Mode::Plan,
+                        mode: Mode::Ask,
                     },
                 ],
                 i as i64,
@@ -359,5 +359,37 @@ mod tests {
             )
             .unwrap();
         assert!(History::load(&store).is_empty());
+    }
+
+    #[test]
+    fn a_conversation_saved_before_plan_was_renamed_ask_still_loads() {
+        let store = Store::open_in_memory().unwrap();
+        store
+            .set_setting(
+                KEY,
+                &serde_json::json!({"conversations": [{
+                    "script_id": "s",
+                    "used_ms": 1,
+                    "turns": [
+                        {"role": "user", "text": "q"},
+                        {"role": "assistant", "text": "a", "mode": "plan"}
+                    ]
+                }]}),
+            )
+            .unwrap();
+        let turns = History::load(&store).get("s");
+        assert_eq!(
+            turns[1],
+            Turn::Assistant {
+                text: "a".into(),
+                mode: Mode::Ask
+            }
+        );
+        // And it is written back under the new name.
+        let mut history = History::load(&store);
+        history.put("s", &turns, 2);
+        history.save(&store).unwrap();
+        let raw: serde_json::Value = store.setting(KEY).unwrap();
+        assert_eq!(raw["conversations"][0]["turns"][1]["mode"], "ask");
     }
 }

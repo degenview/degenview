@@ -419,7 +419,7 @@ impl ScriptManager {
     /// from the script the model was shown.
     fn ai_accept(&mut self, ctx: &egui::Context) {
         // A proposal only exists after an Edit request, and the mode cannot change while one waits;
-        // this guard makes "Plan never changes the script" true even if that ever slips.
+        // this guard makes "Ask never changes the script" true even if that ever slips.
         if self.ai.mode != Mode::Edit {
             return;
         }

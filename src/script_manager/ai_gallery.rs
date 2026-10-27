@@ -145,7 +145,7 @@ fn gallery_of_the_assistant() {
                 },
                 "How would I add a length input?".to_owned(),
                 base,
-                Mode::Plan,
+                Mode::Ask,
                 Arc::new(|| {}),
             );
             scene.frames(12);
@@ -176,7 +176,7 @@ fn gallery_of_the_assistant() {
                 },
                 "What does this script do?".to_owned(),
                 base,
-                Mode::Plan,
+                Mode::Ask,
                 Arc::new(|| {}),
             );
             scene.frames(12);

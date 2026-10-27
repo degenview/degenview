@@ -21,20 +21,21 @@ const MAX_DIAGNOSTIC_LINES: usize = 20;
 const OMITTED: &str =
     "[The script that was proposed here is omitted. The current script is in the last message.]";
 
-/// What a request may do. In Plan the assistant only talks: the script is never offered for
+/// What a request may do. In Ask the assistant only talks: the script is never offered for
 /// applying, whatever the model writes. In Edit it may propose a whole new script.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
-    Plan,
+    #[serde(alias = "plan")]
+    Ask,
     Edit,
 }
 
 impl Mode {
     pub fn title(self) -> &'static str {
         match self {
-            Self::Plan => "Plan",
+            Self::Ask => "Ask",
             Self::Edit => "Edit",
         }
     }
@@ -69,9 +70,9 @@ declaration unless asked to change it.\n\
 - If the message lists compiler errors, fix them.\n\
 - Write plain Markdown: short paragraphs and `code` for names.\n\n",
         ),
-        Mode::Plan => String::from(
+        Mode::Ask => String::from(
             "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
-interpreter. The user's current script and their question are in the last message. You are in PLAN \
+interpreter. The user's current script and their question are in the last message. You are in ASK \
 mode: you cannot change the script, and nothing you write is applied to it.\n\n\
 How to answer:\n\
 - Answer the question directly and concisely, referring to names and lines in their script.\n\
@@ -161,7 +162,7 @@ pub fn build_messages(
             } => ChatMessage::assistant(without_script(text)),
             Turn::Assistant {
                 text,
-                mode: Mode::Plan,
+                mode: Mode::Ask,
             } => ChatMessage::assistant(text.clone()),
         })
         .collect();
@@ -474,14 +475,14 @@ mod tests {
     }
 
     #[test]
-    fn plan_mode_says_it_cannot_change_the_script_and_edit_mode_asks_for_the_whole_one() {
-        let plan = system_prompt(Mode::Plan);
-        assert!(plan.contains("PLAN"));
+    fn ask_mode_says_it_cannot_change_the_script_and_edit_mode_asks_for_the_whole_one() {
+        let plan = system_prompt(Mode::Ask);
+        assert!(plan.contains("ASK"));
         assert!(plan.contains("Never write the complete script"));
         assert!(!plan.contains("COMPLETE updated script"));
         let edit = system_prompt(Mode::Edit);
         assert!(edit.contains("COMPLETE updated script"));
-        assert!(!edit.contains("PLAN"));
+        assert!(!edit.contains("ASK"));
         // Both carry the unsupported-name list and the examples.
         for prompt in [&plan, &edit] {
             assert!(prompt.contains("fixnan"));
@@ -491,8 +492,8 @@ mod tests {
 
     #[test]
     fn the_default_mode_is_plan() {
-        assert_eq!(Mode::default(), Mode::Plan);
-        assert_eq!(Mode::Plan.title(), "Plan");
+        assert_eq!(Mode::default(), Mode::Ask);
+        assert_eq!(Mode::Ask.title(), "Ask");
     }
 
     #[test]
@@ -502,7 +503,7 @@ mod tests {
             Turn::User("how".into()),
             Turn::Assistant {
                 text: snippet.into(),
-                mode: Mode::Plan,
+                mode: Mode::Ask,
             },
             Turn::User("do it".into()),
             Turn::Assistant {

@@ -253,42 +253,42 @@ fn the_panel_state_is_saved_with_the_layout() {
 }
 
 #[test]
-fn the_panel_opens_in_plan_mode() {
+fn the_panel_opens_in_ask_mode() {
     let mut rig = Rig::new("ai-plan-default");
     open_panel(&mut rig);
-    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    assert_eq!(rig.manager.ai.mode, Mode::Ask);
 }
 
 #[test]
-fn a_question_in_plan_mode_leaves_the_editor_and_the_proposal_alone() {
+fn a_question_in_ask_mode_leaves_the_editor_and_the_proposal_alone() {
     let mut rig = Rig::new("ai-plan-asks");
     open_panel(&mut rig);
     let before = source(&rig);
     // Even a model that answers with a whole new script changes nothing.
     ask_in(
         &mut rig,
-        Mode::Plan,
+        Mode::Ask,
         script_reply(&format!("{before}// sneaky\n")),
     );
     assert!(rig.manager.ai.proposal.is_none());
     assert_eq!(source(&rig), before);
-    // And Apply, were it ever sent, does nothing in Plan.
+    // And Apply, were it ever sent, does nothing in Ask.
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
     rig.frame();
     assert_eq!(source(&rig), before);
 }
 
 #[test]
-fn accept_is_refused_in_plan_even_if_a_proposal_somehow_exists() {
+fn accept_is_refused_in_ask_even_if_a_proposal_somehow_exists() {
     let mut rig = Rig::new("ai-plan-accept");
     open_panel(&mut rig);
     let before = source(&rig);
     ask(&mut rig, script_reply(&format!("{before}// x\n")));
     assert!(rig.manager.ai.proposal.is_some());
-    rig.manager.ai.mode = Mode::Plan;
+    rig.manager.ai.mode = Mode::Ask;
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
     rig.frame();
-    assert_eq!(source(&rig), before, "Plan mode applies nothing");
+    assert_eq!(source(&rig), before, "Ask mode applies nothing");
 }
 
 #[test]
@@ -305,7 +305,7 @@ fn the_mode_switch_works_and_is_locked_while_a_change_waits() {
     ask(&mut rig, script_reply(&format!("{before}// x\n")));
     rig.manager
         .cmds
-        .push(Cmd::Ai(PanelAction::SetMode(Mode::Plan)));
+        .push(Cmd::Ai(PanelAction::SetMode(Mode::Ask)));
     rig.frame();
     assert_eq!(
         rig.manager.ai.mode,
@@ -317,9 +317,9 @@ fn the_mode_switch_works_and_is_locked_while_a_change_waits() {
     rig.frame();
     rig.manager
         .cmds
-        .push(Cmd::Ai(PanelAction::SetMode(Mode::Plan)));
+        .push(Cmd::Ai(PanelAction::SetMode(Mode::Ask)));
     rig.frame();
-    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    assert_eq!(rig.manager.ai.mode, Mode::Ask);
 }
 
 #[test]
@@ -328,7 +328,7 @@ fn implement_switches_to_edit_and_asks_for_the_plan() {
     open_panel(&mut rig);
     ask_in(
         &mut rig,
-        Mode::Plan,
+        Mode::Ask,
         MockProvider::text(&["Plan:\n1. Add an input\n2. Use it\n"]),
     );
     assert!(rig.manager.ai.can_implement());
@@ -347,7 +347,7 @@ fn implement_does_nothing_without_a_plan() {
     open_panel(&mut rig);
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Implement));
     rig.frame();
-    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    assert_eq!(rig.manager.ai.mode, Mode::Ask);
     assert!(rig.manager.ai.input.is_empty());
 }
 
@@ -361,7 +361,7 @@ fn the_panel_draws_a_plan_reply_with_code_and_the_implement_button() {
     open_panel(&mut rig);
     ask_in(
         &mut rig,
-        Mode::Plan,
+        Mode::Ask,
         MockProvider::text(&[
             "## Plan\nThe **length** is hard-coded. See [docs](https://example.com).\n",
             "1. Add `input.int`\n2. Use it:\n```pine\nlength = input.int(14)\n```\n- done *soon*\n",
@@ -597,10 +597,10 @@ fn opening_a_fold_adds_the_hidden_lines() {
 }
 
 #[test]
-fn the_sheet_does_not_open_in_plan_mode_or_without_a_proposal() {
+fn the_sheet_does_not_open_in_ask_mode_or_without_a_proposal() {
     let (base, new) = base_and_three_changes();
     let mut rig = proposing("ai-review-plan", &base, &new);
-    rig.manager.ai.mode = Mode::Plan;
+    rig.manager.ai.mode = Mode::Ask;
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Review));
     rig.frame();
     assert!(rig.manager.ai.review.is_none());
@@ -632,7 +632,7 @@ fn a_finished_reply_is_saved_and_comes_back_for_that_script_only() {
     open_panel(&mut rig);
     ask_in(
         &mut rig,
-        Mode::Plan,
+        Mode::Ask,
         MockProvider::text(&["Because it is a moving average."]),
     );
     let saved = saved_turns(&rig);
@@ -645,7 +645,7 @@ fn a_finished_reply_is_saved_and_comes_back_for_that_script_only() {
     rig.manager.open_script(&other);
     rig.frame();
     assert!(rig.manager.ai.turns.is_empty());
-    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    assert_eq!(rig.manager.ai.mode, Mode::Ask);
     rig.manager.open_script(&first);
     rig.frame();
     assert_eq!(rig.manager.ai.turns, saved);
@@ -655,7 +655,7 @@ fn a_finished_reply_is_saved_and_comes_back_for_that_script_only() {
 fn a_restarted_app_still_has_the_conversation() {
     let mut rig = Rig::new("ai-history-restart");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     let before = rig.manager.ai.turns.clone();
     let rig = rig.restarted();
     assert_eq!(rig.manager.ai.turns, before);
@@ -665,7 +665,7 @@ fn a_restarted_app_still_has_the_conversation() {
 fn start_over_deletes_the_saved_conversation() {
     let mut rig = Rig::new("ai-history-clear");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     assert!(!saved_turns(&rig).is_empty());
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Clear));
     rig.frame();
@@ -676,7 +676,7 @@ fn start_over_deletes_the_saved_conversation() {
 fn deleting_a_script_deletes_its_conversation() {
     let mut rig = Rig::new("ai-history-delete");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     let id = rig.manager.ai.script_id.clone().unwrap();
     rig.manager.delete_script(&id);
     assert!(
@@ -690,7 +690,7 @@ fn deleting_a_script_deletes_its_conversation() {
 fn a_conversation_cleared_in_settings_is_not_brought_back() {
     let mut rig = Rig::new("ai-history-settings");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     // Settings clears the saved history while the conversation is on screen.
     {
         let store = rig.shared.lock().unwrap();
@@ -711,7 +711,7 @@ fn a_conversation_cleared_in_settings_is_not_brought_back() {
 fn edit_last_puts_the_message_back_and_forgets_the_exchange() {
     let mut rig = Rig::new("ai-edit-last");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     rig.manager.cmds.push(Cmd::Ai(PanelAction::EditLast));
     rig.frame();
     assert_eq!(rig.manager.ai.input, "make a change");
@@ -723,7 +723,7 @@ fn edit_last_puts_the_message_back_and_forgets_the_exchange() {
 fn retry_asks_the_last_message_again() {
     let mut rig = Rig::new("ai-retry");
     open_panel(&mut rig);
-    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    ask_in(&mut rig, Mode::Ask, MockProvider::text(&["An answer."]));
     rig.manager.cmds.push(Cmd::Ai(PanelAction::Retry));
     rig.frame();
     // The test key store is empty, so the new request is refused; the exchange is gone and the

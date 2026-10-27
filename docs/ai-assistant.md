@@ -88,19 +88,19 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
   script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
 
-## Plan and Edit modes
+## Ask and Edit modes
 
-- A new conversation starts in **Plan**, and so does opening another script. The Plan | Edit switch
-  sits in the composer; it is locked while a request runs or a proposal waits, so Plan can never sit
+- A new conversation starts in **Ask**, and so does opening another script. The Ask | Edit switch
+  sits in the composer; it is locked while a request runs or a proposal waits, so Ask can never sit
   beside an Apply button. Start over keeps the mode.
-- **Plan never changes the script, in code and not only in the prompt.** `Assistant::finish` makes no
-  `Proposal` for a Plan request even if the model returns a whole script, and `ai_accept` refuses
-  unless the mode is Edit. A script the model writes in Plan shows as a code block with a Copy
+- **Ask never changes the script, in code and not only in the prompt.** `Assistant::finish` makes no
+  `Proposal` for an Ask request even if the model returns a whole script, and `ai_accept` refuses
+  unless the mode is Edit. A script the model writes in Ask shows as a code block with a Copy
   button. `ai_prompt::system_prompt(mode)` tells the model it cannot change the script, to answer
   or give a short numbered plan, and to keep any snippet under about 15 lines.
 - Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit
-  reply's script (the current one is resent) but keeps a Plan reply whole.
-- A Plan reply with two or more numbered steps (`looks_like_plan`) gets an **Implement this plan**
+  reply's script (the current one is resent) but keeps an Ask reply whole.
+- An Ask reply with two or more numbered steps (`looks_like_plan`) gets an **Implement this plan**
   button: it switches to Edit and sends `IMPLEMENT_MESSAGE`, with the plan already in history.
 - The user's message shows from the moment it is sent (`Assistant::pending_request`), not only
   when the reply ends, and the transcript scrolls to the end when a request starts or finishes.
@@ -132,8 +132,8 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
 
 - **Layout**: the header has the model chip (provider and model; it opens the model menu); user
   messages are right-aligned bubbles; replies are full width with Copy and Ask again under the last
-  one; the composer holds the box, the Plan | Edit switch and Send in one frame; the line under it
-  names what a request sends (`Sent to OpenAI · Plan never edits · Bollinger Squeeze · 42 lines ·
+  one; the composer holds the box, the Ask | Edit switch and Send in one frame; the line under it
+  names what a request sends (`Sent to OpenAI · Ask never edits · Bollinger Squeeze · 42 lines ·
   No problems`). What leaves the Mac comes first, because a narrow panel cuts the end of the line.
 - **Errors** are a banner with **Try again** (the message is back in the box) and a dismiss button.
 - **Retry and Edit** work on the last exchange only (`Assistant::rewind_last`): Retry sends the message
