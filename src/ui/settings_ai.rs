@@ -244,6 +244,7 @@ pub fn body(
     let (text, tone) = state.badge(store);
     status_badge(ui, text, tone);
     ui.add_space(18.0);
+    failure_card(ui, state);
 
     section(ui, "Provider", None, |ui| {
         card(ui, |ui| {
@@ -285,7 +286,6 @@ pub fn body(
             ui.vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true));
         });
     });
-    failure_card(ui, state);
     let provider = state.kind().title();
     kit::notice_card(
         ui,
@@ -326,24 +326,31 @@ pub(crate) fn needs_card(status: &StatusMessage) -> bool {
     status.is_error && status.text.chars().count() > 70
 }
 
-/// The full error under the API access card, until it is dismissed or another result replaces it.
+/// The full error at the top of the page, where it is seen without scrolling, until it is dismissed or another result replaces it.
 fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
     let Some(status) = state.status.as_ref().filter(|status| needs_card(status)) else {
         return;
     };
-    ui.add_space(12.0);
     let notice = ErrorNotice::new("ai-settings", &status.text)
         .detail_lines(4)
         .dismissable();
     if error_notice::show(ui, &notice) == Some(ErrorEvent::Dismiss) {
         state.status = None;
     }
-    ui.add_space(6.0);
+    ui.add_space(18.0);
 }
 
 pub fn footer(ui: &mut egui::Ui, state: &mut AiSettingsState, actions: &mut Vec<AiAction>) {
     let store = AiKeyStore::shared();
-    footer_row(ui, footer_status(&state.status), |ui| {
+    // An error the page shows as a card is only pointed at here, not said twice.
+    let status = match &state.status {
+        Some(status) if needs_card(status) => Some((
+            "Failed. The details are at the top of the page.".to_owned(),
+            true,
+        )),
+        other => footer_status(other),
+    };
+    footer_row(ui, status, |ui| {
         if kit::sheet_button(ui, "Save", true, state.can_save()).clicked()
             && let Some(action) = state.save(store)
         {

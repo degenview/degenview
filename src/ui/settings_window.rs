@@ -977,6 +977,52 @@ pub(super) fn row(ui: &mut egui::Ui, title: &str, value: impl FnOnce(&mut egui::
 mod tests {
     use super::*;
 
+    /// The AI page as the user saw it fail: a provider's paragraph as the Test Connection result.
+    /// Both Save and the paragraph's card must be reachable, in both themes.
+    #[test]
+    fn the_ai_page_keeps_its_save_button_and_shows_a_long_error_as_a_card() {
+        use crate::service::keychain_ai_keys::AiKeyStore;
+        use crate::service::llm::prefs::AiPrefs;
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::settings_ai::{self, AiSettingsInput};
+        use crate::ui::settings_api_keys::StatusMessage;
+        use crate::ui::theme::AppTheme;
+        let long = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error. (Please include the request ID f3762b57-a48f-45e4-bd18-d3a34c646c59 in your email.)";
+        let _ = AiKeyStore::shared();
+        for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, 0.0));
+            theme::apply(&screen.ctx, app_theme);
+            let prefs = AiPrefs::default();
+            let mut state = settings_ai::AiSettingsState::default();
+            state.status = Some(StatusMessage::error(long));
+            let mut actions = Vec::new();
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    let footer = page_shell(&mut page, SettingsSection::Ai, "Describe a change and an AI model edits your Pine script, using your own API key.", true, |ui| {
+                        settings_ai::body(ui, &mut state, &AiSettingsInput { prefs: &prefs }, &mut actions)
+                    });
+                    let mut footer = footer.expect("a footer");
+                    let bar = footer.max_rect();
+                    settings_ai::footer(&mut footer, &mut state, &mut actions);
+                    assert!(
+                        footer.min_rect().right() <= bar.right() + 0.5,
+                        "{name}: the footer ran past the page: {:?} of {bar:?}",
+                        footer.min_rect()
+                    );
+                }));
+            }
+            assert!(
+                state.status.is_some(),
+                "{name}: nothing dismissed the error"
+            );
+            if gallery_dir().is_some() {
+                screen.save(&format!("settings-ai-{name}"), last.expect("a frame"));
+            }
+        }
+    }
+
     /// A footer whose status is a paragraph still keeps every button inside the bar.
     #[test]
     fn a_long_status_never_pushes_the_footer_buttons_out_of_the_bar() {

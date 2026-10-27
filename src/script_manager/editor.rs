@@ -143,6 +143,9 @@ pub struct EditorState {
     /// areas of their own, which the editor's clip does not reach, so they hide instead of drawing
     /// over whatever sits next to the editor.
     caret_hidden: bool,
+    /// The part of the text area on screen, which the suggestion list and the signature panel stay
+    /// inside. Set each frame by `show`.
+    text_visible: Option<Rect>,
     /// The caret position last scrolled to, so only a caret move scrolls (not a mouse wheel).
     caret_seen: Option<usize>,
     /// How far down the text the editor was scrolled when last drawn.
@@ -174,6 +177,8 @@ struct CompletionView {
 
 /// Suggestion rows visible at once; longer lists scroll.
 const COMPLETION_ROWS: usize = 10;
+/// The width of the suggestion list's rows.
+const COMPLETION_WIDTH: f32 = 412.0;
 const COMPLETION_ROW_HEIGHT: f32 = 22.0;
 
 #[derive(Default)]
@@ -219,6 +224,7 @@ impl EditorState {
             last_caret: None,
             caret_rect: None,
             caret_hidden: false,
+            text_visible: None,
             caret_seen: None,
             select_to: None,
             debug: DebugMarks::default(),
@@ -506,6 +512,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &mut edited);
     let visible = text_area.intersect(ui.clip_rect());
+    state.text_visible = Some(visible);
     state.caret_hidden = state
         .caret_rect
         .is_some_and(|rect| !visible.intersects(rect));
@@ -688,9 +695,24 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
     let scroll_to_selected = view.scroll_to_selected;
     let visible_height =
         view.completion.items.len().min(COMPLETION_ROWS) as f32 * COMPLETION_ROW_HEIGHT;
+    // Under the caret, or over it when the list would run out of the editor (onto the panel
+    // below) and there is room above.
+    let list_height = visible_height + 10.0;
+    let below = caret_rect.bottom() + 4.0;
+    let mut position = egui::pos2(caret_rect.left(), below);
+    if let Some(visible) = state.text_visible {
+        let above = caret_rect.top() - 4.0 - list_height;
+        if below + list_height > visible.bottom() && above >= visible.top() {
+            position.y = above;
+        }
+        position.x = position
+            .x
+            .min(visible.right() - (COMPLETION_WIDTH + 10.0))
+            .max(visible.left());
+    }
     egui::Area::new(Id::new("script-completion"))
         .order(egui::Order::Foreground)
-        .fixed_pos(egui::pos2(caret_rect.left(), caret_rect.bottom() + 4.0))
+        .fixed_pos(position)
         .show(&ctx, |ui| {
             egui::Frame::new()
                 .fill(theme::chrome())
@@ -698,7 +720,7 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                 .corner_radius(6.0)
                 .inner_margin(Margin::same(4))
                 .show(ui, |ui| {
-                    ui.set_width(412.0);
+                    ui.set_width(COMPLETION_WIDTH);
                     egui::ScrollArea::vertical()
                         .min_scrolled_height(visible_height)
                         .max_height(visible_height)
@@ -706,7 +728,7 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                             ui.spacing_mut().item_spacing.y = 0.0;
                             for (index, item) in view.completion.items.iter().enumerate() {
                                 let (rect, response) = ui.allocate_exact_size(
-                                    Vec2::new(412.0, COMPLETION_ROW_HEIGHT),
+                                    Vec2::new(COMPLETION_WIDTH, COMPLETION_ROW_HEIGHT),
                                     Sense::click(),
                                 );
                                 let on = index == selected;
@@ -839,7 +861,11 @@ fn draw_signature(ui: &mut Ui, state: &EditorState) {
     const MARGIN: Margin = Margin::symmetric(10, 6);
     const EDGE: f32 = 8.0;
     const GAP: f32 = 4.0;
-    let bounds = ctx.content_rect().shrink(EDGE);
+    // Inside the editor's text, never over what is around it (the find bar, the panel below).
+    let bounds = state
+        .text_visible
+        .unwrap_or_else(|| ctx.content_rect())
+        .shrink(EDGE);
     // The frame's margin plus its one-point border on each side.
     let chrome = MARGIN.sum() + Vec2::splat(2.0);
     job.wrap.max_width = f32::INFINITY;
@@ -855,10 +881,11 @@ fn draw_signature(ui: &mut Ui, state: &EditorState) {
         .min(bounds.right() - size.x)
         .max(bounds.left());
     let above = caret_rect.top() - GAP - size.y;
+    let below = caret_rect.bottom() + GAP;
     let y = if above >= bounds.top() {
         above
     } else {
-        caret_rect.bottom() + GAP
+        below.min((bounds.bottom() - size.y).max(bounds.top()))
     };
     egui::Area::new(Id::new("script-signature"))
         .order(egui::Order::Foreground)
@@ -2909,6 +2936,17 @@ mod tests {
         for _ in 0..30 {
             frame(Vec::new(), &mut state);
         }
+        let layer = egui::LayerId::new(egui::Order::Foreground, Id::new("script-signature"));
+        let drawn = |ctx: &egui::Context| ctx.memory(|m| m.areas().visible_last_frame(&layer));
+        assert!(drawn(&ctx), "the panel is up while the caret is in view");
+        let panel = ctx
+            .memory(|memory| memory.area_rect(Id::new("script-signature")))
+            .expect("laid out");
+        let visible = state.text_visible.expect("set by show");
+        assert!(
+            visible.contains_rect(panel),
+            "the panel {panel:?} stays inside the text {visible:?}"
+        );
         assert!(
             !state.caret_hidden,
             "the caret was scrolled into view: {:?} scroll {}",
@@ -2929,6 +2967,7 @@ mod tests {
             frame(vec![wheel.clone()], &mut state);
         }
         assert!(state.caret_hidden, "the caret is below the editor now");
+        assert!(!drawn(&ctx), "so the panel is not drawn over what is below");
     }
 
     #[test]

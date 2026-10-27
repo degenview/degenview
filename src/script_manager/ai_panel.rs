@@ -234,10 +234,12 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     egui::Frame::new()
         .inner_margin(Margin::symmetric(MENU_INSET as i8, 4))
         .show(ui, |ui| {
-            let field = ui.add(
-                egui::TextEdit::singleline(&mut ai.model_filter)
-                    .hint_text("Filter, or type a model name")
-                    .desired_width(inner),
+            let field = kit::search_field(
+                ui,
+                Id::new("ai-model-filter"),
+                &mut ai.model_filter,
+                "Filter, or type a model name",
+                inner,
             );
             let typed = ai.model_filter.trim().to_owned();
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !typed.is_empty() {

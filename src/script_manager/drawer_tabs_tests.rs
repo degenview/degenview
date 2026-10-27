@@ -194,6 +194,62 @@ fn problems_fit_the_drawer() {
     }
 }
 
+/// The toolbar's button, clicked for real, puts every problem on the clipboard in one command (a
+/// second copy in the same frame would leave only the last).
+#[test]
+fn the_copy_button_copies_every_problem_at_once() {
+    use DiagnosticSeverity::{Error, Warning};
+    use eframe::egui::{Event, Modifiers, PointerButton, pos2};
+    let list = vec![
+        diagnostic("E1", Error, 3, "first error"),
+        diagnostic("E2", Error, 5, "second error"),
+        diagnostic("E3", Error, 7, "third error"),
+        diagnostic("W1", Warning, 9, "a warning"),
+    ];
+    let mut screen = Screen::new(vec2(900.0, 300.0));
+    let mut copied = None::<Instant>;
+    let mut copies: Vec<String> = Vec::new();
+    let frame = |screen: &mut Screen, events: Vec<Event>, copied: &mut Option<Instant>| {
+        let output = screen.run(events, |ui| {
+            drawer::problems(ui, &list, copied);
+        });
+        output
+            .platform_output
+            .commands
+            .into_iter()
+            .filter_map(|command| match command {
+                eframe::egui::OutputCommand::CopyText(text) => Some(text),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    frame(&mut screen, Vec::new(), &mut copied);
+    // The button is somewhere along the toolbar: click along it until one lands.
+    'scan: for x in (700..890).step_by(6) {
+        let at = pos2(x as f32, 23.0);
+        frame(&mut screen, vec![Event::PointerMoved(at)], &mut copied);
+        for pressed in [true, false] {
+            copies.extend(frame(
+                &mut screen,
+                vec![Event::PointerButton {
+                    pos: at,
+                    button: PointerButton::Primary,
+                    pressed,
+                    modifiers: Modifiers::NONE,
+                }],
+                &mut copied,
+            ));
+        }
+        if !copies.is_empty() {
+            break 'scan;
+        }
+    }
+    assert_eq!(copies.len(), 1, "one copy: {copies:?}");
+    let lines: Vec<&str> = copies[0].lines().collect();
+    assert_eq!(lines.len(), 4, "every problem is in it: {:?}", copies[0]);
+    assert!(lines[0].contains("first error") && lines[3].contains("a warning"));
+}
+
 #[test]
 fn problems_are_counted_in_words() {
     use DiagnosticSeverity::{Error, Warning};
