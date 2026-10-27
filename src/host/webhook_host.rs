@@ -91,6 +91,12 @@ impl WebhookHost {
         self.open = true;
     }
 
+    /// Opens Settings on the AI Assistant page (the assistant panel's "Open Settings").
+    pub fn open_ai(&mut self) {
+        self.state.section = crate::ui::settings_window::SettingsSection::Ai;
+        self.open = true;
+    }
+
     /// Opens Settings on the Webhooks page (an alert editor's "Add in Settings").
     pub fn open_webhooks(&mut self) {
         self.state.section = crate::ui::settings_window::SettingsSection::Webhooks;

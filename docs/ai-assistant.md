@@ -10,7 +10,7 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | `service/llm`: providers, streaming, errors | Done (phase 1) |
 | `service/keychain_ai_keys`: per-provider key store | Done (phase 1) |
 | Settings ▸ AI Assistant: provider, model, key, Test Connection | Done (phase 1) |
-| Assistant panel under the editor, proposal diff, accept as one undo step | Not started (phase 2) |
+| Assistant panel under the editor, proposal diff, accept as one undo step | Done (phase 2) |
 | Compile-and-repair loop, runtime-error context, selection edits | Not started (phase 3) |
 
 ## Why a user-supplied key
@@ -59,6 +59,35 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - The first time the assistant is used, the user must be told the script and prompt are sent to the
   provider (the Settings page already says so).
 
+## The panel (phase 2)
+
+- `ai_panel` (view), `ai_host` (`impl ScriptManager`), `ai` (state), `ai_prompt` (pure text rules).
+  The toolbar's sparkles button toggles it (`prefs.ai_open`, `ai_height`); it sits under the editor
+  and the debugger's panel, in an outer split.
+- **One conversation per open script.** Opening another script, or Start over, forgets it and stops
+  any request. Only the last six turns are resent, with earlier scripts replaced by a marker; the
+  current script and its compiler diagnostics are always in the last message.
+- **The model returns the whole script** in one fenced block, never a patch. `ai_prompt::split_reply`
+  picks the block that looks like a script (a `//@version` or a declaration), or the only block.
+  A block still open when the stream ends, or a `length` stop, is refused: a cut-off script is never
+  offered. A script equal to the current one (ignoring line endings and trailing blank space) is
+  "nothing to change".
+- **Nothing changes until Apply.** A finished reply becomes a `Proposal` (base text, script, diff,
+  and the error and warning counts from compiling it off-screen). `ai_accept` refuses if the editor
+  no longer holds exactly `proposal.base`, so typing made while the model wrote is never overwritten.
+  Apply goes through `editor::apply_script`, which shares `apply_undoable` with the change-marker
+  revert: one undo step, caret on the first changed line. Never use `replace_source` for this; it
+  leaves no undo entry. A proposal that does not compile can still be applied ("Apply anyway").
+- A request runs on its own `std::thread` (not a `WorkQueue` lane, so a stalled connection never
+  holds up the next request). Stop detaches at once and restores the typed message; the thread ends
+  when its connection next yields. A failed request puts the message back in the box.
+- The line endings of the user's file are kept (`match_line_endings`).
+- Enter sends and Shift-Enter adds a line; Enter is left alone while an input method is composing.
+- The panel says what it sends ("Sent to OpenAI: this script and your message") above the Send
+  button, and a missing key shows a setup card with Open Settings.
+- Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
+  script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
+
 ## Verified and not
 
 Verified by tests: SSE framing; both wire formats against hand-written frames; request bodies and
@@ -66,7 +95,12 @@ headers; a real `HttpProvider` against a loopback server (key header, streamed r
 redirect refused, model list); key store behaviour including the refusing-Keychain case; the form
 rules on the Settings page.
 
-**Not verified**: any request to the real OpenAI or Anthropic API (no keys were used), so the frame
+Also verified headlessly: a scripted provider driving the whole window (reply to proposal, accept,
+stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
+as one undo step and redo in the editor.
+
+**Not verified**: using the panel in a real window (typing, Enter to send, focus, scroll feel, the
+Keychain prompt on Send); any request to the real OpenAI or Anthropic API (no keys were used), so the frame
 shapes come from the providers' documentation rather than recorded traffic, and the suggested
 default model names (`gpt-5`, `claude-sonnet-5-5`) may need updating; the Settings page in a real
 window (layout, the eye button, the spinner); the Keychain path on a signed build.

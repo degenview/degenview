@@ -6,6 +6,14 @@
 //! drawer under the chart.
 #![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet
 
+mod ai;
+#[cfg(test)]
+mod ai_gallery;
+mod ai_host;
+mod ai_panel;
+mod ai_prompt;
+#[cfg(test)]
+mod ai_tests;
 mod bottom_bar;
 mod completion;
 pub mod debug;
@@ -99,6 +107,8 @@ pub enum ScriptManagerAction {
     },
     /// Open Settings on the Alpaca tab.
     OpenAlpacaSettings,
+    /// Open Settings on the AI Assistant page.
+    OpenAiSettings,
 }
 
 /// The focused chart a script alert would watch: its market and timeframe.
@@ -149,6 +159,9 @@ pub(crate) enum Cmd {
     /// A click or menu choice in the editor's breakpoint column.
     Gutter(debug_marks::GutterEvent),
     ToggleDebugPanel,
+    ToggleAiPanel,
+    /// Something the assistant's panel asked for.
+    Ai(ai_panel::PanelAction),
     /// The profiler's control: on or off, run (again), cancel.
     ProfilerToggle,
     ProfilerRun,
@@ -222,6 +235,8 @@ pub struct ScriptManager {
     pub(crate) debug: debug::DebugPanel,
     /// Whether the profiler is on, the run in flight and the profile it made.
     pub(crate) profiler: profiler::Profiler,
+    /// The AI assistant's conversation about the open script.
+    pub(crate) ai: ai::Assistant,
     /// What the profile on screen would have to be of to be current; kept up to date while the
     /// profiler is on.
     profiler_now: Option<profiler::ProfileKey>,
@@ -247,6 +262,7 @@ impl ScriptManager {
             logs: logs::LogsPane::load(&shared),
             debug: debug::DebugPanel::load(&shared),
             profiler: profiler::Profiler::default(),
+            ai: ai::Assistant::default(),
             profiler_now: None,
             shared,
             script_store,
@@ -522,6 +538,7 @@ impl ScriptManager {
             self.refresh();
         }
         ctx.request_repaint_after(Duration::from_millis(1500));
+        self.ai_begin_frame();
         if let Some(rx) = &self.export_rx
             && let Ok((id, destination)) = rx.try_recv()
         {
@@ -634,6 +651,9 @@ impl ScriptManager {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
                     self.cmds.push(Cmd::ToggleDebugPanel);
+                }
+                if self.open.is_some() && ai_panel::panel_button(ui, self.prefs.ai_open) {
+                    self.cmds.push(Cmd::ToggleAiPanel);
                 }
                 if self.open.is_some() {
                     let status = self.profiler.status(self.profiler_now.as_ref());
@@ -1040,6 +1060,8 @@ impl ScriptManager {
             Cmd::DebugPanel(action) => self.debug_action(action, ctx),
             Cmd::Gutter(event) => self.debug_gutter(event),
             Cmd::ToggleDebugPanel => self.prefs.debug_open = !self.prefs.debug_open,
+            Cmd::ToggleAiPanel => self.ai_toggle_panel(),
+            Cmd::Ai(action) => self.ai_action(action, ctx),
             Cmd::ProfilerToggle => self.profiler_toggle(),
             Cmd::ProfilerRun => self.profiler_start(ctx),
             Cmd::ProfilerCancel => self.profiler.cancel(),

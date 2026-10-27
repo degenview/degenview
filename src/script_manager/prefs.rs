@@ -61,6 +61,10 @@ pub struct LayoutPrefs {
     pub debug_side_width: f32,
     /// Which sections of the debug panel's second column are open (see `debug::Section`).
     pub debug_sections: u8,
+    /// The assistant's panel under the editor is shown.
+    pub ai_open: bool,
+    /// 0 means the default height.
+    pub ai_height: f32,
 }
 
 impl Default for LayoutPrefs {
@@ -80,6 +84,8 @@ impl Default for LayoutPrefs {
             debug_height: 0.0,
             debug_side_width: 0.0,
             debug_sections: 0b0111,
+            ai_open: false,
+            ai_height: 0.0,
         }
     }
 }

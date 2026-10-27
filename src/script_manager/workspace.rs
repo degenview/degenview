@@ -2,6 +2,8 @@
 //! editor and the preview pane. Ported from `ScriptWorkspaceView` and the detail part of
 //! `ScriptManagerView`.
 
+use super::ai::Assistant;
+use super::ai_panel::{self, Setup};
 use super::debug::DebugPanel;
 use super::debug_panel;
 use super::drawer;
@@ -165,6 +167,7 @@ impl ScriptManager {
 
         let cmds = RefCell::new(Vec::new());
         let changed = Cell::new(false);
+        let setup = self.ai_setup();
         let profile_column = self.profiler.column(self.profiler_now.as_ref());
         let profile_status = self.profiler.status(self.profiler_now.as_ref());
         let profile_lines_match = self.profiler.lines_match(self.profiler_now.as_ref());
@@ -173,6 +176,12 @@ impl ScriptManager {
             let preview = &mut self.preview;
             let copied_at = &mut self.problems_copied;
             let logs = &mut self.logs.view;
+            let assistant = RefCell::new(&mut self.ai);
+            let ai_pane = AiPane {
+                assistant: &assistant,
+                setup: &setup,
+                script_name: &input.name,
+            };
             // The editor draws the debugger's panel and the drawer shows its logs, so both reach the
             // layout preferences and the debugger through one cell.
             let shared = RefCell::new((&mut self.prefs, &mut self.debug));
@@ -190,7 +199,17 @@ impl ScriptManager {
                 Id::new(("script-workspace", horizontal)),
                 spec,
                 &mut state,
-                |ui| editor_pane(ui, open, &shared, &cmds, &changed, profile_column.clone()),
+                |ui| {
+                    editor_pane(
+                        ui,
+                        open,
+                        &shared,
+                        &cmds,
+                        &changed,
+                        profile_column.clone(),
+                        &ai_pane,
+                    )
+                },
                 |ui| preview_pane(ui, preview, &shared, copied_at, &side, logs, &cmds),
             );
         }
@@ -224,8 +243,61 @@ struct ProfileTab<'a> {
     lines_match: bool,
 }
 
-/// The editor, and under it the debugger's panel when that is shown.
+/// What the editor pane needs for the assistant's panel.
+struct AiPane<'a> {
+    assistant: &'a RefCell<&'a mut Assistant>,
+    setup: &'a Setup,
+    script_name: &'a str,
+}
+
+/// The editor with the debugger's panel, and under both the assistant's panel when it is shown.
 fn editor_pane(
+    ui: &mut Ui,
+    open: &mut Option<OpenScript>,
+    shared: &Shared<'_>,
+    cmds: &RefCell<Vec<Cmd>>,
+    changed: &Cell<bool>,
+    profile_column: Option<ProfileColumn>,
+    ai: &AiPane<'_>,
+) {
+    let (shown, height) = {
+        let guard = shared.borrow();
+        (guard.0.ai_open, guard.0.ai_height)
+    };
+    if !shown {
+        editor_and_debug(ui, open, shared, cmds, changed, profile_column);
+        return;
+    }
+    let spec = SplitSpec {
+        axis: Axis::Vertical,
+        secondary_first: false,
+        min_primary: 140.0,
+        min_secondary: 200.0,
+        max_secondary: f32::MAX,
+        default: DefaultLength::Points(320.0),
+    };
+    let mut state = SplitState {
+        length: height,
+        visible: true,
+    };
+    split::show(
+        ui,
+        Id::new("script-ai-split"),
+        spec,
+        &mut state,
+        |ui| editor_and_debug(ui, open, shared, cmds, changed, profile_column),
+        |ui| {
+            let mut assistant = ai.assistant.borrow_mut();
+            for action in ai_panel::show(ui, &mut assistant, ai.setup, ai.script_name) {
+                cmds.borrow_mut().push(Cmd::Ai(action));
+            }
+        },
+    );
+    shared.borrow_mut().0.ai_height = state.length;
+}
+
+/// The editor, and under it the debugger's panel when that is shown.
+fn editor_and_debug(
     ui: &mut Ui,
     open: &mut Option<OpenScript>,
     shared: &Shared<'_>,

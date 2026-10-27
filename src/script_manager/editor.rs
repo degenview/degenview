@@ -1979,6 +1979,31 @@ fn apply_hunk_edit(ctx: &egui::Context, state: &mut EditorState, hunk: &DiffHunk
     let Ok(edit) = diff::revert_edit(hunk, &state.source) else {
         return false;
     };
+    apply_undoable(ctx, state, &edit);
+    true
+}
+
+/// Replaces the whole text with a script the assistant wrote, as one undo step: Cmd-Z brings back
+/// exactly what was here. The caret goes to the first line that differs, so the change is where the
+/// editor looks.
+pub(super) fn apply_script(ctx: &egui::Context, state: &mut EditorState, script: &str) {
+    state.preview = None;
+    let first = state
+        .source
+        .chars()
+        .zip(script.chars())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let edit = Edit {
+        range: 0..state.source.chars().count(),
+        replacement: script.to_owned(),
+        selection: first..first,
+    };
+    apply_undoable(ctx, state, &edit);
+}
+
+/// Applies `edit` to the text as one undo step and selects what it asks for.
+fn apply_undoable(ctx: &egui::Context, state: &mut EditorState, edit: &Edit) {
     let mut edit_state = TextEditState::load(ctx, state.id).unwrap_or_default();
     // egui folds edits made within a second of each other into one undo step; mark the text as it
     // stands now so undoing the revert returns to exactly this, not to before the last keystrokes.
@@ -2002,7 +2027,6 @@ fn apply_hunk_edit(ctx: &egui::Context, state: &mut EditorState, hunk: &DiffHunk
     state.select_to = None;
     ctx.memory_mut(|memory| memory.request_focus(state.id));
     ctx.request_repaint();
-    true
 }
 
 /// Leading-space level of each line, with blank lines keeping only the guides both neighbours
@@ -2876,6 +2900,45 @@ mod tests {
         run_frame(&ctx, &mut state, 0.6, vec![undo_key(true)]);
         assert_eq!(state.source, saved, "redo reverts again");
         assert!(state.changes().is_clean());
+    }
+
+    #[test]
+    fn an_applied_script_is_one_undo_step_and_redo_replays_it() {
+        let before = "//@version=6\nplot(close)\n";
+        let after = "//@version=6\nfast = ta.ema(close, 9)\nplot(fast)\nplot(close)\n";
+        let mut state = EditorState::new("s", before, before);
+        let ctx = egui::Context::default();
+        ctx.memory_mut(|memory| memory.request_focus(state.id));
+        run_frame(&ctx, &mut state, 0.0, vec![]);
+        // Typed just now: egui has not yet closed that run of edits.
+        state.source = format!("{before}// note\n");
+        run_frame(&ctx, &mut state, 0.1, vec![]);
+        let typed = state.source.clone();
+
+        apply_script(&ctx, &mut state, after);
+        assert_eq!(state.source, after);
+        run_frame(&ctx, &mut state, 0.2, vec![]);
+        run_frame(&ctx, &mut state, 0.3, vec![]);
+        assert_eq!(state.source, after);
+
+        run_frame(&ctx, &mut state, 0.4, vec![undo_key(false)]);
+        assert_eq!(state.source, typed, "one undo brings back what was there");
+        run_frame(&ctx, &mut state, 0.5, vec![undo_key(true)]);
+        assert_eq!(state.source, after, "redo applies the script again");
+    }
+
+    #[test]
+    fn an_applied_script_puts_the_caret_on_the_first_changed_line() {
+        let mut state = EditorState::new("s", "a = 1\nb = 2\n", "a = 1\nb = 2\n");
+        let ctx = egui::Context::default();
+        apply_script(&ctx, &mut state, "a = 1\nb = 3\nc = 4\n");
+        let caret = TextEditState::load(&ctx, state.id)
+            .and_then(|edit| edit.cursor.char_range())
+            .map(|range| range.primary.index.0);
+        assert_eq!(caret, Some("a = 1\nb = ".chars().count()));
+        // Identical text applies cleanly too.
+        apply_script(&ctx, &mut state, "a = 1\nb = 3\nc = 4\n");
+        assert_eq!(state.source, "a = 1\nb = 3\nc = 4\n");
     }
 
     #[test]
