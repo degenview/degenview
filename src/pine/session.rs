@@ -96,9 +96,6 @@ pub struct Session {
     pub security_globals: Option<FastMap<String, RuntimeValue>>,
     /// The chart's foreground and background (`chart.fg_color`, `chart.bg_color`).
     pub theme: super::program::ChartTheme,
-    /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
-    /// a read before the declaration still means the builtin.
-    shadowing_builtins: Vec<String>,
     /// How many `request.*` expressions the running code is inside of.
     pub security_depth: usize,
     pub last_bar_index: i64,
@@ -150,9 +147,9 @@ const SHADOWED_INLINE: usize = 4;
 /// names borrow from the statement, so saving one builds no `String`, and a block that shadows a few
 /// names allocates nothing.
 struct Shadowed<'s> {
-    inline: [Option<(&'s str, Option<RuntimeValue>)>; SHADOWED_INLINE],
+    inline: [Option<(&'s str, RuntimeValue)>; SHADOWED_INLINE],
     used: usize,
-    overflow: Vec<(&'s str, Option<RuntimeValue>)>,
+    overflow: Vec<(&'s str, RuntimeValue)>,
 }
 
 impl Default for Shadowed<'_> {
@@ -166,8 +163,8 @@ impl Default for Shadowed<'_> {
 }
 
 impl<'s> Shadowed<'s> {
-    /// `value` is what `name` holds now; None for a builtin's name, which has no variable.
-    fn push(&mut self, name: &'s str, value: Option<RuntimeValue>) {
+    /// `value` is what `name` holds now.
+    fn push(&mut self, name: &'s str, value: RuntimeValue) {
         if self.used < SHADOWED_INLINE {
             self.inline[self.used] = Some((name, value));
             self.used += 1;
@@ -180,13 +177,10 @@ impl<'s> Shadowed<'s> {
     fn restore(self, variables: &mut FastMap<String, RuntimeValue>) {
         let saved = self.inline.into_iter().flatten().chain(self.overflow);
         for (name, value) in saved {
-            match (value, variables.get_mut(name)) {
-                (Some(value), Some(slot)) => *slot = value,
-                (Some(value), None) => {
+            match variables.get_mut(name) {
+                Some(slot) => *slot = value,
+                None => {
                     variables.insert(name.to_owned(), value);
-                }
-                (None, _) => {
-                    variables.remove(name);
                 }
             }
         }
@@ -273,7 +267,6 @@ impl Session {
                 _ => {}
             }
         }
-        let shadowing_builtins = declared_builtin_names(&program.statements);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -333,7 +326,6 @@ impl Session {
             security_globals: None,
             theme: super::program::ChartTheme::DARK,
             security_depth: 0,
-            shadowing_builtins,
             last_bar_index: -1,
             last_bar_time: None,
             first_bar_time: None,
@@ -585,9 +577,6 @@ impl Session {
             self.sync_committed();
             self.working = self.committed.clone();
             self.working.bar_index = self.committed.bar_index + 1;
-        }
-        for name in &self.shadowing_builtins {
-            self.working.variables.remove(name);
         }
         if self.working.bar_index >= self.last_bar_index {
             self.last_bar_index = self.working.bar_index;
@@ -1379,13 +1368,10 @@ impl Session {
     /// an ordinary `x = …` in a branch or body), for those that already exist outside it.
     fn shadowed_by<'s>(&self, statement: &'s Statement) -> Shadowed<'s> {
         let mut saved = Shadowed::default();
-        // A name that is a builtin (`low`) has no variable outside the block, so it is removed after.
-        let mut save = |name: &'s str| match self.working.variables.get(name) {
-            Some(value) => saved.push(name, Some(value.clone())),
-            None if self.shadowing_builtins.iter().any(|shadow| shadow == name) => {
-                saved.push(name, None);
+        let mut save = |name: &'s str| {
+            if let Some(value) = self.working.variables.get(name) {
+                saved.push(name, value.clone());
             }
-            None => {}
         };
         match statement {
             Statement::ForRange { variable, .. } => save(variable),
@@ -3175,39 +3161,6 @@ impl Session {
         self.working.next_reference += 1;
         self.working.next_reference
     }
-}
-
-/// The builtin variable names (`low`, `time`) that `statements` declare anew anywhere: a global, a
-/// local, a loop counter or a tuple element.
-fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
-    fn visit(statements: &[Statement], found: &mut Vec<String>) {
-        for statement in statements {
-            let names: Vec<&str> = match statement {
-                Statement::Declaration { name, .. } => vec![name],
-                Statement::TupleDeclaration { names, .. } => {
-                    names.iter().map(String::as_str).collect()
-                }
-                Statement::ForRange { variable, .. } => vec![variable],
-                Statement::ForIn { index, value, .. } => index
-                    .as_deref()
-                    .into_iter()
-                    .chain([value.as_str()])
-                    .collect(),
-                _ => Vec::new(),
-            };
-            for name in names {
-                if super::symbol_catalog::is_variable(name) && !found.iter().any(|n| n == name) {
-                    found.push(name.to_owned());
-                }
-            }
-            for block in super::traversal::nested_blocks(statement) {
-                visit(block, found);
-            }
-        }
-    }
-    let mut found = Vec::new();
-    visit(statements, &mut found);
-    found
 }
 
 fn sorted_by_id<T: Clone>(map: &FastMap<usize, T>) -> Vec<T> {

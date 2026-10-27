@@ -9,7 +9,7 @@ use std::hash::{Hash, Hasher};
 use super::ast::{Expression, Literal, Parameter, Statement};
 use super::identifier_rules;
 use super::symbol_catalog;
-use super::traversal::{for_each_call, for_each_identifier, nested_blocks};
+use super::traversal::{for_each_call, nested_blocks};
 use crate::pine::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, ValueType};
 
 /// Validates `statements`. `methods` is the set of names declared with `method`, which may be
@@ -24,7 +24,6 @@ pub fn validate(
         methods,
         source,
         signatures: HashMap::new(),
-        first_reads: first_reads(statements),
     };
     validator.validate(statements, &HashSet::new(), &HashSet::new(), false, false);
     for_each_call(statements, &mut |name, range| {
@@ -56,21 +55,6 @@ struct Validator<'a> {
     methods: &'a HashSet<String>,
     source: &'a str,
     signatures: HashMap<String, Vec<Signature>>,
-    /// Where each name is first read, as a source offset.
-    first_reads: HashMap<String, usize>,
-}
-
-/// The source offset of the first read of every name in the script.
-fn first_reads(statements: &[Statement]) -> HashMap<String, usize> {
-    let mut first = HashMap::new();
-    for_each_identifier(statements, &mut |name, range| {
-        let at = range.start.offset;
-        first
-            .entry(name.to_owned())
-            .and_modify(|seen: &mut usize| *seen = (*seen).min(at))
-            .or_insert(at);
-    });
-    first
 }
 
 impl Validator<'_> {
@@ -293,38 +277,9 @@ impl Validator<'_> {
         declared.insert(name.to_owned());
     }
 
+    /// A name a builtin owns cannot be declared: a variable, a loop counter or a function may not be
+    /// called `open` or `plot`, wherever it is declared.
     fn check_name(&mut self, name: &str, range: SourceRange) {
-        // Pine lets a script declare a name that a builtin variable has (`low = shareZ < limit`): from
-        // that line on the name is the script's, which is worth a warning but not a refusal.
-        if symbol_catalog::is_variable(name) {
-            // TradingView refuses it once the script has read the builtin above the declaration:
-            // the name would mean two things.
-            if self
-                .first_reads
-                .get(name)
-                .is_some_and(|&read| read < range.start.offset)
-            {
-                self.report(
-                    "CE10190",
-                    DiagnosticCategory::Semantic,
-                    format!(
-                        "Cannot shadow the built-in variable \"{name}\" because it has already been used as a built-in."
-                    ),
-                    range,
-                );
-                return;
-            }
-            self.diagnostics.push(Diagnostic {
-                code: "PINE7006".to_owned(),
-                severity: DiagnosticSeverity::Warning,
-                category: DiagnosticCategory::Semantic,
-                message: format!(
-                    "'{name}' shadows the built-in variable '{name}' from this declaration on; earlier lines still read the built-in, and `{name}[n]` keeps reading the built-in's history."
-                ),
-                range,
-            });
-            return;
-        }
         if let Some(violation) = identifier_rules::violation(name) {
             self.report(
                 violation.code,
@@ -335,22 +290,25 @@ impl Validator<'_> {
         }
     }
 
-    /// A parameter may reuse a builtin function's name (`color fill`): inside the function the name is
-    /// the parameter, which is a warning rather than an error. Builtin variables stay reserved.
+    /// A parameter may reuse a builtin's name (`color fill`, `float close`): inside the function the
+    /// name is the parameter, which is a warning rather than an error.
     fn check_parameter_name(&mut self, name: &str, range: SourceRange) {
-        if symbol_catalog::is_function(name) && !symbol_catalog::is_variable(name) {
-            self.diagnostics.push(Diagnostic {
-                code: "PINE7006".to_owned(),
-                severity: DiagnosticSeverity::Warning,
-                category: DiagnosticCategory::Semantic,
-                message: format!(
-                    "Parameter '{name}' shadows the built-in function '{name}' inside this function."
-                ),
-                range,
-            });
-            return;
-        }
-        self.check_name(name, range);
+        let kind = if symbol_catalog::is_variable(name) {
+            "variable"
+        } else if symbol_catalog::is_function(name) {
+            "function"
+        } else {
+            return self.check_name(name, range);
+        };
+        self.diagnostics.push(Diagnostic {
+            code: "PINE7006".to_owned(),
+            severity: DiagnosticSeverity::Warning,
+            category: DiagnosticCategory::Semantic,
+            message: format!(
+                "Parameter '{name}' shadows the built-in {kind} '{name}' inside this function."
+            ),
+            range,
+        });
     }
 
     fn report(
@@ -464,9 +422,9 @@ mod tests {
     }
 
     #[test]
-    fn shadowing_a_builtin_variable_is_a_warning() {
+    fn declaring_a_builtin_variable_is_an_error() {
         let statements = [decl("close", None, literal(1))];
-        assert_eq!(codes(&run(&statements)), ["PINE7006"]);
+        assert_eq!(codes(&run(&statements)), ["CE10190"]);
     }
 
     #[test]

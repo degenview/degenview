@@ -644,47 +644,55 @@ fn calls_on_a_drawing_variable_that_is_still_na_do_nothing() {
 }
 
 #[test]
-fn a_script_may_declare_a_name_a_builtin_variable_has() {
-    // `low` is the script's from the declaration on, on every bar.
-    let session = run(
-        "dummy = 1\n\
-         low = high - 1000.0\n\
-         after = low\n\
-         lagged = low[1]",
-        3,
+fn a_builtin_variable_cannot_be_declared_anywhere() {
+    // Always an error, whether or not the script read the builtin first.
+    for body in [
+        "open = 1\nplot(open)",
+        "open = 1",
+        "x = open\nopen = 1\nplot(x + open)",
+        "if barstate.isfirst\n    low = 1.0\nplot(close)",
+        "for time = 0 to 1\n    plot(close)",
+        "for [index, high] in array.from(1, 2)\n    plot(close)",
+        "[volume, other] = [1, 2]\nplot(other)",
+        "close() => 1\nplot(2)",
+        "var bar_index = 0\nplot(bar_index)",
+    ] {
+        let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        let error = program
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "CE10190")
+            .unwrap_or_else(|| panic!("{body:?}: {:?}", program.diagnostics));
+        assert!(
+            error.message.starts_with("Cannot shadow the built-in"),
+            "{}",
+            error.message
+        );
+        assert_eq!(
+            error.severity,
+            crate::pine::token::DiagnosticSeverity::Error
+        );
+        assert!(!program.is_valid(), "{body:?}");
+    }
+    let program = compiler::compile(
+        "//@version=6\nindicator(\"T\")\nx = open\nopen = 1\nplot(x)",
+        Limits::default(),
+        &NoLibraries,
     );
-    // The bars are low = price - 2 (98 + index): the third bar's builtin low is 100.
-    assert_eq!(
-        value(&session, "after"),
-        RuntimeValue::Float(104.0 - 1000.0)
-    );
-    // `low[1]` keeps reading the builtin's history (a documented approximation).
-    assert_eq!(value(&session, "lagged"), RuntimeValue::Float(99.0));
-    let codes = diagnostic_codes("low = high - 1\nplot(low)");
-    assert_eq!(codes, ["PINE7006"]);
-}
-
-#[test]
-fn a_builtin_variable_read_above_its_declaration_cannot_be_shadowed() {
-    // As in TradingView: once the script has used the builtin, the name cannot also be its own.
-    let source = "//@version=6\nindicator(\"T\")\nx = open\nopen = 1\nplot(x + open)";
-    let program = compiler::compile(source, Limits::default(), &NoLibraries);
     let error = program
         .diagnostics
         .iter()
         .find(|d| d.code == "CE10190")
-        .unwrap_or_else(|| panic!("{:?}", program.diagnostics));
-    assert_eq!(
-        error.message,
-        "Cannot shadow the built-in variable \"open\" because it has already been used as a built-in."
-    );
-    assert_eq!(
-        error.severity,
-        crate::pine::token::DiagnosticSeverity::Error
-    );
+        .unwrap();
     assert_eq!(error.range.start.line, 4, "on the declaration");
-    // Declared before any read, it stays the warning.
-    assert_eq!(diagnostic_codes("open = 1\nplot(open)"), ["PINE7006"]);
+    // A name that merely starts like a builtin, a namespace and a parameter stay allowed.
+    assert!(diagnostic_codes("opened = 1\nta = 2\nplot(opened + ta)").is_empty());
+    assert_eq!(
+        diagnostic_codes("f(float close) =>\n    close\nplot(f(1.0))"),
+        ["PINE7006"],
+        "a parameter may reuse the name inside its function, with a warning"
+    );
 }
 
 #[test]
