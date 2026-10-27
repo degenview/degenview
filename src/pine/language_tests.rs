@@ -688,6 +688,37 @@ fn a_builtin_variable_read_above_its_declaration_cannot_be_shadowed() {
 }
 
 #[test]
+fn shadowing_a_builtin_variable_follows_the_manual_and_the_published_scripts() {
+    // Pine manual, Variable declarations > Scopes > Shadowing: shadowing a built-in variable is a
+    // compiler warning, and a compilation error once the script uses the built-in. The corpus shows how
+    // far that reaches: `aVFtPnUh` declares a local `hl2` in a function and reads the built-in `hl2` at
+    // global scope further down, and TradingView accepts it, so only a read above the declaration counts.
+    let warns = |body: &str| diagnostic_codes(body) == ["PINE7006"];
+    let errors = |body: &str| diagnostic_codes(body).contains(&"CE10190".to_owned());
+    // Never read as the built-in: a warning, in every kind of scope.
+    assert!(warns("open = 1"));
+    assert!(warns("open = 1\nplot(open)"));
+    assert!(warns(
+        "f(x) =>\n    float hl2 = x * 2\n    hl2 + 1\nplot(f(close))"
+    ));
+    assert!(warns("for time = 0 to 1\n    plot(time)"));
+    assert!(warns("if barstate.isfirst\n    low = 1.0\n    plot(low)"));
+    // A local shadow, then the built-in read below it, outside its block: still a warning.
+    assert!(warns(
+        "f(x) =>\n    float hl2 = x * 2\n    hl2 + 1\nplot(f(close))\nplot(hl2)"
+    ));
+    // The built-in read above the declaration, in any scope: an error.
+    assert!(errors("x = open\nopen = 1\nplot(x)"));
+    assert!(errors("plot(open)\nopen = 1"));
+    assert!(errors("f() => open\nopen = 1\nplot(f())"));
+    assert!(errors(
+        "if barstate.isfirst\n    x = low\nf() =>\n    low = 1.0\n    low\nplot(f())"
+    ));
+    // A namespace's name is free.
+    assert!(diagnostic_codes("barstate = 1\nplot(barstate)").is_empty());
+}
+
+#[test]
 fn a_plot_offset_shifts_the_values_and_says_what_it_cannot_do() {
     let source =
         "//@version=6\nindicator(\"T\")\nplot(close, offset = 2)\nplot(close, offset = -1)";

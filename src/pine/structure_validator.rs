@@ -298,7 +298,8 @@ impl Validator<'_> {
         // that line on the name is the script's, which is worth a warning but not a refusal.
         if symbol_catalog::is_variable(name) {
             // TradingView refuses it once the script has read the builtin above the declaration:
-            // the name would mean two things.
+            // the name would mean two things. The manual says "anywhere", but published scripts read
+            // the builtin below a local shadow, so only a read before the declaration counts.
             if self
                 .first_reads
                 .get(name)
