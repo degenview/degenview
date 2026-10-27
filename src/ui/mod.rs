@@ -36,6 +36,7 @@ pub mod kit;
 pub mod layout_prompts;
 pub mod line_geometry;
 pub mod link_charts;
+pub mod markdown_view;
 pub mod object_tree;
 pub mod paper_account_sheet;
 pub mod paper_chart_trading;

@@ -3,10 +3,11 @@
 //! pressed; `ai_host` acts on it.
 
 use super::ai::{Assistant, Notice, Proposal};
-use super::ai_prompt::{self, Turn};
+use super::ai_prompt::{self, Mode, Turn};
 use super::diff::DiffHunk;
 use super::diff_view;
 use crate::ui::icons::{self, Icon};
+use crate::ui::markdown_view;
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Align, Color32, FontId, Id, Key, Layout, Margin, Modifiers, RichText, Sense, Ui, vec2,
@@ -14,15 +15,20 @@ use eframe::egui::{
 
 const HEADER_HEIGHT: f32 = 34.0;
 const INPUT_HEIGHT: f32 = 62.0;
-const FOOTER_HEIGHT: f32 = 44.0;
+const FOOTER_HEIGHT: f32 = 66.0;
 const CODE_SIZE: f32 = 11.5;
 const MAX_HUNK_LINES: usize = 40;
 
-/// Starting points for an empty conversation.
-const EXAMPLES: [&str; 3] = [
+/// Starting points for an empty conversation, for each mode.
+const PLAN_EXAMPLES: [&str; 3] = [
     "Explain what this script does",
+    "What could go wrong with this logic?",
+    "How would I add an alert to this?",
+];
+const EDIT_EXAMPLES: [&str; 3] = [
     "Add an input for the length",
     "Plot a marker when the signal crosses",
+    "Tidy up the names and add comments",
 ];
 
 /// What the panel needs to know about the provider, worked out by the host.
@@ -42,6 +48,9 @@ pub enum PanelAction {
     Clear,
     OpenSettings,
     Close,
+    SetMode(Mode),
+    /// Carry out the plan in the last reply: switch to Edit and ask for it.
+    Implement,
 }
 
 pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
@@ -157,14 +166,25 @@ fn transcript(
             if ai.turns.is_empty() && !ai.is_running() && ai.proposal.is_none() {
                 empty_state(ui, ai, script_name);
             }
-            for turn in &ai.turns {
+            let last = ai.turns.len().saturating_sub(1);
+            let can_implement = ai.can_implement();
+            for (index, turn) in ai.turns.iter().enumerate() {
                 match turn {
                     Turn::User(text) => user_message(ui, text),
-                    Turn::Assistant(text) => assistant_message(ui, text, true),
+                    Turn::Assistant { text, mode } => {
+                        let id = Id::new(("ai-turn", index));
+                        assistant_message(ui, id, text, *mode, true);
+                        if can_implement && index == last && implement_button(ui) {
+                            actions.push(PanelAction::Implement);
+                        }
+                    }
                 }
             }
+            if let Some(request) = ai.pending_request() {
+                user_message(ui, request);
+            }
             if ai.is_running() {
-                assistant_message(ui, &ai.streaming, false);
+                assistant_message(ui, Id::new("ai-streaming"), &ai.streaming, ai.mode, false);
             }
             if let Some(notice) = &ai.notice {
                 notice_row(ui, notice);
@@ -173,6 +193,9 @@ fn transcript(
                 proposal_card(ui, proposal, actions);
             }
             ui.add_space(8.0);
+            if std::mem::take(&mut ai.scroll_to_end) {
+                ui.scroll_to_cursor(Some(Align::BOTTOM));
+            }
         });
 }
 
@@ -214,15 +237,28 @@ fn setup_card(ui: &mut Ui, problem: &str) -> bool {
 
 fn empty_state(ui: &mut Ui, ai: &mut Assistant, script_name: &str) {
     ui.add_space(6.0);
-    ui.label(kit::text(
-        format!("Describe a change to {script_name}."),
-        kit::size::BODY,
-        kit::REGULAR,
-        theme::text_secondary(),
-    ));
+    let (line, examples) = match ai.mode {
+        Mode::Plan => (
+            format!("Ask about {script_name}, or plan a change. Nothing is edited in Plan mode."),
+            PLAN_EXAMPLES,
+        ),
+        Mode::Edit => (
+            format!("Describe a change to {script_name}."),
+            EDIT_EXAMPLES,
+        ),
+    };
+    ui.add(
+        egui::Label::new(kit::text(
+            line,
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ))
+        .wrap(),
+    );
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for example in EXAMPLES {
+        for example in examples {
             if kit::value_chip(ui, example, false).clicked() {
                 ai.input = example.to_owned();
                 ai.focus_input = true;
@@ -260,35 +296,41 @@ fn user_message(ui: &mut Ui, text: &str) {
         });
 }
 
-fn assistant_message(ui: &mut Ui, text: &str, done: bool) {
+fn thinking(ui: &mut Ui) {
+    ui.horizontal(|ui| {
+        ui.add(
+            egui::Spinner::new()
+                .size(12.0)
+                .color(theme::text_secondary()),
+        );
+        ui.label(kit::text(
+            "Thinking…",
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+    });
+}
+
+/// A reply. A Plan reply is shown whole, code blocks and all. An Edit reply's script is not shown
+/// in the transcript (the proposal below it is where it is read), only a line saying it was written.
+fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
     caption(ui, "Assistant");
+    if text.trim().is_empty() {
+        thinking(ui);
+        return;
+    }
+    if mode == Mode::Plan {
+        markdown_view::show(ui, id, &markdown_view::parse(text));
+        return;
+    }
     let reply = ai_prompt::split_reply(text);
     if reply.prose.is_empty() && reply.script.is_none() {
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::Spinner::new()
-                    .size(12.0)
-                    .color(theme::text_secondary()),
-            );
-            ui.label(kit::text(
-                "Thinking…",
-                kit::size::BODY,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-        });
+        thinking(ui);
         return;
     }
     if !reply.prose.is_empty() {
-        ui.add(
-            egui::Label::new(kit::text(
-                reply.prose,
-                kit::size::BODY,
-                kit::REGULAR,
-                theme::text_primary(),
-            ))
-            .selectable(true),
-        );
+        markdown_view::show(ui, id, &markdown_view::parse(&reply.prose));
     }
     if let Some(script) = &reply.script {
         ui.horizontal(|ui| {
@@ -321,6 +363,13 @@ fn assistant_message(ui: &mut Ui, text: &str, done: bool) {
             }
         });
     }
+}
+
+fn implement_button(ui: &mut Ui) -> bool {
+    ui.add_space(2.0);
+    kit::push_button(ui, Some(Icon::PlayFill), "Implement this plan", true)
+        .on_hover_text("Switches to Edit mode and asks for these changes.")
+        .clicked()
 }
 
 fn notice_row(ui: &mut Ui, notice: &Notice) {
@@ -499,7 +548,10 @@ fn input_box(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<P
                             .font(FontId::proportional(kit::size::BODY))
                             .text_color(theme::text_primary())
                             .hint_text(kit::text(
-                                "Describe a change. Enter to send, Shift-Enter for a new line.",
+                                match ai.mode {
+                                    Mode::Plan => "Ask a question or plan a change. Enter to send.",
+                                    Mode::Edit => "Describe a change. Enter to send, Shift-Enter for a new line.",
+                                },
                                 kit::size::BODY,
                                 kit::REGULAR,
                                 theme::text_tertiary(),
@@ -515,12 +567,25 @@ fn input_box(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<P
         });
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        ui.label(kit::text(
-            format!("Sent to {}: this script and your message.", setup.provider),
-            kit::size::CAPTION + 0.5,
-            kit::REGULAR,
-            theme::text_tertiary(),
-        ));
+        // The mode cannot change while a request runs or a change waits for an answer.
+        let locked = ai.is_running() || ai.proposal.is_some();
+        let mut mode = ai.mode;
+        ui.add_enabled_ui(!locked, |ui| {
+            kit::segmented(
+                ui,
+                Id::new("ai-mode"),
+                &[
+                    (Mode::Plan, Mode::Plan.title()),
+                    (Mode::Edit, Mode::Edit.title()),
+                ],
+                &mut mode,
+            );
+        })
+        .response
+        .on_disabled_hover_text("Answer or discard the proposed change first.");
+        if mode != ai.mode {
+            actions.push(PanelAction::SetMode(mode));
+        }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if ai.is_running() {
                 if kit::sheet_button(ui, "Stop", false, true).clicked() {
@@ -531,4 +596,19 @@ fn input_box(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<P
             }
         });
     });
+    ui.add(
+        egui::Label::new(kit::text(
+            match ai.mode {
+                Mode::Plan => format!(
+                    "Plan mode never changes your script. Sent to {}.",
+                    setup.provider
+                ),
+                Mode::Edit => format!("Sent to {}: this script and your message.", setup.provider),
+            },
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            theme::text_tertiary(),
+        ))
+        .truncate(),
+    );
 }

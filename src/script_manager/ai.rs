@@ -6,7 +6,7 @@
 //! network. Nothing here changes the script: a finished reply becomes a [`Proposal`] that the user
 //! accepts or discards, and accepting goes through the editor as one undo step.
 
-use super::ai_prompt::{self, Turn};
+use super::ai_prompt::{self, Mode, Turn};
 use super::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
@@ -62,6 +62,7 @@ struct Run {
     cancel: Arc<AtomicBool>,
     base: String,
     typed: String,
+    mode: Mode,
 }
 
 impl Drop for Run {
@@ -76,6 +77,7 @@ pub struct Finished {
     text: String,
     base: String,
     typed: String,
+    mode: Mode,
 }
 
 #[derive(Default)]
@@ -83,6 +85,8 @@ pub struct Assistant {
     /// The script this conversation is about; a different open script starts a new one.
     pub script_id: Option<ScriptId>,
     pub turns: Vec<Turn>,
+    /// Whether a request may propose a change. Plan, until the user switches to Edit.
+    pub mode: Mode,
     /// The message being typed.
     pub input: String,
     /// The reply so far, while one streams.
@@ -91,6 +95,8 @@ pub struct Assistant {
     pub notice: Option<Notice>,
     /// The input box takes the keyboard on the next frame.
     pub focus_input: bool,
+    /// The transcript scrolls to its end on the next frame (a request started or ended).
+    pub scroll_to_end: bool,
     /// The provider and model, read from the store while the panel is open.
     pub prefs: AiPrefs,
     pub prefs_loaded_at: Option<Instant>,
@@ -102,14 +108,46 @@ impl Assistant {
         self.run.is_some()
     }
 
-    /// Forgets the conversation and stops any request. The typed message stays.
+    /// What the user sent, while its reply is still coming. It joins the history only when the
+    /// reply ends, but it has to be on screen from the moment it is sent.
+    pub fn pending_request(&self) -> Option<&str> {
+        self.run.as_ref().map(|run| run.typed.as_str())
+    }
+
+    /// Starts a new conversation about another script: the old one is forgotten, any request
+    /// stops, and the mode goes back to Plan. The typed message stays.
     pub fn reset(&mut self, script_id: Option<ScriptId>) {
-        self.run = None;
         self.script_id = script_id;
+        self.mode = Mode::Plan;
+        self.clear();
+    }
+
+    /// Forgets this conversation and stops any request, keeping the script and the mode.
+    pub fn clear(&mut self) {
+        self.run = None;
         self.turns.clear();
         self.streaming.clear();
         self.proposal = None;
         self.notice = None;
+    }
+
+    /// Switches mode. Refused while a request is running or a proposal waits, so Plan can never
+    /// sit beside an Apply button.
+    pub fn set_mode(&mut self, mode: Mode) -> bool {
+        if self.run.is_some() || self.proposal.is_some() {
+            return false;
+        }
+        self.mode = mode;
+        true
+    }
+
+    /// Whether the last reply is a plan that the Implement button can carry out.
+    pub fn can_implement(&self) -> bool {
+        self.run.is_none()
+            && matches!(
+                self.turns.last(),
+                Some(Turn::Assistant { text, mode: Mode::Plan }) if ai_prompt::looks_like_plan(text)
+            )
     }
 
     /// Starts a request on its own thread. `wake` repaints the UI when text arrives.
@@ -119,6 +157,7 @@ impl Assistant {
         request: ChatRequest,
         typed: String,
         base: String,
+        mode: Mode,
         wake: Arc<dyn Fn() + Send + Sync>,
     ) {
         let (sender, rx) = mpsc::channel();
@@ -142,11 +181,13 @@ impl Assistant {
         self.notice = None;
         self.streaming.clear();
         self.input.clear();
+        self.scroll_to_end = true;
         self.run = Some(Run {
             rx,
             cancel,
             base,
             typed,
+            mode,
         });
     }
 
@@ -187,6 +228,7 @@ impl Assistant {
             text: std::mem::take(&mut self.streaming),
             base: run.base.clone(),
             typed: run.typed.clone(),
+            mode: run.mode,
         }
     }
 
@@ -198,7 +240,9 @@ impl Assistant {
             text,
             base,
             typed,
+            mode,
         } = finished;
+        self.scroll_to_end = true;
         match result {
             Err(LlmError::Cancelled) => {
                 self.input = typed;
@@ -213,7 +257,14 @@ impl Assistant {
             }
             Ok(done) => {
                 self.turns.push(Turn::User(typed));
-                self.turns.push(Turn::Assistant(text.clone()));
+                self.turns.push(Turn::Assistant {
+                    text: text.clone(),
+                    mode,
+                });
+                // Plan only talks. Whatever the model wrote, no proposal comes of it.
+                if mode == Mode::Plan {
+                    return;
+                }
                 let reply = ai_prompt::split_reply(&text);
                 let Some(script) = reply.script else {
                     return;
@@ -299,6 +350,7 @@ mod tests {
             request(),
             "make it red".to_owned(),
             base.to_owned(),
+            Mode::Edit,
             wake(),
         );
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -345,6 +397,7 @@ mod tests {
             request(),
             "fix".to_owned(),
             BASE.to_owned(),
+            Mode::Edit,
             wake(),
         );
         let finished = loop {
@@ -417,6 +470,7 @@ mod tests {
             request(),
             "make it red".to_owned(),
             BASE.to_owned(),
+            Mode::Edit,
             wake(),
         );
         let finished = loop {
@@ -443,6 +497,7 @@ mod tests {
             request(),
             "make it red".to_owned(),
             BASE.to_owned(),
+            Mode::Edit,
             wake(),
         );
         assistant.stop();
@@ -463,6 +518,7 @@ mod tests {
             request(),
             "again".to_owned(),
             BASE.to_owned(),
+            Mode::Edit,
             wake(),
         );
         assert!(assistant.proposal.is_none());
@@ -487,5 +543,149 @@ mod tests {
         assert_eq!(match_line_endings("a\nb", "x\r\ny\r\n"), "a\r\nb\r\n");
         assert!(same_text("a\r\nb\n", "a\nb"));
         assert!(!same_text("a", "b"));
+    }
+
+    /// Runs a scripted reply in `mode` to its end.
+    fn run_in(mode: Mode, replies: Vec<Result<Vec<String>, LlmError>>, base: &str) -> Assistant {
+        let mut assistant = Assistant::default();
+        assistant.start(
+            Box::new(MockProvider::replying(replies)),
+            request(),
+            "a question".to_owned(),
+            base.to_owned(),
+            mode,
+            wake(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let finished = loop {
+            if let Some(finished) = assistant.poll() {
+                break finished;
+            }
+            assert!(Instant::now() < deadline, "the reply never finished");
+            std::thread::sleep(Duration::from_millis(2));
+        };
+        assistant.finish(finished, &|_| Vec::new());
+        assistant
+    }
+
+    #[test]
+    fn a_new_conversation_starts_in_plan() {
+        assert_eq!(Assistant::default().mode, Mode::Plan);
+    }
+
+    #[test]
+    fn plan_never_proposes_even_when_the_model_writes_a_whole_script() {
+        let new = "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n";
+        let assistant = run_in(Mode::Plan, vec![reply_with(new)], BASE);
+        assert!(assistant.proposal.is_none(), "Plan must never offer Apply");
+        assert!(assistant.notice.is_none());
+        // The reply is still kept, with the mode it was made in, so it shows as code.
+        assert_eq!(
+            assistant.turns.last(),
+            Some(&Turn::Assistant {
+                text: format!("Made it red.\n```pine\n{new}```\n"),
+                mode: Mode::Plan
+            })
+        );
+    }
+
+    #[test]
+    fn edit_still_proposes() {
+        let new = "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n";
+        let assistant = run_in(Mode::Edit, vec![reply_with(new)], BASE);
+        assert!(assistant.proposal.is_some());
+    }
+
+    #[test]
+    fn the_mode_cannot_change_while_a_request_runs_or_a_change_waits() {
+        let mut assistant = Assistant::default();
+        assert!(assistant.set_mode(Mode::Edit));
+        assert_eq!(assistant.mode, Mode::Edit);
+        assistant.start(
+            Box::new(MockProvider::replying(vec![reply_with("x")])),
+            request(),
+            "q".to_owned(),
+            BASE.to_owned(),
+            Mode::Edit,
+            wake(),
+        );
+        assert!(!assistant.set_mode(Mode::Plan), "refused while running");
+        assistant.stop();
+        assert!(assistant.set_mode(Mode::Plan));
+
+        let mut with_proposal = run_in(
+            Mode::Edit,
+            vec![reply_with("//@version=6\nplot(close)\n")],
+            BASE,
+        );
+        assert!(with_proposal.proposal.is_some());
+        with_proposal.mode = Mode::Edit;
+        assert!(
+            !with_proposal.set_mode(Mode::Plan),
+            "refused while a change waits"
+        );
+        assert_eq!(with_proposal.mode, Mode::Edit);
+    }
+
+    #[test]
+    fn a_plan_reply_with_numbered_steps_can_be_implemented() {
+        let plan =
+            MockProvider::text(&["Here is the plan:\n1. Add an input\n2. Use it in the average\n"]);
+        let assistant = run_in(Mode::Plan, vec![plan], BASE);
+        assert!(assistant.can_implement());
+
+        let answer = MockProvider::text(&["The RSI measures momentum."]);
+        assert!(!run_in(Mode::Plan, vec![answer], BASE).can_implement());
+
+        // Steps in an edit reply, or while a request is running, do not offer it.
+        let steps = MockProvider::text(&["1. a\n2. b\n"]);
+        assert!(!run_in(Mode::Edit, vec![steps], BASE).can_implement());
+        let mut running = run_in(
+            Mode::Plan,
+            vec![MockProvider::text(&["1. a\n2. b\n"])],
+            BASE,
+        );
+        running.start(
+            Box::new(MockProvider::replying(vec![])),
+            request(),
+            "again".to_owned(),
+            BASE.to_owned(),
+            Mode::Plan,
+            wake(),
+        );
+        assert!(!running.can_implement());
+    }
+
+    #[test]
+    fn a_new_script_goes_back_to_plan_but_start_over_keeps_the_mode() {
+        let mut assistant = run_in(
+            Mode::Edit,
+            vec![reply_with("//@version=6\nplot(close)\n")],
+            BASE,
+        );
+        assistant.mode = Mode::Edit;
+        assistant.clear();
+        assert_eq!(assistant.mode, Mode::Edit, "Start over keeps the mode");
+        assert!(assistant.turns.is_empty());
+        assistant.reset(Some("other".into()));
+        assert_eq!(assistant.mode, Mode::Plan);
+    }
+
+    #[test]
+    fn the_request_is_visible_while_it_runs_and_scrolls_the_transcript() {
+        let mut assistant = Assistant::default();
+        assert_eq!(assistant.pending_request(), None);
+        assistant.start(
+            Box::new(MockProvider::replying(vec![reply_with("x")])),
+            request(),
+            "make it red".to_owned(),
+            BASE.to_owned(),
+            Mode::Edit,
+            wake(),
+        );
+        assert_eq!(assistant.pending_request(), Some("make it red"));
+        assert!(assistant.scroll_to_end);
+        assistant.stop();
+        assert_eq!(assistant.pending_request(), None);
     }
 }

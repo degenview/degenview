@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use super::ai_panel::PanelAction;
+use super::ai_prompt::Mode;
 use super::debug_tests::Rig;
 use super::*;
 use crate::service::llm::mock::MockProvider;
@@ -25,14 +26,22 @@ fn source(rig: &Rig) -> String {
     rig.manager.open.as_ref().unwrap().editor.source.clone()
 }
 
-/// Sends a request that the scripted provider answers with `reply`, and runs frames until it ends.
+/// Sends an Edit request that the scripted provider answers with `reply`, and runs frames until it
+/// ends.
 fn ask(rig: &mut Rig, reply: Result<Vec<String>, LlmError>) {
+    ask_in(rig, Mode::Edit, reply);
+}
+
+fn ask_in(rig: &mut Rig, mode: Mode, reply: Result<Vec<String>, LlmError>) {
+    // As a user would: choose the mode, then send.
+    assert!(rig.manager.ai.set_mode(mode));
     let base = source(rig);
     rig.manager.ai.start(
         Box::new(MockProvider::replying(vec![reply])),
         request(),
         "make a change".to_owned(),
         base,
+        mode,
         Arc::new(|| {}),
     );
     for _ in 0..400 {
@@ -237,4 +246,124 @@ fn the_panel_state_is_saved_with_the_layout() {
     rig.frame();
     let saved = LayoutPrefs::load(&rig.shared);
     assert!(saved.ai_open);
+}
+
+#[test]
+fn the_panel_opens_in_plan_mode() {
+    let mut rig = Rig::new("ai-plan-default");
+    open_panel(&mut rig);
+    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+}
+
+#[test]
+fn a_question_in_plan_mode_leaves_the_editor_and_the_proposal_alone() {
+    let mut rig = Rig::new("ai-plan-asks");
+    open_panel(&mut rig);
+    let before = source(&rig);
+    // Even a model that answers with a whole new script changes nothing.
+    ask_in(
+        &mut rig,
+        Mode::Plan,
+        script_reply(&format!("{before}// sneaky\n")),
+    );
+    assert!(rig.manager.ai.proposal.is_none());
+    assert_eq!(source(&rig), before);
+    // And Apply, were it ever sent, does nothing in Plan.
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+    rig.frame();
+    assert_eq!(source(&rig), before);
+}
+
+#[test]
+fn accept_is_refused_in_plan_even_if_a_proposal_somehow_exists() {
+    let mut rig = Rig::new("ai-plan-accept");
+    open_panel(&mut rig);
+    let before = source(&rig);
+    ask(&mut rig, script_reply(&format!("{before}// x\n")));
+    assert!(rig.manager.ai.proposal.is_some());
+    rig.manager.ai.mode = Mode::Plan;
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+    rig.frame();
+    assert_eq!(source(&rig), before, "Plan mode applies nothing");
+}
+
+#[test]
+fn the_mode_switch_works_and_is_locked_while_a_change_waits() {
+    let mut rig = Rig::new("ai-mode-switch");
+    open_panel(&mut rig);
+    rig.manager
+        .cmds
+        .push(Cmd::Ai(PanelAction::SetMode(Mode::Edit)));
+    rig.frame();
+    assert_eq!(rig.manager.ai.mode, Mode::Edit);
+
+    let before = source(&rig);
+    ask(&mut rig, script_reply(&format!("{before}// x\n")));
+    rig.manager
+        .cmds
+        .push(Cmd::Ai(PanelAction::SetMode(Mode::Plan)));
+    rig.frame();
+    assert_eq!(
+        rig.manager.ai.mode,
+        Mode::Edit,
+        "locked while a change waits"
+    );
+
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Discard));
+    rig.frame();
+    rig.manager
+        .cmds
+        .push(Cmd::Ai(PanelAction::SetMode(Mode::Plan)));
+    rig.frame();
+    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+}
+
+#[test]
+fn implement_switches_to_edit_and_asks_for_the_plan() {
+    let mut rig = Rig::new("ai-implement");
+    open_panel(&mut rig);
+    ask_in(
+        &mut rig,
+        Mode::Plan,
+        MockProvider::text(&["Plan:\n1. Add an input\n2. Use it\n"]),
+    );
+    assert!(rig.manager.ai.can_implement());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Implement));
+    rig.frame();
+    // The test key store is empty, so the request itself is refused; what matters is that it was
+    // made as an Edit request carrying the implement message.
+    assert_eq!(rig.manager.ai.mode, Mode::Edit);
+    assert_eq!(rig.manager.ai.input, super::ai_prompt::IMPLEMENT_MESSAGE);
+    assert!(rig.manager.ai.notice.as_ref().unwrap().error);
+}
+
+#[test]
+fn implement_does_nothing_without_a_plan() {
+    let mut rig = Rig::new("ai-implement-none");
+    open_panel(&mut rig);
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Implement));
+    rig.frame();
+    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    assert!(rig.manager.ai.input.is_empty());
+}
+
+#[test]
+fn the_panel_draws_a_plan_reply_with_code_and_the_implement_button() {
+    let mut rig = Rig::new("ai-plan-draw");
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(700.0, 460.0),
+    ));
+    open_panel(&mut rig);
+    ask_in(
+        &mut rig,
+        Mode::Plan,
+        MockProvider::text(&[
+            "## Plan\nThe **length** is hard-coded. See [docs](https://example.com).\n",
+            "1. Add `input.int`\n2. Use it:\n```pine\nlength = input.int(14)\n```\n- done *soon*\n",
+        ]),
+    );
+    rig.frame();
+    rig.frame();
+    assert!(rig.manager.ai.can_implement());
 }

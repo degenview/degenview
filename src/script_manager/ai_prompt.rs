@@ -20,18 +20,41 @@ const MAX_DIAGNOSTIC_LINES: usize = 20;
 const OMITTED: &str =
     "[The script that was proposed here is omitted. The current script is in the last message.]";
 
+/// What a request may do. In Plan the assistant only talks: the script is never offered for
+/// applying, whatever the model writes. In Edit it may propose a whole new script.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum Mode {
+    #[default]
+    Plan,
+    Edit,
+}
+
+impl Mode {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Plan => "Plan",
+            Self::Edit => "Edit",
+        }
+    }
+}
+
+/// What the Implement button sends after a plan.
+pub const IMPLEMENT_MESSAGE: &str =
+    "Implement the plan above. Make exactly those changes and return the complete updated script.";
+
 /// One line of the conversation as the panel keeps it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Turn {
     /// What the user typed.
     User(String),
-    /// The model's whole reply, code block included.
-    Assistant(String),
+    /// The model's whole reply, code block included, and the mode the request was made in.
+    Assistant { text: String, mode: Mode },
 }
 
-pub fn system_prompt() -> String {
-    let mut prompt = String::from(
-        "You edit Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+pub fn system_prompt(mode: Mode) -> String {
+    let mut prompt = match mode {
+        Mode::Edit => String::from(
+            "You edit Pine Script v6 for DegenView, a desktop charting app with its own Pine \
 interpreter. The user's current script and their request are in the last message.\n\n\
 How to answer:\n\
 - If the user asks for a change, reply with one or two sentences saying what you changed, then the \
@@ -41,8 +64,25 @@ COMPLETE updated script in a single ```pine fenced block. Never a fragment, a pa
 declaration unless asked to change it.\n\
 - If the user asks a question, answer in prose with no code block.\n\
 - If the request cannot be done in this Pine implementation, say so and why instead of guessing.\n\
-- If the message lists compiler errors, fix them.\n\n\
-This interpreter is not TradingView, and some Pine is not implemented. Do not use these:\n",
+- If the message lists compiler errors, fix them.\n\
+- Write plain Markdown: short paragraphs and `code` for names.\n\n",
+        ),
+        Mode::Plan => String::from(
+            "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+interpreter. The user's current script and their question are in the last message. You are in PLAN \
+mode: you cannot change the script, and nothing you write is applied to it.\n\n\
+How to answer:\n\
+- Answer the question directly and concisely, referring to names and lines in their script.\n\
+- If they want a change, give a short numbered plan: what to change and why, one step per item. Do \
+not write the code for it.\n\
+- Never write the complete script. A short snippet (under about 15 lines) in a ```pine fenced block is \
+fine when it makes the point clearer.\n\
+- If something cannot be done in this Pine implementation, say so and why instead of guessing.\n\
+- Write plain Markdown: short paragraphs, lists, and `code` for names.\n\n",
+        ),
+    };
+    prompt.push_str(
+        "This interpreter is not TradingView, and some Pine is not implemented. Do not use these:\n",
     );
     prompt.push_str(&format!(
         "- functions: {}\n- variables (they evaluate to na): {}\n",
@@ -50,9 +90,7 @@ This interpreter is not TradingView, and some Pine is not implemented. Do not us
         symbol_catalog::UNIMPLEMENTED_VARIABLES.join(", "),
     ));
     prompt.push_str(
-        "\nThe script is compiled before the user sees it, so an unknown function or a wrong \
-argument shows up as an error. Prefer plain, well-known Pine over clever Pine.\n\n\
-Two scripts that run correctly here, for style:\n",
+        "\nPrefer plain, well-known Pine over clever Pine.\n\nTwo scripts that run correctly here, for style:\n",
     );
     for name in ["RSI Zones", "EMA Cross Strategy"] {
         if let Some(demo) = BUNDLED.iter().find(|demo| demo.name == name) {
@@ -113,7 +151,16 @@ pub fn build_messages(
         .iter()
         .map(|turn| match turn {
             Turn::User(text) => ChatMessage::user(text.clone()),
-            Turn::Assistant(text) => ChatMessage::assistant(without_script(text)),
+            // An edit's script is dropped from history (the current one is resent); a plan's
+            // snippets are part of what was said, so they stay.
+            Turn::Assistant {
+                text,
+                mode: Mode::Edit,
+            } => ChatMessage::assistant(without_script(text)),
+            Turn::Assistant {
+                text,
+                mode: Mode::Plan,
+            } => ChatMessage::assistant(text.clone()),
         })
         .collect();
     // Providers want the conversation to open with the user and to alternate.
@@ -215,6 +262,31 @@ pub fn split_reply(text: &str) -> Reply {
     }
 }
 
+/// Whether a reply reads as a plan: two or more numbered steps outside any code. Decides whether
+/// the panel offers to implement it.
+pub fn looks_like_plan(text: &str) -> bool {
+    let mut open: Option<usize> = None;
+    let mut steps = 0;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let ticks = trimmed.chars().take_while(|c| *c == '`').count();
+        match open {
+            Some(width) if ticks >= width && trimmed.trim_matches('`').is_empty() => open = None,
+            Some(_) => {}
+            None if ticks >= 3 => open = Some(ticks),
+            None => {
+                let digits = trimmed.chars().take_while(char::is_ascii_digit).count();
+                let after = &trimmed[digits..];
+                if (1..=2).contains(&digits) && (after.starts_with(". ") || after.starts_with(") "))
+                {
+                    steps += 1;
+                }
+            }
+        }
+    }
+    steps >= 2
+}
+
 /// An earlier reply with its script replaced by a marker, so history stays short.
 fn without_script(text: &str) -> String {
     let blocks = blocks(text);
@@ -247,7 +319,7 @@ mod tests {
 
     #[test]
     fn the_system_prompt_states_the_contract_and_the_unsupported_names() {
-        let prompt = system_prompt();
+        let prompt = system_prompt(Mode::Edit);
         assert!(prompt.contains("COMPLETE updated script"));
         assert!(prompt.contains("fixnan"));
         assert!(prompt.contains("syminfo.sector"));
@@ -291,9 +363,15 @@ mod tests {
         let reply = "Done.\n```pine\n//@version=6\nplot(close)\n```\n";
         let history = vec![
             Turn::User("first".into()),
-            Turn::Assistant(reply.into()),
+            Turn::Assistant {
+                text: reply.into(),
+                mode: Mode::Edit,
+            },
             Turn::User("second".into()),
-            Turn::Assistant("Sure, a question needs no code.".into()),
+            Turn::Assistant {
+                text: "Sure, a question needs no code.".into(),
+                mode: Mode::Edit,
+            },
         ];
         let messages = build_messages(&history, "src", "third", &[]);
         assert_eq!(messages.len(), 5);
@@ -313,7 +391,10 @@ mod tests {
             .flat_map(|i| {
                 [
                     Turn::User(format!("u{i}")),
-                    Turn::Assistant(format!("a{i}")),
+                    Turn::Assistant {
+                        text: format!("a{i}"),
+                        mode: Mode::Edit,
+                    },
                 ]
             })
             .collect();
@@ -388,5 +469,70 @@ mod tests {
         let reply = split_reply("日本語 🙂\n```pine\n//@version=6\n```\nあとで");
         assert_eq!(reply.script.as_deref(), Some("//@version=6"));
         assert_eq!(reply.prose, "日本語 🙂\nあとで");
+    }
+
+    #[test]
+    fn plan_mode_says_it_cannot_change_the_script_and_edit_mode_asks_for_the_whole_one() {
+        let plan = system_prompt(Mode::Plan);
+        assert!(plan.contains("PLAN"));
+        assert!(plan.contains("Never write the complete script"));
+        assert!(!plan.contains("COMPLETE updated script"));
+        let edit = system_prompt(Mode::Edit);
+        assert!(edit.contains("COMPLETE updated script"));
+        assert!(!edit.contains("PLAN"));
+        // Both carry the unsupported-name list and the examples.
+        for prompt in [&plan, &edit] {
+            assert!(prompt.contains("fixnan"));
+            assert!(prompt.contains("indicator(\"RSI Zones\""));
+        }
+    }
+
+    #[test]
+    fn the_default_mode_is_plan() {
+        assert_eq!(Mode::default(), Mode::Plan);
+        assert_eq!(Mode::Plan.title(), "Plan");
+    }
+
+    #[test]
+    fn a_plans_snippets_stay_in_history_but_an_edits_script_does_not() {
+        let snippet = "Use this:\n```pine\nlength = input.int(14)\n```\n1. Add it\n2. Use it";
+        let history = vec![
+            Turn::User("how".into()),
+            Turn::Assistant {
+                text: snippet.into(),
+                mode: Mode::Plan,
+            },
+            Turn::User("do it".into()),
+            Turn::Assistant {
+                text: "Done.\n```pine\n//@version=6\nplot(close)\n```".into(),
+                mode: Mode::Edit,
+            },
+        ];
+        let messages = build_messages(&history, "src", "next", &[]);
+        assert_eq!(messages[1].content, snippet);
+        assert!(!messages[3].content.contains("plot(close)"));
+        assert!(messages[3].content.contains("omitted"));
+    }
+
+    #[test]
+    fn numbered_steps_outside_code_make_a_plan() {
+        assert!(looks_like_plan(
+            "Here is how:\n1. Add an input\n2. Use it\n"
+        ));
+        assert!(looks_like_plan("1) one\n2) two"));
+        assert!(looks_like_plan("  1. indented\n  2. also"));
+        // One step, a year, or steps inside a code block are not a plan.
+        assert!(!looks_like_plan("1. only one"));
+        assert!(!looks_like_plan("In 2024. Then 2025. It rose."));
+        assert!(!looks_like_plan("```\n1. a\n2. b\n```"));
+        assert!(!looks_like_plan("Just an answer."));
+        assert!(!looks_like_plan(""));
+        // Steps after a closed block count.
+        assert!(looks_like_plan("```\nx\n```\n1. a\n2. b"));
+    }
+
+    #[test]
+    fn the_implement_message_asks_for_the_whole_script() {
+        assert!(IMPLEMENT_MESSAGE.contains("complete updated script"));
     }
 }

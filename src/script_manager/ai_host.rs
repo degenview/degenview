@@ -4,7 +4,7 @@
 
 use super::ai::Notice;
 use super::ai_panel::{PanelAction, Setup};
-use super::ai_prompt::{self, MAX_SOURCE_CHARS};
+use super::ai_prompt::{self, IMPLEMENT_MESSAGE, MAX_SOURCE_CHARS, Mode};
 use super::registry::LibraryRegistry;
 use super::{ScriptManager, ScriptManagerAction, editor};
 use crate::pine::compiler;
@@ -93,9 +93,15 @@ impl ScriptManager {
             PanelAction::Stop => self.ai.stop(),
             PanelAction::Accept => self.ai_accept(ctx),
             PanelAction::Discard => self.ai.proposal = None,
-            PanelAction::Clear => {
-                let id = self.ai.script_id.clone();
-                self.ai.reset(id);
+            PanelAction::Clear => self.ai.clear(),
+            PanelAction::SetMode(mode) => {
+                self.ai.set_mode(mode);
+            }
+            PanelAction::Implement => {
+                if self.ai.can_implement() && self.ai.set_mode(Mode::Edit) {
+                    self.ai.input = IMPLEMENT_MESSAGE.to_owned();
+                    self.ai_send(ctx);
+                }
             }
             PanelAction::OpenSettings => self.actions.push(ScriptManagerAction::OpenAiSettings),
             PanelAction::Close => self.prefs.ai_open = false,
@@ -136,19 +142,25 @@ impl ScriptManager {
         let diagnostics = diagnostics_of(&source);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),
-            system: ai_prompt::system_prompt(),
+            system: ai_prompt::system_prompt(self.ai.mode),
             messages: ai_prompt::build_messages(&self.ai.turns, &source, &typed, &diagnostics),
             max_tokens: MAX_REPLY_TOKENS,
         };
         let repaint = ctx.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
+        let mode = self.ai.mode;
         self.ai
-            .start(Box::new(provider), request, typed, source, wake);
+            .start(Box::new(provider), request, typed, source, mode, wake);
     }
 
     /// Puts the proposed script in the editor as one undo step, unless the editor has moved on
     /// from the script the model was shown.
     fn ai_accept(&mut self, ctx: &egui::Context) {
+        // A proposal only exists after an Edit request, and the mode cannot change while one waits;
+        // this guard makes "Plan never changes the script" true even if that ever slips.
+        if self.ai.mode != Mode::Edit {
+            return;
+        }
         let (Some(proposal), Some(open)) = (self.ai.proposal.as_ref(), self.open.as_mut()) else {
             return;
         };

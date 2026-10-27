@@ -88,6 +88,32 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
   script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
 
+## Plan and Edit modes
+
+- A new conversation starts in **Plan**, and so does opening another script. The Plan | Edit switch
+  sits in the composer; it is locked while a request runs or a proposal waits, so Plan can never sit
+  beside an Apply button. Start over keeps the mode.
+- **Plan never changes the script, in code and not only in the prompt.** `Assistant::finish` makes no
+  `Proposal` for a Plan request even if the model returns a whole script, and `ai_accept` refuses
+  unless the mode is Edit. A script the model writes in Plan shows as a code block with a Copy
+  button. `ai_prompt::system_prompt(mode)` tells the model it cannot change the script, to answer
+  or give a short numbered plan, and to keep any snippet under about 15 lines.
+- Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit
+  reply's script (the current one is resent) but keeps a Plan reply whole.
+- A Plan reply with two or more numbered steps (`looks_like_plan`) gets an **Implement this plan**
+  button: it switches to Edit and sends `IMPLEMENT_MESSAGE`, with the plan already in history.
+- The user's message shows from the moment it is sent (`Assistant::pending_request`), not only
+  when the reply ends, and the transcript scrolls to the end when a request starts or finishes.
+
+## Reply rendering
+
+`ui/markdown_view.rs` renders replies: paragraphs, headings, bullet and numbered items, quotes,
+fenced code (pine code is syntax-coloured; each block has Copy) and inline bold, italic, `code`
+and http(s) links. It is a small parser, not CommonMark: it never fails and never waits, so a fence
+still open while streaming is an open code block, and a `**` with nothing to close it is two
+stars. Underscores are never emphasis (`plot_color` stays `plot_color`). Only http(s) links are
+made clickable.
+
 ## Verified and not
 
 Verified by tests: SSE framing; both wire formats against hand-written frames; request bodies and
@@ -99,7 +125,8 @@ Also verified headlessly: a scripted provider driving the whole window (reply to
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
 
-**Not verified**: using the panel in a real window (typing, Enter to send, focus, scroll feel, the
+**Not verified**: clicking a link or the Copy button in a real window (the character-under-pointer
+mapping for links is tested, the click itself is not); using the panel in a real window (typing, Enter to send, focus, scroll feel, the
 Keychain prompt on Send); any request to the real OpenAI or Anthropic API (no keys were used), so the frame
 shapes come from the providers' documentation rather than recorded traffic, and the suggested
 default model names (`gpt-5`, `claude-sonnet-5-5`) may need updating; the Settings page in a real
