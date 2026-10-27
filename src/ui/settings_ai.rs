@@ -8,9 +8,10 @@ use crate::service::keychain_ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
 use crate::ui::alert_center::Tone;
+use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, link, status};
-use crate::ui::settings_window::{card, section, status_badge};
+use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, footer_status, link};
+use crate::ui::settings_window::{card, footer_row, section, status_badge};
 use crate::ui::{kit, theme};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -284,6 +285,7 @@ pub fn body(
             ui.vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true));
         });
     });
+    failure_card(ui, state);
     let provider = state.kind().title();
     kit::notice_card(
         ui,
@@ -318,11 +320,30 @@ pub fn body(
     }
 }
 
+/// Whether an error is too long for the footer's one line: it also gets a card in the page, with
+/// the provider's whole message, its request id and a button to copy them.
+pub(crate) fn needs_card(status: &StatusMessage) -> bool {
+    status.is_error && status.text.chars().count() > 70
+}
+
+/// The full error under the API access card, until it is dismissed or another result replaces it.
+fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
+    let Some(status) = state.status.as_ref().filter(|status| needs_card(status)) else {
+        return;
+    };
+    ui.add_space(12.0);
+    let notice = ErrorNotice::new("ai-settings", &status.text)
+        .detail_lines(4)
+        .dismissable();
+    if error_notice::show(ui, &notice) == Some(ErrorEvent::Dismiss) {
+        state.status = None;
+    }
+    ui.add_space(6.0);
+}
+
 pub fn footer(ui: &mut egui::Ui, state: &mut AiSettingsState, actions: &mut Vec<AiAction>) {
     let store = AiKeyStore::shared();
-    status(ui, &state.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    footer_row(ui, footer_status(&state.status), |ui| {
         if kit::sheet_button(ui, "Save", true, state.can_save()).clicked()
             && let Some(action) = state.save(store)
         {

@@ -238,16 +238,13 @@ fn swift_value(value: &serde_json::Value) -> Option<InputValue> {
 pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
     let mut edits = Vec::new();
     if schema.inputs.is_empty() {
-        super::drawer::placeholder(
-            ui,
-            "No inputs",
-            "Declare one with input.int(), input.float(), input.bool() and friends, and it appears here.",
-        );
+        super::drawer_intro::inputs(ui);
         return edits;
     }
     egui::ScrollArea::vertical()
         .id_salt("script-inputs-scroll")
         .auto_shrink([false, false])
+        .min_scrolled_height(0.0)
         .show(ui, |ui| {
             egui::Frame::new()
                 .inner_margin(Margin::same(12))

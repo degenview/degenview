@@ -15,6 +15,7 @@ pub mod anthropic;
 pub mod openai;
 pub mod prefs;
 pub mod sse;
+pub mod summary;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

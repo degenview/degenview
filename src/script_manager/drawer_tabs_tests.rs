@@ -12,6 +12,7 @@ use super::profiler::Status;
 use crate::pine::alert_frequency::AlertFrequency;
 use crate::pine::logs::{LogBatch, LogEvent, LogHistory, LogLevel};
 use crate::pine::program::VisualOutput;
+use crate::pine::program::{InputControl, InputDefinition, InputSchema, InputValue};
 use crate::pine::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
 use crate::pine::token::{
@@ -113,6 +114,48 @@ fn strategy(trades: usize) -> StrategyReport {
             .collect(),
         open_profit: 0.0,
         chart: crate::model::ChartKind::Standard,
+    }
+}
+
+#[test]
+fn inputs_fit_the_drawer() {
+    use crate::pine::token::ValueType;
+    let definition = |id: &str, kind, default| InputDefinition {
+        id: id.into(),
+        kind,
+        control: InputControl::Standard,
+        default_value: default,
+        title: Some(format!("The {id} input")),
+        tooltip: None,
+        group: None,
+        inline: None,
+        confirm: false,
+        min_value: None,
+        max_value: None,
+        step: None,
+        options: None,
+        option_titles: None,
+        active: None,
+    };
+    let six = InputSchema {
+        inputs: (0..6)
+            .map(|index| {
+                definition(
+                    &format!("input{index}"),
+                    ValueType::Int,
+                    InputValue::Int(14),
+                )
+            })
+            .collect(),
+    };
+    let cases = [("none", InputSchema::default()), ("six", six)];
+    for (state, schema) in &cases {
+        for size in SIZES {
+            let values = super::inputs::InputValues::new();
+            fits("inputs", state, size, |ui| {
+                super::inputs::show(ui, schema, &values);
+            });
+        }
     }
 }
 

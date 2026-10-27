@@ -71,6 +71,42 @@ pub const DRAFT_DELAY: Duration = Duration::from_secs(1);
 pub const COMPILE_DELAY: Duration = Duration::from_millis(500);
 const FLASH: Duration = Duration::from_millis(700);
 
+/// A brief highlight of where a jump landed: the character it landed on, or the whole line.
+#[derive(Clone, Copy)]
+struct Flash {
+    /// The character offset the jump landed on.
+    index: usize,
+    at: Instant,
+    whole_line: bool,
+}
+
+impl Flash {
+    fn at(index: usize) -> Self {
+        Self {
+            index,
+            at: Instant::now(),
+            whole_line: false,
+        }
+    }
+
+    fn line(index: usize) -> Self {
+        Self {
+            whole_line: true,
+            ..Self::at(index)
+        }
+    }
+
+    /// 1 when it starts, 0 when it is over; the line holds its strength before it fades.
+    fn strength(&self) -> f32 {
+        let age = (self.at.elapsed().as_secs_f32() / FLASH.as_secs_f32()).clamp(0.0, 1.0);
+        if self.whole_line {
+            1.0 - age * age
+        } else {
+            1.0 - age
+        }
+    }
+}
+
 pub struct EditorState {
     id: Id,
     pub source: String,
@@ -92,7 +128,7 @@ pub struct EditorState {
     highlighted: Option<(u64, Arc<Vec<Span>>)>,
     /// A UTF-16 offset to move the caret to on the next frame (a Problems row was clicked).
     jump_to: Option<usize>,
-    flash: Option<(usize, Instant)>,
+    flash: Option<Flash>,
     last_edit: Option<Instant>,
     /// When the text last changed without being compiled; `diagnostics` is that much out of date.
     compile_requested: Option<Instant>,
@@ -103,6 +139,10 @@ pub struct EditorState {
     completion_explicit: bool,
     last_caret: Option<usize>,
     caret_rect: Option<Rect>,
+    /// The caret is scrolled out of the text area. The suggestion list and the signature panel are
+    /// areas of their own, which the editor's clip does not reach, so they hide instead of drawing
+    /// over whatever sits next to the editor.
+    caret_hidden: bool,
     /// The caret position last scrolled to, so only a caret move scrolls (not a mouse wheel).
     caret_seen: Option<usize>,
     /// How far down the text the editor was scrolled when last drawn.
@@ -178,6 +218,7 @@ impl EditorState {
             completion_explicit: false,
             last_caret: None,
             caret_rect: None,
+            caret_hidden: false,
             caret_seen: None,
             select_to: None,
             debug: DebugMarks::default(),
@@ -324,7 +365,7 @@ impl EditorState {
         )
     }
 
-    /// Scrolls to a one-based line and flashes its start, next frame.
+    /// Scrolls to a one-based line and flashes all of it, next frame.
     pub fn show_line(&mut self, line: usize) {
         let line = line.max(1);
         let start: usize = self
@@ -334,7 +375,7 @@ impl EditorState {
             .map(|text| text.chars().count())
             .sum();
         self.scroll_to_line = Some(line - 1);
-        self.flash = Some((start, Instant::now()));
+        self.flash = Some(Flash::line(start));
     }
 
     /// Brings a one-based line into view next frame, centred, unless it is already well inside the
@@ -464,6 +505,10 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
     let rows = text_view(ui, state, text_area, &mut edited);
+    let visible = text_area.intersect(ui.clip_rect());
+    state.caret_hidden = state
+        .caret_rect
+        .is_some_and(|rect| !visible.intersects(rect));
     // A rename changes the text but is not typing: no suggestions follow it.
     let renamed = navigation::rename_box(ui.ctx(), state);
     edited |= renamed;
@@ -605,6 +650,11 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
         state.completion_wanted = false;
     }
     state.last_caret = caret;
+    if state.caret_hidden {
+        // Scrolled away: nothing to draw, and Enter or Tab must not take an invisible row.
+        state.completion = None;
+        return false;
+    }
     let Some(caret) = caret.filter(|_| focused && state.completion_wanted) else {
         state.completion = None;
         return false;
@@ -734,7 +784,10 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
 /// argument under the caret underlined. Quiet while the suggestion list is open.
 fn draw_signature(ui: &mut Ui, state: &EditorState) {
     let ctx = ui.ctx().clone();
-    if state.completion.is_some() || !ctx.memory(|memory| memory.has_focus(state.id)) {
+    if state.completion.is_some()
+        || state.caret_hidden
+        || !ctx.memory(|memory| memory.has_focus(state.id))
+    {
         return;
     }
     let Some(caret_rect) = state.caret_rect else {
@@ -912,7 +965,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             .set_char_range(Some(CCursorRange::one(CCursor::new(index))));
         edit_state.store(ui.ctx(), id);
         ui.memory_mut(|memory| memory.request_focus(id));
-        state.flash = Some((index, Instant::now()));
+        state.flash = Some(Flash::at(index));
         ui.ctx().request_repaint();
     }
     if let Some(range) = state.select_to.take() {
@@ -924,7 +977,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
         edit_state.store(ui.ctx(), id);
         // The find field keeps focus so typing refines the search; the match is selected and
         // scrolled into view.
-        state.flash = Some((range.start, Instant::now()));
+        state.flash = Some(Flash::at(range.start));
         ui.ctx().request_repaint();
     }
     let flash = state.flash;
@@ -1154,6 +1207,19 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             let (extra_behind, extra_over) =
                 carets::shapes(state, galley, origin, ui.visuals(), char_width);
             behind_shapes.extend(extra_behind);
+            if let Some(flash) = flash
+                && flash.whole_line
+                && flash.at.elapsed() < FLASH
+            {
+                let placed = galley
+                    .pos_from_cursor(CCursor::new(flash.index))
+                    .translate(origin.to_vec2());
+                behind_shapes.push(Shape::rect_filled(
+                    Rect::from_x_y_ranges(band_x, placed.top()..=placed.bottom()),
+                    0.0,
+                    theme::with_alpha(theme::YELLOW, 0.38 * flash.strength()),
+                ));
+            }
             ui.painter().set(behind, Shape::Vec(behind_shapes));
             ui.painter().extend(extra_over);
 
@@ -1247,9 +1313,9 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             }
 
             // Flash the revealed position, and bring it into view.
-            if let Some((index, started)) = flash {
-                let age = started.elapsed();
-                let cursor_rect = galley.pos_from_cursor(CCursor::new(index));
+            if let Some(flash) = flash {
+                let age = flash.at.elapsed();
+                let cursor_rect = galley.pos_from_cursor(CCursor::new(flash.index));
                 let placed = cursor_rect.translate(origin.to_vec2());
                 if age < FLASH {
                     if age.is_zero() || age < Duration::from_millis(40) {
@@ -1258,18 +1324,20 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                             Some(Align::Center),
                         );
                     }
-                    let fade = 1.0 - age.as_secs_f32() / FLASH.as_secs_f32();
-                    let size = Vec2::new(char_width * 1.2, placed.height());
-                    ui.painter().rect_filled(
-                        Rect::from_min_size(placed.min - Vec2::new(2.0, 0.0), size).expand(3.0),
-                        4.0,
-                        theme::with_alpha(theme::YELLOW, 0.35 * fade),
-                    );
+                    // A whole line is painted behind the text, with the other bands.
+                    if !flash.whole_line {
+                        let size = Vec2::new(char_width * 1.2, placed.height());
+                        ui.painter().rect_filled(
+                            Rect::from_min_size(placed.min - Vec2::new(2.0, 0.0), size).expand(3.0),
+                            4.0,
+                            theme::with_alpha(theme::YELLOW, 0.35 * flash.strength()),
+                        );
+                    }
                     ui.ctx().request_repaint();
                 }
             }
         });
-    if state.flash.is_some_and(|(_, at)| at.elapsed() >= FLASH) {
+    if state.flash.is_some_and(|flash| flash.at.elapsed() >= FLASH) {
         state.flash = None;
     }
     #[cfg(test)]
@@ -2807,6 +2875,71 @@ mod tests {
             narrow.left() >= 7.5 && narrow.right() <= 480.0 - 7.5,
             "{narrow:?}"
         );
+    }
+
+    #[test]
+    fn the_signature_panel_hides_when_the_caret_is_scrolled_out_of_the_editor() {
+        let mut source = "plot(close)\n".repeat(120);
+        source.push_str("plot(close, ");
+        let mut state = EditorState::new("s", &source, "");
+        let ctx = egui::Context::default();
+        let caret = source.chars().count();
+        let mut edit = TextEditState::default();
+        edit.cursor
+            .set_char_range(Some(CCursorRange::one(CCursor::new(caret))));
+        edit.store(&ctx, state.id);
+        ctx.memory_mut(|memory| memory.request_focus(state.id));
+        let time = std::cell::Cell::new(0.0);
+        let frame = |events: Vec<Event>, state: &mut EditorState| {
+            time.set(time.get() + 0.1);
+            let input = egui::RawInput {
+                time: Some(time.get()),
+                screen_rect: Some(Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    Vec2::new(900.0, 320.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                show(ui, state);
+            });
+            output.textures_delta.clear();
+        };
+        for _ in 0..30 {
+            frame(Vec::new(), &mut state);
+        }
+        assert!(
+            !state.caret_hidden,
+            "the caret was scrolled into view: {:?} scroll {}",
+            state.caret_rect, state.scroll_y
+        );
+        // The wheel scrolls the text but not the caret: it leaves the editor, and the panel with it.
+        let wheel = Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point,
+            delta: Vec2::new(0.0, 3000.0),
+            phase: egui::TouchPhase::Move,
+            modifiers: Modifiers::NONE,
+        };
+        frame(
+            vec![egui::Event::PointerMoved(egui::pos2(300.0, 150.0))],
+            &mut state,
+        );
+        for _ in 0..4 {
+            frame(vec![wheel.clone()], &mut state);
+        }
+        assert!(state.caret_hidden, "the caret is below the editor now");
+    }
+
+    #[test]
+    fn showing_a_line_flashes_all_of_it_and_a_jump_only_its_spot() {
+        let mut state = EditorState::new("s", "a\nbb\nccc", "");
+        state.show_line(2);
+        let flash = state.flash.expect("flashing");
+        assert!(flash.whole_line);
+        assert_eq!(flash.index, 2, "the start of the second line");
+        assert!(flash.strength() > 0.9, "strongest when it starts");
+        assert!(Flash::at(0).strength() <= 1.0 && !Flash::at(0).whole_line);
     }
 
     // MARK: Changes against the saved text

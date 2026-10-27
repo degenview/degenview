@@ -10,8 +10,8 @@ use crate::model::snapshot::{SnapshotHost, SnapshotPrefs, SnapshotScale};
 use crate::service::snapshot_upload::token_is_valid;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, status};
-use crate::ui::settings_window::{card, section, status_badge};
+use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, footer_status};
+use crate::ui::settings_window::{card, footer_row, section, status_badge};
 use crate::ui::{kit, settings_card};
 use eframe::egui;
 
@@ -233,9 +233,8 @@ pub fn footer(
     input: &SnapshotsInput,
     actions: &mut Vec<SnapshotsAction>,
 ) {
-    status(ui, &state.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    let status = footer_status(&state.status);
+    footer_row(ui, status, |ui| {
         if kit::sheet_button(ui, "Save", true, state.can_save(input.prefs)).clicked() {
             actions.push(state.save_action());
         }

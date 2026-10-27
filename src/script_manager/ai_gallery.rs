@@ -13,6 +13,9 @@ use super::debug_tests::Rig;
 use super::*;
 use crate::service::keychain_ai_keys::AiKeyStore;
 use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
+
+/// An error as OpenAI writes it: a paragraph with the request id in brackets.
+const LONG_ERROR: &str = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error. (Please include the request ID f3762b57-a48f-45e4-bd18-d3a34c646c59 in your email.)";
 use crate::ui::render_tests::{Screen, gallery_dir};
 use crate::ui::theme::AppTheme;
 
@@ -189,6 +192,11 @@ fn gallery_of_the_assistant() {
             scene.rig.manager.ai.input = "What does this script do?".to_owned();
             scene.frames(4);
             scene.save("error");
+
+            // The same, with a provider's whole paragraph.
+            scene.rig.manager.ai.notice = Some(super::ai::Notice::error(LONG_ERROR));
+            scene.frames(4);
+            scene.save("error-long");
             scene.rig.manager.ai.notice = None;
             scene.rig.manager.ai.input.clear();
             scene.rig.manager.ai.clear();
@@ -314,6 +322,13 @@ fn gallery_of_the_assistant() {
             if let Some(chip) = chip {
                 scene.click(chip.center());
                 scene.save("model-menu");
+                // The list failed with a provider's whole paragraph.
+                scene.rig.manager.ai.models.insert(
+                    ProviderKind::OpenAi,
+                    super::ai_models::ModelList::Failed(LONG_ERROR.to_owned()),
+                );
+                scene.frames(3);
+                scene.save("model-menu-failed");
                 scene.frame_with(vec![egui::Event::Key {
                     key: egui::Key::Escape,
                     physical_key: None,

@@ -88,7 +88,7 @@ impl EditorState {
         )));
         edit_state.store(ctx, self.id);
         ctx.memory_mut(|memory| memory.request_focus(self.id));
-        self.flash = Some((range.start, Instant::now()));
+        self.flash = Some(super::Flash::at(range.start));
         ctx.request_repaint();
     }
 

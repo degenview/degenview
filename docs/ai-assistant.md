@@ -135,7 +135,15 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
   one; the composer holds the box, the Ask | Edit switch and Send in one frame; the line under it
   names what a request sends (`Sent to OpenAI · Ask never edits · Bollinger Squeeze · 42 lines ·
   No problems`). What leaves the Mac comes first, because a narrow panel cuts the end of the line.
-- **Errors** are a banner with **Try again** (the message is back in the box) and a dismiss button.
+- **Errors** are a card (`ui::error_notice`, shared by the panel, the model menu and Settings) with **Try again**
+  (the message is back in the box), **Copy details** and a dismiss button. Providers write whole paragraphs, so
+  `service::llm::summary::summarize` splits the text first: a headline (`The provider had a problem (HTTP 500)`),
+  up to 400 characters of detail shown in three lines, and the request id, which a support desk asks for. It
+  works on the message text, not on `LlmError`, because the error has been turned into a string by the time any
+  screen holds it; Copy gives the whole text. The model menu is fixed at `MENU_WIDTH` whatever the error says.
+  Settings footers (`settings_window::footer_row`, also Alpaca, CoinMarketCap, Snapshots and Webhooks) lay the buttons out
+  first and cut the status to one line with an ellipsis (hover shows all), so a long error can never push Save out of
+  the bar; the AI page also shows the full error as a card under API access.
 - **Retry and Edit** work on the last exchange only (`Assistant::rewind_last`): Retry sends the message
   again in the mode it was asked in; Edit puts it in the box.
 - **Model menu** (`ai_models`): the providers (one without a key opens Settings) and the current

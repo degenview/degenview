@@ -28,6 +28,7 @@ mod drawing_layer;
 pub mod drawing_properties;
 pub mod drawing_render;
 pub mod empty_state;
+pub mod error_notice;
 mod fib_geometry;
 pub mod grid_drop;
 pub mod header_controls;

@@ -10,7 +10,6 @@ use crate::pine::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
-use crate::ui::pine_logs_view::centered;
 use crate::ui::pine_report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -19,6 +18,7 @@ use eframe::egui::{
 use std::time::{Duration, Instant};
 
 pub const BAR_HEIGHT: f32 = super::bottom_bar::HEIGHT;
+const PROBLEM_MENU_WIDTH: f32 = 180.0;
 
 impl DrawerTab {
     pub const ALL: [Self; 5] = [
@@ -200,41 +200,24 @@ pub fn bar(
     output
 }
 
-/// A centred "title / caption" message, like the drawer's empty states.
-pub fn placeholder(ui: &mut Ui, title: &str, caption: &str) {
-    centered(ui, |ui| {
-        ui.label(kit::text(
-            title,
-            kit::size::HEADLINE,
-            kit::SEMIBOLD,
-            theme::text_primary(),
-        ));
-        ui.add_space(2.0);
-        ui.label(kit::text(
-            caption,
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            theme::text_tertiary(),
-        ));
-    });
-}
-
-/// How the Copy button copies: only the errors, or everything when there are only warnings.
+/// How the Copy button copies: every problem, errors first, one line each.
 pub fn copy_text(diagnostics: &[Diagnostic]) -> String {
-    let has_errors = diagnostics
-        .iter()
-        .any(|d| d.severity == DiagnosticSeverity::Error);
     sorted(diagnostics)
         .into_iter()
-        .filter(|d| !has_errors || d.severity == DiagnosticSeverity::Error)
-        .map(|d| {
-            format!(
-                "{} · {}:{}  {}",
-                d.code, d.range.start.line, d.range.start.column, d.message
-            )
-        })
+        .map(problem_line)
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// One problem as a line of text: `E1 · 3:4  message`.
+pub fn problem_line(diagnostic: &Diagnostic) -> String {
+    format!(
+        "{} · {}:{}  {}",
+        diagnostic.code,
+        diagnostic.range.start.line,
+        diagnostic.range.start.column,
+        diagnostic.message
+    )
 }
 
 /// Errors first, then source order.
@@ -296,13 +279,12 @@ pub fn problems(
         chrome::state_field(ui, field, dot, &problems_summary(diagnostics), None);
         if copy {
             ui.add_space(6.0);
-            let (icon, tip, color) = if just_copied {
-                (Icon::Check, "Copied", theme::text_secondary())
-            } else if has_errors {
-                (Icon::CopyDoc, "Copy errors", theme::text_secondary())
+            let (icon, tip) = if just_copied {
+                (Icon::Check, "Copied")
             } else {
-                (Icon::CopyDoc, "Copy problems", theme::text_secondary())
+                (Icon::CopyDoc, "Copy all problems")
             };
+            let color = theme::text_secondary();
             if icons::button(ui, icon, BUTTON, color, tip).clicked() && !just_copied {
                 ui.ctx().copy_text(copy_text(diagnostics));
                 *copied_at = Some(Instant::now());
@@ -323,13 +305,32 @@ pub fn problems(
                 if index > 0 {
                     hairline(ui);
                 }
-                if problem_row(ui, diagnostic).clicked() {
+                let response = problem_row(ui, diagnostic);
+                problem_menu(&response, diagnostic);
+                if response.clicked() {
                     jump = Some(diagnostic.clone());
                 }
             }
         });
     });
     jump
+}
+
+/// The right-click menu of a problem row: copy it whole, or only its message.
+fn problem_menu(response: &egui::Response, diagnostic: &Diagnostic) {
+    kit::context_popup(response)
+        .width(PROBLEM_MENU_WIDTH)
+        .show(|ui| {
+            kit::menu_scope(ui, PROBLEM_MENU_WIDTH - 20.0);
+            if kit::menu_item(ui, Icon::CopyDoc, "Copy problem", true, false) {
+                ui.ctx().copy_text(problem_line(diagnostic));
+                ui.close();
+            }
+            if kit::menu_item(ui, Icon::CopyDoc, "Copy message", true, false) {
+                ui.ctx().copy_text(diagnostic.message.clone());
+                ui.close();
+            }
+        });
 }
 
 fn problem_row(ui: &mut Ui, diagnostic: &Diagnostic) -> egui::Response {
@@ -484,15 +485,24 @@ mod tests {
     }
 
     #[test]
-    fn copy_prefers_errors_and_uses_the_swift_line_format() {
+    fn copy_takes_every_problem_errors_first_in_the_line_format() {
         use DiagnosticSeverity::{Error, Warning};
-        let mixed = [diag("W1", Warning, 1, 5), diag("E1", Error, 3, 30)];
-        assert_eq!(copy_text(&mixed), "E1 · 3:4  E1 message");
-        let warnings = [diag("W1", Warning, 1, 5), diag("W2", Warning, 2, 9)];
+        let list = [
+            diag("W1", Warning, 1, 5),
+            diag("E2", Error, 9, 90),
+            diag("E1", Error, 3, 30),
+        ];
         assert_eq!(
-            copy_text(&warnings),
-            "W1 · 1:4  W1 message\nW2 · 2:4  W2 message"
+            copy_text(&list),
+            "E1 · 3:4  E1 message\nE2 · 9:4  E2 message\nW1 · 1:4  W1 message"
         );
+        assert_eq!(copy_text(&[]), "");
+    }
+
+    #[test]
+    fn one_problem_is_a_single_line() {
+        let one = diag("E1", DiagnosticSeverity::Error, 3, 30);
+        assert_eq!(problem_line(&one), "E1 · 3:4  E1 message");
     }
 }
 

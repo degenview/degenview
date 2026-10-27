@@ -9,7 +9,8 @@
 use std::cell::RefCell;
 
 use eframe::egui::{
-    self, Align2, Color32, CursorIcon, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
+    self, Align2, Color32, CursorIcon, FontId, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2,
+    vec2,
 };
 
 use super::profile_marks::{HotRow, ProfileMarks, SummaryGroup, SummaryRow, count};
@@ -387,6 +388,11 @@ fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<
     });
 }
 
+/// The side of the chip that holds a total's icon.
+const TILE_ICON: f32 = 24.0;
+/// Narrower than this, a tile keeps its whole label and leaves the icon out.
+const TILE_ICON_MIN_WIDTH: f32 = 120.0;
+
 /// The run's three figures, side by side.
 fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
     let gap = 8.0;
@@ -398,10 +404,15 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
     };
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = gap;
-        for (label, value) in [
-            ("Total time", &marks.totals.time),
-            ("Bars", &marks.totals.bars),
-            ("Executions", &marks.totals.executions),
+        for (icon, tint, label, value) in [
+            (Icon::Clock, kit::ACCENT, "Total time", &marks.totals.time),
+            (Icon::BarChart, kit::GREEN, "Bars", &marks.totals.bars),
+            (
+                Icon::Repeat,
+                kit::ORANGE,
+                "Executions",
+                &marks.totals.executions,
+            ),
         ] {
             let (rect, _) = ui.allocate_exact_size(vec2(width, 52.0), Sense::hover());
             ui.painter().rect_filled(rect, 10.0, theme::ink(7));
@@ -411,16 +422,41 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
                 Stroke::new(1.0, theme::ink(14)),
                 StrokeKind::Inside,
             );
+            // A tinted chip in the corner says what the figure counts, when the tile has room
+            // for it beside the label.
+            let chip_room = if width >= TILE_ICON_MIN_WIDTH {
+                TILE_ICON + 6.0
+            } else {
+                0.0
+            };
+            let top = rect.top() + 8.0;
+            if chip_room > 0.0 {
+                let chip = Rect::from_min_size(
+                    pos2(rect.right() - 10.0 - TILE_ICON, top),
+                    Vec2::splat(TILE_ICON),
+                );
+                ui.painter()
+                    .rect_filled(chip, 7.0, theme::with_alpha(tint, 0.14));
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(chip.center(), Vec2::splat(14.0)),
+                    icon,
+                    tint,
+                );
+            }
             let name = kit::galley(
                 ui,
                 label,
                 kit::size::CAPTION,
                 kit::REGULAR,
                 theme::text_secondary(),
-                width - 20.0,
+                width - 20.0 - chip_room,
             );
             ui.painter().galley(
-                pos2(rect.left() + 10.0, rect.top() + 9.0),
+                pos2(
+                    rect.left() + 10.0,
+                    top + TILE_ICON / 2.0 - name.size().y / 2.0,
+                ),
                 name,
                 theme::text_secondary(),
             );

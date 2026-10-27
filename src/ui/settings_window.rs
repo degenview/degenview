@@ -350,10 +350,10 @@ pub(super) fn status_badge(ui: &mut egui::Ui, text: &str, tone: Tone) {
     kit::paint_status_badge(ui, rect.right(), rect.center().y, text, tone);
 }
 
-/// "Saved securely in Keychain." in green, or what went wrong in red, beside a page's buttons.
+/// A status line in a page's body: the icon, then the message, wrapped to the page.
 pub(super) fn status_message(ui: &mut egui::Ui, text: &str, is_error: bool) {
     let color = if is_error { kit::RED } else { kit::GREEN };
-    ui.horizontal(|ui| {
+    ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         icons::inline(
             ui,
@@ -365,13 +365,78 @@ pub(super) fn status_message(ui: &mut egui::Ui, text: &str, is_error: bool) {
             12.0,
             color,
         );
-        ui.label(kit::text(
-            text,
-            kit::size::CAPTION + 0.5,
-            kit::REGULAR,
-            color,
-        ));
+        ui.add(
+            egui::Label::new(kit::text(
+                text,
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                color,
+            ))
+            .wrap(),
+        );
     });
+}
+
+/// The bar under a page: `status` on the left and `buttons` on the right, laid out first so they
+/// always have their room. A status is one line that is cut with an ellipsis (its full text is
+/// the hover text), never a line that pushes the buttons out of the bar.
+pub(crate) fn footer_row(
+    ui: &mut egui::Ui,
+    status: Option<(String, bool)>,
+    buttons: impl FnOnce(&mut egui::Ui),
+) {
+    let bar = ui.max_rect();
+    let used = ui
+        .scope_builder(
+            egui::UiBuilder::new()
+                .max_rect(bar)
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+            |ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                buttons(ui);
+            },
+        )
+        .response
+        .rect;
+    let Some((text, is_error)) = status else {
+        return;
+    };
+    let room = Rect::from_min_max(
+        bar.min,
+        Pos2::new((used.left() - 16.0).max(bar.left()), bar.max.y),
+    );
+    if room.width() < 48.0 {
+        return;
+    }
+    ui.scope_builder(
+        egui::UiBuilder::new()
+            .max_rect(room)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        |ui| {
+            let color = if is_error { kit::RED } else { kit::GREEN };
+            ui.spacing_mut().item_spacing.x = 6.0;
+            icons::inline(
+                ui,
+                if is_error {
+                    Icon::TriangleFill
+                } else {
+                    Icon::CheckCircleFill
+                },
+                12.0,
+                color,
+            );
+            let galley = kit::galley(
+                ui,
+                &text,
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                color,
+                ui.available_width(),
+            );
+            ui.add(egui::Label::new(galley).selectable(false))
+                .on_hover_text(&text);
+        },
+    );
 }
 
 pub fn show(
@@ -911,6 +976,48 @@ pub(super) fn row(ui: &mut egui::Ui, title: &str, value: impl FnOnce(&mut egui::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A footer whose status is a paragraph still keeps every button inside the bar.
+    #[test]
+    fn a_long_status_never_pushes_the_footer_buttons_out_of_the_bar() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        let long = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error.";
+        for width in [380.0_f32, 560.0, 900.0] {
+            let mut screen = Screen::new(Vec2::new(width, 80.0));
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let bar =
+                        Rect::from_min_size(Pos2::new(24.0, 14.0), Vec2::new(width - 48.0, 28.0));
+                    let mut footer = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(bar)
+                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+                    );
+                    let mut rects = Vec::new();
+                    footer_row(&mut footer, Some((long.to_owned(), true)), |ui| {
+                        for label in ["Save", "Test Connection", "Remove Key"] {
+                            rects.push(kit::sheet_button(ui, label, false, true).rect);
+                        }
+                    });
+                    for rect in rects {
+                        assert!(
+                            rect.left() >= bar.left() - 0.5 && rect.right() <= bar.right() + 0.5,
+                            "{width}: a button is outside the bar: {rect:?} of {bar:?}"
+                        );
+                    }
+                    assert!(
+                        footer.min_rect().right() <= bar.right() + 0.5,
+                        "{width}: the footer grew to {:?}",
+                        footer.min_rect()
+                    );
+                }));
+            }
+            if gallery_dir().is_some() {
+                screen.save(&format!("settings-footer-{width}"), last.expect("a frame"));
+            }
+        }
+    }
 
     #[test]
     fn sections_remember_themselves_by_key() {

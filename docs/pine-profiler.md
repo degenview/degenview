@@ -126,7 +126,7 @@ script does with the candles afterwards is timed like anything else.
   the profiler is doing, with a dot coloured by state and the chart it ran on, and one button for the
   next thing: run again, cancel, try again), a hairline, then the body. Off, it introduces the
   profiler in three steps with a picture of the column and a *Start profiling* button. Running, it
-  shows progress and *Cancel*. With a result: the three totals (time, bars, executions); the ten
+  shows progress and *Cancel*. With a result: the three totals (time, bars, executions), each with a tinted icon chip (clock, bars, repeat) that a tile under 120pt wide leaves out so its label stays whole; the ten
   hottest lines by their own time (click one to go to it); and two cards of figures, *Where the time
   goes* (hottest line, block and function, each a click away from its line) and *How it was
   measured* (what is in no line, waiting for data, the profiler's overhead, the clock's resolution,

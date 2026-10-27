@@ -11,7 +11,7 @@ use crate::service::keychain_api_keys::{
 };
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, section, status_badge, status_message};
+use crate::ui::settings_window::{card, footer_row, section, status_badge};
 use crate::ui::{kit, theme};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -340,9 +340,18 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
-pub(crate) fn status(ui: &mut egui::Ui, status: &Option<StatusMessage>) {
-    if let Some(status) = status {
-        status_message(ui, &status.text, status.is_error);
+/// What a footer says about `status`: an error long enough to need it is cut to its headline (the
+/// provider's paragraph is the hover text), anything else is shown as it is.
+pub(crate) fn footer_status(status: &Option<StatusMessage>) -> Option<(String, bool)> {
+    let status = status.as_ref()?;
+    Some((footer_text(&status.text, status.is_error), status.is_error))
+}
+
+pub(crate) fn footer_text(text: &str, is_error: bool) -> String {
+    if is_error && text.chars().count() > 70 {
+        crate::service::llm::summary::summarize(text).headline
+    } else {
+        text.to_owned()
     }
 }
 
@@ -423,9 +432,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
 
 pub fn alpaca_footer(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCredentialsStore) {
     let form = &mut state.alpaca;
-    status(ui, &form.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    footer_row(ui, footer_status(&form.status), |ui| {
         if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
             form.save(store);
         }
@@ -480,9 +487,7 @@ pub fn coinmarketcap_footer(
     store: &CoinMarketCapKeyStore,
 ) {
     let form = &mut state.cmc;
-    status(ui, &form.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    footer_row(ui, footer_status(&form.status), |ui| {
         if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
             form.save(store);
         }
