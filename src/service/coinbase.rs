@@ -34,10 +34,37 @@ struct Granularity {
 impl Granularity {
     fn for_interval(interval: &str) -> Option<Granularity> {
         match interval {
+            // Coinbase serves 1, 5 and 15 minutes, 1, 6 hours and 1 day; 30m and 4h are folded.
+            // The chart offers 1H and up; the shorter ones are what Pine's `request.security` asks for.
+            "1m" => Some(Granularity {
+                source_secs: 60,
+                target_secs: 60,
+                per_target: 1,
+            }),
+            "5m" => Some(Granularity {
+                source_secs: 300,
+                target_secs: 300,
+                per_target: 1,
+            }),
+            "15m" => Some(Granularity {
+                source_secs: 900,
+                target_secs: 900,
+                per_target: 1,
+            }),
+            "30m" => Some(Granularity {
+                source_secs: 900,
+                target_secs: 1_800,
+                per_target: 2,
+            }),
             "1h" => Some(Granularity {
                 source_secs: 3_600,
                 target_secs: 3_600,
                 per_target: 1,
+            }),
+            "4h" => Some(Granularity {
+                source_secs: 3_600,
+                target_secs: 14_400,
+                per_target: 4,
             }),
             "1d" => Some(Granularity {
                 source_secs: 86_400,
@@ -352,6 +379,87 @@ mod tests {
         assert_eq!(product_id("BTC"), "BTC-USD");
         assert_eq!(product_id("ETH/USD"), "ETH-USD");
         assert_eq!(product_id("BTC-USD"), "BTC-USD");
+    }
+
+    #[test]
+    fn minute_intervals_are_native_and_30m_and_4h_are_folded() {
+        // A script on a one-hour chart asks for 5m intrabars and a 4h series; neither used to exist.
+        for (interval, seconds) in [("1m", 60), ("5m", 300), ("15m", 900)] {
+            let plan = Granularity::for_interval(interval).expect(interval);
+            assert_eq!((plan.source_secs, plan.target_secs), (seconds, seconds));
+            assert!(!plan.needs_aggregation());
+        }
+        let half_hour = Granularity::for_interval("30m").expect("30m");
+        assert_eq!(
+            (
+                half_hour.source_secs,
+                half_hour.target_secs,
+                half_hour.per_target
+            ),
+            (900, 1_800, 2)
+        );
+        let four_hours = Granularity::for_interval("4h").expect("4h");
+        assert_eq!(
+            (
+                four_hours.source_secs,
+                four_hours.target_secs,
+                four_hours.per_target
+            ),
+            (3_600, 14_400, 4)
+        );
+        // Intervals Coinbase and the fold cannot make stay refused rather than approximated.
+        assert!(Granularity::for_interval("2h").is_none());
+        assert!(Granularity::for_interval("3m").is_none());
+    }
+
+    fn candle(open_time: i64, length_ms: i64, price: f64) -> Kline {
+        Kline {
+            open_time,
+            close_time: open_time + length_ms - 1,
+            open: price,
+            high: price + 1.0,
+            low: price - 1.0,
+            close: price + 0.5,
+            volume: 1.0,
+        }
+    }
+
+    #[test]
+    fn hourly_candles_fold_into_four_hour_candles_on_utc_boundaries() {
+        let midnight = crate::format::days_from_civil(2026, 10, 5) * 86_400_000;
+        let hour = 3_600_000;
+        // 01:00 to 08:00: the 00:00 bar is partial, 04:00 is whole, 08:00 is partial.
+        let hourly: Vec<Kline> = (1..=8)
+            .map(|index| candle(midnight + index * hour, hour, 100.0 + index as f64))
+            .collect();
+        let folded = fold_calendar(&hourly, 14_400, false);
+        let opens: Vec<i64> = folded.iter().map(|bar| bar.open_time).collect();
+        assert_eq!(opens, [midnight, midnight + 4 * hour, midnight + 8 * hour]);
+        // The whole 04:00 bar: open of 04:00, close of 07:00, extremes and volume over the four.
+        let whole = &folded[1];
+        assert_eq!((whole.open, whole.close), (104.0, 107.5));
+        assert_eq!((whole.low, whole.high), (103.0, 108.0));
+        assert_eq!(whole.volume, 4.0);
+        // A page cut by the request drops the bucket it only half has.
+        let cut = fold_calendar(&hourly, 14_400, true);
+        assert_eq!(
+            cut.first().map(|bar| bar.open_time),
+            Some(midnight + 4 * hour)
+        );
+    }
+
+    #[test]
+    fn quarter_hours_fold_into_half_hours() {
+        let midnight = crate::format::days_from_civil(2026, 10, 5) * 86_400_000;
+        let quarter = 900_000;
+        let candles: Vec<Kline> = (0..4)
+            .map(|index| candle(midnight + index * quarter, quarter, 10.0 + index as f64))
+            .collect();
+        let folded = fold_calendar(&candles, 1_800, false);
+        assert_eq!(folded.len(), 2);
+        assert_eq!(folded[1].open_time, midnight + 2 * quarter);
+        assert_eq!((folded[1].open, folded[1].close), (12.0, 13.5));
+        assert_eq!(folded[1].volume, 2.0);
     }
 
     #[test]
