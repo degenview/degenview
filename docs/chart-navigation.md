@@ -110,7 +110,7 @@ page was cut by the request, so a bar is never split across two pages.
 | Provider | Older pages |
 | --- | --- |
 | Binance | Yes, every timeframe (3M / 1Y fold monthly klines). |
-| Coinbase | Yes, every timeframe (daily or hourly pages of 290, folded). Not verified live. |
+| Coinbase | Yes, every timeframe (daily or hourly pages of 290, folded). Not verified live. 1m to 4h (for Pine's requests, not the chart) were fetched live once: no gaps, bars on UTC boundaries. |
 | Alpaca | Yes, every timeframe (needs the API keys; `start`/`end` bars). Not verified live. |
 | DexScreener | Hourly only. GeckoTerminal's free API serves the last 180 days (`before_timestamp` older than that is HTTP 401, taken as the start of history), so daily bars arrive whole (about 180) and 1W / 1M / 3M / 1Y are shallow by nature. |
 | CoinGecko, prediction markets, CoinMarketCap | No: no time-range fetch is implemented. The chart stops at what a refresh brings. |

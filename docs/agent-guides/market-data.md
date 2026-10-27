@@ -30,6 +30,10 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
   years everywhere. Binance and Alpaca fold monthly bars, Coinbase and GeckoTerminal fold daily
   bars, and CoinGecko builds them from its price series. Pass `truncated` when the series starts
   where a request stopped, so the fragment of its first bucket is dropped.
+- The chart offers 1H and up, but Pine's `request.security` asks a provider for any timeframe (5m
+  intrabars, a 4h series), so a provider's token table must cover the minutes too or the script fails
+  with `PINE4021`. Coinbase serves 1m/5m/15m natively and folds 30m (from 15m) and 4h (from 1h); its
+  pages stop at `MAX_PAGES` (60 x 290 candles), so 5m intrabars reach back about 60 days.
 - `service::fetch_klines` passes every provider through `service::normalize` (ascending, one
   candle per open time, finite prices, a range that holds its open and close). GeckoTerminal lists
   only intervals that traded, so `fill_gaps` adds flat zero-volume candles to keep bars evenly
