@@ -21,13 +21,13 @@ use super::ast::{Expression, Statement};
 use super::traversal::{expressions, for_each_call, for_each_identifier, nested_blocks};
 use super::{
     Diagnostic, DiagnosticCategory, SourceRange, alert_builtins, array_builtins, builtins,
-    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, strategy_builtins,
-    strings, symbol_catalog, ta, ta_extra, visuals,
+    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, registry,
+    strategy_builtins, strings, symbol_catalog, ta, ta_extra, visuals,
 };
 
 pub const UNDEFINED_VARIABLE: &str = "PINE3050";
 pub const UNDEFINED_FUNCTION: &str = "PINE3051";
-/// A call to a name in `array`, `map`, `matrix`, `math` or `str` that DegenView does not run.
+/// A call to a function DegenView does not run, in a namespace whose functions are all known.
 pub const UNKNOWN_MEMBER: &str = "PINE3053";
 
 /// Reports each variable read and function call whose name nothing defines. `import_aliases` are
@@ -42,7 +42,7 @@ pub fn validate(
 
     let mut diagnostics = Vec::new();
     for_each_identifier(statements, &mut |name, range| {
-        if !variable_is_defined(name, &declared) {
+        if !variable_is_defined(name, &declared) || unknown_value(name, &declared) {
             diagnostics.push(error(
                 UNDEFINED_VARIABLE,
                 format!("Undefined variable '{name}'."),
@@ -69,97 +69,38 @@ fn error(code: &str, message: String, range: SourceRange) -> Diagnostic {
     Diagnostic::error(code, DiagnosticCategory::Semantic, message, range)
 }
 
-/// The message for a call into a namespace whose every function is listed, when `name` is not one.
-///
-/// Only the namespaces below qualify: every function the runtime accepts is in the lists named
-/// here, so a name missing from them fails when the line runs. The others (`request`, `color`, the
-/// drawing namespaces) are dispatched from several places and are left to the runtime. A script's own
-/// `array` or `str` (a variable, an import alias) is left alone, as it is for `log`.
+/// Whether `name` reads a value in a value-closed namespace that the namespace does not have
+/// (`barstate.nosuch`). A function read without a call is not reported: that is not a name
+/// mistake.
+fn unknown_value(name: &str, declared: &HashSet<String>) -> bool {
+    let Some((namespace, _)) = name.split_once('.') else {
+        return false;
+    };
+    registry::is_closed_for_values(namespace)
+        && !declared.contains(namespace)
+        && !declared.contains(name)
+        && !registry::is_value(name)
+        && !registry::is_function(name)
+}
+
+/// The message for a call into a closed namespace (see `registry`) when `name` is not one of its
+/// functions. A script's own `array` or `str` (a variable, an import alias) is left alone, as it is
+/// for `log`.
 fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
     let (namespace, _) = name.split_once('.')?;
-    if name.matches('.').count() != 1 || declared.contains(namespace) || declared.contains(name) {
-        return None;
-    }
-    let (listed, known): (bool, Vec<String>) = match namespace {
-        "array" => (
-            array_builtins::handles(name),
-            array_builtins::KNOWN
-                .iter()
-                .map(|n| (*n).to_owned())
-                .collect(),
-        ),
-        "map" => (
-            map_builtins::handles(name),
-            map_builtins::NAMES
-                .iter()
-                .map(|n| (*n).to_owned())
-                .collect(),
-        ),
-        "matrix" => (
-            matrix_builtins::handles(name),
-            matrix_builtins::MEMBERS
-                .iter()
-                .map(|member| format!("matrix.{member}"))
-                .collect(),
-        ),
-        "ta" => (
-            ta_is_listed(name),
-            ta::SUPPORTED
-                .iter()
-                .chain(&ta_extra::FUNCTIONS)
-                .chain(&TA_INLINE)
-                .map(|n| (*n).to_owned())
-                .chain(["ta.linreg".to_owned()])
-                .collect(),
-        ),
-        "math" => (
-            math::SUPPORTED.contains(&name),
-            math::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
-        ),
-        "str" => (
-            strings::SUPPORTED.contains(&name) || STR_INLINE.contains(&name),
-            strings::SUPPORTED
-                .iter()
-                .chain(&STR_INLINE)
-                .map(|n| (*n).to_owned())
-                .collect(),
-        ),
-        _ => return None,
-    };
-    if listed {
+    if !registry::is_closed(namespace)
+        || declared.contains(namespace)
+        || declared.contains(name)
+        || registry::is_function(name)
+    {
         return None;
     }
     let mut message = format!("'{name}' is not a function DegenView runs.");
-    if let Some(close) = closest(name, &known) {
+    if let Some(close) = closest(name, registry::members(namespace)) {
         message.push_str(&format!(" Did you mean '{close}'?"));
     }
     Some(message)
 }
-
-/// `ta.*` functions the session evaluates inline, outside `ta::SUPPORTED` and `ta_extra::FUNCTIONS`.
-/// A test reads the engine's source for every `ta.` name it mentions, so one added there and not
-/// here fails it rather than reaching a script as a false error.
-const TA_INLINE: [&str; 12] = [
-    "ta.barssince",
-    "ta.vwap",
-    "ta.dmi",
-    "ta.cum",
-    "ta.correlation",
-    "ta.tr",
-    "ta.atr",
-    "ta.bb",
-    "ta.pivothigh",
-    "ta.pivotlow",
-    "ta.sar",
-    "ta.supertrend",
-];
-
-fn ta_is_listed(name: &str) -> bool {
-    ta::is_supported(name) || ta_extra::FUNCTIONS.contains(&name) || TA_INLINE.contains(&name)
-}
-
-/// `str.*` functions the session evaluates inline rather than from `strings::SUPPORTED`.
-const STR_INLINE: [&str; 1] = ["str.format_time"];
 
 /// The listed name nearest to `name`, if one is a typo away (two edits or fewer).
 fn closest<'a>(name: &str, known: &'a [String]) -> Option<&'a str> {
@@ -433,44 +374,105 @@ s = str.format(\"{0}\", 1) + str.tostring(2)
         );
     }
 
-    /// Every `ta.` name between quotes in the engine's source is a function or a variable the check
-    /// knows, so a name added to the interpreter without being listed fails here.
     #[test]
-    fn every_ta_name_the_engine_mentions_is_known() {
-        let files = [
-            include_str!("session.rs"),
-            include_str!("ta.rs"),
-            include_str!("ta_call.rs"),
-            include_str!("ta_extra.rs"),
-            include_str!("market_values.rs"),
-        ];
-        let mut unknown = Vec::new();
-        let mut seen = 0;
-        for text in files {
-            let code = text.split("#[cfg(test)]").next().unwrap_or(text);
-            for piece in code.split("\"ta.").skip(1) {
-                let member: String = piece
-                    .chars()
-                    .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
-                    .collect();
-                if member.is_empty() || !piece[member.len()..].starts_with('"') {
-                    continue;
-                }
-                seen += 1;
-                let name = format!("ta.{member}");
-                if !ta_is_listed(&name) && !ta_extra::VARIABLES.contains(&name.as_str()) {
-                    unknown.push(name);
-                }
-            }
+    fn every_closed_namespace_rejects_a_function_it_does_not_have() {
+        for namespace in registry::CLOSED {
+            let found = unknown_members(&format!("x = {namespace}.nosuch_zz(1)"));
+            assert_eq!(found.len(), 1, "{namespace}: {found:?}");
+            assert_eq!(found[0].severity, DiagnosticSeverity::Error);
         }
-        assert!(seen > 40, "the scan found only {seen} names");
-        assert!(unknown.is_empty(), "{unknown:?}");
     }
 
     #[test]
-    fn other_namespaces_are_left_to_the_runtime() {
-        assert!(unknown_members("c = color.nosuch(1)").is_empty());
+    fn a_typo_in_a_drawing_input_or_strategy_name_gets_a_hint() {
+        let hint = |body: &str| unknown_members(body).remove(0).message;
+        assert!(hint("l = line.nwe(1, 2, 3, 4)").ends_with("Did you mean 'line.new'?"));
+        assert!(hint("label.delet(x)").ends_with("Did you mean 'label.delete'?"));
+        assert!(
+            hint("strategy.entery(\"a\", strategy.long)")
+                .ends_with("Did you mean 'strategy.entry'?")
+        );
+        assert!(hint("v = input.itn(3)").ends_with("Did you mean 'input.int'?"));
+        // `alert` has no dotted functions at all, so there is nothing to suggest.
+        let message = hint("alert.fire(\"x\")");
+        assert!(!message.contains("Did you mean"), "{message}");
+    }
+
+    #[test]
+    fn real_drawing_input_strategy_and_alert_calls_are_not_reported() {
+        let body = "\
+l = line.new(bar_index, close, bar_index + 1, close)
+line.set_x2(l, bar_index + 2)
+line.delete(l)
+b = box.new(bar_index, high, bar_index + 1, low)
+t = table.new(position.top_right, 2, 2)
+table.cell(t, 0, 0, \"a\")
+lb = label.new(bar_index, high, \"x\", style = label.style_label_down)
+lf = linefill.new(l, l)
+n = input.int(3, \"n\") + input.float(1.0) + (input.bool(true) ? 1 : 0)
+s = input.string(\"a\") + input.timeframe(\"D\") + input.source(close)
+alert(\"x\", alert.freq_once_per_bar)
+alertcondition(close > open, \"c\", \"m\")
+amount = strategy.convert_to_account(12.5)
+";
+        assert!(
+            unknown_members(body).is_empty(),
+            "{:?}",
+            unknown_members(body)
+        );
+        let strategy = "//@version=6\nstrategy(\"S\")\n\
+            strategy.entry(\"l\", strategy.long)\nstrategy.close_all()\n\
+            strategy.risk.max_drawdown(10, strategy.percent_of_equity)\n\
+            p = strategy.closedtrades.profit(0) + strategy.opentrades.size(0)\n";
+        let program = compile(strategy, Limits::default(), &NoLibraries);
+        assert!(
+            program.diagnostics.iter().all(|d| d.code != UNKNOWN_MEMBER),
+            "{:?}",
+            program.diagnostics
+        );
+    }
+
+    #[test]
+    fn a_script_variable_named_like_a_drawing_namespace_is_left_alone() {
+        // `table` the variable, not the namespace: `table.anything()` is then the script's own.
+        assert!(unknown_members("table = 3\nx = table.nosuch(1)").is_empty());
+    }
+
+    #[test]
+    fn an_unknown_value_in_a_closed_namespace_is_an_undefined_variable() {
+        let codes = |body: &str| {
+            let source = format!("//@version=6\nindicator(\"T\")\n{body}\n");
+            compile(&source, Limits::default(), &NoLibraries)
+                .diagnostics
+                .into_iter()
+                .filter(|d| d.code == UNDEFINED_VARIABLE)
+                .map(|d| d.message)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            codes("x = barstate.nosuch"),
+            ["Undefined variable 'barstate.nosuch'."]
+        );
+        assert_eq!(codes("x = chart.nosuch + math.nosuch").len(), 2);
+        // `syminfo` and `strategy` gain variables with Pine releases, so their reads stay open.
+        assert!(codes("x = syminfo.cftc_code + strategy.some_new_variable").is_empty());
+        // Real ones: builtin variables, constants and the drawing collections.
+        let real = "a = syminfo.mintick + math.pi + timeframe.multiplier + bar_index\n\
+            b = barstate.islast ? 1 : 0\nc = ta.tr\nd = array.size(line.all)\n\
+            e = label.style_label_up == label.style_label_up\nf = color.red\n\
+            g = chart.bg_color\nh = strategy.position_size";
+        assert!(codes(real).is_empty(), "{:?}", codes(real));
+        // A script's own name wins, as for functions.
+        assert!(codes("barstate = 3\nx = barstate.nosuch").is_empty());
+    }
+
+    #[test]
+    fn open_namespaces_are_left_to_the_runtime() {
+        // `request` has its own error for an unknown function (`PINE9003`); `footprint` and
+        // `volume_row` are object types whose functions are called on a value.
         assert!(unknown_members("t = request.nosuch(1)").is_empty());
+        assert!(unknown_members("t = footprint.nosuch(1)").is_empty());
+        assert!(!registry::is_closed("request"));
     }
 
     #[test]

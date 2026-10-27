@@ -52,6 +52,7 @@ pub mod parser;
 pub mod profile;
 pub mod program;
 pub mod regex_lite;
+pub mod registry;
 pub mod runtime_support;
 pub mod runtime_types;
 pub mod runtime_value;
