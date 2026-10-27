@@ -98,13 +98,15 @@ fn a_failure_is_in_the_list_the_chip_and_the_editor() {
 }
 
 #[test]
-fn the_failure_points_at_the_failing_call() {
+fn the_failure_points_at_the_whole_failing_name() {
     let rig = failing("problems-position");
     let failure = &runtime(&rig)[0];
     let text = source(&rig);
-    let at = syntax::compiled_utf16_to_char_index(&text, failure.range.start.offset);
-    let from_there: String = text.chars().skip(at).take(12).collect();
-    assert!(from_there.starts_with("array.resize"), "{from_there:?}");
+    let from = syntax::compiled_utf16_to_char_index(&text, failure.range.start.offset);
+    let to = syntax::compiled_utf16_to_char_index(&text, failure.range.end.offset);
+    let marked: String = text.chars().skip(from).take(to - from).collect();
+    // Not only `array`: the name that is not a function is `array.resize`.
+    assert_eq!(marked, "array.resize");
 }
 
 #[test]

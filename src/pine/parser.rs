@@ -9,6 +9,7 @@ use super::ast::{
     UnaryOperator,
 };
 use super::program::StatementEnd;
+use super::token::SourcePosition;
 use crate::pine::{
     Diagnostic, DiagnosticCategory, Limits, SourceRange, Token, TokenKind, ValueType,
 };
@@ -808,11 +809,20 @@ impl Parser {
                 return Extension::Finished(lhs);
             }
         };
+        // The whole access is what a diagnostic points at: `array.resize`, not only `array`.
+        let to_member = |range: SourceRange, member_end: SourcePosition| SourceRange {
+            start: range.start,
+            end: member_end,
+        };
+        let member_end = self.current().range.end;
         self.advance();
         if let Expression::Identifier(base, range) = lhs {
-            return Extension::Extended(Expression::Identifier(format!("{base}.{member}"), range));
+            return Extension::Extended(Expression::Identifier(
+                format!("{base}.{member}"),
+                to_member(range, member_end),
+            ));
         }
-        let range = lhs.range();
+        let range = to_member(lhs.range(), member_end);
         Extension::Extended(Expression::Member {
             base: Box::new(lhs),
             name: member,
@@ -1626,5 +1636,51 @@ mod tests {
             [Statement::Conditional { when_true, when_false, .. }]
                 if when_true.len() == 1 && when_false.is_empty()
         ));
+    }
+
+    #[test]
+    fn a_dotted_name_spans_the_whole_name() {
+        let (statements, diagnostics) = parse("array.resize(a, 5)\n");
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let Statement::Expression(Expression::Call { name, range, .. }) = &statements[0] else {
+            panic!("expected call");
+        };
+        assert_eq!(name, "array.resize");
+        assert_eq!((range.start.column, range.end.column), (1, 13));
+        assert_eq!((range.start.offset, range.end.offset), (0, 12));
+    }
+
+    #[test]
+    fn a_longer_dotted_name_and_a_member_of_a_call_span_what_they_read() {
+        let (statements, _) =
+            parse("x = strategy.closedtrades.profit(0)\ny = array.get(a, 0).top\n");
+        let Statement::Declaration { value, .. } = &statements[0] else {
+            panic!("expected declaration");
+        };
+        let Expression::Call { name, range, .. } = value else {
+            panic!("expected call, got {value:?}");
+        };
+        assert_eq!(name, "strategy.closedtrades.profit");
+        assert_eq!(range.end.offset - range.start.offset, name.len());
+        let Statement::Declaration { value, .. } = &statements[1] else {
+            panic!("expected declaration");
+        };
+        let Expression::Member { range, .. } = value else {
+            panic!("expected member, got {value:?}");
+        };
+        // From the start of `array.get(a, 0)` to the end of `.top`.
+        assert_eq!(
+            range.end.offset - range.start.offset,
+            "array.get(a, 0).top".len()
+        );
+    }
+
+    #[test]
+    fn a_plain_name_keeps_its_range() {
+        let (statements, _) = parse("plot(close)\n");
+        let Statement::Expression(Expression::Call { range, .. }) = &statements[0] else {
+            panic!("expected call");
+        };
+        assert_eq!((range.start.offset, range.end.offset), (0, 4));
     }
 }
