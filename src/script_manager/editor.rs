@@ -411,7 +411,7 @@ pub fn status_chip_with_runtime(
         .iter()
         .any(|d| d.severity == DiagnosticSeverity::Error)
     {
-        let all: Vec<Diagnostic> = diagnostics.iter().chain(runtime).cloned().collect();
+        let all: Vec<Diagnostic> = super::problems::combined(diagnostics, runtime);
         return status_chip(CompileStatus::Error, &all);
     }
     status_chip(status, diagnostics)
@@ -1153,9 +1153,8 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
             ui.painter().extend(extra_over);
 
             // Diagnostic underlines and their merged hover messages (over the text).
-            let marked = state
-                .diagnostics
-                .iter()
+            let marked = super::problems::visible(&state.diagnostics, &state.runtime_problems)
+                .into_iter()
                 .map(|diagnostic| (diagnostic, false))
                 .chain(state.runtime_problems.iter().map(|d| (d, true)));
             for (diagnostic, runtime) in marked {

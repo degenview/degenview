@@ -23,6 +23,15 @@ if barstate.islast
 plot(ta.sma(close, length))
 ";
 
+/// A typo on a line that never runs: the compiler warns, and nothing has failed.
+const TYPO: &str = "//@version=6
+indicator(\"Typo\")
+var values = array.new_float()
+if close < 0
+    array.pusj(values, close)
+plot(close)
+";
+
 fn frames(rig: &mut Rig, screen: &mut Screen, count: usize) -> egui::FullOutput {
     let mut last = None;
     for _ in 0..count {
@@ -74,5 +83,17 @@ fn gallery_of_a_runtime_failure() {
         rig.manager.prefs.drawer_tab = DrawerTab::Profile;
         let output = frames(&mut rig, &mut screen, 4);
         screen.save(&format!("profile-{name}"), output);
+
+        // Before any run fails: a warning with a hint, and the chip says so.
+        rig.set_source(TYPO);
+        rig.manager.prefs.drawer_tab = DrawerTab::Problems;
+        until(&mut rig, &mut screen, "the warning", |rig| {
+            rig.manager
+                .open
+                .as_ref()
+                .is_some_and(|open| !open.editor.diagnostics.is_empty())
+        });
+        let output = frames(&mut rig, &mut screen, 6);
+        screen.save(&format!("warning-{name}"), output);
     }
 }

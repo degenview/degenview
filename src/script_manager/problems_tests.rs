@@ -9,8 +9,8 @@ use super::editor::status_chip_with_runtime;
 use super::*;
 use crate::pine::token::DiagnosticSeverity;
 
-/// `array.resize` is not Pine v6; the compiler lets the call through and the run rejects it, on the
-/// last bar only: the shape of a failure that no compile error announces.
+/// `array.resize` is not Pine v6; the compiler only warns about the call and the run rejects it, on
+/// the last bar only: the shape of a failure that no compile error announces.
 const FAILS_ON_THE_LAST_BAR: &str = "//@version=6
 indicator(\"Fails\")
 var values = array.new_float()
@@ -61,14 +61,13 @@ fn failing(tag: &str) -> Rig {
 }
 
 #[test]
-fn the_failing_script_compiles_clean() {
+fn the_failing_script_compiles_with_a_warning_and_no_error() {
     let rig = failing("problems-compiles");
-    assert!(
-        editor(&rig).diagnostics.is_empty(),
-        "{:?}",
-        editor(&rig).diagnostics
-    );
-    assert_eq!(editor(&rig).status, CompileStatus::Valid);
+    let diagnostics = &editor(&rig).diagnostics;
+    assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+    assert_eq!(diagnostics[0].code, crate::pine::name_check::UNKNOWN_MEMBER);
+    assert_eq!(diagnostics[0].severity, DiagnosticSeverity::Warning);
+    assert_eq!(editor(&rig).status, CompileStatus::Warning);
 }
 
 #[test]
@@ -83,9 +82,11 @@ fn a_failure_is_in_the_list_the_chip_and_the_editor() {
     );
     assert_eq!(failures[0].severity, DiagnosticSeverity::Error);
 
-    // The Problems tab and its count read this list.
+    // The Problems tab and its count read this list: the failure, and not also the compiler's
+    // warning about the same call.
     let list = problems::combined(&editor(&rig).diagnostics, &failures);
-    assert_eq!(list.len(), 1);
+    assert_eq!(list.len(), 1, "{list:?}");
+    assert_eq!(list[0].severity, DiagnosticSeverity::Error);
 
     // The editor was handed the failure this frame, and the chip counts it.
     assert_eq!(editor(&rig).runtime_problems().len(), 1);
