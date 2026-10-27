@@ -199,6 +199,13 @@
 - `ScriptManager` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
   debounced apply and stale output; it has no alert coordinator. `script_manager::inputs` renders a
   precompiled `InputSchema` and is shared with chart settings.
+- A script can fail at run time after it compiles (the compiler judges some names only when they run).
+  `script_manager::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
+  and the profile's failure, each only if its run was of the text now in the editor and never beside a
+  compile error. The Problems tab and its badge, the editor's chip and the red underline all read it, so
+  a failure must not be handled in one place only. `ExecutionController` remembers its last failure
+  (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
+  read as a success.
 - Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
   use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.
