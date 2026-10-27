@@ -28,6 +28,7 @@ pub mod footprint_call;
 mod footprint_tests;
 pub mod identifier_rules;
 pub mod ignored_features;
+pub mod input_activity;
 pub mod input_arguments;
 #[cfg(test)]
 mod language_tests;

@@ -5,9 +5,10 @@
 use std::collections::{HashMap, HashSet};
 
 use super::alert_frequency::AlertFrequency;
-use super::ast::{Argument, EnumMember, Expression, Statement};
+use super::ast::{Argument, BinaryOperator, EnumMember, Expression, Statement};
 use super::builtins;
 use super::calendar;
+use super::input_activity;
 use super::input_arguments::InputArguments;
 use super::operators;
 use super::outputs::{LineExtend, LineStyle, MarkerLocation, MarkerShape, Size, TablePosition};
@@ -16,6 +17,7 @@ use super::program::{
     ScriptType,
 };
 use super::runtime_value::RuntimeValue;
+use super::session::Session;
 use super::strategy::StrategySettings;
 use super::structure_validator;
 use super::symbol_catalog;
@@ -432,7 +434,7 @@ fn constant_environment(statements: &[Statement]) -> HashMap<String, RuntimeValu
     environment
 }
 
-fn constant_value(
+pub(super) fn constant_value(
     expression: &Expression,
     environment: &HashMap<String, RuntimeValue>,
 ) -> Option<RuntimeValue> {
@@ -474,18 +476,38 @@ fn constant_value(
             RuntimeValue::Float(n) => Some(RuntimeValue::Float(-n)),
             _ => None,
         },
+        Expression::Unary {
+            op: super::ast::UnaryOperator::Not,
+            operand,
+            ..
+        } => Session::truth(constant_value(operand, environment)?)
+            .map(|value| RuntimeValue::Bool(!value)),
         Expression::Binary { lhs, op, rhs, .. } => {
-            if !op.is_arithmetic() {
-                return None;
-            }
             let a = constant_value(lhs, environment)?;
             let b = constant_value(rhs, environment)?;
-            let value = operators::apply(*op, &a, &b);
+            let value = match op {
+                BinaryOperator::And => RuntimeValue::Bool(Session::truth(a)? && Session::truth(b)?),
+                BinaryOperator::Or => RuntimeValue::Bool(Session::truth(a)? || Session::truth(b)?),
+                _ => operators::apply(*op, &a, &b),
+            };
             if value == RuntimeValue::Na {
                 None
             } else {
                 Some(value)
             }
+        }
+        Expression::Ternary {
+            condition,
+            when_true,
+            when_false,
+            ..
+        } => {
+            let chosen = if Session::truth(constant_value(condition, environment)?)? {
+                when_true
+            } else {
+                when_false
+            };
+            constant_value(chosen, environment)
         }
         Expression::Call {
             name, arguments, ..
@@ -597,7 +619,9 @@ fn collect_inputs(
             && (fn_name.starts_with("input.") || fn_name == "input")
         {
             if fn_name == "input.enum" {
-                if let Some(input) = enum_input(name, arguments, &enums, environment) {
+                if let Some(mut input) = enum_input(name, arguments, &enums, environment) {
+                    input.active =
+                        input_active(fn_name, arguments, environment, schema, diagnostics);
                     schema.inputs.push(input);
                 } else {
                     diagnostics.push(Diagnostic::error(
@@ -629,6 +653,7 @@ fn collect_inputs(
                 ));
                 continue;
             };
+            let active = input_active(fn_name, arguments, environment, schema, diagnostics);
             schema.inputs.push(InputDefinition {
                 id: name.clone(),
                 kind: builtins::input_kind(fn_name, &default_value),
@@ -644,6 +669,7 @@ fn collect_inputs(
                 step: inputs.number("step", &constant),
                 options: input_options(&inputs, fn_name, environment),
                 option_titles: None,
+                active,
             });
         }
         if let Statement::Conditional {
@@ -656,6 +682,32 @@ fn collect_inputs(
             collect_inputs(when_false, environment, schema, diagnostics);
         }
     }
+}
+
+/// When the call's `active` lets the user edit the input, as a condition on other inputs. None
+/// when the call sets none, and when what it sets cannot be known before the script runs: that is
+/// warned about, and the input stays editable.
+fn input_active(
+    function: &str,
+    arguments: &[Argument],
+    environment: &HashMap<String, RuntimeValue>,
+    schema: &InputSchema,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<Expression> {
+    let argument = InputArguments::new(function, arguments).find("active")?;
+    let Some(condition) = input_activity::compile(argument, environment, &schema.inputs) else {
+        diagnostics.push(super::ignored_features::warning(
+            "PINE7001",
+            format!(
+                "{function}(): `active` is ignored. Only inputs declared above it and constants can set it, so the input can always be edited."
+            ),
+            argument.name_range.unwrap_or(argument.value.range()),
+        ));
+        return None;
+    };
+    // An input that is always active needs no condition.
+    (condition != Expression::Literal(super::ast::Literal::Bool(true), condition.range()))
+        .then_some(condition)
 }
 
 fn enum_declarations(statements: &[Statement]) -> HashMap<String, Vec<EnumMember>> {
@@ -714,6 +766,7 @@ fn enum_input(
                 .collect(),
         ),
         option_titles: Some(choices.iter().map(|(_, m)| m.title.clone()).collect()),
+        active: None,
     })
 }
 

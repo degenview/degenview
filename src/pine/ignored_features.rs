@@ -160,16 +160,10 @@ fn plot() -> HashMap<&'static str, &'static str> {
 }
 
 fn input() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
-        (
-            "display",
-            "The input is not listed in the status line or the Data Window.",
-        ),
-        (
-            "active",
-            "The input can always be edited; it is never greyed out.",
-        ),
-    ])
+    HashMap::from([(
+        "display",
+        "The input is not listed in the status line or the Data Window.",
+    )])
 }
 
 fn plotarrow() -> HashMap<&'static str, &'static str> {
@@ -437,7 +431,7 @@ fn spanning(name: &str, range: SourceRange) -> SourceRange {
     SourceRange::new(range.start, end)
 }
 
-fn warning(code: &str, message: String, range: SourceRange) -> Diagnostic {
+pub(super) fn warning(code: &str, message: String, range: SourceRange) -> Diagnostic {
     Diagnostic {
         code: code.to_owned(),
         severity: DiagnosticSeverity::Warning,

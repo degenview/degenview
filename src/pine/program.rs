@@ -1,9 +1,9 @@
 //! The compiled program and the script's declaration, inputs, bar events, symbol facts, theme
 //! and visual output, ported from `Pine/Model/*` + `PineCompiledProgram`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::ast::Statement;
+use super::ast::{Expression, Statement};
 use super::outputs::{
     ArrowOutput, BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine,
     LabelOutput, LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
@@ -72,11 +72,25 @@ pub struct InputDefinition {
     pub options: Option<Vec<InputValue>>,
     /// What to show for each of `options`, when it differs from the value.
     pub option_titles: Option<Vec<String>>,
+    /// `active`: the condition, on other inputs, under which the user can change this input. None
+    /// when it can always be changed.
+    pub active: Option<Expression>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InputSchema {
     pub inputs: Vec<InputDefinition>,
+}
+
+impl InputSchema {
+    /// Whether the user can change `input` while the inputs hold `values` (an input with no entry
+    /// holds its default). A greyed-out input still holds its value, and the script reads it.
+    pub fn is_active(&self, input: &InputDefinition, values: &HashMap<String, InputValue>) -> bool {
+        input
+            .active
+            .as_ref()
+            .is_none_or(|condition| super::input_activity::holds(condition, &self.inputs, values))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -2259,13 +2259,153 @@ fn the_new_input_functions_return_their_defaults_typed() {
 fn the_input_arguments_that_change_nothing_are_warned_about() {
     let codes = diagnostic_codes(
         "a = input.int(1, \"A\", display = display.none)\n\
-         b = input.text_area(\"x\", \"B\", active = false)\nplot(a)",
+         b = input.text_area(\"x\", \"B\", active = close > open)\nplot(a)",
     );
     assert_eq!(
         codes.iter().filter(|c| *c == "PINE7001").count(),
         2,
         "{codes:?}"
     );
+}
+
+fn active_inputs(body: &str) -> crate::pine::program::InputSchema {
+    input_schema(&format!("{body}\nplot(1)"))
+}
+
+#[test]
+fn active_greys_an_input_out_by_other_inputs_and_constants() {
+    use crate::pine::program::InputValue;
+    use std::collections::HashMap;
+    let schema = active_inputs(
+        "const bool debug = false\n\
+         custom = input.bool(false, \"Custom\")\n\
+         mode = input.string(\"Fast\", \"Mode\", options = [\"Fast\", \"Slow\"])\n\
+         always = input.int(1, \"Always\", active = true)\n\
+         never = input.int(1, \"Never\", active = false)\n\
+         by_switch = input.int(2, \"By switch\", active = custom)\n\
+         by_not = input.int(3, \"By not\", active = not custom)\n\
+         by_mode = input.int(4, \"By mode\", active = mode == \"Slow\" and not debug)\n\
+         by_constant = input.int(5, \"By constant\", active = debug)\n\
+         by_ternary = input.int(6, \"By ternary\", active = custom ? mode == \"Slow\" : true)",
+    );
+    let active = |id: &str, values: &HashMap<String, InputValue>| {
+        let input = schema.inputs.iter().find(|i| i.id == id).unwrap();
+        schema.is_active(input, values)
+    };
+    let none = HashMap::new();
+    assert!(active("always", &none) && active("custom", &none) && active("mode", &none));
+    assert!(!active("never", &none) && !active("by_constant", &none));
+    assert!(!active("by_switch", &none) && active("by_not", &none));
+    assert!(!active("by_mode", &none) && active("by_ternary", &none));
+
+    let edited = HashMap::from([
+        ("custom".to_owned(), InputValue::Bool(true)),
+        ("mode".to_owned(), InputValue::String("Slow".into())),
+    ]);
+    assert!(active("by_switch", &edited) && !active("by_not", &edited));
+    assert!(active("by_mode", &edited), "`not debug` is a constant true");
+    assert!(
+        !active("by_constant", &edited),
+        "`debug` is a constant and stays false"
+    );
+    assert!(active("by_ternary", &edited));
+    assert!(
+        !active("never", &edited),
+        "nothing re-enables a constant false"
+    );
+}
+
+#[test]
+fn active_compares_numbers_and_follows_a_chain_of_inputs() {
+    use crate::pine::program::InputValue;
+    use std::collections::HashMap;
+    let schema = active_inputs(
+        "length = input.int(10, \"Length\")\n\
+         smooth = input.bool(true, \"Smooth\", active = length > 5)\n\
+         factor = input.float(2.0, \"Factor\", active = smooth)",
+    );
+    let factor = &schema.inputs[2];
+    assert!(schema.is_active(factor, &HashMap::new()));
+    let short = HashMap::from([("length".to_owned(), InputValue::Int(3))]);
+    assert!(
+        schema.is_active(factor, &short),
+        "`smooth` still holds true: a greyed-out input keeps its value"
+    );
+    let switched_off = HashMap::from([("smooth".to_owned(), InputValue::Bool(false))]);
+    assert!(!schema.is_active(factor, &switched_off));
+    assert!(!schema.is_active(&schema.inputs[1], &short));
+}
+
+#[test]
+fn active_is_found_by_position_and_on_enum_inputs() {
+    let schema = active_inputs(
+        "enum Side\n    left\n    right\n\
+         on = input.bool(false, \"On\")\n\
+         length = input.int(14, \"Length\", 1, 100, 1, \"tip\", \"row\", \"Group\", false, display.all, on)\n\
+         side = input.enum(Side.left, \"Side\", active = on)",
+    );
+    let values = std::collections::HashMap::new();
+    assert!(!schema.is_active(&schema.inputs[1], &values));
+    assert!(!schema.is_active(&schema.inputs[2], &values));
+}
+
+#[test]
+fn an_active_the_settings_cannot_know_is_warned_about_and_stays_editable() {
+    for condition in [
+        "close > open",
+        "later",
+        "array.size(array.new_int()) > 0",
+        "1",
+        "na",
+    ] {
+        let source = format!(
+            "//@version=6\nindicator(\"T\")\n\
+             a = input.int(1, \"A\", active = {condition})\n\
+             later = input.bool(true)\nplot(a)"
+        );
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        let warnings: Vec<_> = program
+            .diagnostics
+            .iter()
+            .filter(|d| d.code == "PINE7001")
+            .collect();
+        assert_eq!(warnings.len(), 1, "{condition}: {:?}", program.diagnostics);
+        assert!(
+            warnings[0].message.contains("`active` is ignored"),
+            "{}",
+            warnings[0].message
+        );
+        let input = &program.input_schema.inputs[0];
+        assert!(input.active.is_none());
+        assert!(
+            program
+                .input_schema
+                .is_active(input, &std::collections::HashMap::new())
+        );
+    }
+    let honoured = compiler::compile(
+        "//@version=6\nindicator(\"T\")\non = input.bool(true)\n\
+         a = input.int(1, \"A\", active = on)\nplot(a)",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(
+        honoured.diagnostics.iter().all(|d| d.code != "PINE7001"),
+        "{:?}",
+        honoured.diagnostics
+    );
+}
+
+#[test]
+fn constants_fold_comparisons_logic_and_ternaries() {
+    let session = run(
+        "const int n = 3\nconst bool big = n > 2 and not (n == 4)\n\
+         const string word = big ? \"yes\" : \"no\"\n\
+         x = input.bool(big)\ny = input.string(word)",
+        2,
+    );
+    assert_eq!(value(&session, "x"), RuntimeValue::Bool(true));
+    assert_eq!(value(&session, "y"), RuntimeValue::String("yes".into()));
 }
 
 #[test]

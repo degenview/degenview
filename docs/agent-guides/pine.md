@@ -112,7 +112,13 @@
   third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
   `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
   with their own controls (`script_manager::inputs`), and the stored value of each is the plain
-  `InputValue` it always was, so saved inputs are unchanged. `display` and `active` are warned about.
+  `InputValue` it always was, so saved inputs are unchanged. `display` is warned about.
+- `active` is compiled by `pine::input_activity` into `InputDefinition::active`: an expression over inputs
+  declared above it (kept by name) and the script's constants (folded to literals), evaluated by
+  `InputSchema::is_active` against the values being edited with `compiler::constant_value`, which also
+  folds comparisons, `and`/`or`/`not` and `?:`. The form draws a card whose condition fails disabled; the
+  input keeps its value and the script reads it. Anything else (a series, a call, a later input, a
+  non-bool) is warned (`PINE7001`) and leaves the input editable. The MCP input tools do not honour it.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

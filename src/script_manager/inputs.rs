@@ -283,7 +283,8 @@ pub fn cards(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<Inp
             ));
         }
         for input in inputs {
-            if let Some(value) = card(ui, input, values.get(&input.id)) {
+            let active = schema.is_active(input, values);
+            if let Some(value) = card(ui, input, values.get(&input.id), active) {
                 edits.push(InputEdit::Set(input.id.clone(), value));
             }
         }
@@ -296,6 +297,7 @@ fn card(
     ui: &mut Ui,
     input: &InputDefinition,
     override_value: Option<&InputValue>,
+    active: bool,
 ) -> Option<InputValue> {
     let title = input.title.clone().unwrap_or_else(|| input.id.clone());
     let current = override_value.unwrap_or(&input.default_value).clone();
@@ -309,9 +311,13 @@ fn card(
         (_, InputValue::Color(_)) => Icon::Palette,
         (_, InputValue::Source(_)) => Icon::ChartLine,
     };
-    settings_card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
-        control(ui, input, &title, &current)
+    // A greyed-out card still shows the value the script reads; it just cannot be changed.
+    ui.add_enabled_ui(active, |ui| {
+        settings_card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
+            control(ui, input, &title, &current)
+        })
     })
+    .inner
 }
 
 fn control(
@@ -979,6 +985,7 @@ mod tests {
             step: None,
             options: None,
             option_titles: None,
+            active: None,
         }
     }
 
@@ -1345,5 +1352,64 @@ mod tests {
             ],
         };
         assert_eq!(drawn(&schema), 0, "nobody touched anything");
+    }
+
+    /// Clicks where a card's switch sits (its right end, mid-height) and returns the edits asked for.
+    fn clicked_switch(schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(480.0, 200.0));
+        let frame = |events: Vec<egui::Event>, edits: &mut Vec<InputEdit>| {
+            let mut used = egui::Rect::NOTHING;
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                *edits = cards(ui, schema, values);
+                used = ui.min_rect();
+            });
+            output.textures_delta.clear();
+            used
+        };
+        let mut ignored = Vec::new();
+        let card_rect = frame(Vec::new(), &mut ignored);
+        let at = egui::pos2(card_rect.right() - 14.0 - 18.0, card_rect.center().y);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(vec![egui::Event::PointerMoved(at)], &mut ignored);
+        frame(vec![button(true)], &mut ignored);
+        let mut edits = Vec::new();
+        frame(vec![button(false)], &mut edits);
+        edits
+    }
+
+    #[test]
+    fn a_greyed_out_input_cannot_be_changed_and_an_active_one_can() {
+        let switch = |active: Option<crate::pine::ast::Expression>| InputSchema {
+            inputs: vec![InputDefinition {
+                active,
+                ..def("flag", ValueType::Bool, InputValue::Bool(true), None)
+            }],
+        };
+        let locked = crate::pine::ast::Expression::Literal(
+            crate::pine::ast::Literal::Bool(false),
+            crate::pine::token::SourceRange::ZERO,
+        );
+        let values = InputValues::default();
+        assert_eq!(
+            clicked_switch(&switch(None), &values),
+            vec![InputEdit::Set("flag".into(), InputValue::Bool(false))],
+            "the click lands on the switch"
+        );
+        assert_eq!(
+            clicked_switch(&switch(Some(locked)), &values),
+            Vec::<InputEdit>::new(),
+            "the same click on a greyed-out input changes nothing"
+        );
     }
 }
