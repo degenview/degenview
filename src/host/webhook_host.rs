@@ -8,6 +8,7 @@ use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
 use crate::service::cache_control;
 use crate::service::disk_cache::{CacheStats, ClearOutcome};
 use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
+use crate::service::llm::prefs::AiPrefs;
 use crate::service::webhook_delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::store::Store;
 use crate::ui::settings_api_keys::StatusMessage;
@@ -56,6 +57,9 @@ impl Default for StorageEvents {
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
     snapshots: crate::host::snapshot_host::SnapshotHost,
+    /// The saved assistant settings, read from the store when Settings first needs them.
+    ai_prefs: Option<AiPrefs>,
+    ai_prefs_read_at: Option<std::time::Instant>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -85,6 +89,12 @@ impl WebhookHost {
     /// Opens Settings on the Alpaca page (the Script Manager's "Open Settings").
     pub fn open_alpaca(&mut self) {
         self.state.section = crate::ui::settings_window::SettingsSection::Alpaca;
+        self.open = true;
+    }
+
+    /// Opens Settings on the AI Assistant page (the assistant panel's "Open Settings").
+    pub fn open_ai(&mut self) {
+        self.state.section = crate::ui::settings_window::SettingsSection::Ai;
         self.open = true;
     }
 
@@ -120,6 +130,16 @@ impl WebhookHost {
         // drew a second title bar and let the page be dragged around within its own window.
         let endpoints = store.webhook_endpoints();
         let snapshot_prefs = self.snapshots.prefs();
+        // Read again every second: the assistant panel changes these too, in another window.
+        if self.ai_prefs.is_none()
+            || self
+                .ai_prefs_read_at
+                .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.ai_prefs = Some(AiPrefs::load(store));
+            self.ai_prefs_read_at = Some(std::time::Instant::now());
+        }
+        let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
         let input = SettingsInput {
             notifications,
             health,
@@ -136,6 +156,7 @@ impl WebhookHost {
                 token_saved: crate::service::keychain_snapshot_token::SnapshotTokenStore::shared()
                     .is_configured(),
             },
+            ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
             sync,
             now_ms,
@@ -147,6 +168,26 @@ impl WebhookHost {
                 }
                 SettingsAction::Storage(action) => self.apply_storage(action, ui.ctx()),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
+                SettingsAction::Ai(crate::ui::settings_ai::AiAction::SavePrefs(prefs)) => {
+                    if let Err(error) = prefs.save(store) {
+                        self.state.ai.status = Some(StatusMessage::error(format!(
+                            "Could not save the settings: {error}"
+                        )));
+                    }
+                    self.ai_prefs = Some(prefs);
+                    self.ai_prefs_read_at = Some(std::time::Instant::now());
+                }
+                SettingsAction::Ai(crate::ui::settings_ai::AiAction::ClearHistory) => {
+                    use crate::script_manager::ai_history::History;
+                    let mut history = History::load(store);
+                    history.clear();
+                    self.state.ai.status = Some(match history.save(store) {
+                        Ok(()) => StatusMessage::ok("Saved conversations cleared."),
+                        Err(error) => {
+                            StatusMessage::error(format!("Could not clear them: {error}"))
+                        }
+                    });
+                }
                 SettingsAction::SetTheme(theme) => {
                     let _ = store.set_setting(crate::ui::theme::THEME_KEY, &theme);
                     crate::ui::theme::apply(ui.ctx(), theme);

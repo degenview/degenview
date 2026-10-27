@@ -322,7 +322,7 @@ fn step(ui: &mut egui::Ui, number: usize, text: &str) {
 }
 
 /// A link with a leading "open" glyph, in the accent colour.
-fn link(ui: &mut egui::Ui, label: &str, url: &str) {
+pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     let response = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;

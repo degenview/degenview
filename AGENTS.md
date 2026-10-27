@@ -19,6 +19,7 @@ scenario matches the work:
 | `request.footprint()`, `footprint` or `volume_row` | [Pine volume footprints](docs/pine-footprint.md) |
 | The Pine debugger: breakpoints, stepping, watches, the interpreter's debug hooks, `pine/debug/` | [Pine debugger](docs/pine-debugger.md) |
 | The Pine profiler: the recorder, regions, profile sessions, the profile column and tab | [Pine profiler](docs/pine-profiler.md) |
+| The AI assistant, LLM providers, or the AI API keys | [AI assistant](docs/ai-assistant.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
@@ -95,6 +96,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.
 - [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
+- [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).

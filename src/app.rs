@@ -202,6 +202,8 @@ enum AppAction {
     OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
+    /// Open Settings on the AI Assistant page.
+    OpenAiSettings,
     OpenAlerts,
     /// The price-alert sheet in a chart window saved an alert.
     SavePriceAlert {
@@ -662,6 +664,7 @@ fn show_tab(
                         webhook_endpoint_ids,
                     },
                     ScriptManagerAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
+                    ScriptManagerAction::OpenAiSettings => AppAction::OpenAiSettings,
                 }));
             }
         }
@@ -1039,6 +1042,11 @@ impl DegenViewApp {
                 AppAction::OpenAlpacaSettings => {
                     if let Ok(mut host) = self.webhook_host.lock() {
                         host.open_alpaca();
+                    }
+                }
+                AppAction::OpenAiSettings => {
+                    if let Ok(mut host) = self.webhook_host.lock() {
+                        host.open_ai();
                     }
                 }
                 AppAction::OpenAlerts => self.alerts_open.store(true, Ordering::Release),
