@@ -69,6 +69,10 @@ pub struct Completion {
     pub items: Vec<Item>,
 }
 
+/// The most names one request offers: enough for a whole namespace (`math.` and `array.` run to
+/// about a hundred), which the list scrolls through, so none is cut off the end.
+const MAX_SUGGESTIONS: usize = 200;
+
 const KEYWORDS: [&str; 23] = [
     "if", "else", "for", "while", "switch", "var", "varip", "import", "export", "method", "type",
     "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by", "once",
@@ -394,7 +398,7 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
         };
         key(a).cmp(&key(b))
     });
-    items.truncate(60);
+    items.truncate(MAX_SUGGESTIONS);
     Some(Completion {
         replace: start..caret,
         items,
@@ -524,7 +528,10 @@ mod tests {
         assert!(labels(&found).contains(&"ta.sma") && labels(&found).contains(&"ta.atr"));
         assert!(labels(&found).iter().all(|l| l.starts_with("ta.")));
         let narrowed = complete("x = ta.pi", 9, false).unwrap();
-        assert_eq!(labels(&narrowed), ["ta.pivothigh", "ta.pivotlow"]);
+        assert_eq!(
+            labels(&narrowed),
+            ["ta.pivot_point_levels", "ta.pivothigh", "ta.pivotlow"]
+        );
     }
 
     #[test]

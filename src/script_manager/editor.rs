@@ -2463,10 +2463,10 @@ mod tests {
         let mut state = EditorState::new("s", "x = ta.pi", "");
         let caret = state.source.chars().count();
         let completion = completion::complete(&state.source, caret, false).expect("suggestions");
-        assert_eq!(completion.items[0].label, "ta.pivothigh");
+        assert_eq!(completion.items[0].label, "ta.pivot_point_levels");
         state.completion = Some(CompletionView {
             completion,
-            selected: 1,
+            selected: 2,
             scroll_to_selected: false,
         });
         let ctx = egui::Context::default();
