@@ -9,7 +9,9 @@
 mod ai;
 #[cfg(test)]
 mod ai_gallery;
+pub mod ai_history;
 mod ai_host;
+mod ai_models;
 mod ai_panel;
 mod ai_prompt;
 mod ai_review;
@@ -1197,6 +1199,7 @@ impl ScriptManager {
         }
         self.debug.script_deleted(id);
         self.profiler.script_deleted(id);
+        self.ai_forget_history(id);
         self.with_store(|store| store.delete(id));
         self.refresh();
     }

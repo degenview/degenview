@@ -6,13 +6,15 @@
 //! network. Nothing here changes the script: a finished reply becomes a [`Proposal`] that the user
 //! accepts or discards, and accepting goes through the editor as one undo step.
 
+use super::ai_models::{self, ModelList};
 use super::ai_prompt::{self, Mode, Turn};
 use super::ai_review::Review;
 use super::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
-use crate::service::llm::{ChatRequest, Done, LlmError, LlmProvider};
+use crate::service::llm::{ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -56,6 +58,9 @@ enum Event {
     Text(String),
     Done(Result<Done, LlmError>),
 }
+
+/// The answer to a model-list request: the ids, or why they could not be had.
+type ModelsReceiver = Receiver<Result<Vec<String>, String>>;
 
 /// A request in flight. Dropping it asks the thread to stop.
 struct Run {
@@ -103,6 +108,11 @@ pub struct Assistant {
     /// The provider and model, read from the store while the panel is open.
     pub prefs: AiPrefs,
     pub prefs_loaded_at: Option<Instant>,
+    /// The models each provider's key can use, filled when the model menu opens.
+    pub models: HashMap<ProviderKind, ModelList>,
+    /// What is typed in the model menu's filter.
+    pub model_filter: String,
+    models_rx: Option<(ProviderKind, ModelsReceiver)>,
     run: Option<Run>,
 }
 
@@ -143,6 +153,62 @@ impl Assistant {
         }
         self.mode = mode;
         true
+    }
+
+    /// Takes back the last exchange so it can be sent again or edited: its message is returned, the
+    /// reply and any proposal over it are dropped, and the mode returns to the one it was made in.
+    /// Only the last exchange, and never while a request runs.
+    pub fn rewind_last(&mut self) -> Option<String> {
+        if self.run.is_some() {
+            return None;
+        }
+        let at = match self.turns.as_slice() {
+            [.., Turn::User(_), Turn::Assistant { .. }] => self.turns.len() - 2,
+            [.., Turn::User(_)] => self.turns.len() - 1,
+            _ => return None,
+        };
+        let mode = match self.turns.last() {
+            Some(Turn::Assistant { mode, .. }) => *mode,
+            _ => self.mode,
+        };
+        let Turn::User(text) = self.turns[at].clone() else {
+            return None;
+        };
+        self.turns.truncate(at);
+        self.proposal = None;
+        self.review = None;
+        self.notice = None;
+        self.mode = mode;
+        Some(text)
+    }
+
+    /// Starts asking `provider` for the models its key can use.
+    pub fn begin_model_fetch(
+        &mut self,
+        kind: ProviderKind,
+        provider: Box<dyn LlmProvider>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) {
+        self.models.insert(kind, ModelList::Loading);
+        self.models_rx = Some((kind, ai_models::fetch(provider, wake)));
+    }
+
+    /// Takes in a model list that has arrived.
+    pub fn poll_models(&mut self) {
+        let Some((kind, receiver)) = &self.models_rx else {
+            return;
+        };
+        let kind = *kind;
+        let list = match receiver.try_recv() {
+            Ok(Ok(ids)) => ModelList::Ready(ai_models::usable_chat_models(kind, &ids)),
+            Ok(Err(message)) => ModelList::Failed(message),
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                ModelList::Failed("The model list stopped unexpectedly.".to_owned())
+            }
+        };
+        self.models.insert(kind, list);
+        self.models_rx = None;
     }
 
     /// Whether the last reply is a plan that the Implement button can carry out.
@@ -692,5 +758,88 @@ mod tests {
         assert!(assistant.scroll_to_end);
         assistant.stop();
         assert_eq!(assistant.pending_request(), None);
+    }
+
+    #[test]
+    fn rewinding_takes_back_the_last_exchange_and_its_mode() {
+        let mut assistant = run_in(
+            Mode::Edit,
+            vec![reply_with("//@version=6\nplot(close)\n")],
+            BASE,
+        );
+        assistant.mode = Mode::Plan;
+        assert!(assistant.proposal.is_some());
+        let text = assistant.rewind_last();
+        assert_eq!(text.as_deref(), Some("a question"));
+        assert!(assistant.turns.is_empty());
+        assert!(assistant.proposal.is_none() && assistant.notice.is_none());
+        assert_eq!(assistant.mode, Mode::Edit, "the mode it was asked in");
+    }
+
+    #[test]
+    fn rewinding_only_undoes_the_last_exchange() {
+        let mut assistant = run_in(Mode::Plan, vec![MockProvider::text(&["one"])], BASE);
+        assistant.turns.push(Turn::User("second".into()));
+        assistant.turns.push(Turn::Assistant {
+            text: "two".into(),
+            mode: Mode::Plan,
+        });
+        assert_eq!(assistant.rewind_last().as_deref(), Some("second"));
+        assert_eq!(assistant.turns.len(), 2, "the first exchange stays");
+        assert_eq!(assistant.rewind_last().as_deref(), Some("a question"));
+        assert_eq!(assistant.rewind_last(), None, "nothing left");
+    }
+
+    #[test]
+    fn nothing_rewinds_while_a_request_runs() {
+        let mut assistant = run_in(Mode::Plan, vec![MockProvider::text(&["one"])], BASE);
+        assistant.start(
+            Box::new(MockProvider::replying(vec![])),
+            request(),
+            "again".to_owned(),
+            BASE.to_owned(),
+            Mode::Plan,
+            wake(),
+        );
+        assert_eq!(assistant.rewind_last(), None);
+        assert_eq!(assistant.turns.len(), 2);
+    }
+
+    #[test]
+    fn a_model_list_arrives_filtered_or_as_an_error() {
+        let wait = |assistant: &mut Assistant, kind: ProviderKind| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while matches!(assistant.models.get(&kind), Some(ModelList::Loading)) {
+                assert!(Instant::now() < deadline, "no answer");
+                assistant.poll_models();
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        };
+        let mut assistant = Assistant::default();
+        let mut provider = MockProvider::replying(vec![]);
+        provider.models = Ok(vec![
+            "gpt-5".to_owned(),
+            "text-embedding-3-small".to_owned(),
+            "o3".to_owned(),
+        ]);
+        assistant.begin_model_fetch(ProviderKind::OpenAi, Box::new(provider), wake());
+        assert_eq!(
+            assistant.models.get(&ProviderKind::OpenAi),
+            Some(&ModelList::Loading)
+        );
+        wait(&mut assistant, ProviderKind::OpenAi);
+        assert_eq!(
+            assistant.models.get(&ProviderKind::OpenAi),
+            Some(&ModelList::Ready(vec!["gpt-5".to_owned(), "o3".to_owned()]))
+        );
+
+        let mut failing = MockProvider::replying(vec![]);
+        failing.models = Err(LlmError::Auth("bad key".to_owned()));
+        assistant.begin_model_fetch(ProviderKind::Anthropic, Box::new(failing), wake());
+        wait(&mut assistant, ProviderKind::Anthropic);
+        assert!(matches!(
+            assistant.models.get(&ProviderKind::Anthropic),
+            Some(ModelList::Failed(message)) if message.contains("bad key")
+        ));
     }
 }

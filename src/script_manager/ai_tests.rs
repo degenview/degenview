@@ -5,12 +5,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::ai_history::History;
+use super::ai_models::ModelList;
 use super::ai_panel::PanelAction;
 use super::ai_prompt::Mode;
 use super::ai_review_view::ReviewAction;
 use super::debug_tests::Rig;
 use super::*;
 use crate::service::llm::mock::MockProvider;
+use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{ChatMessage, ChatRequest, LlmError, ProviderKind};
 use eframe::egui;
 
@@ -616,4 +619,210 @@ fn a_new_request_or_start_over_closes_the_sheet() {
     open_review(&mut rig);
     rig.manager.ai.clear();
     assert!(rig.manager.ai.review.is_none() && rig.manager.ai.proposal.is_none());
+}
+
+fn saved_turns(rig: &Rig) -> Vec<super::ai_prompt::Turn> {
+    let id = rig.manager.ai.script_id.clone().expect("a script is open");
+    History::load(&rig.shared.lock().unwrap()).get(&id)
+}
+
+#[test]
+fn a_finished_reply_is_saved_and_comes_back_for_that_script_only() {
+    let mut rig = Rig::new("ai-history");
+    open_panel(&mut rig);
+    ask_in(
+        &mut rig,
+        Mode::Plan,
+        MockProvider::text(&["Because it is a moving average."]),
+    );
+    let saved = saved_turns(&rig);
+    assert_eq!(saved.len(), 2);
+    assert_eq!(saved, rig.manager.ai.turns);
+
+    // Another script has its own, empty conversation; coming back restores this one.
+    let first = rig.manager.ai.script_id.clone().unwrap();
+    let other = rig.manager.scripts[1].id.clone();
+    rig.manager.open_script(&other);
+    rig.frame();
+    assert!(rig.manager.ai.turns.is_empty());
+    assert_eq!(rig.manager.ai.mode, Mode::Plan);
+    rig.manager.open_script(&first);
+    rig.frame();
+    assert_eq!(rig.manager.ai.turns, saved);
+}
+
+#[test]
+fn a_restarted_app_still_has_the_conversation() {
+    let mut rig = Rig::new("ai-history-restart");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    let before = rig.manager.ai.turns.clone();
+    let rig = rig.restarted();
+    assert_eq!(rig.manager.ai.turns, before);
+}
+
+#[test]
+fn start_over_deletes_the_saved_conversation() {
+    let mut rig = Rig::new("ai-history-clear");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    assert!(!saved_turns(&rig).is_empty());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Clear));
+    rig.frame();
+    assert!(saved_turns(&rig).is_empty());
+}
+
+#[test]
+fn deleting_a_script_deletes_its_conversation() {
+    let mut rig = Rig::new("ai-history-delete");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    let id = rig.manager.ai.script_id.clone().unwrap();
+    rig.manager.delete_script(&id);
+    assert!(
+        History::load(&rig.shared.lock().unwrap())
+            .get(&id)
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_conversation_cleared_in_settings_is_not_brought_back() {
+    let mut rig = Rig::new("ai-history-settings");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    // Settings clears the saved history while the conversation is on screen.
+    {
+        let store = rig.shared.lock().unwrap();
+        let mut history = History::load(&store);
+        history.clear();
+        history.save(&store).unwrap();
+    }
+    let first = rig.manager.ai.script_id.clone().unwrap();
+    let other = rig.manager.scripts[1].id.clone();
+    rig.manager.open_script(&other);
+    rig.frame();
+    rig.manager.open_script(&first);
+    rig.frame();
+    assert!(rig.manager.ai.turns.is_empty(), "it stays cleared");
+}
+
+#[test]
+fn edit_last_puts_the_message_back_and_forgets_the_exchange() {
+    let mut rig = Rig::new("ai-edit-last");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::EditLast));
+    rig.frame();
+    assert_eq!(rig.manager.ai.input, "make a change");
+    assert!(rig.manager.ai.turns.is_empty());
+    assert!(saved_turns(&rig).is_empty(), "the edit is saved too");
+}
+
+#[test]
+fn retry_asks_the_last_message_again() {
+    let mut rig = Rig::new("ai-retry");
+    open_panel(&mut rig);
+    ask_in(&mut rig, Mode::Plan, MockProvider::text(&["An answer."]));
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Retry));
+    rig.frame();
+    // The test key store is empty, so the new request is refused; the exchange is gone and the
+    // message is waiting to be sent again.
+    assert!(rig.manager.ai.turns.is_empty());
+    assert_eq!(rig.manager.ai.input, "make a change");
+    assert!(rig.manager.ai.notice.as_ref().unwrap().error);
+}
+
+#[test]
+fn retry_and_edit_do_nothing_without_an_exchange() {
+    let mut rig = Rig::new("ai-retry-none");
+    open_panel(&mut rig);
+    for action in [PanelAction::Retry, PanelAction::EditLast] {
+        rig.manager.cmds.push(Cmd::Ai(action));
+        rig.frame();
+    }
+    assert!(rig.manager.ai.input.is_empty() && rig.manager.ai.notice.is_none());
+}
+
+#[test]
+fn dismissing_a_notice_clears_it() {
+    let mut rig = Rig::new("ai-dismiss");
+    open_panel(&mut rig);
+    rig.manager.ai.notice = Some(ai::Notice::error("Something."));
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::DismissNotice));
+    rig.frame();
+    assert!(rig.manager.ai.notice.is_none());
+}
+
+#[test]
+fn choosing_a_model_or_provider_is_saved_where_settings_reads_it() {
+    let mut rig = Rig::new("ai-model");
+    open_panel(&mut rig);
+    rig.manager
+        .cmds
+        .push(Cmd::Ai(PanelAction::SetModel("gpt-5-mini".into())));
+    rig.frame();
+    let saved = AiPrefs::load(&rig.shared.lock().unwrap());
+    assert_eq!(saved.model(ProviderKind::OpenAi), "gpt-5-mini");
+    assert_eq!(rig.manager.ai_setup().model, "gpt-5-mini");
+
+    rig.manager
+        .cmds
+        .push(Cmd::Ai(PanelAction::SetProvider(ProviderKind::Anthropic)));
+    rig.frame();
+    let saved = AiPrefs::load(&rig.shared.lock().unwrap());
+    assert_eq!(saved.provider, ProviderKind::Anthropic);
+    assert_eq!(
+        saved.model(ProviderKind::OpenAi),
+        "gpt-5-mini",
+        "the other model is kept"
+    );
+    assert_eq!(rig.manager.ai_setup().provider, "Anthropic");
+}
+
+#[test]
+fn opening_the_model_menu_without_a_key_says_why_instead_of_loading() {
+    let mut rig = Rig::new("ai-models-nokey");
+    open_panel(&mut rig);
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::LoadModels));
+    rig.frame();
+    let list = rig.manager.ai.models.get(&ProviderKind::OpenAi).cloned();
+    assert!(
+        matches!(list, Some(ModelList::Failed(message)) if message.contains("API key")),
+        "no key: nothing to ask"
+    );
+}
+
+#[test]
+fn a_loaded_model_list_is_not_asked_for_again() {
+    let mut rig = Rig::new("ai-models-cached");
+    open_panel(&mut rig);
+    rig.manager.ai.models.insert(
+        ProviderKind::OpenAi,
+        ModelList::Ready(vec!["gpt-5".to_owned()]),
+    );
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::LoadModels));
+    rig.frame();
+    assert_eq!(
+        rig.manager.ai.models.get(&ProviderKind::OpenAi),
+        Some(&ModelList::Ready(vec!["gpt-5".to_owned()]))
+    );
+}
+
+#[test]
+fn the_setup_describes_what_a_request_sends_and_which_providers_are_usable() {
+    let mut rig = Rig::new("ai-setup-context");
+    let setup = rig.manager.ai_setup();
+    assert!(setup.context.contains("lines"), "{}", setup.context);
+    assert!(setup.context.contains("problem"), "{}", setup.context);
+    assert_eq!(setup.providers.len(), 3);
+    // With no keys only the keyless provider is ready.
+    let ready: Vec<ProviderKind> = setup
+        .providers
+        .iter()
+        .filter(|(_, ready)| *ready)
+        .map(|(kind, _)| *kind)
+        .collect();
+    assert_eq!(ready, vec![ProviderKind::Compatible]);
+    let _ = &mut rig;
 }

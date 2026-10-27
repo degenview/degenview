@@ -3,10 +3,13 @@
 //! about replies live in `ai`; the words sent to the model in `ai_prompt`.
 
 use super::ai::Notice;
+use super::ai_history::History;
+use super::ai_models::ModelList;
 use super::ai_panel::{PanelAction, Setup};
 use super::ai_prompt::{self, IMPLEMENT_MESSAGE, MAX_SOURCE_CHARS, Mode};
 use super::ai_review::Review;
 use super::ai_review_view::{self, ReviewAction};
+use super::drawer;
 use super::registry::LibraryRegistry;
 use super::{ScriptManager, ScriptManagerAction, editor};
 use crate::pine::compiler;
@@ -40,9 +43,15 @@ impl ScriptManager {
         let open_id = self.open.as_ref().map(|open| open.id.clone());
         if self.ai.script_id != open_id {
             self.ai.reset(open_id);
+            self.ai_restore_history();
         }
+        self.ai.poll_models();
         if let Some(finished) = self.ai.poll() {
+            let before = self.ai.turns.len();
             self.ai.finish(finished, &diagnostics_of);
+            if self.ai.turns.len() != before {
+                self.ai_persist_history();
+            }
         }
         let stale = self
             .ai
@@ -74,10 +83,30 @@ impl ScriptManager {
         } else {
             None
         };
+        // What a request would send, so it is never a surprise.
+        let context = self
+            .open
+            .as_ref()
+            .map(|open| {
+                let lines = open.editor.source.lines().count();
+                format!(
+                    "{} · {lines} {} · {}",
+                    open.name,
+                    if lines == 1 { "line" } else { "lines" },
+                    drawer::problems_summary(&open.editor.diagnostics)
+                )
+            })
+            .unwrap_or_default();
         Setup {
             provider: kind.title().to_owned(),
             model,
             problem,
+            context,
+            providers: ProviderKind::ALL
+                .into_iter()
+                .map(|kind| (kind, !kind.needs_key() || key_available(kind)))
+                .collect(),
+            current: kind,
         }
     }
 
@@ -99,7 +128,37 @@ impl ScriptManager {
                 self.ai.review = None;
             }
             PanelAction::Review => self.ai_open_review(ctx),
-            PanelAction::Clear => self.ai.clear(),
+            PanelAction::Clear => {
+                self.ai.clear();
+                self.ai_persist_history();
+            }
+            PanelAction::DismissNotice => self.ai.notice = None,
+            PanelAction::Retry => {
+                if let Some(text) = self.ai.rewind_last() {
+                    self.ai.input = text;
+                    self.ai_persist_history();
+                    self.ai_send(ctx);
+                }
+            }
+            PanelAction::EditLast => {
+                if let Some(text) = self.ai.rewind_last() {
+                    self.ai.input = text;
+                    self.ai.focus_input = true;
+                    self.ai_persist_history();
+                }
+            }
+            PanelAction::LoadModels => self.ai_load_models(ctx),
+            PanelAction::SetModel(model) => {
+                let kind = self.ai.prefs.provider;
+                self.ai.prefs.set_model(kind, &model);
+                self.ai_save_prefs();
+            }
+            PanelAction::SetProvider(kind) => {
+                self.ai.prefs.provider = kind;
+                self.ai.model_filter.clear();
+                self.ai_save_prefs();
+                self.ai_load_models(ctx);
+            }
             PanelAction::SetMode(mode) => {
                 self.ai.set_mode(mode);
             }
@@ -111,6 +170,85 @@ impl ScriptManager {
             }
             PanelAction::OpenSettings => self.actions.push(ScriptManagerAction::OpenAiSettings),
             PanelAction::Close => self.prefs.ai_open = false,
+        }
+    }
+
+    /// Saves the provider and model the panel just chose, where Settings reads them too.
+    fn ai_save_prefs(&mut self) {
+        if let Ok(store) = self.shared.lock() {
+            let _ = self.ai.prefs.save(&store);
+        }
+        self.ai.prefs_loaded_at = Some(Instant::now());
+    }
+
+    /// Asks the current provider which models its key can use. Reading the key is where the
+    /// Keychain may ask; the user just opened the menu.
+    fn ai_load_models(&mut self, ctx: &egui::Context) {
+        let kind = self.ai.prefs.provider;
+        if matches!(
+            self.ai.models.get(&kind),
+            Some(ModelList::Loading | ModelList::Ready(_))
+        ) {
+            return;
+        }
+        let provider = HttpProvider::new(
+            kind,
+            self.ai.prefs.base_url(kind),
+            keychain_ai_keys::key(kind),
+        );
+        match provider {
+            Ok(provider) => {
+                let repaint = ctx.clone();
+                let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
+                self.ai.begin_model_fetch(kind, Box::new(provider), wake);
+            }
+            Err(error) => {
+                self.ai
+                    .models
+                    .insert(kind, ModelList::Failed(error.to_string()));
+            }
+        }
+    }
+
+    /// Brings back what was said about the open script before. Read from the store each time, so
+    /// conversations cleared in Settings stay cleared.
+    fn ai_restore_history(&mut self) {
+        let Some(id) = self.ai.script_id.clone() else {
+            return;
+        };
+        if let Ok(store) = self.shared.lock() {
+            self.ai.turns = History::load(&store).get(&id);
+        }
+    }
+
+    /// Saves the open script's conversation, and forgets those of scripts that are gone.
+    pub(super) fn ai_persist_history(&mut self) {
+        let Some(id) = self.ai.script_id.clone() else {
+            return;
+        };
+        let turns = self.ai.turns.clone();
+        let known: Vec<String> = self
+            .scripts
+            .iter()
+            .map(|script| script.id.clone())
+            .collect();
+        let now = super::model::now_ms();
+        if let Ok(store) = self.shared.lock() {
+            let mut history = History::load(&store);
+            if !known.is_empty() {
+                history.retain_scripts(&|script| known.iter().any(|k| k == script));
+            }
+            history.put(&id, &turns, now);
+            let _ = history.save(&store);
+        }
+    }
+
+    /// A deleted script's conversation goes with it.
+    pub(super) fn ai_forget_history(&mut self, script_id: &str) {
+        if let Ok(store) = self.shared.lock() {
+            let mut history = History::load(&store);
+            history.remove(script_id);
+            let _ = history.save(&store);
         }
     }
 

@@ -128,6 +128,32 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
   backgrounds are already translucent, and `theme::with_alpha` replaces alpha. This went wrong once,
   and only the light theme showed it.
 
+## The panel, history and the model menu
+
+- **Layout**: the header has the model chip (provider and model; it opens the model menu); user
+  messages are right-aligned bubbles; replies are full width with Copy and Ask again under the last
+  one; the composer holds the box, the Plan | Edit switch and Send in one frame; the line under it
+  names what a request sends (`Sent to OpenAI · Plan never edits · Bollinger Squeeze · 42 lines ·
+  No problems`). What leaves the Mac comes first, because a narrow panel cuts the end of the line.
+- **Errors** are a banner with **Try again** (the message is back in the box) and a dismiss button.
+- **Retry and Edit** work on the last exchange only (`Assistant::rewind_last`): Retry sends the message
+  again in the mode it was asked in; Edit puts it in the box.
+- **Model menu** (`ai_models`): the providers (one without a key opens Settings) and the current
+  provider's models from its key's model list, fetched when the menu opens and kept for the session.
+  OpenAI's list is filtered to chat models (embedding, speech, image and moderation ids are hidden); a
+  filter box narrows the list, and typing a name the list does not show offers "Use …". The choice is
+  saved to `ai.prefs`, which Settings reads. The Settings page re-reads its draft when the saved
+  prefs change under it, and the host re-reads the prefs every second, so neither can put an old
+  choice back. A text field inside a menu must not ask for infinite width, or the menu grows to fill the
+  window.
+- **Saved history** (`ai_history`): each script's conversation is saved in the local setting
+  `ai.history` and restored when that script is opened, so it survives a restart. It is capped (30
+  conversations by last use, 40 turns each, 40k characters a turn, 120k a conversation, 1M in all; the
+  oldest turns go first and a conversation never starts with a reply) and never syncs. Writes are
+  read-modify-write against the store, so a history cleared in Settings is not brought back by a copy in
+  memory. A deleted script's conversation goes with it. Settings > AI Assistant has **Clear saved
+  conversations**. Only text is stored: not proposals, not the review, not the mode.
+
 ## Reply rendering
 
 `ui/markdown_view.rs` renders replies: paragraphs, headings, bullet and numbered items, quotes,
@@ -148,7 +174,8 @@ Also verified headlessly: a scripted provider driving the whole window (reply to
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
 
-**Not verified**: the review sheet in a real window (clicking rows and toggles, scrolling a very long
+**Not verified**: the model menu against real provider lists (the OpenAI filter is a heuristic; the
+"Use …" row is the way out) and clicking in it; the review sheet in a real window (clicking rows and toggles, scrolling a very long
 file, a very small window); clicking a link or the Copy button in a real window (the character-under-pointer
 mapping for links is tested, the click itself is not); using the panel in a real window (typing, Enter to send, focus, scroll feel, the
 Keychain prompt on Send); any request to the real OpenAI or Anthropic API (no keys were used), so the frame

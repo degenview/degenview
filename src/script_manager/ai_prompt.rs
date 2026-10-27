@@ -11,6 +11,7 @@ use super::drawer;
 use crate::pine::symbol_catalog;
 use crate::pine::token::Diagnostic;
 use crate::service::llm::ChatMessage;
+use serde::{Deserialize, Serialize};
 
 /// Same cap as the MCP server's script edits: a bigger script is a runaway, not a script.
 pub const MAX_SOURCE_CHARS: usize = 200_000;
@@ -22,7 +23,8 @@ const OMITTED: &str =
 
 /// What a request may do. In Plan the assistant only talks: the script is never offered for
 /// applying, whatever the model writes. In Edit it may propose a whole new script.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
     Plan,
