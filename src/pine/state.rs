@@ -9,8 +9,8 @@ use super::alert_frequency::AlertFrequency;
 use super::broker::Broker;
 use super::containers::{Map, Matrix, Object};
 use super::outputs::{
-    BoxOutput, CandleOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput, LineOutput,
-    LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
+    ArrowOutput, BoxOutput, CandleOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput,
+    LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
 };
 use super::runtime_value::RuntimeValue;
 use super::ta;
@@ -86,9 +86,14 @@ pub struct RuntimeState {
     /// Complete state for each `ta.*` call site. It belongs to the working state so an
     /// unconfirmed realtime tick is rolled back together with variables and containers.
     pub ta_states: FastMap<usize, ta::State>,
+    /// The `once` structures (by site key) whose block has run; they never run it again. A scan of a
+    /// short list: a script has a handful of them, and a set here made `RuntimeState` large enough to
+    /// slow four sessions running at once by 11% (`simultaneous_x4`).
+    pub once_finished: Vec<usize>,
     pub plots: FastMap<usize, PlotOutput>,
     pub hlines: FastMap<usize, HorizontalLine>,
     pub markers: FastMap<usize, MarkerOutput>,
+    pub arrows: FastMap<usize, ArrowOutput>,
     pub backgrounds: FastMap<usize, ColorOutput>,
     pub bar_colors: FastMap<usize, ColorOutput>,
     pub fills: FastMap<usize, FillOutput>,

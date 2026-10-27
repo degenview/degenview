@@ -7,7 +7,10 @@
 use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
-use crate::pine::{math, strings, ta, ta_extra};
+use crate::pine::{
+    array_builtins, drawings, input_arguments, map_builtins, math, matrix_builtins,
+    strategy_builtins, strings, ta, ta_extra,
+};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -67,9 +70,13 @@ pub struct Completion {
     pub items: Vec<Item>,
 }
 
-const KEYWORDS: [&str; 22] = [
+/// The most names one request offers: enough for a whole namespace (`math.` and `array.` run to
+/// about a hundred), which the list scrolls through, so none is cut off the end.
+const MAX_SUGGESTIONS: usize = 200;
+
+const KEYWORDS: [&str; 23] = [
     "if", "else", "for", "while", "switch", "var", "varip", "import", "export", "method", "type",
-    "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by",
+    "enum", "and", "or", "not", "true", "false", "na", "break", "continue", "to", "by", "once",
 ];
 
 const TYPES: [&str; 16] = [
@@ -163,16 +170,6 @@ const DRAWING_COLLECTIONS: [&str; 6] = [
     "polyline.all",
 ];
 
-const INPUTS: [&str; 7] = [
-    "input.int",
-    "input.float",
-    "input.bool",
-    "input.string",
-    "input.color",
-    "input.source",
-    "input.time",
-];
-
 const COLORS: [&str; 19] = [
     "color.aqua",
     "color.black",
@@ -193,59 +190,6 @@ const COLORS: [&str; 19] = [
     "color.yellow",
     "color.new",
     "color.rgb",
-];
-
-const COLLECTIONS: [&str; 33] = [
-    "array.new_float",
-    "array.new_int",
-    "array.new_bool",
-    "array.new_string",
-    "array.new_color",
-    "array.from",
-    "array.push",
-    "array.pop",
-    "array.shift",
-    "array.unshift",
-    "array.get",
-    "array.set",
-    "array.size",
-    "array.insert",
-    "array.remove",
-    "array.clear",
-    "array.includes",
-    "array.indexof",
-    "array.first",
-    "array.last",
-    "array.sum",
-    "array.avg",
-    "array.min",
-    "array.max",
-    "array.slice",
-    "array.copy",
-    "array.sort",
-    "array.reverse",
-    "array.join",
-    "map.new",
-    "map.put",
-    "map.get",
-    "map.contains",
-];
-
-const DRAWINGS: [&str; 14] = [
-    "line.new",
-    "line.delete",
-    "line.set_xy1",
-    "line.set_xy2",
-    "label.new",
-    "label.delete",
-    "label.set_text",
-    "box.new",
-    "box.delete",
-    "table.new",
-    "table.cell",
-    "polyline.new",
-    "linefill.new",
-    "line.set_color",
 ];
 
 const ACTIONS: [&str; 5] = [
@@ -310,11 +254,23 @@ pub fn builtins() -> &'static [Item] {
             .chain(&ta_extra::FUNCTIONS)
             .chain(&math::SUPPORTED)
             .chain(&strings::SUPPORTED)
-            .chain(&INPUTS)
-            .chain(&COLLECTIONS)
-            .chain(&DRAWINGS)
+            .chain(&input_arguments::FUNCTIONS)
+            .chain(&array_builtins::KNOWN)
+            .chain(&map_builtins::NAMES)
             .chain(&ACTIONS)
+            .chain(&strategy_builtins::NAMES)
         {
+            add(name, Kind::Function);
+        }
+        for member in matrix_builtins::MEMBERS {
+            add(&format!("matrix.{member}"), Kind::Function);
+        }
+        for (namespace, members) in drawings::NAMESPACES {
+            for member in members {
+                add(&format!("{namespace}.{member}"), Kind::Function);
+            }
+        }
+        for name in drawings::CHART_POINT_NAMES {
             add(name, Kind::Function);
         }
         for name in COLORS
@@ -434,7 +390,7 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
         };
         key(a).cmp(&key(b))
     });
-    items.truncate(60);
+    items.truncate(MAX_SUGGESTIONS);
     Some(Completion {
         replace: start..caret,
         items,
@@ -444,7 +400,7 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::{alert_builtins, array_builtins, drawings, map_builtins, strategy_builtins};
+    use crate::pine::{alert_builtins, strategy_builtins};
 
     fn labels(completion: &Completion) -> Vec<&str> {
         completion.items.iter().map(|i| i.label.as_str()).collect()
@@ -484,15 +440,6 @@ mod tests {
                     || matches!(name, "color.new" | "color.rgb"),
             );
         }
-        for name in COLLECTIONS {
-            check(
-                name,
-                array_builtins::handles(name) || map_builtins::handles(name),
-            );
-        }
-        for name in DRAWINGS {
-            check(name, drawings::handles(name));
-        }
         for name in ACTIONS {
             check(
                 name,
@@ -507,6 +454,36 @@ mod tests {
             );
         }
         assert!(unsupported.is_empty(), "{unsupported:?}");
+    }
+
+    #[test]
+    fn every_array_map_matrix_and_drawing_function_the_engine_handles_is_offered() {
+        let offered: Vec<&str> = builtins().iter().map(|i| i.label.as_str()).collect();
+        for (namespace, members) in drawings::NAMESPACES {
+            for member in members {
+                let name = format!("{namespace}.{member}");
+                assert!(offered.contains(&name.as_str()), "{name}");
+                assert!(drawings::handles(&name), "{name}");
+            }
+        }
+        for name in drawings::CHART_POINT_NAMES {
+            assert!(offered.contains(name), "{name}");
+        }
+        for member in matrix_builtins::MEMBERS {
+            let name = format!("matrix.{member}");
+            assert!(offered.contains(&name.as_str()), "{name}");
+        }
+        for name in array_builtins::KNOWN.iter().chain(&map_builtins::NAMES) {
+            assert!(offered.contains(name), "{name}");
+        }
+        for name in [
+            "array.percentrank",
+            "array.every",
+            "array.some",
+            "map.put_all",
+        ] {
+            assert!(offered.contains(&name), "{name}");
+        }
     }
 
     #[test]
@@ -543,7 +520,10 @@ mod tests {
         assert!(labels(&found).contains(&"ta.sma") && labels(&found).contains(&"ta.atr"));
         assert!(labels(&found).iter().all(|l| l.starts_with("ta.")));
         let narrowed = complete("x = ta.pi", 9, false).unwrap();
-        assert_eq!(labels(&narrowed), ["ta.pivothigh", "ta.pivotlow"]);
+        assert_eq!(
+            labels(&narrowed),
+            ["ta.pivot_point_levels", "ta.pivothigh", "ta.pivotlow"]
+        );
     }
 
     #[test]

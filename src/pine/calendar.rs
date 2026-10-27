@@ -41,6 +41,16 @@ pub fn make(
     Some(seconds * 1000)
 }
 
+/// `weekofyear`: weeks run Sunday to Saturday and week 1 is the one that holds January 1 (so it may
+/// be short), as `dayofweek` counts Sunday as the first day. Inferred: the reference only says it is
+/// the week number of the year.
+pub fn week_of_year(c: &Components) -> i64 {
+    let day_of_year = days_from_civil(c.year, c.month, c.day) - days_from_civil(c.year, 1, 1);
+    // Sunday-based weekday (0…6) of January 1.
+    let january_first = (c.weekday - 1 - day_of_year).rem_euclid(7);
+    (day_of_year + january_first) / 7 + 1
+}
+
 pub fn components(milliseconds: i64) -> Components {
     let days = milliseconds.div_euclid(MILLIS_PER_DAY);
     let seconds_of_day = milliseconds.div_euclid(1000).rem_euclid(86_400);
@@ -78,5 +88,24 @@ mod tests {
     fn month_and_day_roll_over() {
         assert_eq!(make(2023, 13, 1, 0, 0, 0, 0), make(2024, 1, 1, 0, 0, 0, 0));
         assert_eq!(make(2023, 0, 1, 0, 0, 0, 0), make(2022, 12, 1, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn weeks_start_on_sunday_and_week_one_holds_january_first() {
+        let week = |year, month, day| {
+            week_of_year(&components(make(year, month, day, 12, 0, 0, 0).unwrap()))
+        };
+        // 2023 started on a Sunday, 2024 on a Monday, 2022 on a Saturday.
+        assert_eq!(
+            (week(2023, 1, 1), week(2023, 1, 7), week(2023, 1, 8)),
+            (1, 1, 2)
+        );
+        assert_eq!(
+            (week(2024, 1, 1), week(2024, 1, 6), week(2024, 1, 7)),
+            (1, 1, 2)
+        );
+        assert_eq!((week(2022, 1, 1), week(2022, 1, 2)), (1, 2));
+        assert_eq!((week(2023, 12, 31), week(2024, 12, 31)), (53, 53));
+        assert_eq!(week(2024, 2, 29), 9);
     }
 }

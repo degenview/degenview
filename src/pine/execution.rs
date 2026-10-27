@@ -99,6 +99,12 @@ impl ExecutionController {
         self
     }
 
+    /// Makes the run an alert's: `runtime.calculation.mode` reads as the alert mode.
+    pub fn with_alert_mode(mut self) -> Self {
+        self.session.alert_mode = true;
+        self
+    }
+
     /// Makes the run a debugging session: the script stops where the debugger says. Nothing else
     /// installs the hooks, so a controller built without this runs the code it always did.
     pub fn with_debugger(mut self, debug: super::debug::DebugRuntime) -> Self {

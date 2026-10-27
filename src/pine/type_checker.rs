@@ -138,6 +138,15 @@ impl TypeChecker {
                     self.require_bool(value, "while condition", condition.range());
                     self.block(body, scope);
                 }
+                Statement::Once {
+                    condition, body, ..
+                } => {
+                    if let Some(condition) = condition {
+                        let value = self.infer(condition, scope);
+                        self.require_bool(value, "once condition", condition.range());
+                    }
+                    self.block(body, scope);
+                }
                 Statement::Switch { subject, arms, .. } => {
                     if let Some(subject) = subject {
                         self.infer(subject, scope);
@@ -630,9 +639,10 @@ impl TypeChecker {
             return;
         };
         let accepted: &[ValueType] = match name {
-            "input.float" => &[ValueType::Float, ValueType::Int],
+            "input.float" | "input.price" => &[ValueType::Float, ValueType::Int],
             "input.bool" => &[ValueType::Bool],
-            "input.string" | "input.session" => &[ValueType::String],
+            "input.string" | "input.session" | "input.symbol" | "input.timeframe"
+            | "input.text_area" => &[ValueType::String],
             "input.color" => &[ValueType::Color],
             _ => &[ValueType::Int],
         };
@@ -730,6 +740,7 @@ fn nested_blocks(statement: &Statement) -> Vec<&[Statement]> {
         Statement::ForRange { body, .. }
         | Statement::ForIn { body, .. }
         | Statement::WhileLoop { body, .. }
+        | Statement::Once { body, .. }
         | Statement::Function { body, .. } => vec![body.as_slice()],
         Statement::Switch { arms, .. } => arms.iter().map(|arm| arm.body.as_slice()).collect(),
         _ => Vec::new(),

@@ -170,9 +170,10 @@ pub fn identifier(name: &str) -> Inferred {
 pub fn input_result(name: &str) -> Option<ValueType> {
     match name {
         "input.int" | "input.time" => Some(ValueType::Int),
-        "input.float" | "input.source" => Some(ValueType::Float),
+        "input.float" | "input.source" | "input.price" => Some(ValueType::Float),
         "input.bool" => Some(ValueType::Bool),
-        "input.string" | "input.session" => Some(ValueType::String),
+        "input.string" | "input.session" | "input.symbol" | "input.timeframe"
+        | "input.text_area" => Some(ValueType::String),
         "input.color" => Some(ValueType::Color),
         _ => None,
     }
@@ -184,7 +185,11 @@ fn series_result(name: &str) -> Option<ValueType> {
         "label.new" => Some(ValueType::Label),
         "box.new" => Some(ValueType::Box),
         "table.new" => Some(ValueType::Table),
-        "array.from" | "array.copy" | "array.slice" => Some(ValueType::Array),
+        "linefill.new" => Some(ValueType::Linefill),
+        "polyline.new" => Some(ValueType::Polyline),
+        "array.from" | "array.copy" | "array.slice" | "ta.pivot_point_levels" => {
+            Some(ValueType::Array)
+        }
         _ if is_ta_float(name) => Some(ValueType::Float),
         _ if is_ta_bool(name) => Some(ValueType::Bool),
         _ => None,
@@ -220,6 +225,7 @@ fn is_ta_float(name: &str) -> bool {
             | "ta.percentrank"
             | "ta.correlation"
             | "ta.linreg"
+            | "ta.rci"
     )
 }
 
@@ -339,6 +345,8 @@ pub fn value_type_name(kind: ValueType) -> &'static str {
         ValueType::Label => "label",
         ValueType::Box => "box",
         ValueType::Table => "table",
+        ValueType::Linefill => "linefill",
+        ValueType::Polyline => "polyline",
         ValueType::Array => "array",
         ValueType::Object => "object",
         ValueType::Map => "map",

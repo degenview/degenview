@@ -285,6 +285,9 @@ impl Parser {
         if self.take(TokenKind::While) {
             return self.while_statement();
         }
+        if self.take(TokenKind::Once) {
+            return self.once_statement();
+        }
         if self.take(TokenKind::Switch) {
             return self.switch_statement();
         }
@@ -396,6 +399,21 @@ impl Parser {
         let condition = self.expression(0)?;
         let body = self.indented_block("while")?;
         Some(Statement::WhileLoop {
+            condition,
+            body,
+            range: start,
+        })
+    }
+
+    fn once_statement(&mut self) -> Option<Statement> {
+        let start = self.previous().range;
+        let condition = if self.at(TokenKind::Newline) {
+            None
+        } else {
+            Some(self.expression(0)?)
+        };
+        let body = self.indented_block("once")?;
+        Some(Statement::Once {
             condition,
             body,
             range: start,
@@ -1469,6 +1487,8 @@ fn value_type_name(kind: ValueType) -> &'static str {
         ValueType::Label => "label",
         ValueType::Box => "box",
         ValueType::Table => "table",
+        ValueType::Linefill => "linefill",
+        ValueType::Polyline => "polyline",
         ValueType::Array => "array",
         ValueType::Object => "object",
         ValueType::Map => "map",
@@ -1484,7 +1504,8 @@ fn object_type(name: &str) -> Option<ValueType> {
         "box" => Some(ValueType::Box),
         "table" => Some(ValueType::Table),
         "array" => Some(ValueType::Array),
-        "linefill" | "polyline" => Some(ValueType::Object),
+        "linefill" => Some(ValueType::Linefill),
+        "polyline" => Some(ValueType::Polyline),
         "map" => Some(ValueType::Map),
         "matrix" => Some(ValueType::Matrix),
         _ => None,
@@ -1537,6 +1558,7 @@ fn assignment_operator_from_token(kind: &TokenKind) -> Option<AssignmentOperator
         TokenKind::MinusAssign => Some(AssignmentOperator::Compound(BinaryOperator::Subtract)),
         TokenKind::StarAssign => Some(AssignmentOperator::Compound(BinaryOperator::Multiply)),
         TokenKind::SlashAssign => Some(AssignmentOperator::Compound(BinaryOperator::Divide)),
+        TokenKind::PercentAssign => Some(AssignmentOperator::Compound(BinaryOperator::Modulo)),
         _ => None,
     }
 }

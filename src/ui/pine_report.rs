@@ -306,15 +306,26 @@ fn trade_list(ui: &mut egui::Ui, report: &StrategyReport, neutral: Color32) {
                         });
                     })
                     .response
-                    .on_hover_text(format!(
-                        "{} → {} · qty {}",
-                        trade.entry_id,
-                        trade.exit_id,
-                        PineReportFormat::price(trade.quantity)
-                    ));
+                    .on_hover_text(trade_summary(trade));
                 }
             });
     });
+}
+
+/// What hovering a trade says: its entry and exit ids, its size, and the comments of its orders.
+pub(crate) fn trade_summary(trade: &crate::pine::strategy::Trade) -> String {
+    let mut text = format!(
+        "{} \u{2192} {} \u{b7} qty {}",
+        trade.entry_id,
+        trade.exit_id,
+        PineReportFormat::price(trade.quantity)
+    );
+    let comments = trade.comments();
+    if !comments.is_empty() {
+        text.push('\n');
+        text.push_str(&comments);
+    }
+    text
 }
 
 /// The height of the equity curve in the report box.

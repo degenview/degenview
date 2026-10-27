@@ -8,6 +8,7 @@ use super::runtime_value::RuntimeValue;
 use super::state::RuntimeState;
 use super::ta;
 use super::time;
+use super::trading_session::MarketSessions;
 use crate::model::{ChartKind, Kline};
 
 const MILLIS_PER_DAY: i64 = 86_400_000;
@@ -23,6 +24,11 @@ pub struct MarketContext<'a> {
     pub last_bar_time: Option<i64>,
     /// The chart's foreground and background, read as `chart.fg_color` / `chart.bg_color`.
     pub theme: super::program::ChartTheme,
+    /// The length of the chart's own bars, which `timeframe.main_period` keeps inside a
+    /// `request.*()` call that reads another timeframe.
+    pub chart_bar_seconds: f64,
+    /// Whether the script runs for an alert, not on a chart.
+    pub alert_mode: bool,
 }
 
 /// The value of a market/symbol/timeframe identifier, or None when `name` is not one of them.
@@ -41,12 +47,31 @@ pub fn read(name: &str, context: &MarketContext) -> Option<RuntimeValue> {
                 .map(RuntimeValue::String)
                 .unwrap_or(RuntimeValue::Na),
         ),
-        // Crypto exchanges run on UTC; for anything else the exchange's zone is not known.
-        "syminfo.timezone" => Some(if context.symbol.kind == "crypto" {
-            RuntimeValue::String("Etc/UTC".to_owned())
-        } else {
-            RuntimeValue::Na
-        }),
+        "syminfo.timezone" => Some(RuntimeValue::String(
+            MarketSessions::for_kind(&context.symbol.kind)
+                .zone()
+                .to_owned(),
+        )),
+        "syminfo.session" => Some(RuntimeValue::String("session.regular".to_owned())),
+        "syminfo.main_tickerid" => Some(RuntimeValue::String(context.symbol.ticker_id.clone())),
+        // Neither crypto pairs nor stocks are futures contracts.
+        "syminfo.current_contract" | "syminfo.expiration_date" => Some(RuntimeValue::Na),
+        "runtime.calculation.mode" => Some(RuntimeValue::String(
+            if context.alert_mode {
+                "runtime.calculation.mode.alert"
+            } else {
+                "runtime.calculation.mode.chart"
+            }
+            .to_owned(),
+        )),
+        "timeframe.main_period" => time::timeframe(name, context.chart_bar_seconds),
+        "session.isfirstbar"
+        | "session.isfirstbar_regular"
+        | "session.islastbar"
+        | "session.islastbar_regular"
+        | "session.ismarket"
+        | "session.ispremarket"
+        | "session.ispostmarket" => Some(RuntimeValue::Bool(session_flag(name, context))),
         // Every standard chart type reports as standard: the script sees the real OHLC however
         // the chart draws it. The price-based types are their own kinds.
         "chart.is_standard" => Some(RuntimeValue::Bool(context.symbol.chart.is_standard())),
@@ -75,9 +100,34 @@ pub fn read(name: &str, context: &MarketContext) -> Option<RuntimeValue> {
         "chart.fg_color" => Some(RuntimeValue::Color(context.theme.foreground)),
         "chart.bg_color" => Some(RuntimeValue::Color(context.theme.background)),
         _ if name.starts_with("timeframe.") => time::timeframe(name, context.bar_seconds),
-        // Declared-but-unimplemented variables (`syminfo.session`, `weekofyear`, …) read as `na`.
+        // Declared-but-unimplemented variables (`syminfo.description`, `syminfo.sector`, …) read as `na`.
         _ if super::symbol_catalog::is_unimplemented_variable(name) => Some(RuntimeValue::Na),
         _ => None,
+    }
+}
+
+/// The `session.*` flags of the bar being run. The app's charts show the regular session, so
+/// `session.isfirstbar` and `islastbar` mean the same as their `_regular` forms. A bar of a day or
+/// more is a whole session of its own.
+fn session_flag(name: &str, context: &MarketContext) -> bool {
+    let sessions = MarketSessions::for_kind(&context.symbol.kind);
+    let open = context.bar.open_time;
+    let length = (context.bar_seconds * 1_000.0).round() as i64;
+    let intraday = context.bar_seconds > 0.0 && context.bar_seconds < 86_400.0;
+    match name {
+        "session.ismarket" => !intraday || sessions.is_regular(open),
+        "session.ispremarket" => intraday && sessions.is_premarket(open),
+        "session.ispostmarket" => intraday && sessions.is_postmarket(open),
+        "session.isfirstbar" | "session.isfirstbar_regular" => {
+            let previous = context
+                .state
+                .histories
+                .get("time")
+                .and_then(|times| times.last())
+                .and_then(RuntimeValue::int_value);
+            !intraday || sessions.starts_regular_session(open, previous)
+        }
+        _ => !intraday || sessions.ends_regular_session(open, length),
     }
 }
 
@@ -122,6 +172,7 @@ mod tests {
         visible_range: Option<(i64, i64)>,
         first_bar_time: Option<i64>,
         last_bar_time: Option<i64>,
+        chart_bar_seconds: Option<f64>,
     }
 
     impl Fixture {
@@ -146,6 +197,7 @@ mod tests {
                 visible_range: None,
                 first_bar_time: Some(1_000),
                 last_bar_time: Some(2_000),
+                chart_bar_seconds: None,
             }
         }
 
@@ -161,6 +213,8 @@ mod tests {
                     first_bar_time: self.first_bar_time,
                     last_bar_time: self.last_bar_time,
                     theme: crate::pine::program::ChartTheme::DARK,
+                    chart_bar_seconds: self.chart_bar_seconds.unwrap_or(self.bar_seconds),
+                    alert_mode: false,
                 },
             )
         }
@@ -232,6 +286,21 @@ mod tests {
     }
 
     #[test]
+    fn main_period_stays_the_charts_while_the_period_follows_a_request() {
+        let mut fixture = Fixture::new(1_000, 300.0);
+        fixture.chart_bar_seconds = Some(60.0);
+        assert_eq!(
+            fixture.read("timeframe.period"),
+            Some(RuntimeValue::String("5".to_owned()))
+        );
+        assert_eq!(
+            fixture.read("timeframe.main_period"),
+            Some(RuntimeValue::String("1".to_owned()))
+        );
+        assert_eq!(Fixture::new(1_000, 0.0).read("timeframe.main_period"), None);
+    }
+
+    #[test]
     fn the_chart_theme_and_unimplemented_names_read() {
         let fixture = Fixture::new(1_000, 60.0);
         assert_eq!(
@@ -243,7 +312,7 @@ mod tests {
             fixture.read("chart.bg_color"),
             Some(RuntimeValue::Color(0x1317_22ff))
         );
-        assert_eq!(fixture.read("syminfo.session"), Some(RuntimeValue::Na));
-        assert_eq!(fixture.read("weekofyear"), Some(RuntimeValue::Na));
+        assert_eq!(fixture.read("syminfo.description"), Some(RuntimeValue::Na));
+        assert_eq!(fixture.read("syminfo.isin"), Some(RuntimeValue::Na));
     }
 }

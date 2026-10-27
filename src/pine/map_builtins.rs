@@ -30,24 +30,27 @@ const MEMBERS: [&str; 10] = [
     "put", "get", "contains", "remove", "size", "clear", "keys", "values", "copy", "put_all",
 ];
 
+/// Every `map.*` name this module handles, `MEMBERS` in the same order with the prefix.
+pub const NAMES: [&str; 11] = [
+    "map.new",
+    "map.put",
+    "map.get",
+    "map.contains",
+    "map.remove",
+    "map.size",
+    "map.clear",
+    "map.keys",
+    "map.values",
+    "map.copy",
+    "map.put_all",
+];
+
 /// `map.member` for a member this module handles, so a method call needs no `format!`.
 pub fn qualified(member: &str) -> Option<&'static str> {
-    const NAMES: [&str; 10] = [
-        "map.put",
-        "map.get",
-        "map.contains",
-        "map.remove",
-        "map.size",
-        "map.clear",
-        "map.keys",
-        "map.values",
-        "map.copy",
-        "map.put_all",
-    ];
     MEMBERS
         .iter()
         .position(|candidate| *candidate == member)
-        .map(|index| NAMES[index])
+        .map(|index| NAMES[index + 1])
 }
 
 fn runtime_error(code: &str, message: String, range: SourceRange) -> Diagnostic {

@@ -1,13 +1,13 @@
 //! Call-site wiring for the `ta.*` functions in [`ta_extra`](super::ta_extra): binds the Pine
 //! parameters, finds the call site's state and hands both to the pure implementation.
 
-use super::array_builtins::Bound;
+use super::array_builtins::{Bound, new_array};
 use super::ast::Argument;
 use super::runtime_types::RuntimeContext;
 use super::runtime_value::RuntimeValue;
 use super::session::Session;
 use super::ta_extra;
-use super::token::{Diagnostic, SourceRange};
+use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 
 fn number(bound: &Bound, name: &str, default: f64) -> f64 {
     bound
@@ -39,6 +39,8 @@ pub fn parameters(name: &str) -> Option<&'static [&'static str]> {
         "ta.kc" | "ta.kcw" => &["series", "length", "mult", "useTrueRange"],
         "ta.bbw" => &["series", "length", "mult"],
         "ta.tsi" => &["source", "short_length", "long_length"],
+        "ta.rci" => &["source", "length"],
+        "ta.pivot_point_levels" => &["type", "anchor", "developing"],
         _ => return None,
     })
 }
@@ -50,7 +52,7 @@ impl Session {
         name: &str,
         arguments: &[Argument],
         site: usize,
-        _range: SourceRange,
+        range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<Option<RuntimeValue>, Diagnostic> {
         let Some(parameters) = parameters(name) else {
@@ -134,6 +136,37 @@ impl Session {
                 number(&bound, "mult", 2.0),
                 state,
             ),
+            "ta.rci" => ta_extra::rci(&source("source"), length(&bound, "length"), state),
+            "ta.pivot_point_levels" => {
+                let kind = bound
+                    .get("type")
+                    .and_then(RuntimeValue::text_value)
+                    .unwrap_or("");
+                let flag = |key: &str| bound.get(key).and_then(RuntimeValue::bool).unwrap_or(false);
+                let levels = ta_extra::pivot_point_levels(
+                    kind,
+                    flag("anchor"),
+                    flag("developing"),
+                    &bar,
+                    state,
+                );
+                let Some(levels) = levels else {
+                    return Err(Diagnostic::error(
+                        "PINE4035",
+                        DiagnosticCategory::Runtime,
+                        format!(
+                            "ta.pivot_point_levels: the type must be one of {}, not '{kind}'.",
+                            ta_extra::PIVOT_TYPES.join(", ")
+                        ),
+                        range,
+                    ));
+                };
+                let values = levels
+                    .iter()
+                    .map(|level| level.map_or(RuntimeValue::Na, RuntimeValue::Float))
+                    .collect();
+                new_array(&mut self.working, values)
+            }
             _ => ta_extra::tsi(
                 &source("source"),
                 length(&bound, "short_length"),
@@ -186,6 +219,8 @@ mod tests {
             "ta.kcw",
             "ta.bbw",
             "ta.tsi",
+            "ta.rci",
+            "ta.pivot_point_levels",
         ];
         for name in probes {
             assert!(ta_extra::FUNCTIONS.contains(&name), "{name}");

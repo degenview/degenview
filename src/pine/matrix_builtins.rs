@@ -1,12 +1,17 @@
 //! `matrix.*`, ported from `PineRuntimeSession+Matrices.swift`: `matrix.new<T>(rows, columns,
 //! initial)` and the operations a matrix takes, also as methods (`m.get(r, c)`). Element-wise
-//! matrix arithmetic and linear algebra are not supported. Pure over the run's `RuntimeState`.
+//! matrix arithmetic (`sum`, `diff`, `mult`, `pow`, `kron`), reshaping and sorting work on the
+//! interpreter's values; linear algebra works on `f64`s in `pine::linalg`. Pure over the run's
+//! `RuntimeState`.
 //!
 //! One deliberate difference: `matrix.row` / `matrix.col` with a missing (`na`) index are an
 //! out-of-bounds error here; Swift resolved a missing index to `count` and then read past the end.
 
-use super::array_builtins::{Bound, new_array};
+use super::array_builtins::{self, Bound, new_array};
+use super::ast::BinaryOperator;
 use super::containers::Matrix;
+use super::linalg::Dense;
+use super::operators;
 use super::runtime_value::{RefKind, RuntimeValue};
 use super::state::RuntimeState;
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
@@ -21,12 +26,27 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
         "col" | "remove_col" => &["id", "column"],
         "add_row" => &["id", "row", "array_id"],
         "add_col" => &["id", "column", "array_id"],
-        "fill" => &["id", "value"],
+        "fill" => &[
+            "id",
+            "value",
+            "from_row",
+            "to_row",
+            "from_column",
+            "to_column",
+        ],
+        "sum" | "diff" | "mult" | "kron" | "concat" => &["id1", "id2"],
+        "pow" => &["id", "power"],
+        "sort" => &["id", "column", "order"],
+        "reshape" => &["id", "rows", "columns"],
+        "submatrix" => &["id", "from_row", "to_row", "from_column", "to_column"],
+        "swap_rows" => &["id", "row1", "row2"],
+        "swap_columns" => &["id", "column1", "column2"],
         _ => &["id"],
     }
 }
 
-const MEMBERS: [&str; 17] = [
+/// Every `matrix.*` function this module handles, without the prefix.
+pub const MEMBERS: [&str; 49] = [
     "new",
     "get",
     "set",
@@ -44,12 +64,47 @@ const MEMBERS: [&str; 17] = [
     "transpose",
     "avg",
     "min",
+    "max",
+    "median",
+    "mode",
+    "sum",
+    "diff",
+    "mult",
+    "pow",
+    "kron",
+    "concat",
+    "reverse",
+    "sort",
+    "reshape",
+    "submatrix",
+    "swap_rows",
+    "swap_columns",
+    "trace",
+    "det",
+    "inv",
+    "pinv",
+    "rank",
+    "eigenvalues",
+    "eigenvectors",
+    "is_square",
+    "is_identity",
+    "is_diagonal",
+    "is_antidiagonal",
+    "is_symmetric",
+    "is_antisymmetric",
+    "is_triangular",
+    "is_stochastic",
+    "is_binary",
+    "is_zero",
 ];
+
+/// The functions that take two matrices (or a matrix and a number or vector) as `id1` and `id2`.
+const BINARY: [&str; 5] = ["sum", "diff", "mult", "kron", "concat"];
 
 /// Whether `name` is a `matrix.*` function this module handles.
 pub fn handles(name: &str) -> bool {
     name.strip_prefix("matrix.")
-        .is_some_and(|member| MEMBERS.contains(&member) || member == "max")
+        .is_some_and(|member| MEMBERS.contains(&member))
 }
 
 fn runtime_error(code: &str, message: String, range: SourceRange) -> Diagnostic {
@@ -144,10 +199,31 @@ fn values_of(state: &RuntimeState, array: Option<&RuntimeValue>) -> Vec<RuntimeV
     }
 }
 
+/// The second operand of a two-matrix function: another matrix, a vector (`matrix.mult` takes an
+/// array), or a number. Read before the first matrix leaves the table, so `matrix.sum(m, m)` works.
+enum Operand {
+    Matrix(Matrix),
+    Vector(Vec<RuntimeValue>),
+    Scalar(RuntimeValue),
+}
+
+/// What one call works with besides the matrix it runs on.
+struct Call<'a> {
+    member: &'a str,
+    name: &'a str,
+    bound: &'a Bound,
+    mintick: f64,
+    range: SourceRange,
+    /// The matrix's own handle, which `matrix.concat` returns.
+    id: usize,
+    operand: Option<Operand>,
+}
+
 pub fn call(
     name: &str,
     bound: &Bound,
     state: &mut RuntimeState,
+    mintick: f64,
     range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
     let member = name.strip_prefix("matrix.").unwrap_or(name);
@@ -174,26 +250,58 @@ pub fn call(
             range,
         )
     };
-    let Some(RuntimeValue::Ref(RefKind::Matrix, id)) = bound.get("id") else {
+    let binary = BINARY.contains(&member);
+    let Some(RuntimeValue::Ref(RefKind::Matrix, id)) = bound.get(if binary { "id1" } else { "id" })
+    else {
         return Err(not_a_matrix());
     };
     let id = *id;
+    let operand = if binary {
+        Some(match bound.get("id2") {
+            Some(RuntimeValue::Ref(RefKind::Matrix, other)) => Operand::Matrix(
+                state
+                    .matrices
+                    .get(other)
+                    .cloned()
+                    .ok_or_else(not_a_matrix)?,
+            ),
+            Some(RuntimeValue::Ref(RefKind::Array, other)) => {
+                Operand::Vector(state.arrays.get(other).cloned().unwrap_or_default())
+            }
+            other => Operand::Scalar(other.cloned().unwrap_or(RuntimeValue::Na)),
+        })
+    } else {
+        None
+    };
     // The matrix leaves the table while one operation runs on it, so `m.get(r, c)` in a loop does not
     // copy the whole matrix.
     let mut matrix = state.matrices.remove(&id).ok_or_else(not_a_matrix)?;
-    let outcome = apply(member, name, bound, &mut matrix, state, range);
+    let call = Call {
+        member,
+        name,
+        bound,
+        mintick,
+        range,
+        id,
+        operand,
+    };
+    let outcome = apply(&call, &mut matrix, state);
     state.matrices.insert(id, matrix);
     outcome
 }
 
 fn apply(
-    member: &str,
-    name: &str,
-    bound: &Bound,
+    call: &Call,
     matrix: &mut Matrix,
     state: &mut RuntimeState,
-    range: SourceRange,
 ) -> Result<RuntimeValue, Diagnostic> {
+    let Call {
+        member,
+        name,
+        bound,
+        range,
+        ..
+    } = *call;
     let result = match member {
         "get" => {
             let (row, column) = cell(bound, matrix, name, range)?;
@@ -285,7 +393,10 @@ fn apply(
             RuntimeValue::Void
         }
         "fill" => {
-            matrix.fill(bound.get("value").cloned().unwrap_or(RuntimeValue::Na));
+            let rows = span(call, matrix.rows(), "from_row", "to_row", "row")?;
+            let columns = span(call, matrix.columns(), "from_column", "to_column", "column")?;
+            let value = bound.get("value").cloned().unwrap_or(RuntimeValue::Na);
+            matrix.fill_range(rows, columns, &value);
             RuntimeValue::Void
         }
         "copy" => return Ok(new_matrix(state, matrix.clone())),
@@ -308,6 +419,114 @@ fn apply(
                 _ => numbers.iter().copied().fold(f64::NEG_INFINITY, f64::max),
             }));
         }
+        "median" | "mode" => {
+            return Ok(array_builtins::statistic(
+                if member == "median" {
+                    "array.median"
+                } else {
+                    "array.mode"
+                },
+                &Bound::default(),
+                matrix.all_elements(),
+            ));
+        }
+        "trace" => return Ok(trace(matrix)),
+        "det" | "inv" | "pinv" | "rank" | "eigenvalues" | "eigenvectors" => {
+            return linear_algebra(call, matrix, state);
+        }
+        "is_square" | "is_identity" | "is_diagonal" | "is_antidiagonal" | "is_symmetric"
+        | "is_antisymmetric" | "is_triangular" | "is_stochastic" | "is_binary" | "is_zero" => {
+            return Ok(RuntimeValue::Bool(has_shape(member, matrix)));
+        }
+        "sum" | "diff" | "mult" | "kron" | "concat" => return binary(call, matrix, state),
+        "pow" => {
+            let result = power(call, matrix)?;
+            return Ok(new_matrix(state, result));
+        }
+        "reverse" => {
+            matrix.reverse();
+            RuntimeValue::Void
+        }
+        "swap_rows" => {
+            let first = index(bound.get("row1"), matrix.rows(), false, None, name, range)?;
+            let second = index(bound.get("row2"), matrix.rows(), false, None, name, range)?;
+            matrix.swap_rows(first, second);
+            RuntimeValue::Void
+        }
+        "swap_columns" => {
+            let first = index(
+                bound.get("column1"),
+                matrix.columns(),
+                false,
+                None,
+                name,
+                range,
+            )?;
+            let second = index(
+                bound.get("column2"),
+                matrix.columns(),
+                false,
+                None,
+                name,
+                range,
+            )?;
+            matrix.swap_columns(first, second);
+            RuntimeValue::Void
+        }
+        "sort" => {
+            if matrix.rows() > 0 && matrix.columns() > 0 {
+                let column = index(
+                    bound.get("column"),
+                    matrix.columns(),
+                    false,
+                    Some(0),
+                    name,
+                    range,
+                )?;
+                let descending = bound.get("order").and_then(RuntimeValue::text_value)
+                    == Some("order.descending");
+                let order: Vec<usize> = array_builtins::sorted_indices(
+                    &matrix.column(column),
+                    descending,
+                    call.mintick,
+                )
+                .iter()
+                .filter_map(RuntimeValue::int_value)
+                .map(|row| row as usize)
+                .collect();
+                *matrix = matrix.with_rows_ordered(&order);
+            }
+            RuntimeValue::Void
+        }
+        "reshape" => {
+            let dimension = |key: &str| bound.get(key).and_then(RuntimeValue::int_value);
+            let (Some(rows), Some(columns)) = (dimension("rows"), dimension("columns")) else {
+                return Err(dimensions(
+                    name,
+                    "reshape needs a number of rows and columns",
+                    range,
+                ));
+            };
+            if rows < 0 || columns < 0 || (rows as usize) * (columns as usize) != matrix.count() {
+                return Err(dimensions(
+                    name,
+                    &format!(
+                        "cannot reshape {}×{} ({} cells) to {rows}×{columns}",
+                        matrix.rows(),
+                        matrix.columns(),
+                        matrix.count()
+                    ),
+                    range,
+                ));
+            }
+            matrix.reshape(rows as usize, columns as usize);
+            RuntimeValue::Void
+        }
+        "submatrix" => {
+            let rows = span(call, matrix.rows(), "from_row", "to_row", "row")?;
+            let columns = span(call, matrix.columns(), "from_column", "to_column", "column")?;
+            return Ok(new_matrix(state, matrix.submatrix(rows, columns)));
+        }
         _ => {
             return Err(runtime_error(
                 "PINE4007",
@@ -317,6 +536,405 @@ fn apply(
         }
     };
     Ok(result)
+}
+
+/// A shape or operand a function cannot work with.
+fn dimensions(name: &str, why: &str, range: SourceRange) -> Diagnostic {
+    runtime_error("PINE4037", format!("{name}: {why}."), range)
+}
+
+/// The half-open run `[from, to)` along one axis of `count` cells; an absent or `na` end means the
+/// start (0) or the whole axis.
+fn span(
+    call: &Call,
+    count: usize,
+    from_key: &str,
+    to_key: &str,
+    what: &str,
+) -> Result<std::ops::Range<usize>, Diagnostic> {
+    let end = |key: &str, default: usize| -> Result<usize, Diagnostic> {
+        match call
+            .bound
+            .get(key)
+            .filter(|value| **value != RuntimeValue::Na)
+        {
+            None => Ok(default),
+            Some(value) => match value.int_value() {
+                Some(index) if index >= 0 && index as usize <= count => Ok(index as usize),
+                other => Err(bounds(
+                    call.name,
+                    &format!("{what} index"),
+                    other,
+                    count,
+                    call.range,
+                )),
+            },
+        }
+    };
+    let from = end(from_key, 0)?;
+    let to = end(to_key, count)?;
+    if from > to {
+        return Err(dimensions(
+            call.name,
+            &format!("the {what} range starts at {from}, after it ends at {to}"),
+            call.range,
+        ));
+    }
+    Ok(from..to)
+}
+
+/// The sum of the main diagonal's numbers; `na` for a matrix without any.
+fn trace(matrix: &Matrix) -> RuntimeValue {
+    let diagonal: Vec<f64> = (0..matrix.rows().min(matrix.columns()))
+        .filter_map(|at| matrix.get(at, at).number())
+        .collect();
+    if diagonal.is_empty() {
+        RuntimeValue::Na
+    } else {
+        RuntimeValue::Float(diagonal.iter().sum())
+    }
+}
+
+/// A matrix as `f64`s; an element that is not a number is NaN.
+fn dense(matrix: &Matrix) -> Dense {
+    Dense::new(
+        matrix.rows(),
+        matrix.columns(),
+        matrix
+            .all_elements()
+            .iter()
+            .map(|element| element.number().unwrap_or(f64::NAN))
+            .collect(),
+    )
+}
+
+/// The inverse of `dense`: NaN is `na`.
+fn matrix_of(dense: &Dense) -> Matrix {
+    Matrix::from_elements(
+        dense.rows(),
+        dense.columns(),
+        dense
+            .data()
+            .iter()
+            .map(|value| {
+                if value.is_nan() {
+                    RuntimeValue::Na
+                } else {
+                    RuntimeValue::Float(*value)
+                }
+            })
+            .collect(),
+    )
+}
+
+/// `matrix.pow(id, power)`: the square matrix times itself `power` times, as floats.
+fn power(call: &Call, matrix: &Matrix) -> Result<Matrix, Diagnostic> {
+    if !matrix.is_square() {
+        return Err(dimensions(
+            call.name,
+            &format!(
+                "needs a square matrix, got {}×{}",
+                matrix.rows(),
+                matrix.columns()
+            ),
+            call.range,
+        ));
+    }
+    let Some(exponent) = call.bound.get("power").and_then(RuntimeValue::int_value) else {
+        return Err(dimensions(
+            call.name,
+            "needs a whole number power",
+            call.range,
+        ));
+    };
+    let base = dense(matrix);
+    if base.data().iter().any(|value| value.is_nan()) {
+        return Ok(unavailable(matrix.rows(), matrix.columns()));
+    }
+    // A negative power is the power of the inverse; a singular matrix has none.
+    let base = if exponent < 0 {
+        match base.inverse() {
+            Some(inverse) => inverse,
+            None => return Ok(unavailable(matrix.rows(), matrix.columns())),
+        }
+    } else {
+        base
+    };
+    Ok(matrix_of(&base.power(exponent.unsigned_abs())))
+}
+
+/// A matrix of `na`: what a calculation that has no answer (a singular inverse, a `na` input)
+/// gives instead of stopping the script.
+fn unavailable(rows: usize, columns: usize) -> Matrix {
+    Matrix::new(rows, columns, RuntimeValue::Na)
+}
+
+/// `det`, `inv`, `pinv`, `rank`, `eigenvalues` and `eigenvectors`, on `f64`s. A `na` element makes
+/// the answer `na` (an array or matrix of `na` for those); `inv` of a singular matrix is a matrix
+/// of `na`. Everything but `pinv` and `rank` needs a square matrix, and the eigenvalues need a
+/// symmetric one.
+fn linear_algebra(
+    call: &Call,
+    matrix: &Matrix,
+    state: &mut RuntimeState,
+) -> Result<RuntimeValue, Diagnostic> {
+    let (name, range) = (call.name, call.range);
+    let (rows, columns) = (matrix.rows(), matrix.columns());
+    if !matrix.is_square() && !matches!(call.member, "pinv" | "rank") {
+        return Err(dimensions(
+            name,
+            &format!("needs a square matrix, got {rows}×{columns}"),
+            range,
+        ));
+    }
+    let numbers = dense(matrix);
+    let has_na = numbers.data().iter().any(|value| value.is_nan());
+    let na_array = |state: &mut RuntimeState| new_array(state, vec![RuntimeValue::Na; rows]);
+    Ok(match call.member {
+        "det" if has_na => RuntimeValue::Na,
+        "det" => RuntimeValue::Float(numbers.determinant()),
+        "rank" if has_na => RuntimeValue::Na,
+        "rank" => RuntimeValue::Int(numbers.rank() as i64),
+        "inv" => new_matrix(
+            state,
+            match numbers.inverse().filter(|_| !has_na) {
+                Some(inverse) => matrix_of(&inverse),
+                None => unavailable(rows, columns),
+            },
+        ),
+        "pinv" if has_na => new_matrix(state, unavailable(columns, rows)),
+        "pinv" => new_matrix(state, matrix_of(&numbers.pseudo_inverse())),
+        "eigenvalues" | "eigenvectors" if has_na => {
+            if call.member == "eigenvalues" {
+                na_array(state)
+            } else {
+                new_matrix(state, unavailable(rows, columns))
+            }
+        }
+        _ => {
+            if !numbers.is_symmetric() {
+                return Err(dimensions(
+                    name,
+                    "the eigen-decomposition is only supported for a symmetric matrix",
+                    range,
+                ));
+            }
+            let Some((values, vectors)) = numbers.symmetric_eigen() else {
+                return Err(dimensions(name, "the QL iteration did not converge", range));
+            };
+            if call.member == "eigenvalues" {
+                new_array(state, values.into_iter().map(RuntimeValue::Float).collect())
+            } else {
+                new_matrix(state, matrix_of(&vectors))
+            }
+        }
+    })
+}
+
+/// The `is_*` tests. Only numbers qualify: a `na` cell fails every test it takes part in. The
+/// reference says `is_identity`, `is_diagonal`, `is_symmetric`, `is_antisymmetric` and
+/// `is_triangular` are false for a non-square matrix; `is_stochastic` is taken to be square too.
+fn has_shape(member: &str, matrix: &Matrix) -> bool {
+    let (rows, columns) = (matrix.rows(), matrix.columns());
+    let number = |row: usize, column: usize| matrix.get(row, column).number();
+    let cells = || (0..rows).flat_map(move |row| (0..columns).map(move |column| (row, column)));
+    let is = |row: usize, column: usize, wanted: f64| number(row, column) == Some(wanted);
+    let square = matrix.is_square();
+    match member {
+        "is_square" => square,
+        "is_zero" => cells().all(|(row, column)| is(row, column, 0.0)),
+        "is_binary" => cells().all(|(row, column)| is(row, column, 0.0) || is(row, column, 1.0)),
+        "is_diagonal" => {
+            square && cells().all(|(row, column)| row == column || is(row, column, 0.0))
+        }
+        "is_identity" => {
+            square
+                && cells().all(|(row, column)| is(row, column, f64::from(u8::from(row == column))))
+        }
+        "is_antidiagonal" => {
+            cells().all(|(row, column)| row + column + 1 == columns || is(row, column, 0.0))
+        }
+        "is_symmetric" => {
+            square
+                && cells().all(|(row, column)| {
+                    matches!((number(row, column), number(column, row)), (Some(a), Some(b)) if a == b)
+                })
+        }
+        "is_antisymmetric" => {
+            square
+                && cells().all(|(row, column)| {
+                    matches!((number(row, column), number(column, row)), (Some(a), Some(b)) if a == -b)
+                })
+        }
+        "is_triangular" => {
+            square
+                && (cells().all(|(row, column)| row <= column || is(row, column, 0.0))
+                    || cells().all(|(row, column)| row >= column || is(row, column, 0.0)))
+        }
+        _ => {
+            // "is_stochastic": non-negative with every row summing to one (a right stochastic matrix).
+            square
+                && cells().all(|(row, column)| number(row, column).is_some_and(|v| v >= 0.0))
+                && (0..rows).all(|row| {
+                    let sum: f64 = (0..columns).filter_map(|column| number(row, column)).sum();
+                    (sum - 1.0).abs() <= 1e-9
+                })
+        }
+    }
+}
+
+/// `sum`, `diff`, `mult`, `kron` and `concat`. Arithmetic keeps an element an int while both of its
+/// operands are ints, like the `+`, `-` and `*` operators it reuses.
+fn binary(
+    call: &Call,
+    matrix: &mut Matrix,
+    state: &mut RuntimeState,
+) -> Result<RuntimeValue, Diagnostic> {
+    let Some(operand) = &call.operand else {
+        unreachable!("a binary function always has an operand");
+    };
+    let (name, range) = (call.name, call.range);
+    let same_shape = |other: &Matrix| -> Result<(), Diagnostic> {
+        if other.rows() == matrix.rows() && other.columns() == matrix.columns() {
+            Ok(())
+        } else {
+            Err(dimensions(
+                name,
+                &format!(
+                    "the matrices are {}×{} and {}×{}",
+                    matrix.rows(),
+                    matrix.columns(),
+                    other.rows(),
+                    other.columns()
+                ),
+                range,
+            ))
+        }
+    };
+    let result = match (call.member, operand) {
+        ("sum" | "diff", Operand::Matrix(other)) => {
+            same_shape(other)?;
+            let op = arithmetic_operator(call.member);
+            Matrix::from_elements(
+                matrix.rows(),
+                matrix.columns(),
+                matrix
+                    .all_elements()
+                    .iter()
+                    .zip(other.all_elements())
+                    .map(|(a, b)| operators::apply(op, a, b))
+                    .collect(),
+            )
+        }
+        ("sum" | "diff" | "mult", Operand::Scalar(scalar)) => {
+            let op = arithmetic_operator(call.member);
+            Matrix::from_elements(
+                matrix.rows(),
+                matrix.columns(),
+                matrix
+                    .all_elements()
+                    .iter()
+                    .map(|element| operators::apply(op, element, scalar))
+                    .collect(),
+            )
+        }
+        ("mult", Operand::Matrix(other)) => {
+            if matrix.columns() != other.rows() {
+                return Err(dimensions(
+                    name,
+                    &format!(
+                        "the first matrix has {} columns and the second {} rows",
+                        matrix.columns(),
+                        other.rows()
+                    ),
+                    range,
+                ));
+            }
+            let mut elements = Vec::with_capacity(matrix.rows() * other.columns());
+            for row in 0..matrix.rows() {
+                for column in 0..other.columns() {
+                    elements.push(dot(
+                        (0..matrix.columns()).map(|inner| matrix.get(row, inner)),
+                        (0..matrix.columns()).map(|inner| other.get(inner, column)),
+                    ));
+                }
+            }
+            Matrix::from_elements(matrix.rows(), other.columns(), elements)
+        }
+        ("mult", Operand::Vector(vector)) => {
+            if matrix.columns() != vector.len() {
+                return Err(dimensions(
+                    name,
+                    &format!(
+                        "the matrix has {} columns and the array {} elements",
+                        matrix.columns(),
+                        vector.len()
+                    ),
+                    range,
+                ));
+            }
+            let product = (0..matrix.rows())
+                .map(|row| {
+                    dot(
+                        (0..matrix.columns()).map(|inner| matrix.get(row, inner)),
+                        vector.iter(),
+                    )
+                })
+                .collect();
+            return Ok(new_array(state, product));
+        }
+        ("kron", Operand::Matrix(other)) => matrix_of(&dense(matrix).kronecker(&dense(other))),
+        ("concat", Operand::Matrix(other)) => {
+            if matrix.is_empty() {
+                *matrix = other.clone();
+            } else if matrix.columns() == other.columns() {
+                matrix.append_rows(other);
+            } else {
+                return Err(dimensions(
+                    name,
+                    &format!(
+                        "the matrices have {} and {} columns",
+                        matrix.columns(),
+                        other.columns()
+                    ),
+                    range,
+                ));
+            }
+            return Ok(RuntimeValue::Ref(RefKind::Matrix, call.id));
+        }
+        (member, _) => {
+            let wanted = match member {
+                "sum" | "diff" => "a matrix or a number",
+                "mult" => "a matrix, a number or an array",
+                _ => "a matrix",
+            };
+            return Err(dimensions(
+                name,
+                &format!("the second argument must be {wanted}"),
+                range,
+            ));
+        }
+    };
+    Ok(new_matrix(state, result))
+}
+
+fn arithmetic_operator(member: &str) -> BinaryOperator {
+    match member {
+        "sum" => BinaryOperator::Add,
+        "diff" => BinaryOperator::Subtract,
+        _ => BinaryOperator::Multiply,
+    }
+}
+
+/// The sum of the pairwise products, with the operators' own int/float and `na` rules; 0 for none.
+fn dot<'a>(
+    left: impl Iterator<Item = &'a RuntimeValue>,
+    right: impl Iterator<Item = &'a RuntimeValue>,
+) -> RuntimeValue {
+    left.zip(right)
+        .map(|(a, b)| operators::apply(BinaryOperator::Multiply, a, b))
+        .reduce(|sum, product| operators::apply(BinaryOperator::Add, &sum, &product))
+        .unwrap_or(RuntimeValue::Int(0))
 }
 
 #[cfg(test)]
@@ -334,7 +952,7 @@ mod tests {
             .zip(arguments)
             .map(|(parameter, value)| (*parameter, value.clone()))
             .collect();
-        call(name, &bound, state, SourceRange::ZERO)
+        call(name, &bound, state, 0.01, SourceRange::ZERO)
     }
 
     fn ok(state: &mut RuntimeState, name: &str, arguments: &[RuntimeValue]) -> RuntimeValue {
@@ -594,6 +1212,553 @@ mod tests {
                 && handles("matrix.max")
                 && !handles("matrix.nope")
                 && !handles("map.get")
+        );
+    }
+
+    /// The matrix as rows of ints/floats/na, for comparisons.
+    fn rows_of(state: &RuntimeState, matrix: &RuntimeValue) -> Vec<Vec<RuntimeValue>> {
+        let RuntimeValue::Ref(RefKind::Matrix, id) = matrix else {
+            panic!("not a matrix: {matrix:?}");
+        };
+        let m = &state.matrices[id];
+        (0..m.rows()).map(|row| m.row(row)).collect()
+    }
+
+    fn ints(values: &[i64]) -> Vec<RuntimeValue> {
+        values.iter().map(|v| Int(*v)).collect()
+    }
+
+    fn matrix_from(state: &mut RuntimeState, rows: &[&[i64]]) -> RuntimeValue {
+        let m = ok(
+            state,
+            "matrix.new",
+            &[Int(rows.len() as i64), Int(rows[0].len() as i64), Int(0)],
+        );
+        for (r, row) in rows.iter().enumerate() {
+            for (c, value) in row.iter().enumerate() {
+                ok(
+                    state,
+                    "matrix.set",
+                    &[m.clone(), Int(r as i64), Int(c as i64), Int(*value)],
+                );
+            }
+        }
+        m
+    }
+
+    #[test]
+    fn sum_and_diff_work_cell_by_cell_with_a_matrix_or_a_number() {
+        let mut state = RuntimeState::default();
+        let a = matrix_from(&mut state, &[&[1, 2], &[3, 4]]);
+        let b = matrix_from(&mut state, &[&[10, 20], &[30, 40]]);
+        let sum = ok(&mut state, "matrix.sum", &[a.clone(), b.clone()]);
+        assert_eq!(rows_of(&state, &sum), [ints(&[11, 22]), ints(&[33, 44])]);
+        let diff = ok(&mut state, "matrix.diff", &[b.clone(), a.clone()]);
+        assert_eq!(rows_of(&state, &diff), [ints(&[9, 18]), ints(&[27, 36])]);
+        let shifted = ok(&mut state, "matrix.sum", &[a.clone(), Float(0.5)]);
+        assert_eq!(
+            rows_of(&state, &shifted),
+            [[Float(1.5), Float(2.5)], [Float(3.5), Float(4.5)]]
+        );
+        let lowered = ok(&mut state, "matrix.diff", &[a.clone(), Int(1)]);
+        assert_eq!(rows_of(&state, &lowered), [ints(&[0, 1]), ints(&[2, 3])]);
+        // A matrix may be its own operand, and the originals are untouched.
+        let doubled = ok(&mut state, "matrix.sum", &[a.clone(), a.clone()]);
+        assert_eq!(rows_of(&state, &doubled), [ints(&[2, 4]), ints(&[6, 8])]);
+        assert_eq!(rows_of(&state, &a), [ints(&[1, 2]), ints(&[3, 4])]);
+        let wide = matrix_from(&mut state, &[&[1, 2, 3]]);
+        let error = run(&mut state, "matrix.sum", &[a, wide]).unwrap_err();
+        assert_eq!(error.code, "PINE4037");
+        assert!(error.message.contains("2×2 and 1×3"), "{}", error.message);
+    }
+
+    #[test]
+    fn mult_takes_a_matrix_a_number_or_an_array() {
+        let mut state = RuntimeState::default();
+        let a = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6]]);
+        let b = matrix_from(&mut state, &[&[7, 8], &[9, 10], &[11, 12]]);
+        let product = ok(&mut state, "matrix.mult", &[a.clone(), b.clone()]);
+        assert_eq!(
+            rows_of(&state, &product),
+            [ints(&[58, 64]), ints(&[139, 154])]
+        );
+        let scaled = ok(&mut state, "matrix.mult", &[a.clone(), Int(2)]);
+        assert_eq!(
+            rows_of(&state, &scaled),
+            [ints(&[2, 4, 6]), ints(&[8, 10, 12])]
+        );
+        let vector = new_array(&mut state, ints(&[1, 0, 1]));
+        let applied = ok(&mut state, "matrix.mult", &[a.clone(), vector]);
+        assert_eq!(items(&state, &applied), ints(&[4, 10]));
+        let error = run(&mut state, "matrix.mult", &[a.clone(), a.clone()]).unwrap_err();
+        assert_eq!(error.code, "PINE4037");
+        let short = new_array(&mut state, ints(&[1, 2]));
+        assert_eq!(
+            run(&mut state, "matrix.mult", &[a, short])
+                .unwrap_err()
+                .code,
+            "PINE4037"
+        );
+    }
+
+    #[test]
+    fn na_makes_a_product_cell_na_like_the_operators_do() {
+        let mut state = RuntimeState::default();
+        let a = matrix_from(&mut state, &[&[1, 2]]);
+        ok(&mut state, "matrix.set", &[a.clone(), Int(0), Int(1), Na]);
+        let b = matrix_from(&mut state, &[&[3], &[4]]);
+        let product = ok(&mut state, "matrix.mult", &[a, b]);
+        assert_eq!(rows_of(&state, &product), [[Na]]);
+    }
+
+    #[test]
+    fn pow_multiplies_a_square_matrix_by_itself() {
+        let mut state = RuntimeState::default();
+        let fibonacci = matrix_from(&mut state, &[&[1, 1], &[1, 0]]);
+        let tenth = ok(&mut state, "matrix.pow", &[fibonacci.clone(), Int(10)]);
+        assert_eq!(
+            rows_of(&state, &tenth),
+            [[Float(89.0), Float(55.0)], [Float(55.0), Float(34.0)]]
+        );
+        let zeroth = ok(&mut state, "matrix.pow", &[fibonacci.clone(), Int(0)]);
+        assert_eq!(
+            rows_of(&state, &zeroth),
+            [[Float(1.0), Float(0.0)], [Float(0.0), Float(1.0)]]
+        );
+        let wide = matrix_from(&mut state, &[&[1, 2, 3]]);
+        assert_eq!(
+            run(&mut state, "matrix.pow", &[wide, Int(2)])
+                .unwrap_err()
+                .code,
+            "PINE4037"
+        );
+        assert_eq!(
+            run(&mut state, "matrix.pow", &[fibonacci.clone(), Na])
+                .unwrap_err()
+                .code,
+            "PINE4037"
+        );
+        // A negative power is the power of the inverse; a singular matrix has none.
+        let inverse_cubed = ok(&mut state, "matrix.pow", &[fibonacci, Int(-3)]);
+        let rows = rows_of(&state, &inverse_cubed);
+        // [[1,1],[1,0]]⁻³ = [[-1,2],[2,-3]].
+        for (row, expected) in rows.iter().zip([[-1.0, 2.0], [2.0, -3.0]]) {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!(
+                    matches!(cell, Float(got) if (got - want).abs() < 1e-12),
+                    "{rows:?}"
+                );
+            }
+        }
+        let singular = matrix_from(&mut state, &[&[1, 2], &[2, 4]]);
+        let none = ok(&mut state, "matrix.pow", &[singular, Int(-1)]);
+        assert_eq!(rows_of(&state, &none), [[Na, Na], [Na, Na]]);
+    }
+
+    #[test]
+    fn kron_tiles_scaled_copies_as_floats() {
+        let mut state = RuntimeState::default();
+        let a = matrix_from(&mut state, &[&[1, 2], &[3, 4]]);
+        let b = matrix_from(&mut state, &[&[0, 5]]);
+        let product = ok(&mut state, "matrix.kron", &[a, b]);
+        assert_eq!(
+            rows_of(&state, &product),
+            [
+                [Float(0.0), Float(5.0), Float(0.0), Float(10.0)],
+                [Float(0.0), Float(15.0), Float(0.0), Float(20.0)]
+            ]
+        );
+    }
+
+    #[test]
+    fn median_and_mode_ignore_na_and_mode_prefers_the_smallest() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[3, 1, 2], &[2, 3, 9]]);
+        // 1, 2, 2, 3, 3, 9: median 2.5; 2 and 3 both occur twice, the smaller wins.
+        assert_eq!(
+            ok(&mut state, "matrix.median", std::slice::from_ref(&m)),
+            Float(2.5)
+        );
+        assert_eq!(
+            ok(&mut state, "matrix.mode", std::slice::from_ref(&m)),
+            Float(2.0)
+        );
+        ok(&mut state, "matrix.set", &[m.clone(), Int(1), Int(2), Na]);
+        assert_eq!(ok(&mut state, "matrix.median", &[m]), Float(2.0));
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(ok(&mut state, "matrix.median", &[empty]), Na);
+    }
+
+    #[test]
+    fn trace_sums_the_main_diagonal() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6], &[7, 8, 9]]);
+        assert_eq!(ok(&mut state, "matrix.trace", &[m]), Float(15.0));
+        let wide = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6]]);
+        assert_eq!(ok(&mut state, "matrix.trace", &[wide]), Float(6.0));
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(ok(&mut state, "matrix.trace", &[empty]), Na);
+    }
+
+    #[test]
+    fn concat_appends_rows_in_place_and_returns_the_same_matrix() {
+        let mut state = RuntimeState::default();
+        let a = matrix_from(&mut state, &[&[1, 2]]);
+        let b = matrix_from(&mut state, &[&[3, 4], &[5, 6]]);
+        let joined = ok(&mut state, "matrix.concat", &[a.clone(), b.clone()]);
+        assert_eq!(joined, a, "the receiver is returned");
+        assert_eq!(
+            rows_of(&state, &a),
+            [ints(&[1, 2]), ints(&[3, 4]), ints(&[5, 6])]
+        );
+        assert_eq!(rows_of(&state, &b).len(), 2, "the argument is untouched");
+        // Concatenating a matrix with itself doubles its rows.
+        ok(&mut state, "matrix.concat", &[b.clone(), b.clone()]);
+        assert_eq!(rows_of(&state, &b).len(), 4);
+        let narrow = matrix_from(&mut state, &[&[1]]);
+        assert_eq!(
+            run(&mut state, "matrix.concat", &[a, narrow])
+                .unwrap_err()
+                .code,
+            "PINE4037"
+        );
+        let grown = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        let rows = matrix_from(&mut state, &[&[7, 8]]);
+        ok(&mut state, "matrix.concat", &[grown.clone(), rows]);
+        assert_eq!(rows_of(&state, &grown), [ints(&[7, 8])]);
+    }
+
+    #[test]
+    fn reverse_swaps_and_reshape_move_cells() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6]]);
+        ok(&mut state, "matrix.reverse", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &m), [ints(&[6, 5, 4]), ints(&[3, 2, 1])]);
+        ok(&mut state, "matrix.swap_rows", &[m.clone(), Int(0), Int(1)]);
+        assert_eq!(rows_of(&state, &m), [ints(&[3, 2, 1]), ints(&[6, 5, 4])]);
+        ok(
+            &mut state,
+            "matrix.swap_columns",
+            &[m.clone(), Int(0), Int(2)],
+        );
+        assert_eq!(rows_of(&state, &m), [ints(&[1, 2, 3]), ints(&[4, 5, 6])]);
+        ok(
+            &mut state,
+            "matrix.swap_columns",
+            &[m.clone(), Int(1), Int(1)],
+        );
+        assert_eq!(
+            run(&mut state, "matrix.swap_rows", &[m.clone(), Int(0), Int(2)])
+                .unwrap_err()
+                .code,
+            "PINE4010"
+        );
+        ok(&mut state, "matrix.reshape", &[m.clone(), Int(3), Int(2)]);
+        assert_eq!(
+            rows_of(&state, &m),
+            [ints(&[1, 2]), ints(&[3, 4]), ints(&[5, 6])]
+        );
+        let error = run(&mut state, "matrix.reshape", &[m, Int(4), Int(2)]).unwrap_err();
+        assert_eq!(error.code, "PINE4037");
+        assert!(error.message.contains("6 cells"), "{}", error.message);
+    }
+
+    #[test]
+    fn sort_orders_the_rows_by_a_column() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[3, 10], &[1, 30], &[2, 20], &[1, 5]]);
+        ok(&mut state, "matrix.sort", std::slice::from_ref(&m));
+        assert_eq!(
+            rows_of(&state, &m),
+            [
+                ints(&[1, 30]),
+                ints(&[1, 5]),
+                ints(&[2, 20]),
+                ints(&[3, 10])
+            ],
+            "ascending by column 0, ties keep their order"
+        );
+        ok(
+            &mut state,
+            "matrix.sort",
+            &[
+                m.clone(),
+                Int(1),
+                RuntimeValue::String("order.descending".into()),
+            ],
+        );
+        assert_eq!(
+            rows_of(&state, &m),
+            [
+                ints(&[1, 30]),
+                ints(&[2, 20]),
+                ints(&[3, 10]),
+                ints(&[1, 5])
+            ]
+        );
+        assert_eq!(
+            run(&mut state, "matrix.sort", &[m, Int(2)])
+                .unwrap_err()
+                .code,
+            "PINE4010"
+        );
+    }
+
+    #[test]
+    fn submatrix_and_ranged_fill_take_half_open_ranges() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6], &[7, 8, 9]]);
+        let corner = ok(
+            &mut state,
+            "matrix.submatrix",
+            &[m.clone(), Int(1), Int(3), Int(0), Int(2)],
+        );
+        assert_eq!(rows_of(&state, &corner), [ints(&[4, 5]), ints(&[7, 8])]);
+        let whole = ok(&mut state, "matrix.submatrix", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &whole).len(), 3);
+        let tail = ok(&mut state, "matrix.submatrix", &[m.clone(), Int(2)]);
+        assert_eq!(rows_of(&state, &tail), [ints(&[7, 8, 9])]);
+        let backwards = run(&mut state, "matrix.submatrix", &[m.clone(), Int(2), Int(1)]);
+        assert_eq!(backwards.unwrap_err().code, "PINE4037");
+        let outside = run(&mut state, "matrix.submatrix", &[m.clone(), Int(0), Int(4)]);
+        assert_eq!(outside.unwrap_err().code, "PINE4010");
+        ok(
+            &mut state,
+            "matrix.fill",
+            &[m.clone(), Int(0), Int(0), Int(2), Int(1), Int(3)],
+        );
+        assert_eq!(
+            rows_of(&state, &m),
+            [ints(&[1, 0, 0]), ints(&[4, 0, 0]), ints(&[7, 8, 9])]
+        );
+        ok(&mut state, "matrix.fill", &[m.clone(), Int(9)]);
+        assert!(rows_of(&state, &m).iter().flatten().all(|v| *v == Int(9)));
+    }
+
+    #[test]
+    fn every_member_is_handled_and_has_parameters() {
+        for member in MEMBERS {
+            let name = format!("matrix.{member}");
+            assert!(handles(&name), "{name}");
+            assert!(!parameters(&name).is_empty(), "{name}");
+        }
+        assert!(!handles("matrix.nope") && !handles("array.get"));
+    }
+
+    fn float(value: &RuntimeValue) -> f64 {
+        value
+            .number()
+            .unwrap_or_else(|| panic!("not a number: {value:?}"))
+    }
+
+    #[test]
+    fn det_and_rank_read_the_matrix() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[6, 1, 1], &[4, -2, 5], &[2, 8, 7]]);
+        assert!(
+            (float(&ok(&mut state, "matrix.det", std::slice::from_ref(&m))) + 306.0).abs() < 1e-9
+        );
+        assert_eq!(ok(&mut state, "matrix.rank", &[m]), Int(3));
+        let flat = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6], &[7, 8, 9]]);
+        assert_eq!(
+            ok(&mut state, "matrix.rank", std::slice::from_ref(&flat)),
+            Int(2)
+        );
+        assert!(float(&ok(&mut state, "matrix.det", &[flat])).abs() < 1e-9);
+        let wide = matrix_from(&mut state, &[&[1, 0, 1], &[0, 1, 1]]);
+        assert_eq!(
+            ok(&mut state, "matrix.rank", std::slice::from_ref(&wide)),
+            Int(2)
+        );
+        let error = run(&mut state, "matrix.det", &[wide]).unwrap_err();
+        assert_eq!(error.code, "PINE4037");
+        assert!(error.message.contains("2×3"), "{}", error.message);
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(ok(&mut state, "matrix.det", &[empty]), Float(1.0));
+    }
+
+    #[test]
+    fn inv_undoes_the_matrix_and_pinv_matches_it_when_it_exists() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[4, 7], &[2, 6]]);
+        let inverse = ok(&mut state, "matrix.inv", std::slice::from_ref(&m));
+        for (row, expected) in rows_of(&state, &inverse)
+            .iter()
+            .zip([[0.6, -0.7], [-0.2, 0.4]])
+        {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!((float(cell) - want).abs() < 1e-12);
+            }
+        }
+        let pseudo = ok(&mut state, "matrix.pinv", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &pseudo), rows_of(&state, &inverse));
+        let singular = matrix_from(&mut state, &[&[1, 2], &[2, 4]]);
+        let none = ok(&mut state, "matrix.inv", std::slice::from_ref(&singular));
+        assert_eq!(rows_of(&state, &none), [[Na, Na], [Na, Na]]);
+        // The pseudoinverse of a singular matrix still exists: [[1,2],[2,4]]⁺ = [[.04,.08],[.08,.16]].
+        let pseudo = ok(&mut state, "matrix.pinv", &[singular]);
+        for (row, expected) in rows_of(&state, &pseudo)
+            .iter()
+            .zip([[0.04, 0.08], [0.08, 0.16]])
+        {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!((float(cell) - want).abs() < 1e-12);
+            }
+        }
+        let tall = matrix_from(&mut state, &[&[1, 0], &[0, 1], &[0, 0]]);
+        let pseudo = ok(&mut state, "matrix.pinv", &[tall]);
+        assert_eq!(
+            (
+                rows_of(&state, &pseudo).len(),
+                rows_of(&state, &pseudo)[0].len()
+            ),
+            (2, 3)
+        );
+        let wide = matrix_from(&mut state, &[&[1, 2, 3]]);
+        assert_eq!(
+            run(&mut state, "matrix.inv", &[wide]).unwrap_err().code,
+            "PINE4037"
+        );
+    }
+
+    #[test]
+    fn a_na_cell_makes_the_linear_algebra_na() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[2, 1], &[1, 2]]);
+        ok(&mut state, "matrix.set", &[m.clone(), Int(0), Int(1), Na]);
+        assert_eq!(ok(&mut state, "matrix.det", std::slice::from_ref(&m)), Na);
+        assert_eq!(ok(&mut state, "matrix.rank", std::slice::from_ref(&m)), Na);
+        let inverse = ok(&mut state, "matrix.inv", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &inverse), [[Na, Na], [Na, Na]]);
+        let values = ok(&mut state, "matrix.eigenvalues", std::slice::from_ref(&m));
+        assert_eq!(items(&state, &values), [Na, Na]);
+        let vectors = ok(&mut state, "matrix.eigenvectors", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &vectors), [[Na, Na], [Na, Na]]);
+        let pseudo = ok(&mut state, "matrix.pinv", &[m]);
+        assert_eq!(rows_of(&state, &pseudo), [[Na, Na], [Na, Na]]);
+    }
+
+    #[test]
+    fn eigenvalues_and_vectors_of_a_symmetric_matrix() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[2, 1], &[1, 2]]);
+        let values = ok(&mut state, "matrix.eigenvalues", std::slice::from_ref(&m));
+        let values = items(&state, &values);
+        assert!((float(&values[0]) - 1.0).abs() < 1e-12 && (float(&values[1]) - 3.0).abs() < 1e-12);
+        let vectors = ok(&mut state, "matrix.eigenvectors", std::slice::from_ref(&m));
+        let columns = rows_of(&state, &vectors);
+        // A·v = λ·v for each column v.
+        for (k, lambda) in values.iter().enumerate() {
+            let v = [float(&columns[0][k]), float(&columns[1][k])];
+            let image = [2.0 * v[0] + v[1], v[0] + 2.0 * v[1]];
+            assert!((image[0] - float(lambda) * v[0]).abs() < 1e-12);
+            assert!((image[1] - float(lambda) * v[1]).abs() < 1e-12);
+        }
+        let skew = matrix_from(&mut state, &[&[1, 2], &[3, 4]]);
+        for name in ["matrix.eigenvalues", "matrix.eigenvectors"] {
+            let error = run(&mut state, name, std::slice::from_ref(&skew)).unwrap_err();
+            assert_eq!(error.code, "PINE4037");
+            assert!(error.message.contains("symmetric"), "{}", error.message);
+        }
+    }
+
+    fn shape_answers(state: &mut RuntimeState, rows: &[&[i64]]) -> Vec<&'static str> {
+        let m = matrix_from(state, rows);
+        let mut names = Vec::new();
+        for member in MEMBERS.iter().filter(|member| member.starts_with("is_")) {
+            let answer = ok(state, &format!("matrix.{member}"), std::slice::from_ref(&m));
+            if answer == RuntimeValue::Bool(true) {
+                names.push(*member);
+            }
+        }
+        names
+    }
+
+    #[test]
+    fn the_shape_tests_agree_with_their_definitions() {
+        let mut state = RuntimeState::default();
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 0], &[0, 1]]),
+            [
+                "is_square",
+                "is_identity",
+                "is_diagonal",
+                "is_symmetric",
+                "is_triangular",
+                "is_stochastic",
+                "is_binary"
+            ]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 0], &[0, 0]]),
+            [
+                "is_square",
+                "is_diagonal",
+                "is_antidiagonal",
+                "is_symmetric",
+                "is_antisymmetric",
+                "is_triangular",
+                "is_binary",
+                "is_zero"
+            ]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 3], &[4, 0]]),
+            ["is_square", "is_antidiagonal"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 5], &[-5, 0]]),
+            ["is_square", "is_antidiagonal", "is_antisymmetric"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 2], &[0, 3]]),
+            ["is_square", "is_triangular"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 2], &[2, 5]]),
+            ["is_square", "is_symmetric"]
+        );
+        // A non-square matrix is none of the square-only kinds.
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 0, 0], &[0, 1, 0]]),
+            ["is_binary"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 0, 7]]),
+            ["is_antidiagonal"]
+        );
+        // Stochastic: non-negative rows that sum to one.
+        let m = ok(&mut state, "matrix.new", &[Int(2), Int(2), Float(0.5)]);
+        assert_eq!(
+            ok(&mut state, "matrix.is_stochastic", std::slice::from_ref(&m)),
+            RuntimeValue::Bool(true)
+        );
+        ok(
+            &mut state,
+            "matrix.set",
+            &[m.clone(), Int(0), Int(0), Float(0.6)],
+        );
+        assert_eq!(
+            ok(&mut state, "matrix.is_stochastic", std::slice::from_ref(&m)),
+            RuntimeValue::Bool(false)
+        );
+        // `na` is not zero, not binary, and not equal to its mirror.
+        let na = ok(&mut state, "matrix.new", &[Int(2), Int(2), Na]);
+        for member in ["is_zero", "is_binary", "is_symmetric", "is_identity"] {
+            assert_eq!(
+                ok(
+                    &mut state,
+                    &format!("matrix.{member}"),
+                    std::slice::from_ref(&na)
+                ),
+                RuntimeValue::Bool(false),
+                "{member}"
+            );
+        }
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(
+            ok(&mut state, "matrix.is_square", &[empty]),
+            RuntimeValue::Bool(true)
         );
     }
 }

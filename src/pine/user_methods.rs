@@ -159,6 +159,8 @@ impl Session {
                     | (ValueType::Label, RefKind::Label)
                     | (ValueType::Box, RefKind::Box)
                     | (ValueType::Table, RefKind::Table)
+                    | (ValueType::Linefill, RefKind::Linefill)
+                    | (ValueType::Polyline, RefKind::Polyline)
                     | (ValueType::Array, RefKind::Array)
                     | (ValueType::Map, RefKind::Map)
                     | (ValueType::Matrix, RefKind::Matrix)

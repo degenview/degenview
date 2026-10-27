@@ -116,6 +116,11 @@ pub struct Session {
     /// from the candles, and a handle names a bar, not an object.
     pub(crate) footprints: super::footprint_call::FootprintCache,
     pub bar_seconds: f64,
+    /// The chart's own bar length while a `request.*()` call evaluates on another timeframe, which is
+    /// when `bar_seconds` is that timeframe's.
+    pub(crate) chart_bar_seconds: Option<f64>,
+    /// Whether the script runs for an alert, not on a chart (`runtime.calculation.mode`).
+    pub(crate) alert_mode: bool,
     /// The length of the chart's own bars when it cannot be read off their open times: a
     /// price-based chart's bars follow price, not time.
     pub fixed_bar_seconds: Option<f64>,
@@ -203,6 +208,24 @@ impl From<Diagnostic> for RunError {
     fn from(diagnostic: Diagnostic) -> Self {
         Self::Script(diagnostic)
     }
+}
+
+/// `(minmove, pricescale)` with `minmove / pricescale = mintick`: the scale is the smallest power of
+/// ten that makes the tick a whole number of units. None while the tick is not a positive number,
+/// or is finer than twelve decimals.
+fn price_scale(mintick: f64) -> Option<(i64, i64)> {
+    if !(mintick.is_finite() && mintick > 0.0) {
+        return None;
+    }
+    let mut scale = 1_i64;
+    for _ in 0..=12 {
+        let units = mintick * scale as f64;
+        if units >= 0.5 && (units - units.round()).abs() <= 1e-9 * units {
+            return Some((units.round() as i64, scale));
+        }
+        scale *= 10;
+    }
+    None
 }
 
 impl Session {
@@ -345,6 +368,8 @@ impl Session {
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             footprints: Default::default(),
             bar_seconds: 0.0,
+            chart_bar_seconds: None,
+            alert_mode: false,
             fixed_bar_seconds: None,
             drawing_limits,
             supplied_mintick,
@@ -358,14 +383,18 @@ impl Session {
     }
 
     fn fresh_state(&self) -> RuntimeState {
+        let mut broker = Broker::new(
+            self.program
+                .declaration
+                .strategy
+                .clone()
+                .unwrap_or_default(),
+        );
+        // The trading days the risk rules count are the exchange's.
+        broker.zone =
+            Some(super::trading_session::MarketSessions::for_kind(&self.symbol.kind).zone());
         RuntimeState {
-            broker: Broker::new(
-                self.program
-                    .declaration
-                    .strategy
-                    .clone()
-                    .unwrap_or_default(),
-            ),
+            broker,
             // The first bar executes as bar 0.
             bar_index: -1,
             ..RuntimeState::default()
@@ -668,6 +697,7 @@ impl Session {
 
     fn finish_strategy_bar(&mut self, candle: Kline) {
         let close = candle.close;
+        let candle_for_risk = candle.clone();
         if self
             .program
             .declaration
@@ -681,7 +711,11 @@ impl Session {
                 self.mintick,
             );
         }
+        let bar_index = self.working.bar_index as usize;
         self.working.broker.record_equity(close);
+        self.working
+            .broker
+            .check_risk(&candle_for_risk, bar_index, self.mintick);
     }
 
     pub fn emit(&mut self, alert: AlertEvent) {
@@ -705,6 +739,10 @@ impl Session {
                 .collect(),
             hlines: sorted_by_id(&w.hlines),
             markers: sorted_by_id(&w.markers),
+            arrows: sorted_by_id(&w.arrows)
+                .into_iter()
+                .map(super::outputs::ArrowOutput::finished)
+                .collect(),
             backgrounds: sorted_by_id(&w.backgrounds)
                 .into_iter()
                 .map(super::outputs::ColorOutput::finished)
@@ -980,19 +1018,8 @@ impl Session {
                 .last_bar_time
                 .map(RuntimeValue::Int)
                 .or(Some(RuntimeValue::Na)),
-            "year" | "month" | "dayofmonth" | "hour" | "minute" | "second" | "dayofweek" => {
-                let c = calendar::components(bar.open_time);
-                Some(RuntimeValue::Int(match name {
-                    "year" => c.year,
-                    "month" => c.month,
-                    "dayofmonth" => c.day,
-                    "hour" => c.hour,
-                    "minute" => c.minute,
-                    "second" => c.second,
-                    "dayofweek" => c.weekday,
-                    _ => unreachable!(),
-                }))
-            }
+            "year" | "month" | "dayofmonth" | "hour" | "minute" | "second" | "dayofweek"
+            | "weekofyear" => Some(super::time::part(name, bar.open_time, 0)),
             _ => {
                 if let Some(value) =
                     strategy_builtins::strategy_value(name, &self.working.broker, bar.close)
@@ -1010,6 +1037,8 @@ impl Session {
                         first_bar_time: self.first_bar_time,
                         last_bar_time: self.last_bar_time,
                         theme: self.theme,
+                        chart_bar_seconds: self.chart_bar_seconds.unwrap_or(self.bar_seconds),
+                        alert_mode: self.alert_mode,
                     },
                 ) {
                     return Some(value);
@@ -1022,6 +1051,28 @@ impl Session {
     fn symbol_value(&self, name: &str) -> Option<RuntimeValue> {
         match name {
             "syminfo.mintick" => Some(RuntimeValue::Float(self.mintick)),
+            // The currency the results are in: the strategy's own, else the symbol's.
+            "strategy.account_currency" => Some(RuntimeValue::String(
+                self.working
+                    .broker
+                    .settings
+                    .currency
+                    .as_deref()
+                    .map(|code| code.strip_prefix("currency.").unwrap_or(code))
+                    .filter(|code| !code.is_empty() && *code != "NONE")
+                    .map_or_else(|| self.symbol.currency.clone(), str::to_owned),
+            )),
+            "syminfo.minmove" | "syminfo.pricescale" => Some(
+                price_scale(self.mintick)
+                    .map(|(minmove, pricescale)| {
+                        RuntimeValue::Int(if name == "syminfo.minmove" {
+                            minmove
+                        } else {
+                            pricescale
+                        })
+                    })
+                    .unwrap_or(RuntimeValue::Na),
+            ),
             "syminfo.ticker" => Some(RuntimeValue::String(self.symbol.ticker.clone())),
             "syminfo.tickerid" => Some(RuntimeValue::String(self.symbol.ticker_id.clone())),
             "syminfo.currency" => Some(RuntimeValue::String(self.symbol.currency.clone())),
@@ -1365,6 +1416,7 @@ impl Session {
                 | Statement::ForIn { .. }
                 | Statement::Conditional { .. }
                 | Statement::WhileLoop { .. }
+                | Statement::Once { .. }
                 | Statement::Switch { .. }
         ) {
             return self.run_statement_unscoped(statement, context);
@@ -1454,6 +1506,11 @@ impl Session {
             Statement::WhileLoop {
                 condition, body, ..
             } => self.run_while(condition, body, context),
+            Statement::Once {
+                condition,
+                body,
+                range,
+            } => self.run_once(condition.as_ref(), body, *range, context),
             Statement::Switch {
                 subject,
                 arms,
@@ -1586,6 +1643,40 @@ impl Session {
         )?;
         let (flow, value) = self.run(if test { when_true } else { when_false }, context)?;
         Ok(Step { flow, value })
+    }
+
+    /// `once [condition]`. The condition is evaluated on every bar, like an `if`'s, so the `ta.*`
+    /// calls in it keep their history; the block runs only until it has run once. The finished
+    /// flag lives in the working state, so an unconfirmed realtime tick that ran the block leaves
+    /// the structure active, as TradingView's rollback does.
+    fn run_once(
+        &mut self,
+        condition: Option<&Expression>,
+        body: &[Statement],
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<Step, Diagnostic> {
+        if let Some(condition) = condition {
+            let value = self.eval(condition, context)?;
+            let test = self.require_bool(
+                value,
+                "once condition must be bool; numeric-to-bool coercion is not allowed in v6.",
+                condition.range(),
+            )?;
+            if !test {
+                return Ok(Step::normal(RuntimeValue::Void));
+            }
+        }
+        let key = self.site_key(range.start.offset, context);
+        if self.working.once_finished.contains(&key) {
+            return Ok(Step::normal(RuntimeValue::Void));
+        }
+        let (flow, _) = self.run(body, context)?;
+        self.working.once_finished.push(key);
+        Ok(Step {
+            flow,
+            value: RuntimeValue::Void,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2363,7 +2454,7 @@ impl Session {
         } else if map_builtins::handles(name) {
             map_builtins::call(name, &bound, &mut self.working, range)?
         } else {
-            matrix_builtins::call(name, &bound, &mut self.working, range)?
+            matrix_builtins::call(name, &bound, &mut self.working, self.mintick, range)?
         };
         Ok(Some(value))
     }
@@ -2766,11 +2857,13 @@ impl Session {
             "map" => map_builtins::parameters(&full),
             _ => matrix_builtins::parameters(&full),
         };
+        // The receiver is the function's first parameter: `id`, or `id1` for a two-matrix function.
+        let receiver = parameters.first().copied().unwrap_or("id");
         let mut bound = Bound::default();
-        bound.insert("id", value.clone());
+        bound.insert(receiver, value.clone());
         let mut position = 0;
         for parameter in parameters {
-            if *parameter == "id" {
+            if *parameter == receiver {
                 continue;
             }
             if let Some(named) = arguments
@@ -2794,7 +2887,7 @@ impl Session {
                 array_builtins::call(&full, &bound, &[], &mut self.working, self.mintick, range)?
             }
             "map" => map_builtins::call(&full, &bound, &mut self.working, range)?,
-            _ => matrix_builtins::call(&full, &bound, &mut self.working, range)?,
+            _ => matrix_builtins::call(&full, &bound, &mut self.working, self.mintick, range)?,
         };
         Ok(result)
     }
@@ -3448,6 +3541,21 @@ mod tests {
     }
 
     #[test]
+    fn the_price_scale_makes_the_tick_a_whole_number_of_units() {
+        assert_eq!(price_scale(0.01), Some((1, 100)));
+        assert_eq!(price_scale(0.25), Some((25, 100)));
+        assert_eq!(price_scale(0.05), Some((5, 100)));
+        assert_eq!(price_scale(0.0001), Some((1, 10_000)));
+        assert_eq!(price_scale(5.0), Some((5, 1)));
+        assert_eq!(price_scale(1.0), Some((1, 1)));
+        assert_eq!(price_scale(0.0), None);
+        assert_eq!(price_scale(f64::NAN), None);
+        assert_eq!(price_scale(-1.0), None);
+        assert_eq!(price_scale(1e-10), Some((1, 10_000_000_000)));
+        assert_eq!(price_scale(1e-13), None, "finer than twelve decimals");
+    }
+
+    #[test]
     fn realtime_ticks_do_not_advance_committed_ta_history() {
         let program = super::super::compiler::compile(
             "//@version=6\nindicator(\"T\")\nplot(ta.sma(close, 2))",
@@ -3512,6 +3620,73 @@ mod tests {
                 .values()
                 .all(|state| state.inputs.len() == 2),
             "only the historical bar and confirmed realtime bar should be committed"
+        );
+    }
+
+    #[test]
+    fn once_stays_active_through_realtime_ticks_and_finishes_when_the_bar_closes() {
+        let program = super::super::compiler::compile(
+            "//@version=6\nindicator(\"T\")\nvarip int runs = 0\n\
+             once barstate.isrealtime\n    runs += 1\nplot(runs)",
+            Limits::default(),
+            &super::super::compiler::NoLibraries,
+        );
+        let mut session = Session::new(
+            program,
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session.load_history(&[hourly(0)], true, None).unwrap();
+        let runs_after = |session: &mut Session, phase: BarPhase, open_time: i64| {
+            session
+                .execute(
+                    BarEvent {
+                        candle: hourly(open_time),
+                        phase,
+                    },
+                    true,
+                    None,
+                )
+                .unwrap();
+            session.output().plots[0].values.last().copied().flatten()
+        };
+        // Two ticks of the open bar each run the block: rollback keeps the structure active.
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: true },
+                3_600_000
+            ),
+            Some(1.0)
+        );
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: false },
+                3_600_000
+            ),
+            Some(2.0)
+        );
+        // It runs on the closing tick and is then finished for good.
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeClose { is_new: false },
+                3_600_000
+            ),
+            Some(3.0)
+        );
+        assert_eq!(
+            runs_after(
+                &mut session,
+                BarPhase::RealtimeTick { is_new: true },
+                7_200_000
+            ),
+            Some(3.0)
         );
     }
 

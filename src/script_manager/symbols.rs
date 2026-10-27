@@ -624,7 +624,11 @@ impl Builder<'_> {
         }
         match first.kind {
             TokenKind::For => return Some(self.for_loop(tokens, scope)),
-            TokenKind::If | TokenKind::While | TokenKind::Else | TokenKind::Switch => {
+            TokenKind::If
+            | TokenKind::While
+            | TokenKind::Once
+            | TokenKind::Else
+            | TokenKind::Switch => {
                 let body = if tokens.iter().any(|t| t.kind == TokenKind::Switch) {
                     Body::Switch
                 } else {
@@ -849,6 +853,7 @@ impl Builder<'_> {
                 | TokenKind::MinusAssign
                 | TokenKind::StarAssign
                 | TokenKind::SlashAssign
+                | TokenKind::PercentAssign
                     if depth == 0 =>
                 {
                     operator = Some(offset);

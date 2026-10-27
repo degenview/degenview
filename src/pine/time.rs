@@ -7,7 +7,7 @@
 use super::calendar::{self, Components};
 use super::runtime_value::RuntimeValue;
 
-pub const PART_NAMES: [&str; 7] = [
+pub const PART_NAMES: [&str; 8] = [
     "year",
     "month",
     "dayofmonth",
@@ -15,11 +15,13 @@ pub const PART_NAMES: [&str; 7] = [
     "minute",
     "second",
     "dayofweek",
+    "weekofyear",
 ];
 
 /// Every `timeframe.*` name `timeframe` resolves.
-pub const TIMEFRAME_NAMES: [&str; 10] = [
+pub const TIMEFRAME_NAMES: [&str; 11] = [
     "timeframe.period",
+    "timeframe.main_period",
     "timeframe.multiplier",
     "timeframe.isdaily",
     "timeframe.isweekly",
@@ -47,6 +49,7 @@ pub fn part(name: &str, stamp: i64, offset_secs: i64) -> RuntimeValue {
         "hour" => c.hour,
         "minute" => c.minute,
         "second" => c.second,
+        "weekofyear" => calendar::week_of_year(&c),
         _ => c.weekday,
     })
 }
@@ -121,7 +124,7 @@ pub fn timeframe(name: &str, bar_seconds: f64) -> Option<RuntimeValue> {
     let is_weekly = !is_monthly && seconds >= 7.0 * DAY;
     let is_daily = !is_weekly && !is_monthly && seconds >= DAY;
     Some(match name {
-        "timeframe.period" => {
+        "timeframe.period" | "timeframe.main_period" => {
             let (multiplier, suffix) = period(seconds);
             RuntimeValue::String(format!("{multiplier}{suffix}"))
         }

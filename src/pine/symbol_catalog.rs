@@ -44,6 +44,29 @@ pub const VARIABLES: &[&str] = &[
     "strategy.opentrades",
     "strategy.wintrades",
     "strategy.losstrades",
+    "strategy.eventrades",
+    "strategy.avg_trade",
+    "strategy.avg_trade_percent",
+    "strategy.avg_winning_trade",
+    "strategy.avg_winning_trade_percent",
+    "strategy.avg_losing_trade",
+    "strategy.avg_losing_trade_percent",
+    "strategy.grossprofit_percent",
+    "strategy.netprofit_percent",
+    "strategy.grossloss_percent",
+    "strategy.openprofit_percent",
+    "strategy.max_drawdown",
+    "strategy.max_drawdown_percent",
+    "strategy.max_runup",
+    "strategy.max_runup_percent",
+    "strategy.max_contracts_held_all",
+    "strategy.max_contracts_held_long",
+    "strategy.max_contracts_held_short",
+    "strategy.position_entry_name",
+    "strategy.account_currency",
+    "strategy.margin_liquidation_price",
+    "strategy.closedtrades.first_index",
+    "strategy.opentrades.capital_held",
     "syminfo.ticker",
     "syminfo.tickerid",
     "syminfo.currency",
@@ -73,7 +96,7 @@ pub const VARIABLES: &[&str] = &[
     "timeframe.isintraday",
     "timeframe.isdwm",
     "timeframe.isticks",
-    // Pine variables DegenView does not implement (reading one gives `na`).
+    "timeframe.main_period",
     "weekofyear",
     "session.isfirstbar",
     "session.isfirstbar_regular",
@@ -83,6 +106,28 @@ pub const VARIABLES: &[&str] = &[
     "session.ispremarket",
     "session.ispostmarket",
     "syminfo.session",
+    "syminfo.minmove",
+    "syminfo.pricescale",
+    "syminfo.main_tickerid",
+    "syminfo.current_contract",
+    "syminfo.expiration_date",
+    "runtime.calculation.mode",
+    "chart.is_standard",
+    "chart.is_heikinashi",
+    "chart.is_renko",
+    "chart.is_kagi",
+    "chart.is_linebreak",
+    "chart.is_pnf",
+    "chart.is_range",
+    "ta.obv",
+    "ta.accdist",
+    "ta.iii",
+    "ta.nvi",
+    "ta.pvi",
+    "ta.pvt",
+    "ta.wad",
+    "ta.wvad",
+    // Pine variables DegenView cannot supply (reading one gives `na`, with a warning).
     "syminfo.mincontract",
     "syminfo.description",
     "syminfo.volumetype",
@@ -121,6 +166,7 @@ pub const FUNCTIONS: &[&str] = &[
     "minute",
     "second",
     "dayofweek",
+    "weekofyear",
     "fixnan",
     "plotarrow",
     "plotbar",
@@ -136,6 +182,15 @@ pub const OBJECT_TYPES: &[&str] = &[
 pub const RESERVED_CONSTANTS: &[&str] = &[
     "session.regular",
     "session.extended",
+    "runtime.calculation.mode.chart",
+    "runtime.calculation.mode.alert",
+    "dividends.gross",
+    "dividends.net",
+    "earnings.actual",
+    "earnings.estimate",
+    "earnings.standardized",
+    "splits.numerator",
+    "splits.denominator",
     "xloc.bar_index",
     "xloc.bar_time",
     "yloc.price",
@@ -229,6 +284,7 @@ pub const RESERVED_CONSTANTS: &[&str] = &[
     "currency.PLN",
     "currency.QAR",
     "currency.RON",
+    "currency.RSD",
     "currency.RUB",
     "currency.SAR",
     "currency.SEK",
@@ -241,33 +297,24 @@ pub const RESERVED_CONSTANTS: &[&str] = &[
     "currency.USD",
     "currency.USDT",
     "currency.UYU",
+    "currency.VES",
     "currency.VND",
     "currency.ZAR",
 ];
 
 /// Pine variables this release does not implement (they evaluate to `na`).
 pub const UNIMPLEMENTED_VARIABLES: &[&str] = &[
-    "weekofyear",
-    "session.isfirstbar",
-    "session.isfirstbar_regular",
-    "session.islastbar",
-    "session.islastbar_regular",
-    "session.ismarket",
-    "session.ispremarket",
-    "session.ispostmarket",
-    "syminfo.session",
     "syminfo.mincontract",
     "syminfo.description",
     "syminfo.volumetype",
+    "syminfo.isin",
+    "syminfo.shareholders",
     "syminfo.shares_outstanding_total",
     "syminfo.shares_outstanding_float",
     "syminfo.employees",
     "syminfo.sector",
     "syminfo.industry",
     "syminfo.country",
-    "syminfo.expiration_date",
-    "syminfo.current_contract",
-    "syminfo.main_tickerid",
     "syminfo.target_price_average",
     "syminfo.target_price_high",
     "syminfo.target_price_low",
@@ -281,10 +328,20 @@ pub const UNIMPLEMENTED_VARIABLES: &[&str] = &[
     "syminfo.recommendations_sell",
     "syminfo.recommendations_sell_strong",
     "syminfo.recommendations_total",
+    "strategy.margin_liquidation_price",
+    "dividends.future_amount",
+    "dividends.future_ex_date",
+    "dividends.future_pay_date",
+    "earnings.future_eps",
+    "earnings.future_period_end_time",
+    "earnings.future_revenue",
+    "earnings.future_time",
+    "ask",
+    "bid",
 ];
 
-/// Pine functions this release does not implement (a call is a compile error).
-pub const RESERVED_FUNCTIONS: &[&str] = &["fixnan", "plotarrow"];
+/// Pine functions this release does not implement (a call is a runtime error). None today.
+pub const RESERVED_FUNCTIONS: &[&str] = &[];
 
 /// Whether `name` is a builtin variable.
 pub fn is_variable(name: &str) -> bool {
@@ -345,8 +402,10 @@ mod tests {
         assert!(is_reserved_constant("currency.USD"));
         assert!(is_reserved_constant("xloc.bar_time"));
         assert!(!is_reserved_constant("color.red"));
-        assert!(is_unimplemented_variable("weekofyear"));
-        assert!(is_unimplemented_function("fixnan"));
+        assert!(is_unimplemented_variable("syminfo.description"));
+        assert!(!is_unimplemented_variable("weekofyear"));
+        assert!(!is_unimplemented_function("fixnan"));
+        assert!(!is_unimplemented_function("plotarrow"));
         assert!(!is_unimplemented_variable("close"));
     }
 }

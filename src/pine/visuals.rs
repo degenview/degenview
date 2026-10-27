@@ -9,8 +9,9 @@ use std::collections::HashMap;
 use super::builtins;
 use super::drawings::{Arg, DEFAULT_COLOR, FromName, bind, parse};
 use super::outputs::{
-    CandleBar, CandleOutput, ColorOutput, DISPLAY_ALL, FillGradient, FillOutput, HorizontalLine,
-    MarkerKind, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput, PlotStyle, Size,
+    ArrowOutput, CandleBar, CandleOutput, ColorOutput, DISPLAY_ALL, FillGradient, FillOutput,
+    HorizontalLine, MarkerKind, MarkerLocation, MarkerOutput, MarkerShape, PlotOutput, PlotStyle,
+    Size,
 };
 use super::runtime_value::{RefKind, RuntimeValue, color_value};
 use super::state::RuntimeState;
@@ -61,6 +62,7 @@ pub fn handles(name: &str) -> bool {
             | "hline"
             | "plotshape"
             | "plotchar"
+            | "plotarrow"
             | "plotcandle"
             | "plotbar"
             | "fill"
@@ -81,6 +83,7 @@ pub fn call(
         "plot" => plot(args, site, state),
         "hline" => hline(args, site, state),
         "plotshape" | "plotchar" => plot_marker(name, args, site, state),
+        "plotarrow" => plot_arrow(args, site, state),
         "fill" => fill(args, site, state),
         "plotcandle" | "plotbar" => plot_ohlc(name, args, site, state),
         "bgcolor" | "barcolor" => color_series(name, args, site, state),
@@ -134,6 +137,7 @@ fn display_mask(value: Option<&RuntimeValue>) -> u32 {
 fn plot_style(name: Option<&str>) -> PlotStyle {
     match name {
         Some("plot.style_stepline" | "plot.style_steplinebr") => PlotStyle::Stepline,
+        Some("plot.style_stepline_diamond") => PlotStyle::SteplineDiamond,
         Some("plot.style_histogram") => PlotStyle::Histogram,
         Some("plot.style_columns") => PlotStyle::Columns,
         Some("plot.style_area" | "plot.style_areabr") => PlotStyle::Area,
@@ -257,6 +261,70 @@ fn plot_marker(
     marker.colors.push(Some(color));
     marker.display = display_mask(b.get("display"));
     marker.force_overlay = flag(b.get("force_overlay"));
+    Ok(RuntimeValue::Void)
+}
+
+/// `plotarrow(series, title, colorup, colordown, offset, minheight, maxheight, editable,
+/// show_last, display, format, precision, force_overlay)`.
+fn plot_arrow(
+    args: &[Arg],
+    site: usize,
+    state: &mut RuntimeState,
+) -> Result<RuntimeValue, Diagnostic> {
+    let b = bind(
+        args,
+        &[
+            "series",
+            "title",
+            "colorup",
+            "colordown",
+            "offset",
+            "minheight",
+            "maxheight",
+            "editable",
+            "show_last",
+        ],
+    );
+    let output = state.arrows.entry(site).or_insert_with(|| ArrowOutput {
+        id: site,
+        title: text(&b, "title"),
+        values: Vec::new(),
+        up_colors: Vec::new(),
+        down_colors: Vec::new(),
+        offset: 0,
+        show_last: None,
+        min_height: 5.0,
+        max_height: 100.0,
+        display: DISPLAY_ALL,
+        force_overlay: false,
+    });
+    output
+        .values
+        .push(b.get("series").and_then(RuntimeValue::number));
+    output
+        .up_colors
+        .push(color_value(b.get("colorup"), Some(DEFAULT_COLOR)));
+    output.down_colors.push(color_value(
+        b.get("colordown"),
+        builtins::color("color.red"),
+    ));
+    output.offset = b
+        .get("offset")
+        .and_then(RuntimeValue::int_value)
+        .unwrap_or(0);
+    output.show_last = last_bars(b.get("show_last"));
+    output.min_height = b
+        .get("minheight")
+        .and_then(RuntimeValue::number)
+        .unwrap_or(5.0)
+        .max(0.0);
+    output.max_height = b
+        .get("maxheight")
+        .and_then(RuntimeValue::number)
+        .unwrap_or(100.0)
+        .max(output.min_height);
+    output.display = display_mask(b.get("display"));
+    output.force_overlay = flag(b.get("force_overlay"));
     Ok(RuntimeValue::Void)
 }
 

@@ -135,6 +135,13 @@ pub enum Statement {
         body: Vec<Statement>,
         range: SourceRange,
     },
+    /// `once [condition]`: runs its block the first time the condition holds on a closed bar and
+    /// never again; without a condition it runs on the first bar.
+    Once {
+        condition: Option<Expression>,
+        body: Vec<Statement>,
+        range: SourceRange,
+    },
     /// `switch subject` compares each arm's condition to the subject; `switch` without a
     /// subject takes the first arm whose condition is true.
     Switch {
@@ -183,6 +190,7 @@ impl Statement {
             | Self::ForRange { range, .. }
             | Self::ForIn { range, .. }
             | Self::WhileLoop { range, .. }
+            | Self::Once { range, .. }
             | Self::Switch { range, .. }
             | Self::TupleDeclaration { range, .. }
             | Self::TypeDeclaration { range, .. }

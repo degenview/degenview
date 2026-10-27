@@ -445,7 +445,11 @@ fn push_row(
 fn width_styles(style: PlotStyle) -> bool {
     matches!(
         style,
-        PlotStyle::Line | PlotStyle::Stepline | PlotStyle::Circles | PlotStyle::Cross
+        PlotStyle::Line
+            | PlotStyle::Stepline
+            | PlotStyle::SteplineDiamond
+            | PlotStyle::Circles
+            | PlotStyle::Cross
     )
 }
 

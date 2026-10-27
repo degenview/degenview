@@ -35,6 +35,90 @@
   changing its algorithm: most of it is inferred.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
+- A `once` structure's finished flag is `RuntimeState::once_finished` (by site key), in the working
+  state on purpose: an unconfirmed realtime tick that ran the block is rolled back, so the structure
+  stays active until the block runs on a closing tick, as TradingView documents. Its condition is
+  evaluated every bar (like an `if`'s) so `ta.*` calls in it keep their history.
+- `matrix.*` lives in `matrix_builtins` (names in `MEMBERS`, which the editor offers directly). Element
+  arithmetic (`sum`, `diff`, `mult`) goes through `operators::apply` so ints stay ints and `na`
+  propagates like the operators; anything numerical that returns floats (`pow`, `kron`, linear algebra)
+  converts to `pine::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
+  use is `PINE4037`; an index or range outside the matrix is `PINE4010`. `Bound` holds six arguments
+  (`matrix.fill`), so a new builtin with more needs `BOUND_CAPACITY` raised and `tools/pine-bench.sh` run.
+  Linear algebra (`det`, `inv`, `pinv`, `rank`, `eigenvalues`, `eigenvectors`) is `linalg::Dense`: LU for
+  `det`/`inv`, one-sided Jacobi SVD for `rank`/`pinv`, EISPACK `tred2`/`tql2` for the eigen-decomposition.
+  A `na` cell gives `na` (a matrix or array of `na` for the others) and a singular `inv` is a matrix of
+  `na`, so a script is never stopped by data. The eigen-decomposition only exists for a symmetric matrix;
+  anything else is `PINE4037` (TradingView names the same QL algorithm and does not say what it does
+  for other matrices).
+- Drawing functions are the exact lists `drawings::{LINE,LABEL,BOX,LINEFILL,TABLE,POLYLINE}_MEMBERS` and
+  `CHART_POINT_NAMES`: `handles` no longer takes any `set_*`/`get_*`, so a misspelt member is a compile
+  error and the editor offers each name from these tables. A drawing stores bar indexes and remembers
+  whether it was placed by time (`time_anchored`); `set_xloc` re-reads the new coordinates and flips the
+  flag. A label's `yloc` is stored with its price, which is ignored (and may be `na`) above or below the
+  bar; `PineLayer::label_y` resolves it against the candle, so the price scale is not affected.
+- `table.cell_set_*` creates a blank cell when the cell was never defined (inferred; the reference does not
+  say). A text size is `Size::Points(n)` when a script gives a number (`font_size` scales TradingView's 14
+  points to this app's 12). Properties the chart cannot draw (cell tooltips, font family, bold/italic) are
+  accepted and warned about through `ignored_features`, never silently dropped.
+- `plotarrow()` is `ArrowOutput` (per-bar value and both colours; `offset`/`show_last` applied by
+  `ArrowOutput::finished` when the output is read, like a plot's offset). The arrow length is `min_height` to
+  `max_height` in proportion to the value against the series' largest absolute value (inferred: the reference
+  only says larger values draw longer arrows), up arrows sit under the bar's low and down arrows over its
+  high. `plot.style_stepline_diamond` is `PlotStyle::SteplineDiamond`: a step line with a diamond where the
+  value changes. Shapes are in `pine_geometry` (`arrow_shape`, `diamond_points`), which is where to test them.
+  `ignored_features::ignored_values` (PINE7004) has no entry today but stays for the next unsupported constant.
+- `ta.pivot_point_levels` keeps the running period's OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`): a
+  period starts at each anchor bar, the levels set when one ends hold until the next ends, and
+  `developing` recomputes from the running period instead. The type formulas are the classic published
+  ones (the reference lists none) and Woodie's uses the open of the bar that sets the levels, so none of it
+  is checked against TradingView's output. `ta.rci` is Spearman's coefficient (Pearson on mid-ranks) x 100.
+- `session.*` reads `trading_session::MarketSessions` for the symbol's `syminfo.type`: crypto is 24x7 on UTC (a
+  session is a UTC day), a `stock` keeps New York's 09:30-16:00 weekdays with pre- (04:00) and post-market
+  (to 20:00) around it. The app's charts show the regular session, so `isfirstbar`/`islastbar` equal their
+  `_regular` forms, and a bar of a day or more is a whole session (`ismarket` true, pre/post false). The
+  first/last bar is worked out from the neighbouring bar's open time (`histories["time"]`), so it needs no
+  state. Known gap: `hour`, `dayofweek`, `time(..., session)` and the other calendar parts still default to UTC
+  where TradingView uses the exchange zone, so on a stock they differ from TradingView's; `syminfo.timezone`
+  and `session.*` use the exchange zone.
+- `runtime.calculation.mode` is `Session::alert_mode`, set by `ExecutionController::with_alert_mode` for the
+  alert subscriptions. `timeframe.main_period` uses `Session::chart_bar_seconds`, which the security
+  evaluator sets while `bar_seconds` is a requested timeframe's. `weekofyear` weeks run Sunday to Saturday and
+  week 1 holds January 1 (inferred; the reference only says "week number of the year").
+- `strategy.*` statistics are `strategy_builtins::statistic`, computed from the broker on each read (the
+  trade lists) except the equity extremes, which `Broker` keeps as bars arrive (`EquityExtremes`, rolled back
+  with the rest of the state) and merges with the bar being run. Losses are negative in the averages
+  (`avg_losing_trade`) but positive in `grossloss`; a drawdown is measured from the running peak (starting at
+  the initial capital) and a run-up from the running trough; the percentages are against that peak / trough.
+  `margin_liquidation_price` stays a warned `na`: there is no margin model.
+- A trade carries its orders' comments (`OpenTrade::entry_comment`, `Trade::{entry,exit}_comment`; an exit's
+  `comment_profit` / `comment_loss` replace `comment` when its limit / stop fills it) and the highest and
+  lowest price it has seen, from which `strategy.{closed,open}trades.max_runup/max_drawdown(_percent)` follow
+  (positive amounts, before commission, sized to the quantity that closed). `Broker::process` touches the
+  open trades at the bar's open, at every price a trigger fires at and at each vertex of the intrabar path, so
+  a trade closed at the next open does not count that bar's range; a bar with no orders pending touches its
+  high and low. Comments show in the trade list's hover text (`Trade::comments`) and over MCP.
+- `strategy.risk.*` calls state rules on `Broker::risk` (the latest call wins; an invalid call changes nothing).
+  `Broker::process` rolls the trading day (in the exchange zone, `Broker::zone`) and `check_risk`, called after
+  each bar's equity is recorded, compares it with the limits. A reached limit cancels every pending order and
+  closes every open trade at the bar's close, then `place` ignores orders: `max_drawdown` (from the peak
+  equity, cash or % of it) and `max_cons_loss_days` stop for good, `max_intraday_loss` (from the day's best
+  equity) and `max_intraday_filled_orders` (one per filled order, a reversal counting once) until the next
+  day. `allow_entry_in` and `max_position_size` act on `strategy.entry` only. Rules are checked at bars'
+  closes, so a limit can be passed within a bar before it is seen. OCA groups (`oca_name` with `oca_type`
+  cancel or reduce) apply to entries and orders; an exit's own `oca_name` is still ignored.
+- An `input.*` call's arguments are matched to parameters by name or by position in
+  `pine::input_arguments` (each function has its own order; `input.int`/`float` take a range or, when the
+  third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
+  `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
+  with their own controls (`script_manager::inputs`), and the stored value of each is the plain
+  `InputValue` it always was, so saved inputs are unchanged. `display` is warned about.
+- `active` is compiled by `pine::input_activity` into `InputDefinition::active`: an expression over inputs
+  declared above it (kept by name) and the script's constants (folded to literals), evaluated by
+  `InputSchema::is_active` against the values being edited with `compiler::constant_value`, which also
+  folds comparisons, `and`/`or`/`not` and `?:`. The form draws a card whose condition fails disabled; the
+  input keeps its value and the script reads it. Anything else (a series, a call, a later input, a
+  non-bool) is warned (`PINE7001`) and leaves the input editable. The MCP input tools do not honour it.
 - Declaring a name a builtin variable has (`open = 1`, a local `float hl2 = ...`, a loop counter) is the
   `PINE7006` warning unless the script read the builtin above the declaration, then `CE10190`
   (`structure_validator::check_name`). The manual calls it a warning that becomes an error once the script uses
@@ -57,6 +141,8 @@
   decide editor indentation because incomplete parentheses erase them.
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
   catalog and signatures from `script_manager::signature`. Add new builtins to both tables.
+  `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
+  (and their signatures from `parameters()`), so a new one needs no editor edit.
   The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
   events are consumed by `completion_keys` before the list is drawn, so it sets
   `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with

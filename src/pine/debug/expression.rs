@@ -226,6 +226,8 @@ const READ_ONLY_METHODS: &[&str] = &[
     "first",
     "last",
     "includes",
+    "every",
+    "some",
     "contains",
     "indexof",
     "lastindexof",

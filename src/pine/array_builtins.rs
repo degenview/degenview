@@ -12,7 +12,7 @@ use super::state::RuntimeState;
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 
 /// The most parameters a builtin binds by name (`ta.alma`).
-const BOUND_CAPACITY: usize = 5;
+const BOUND_CAPACITY: usize = 6;
 
 /// Evaluated arguments by parameter name. A builtin has a handful of parameters with static names,
 /// so this is a short list searched in order: binding a call allocates nothing, where a table of
@@ -73,26 +73,25 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
         return &["size", "initial_value"];
     }
     match name {
-        "array.push"
-        | "array.unshift"
-        | "array.includes"
-        | "array.indexof"
-        | "array.lastindexof"
-        | "array.binary_search"
+        "array.push" | "array.unshift" | "array.includes" | "array.indexof"
+        | "array.lastindexof" => &["id", "value"],
+        "array.binary_search"
         | "array.binary_search_leftmost"
-        | "array.binary_search_rightmost" => &["id", "value"],
+        | "array.binary_search_rightmost" => &["id", "val"],
+        "array.max" | "array.min" => &["id", "nth"],
         "array.fill" => &["id", "value", "index_from", "index_to"],
         "array.get" | "array.remove" => &["id", "index"],
         "array.set" | "array.insert" => &["id", "index", "value"],
         "array.sort" | "array.sort_indices" => &["id", "order"],
         "array.join" => &["id", "separator"],
-        "array.concat" => &["id", "other"],
+        "array.concat" => &["id1", "id2"],
         "array.slice" => &["id", "index_from", "index_to"],
         "array.variance" | "array.stdev" => &["id", "biased"],
         "array.percentile_nearest_rank" | "array.percentile_linear_interpolation" => {
             &["id", "percentage"]
         }
-        "array.covariance" => &["id", "id2", "biased"],
+        "array.covariance" => &["id1", "id2", "biased"],
+        "array.percentrank" => &["id", "index"],
         _ => &["id"],
     }
 }
@@ -104,7 +103,9 @@ pub fn handles(name: &str) -> bool {
         && (name.starts_with("array.new_") || name == "array.from" || KNOWN.contains(&name))
 }
 
-const KNOWN: [&str; 47] = [
+/// Every `array.*` name this module handles besides the `array.new_<type>` family it matches by
+/// prefix. The editor offers exactly these.
+pub const KNOWN: [&str; 50] = [
     "array.fill",
     "array.lastindexof",
     "array.abs",
@@ -145,6 +146,9 @@ const KNOWN: [&str; 47] = [
     "array.percentile_nearest_rank",
     "array.percentile_linear_interpolation",
     "array.covariance",
+    "array.percentrank",
+    "array.every",
+    "array.some",
     // The two constructors are matched by prefix and name above; kept here so `handles` is total.
     "array.from",
     "array.new",
@@ -191,7 +195,9 @@ pub fn call(
     if name == "array.from" {
         return Ok(new_array(state, all_arguments.to_vec()));
     }
-    let Some(RuntimeValue::Ref(RefKind::Array, id)) = bound.get("id") else {
+    // The two-array functions name their first array `id1`.
+    let Some(RuntimeValue::Ref(RefKind::Array, id)) = bound.get("id").or_else(|| bound.get("id1"))
+    else {
         return Err(runtime_error(
             "PINE4011",
             format!("{name} requires an array; got na."),
@@ -246,7 +252,12 @@ struct Context<'a> {
 
 impl Context<'_> {
     fn value(&self) -> RuntimeValue {
-        self.bound.get("value").cloned().unwrap_or(RuntimeValue::Na)
+        // `binary_search*` calls its parameter `val`.
+        self.bound
+            .get("value")
+            .or_else(|| self.bound.get("val"))
+            .cloned()
+            .unwrap_or(RuntimeValue::Na)
     }
 
     fn descending(&self) -> bool {
@@ -346,7 +357,7 @@ impl Context<'_> {
             "array.reverse" => items.reverse(),
             "array.sort" => sort(items, self.descending(), self.mintick),
             "array.concat" => {
-                items.extend(self.require_array(state, self.bound.get("other"))?);
+                items.extend(self.require_array(state, self.bound.get("id2"))?);
                 return Ok(Some(RuntimeValue::Ref(RefKind::Array, id)));
             }
             _ => return Ok(None),
@@ -429,7 +440,8 @@ impl Context<'_> {
             }
             "array.copy" => new_array(state, items.to_vec()),
             "array.slice" => self.slice(state, items)?,
-            "array.sum" | "array.avg" | "array.max" | "array.min" => aggregate(self.name, items),
+            "array.sum" | "array.avg" => aggregate(self.name, items),
+            "array.max" | "array.min" => self.extreme(items),
             "array.median"
             | "array.mode"
             | "array.range"
@@ -438,8 +450,28 @@ impl Context<'_> {
             | "array.percentile_nearest_rank"
             | "array.percentile_linear_interpolation" => statistic(self.name, self.bound, items),
             "array.covariance" => self.covariance(state, items)?,
+            "array.percentrank" => self.percentrank(items)?,
+            "array.every" => RuntimeValue::Bool(items.iter().all(is_truthy)),
+            "array.some" => RuntimeValue::Bool(items.iter().any(is_truthy)),
             _ => return Ok(None),
         }))
+    }
+
+    /// `array.max(id, nth)` / `array.min(id, nth)`: the greatest (smallest) number, or the `nth`
+    /// greatest (smallest) counting from 0; `na` entries are left out, and `na` is the answer when
+    /// there are not that many numbers.
+    fn extreme(&self, items: &[RuntimeValue]) -> RuntimeValue {
+        let mut numbers: Vec<f64> = items.iter().filter_map(RuntimeValue::number).collect();
+        numbers.sort_by(f64::total_cmp);
+        if self.name == "array.max" {
+            numbers.reverse();
+        }
+        let nth = match self.bound.get("nth") {
+            None | Some(RuntimeValue::Na) => Some(0),
+            Some(value) => value.int_value().and_then(|n| usize::try_from(n).ok()),
+        };
+        nth.and_then(|nth| numbers.get(nth).copied())
+            .map_or(RuntimeValue::Na, RuntimeValue::Float)
     }
 
     fn slice(
@@ -461,6 +493,24 @@ impl Context<'_> {
             ));
         }
         Ok(new_array(state, items[from..to as usize].to_vec()))
+    }
+
+    /// `array.percentrank(id, index)`: the share of the numbers in the array that are at most the
+    /// element at `index`, as a percentage. `na` for an empty array or a `na` element; `na` entries
+    /// count on neither side, as in the other statistics here.
+    fn percentrank(&self, items: &[RuntimeValue]) -> Result<RuntimeValue, Diagnostic> {
+        if items.is_empty() {
+            return Ok(RuntimeValue::Na);
+        }
+        let index = self.index(self.bound.get("index"), items.len(), false)?;
+        let Some(reference) = items[index].number() else {
+            return Ok(RuntimeValue::Na);
+        };
+        let numbers = || items.iter().filter_map(RuntimeValue::number);
+        let at_most = numbers().filter(|number| *number <= reference).count();
+        Ok(RuntimeValue::Float(
+            at_most as f64 / numbers().count() as f64 * 100.0,
+        ))
     }
 
     /// `array.covariance(id1, id2, biased)` over the first `min(size)` pairs.
@@ -513,7 +563,11 @@ fn sort(items: &mut [RuntimeValue], descending: bool, mintick: f64) {
 }
 
 /// `array.sort_indices`: the indexes that would sort `items`, ties keeping their original order.
-fn sorted_indices(items: &[RuntimeValue], descending: bool, mintick: f64) -> Vec<RuntimeValue> {
+pub(crate) fn sorted_indices(
+    items: &[RuntimeValue],
+    descending: bool,
+    mintick: f64,
+) -> Vec<RuntimeValue> {
     let mut indices: Vec<usize> = (0..items.len()).collect();
     indices.sort_by(|a, b| compare(&items[*a], &items[*b], descending, mintick).then(a.cmp(b)));
     indices
@@ -561,6 +615,15 @@ fn binary_search(name: &str, items: &[RuntimeValue], target: &RuntimeValue) -> R
     })
 }
 
+/// What `array.every` / `array.some` take an element to be: a bool as it is, a number by being
+/// non-zero, and `na` as false.
+fn is_truthy(item: &RuntimeValue) -> bool {
+    match item {
+        RuntimeValue::Bool(value) => *value,
+        other => other.number().is_some_and(|number| number != 0.0),
+    }
+}
+
 fn aggregate(name: &str, items: &[RuntimeValue]) -> RuntimeValue {
     let numbers: Vec<f64> = items.iter().filter_map(RuntimeValue::number).collect();
     match name {
@@ -582,20 +645,13 @@ fn aggregate(name: &str, items: &[RuntimeValue]) -> RuntimeValue {
                 RuntimeValue::Float(numbers.iter().sum::<f64>() / numbers.len() as f64)
             }
         }
-        "array.max" => numbers
-            .into_iter()
-            .reduce(f64::max)
-            .map_or(RuntimeValue::Na, RuntimeValue::Float),
-        _ => numbers
-            .into_iter()
-            .reduce(f64::min)
-            .map_or(RuntimeValue::Na, RuntimeValue::Float),
+        _ => RuntimeValue::Na,
     }
 }
 
 /// The statistics over the numbers in the array (`na` entries are ignored); `na` when there are
 /// none. `variance`, `stdev` and `covariance` are the population figures unless `biased = false`.
-fn statistic(name: &str, bound: &Bound, items: &[RuntimeValue]) -> RuntimeValue {
+pub(crate) fn statistic(name: &str, bound: &Bound, items: &[RuntimeValue]) -> RuntimeValue {
     let mut numbers: Vec<f64> = items.iter().filter_map(RuntimeValue::number).collect();
     numbers.sort_by(f64::total_cmp);
     if numbers.is_empty() {
@@ -1092,6 +1148,75 @@ mod tests {
     }
 
     #[test]
+    fn percentrank_is_the_share_of_numbers_at_most_the_element() {
+        let mut f = Fixture::new();
+        let a = f.array(&ints(&[10, 20, 30, 40]));
+        assert_eq!(f.ok("array.percentrank", &[a.clone(), Int(0)]), Float(25.0));
+        assert_eq!(f.ok("array.percentrank", &[a.clone(), Int(2)]), Float(75.0));
+        assert_eq!(
+            f.ok("array.percentrank", &[a.clone(), Int(3)]),
+            Float(100.0)
+        );
+        // Ties count as "at most": both 5s rank at 100 of three numbers 1, 5, 5.
+        let ties = f.array(&ints(&[5, 1, 5]));
+        let rank = f.ok("array.percentrank", &[ties, Int(0)]);
+        assert_eq!(rank, Float(100.0));
+        // `na` entries are in neither the count nor the total.
+        let gappy = f.array(&[Int(1), Na, Int(3)]);
+        assert_eq!(
+            f.ok("array.percentrank", &[gappy.clone(), Int(0)]),
+            Float(50.0)
+        );
+        assert_eq!(f.ok("array.percentrank", &[gappy.clone(), Int(1)]), Na);
+        let empty = f.array(&[]);
+        assert_eq!(f.ok("array.percentrank", &[empty, Int(0)]), Na);
+        assert_eq!(
+            f.run("array.percentrank", &[a, Int(4)]).unwrap_err().code,
+            "PINE4010"
+        );
+    }
+
+    #[test]
+    fn every_and_some_test_the_elements_as_bools() {
+        let mut f = Fixture::new();
+        let all = f.array(&[Bool(true), Bool(true)]);
+        let mixed = f.array(&[Bool(true), Bool(false)]);
+        let none = f.array(&[Bool(false), Na]);
+        assert_eq!(f.ok("array.every", std::slice::from_ref(&all)), Bool(true));
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&mixed)),
+            Bool(false)
+        );
+        assert_eq!(f.ok("array.some", &[mixed]), Bool(true));
+        assert_eq!(f.ok("array.some", std::slice::from_ref(&none)), Bool(false));
+        assert_eq!(f.ok("array.every", &[none]), Bool(false));
+        // Numbers: zero is false, anything else true.
+        let numbers = f.array(&[Int(3), Float(0.5)]);
+        let zeroed = f.array(&[Int(3), Int(0)]);
+        assert_eq!(f.ok("array.every", &[numbers]), Bool(true));
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&zeroed)),
+            Bool(false)
+        );
+        assert_eq!(f.ok("array.some", &[zeroed]), Bool(true));
+        // An empty array: every element qualifies, none does.
+        let empty = f.array(&[]);
+        assert_eq!(
+            f.ok("array.every", std::slice::from_ref(&empty)),
+            Bool(true)
+        );
+        assert_eq!(f.ok("array.some", &[empty]), Bool(false));
+        assert_eq!(f.run("array.some", &[Na]).unwrap_err().code, "PINE4011");
+    }
+
+    #[test]
+    fn every_known_name_is_handled() {
+        for name in KNOWN {
+            assert!(handles(name), "{name}");
+        }
+    }
+
+    #[test]
     fn bound_arguments_are_found_by_name_and_replaced_on_rebind() {
         let mut bound = Bound::default();
         assert_eq!(bound.get("id"), None);
@@ -1108,5 +1233,54 @@ mod tests {
             full.insert(name, Int(0));
         }
         assert_eq!(full.get("e"), Some(&Int(0)), "five parameters fit");
+        full.insert("f", Int(1));
+        assert_eq!(full.get("f"), Some(&Int(1)), "so do six (matrix.fill)");
+    }
+
+    #[test]
+    fn max_and_min_take_an_nth_counting_from_the_extreme() {
+        let mut f = Fixture::new();
+        let a = f.array(&[Int(5), Int(9), Na, Int(1), Int(9), Int(3)]);
+        assert_eq!(f.ok("array.max", std::slice::from_ref(&a)), Float(9.0));
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(0)]), Float(9.0));
+        assert_eq!(
+            f.ok("array.max", &[a.clone(), Int(1)]),
+            Float(9.0),
+            "equal values count each"
+        );
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(2)]), Float(5.0));
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(4)]), Float(1.0));
+        assert_eq!(
+            f.ok("array.max", &[a.clone(), Int(5)]),
+            Na,
+            "only five numbers"
+        );
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(0)]), Float(1.0));
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(2)]), Float(5.0));
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(-1)]), Na);
+        assert_eq!(
+            f.ok("array.min", &[a, Na]),
+            Float(1.0),
+            "na is the default 0"
+        );
+        let empty = f.array(&[]);
+        assert_eq!(f.ok("array.max", &[empty]), Na);
+    }
+
+    #[test]
+    fn the_reference_names_bind_binary_search_concat_and_covariance() {
+        assert_eq!(parameters("array.binary_search"), ["id", "val"]);
+        assert_eq!(parameters("array.binary_search_leftmost"), ["id", "val"]);
+        assert_eq!(parameters("array.concat"), ["id1", "id2"]);
+        assert_eq!(parameters("array.covariance"), ["id1", "id2", "biased"]);
+        let mut f = Fixture::new();
+        let a = f.array(&[Int(1), Int(3), Int(5)]);
+        let b = f.array(&[Int(7)]);
+        assert_eq!(f.ok("array.binary_search", &[a.clone(), Int(3)]), Int(1));
+        f.ok("array.concat", &[a.clone(), b]);
+        assert_eq!(f.items(&a), ints(&[1, 3, 5, 7]));
+        let x = f.array(&[Int(1), Int(2), Int(3)]);
+        let y = f.array(&[Int(2), Int(4), Int(6)]);
+        assert!(matches!(f.ok("array.covariance", &[x, y]), Float(c) if c > 0.0));
     }
 }

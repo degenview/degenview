@@ -145,6 +145,7 @@ impl Validator<'_> {
                 | Statement::ForRange { .. }
                 | Statement::ForIn { .. }
                 | Statement::WhileLoop { .. }
+                | Statement::Once { .. }
                 | Statement::Switch { .. } => self.validate_nested(statement, &declared, in_loop),
                 Statement::Expression(expression) => {
                     // The last statement of a nested block is its value, so it may be any expression.

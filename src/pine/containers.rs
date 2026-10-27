@@ -141,12 +141,27 @@ impl Matrix {
         }
     }
 
+    /// A matrix of the given shape from its elements row by row; `elements.len()` must be
+    /// `rows * columns`.
+    pub fn from_elements(rows: usize, columns: usize, elements: Vec<RuntimeValue>) -> Self {
+        assert_eq!(elements.len(), rows * columns, "a matrix is rows × columns");
+        Self {
+            rows,
+            columns,
+            elements,
+        }
+    }
+
     pub fn rows(&self) -> usize {
         self.rows
     }
 
     pub fn columns(&self) -> usize {
         self.columns
+    }
+
+    pub fn is_square(&self) -> bool {
+        self.rows == self.columns
     }
 
     pub fn count(&self) -> usize {
@@ -236,6 +251,85 @@ impl Matrix {
         }
         self.elements = next;
         self.columns -= 1;
+    }
+
+    /// Sets every cell in `rows` × `columns` (half-open, both within the matrix) to `value`.
+    pub fn fill_range(
+        &mut self,
+        rows: std::ops::Range<usize>,
+        columns: std::ops::Range<usize>,
+        value: &RuntimeValue,
+    ) {
+        for row in rows {
+            self.elements[row * self.columns + columns.start..row * self.columns + columns.end]
+                .fill(value.clone());
+        }
+    }
+
+    /// Reverses the order of rows and of columns: the first cell becomes the last. Row by row
+    /// storage makes that a reversal of the whole element list.
+    pub fn reverse(&mut self) {
+        self.elements.reverse();
+    }
+
+    pub fn swap_rows(&mut self, first: usize, second: usize) {
+        if first != second {
+            for column in 0..self.columns {
+                self.elements.swap(
+                    first * self.columns + column,
+                    second * self.columns + column,
+                );
+            }
+        }
+    }
+
+    pub fn swap_columns(&mut self, first: usize, second: usize) {
+        if first != second {
+            for row in 0..self.rows {
+                self.elements
+                    .swap(row * self.columns + first, row * self.columns + second);
+            }
+        }
+    }
+
+    /// The same elements read row by row into `rows` × `columns`, which must hold as many.
+    pub fn reshape(&mut self, rows: usize, columns: usize) {
+        assert_eq!(
+            rows * columns,
+            self.elements.len(),
+            "a reshape keeps the cells"
+        );
+        self.rows = rows;
+        self.columns = columns;
+    }
+
+    /// The rows `rows` and columns `columns` (half-open, within the matrix) as a new matrix.
+    pub fn submatrix(&self, rows: std::ops::Range<usize>, columns: std::ops::Range<usize>) -> Self {
+        let mut elements = Vec::with_capacity(rows.len() * columns.len());
+        for row in rows.clone() {
+            elements.extend_from_slice(
+                &self.elements
+                    [row * self.columns + columns.start..row * self.columns + columns.end],
+            );
+        }
+        Self::from_elements(rows.len(), columns.len(), elements)
+    }
+
+    /// The matrix with its rows in the given order (`order[i]` is the old row that becomes row `i`).
+    pub fn with_rows_ordered(&self, order: &[usize]) -> Self {
+        let mut elements = Vec::with_capacity(self.elements.len());
+        for row in order {
+            elements
+                .extend_from_slice(&self.elements[row * self.columns..(row + 1) * self.columns]);
+        }
+        Self::from_elements(order.len(), self.columns, elements)
+    }
+
+    /// Appends the rows of `other`, which has as many columns.
+    pub fn append_rows(&mut self, other: &Matrix) {
+        debug_assert_eq!(self.columns, other.columns);
+        self.elements.extend_from_slice(&other.elements);
+        self.rows += other.rows;
     }
 
     pub fn fill(&mut self, value: RuntimeValue) {
