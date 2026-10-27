@@ -219,6 +219,21 @@
   (it has its own `PINE9003`); `syminfo`, `strategy` and `runtime` stay open for values because Pine adds
   variables there over time (`syminfo.cftc_code` failed the corpus). A false error on a script that runs is
   worse than a missed typo.
+- **Builtin calls are routed, not searched for.** `Session::call` used to find a builtin by asking each
+  family in turn on every execution (about 100 string tests before `ta.sma`, 180 before `plot`). When the
+  session is built, `call_binding::bind` sets `Expression::Call::route` on every call that nothing in the
+  program can capture (no function, method, type or import alias of that name or head), and `call_routed`
+  (`call_routes.rs`) goes straight to the family. The chain stays for everything else (user functions and
+  methods, variable receivers like `levels.push`, `request.*`, `log.*`, `ticker.*`, debugger watch
+  expressions, which are parsed separately and never bound) and as the backstop that raises `PINE4007`.
+  It is one implementation with two entrances: each family is a method both the chain and the route call.
+  **A new builtin goes in a family; a new family needs a `Route`, an arm in `route_of` in the chain's
+  order, and an arm in `call_routed`.** Fail-safe: a family that returns `None` hands the call back to the
+  chain, so a wrong route costs time, not correctness. The tests that guard it: `call_binding_tests`
+  (every registered function run both ways with four argument shapes, the workloads both ways, user
+  methods/types/aliases that must stay on the chain) and `PINE_CORPUS_DUAL=1` on the corpus (every
+  community script both ways). A change here is checked with `tools/pine-bench.sh`; the workloads that
+  show it are `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
 - A script that fails when it runs has no profile (`Profiler::finish`), only the failure, which the
   Problems list also shows.
 - Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the

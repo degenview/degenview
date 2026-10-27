@@ -895,6 +895,7 @@ impl Parser {
                     arguments,
                     site: self.call_site,
                     range,
+                    route: None,
                 })
             }
             other => {
