@@ -708,6 +708,9 @@ impl Session {
         commit: bool,
     ) -> Result<RuntimeValue, Diagnostic> {
         let chart_bar_seconds = self.bar_seconds;
+        // The outermost request remembers the chart's own bar length for `timeframe.main_period`.
+        let outer_chart_seconds = self.chart_bar_seconds;
+        self.chart_bar_seconds = Some(outer_chart_seconds.unwrap_or(chart_bar_seconds));
         self.security_depth += 1;
         // The chart's state steps aside and the site's takes its place. A commit moves the site's
         // state in and back out; copying it for every call would make a run quadratic in its length.
@@ -766,6 +769,7 @@ impl Session {
             std::mem::replace(&mut self.security_globals, outer_globals).unwrap_or_default();
         self.working = chart;
         self.bar_seconds = chart_bar_seconds;
+        self.chart_bar_seconds = outer_chart_seconds;
         self.security_depth -= 1;
         value
     }

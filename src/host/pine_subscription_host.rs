@@ -214,6 +214,7 @@ impl PineSubscriptionHost {
                     None,
                 )
                 .ok()
+                .map(ExecutionController::with_alert_mode)
                 .map(|controller| match chart.bar_seconds {
                     Some(seconds) => controller.with_bar_seconds(seconds),
                     None => controller,

@@ -73,7 +73,7 @@ pub const VARIABLES: &[&str] = &[
     "timeframe.isintraday",
     "timeframe.isdwm",
     "timeframe.isticks",
-    // Pine variables DegenView does not implement (reading one gives `na`).
+    "timeframe.main_period",
     "weekofyear",
     "session.isfirstbar",
     "session.isfirstbar_regular",
@@ -83,6 +83,28 @@ pub const VARIABLES: &[&str] = &[
     "session.ispremarket",
     "session.ispostmarket",
     "syminfo.session",
+    "syminfo.minmove",
+    "syminfo.pricescale",
+    "syminfo.main_tickerid",
+    "syminfo.current_contract",
+    "syminfo.expiration_date",
+    "runtime.calculation.mode",
+    "chart.is_standard",
+    "chart.is_heikinashi",
+    "chart.is_renko",
+    "chart.is_kagi",
+    "chart.is_linebreak",
+    "chart.is_pnf",
+    "chart.is_range",
+    "ta.obv",
+    "ta.accdist",
+    "ta.iii",
+    "ta.nvi",
+    "ta.pvi",
+    "ta.pvt",
+    "ta.wad",
+    "ta.wvad",
+    // Pine variables DegenView cannot supply (reading one gives `na`, with a warning).
     "syminfo.mincontract",
     "syminfo.description",
     "syminfo.volumetype",
@@ -121,6 +143,7 @@ pub const FUNCTIONS: &[&str] = &[
     "minute",
     "second",
     "dayofweek",
+    "weekofyear",
     "fixnan",
     "plotarrow",
     "plotbar",
@@ -136,6 +159,15 @@ pub const OBJECT_TYPES: &[&str] = &[
 pub const RESERVED_CONSTANTS: &[&str] = &[
     "session.regular",
     "session.extended",
+    "runtime.calculation.mode.chart",
+    "runtime.calculation.mode.alert",
+    "dividends.gross",
+    "dividends.net",
+    "earnings.actual",
+    "earnings.estimate",
+    "earnings.standardized",
+    "splits.numerator",
+    "splits.denominator",
     "xloc.bar_index",
     "xloc.bar_time",
     "yloc.price",
@@ -229,6 +261,7 @@ pub const RESERVED_CONSTANTS: &[&str] = &[
     "currency.PLN",
     "currency.QAR",
     "currency.RON",
+    "currency.RSD",
     "currency.RUB",
     "currency.SAR",
     "currency.SEK",
@@ -241,33 +274,24 @@ pub const RESERVED_CONSTANTS: &[&str] = &[
     "currency.USD",
     "currency.USDT",
     "currency.UYU",
+    "currency.VES",
     "currency.VND",
     "currency.ZAR",
 ];
 
 /// Pine variables this release does not implement (they evaluate to `na`).
 pub const UNIMPLEMENTED_VARIABLES: &[&str] = &[
-    "weekofyear",
-    "session.isfirstbar",
-    "session.isfirstbar_regular",
-    "session.islastbar",
-    "session.islastbar_regular",
-    "session.ismarket",
-    "session.ispremarket",
-    "session.ispostmarket",
-    "syminfo.session",
     "syminfo.mincontract",
     "syminfo.description",
     "syminfo.volumetype",
+    "syminfo.isin",
+    "syminfo.shareholders",
     "syminfo.shares_outstanding_total",
     "syminfo.shares_outstanding_float",
     "syminfo.employees",
     "syminfo.sector",
     "syminfo.industry",
     "syminfo.country",
-    "syminfo.expiration_date",
-    "syminfo.current_contract",
-    "syminfo.main_tickerid",
     "syminfo.target_price_average",
     "syminfo.target_price_high",
     "syminfo.target_price_low",
@@ -281,6 +305,14 @@ pub const UNIMPLEMENTED_VARIABLES: &[&str] = &[
     "syminfo.recommendations_sell",
     "syminfo.recommendations_sell_strong",
     "syminfo.recommendations_total",
+    "dividends.future_amount",
+    "dividends.future_ex_date",
+    "earnings.future_eps",
+    "earnings.future_period_end_time",
+    "earnings.future_revenue",
+    "earnings.future_time",
+    "ask",
+    "bid",
 ];
 
 /// Pine functions this release does not implement (a call is a runtime error). None today.
@@ -345,7 +377,8 @@ mod tests {
         assert!(is_reserved_constant("currency.USD"));
         assert!(is_reserved_constant("xloc.bar_time"));
         assert!(!is_reserved_constant("color.red"));
-        assert!(is_unimplemented_variable("weekofyear"));
+        assert!(is_unimplemented_variable("syminfo.description"));
+        assert!(!is_unimplemented_variable("weekofyear"));
         assert!(!is_unimplemented_function("fixnan"));
         assert!(!is_unimplemented_function("plotarrow"));
         assert!(!is_unimplemented_variable("close"));

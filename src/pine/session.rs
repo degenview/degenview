@@ -116,6 +116,11 @@ pub struct Session {
     /// from the candles, and a handle names a bar, not an object.
     pub(crate) footprints: super::footprint_call::FootprintCache,
     pub bar_seconds: f64,
+    /// The chart's own bar length while a `request.*()` call evaluates on another timeframe, which is
+    /// when `bar_seconds` is that timeframe's.
+    pub(crate) chart_bar_seconds: Option<f64>,
+    /// Whether the script runs for an alert, not on a chart (`runtime.calculation.mode`).
+    pub(crate) alert_mode: bool,
     /// The length of the chart's own bars when it cannot be read off their open times: a
     /// price-based chart's bars follow price, not time.
     pub fixed_bar_seconds: Option<f64>,
@@ -203,6 +208,24 @@ impl From<Diagnostic> for RunError {
     fn from(diagnostic: Diagnostic) -> Self {
         Self::Script(diagnostic)
     }
+}
+
+/// `(minmove, pricescale)` with `minmove / pricescale = mintick`: the scale is the smallest power of
+/// ten that makes the tick a whole number of units. None while the tick is not a positive number,
+/// or is finer than twelve decimals.
+fn price_scale(mintick: f64) -> Option<(i64, i64)> {
+    if !(mintick.is_finite() && mintick > 0.0) {
+        return None;
+    }
+    let mut scale = 1_i64;
+    for _ in 0..=12 {
+        let units = mintick * scale as f64;
+        if units >= 0.5 && (units - units.round()).abs() <= 1e-9 * units {
+            return Some((units.round() as i64, scale));
+        }
+        scale *= 10;
+    }
+    None
 }
 
 impl Session {
@@ -345,6 +368,8 @@ impl Session {
             mintick: supplied_mintick.unwrap_or(DEFAULT_MINTICK),
             footprints: Default::default(),
             bar_seconds: 0.0,
+            chart_bar_seconds: None,
+            alert_mode: false,
             fixed_bar_seconds: None,
             drawing_limits,
             supplied_mintick,
@@ -984,19 +1009,8 @@ impl Session {
                 .last_bar_time
                 .map(RuntimeValue::Int)
                 .or(Some(RuntimeValue::Na)),
-            "year" | "month" | "dayofmonth" | "hour" | "minute" | "second" | "dayofweek" => {
-                let c = calendar::components(bar.open_time);
-                Some(RuntimeValue::Int(match name {
-                    "year" => c.year,
-                    "month" => c.month,
-                    "dayofmonth" => c.day,
-                    "hour" => c.hour,
-                    "minute" => c.minute,
-                    "second" => c.second,
-                    "dayofweek" => c.weekday,
-                    _ => unreachable!(),
-                }))
-            }
+            "year" | "month" | "dayofmonth" | "hour" | "minute" | "second" | "dayofweek"
+            | "weekofyear" => Some(super::time::part(name, bar.open_time, 0)),
             _ => {
                 if let Some(value) =
                     strategy_builtins::strategy_value(name, &self.working.broker, bar.close)
@@ -1014,6 +1028,8 @@ impl Session {
                         first_bar_time: self.first_bar_time,
                         last_bar_time: self.last_bar_time,
                         theme: self.theme,
+                        chart_bar_seconds: self.chart_bar_seconds.unwrap_or(self.bar_seconds),
+                        alert_mode: self.alert_mode,
                     },
                 ) {
                     return Some(value);
@@ -1026,6 +1042,17 @@ impl Session {
     fn symbol_value(&self, name: &str) -> Option<RuntimeValue> {
         match name {
             "syminfo.mintick" => Some(RuntimeValue::Float(self.mintick)),
+            "syminfo.minmove" | "syminfo.pricescale" => Some(
+                price_scale(self.mintick)
+                    .map(|(minmove, pricescale)| {
+                        RuntimeValue::Int(if name == "syminfo.minmove" {
+                            minmove
+                        } else {
+                            pricescale
+                        })
+                    })
+                    .unwrap_or(RuntimeValue::Na),
+            ),
             "syminfo.ticker" => Some(RuntimeValue::String(self.symbol.ticker.clone())),
             "syminfo.tickerid" => Some(RuntimeValue::String(self.symbol.ticker_id.clone())),
             "syminfo.currency" => Some(RuntimeValue::String(self.symbol.currency.clone())),
@@ -3491,6 +3518,21 @@ mod tests {
         assert_eq!(plots[1].values.last(), Some(&Some(2.0)));
         assert_eq!(plots[2].values.last(), Some(&Some(-1.0)));
         assert_eq!(plots[3].values.last(), Some(&Some(6.0)));
+    }
+
+    #[test]
+    fn the_price_scale_makes_the_tick_a_whole_number_of_units() {
+        assert_eq!(price_scale(0.01), Some((1, 100)));
+        assert_eq!(price_scale(0.25), Some((25, 100)));
+        assert_eq!(price_scale(0.05), Some((5, 100)));
+        assert_eq!(price_scale(0.0001), Some((1, 10_000)));
+        assert_eq!(price_scale(5.0), Some((5, 1)));
+        assert_eq!(price_scale(1.0), Some((1, 1)));
+        assert_eq!(price_scale(0.0), None);
+        assert_eq!(price_scale(f64::NAN), None);
+        assert_eq!(price_scale(-1.0), None);
+        assert_eq!(price_scale(1e-10), Some((1, 10_000_000_000)));
+        assert_eq!(price_scale(1e-13), None, "finer than twelve decimals");
     }
 
     #[test]

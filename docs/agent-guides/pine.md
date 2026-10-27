@@ -73,6 +73,18 @@
   `developing` recomputes from the running period instead. The type formulas are the classic published
   ones (the reference lists none) and Woodie's uses the open of the bar that sets the levels, so none of it
   is checked against TradingView's output. `ta.rci` is Spearman's coefficient (Pearson on mid-ranks) x 100.
+- `session.*` reads `trading_session::MarketSessions` for the symbol's `syminfo.type`: crypto is 24x7 on UTC (a
+  session is a UTC day), a `stock` keeps New York's 09:30-16:00 weekdays with pre- (04:00) and post-market
+  (to 20:00) around it. The app's charts show the regular session, so `isfirstbar`/`islastbar` equal their
+  `_regular` forms, and a bar of a day or more is a whole session (`ismarket` true, pre/post false). The
+  first/last bar is worked out from the neighbouring bar's open time (`histories["time"]`), so it needs no
+  state. Known gap: `hour`, `dayofweek`, `time(..., session)` and the other calendar parts still default to UTC
+  where TradingView uses the exchange zone, so on a stock they differ from TradingView's; `syminfo.timezone`
+  and `session.*` use the exchange zone.
+- `runtime.calculation.mode` is `Session::alert_mode`, set by `ExecutionController::with_alert_mode` for the
+  alert subscriptions. `timeframe.main_period` uses `Session::chart_bar_seconds`, which the security
+  evaluator sets while `bar_seconds` is a requested timeframe's. `weekofyear` weeks run Sunday to Saturday and
+  week 1 holds January 1 (inferred; the reference only says "week number of the year").
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

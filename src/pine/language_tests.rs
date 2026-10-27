@@ -507,13 +507,14 @@ fn strategy_settings_the_engine_cannot_honour_are_warnings_not_errors() {
     // magnifier, fill limits and risk-free rate are warned about; standard-OHLC fills are a no-op here.
     assert_eq!(codes, ["PINE7001", "PINE7001", "PINE7001"]);
     let session = run(
-        "amount = strategy.convert_to_account(12.5)\nweek = weekofyear(time)",
+        "amount = strategy.convert_to_account(12.5)\nsame = strategy.convert_to_symbol(3)",
         1,
     );
     assert_eq!(value(&session, "amount"), RuntimeValue::Float(12.5));
-    assert_eq!(value(&session, "week"), RuntimeValue::Na);
-    let codes =
-        diagnostic_codes("a = strategy.convert_to_symbol(1)\nb = weekofyear(time)\nplot(close)");
+    assert_eq!(value(&session, "same"), RuntimeValue::Int(3));
+    let codes = diagnostic_codes(
+        "a = strategy.convert_to_symbol(1)\nb = strategy.convert_to_account(1)\nplot(close)",
+    );
     assert_eq!(
         codes.iter().filter(|c| *c == "PINE7005").count(),
         2,
@@ -1516,4 +1517,237 @@ fn the_rank_correlation_index_follows_a_trend() {
     close_to(&session, "rising", 100.0);
     close_to(&session, "falling", -100.0);
     assert_eq!(value(&session, "short"), RuntimeValue::Na);
+}
+
+/// Compiles `body` and runs it over `data` for a symbol of `kind`.
+fn run_for(kind: &str, data: &[Kline], body: &str, alert: bool) -> Session {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let symbol = SymbolInfo {
+        kind: kind.to_owned(),
+        ..SymbolInfo::default()
+    };
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        symbol,
+        None,
+        None,
+    );
+    session.alert_mode = alert;
+    if let Err(error) = session.evaluate(data) {
+        panic!("{error:?}");
+    }
+    session
+}
+
+/// Half-hour bars of Tuesday 2024-03-05 from 04:00 to 19:30 New York time.
+fn new_york_day() -> Vec<Kline> {
+    let start = crate::pine::calendar::make(2024, 3, 5, 9, 0, 0, 0).unwrap();
+    (0..32)
+        .map(|index| {
+            let open = start + index * 1_800_000;
+            Kline {
+                open_time: open,
+                close_time: open + 1_799_999,
+                open: 100.0,
+                high: 101.0,
+                low: 99.0,
+                close: 100.5,
+                volume: 1.0,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn session_flags_follow_a_us_stocks_hours_in_new_york() {
+    let session = run_for(
+        "stock",
+        &new_york_day(),
+        "var int market = 0\nvar int pre = 0\nvar int post = 0\nvar int firsts = 0\nvar int lasts = 0\n\
+         var int first_at = -1\nvar int last_at = -1\n\
+         if session.ismarket\n    market += 1\n\
+         if session.ispremarket\n    pre += 1\n\
+         if session.ispostmarket\n    post += 1\n\
+         if session.isfirstbar\n    firsts += 1\n    first_at := bar_index\n\
+         if session.islastbar\n    lasts += 1\n    last_at := bar_index\n\
+         regular_first = session.isfirstbar_regular\nregular_last = session.islastbar_regular",
+        false,
+    );
+    // 04:00 … 09:00 are 11 premarket bars, 09:30 … 15:30 are 13 regular ones, 16:00 … 19:30 are 8.
+    assert_eq!(value(&session, "pre"), RuntimeValue::Int(11));
+    assert_eq!(value(&session, "market"), RuntimeValue::Int(13));
+    assert_eq!(value(&session, "post"), RuntimeValue::Int(8));
+    assert_eq!(value(&session, "firsts"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "first_at"), RuntimeValue::Int(11));
+    assert_eq!(value(&session, "lasts"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "last_at"), RuntimeValue::Int(23));
+    // The regular-session forms agree on the last bar (19:30 is after the close).
+    assert_eq!(value(&session, "regular_first"), RuntimeValue::Bool(false));
+    assert_eq!(value(&session, "regular_last"), RuntimeValue::Bool(false));
+}
+
+#[test]
+fn a_crypto_session_is_a_utc_day_that_is_always_open() {
+    // One-minute bars from 1970-01-01 00:00 UTC for a day and a quarter.
+    let session = run(
+        "var int firsts = 0\nvar int lasts = 0\nvar int closed = 0\n\
+         if session.isfirstbar\n    firsts += 1\n\
+         if session.islastbar\n    lasts += 1\n\
+         if not session.ismarket or session.ispremarket or session.ispostmarket\n    closed += 1",
+        1_800,
+    );
+    assert_eq!(value(&session, "firsts"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "lasts"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "closed"), RuntimeValue::Int(0));
+}
+
+#[test]
+fn every_bar_of_a_daily_chart_is_a_whole_session() {
+    let daily: Vec<Kline> = (0..3)
+        .map(|index| Kline {
+            open_time: index * 86_400_000,
+            close_time: (index + 1) * 86_400_000 - 1,
+            open: 1.0,
+            high: 2.0,
+            low: 0.5,
+            close: 1.5,
+            volume: 1.0,
+        })
+        .collect();
+    let session = run_for(
+        "stock",
+        &daily,
+        "var int firsts = 0\nvar int lasts = 0\nvar int pre = 0\n\
+         if session.isfirstbar\n    firsts += 1\n\
+         if session.islastbar\n    lasts += 1\n\
+         if session.ispremarket\n    pre += 1\n\
+         market = session.ismarket",
+        false,
+    );
+    assert_eq!(value(&session, "firsts"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "lasts"), RuntimeValue::Int(3));
+    assert_eq!(value(&session, "pre"), RuntimeValue::Int(0));
+    assert_eq!(value(&session, "market"), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn syminfo_names_the_session_the_zone_and_the_contract() {
+    let session = run_for(
+        "stock",
+        &new_york_day(),
+        "zone = syminfo.timezone\nmode = syminfo.session\nmain = syminfo.main_tickerid\n\
+         contract = syminfo.current_contract\nexpires = syminfo.expiration_date\n\
+         scale = syminfo.pricescale\nmove = syminfo.minmove",
+        false,
+    );
+    assert_eq!(
+        value(&session, "zone"),
+        RuntimeValue::String("America/New_York".into())
+    );
+    assert_eq!(
+        value(&session, "mode"),
+        RuntimeValue::String("session.regular".into())
+    );
+    assert_eq!(value(&session, "main"), RuntimeValue::String(String::new()));
+    assert_eq!(value(&session, "contract"), RuntimeValue::Na);
+    assert_eq!(value(&session, "expires"), RuntimeValue::Na);
+    assert_eq!(
+        value(&session, "move").number().unwrap() / value(&session, "scale").number().unwrap(),
+        session.mintick,
+        "minmove / pricescale is the tick"
+    );
+    let crypto = run("zone = syminfo.timezone", 2);
+    assert_eq!(
+        value(&crypto, "zone"),
+        RuntimeValue::String("Etc/UTC".into())
+    );
+}
+
+#[test]
+fn weekofyear_counts_sunday_to_saturday_weeks_with_the_first_holding_january_1() {
+    let session = run(
+        "w1 = weekofyear(timestamp(2024, 1, 1))\n\
+         w1_sat = weekofyear(timestamp(2024, 1, 6))\n\
+         w2 = weekofyear(timestamp(2024, 1, 7))\n\
+         last_2023 = weekofyear(timestamp(2023, 12, 31))\n\
+         last_2024 = weekofyear(timestamp(2024, 12, 31))\n\
+         shifted = weekofyear(timestamp(2024, 1, 6, 23, 0, 0), \"UTC+2\")\n\
+         from_bar = weekofyear\n\
+         missing = weekofyear(na)",
+        2,
+    );
+    assert_eq!(value(&session, "w1"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "w1_sat"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "w2"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "last_2023"), RuntimeValue::Int(53));
+    assert_eq!(value(&session, "last_2024"), RuntimeValue::Int(53));
+    assert_eq!(
+        value(&session, "shifted"),
+        RuntimeValue::Int(2),
+        "Sunday 01:00 in UTC+2"
+    );
+    assert_eq!(
+        value(&session, "from_bar"),
+        RuntimeValue::Int(1),
+        "1970-01-01 is week 1"
+    );
+    assert_eq!(value(&session, "missing"), RuntimeValue::Na);
+}
+
+#[test]
+fn runtime_calculation_mode_tells_a_chart_from_an_alert() {
+    let chart = run_for("crypto", &bars(2), "mode = runtime.calculation.mode", false);
+    assert_eq!(
+        value(&chart, "mode"),
+        RuntimeValue::String("runtime.calculation.mode.chart".into())
+    );
+    let alert = run_for("crypto", &bars(2), "mode = runtime.calculation.mode", true);
+    assert_eq!(
+        value(&alert, "mode"),
+        RuntimeValue::String("runtime.calculation.mode.alert".into())
+    );
+    let compared = run_for(
+        "crypto",
+        &bars(2),
+        "in_alert = runtime.calculation.mode == runtime.calculation.mode.alert",
+        true,
+    );
+    assert_eq!(value(&compared, "in_alert"), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn the_constants_that_belong_to_the_data_requests_are_known_names() {
+    let session = run(
+        "a = dividends.net\nb = earnings.estimate\nc = splits.denominator\nd = currency.RSD\ne = currency.VES",
+        1,
+    );
+    assert_eq!(
+        value(&session, "a"),
+        RuntimeValue::String("dividends.net".into())
+    );
+    assert_eq!(
+        value(&session, "d"),
+        RuntimeValue::String("currency.RSD".into())
+    );
+}
+
+#[test]
+fn the_variables_that_need_data_the_app_lacks_read_na_with_a_warning() {
+    let body = "a = dividends.future_amount\nb = earnings.future_eps\nc = syminfo.isin\nd = ask\nplot(close)";
+    let session = run(body, 1);
+    for name in ["a", "b", "c", "d"] {
+        assert_eq!(value(&session, name), RuntimeValue::Na, "{name}");
+    }
+    assert_eq!(
+        diagnostic_codes(body)
+            .iter()
+            .filter(|code| *code == "PINE7003")
+            .count(),
+        4
+    );
 }
