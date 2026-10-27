@@ -448,11 +448,18 @@ pub struct PineTradeInfo {
     pub exit_price: f64,
     pub commission: f64,
     pub profit: f64,
+    /// The `comment` of the order that opened the trade and of the one that closed it.
+    pub entry_comment: String,
+    pub exit_comment: String,
+    /// How far the trade was in profit at best and in loss at worst, as positive amounts of money.
+    pub max_runup: f64,
+    pub max_drawdown: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct PineOpenTradeInfo {
     pub entry_id: String,
+    pub entry_comment: String,
     pub direction: String,
     pub quantity: f64,
     pub entry_bar: usize,

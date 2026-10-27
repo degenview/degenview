@@ -84,6 +84,7 @@ fn trade(id: usize, long: bool, profit: f64) -> Trade {
         exit_price: 101.0 + id as f64,
         commission: 0.0,
         profit,
+        ..Trade::default()
     }
 }
 

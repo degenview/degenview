@@ -58,6 +58,24 @@ of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo featur
 - `cargo test` — fast suite, corpus excluded.
 - `cargo test --features corpus` — full suite including the Pine corpus.
 
+## Worktrees and build space
+
+Every worktree builds into its own `target/`, which is 5 GB fresh and grows with each rebuild
+because cargo never deletes old output. Finished worktrees are where the disk goes.
+
+- One worktree per branch, beside the main checkout. Keep its build output in `target/` or a
+  `target-*` directory (both are ignored). Do not share one `CARGO_TARGET_DIR` between worktrees:
+  concurrent builds would block on its lock and overwrite each other's `target/debug/degenview`.
+- When a pull request merges, remove its worktree. `tools/clean-worktrees.sh` lists every worktree and
+  whether it can go; `--remove-merged` removes the finished ones, and never one with uncommitted
+  changes, newer commits, no pull request, or a process running from it. `--clean-idle DAYS` deletes
+  only the `target/debug` of worktrees not built for that long.
+- `[profile.dev]` keeps line tables but drops variable-level debug info, about a third of a fresh
+  `target/` (the incremental cache is the rest of what grows). To inspect your own code's variables in lldb, build with `CARGO_PROFILE_DEV_DEBUG=true`
+  into a separate `CARGO_TARGET_DIR`.
+- A full disk shows as `rustc-LLVM ERROR: IO failure on output stream: No space left on device`.
+  Check `df -h` and run the script before anything else.
+
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map and data flow.

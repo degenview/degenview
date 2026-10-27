@@ -40,12 +40,28 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("strategy.close", close());
     table.insert("strategy.close_all", close());
     table.insert("plot", plot());
+    table.insert("plotarrow", plotarrow());
+    for function in std::iter::once("input").chain(super::input_arguments::FUNCTIONS) {
+        table.insert(function, input());
+    }
+    for rule in [
+        "strategy.risk.max_drawdown",
+        "strategy.risk.max_intraday_loss",
+        "strategy.risk.max_intraday_filled_orders",
+        "strategy.risk.max_cons_loss_days",
+    ] {
+        table.insert(
+            rule,
+            HashMap::from([("alert_message", "Order fill alerts are not sent.")]),
+        );
+    }
     table.insert("hline", hline());
     table.insert("bgcolor", color_series());
     table.insert("barcolor", color_series());
     table.insert("fill", fill());
     table.insert("plotcandle", plotcandle());
     table.insert("box.new", box_new());
+    table.insert("table.cell", table_cell());
     let mut request_security = request();
     request_security.insert("calc_bars_count", "The whole history is always requested.");
     table.insert("request.security", request_security);
@@ -53,6 +69,20 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("plotshape", marker());
     table.insert("plotchar", marker());
     table
+}
+
+fn table_cell() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        ("tooltip", "Cell tooltips are not shown."),
+        (
+            "text_font_family",
+            "Cell text is always drawn in the chart's own font.",
+        ),
+        (
+            "text_formatting",
+            "Cell text is never drawn bold or italic.",
+        ),
+    ])
 }
 
 fn declaration() -> HashMap<&'static str, &'static str> {
@@ -81,35 +111,11 @@ fn declaration() -> HashMap<&'static str, &'static str> {
 }
 
 fn entry() -> HashMap<&'static str, &'static str> {
-    HashMap::from([
-        (
-            "oca_name",
-            "Orders are never grouped; each fills on its own.",
-        ),
-        (
-            "oca_type",
-            "Orders are never grouped; each fills on its own.",
-        ),
-        ("comment", "Order comments are not shown in the trade list."),
-        ("alert_message", "Order fill alerts are not sent."),
-    ])
+    HashMap::from([("alert_message", "Order fill alerts are not sent.")])
 }
 
 fn exit() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("comment", "Exit comments are not shown in the trade list."),
-        (
-            "comment_profit",
-            "Exit comments are not shown in the trade list.",
-        ),
-        (
-            "comment_loss",
-            "Exit comments are not shown in the trade list.",
-        ),
-        (
-            "comment_trailing",
-            "Exit comments are not shown in the trade list.",
-        ),
         ("alert_message", "Order fill alerts are not sent."),
         ("alert_profit", "Order fill alerts are not sent."),
         ("alert_loss", "Order fill alerts are not sent."),
@@ -123,7 +129,6 @@ fn exit() -> HashMap<&'static str, &'static str> {
 
 fn close() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("comment", "Order comments are not shown in the trade list."),
         ("alert_message", "Order fill alerts are not sent."),
         (
             "immediately",
@@ -151,6 +156,28 @@ fn plot() -> HashMap<&'static str, &'static str> {
             "The value is formatted by the chart's own rules.",
         ),
         ("linestyle", "The line is always solid."),
+    ])
+}
+
+fn input() -> HashMap<&'static str, &'static str> {
+    HashMap::from([(
+        "display",
+        "The input is not listed in the status line or the Data Window.",
+    )])
+}
+
+fn plotarrow() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        (
+            "offset",
+            "Partly. The arrows are shifted, but those that land past the last bar are not drawn.",
+        ),
+        ("editable", "Plot settings cannot be edited from the chart."),
+        ("format", "The value is formatted by the chart's own rules."),
+        (
+            "precision",
+            "The value is formatted by the chart's own rules.",
+        ),
     ])
 }
 
@@ -222,12 +249,9 @@ fn marker() -> HashMap<&'static str, &'static str> {
     ])
 }
 
-/// Whole functions that do nothing, by name prefix.
-fn function_prefixes() -> [(&'static str, &'static str); 1] {
-    [(
-        "strategy.risk.",
-        "Risk limits are never enforced, so a drawdown or loss limit does not stop the strategy.",
-    )]
+/// Whole functions that do nothing, by name prefix. None today: the risk rules are enforced.
+fn function_prefixes() -> [(&'static str, &'static str); 0] {
+    []
 }
 
 /// Functions the engine accepts but cannot honour: what they return instead, by exact name.
@@ -251,6 +275,15 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
             "No exchange rates are available: the amount is returned unchanged, which is right only while the account and the symbol share a currency.",
         ));
     }
+    table.push(("table.cell_set_tooltip", "Cell tooltips are not shown."));
+    table.push((
+        "table.cell_set_text_font_family",
+        "Cell text is always drawn in the chart's own font.",
+    ));
+    table.push((
+        "table.cell_set_text_formatting",
+        "Cell text is never drawn bold or italic.",
+    ));
     table.push((
         "ticker.modify",
         "Session and adjustment modifiers are not applied; the symbol is used as given.",
@@ -274,16 +307,10 @@ fn partly_supported_functions() -> [(&'static str, &'static str); 1] {
 }
 
 /// Argument values that make the engine draw something else, keyed function → argument → constant.
+/// None today: every constant the reference lists for these arguments is drawn as it says.
 fn ignored_values()
 -> HashMap<&'static str, HashMap<&'static str, HashMap<&'static str, &'static str>>> {
-    let mut plot: HashMap<&'static str, HashMap<&'static str, &'static str>> = HashMap::new();
-    let mut style = HashMap::new();
-    style.insert(
-        "plot.style_stepline_diamond",
-        "It is drawn as a plain line.",
-    );
-    plot.insert("style", style);
-    HashMap::from([("plot", plot)])
+    HashMap::new()
 }
 
 pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
@@ -404,7 +431,7 @@ fn spanning(name: &str, range: SourceRange) -> SourceRange {
     SourceRange::new(range.start, end)
 }
 
-fn warning(code: &str, message: String, range: SourceRange) -> Diagnostic {
+pub(super) fn warning(code: &str, message: String, range: SourceRange) -> Diagnostic {
     Diagnostic {
         code: code.to_owned(),
         severity: DiagnosticSeverity::Warning,

@@ -73,26 +73,24 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
         return &["size", "initial_value"];
     }
     match name {
-        "array.push"
-        | "array.unshift"
-        | "array.includes"
-        | "array.indexof"
-        | "array.lastindexof"
-        | "array.binary_search"
+        "array.push" | "array.unshift" | "array.includes" | "array.indexof"
+        | "array.lastindexof" => &["id", "value"],
+        "array.binary_search"
         | "array.binary_search_leftmost"
-        | "array.binary_search_rightmost" => &["id", "value"],
+        | "array.binary_search_rightmost" => &["id", "val"],
+        "array.max" | "array.min" => &["id", "nth"],
         "array.fill" => &["id", "value", "index_from", "index_to"],
         "array.get" | "array.remove" => &["id", "index"],
         "array.set" | "array.insert" => &["id", "index", "value"],
         "array.sort" | "array.sort_indices" => &["id", "order"],
         "array.join" => &["id", "separator"],
-        "array.concat" => &["id", "other"],
+        "array.concat" => &["id1", "id2"],
         "array.slice" => &["id", "index_from", "index_to"],
         "array.variance" | "array.stdev" => &["id", "biased"],
         "array.percentile_nearest_rank" | "array.percentile_linear_interpolation" => {
             &["id", "percentage"]
         }
-        "array.covariance" => &["id", "id2", "biased"],
+        "array.covariance" => &["id1", "id2", "biased"],
         "array.percentrank" => &["id", "index"],
         _ => &["id"],
     }
@@ -197,7 +195,9 @@ pub fn call(
     if name == "array.from" {
         return Ok(new_array(state, all_arguments.to_vec()));
     }
-    let Some(RuntimeValue::Ref(RefKind::Array, id)) = bound.get("id") else {
+    // The two-array functions name their first array `id1`.
+    let Some(RuntimeValue::Ref(RefKind::Array, id)) = bound.get("id").or_else(|| bound.get("id1"))
+    else {
         return Err(runtime_error(
             "PINE4011",
             format!("{name} requires an array; got na."),
@@ -252,7 +252,12 @@ struct Context<'a> {
 
 impl Context<'_> {
     fn value(&self) -> RuntimeValue {
-        self.bound.get("value").cloned().unwrap_or(RuntimeValue::Na)
+        // `binary_search*` calls its parameter `val`.
+        self.bound
+            .get("value")
+            .or_else(|| self.bound.get("val"))
+            .cloned()
+            .unwrap_or(RuntimeValue::Na)
     }
 
     fn descending(&self) -> bool {
@@ -352,7 +357,7 @@ impl Context<'_> {
             "array.reverse" => items.reverse(),
             "array.sort" => sort(items, self.descending(), self.mintick),
             "array.concat" => {
-                items.extend(self.require_array(state, self.bound.get("other"))?);
+                items.extend(self.require_array(state, self.bound.get("id2"))?);
                 return Ok(Some(RuntimeValue::Ref(RefKind::Array, id)));
             }
             _ => return Ok(None),
@@ -435,7 +440,8 @@ impl Context<'_> {
             }
             "array.copy" => new_array(state, items.to_vec()),
             "array.slice" => self.slice(state, items)?,
-            "array.sum" | "array.avg" | "array.max" | "array.min" => aggregate(self.name, items),
+            "array.sum" | "array.avg" => aggregate(self.name, items),
+            "array.max" | "array.min" => self.extreme(items),
             "array.median"
             | "array.mode"
             | "array.range"
@@ -449,6 +455,23 @@ impl Context<'_> {
             "array.some" => RuntimeValue::Bool(items.iter().any(is_truthy)),
             _ => return Ok(None),
         }))
+    }
+
+    /// `array.max(id, nth)` / `array.min(id, nth)`: the greatest (smallest) number, or the `nth`
+    /// greatest (smallest) counting from 0; `na` entries are left out, and `na` is the answer when
+    /// there are not that many numbers.
+    fn extreme(&self, items: &[RuntimeValue]) -> RuntimeValue {
+        let mut numbers: Vec<f64> = items.iter().filter_map(RuntimeValue::number).collect();
+        numbers.sort_by(f64::total_cmp);
+        if self.name == "array.max" {
+            numbers.reverse();
+        }
+        let nth = match self.bound.get("nth") {
+            None | Some(RuntimeValue::Na) => Some(0),
+            Some(value) => value.int_value().and_then(|n| usize::try_from(n).ok()),
+        };
+        nth.and_then(|nth| numbers.get(nth).copied())
+            .map_or(RuntimeValue::Na, RuntimeValue::Float)
     }
 
     fn slice(
@@ -622,14 +645,7 @@ fn aggregate(name: &str, items: &[RuntimeValue]) -> RuntimeValue {
                 RuntimeValue::Float(numbers.iter().sum::<f64>() / numbers.len() as f64)
             }
         }
-        "array.max" => numbers
-            .into_iter()
-            .reduce(f64::max)
-            .map_or(RuntimeValue::Na, RuntimeValue::Float),
-        _ => numbers
-            .into_iter()
-            .reduce(f64::min)
-            .map_or(RuntimeValue::Na, RuntimeValue::Float),
+        _ => RuntimeValue::Na,
     }
 }
 
@@ -1219,5 +1235,52 @@ mod tests {
         assert_eq!(full.get("e"), Some(&Int(0)), "five parameters fit");
         full.insert("f", Int(1));
         assert_eq!(full.get("f"), Some(&Int(1)), "so do six (matrix.fill)");
+    }
+
+    #[test]
+    fn max_and_min_take_an_nth_counting_from_the_extreme() {
+        let mut f = Fixture::new();
+        let a = f.array(&[Int(5), Int(9), Na, Int(1), Int(9), Int(3)]);
+        assert_eq!(f.ok("array.max", std::slice::from_ref(&a)), Float(9.0));
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(0)]), Float(9.0));
+        assert_eq!(
+            f.ok("array.max", &[a.clone(), Int(1)]),
+            Float(9.0),
+            "equal values count each"
+        );
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(2)]), Float(5.0));
+        assert_eq!(f.ok("array.max", &[a.clone(), Int(4)]), Float(1.0));
+        assert_eq!(
+            f.ok("array.max", &[a.clone(), Int(5)]),
+            Na,
+            "only five numbers"
+        );
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(0)]), Float(1.0));
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(2)]), Float(5.0));
+        assert_eq!(f.ok("array.min", &[a.clone(), Int(-1)]), Na);
+        assert_eq!(
+            f.ok("array.min", &[a, Na]),
+            Float(1.0),
+            "na is the default 0"
+        );
+        let empty = f.array(&[]);
+        assert_eq!(f.ok("array.max", &[empty]), Na);
+    }
+
+    #[test]
+    fn the_reference_names_bind_binary_search_concat_and_covariance() {
+        assert_eq!(parameters("array.binary_search"), ["id", "val"]);
+        assert_eq!(parameters("array.binary_search_leftmost"), ["id", "val"]);
+        assert_eq!(parameters("array.concat"), ["id1", "id2"]);
+        assert_eq!(parameters("array.covariance"), ["id1", "id2", "biased"]);
+        let mut f = Fixture::new();
+        let a = f.array(&[Int(1), Int(3), Int(5)]);
+        let b = f.array(&[Int(7)]);
+        assert_eq!(f.ok("array.binary_search", &[a.clone(), Int(3)]), Int(1));
+        f.ok("array.concat", &[a.clone(), b]);
+        assert_eq!(f.items(&a), ints(&[1, 3, 5, 7]));
+        let x = f.array(&[Int(1), Int(2), Int(3)]);
+        let y = f.array(&[Int(2), Int(4), Int(6)]);
+        assert!(matches!(f.ok("array.covariance", &[x, y]), Float(c) if c > 0.0));
     }
 }

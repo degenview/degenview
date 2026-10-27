@@ -9,8 +9,8 @@ use super::alert_frequency::AlertFrequency;
 use super::broker::Broker;
 use super::containers::{Map, Matrix, Object};
 use super::outputs::{
-    BoxOutput, CandleOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput, LineOutput,
-    LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
+    ArrowOutput, BoxOutput, CandleOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput,
+    LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
 };
 use super::runtime_value::RuntimeValue;
 use super::ta;
@@ -93,6 +93,7 @@ pub struct RuntimeState {
     pub plots: FastMap<usize, PlotOutput>,
     pub hlines: FastMap<usize, HorizontalLine>,
     pub markers: FastMap<usize, MarkerOutput>,
+    pub arrows: FastMap<usize, ArrowOutput>,
     pub backgrounds: FastMap<usize, ColorOutput>,
     pub bar_colors: FastMap<usize, ColorOutput>,
     pub fills: FastMap<usize, FillOutput>,

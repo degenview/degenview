@@ -3,7 +3,7 @@
 //! `ScriptPreviewInputsStore`.
 
 use crate::model::pine_instance::StoredInput as Stored;
-use crate::pine::program::{InputDefinition, InputSchema, InputValue};
+use crate::pine::program::{InputControl, InputDefinition, InputSchema, InputValue};
 use crate::pine::token::ValueType;
 use crate::ui::icons::Icon;
 use crate::ui::kit::StepDirection as Direction;
@@ -283,7 +283,8 @@ pub fn cards(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<Inp
             ));
         }
         for input in inputs {
-            if let Some(value) = card(ui, input, values.get(&input.id)) {
+            let active = schema.is_active(input, values);
+            if let Some(value) = card(ui, input, values.get(&input.id), active) {
                 edits.push(InputEdit::Set(input.id.clone(), value));
             }
         }
@@ -296,6 +297,7 @@ fn card(
     ui: &mut Ui,
     input: &InputDefinition,
     override_value: Option<&InputValue>,
+    active: bool,
 ) -> Option<InputValue> {
     let title = input.title.clone().unwrap_or_else(|| input.id.clone());
     let current = override_value.unwrap_or(&input.default_value).clone();
@@ -304,13 +306,18 @@ fn card(
         (ValueType::Time, InputValue::Int(_)) => Icon::Calendar,
         (_, InputValue::Int(_) | InputValue::Float(_)) => Icon::Hash,
         (_, InputValue::String(_)) if input.options.is_some() => Icon::List,
+        (_, InputValue::String(_)) if input.control == InputControl::Timeframe => Icon::List,
         (_, InputValue::String(_)) => Icon::TextFormat,
         (_, InputValue::Color(_)) => Icon::Palette,
         (_, InputValue::Source(_)) => Icon::ChartLine,
     };
-    settings_card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
-        control(ui, input, &title, &current)
+    // A greyed-out card still shows the value the script reads; it just cannot be changed.
+    ui.add_enabled_ui(active, |ui| {
+        settings_card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
+            control(ui, input, &title, &current)
+        })
     })
+    .inner
 }
 
 fn control(
@@ -338,14 +345,51 @@ fn control(
                 .and_then(|index| titles.get(index))
                 .map(|(stored, _)| InputValue::String(stored.clone()))
         }
-        (_, InputValue::String(value)) => {
+        (_, InputValue::String(value)) if input.control == InputControl::Timeframe => {
+            let labels: Vec<String> = TIMEFRAMES
+                .iter()
+                .map(|(_, label)| (*label).to_owned())
+                .collect();
+            let selected = TIMEFRAMES.iter().position(|(stored, _)| stored == value);
+            let shown = labels_with_current(&labels, selected, value);
+            let width = picker_width(ui, &shown);
+            crate::ui::kit::menu_picker(ui, width, &shown, selected.unwrap_or(labels.len()), true)
+                .and_then(|index| TIMEFRAMES.get(index))
+                .map(|(stored, _)| InputValue::String((*stored).to_owned()))
+        }
+        (_, InputValue::String(value)) if input.control == InputControl::TextArea => {
             let mut text = value.clone();
             let response = ui.add(
-                egui::TextEdit::singleline(&mut text)
+                egui::TextEdit::multiline(&mut text)
                     .hint_text(title)
-                    .desired_width(140.0)
+                    .desired_rows(3)
+                    .desired_width(220.0)
                     .margin(Margin::symmetric(6, 4)),
             );
+            response.changed().then_some(InputValue::String(text))
+        }
+        (_, InputValue::String(value)) => {
+            let mut text = value.clone();
+            // A session that is not one reads in red, as the script would find it unusable.
+            let invalid = input.control == InputControl::Session && !session_is_valid(value);
+            let hint = match input.control {
+                InputControl::Symbol => "EXCHANGE:SYMBOL",
+                InputControl::Session => "0930-1600",
+                _ => title,
+            };
+            let mut edit = egui::TextEdit::singleline(&mut text)
+                .hint_text(hint)
+                .desired_width(140.0)
+                .margin(Margin::symmetric(6, 4));
+            if invalid {
+                edit = edit.text_color(theme::LOSS);
+            }
+            let response = ui.add(edit);
+            if invalid {
+                response.clone().on_hover_text(
+                    "Not a session. Write it as 0930-1600, with days after a colon (0930-1600:23456) or 24x7.",
+                );
+            }
             response.changed().then_some(InputValue::String(text))
         }
         (_, InputValue::Color(value)) => crate::ui::kit::color_well(
@@ -357,7 +401,7 @@ fn control(
         )
         .map(|color| InputValue::Color(rgba_from_color(color))),
         (_, InputValue::Source(value)) => {
-            let names = ["open", "high", "low", "close", "volume"];
+            let names = SOURCES;
             let labels: Vec<String> = names.iter().map(|name| capitalized(name)).collect();
             let width = picker_width(ui, &labels);
             let selected = names.iter().position(|name| name == value).unwrap_or(3);
@@ -365,6 +409,36 @@ fn control(
                 .map(|index| InputValue::Source(names[index].to_owned()))
         }
     }
+}
+
+/// The sources `input.source` offers: the bar's prices and their averages, and the volume.
+const SOURCES: [&str; 9] = [
+    "open", "high", "low", "close", "hl2", "hlc3", "ohlc4", "hlcc4", "volume",
+];
+
+/// The timeframes `input.timeframe` offers when the script lists none, as Pine writes them and as
+/// they read; the empty string is the chart's own.
+const TIMEFRAMES: [(&str, &str); 15] = [
+    ("", "Chart"),
+    ("1", "1 minute"),
+    ("3", "3 minutes"),
+    ("5", "5 minutes"),
+    ("15", "15 minutes"),
+    ("30", "30 minutes"),
+    ("45", "45 minutes"),
+    ("60", "1 hour"),
+    ("120", "2 hours"),
+    ("180", "3 hours"),
+    ("240", "4 hours"),
+    ("1D", "1 day"),
+    ("1W", "1 week"),
+    ("1M", "1 month"),
+    ("3M", "3 months"),
+];
+
+/// Whether a session input holds a session Pine can read (an empty one is the chart's own).
+fn session_is_valid(text: &str) -> bool {
+    text.is_empty() || crate::pine::trading_session::TradingSession::parse(text).is_some()
 }
 
 /// `labels`, plus `current` when it matches none of them, so the picker has something to show.
@@ -899,6 +973,7 @@ mod tests {
         InputDefinition {
             id: id.into(),
             kind,
+            control: InputControl::Standard,
             default_value: default,
             title: None,
             tooltip: None,
@@ -910,6 +985,7 @@ mod tests {
             step: None,
             options: None,
             option_titles: None,
+            active: None,
         }
     }
 
@@ -1189,5 +1265,151 @@ mod tests {
         );
         apply_edit(&mut values, &schema, InputEdit::Reset);
         assert!(values.is_empty());
+    }
+
+    #[test]
+    fn a_session_input_is_valid_when_pine_can_read_it() {
+        for text in ["", "0930-1600", "0930-1600:23456", "24x7", "1800-0600"] {
+            assert!(session_is_valid(text), "{text}");
+        }
+        for text in ["nine to five", "0930", "2500-1600", "0930-1600:9"] {
+            assert!(!session_is_valid(text), "{text}");
+        }
+    }
+
+    #[test]
+    fn the_standard_timeframes_are_pine_strings_and_none_repeats() {
+        let mut stored: Vec<&str> = TIMEFRAMES.iter().map(|(stored, _)| *stored).collect();
+        for text in &stored {
+            assert!(
+                text.is_empty() || crate::pine::time::seconds_of_timeframe(text).is_some(),
+                "{text}"
+            );
+        }
+        let count = stored.len();
+        stored.sort_unstable();
+        stored.dedup();
+        assert_eq!(stored.len(), count);
+        // The chart's own is first, so it is what an empty value shows.
+        assert_eq!(TIMEFRAMES[0], ("", "Chart"));
+    }
+
+    #[test]
+    fn every_source_input_offers_resolves_as_a_series() {
+        for name in SOURCES {
+            assert!(
+                crate::pine::builtin_types::identifier(name)
+                    .kind()
+                    .is_some(),
+                "{name}"
+            );
+        }
+    }
+
+    fn string_input(control: InputControl, default: &str) -> InputDefinition {
+        InputDefinition {
+            control,
+            ..def(
+                "s",
+                ValueType::String,
+                InputValue::String(default.into()),
+                None,
+            )
+        }
+    }
+
+    /// Draws `schema` on a headless frame and returns the edits it asked for (none, with no user).
+    fn drawn(schema: &InputSchema) -> usize {
+        let ctx = egui::Context::default();
+        let mut edits = 0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            edits = show(ui, schema, &InputValues::default()).len();
+        });
+        output.textures_delta.clear();
+        edits
+    }
+
+    #[test]
+    fn every_kind_of_input_draws() {
+        let schema = InputSchema {
+            inputs: vec![
+                string_input(InputControl::Symbol, "BINANCE:BTCUSDT"),
+                string_input(InputControl::Timeframe, "60"),
+                string_input(InputControl::Timeframe, "7"),
+                string_input(InputControl::Session, "0930-1600"),
+                string_input(InputControl::Session, "garbage"),
+                string_input(InputControl::TextArea, "line one\nline two"),
+                InputDefinition {
+                    control: InputControl::Price,
+                    ..def("p", ValueType::Float, InputValue::Float(1.5), None)
+                },
+                def(
+                    "src",
+                    ValueType::Float,
+                    InputValue::Source("hl2".into()),
+                    None,
+                ),
+            ],
+        };
+        assert_eq!(drawn(&schema), 0, "nobody touched anything");
+    }
+
+    /// Clicks where a card's switch sits (its right end, mid-height) and returns the edits asked for.
+    fn clicked_switch(schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, vec2(480.0, 200.0));
+        let frame = |events: Vec<egui::Event>, edits: &mut Vec<InputEdit>| {
+            let mut used = egui::Rect::NOTHING;
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                *edits = cards(ui, schema, values);
+                used = ui.min_rect();
+            });
+            output.textures_delta.clear();
+            used
+        };
+        let mut ignored = Vec::new();
+        let card_rect = frame(Vec::new(), &mut ignored);
+        let at = egui::pos2(card_rect.right() - 14.0 - 18.0, card_rect.center().y);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(vec![egui::Event::PointerMoved(at)], &mut ignored);
+        frame(vec![button(true)], &mut ignored);
+        let mut edits = Vec::new();
+        frame(vec![button(false)], &mut edits);
+        edits
+    }
+
+    #[test]
+    fn a_greyed_out_input_cannot_be_changed_and_an_active_one_can() {
+        let switch = |active: Option<crate::pine::ast::Expression>| InputSchema {
+            inputs: vec![InputDefinition {
+                active,
+                ..def("flag", ValueType::Bool, InputValue::Bool(true), None)
+            }],
+        };
+        let locked = crate::pine::ast::Expression::Literal(
+            crate::pine::ast::Literal::Bool(false),
+            crate::pine::token::SourceRange::ZERO,
+        );
+        let values = InputValues::default();
+        assert_eq!(
+            clicked_switch(&switch(None), &values),
+            vec![InputEdit::Set("flag".into(), InputValue::Bool(false))],
+            "the click lands on the switch"
+        );
+        assert_eq!(
+            clicked_switch(&switch(Some(locked)), &values),
+            Vec::<InputEdit>::new(),
+            "the same click on a greyed-out input changes nothing"
+        );
     }
 }

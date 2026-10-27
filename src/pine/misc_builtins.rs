@@ -24,7 +24,7 @@ pub const UNAVAILABLE_FEEDS: [&str; 8] = [
 ];
 
 /// Functions the engine does not implement: they return `na`, and `ignored_features` warns.
-pub const UNIMPLEMENTED_FUNCTIONS: [&str; 1] = ["weekofyear"];
+pub const UNIMPLEMENTED_FUNCTIONS: [&str; 0] = [];
 
 /// `strategy.convert_to_*`: the amount comes back unchanged, which is right while the account
 /// and the symbol share a currency (no exchange rates are available here).

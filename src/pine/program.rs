@@ -1,12 +1,12 @@
 //! The compiled program and the script's declaration, inputs, bar events, symbol facts, theme
 //! and visual output, ported from `Pine/Model/*` + `PineCompiledProgram`.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use super::ast::Statement;
+use super::ast::{Expression, Statement};
 use super::outputs::{
-    BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine, LabelOutput,
-    LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
+    ArrowOutput, BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine,
+    LabelOutput, LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
 };
 use super::state::AlertEvent;
 use super::strategy::{StrategyReport, StrategySettings};
@@ -41,10 +41,25 @@ pub enum InputValue {
     Source(String),
 }
 
+/// What an input is edited with, beyond what its value says: the string inputs of `input.symbol`,
+/// `input.timeframe`, `input.session` and `input.text_area` and the float of `input.price` hold the
+/// same kinds of value as `input.string` and `input.float` but are not typed the same way.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum InputControl {
+    #[default]
+    Standard,
+    Price,
+    Symbol,
+    Timeframe,
+    Session,
+    TextArea,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputDefinition {
     pub id: String,
     pub kind: ValueType,
+    pub control: InputControl,
     pub default_value: InputValue,
     pub title: Option<String>,
     pub tooltip: Option<String>,
@@ -57,11 +72,25 @@ pub struct InputDefinition {
     pub options: Option<Vec<InputValue>>,
     /// What to show for each of `options`, when it differs from the value.
     pub option_titles: Option<Vec<String>>,
+    /// `active`: the condition, on other inputs, under which the user can change this input. None
+    /// when it can always be changed.
+    pub active: Option<Expression>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InputSchema {
     pub inputs: Vec<InputDefinition>,
+}
+
+impl InputSchema {
+    /// Whether the user can change `input` while the inputs hold `values` (an input with no entry
+    /// holds its default). A greyed-out input still holds its value, and the script reads it.
+    pub fn is_active(&self, input: &InputDefinition, values: &HashMap<String, InputValue>) -> bool {
+        input
+            .active
+            .as_ref()
+            .is_none_or(|condition| super::input_activity::holds(condition, &self.inputs, values))
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -213,6 +242,7 @@ pub struct VisualOutput {
     pub plots: Vec<PlotOutput>,
     pub hlines: Vec<HorizontalLine>,
     pub markers: Vec<MarkerOutput>,
+    pub arrows: Vec<ArrowOutput>,
     pub backgrounds: Vec<ColorOutput>,
     pub bar_colors: Vec<ColorOutput>,
     pub fills: Vec<FillOutput>,
@@ -235,6 +265,7 @@ impl VisualOutput {
     pub fn has_forced_overlay(&self) -> bool {
         self.plots.iter().any(|plot| plot.force_overlay)
             || self.markers.iter().any(|marker| marker.force_overlay)
+            || self.arrows.iter().any(|arrow| arrow.force_overlay)
             || self.candles.iter().any(|candle| candle.force_overlay)
     }
 
@@ -261,6 +292,12 @@ impl VisualOutput {
             if marker.force_overlay {
                 forced.markers.push(marker.clone());
                 marker.display &= !DISPLAY_PANE;
+            }
+        }
+        for arrow in &mut pane.arrows {
+            if arrow.force_overlay {
+                forced.arrows.push(arrow.clone());
+                arrow.display &= !DISPLAY_PANE;
             }
         }
         for candle in &mut pane.candles {
