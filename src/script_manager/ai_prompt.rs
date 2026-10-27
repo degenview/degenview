@@ -87,9 +87,15 @@ fine when it makes the point clearer.\n\
     prompt.push_str(
         "This interpreter is not TradingView, and some Pine is not implemented. Do not use these:\n",
     );
+    // Every Pine function is implemented now, so the list may be empty: no line, not a blank one.
+    if !symbol_catalog::RESERVED_FUNCTIONS.is_empty() {
+        prompt.push_str(&format!(
+            "- functions: {}\n",
+            symbol_catalog::RESERVED_FUNCTIONS.join(", ")
+        ));
+    }
     prompt.push_str(&format!(
-        "- functions: {}\n- variables (they evaluate to na): {}\n",
-        symbol_catalog::RESERVED_FUNCTIONS.join(", "),
+        "- variables (they evaluate to na): {}\n",
         symbol_catalog::UNIMPLEMENTED_VARIABLES.join(", "),
     ));
     prompt.push_str(
@@ -324,7 +330,10 @@ mod tests {
     fn the_system_prompt_states_the_contract_and_the_unsupported_names() {
         let prompt = system_prompt(Mode::Edit);
         assert!(prompt.contains("COMPLETE updated script"));
-        assert!(prompt.contains("fixnan"));
+        assert!(
+            !prompt.contains("- functions:"),
+            "no function is unimplemented"
+        );
         assert!(prompt.contains("syminfo.sector"));
         // Both examples are bundled scripts that compile with no diagnostics (a repo rule).
         assert!(prompt.contains("indicator(\"RSI Zones\""));
@@ -485,7 +494,7 @@ mod tests {
         assert!(!edit.contains("ASK"));
         // Both carry the unsupported-name list and the examples.
         for prompt in [&plan, &edit] {
-            assert!(prompt.contains("fixnan"));
+            assert!(prompt.contains("syminfo.sector"));
             assert!(prompt.contains("indicator(\"RSI Zones\""));
         }
     }

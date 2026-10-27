@@ -5,9 +5,9 @@
 //! A report is an error: the script would fail the run at that name anyway, and showing it as a
 //! warning first made the Problems tab flip from yellow to red once the run failed.
 //!
-//! The one warning is a member of a namespace whose functions are all listed (`array.resize`): the
-//! script compiles, and fails only if the line is reached, so it is a warning until the run says
-//! otherwise (see `UNKNOWN_MEMBER`).
+//! That includes a member of a namespace whose functions are all listed (`array.resize`,
+//! `UNKNOWN_MEMBER`): it was a warning first, but a script with one cannot run correctly, and the
+//! chart then ran it up to the line and failed there.
 //!
 //! It is deliberately lenient, because a false report on a script that runs is worse than a
 //! missed typo: a name counts as defined when it is declared *anywhere* in the script (scope and
@@ -20,9 +20,9 @@ use std::collections::HashSet;
 use super::ast::{Expression, Statement};
 use super::traversal::{expressions, for_each_call, for_each_identifier, nested_blocks};
 use super::{
-    Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange, alert_builtins,
-    array_builtins, builtins, compiler, drawings, map_builtins, math, matrix_builtins,
-    misc_builtins, strategy_builtins, strings, symbol_catalog, ta, ta_extra, visuals,
+    Diagnostic, DiagnosticCategory, SourceRange, alert_builtins, array_builtins, builtins,
+    compiler, drawings, map_builtins, math, matrix_builtins, misc_builtins, strategy_builtins,
+    strings, symbol_catalog, ta, ta_extra, visuals,
 };
 
 pub const UNDEFINED_VARIABLE: &str = "PINE3050";
@@ -58,13 +58,7 @@ pub fn validate(
                 range,
             ));
         } else if let Some(message) = unknown_member(name, &declared) {
-            diagnostics.push(Diagnostic {
-                code: UNKNOWN_MEMBER.to_owned(),
-                severity: DiagnosticSeverity::Warning,
-                category: DiagnosticCategory::Semantic,
-                message,
-                range,
-            });
+            diagnostics.push(error(UNKNOWN_MEMBER, message, range));
         }
     });
     diagnostics.sort_by_key(|diagnostic| diagnostic.range.start.offset);
@@ -77,9 +71,9 @@ fn error(code: &str, message: String, range: SourceRange) -> Diagnostic {
 
 /// The message for a call into a namespace whose every function is listed, when `name` is not one.
 ///
-/// Only the namespaces below qualify: each has one table the runtime dispatches from, so a name
-/// missing from it fails when the line runs. The others (`ta`, `request`, `color`, the drawing
-/// namespaces) are dispatched from several places and are left to the runtime. A script's own
+/// Only the namespaces below qualify: every function the runtime accepts is in the lists named
+/// here, so a name missing from them fails when the line runs. The others (`request`, `color`, the
+/// drawing namespaces) are dispatched from several places and are left to the runtime. A script's own
 /// `array` or `str` (a variable, an import alias) is left alone, as it is for `log`.
 fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
     let (namespace, _) = name.split_once('.')?;
@@ -108,27 +102,64 @@ fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
                 .map(|member| format!("matrix.{member}"))
                 .collect(),
         ),
+        "ta" => (
+            ta_is_listed(name),
+            ta::SUPPORTED
+                .iter()
+                .chain(&ta_extra::FUNCTIONS)
+                .chain(&TA_INLINE)
+                .map(|n| (*n).to_owned())
+                .chain(["ta.linreg".to_owned()])
+                .collect(),
+        ),
         "math" => (
             math::SUPPORTED.contains(&name),
             math::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
         ),
         "str" => (
-            strings::SUPPORTED.contains(&name),
-            strings::SUPPORTED.iter().map(|n| (*n).to_owned()).collect(),
+            strings::SUPPORTED.contains(&name) || STR_INLINE.contains(&name),
+            strings::SUPPORTED
+                .iter()
+                .chain(&STR_INLINE)
+                .map(|n| (*n).to_owned())
+                .collect(),
         ),
         _ => return None,
     };
     if listed {
         return None;
     }
-    let mut message = format!(
-        "'{name}' is not a function DegenView runs; the script fails if this line is reached."
-    );
+    let mut message = format!("'{name}' is not a function DegenView runs.");
     if let Some(close) = closest(name, &known) {
         message.push_str(&format!(" Did you mean '{close}'?"));
     }
     Some(message)
 }
+
+/// `ta.*` functions the session evaluates inline, outside `ta::SUPPORTED` and `ta_extra::FUNCTIONS`.
+/// A test reads the engine's source for every `ta.` name it mentions, so one added there and not
+/// here fails it rather than reaching a script as a false error.
+const TA_INLINE: [&str; 12] = [
+    "ta.barssince",
+    "ta.vwap",
+    "ta.dmi",
+    "ta.cum",
+    "ta.correlation",
+    "ta.tr",
+    "ta.atr",
+    "ta.bb",
+    "ta.pivothigh",
+    "ta.pivotlow",
+    "ta.sar",
+    "ta.supertrend",
+];
+
+fn ta_is_listed(name: &str) -> bool {
+    ta::is_supported(name) || ta_extra::FUNCTIONS.contains(&name) || TA_INLINE.contains(&name)
+}
+
+/// `str.*` functions the session evaluates inline rather than from `strings::SUPPORTED`.
+const STR_INLINE: [&str; 1] = ["str.format_time"];
 
 /// The listed name nearest to `name`, if one is a typo away (two edits or fewer).
 fn closest<'a>(name: &str, known: &'a [String]) -> Option<&'a str> {
@@ -301,6 +332,7 @@ const UNDOTTED_BUILTINS: &[&str] = &["time", "time_close", "max_bars_back", "fix
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pine::DiagnosticSeverity;
     use crate::pine::compiler::compile;
     use crate::pine::{Limits, compiler::NoLibraries};
 
@@ -324,11 +356,11 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_array_function_is_a_warning_on_the_whole_name() {
+    fn an_unknown_array_function_is_an_error_on_the_whole_name() {
         let body = "var a = array.new_float()\nif barstate.islast\n    array.resize(a, 5)\n";
         let found = unknown_members(body);
         assert_eq!(found.len(), 1, "{found:?}");
-        assert_eq!(found[0].severity, DiagnosticSeverity::Warning);
+        assert_eq!(found[0].severity, DiagnosticSeverity::Error);
         assert!(
             found[0]
                 .message
@@ -339,16 +371,6 @@ mod tests {
         assert_eq!(
             &source[range.start.offset..range.end.offset],
             "array.resize"
-        );
-        // Not an error: the script still compiles and runs until it reaches the line.
-        let program = compile(&source, Limits::default(), &NoLibraries);
-        assert!(
-            program
-                .diagnostics
-                .iter()
-                .all(|d| d.severity != DiagnosticSeverity::Error),
-            "{:?}",
-            program.diagnostics
         );
     }
 
@@ -389,9 +411,66 @@ s = str.format(\"{0}\", 1) + str.tostring(2)
     }
 
     #[test]
+    fn an_unknown_ta_function_is_an_error_with_a_hint_for_a_typo() {
+        let found = unknown_members("x = ta.covariance(close, open, 5)");
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].severity, DiagnosticSeverity::Error);
+        assert!(
+            found[0]
+                .message
+                .starts_with("'ta.covariance' is not a function")
+        );
+        let hint = unknown_members("plot(ta.smaa(close, 3))").remove(0).message;
+        assert!(hint.ends_with("Did you mean 'ta.sma'?"), "{hint}");
+        // Used by the script, listed or inline: all fine.
+        let fine = "a = ta.sma(close, 3) + ta.atr(14) + ta.correlation(close, open, 5)\n\
+                    [m, s, h] = ta.macd(close, 12, 26, 9)\nb = ta.linreg(close, 5, 0)\n\
+                    c = ta.stoch(close, high, low, 14)\nd = ta.tr(true)";
+        assert!(
+            unknown_members(fine).is_empty(),
+            "{:?}",
+            unknown_members(fine)
+        );
+    }
+
+    /// Every `ta.` name between quotes in the engine's source is a function or a variable the check
+    /// knows, so a name added to the interpreter without being listed fails here.
+    #[test]
+    fn every_ta_name_the_engine_mentions_is_known() {
+        let files = [
+            include_str!("session.rs"),
+            include_str!("ta.rs"),
+            include_str!("ta_call.rs"),
+            include_str!("ta_extra.rs"),
+            include_str!("market_values.rs"),
+        ];
+        let mut unknown = Vec::new();
+        let mut seen = 0;
+        for text in files {
+            let code = text.split("#[cfg(test)]").next().unwrap_or(text);
+            for piece in code.split("\"ta.").skip(1) {
+                let member: String = piece
+                    .chars()
+                    .take_while(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == '_')
+                    .collect();
+                if member.is_empty() || !piece[member.len()..].starts_with('"') {
+                    continue;
+                }
+                seen += 1;
+                let name = format!("ta.{member}");
+                if !ta_is_listed(&name) && !ta_extra::VARIABLES.contains(&name.as_str()) {
+                    unknown.push(name);
+                }
+            }
+        }
+        assert!(seen > 40, "the scan found only {seen} names");
+        assert!(unknown.is_empty(), "{unknown:?}");
+    }
+
+    #[test]
     fn other_namespaces_are_left_to_the_runtime() {
-        assert!(unknown_members("plot(ta.nosuch(close, 3))").is_empty());
         assert!(unknown_members("c = color.nosuch(1)").is_empty());
+        assert!(unknown_members("t = request.nosuch(1)").is_empty());
     }
 
     #[test]

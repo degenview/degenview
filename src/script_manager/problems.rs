@@ -6,7 +6,6 @@
 //! Pure: no egui. Where the failures come from and whether they are still about the text on screen
 //! is decided by the caller (`PreviewState::runtime_error_for`, `Profiler::failure`).
 
-use crate::pine::name_check::UNKNOWN_MEMBER;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 
 /// The runtime failures to show beside `compile`: what the chart's run reported, then what the
@@ -36,26 +35,7 @@ pub fn runtime_problems(
 
 /// The compile diagnostics, then the runtime failures.
 pub fn combined(compile: &[Diagnostic], runtime: &[Diagnostic]) -> Vec<Diagnostic> {
-    visible(compile, runtime)
-        .into_iter()
-        .chain(runtime)
-        .cloned()
-        .collect()
-}
-
-/// The compile diagnostics worth showing beside `runtime`: not the "unknown function" warning that
-/// the run then proved right with an error at the same call, which would list one mistake twice.
-pub fn visible<'a>(compile: &'a [Diagnostic], runtime: &[Diagnostic]) -> Vec<&'a Diagnostic> {
-    compile
-        .iter()
-        .filter(|d| {
-            !(d.code == UNKNOWN_MEMBER
-                && runtime.iter().any(|failure| {
-                    failure.severity == DiagnosticSeverity::Error
-                        && failure.range.start.offset == d.range.start.offset
-                }))
-        })
-        .collect()
+    compile.iter().chain(runtime).cloned().collect()
 }
 
 #[cfg(test)]
@@ -127,27 +107,5 @@ mod tests {
         assert_eq!(list[0].message, "w");
         assert_eq!(list[1].message, "boom");
         assert!(combined(&[], &[]).is_empty());
-    }
-
-    #[test]
-    fn the_unknown_function_warning_gives_way_to_the_failure_at_the_same_call() {
-        let at = |code: &str, severity, offset: usize| {
-            let mut d = diagnostic(severity, "m");
-            d.code = code.to_owned();
-            d.range.start.offset = offset;
-            d
-        };
-        let warned = at(UNKNOWN_MEMBER, DiagnosticSeverity::Warning, 10);
-        let elsewhere = at(UNKNOWN_MEMBER, DiagnosticSeverity::Warning, 40);
-        let other = at("PINE9999", DiagnosticSeverity::Warning, 10);
-        let failure = at("PINE4007", DiagnosticSeverity::Error, 10);
-        let compile = [warned.clone(), elsewhere.clone(), other.clone()];
-
-        // Without the failure the warning stands; with it, only the warning for that call goes.
-        assert_eq!(visible(&compile, &[]).len(), 3);
-        assert_eq!(
-            combined(&compile, std::slice::from_ref(&failure)),
-            vec![elsewhere, other, failure]
-        );
     }
 }

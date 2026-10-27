@@ -23,6 +23,16 @@ for i = 1 to 20
 plot(total)
 ";
 
+/// Compiles clean and fails on the last bar: an index past the end of an empty array.
+const FAILS: &str = "//@version=6
+indicator(\"Fails\")
+var values = array.new_float()
+x = 0.0
+if barstate.islast
+    x := array.get(values, 5)
+plot(close + x)
+";
+
 fn status(rig: &Rig) -> Status {
     rig.manager
         .profiler
@@ -115,6 +125,54 @@ fn turning_it_on_profiles_the_open_script_and_marks_its_lines() {
     }
     // The editor was handed the column and drew it.
     rig.frame();
+}
+
+#[test]
+fn a_script_that_fails_when_it_runs_has_no_profile() {
+    let mut rig = Rig::new("profiler-fails");
+    rig.set_source(FAILS);
+    rig.manager.cmds.push(Cmd::ProfilerToggle);
+    until(&mut rig, "the failure", |s| matches!(s, Status::Failed(_)));
+    let Status::Failed(message) = status(&rig) else {
+        unreachable!()
+    };
+    assert!(
+        message.starts_with("The script failed after") && message.contains("out of bounds"),
+        "{message}"
+    );
+    // No numbers of any kind: not in the drawer, not beside the code.
+    assert!(rig.manager.profiler.profile().is_none());
+    assert!(!matches!(column(&rig), Some(ProfileColumn::Marks(_))));
+    // The failure is still the Problems list's to show.
+    let failure = rig
+        .manager
+        .profiler
+        .failure(rig.manager.profiler_now.as_ref())
+        .expect("the diagnostic");
+    assert!(failure.message.contains("out of bounds"));
+}
+
+#[test]
+fn a_failed_run_drops_the_profile_of_the_text_before_it() {
+    let mut rig = profile_on("profiler-fails-after-ok");
+    assert!(rig.manager.profiler.profile().is_some());
+    rig.set_source(FAILS);
+    rig.manager.cmds.push(Cmd::ProfilerRun);
+    until(&mut rig, "the failure", |s| matches!(s, Status::Failed(_)));
+    assert!(
+        rig.manager.profiler.profile().is_none(),
+        "the earlier script's numbers are not this script's"
+    );
+    // Fixing the script profiles it again.
+    rig.set_source(SOURCE);
+    rig.manager.cmds.push(Cmd::ProfilerRun);
+    until(&mut rig, "a profile", |s| *s == Status::Ready);
+    assert!(
+        rig.manager
+            .profiler
+            .failure(rig.manager.profiler_now.as_ref())
+            .is_none()
+    );
 }
 
 #[test]
