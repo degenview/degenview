@@ -1,0 +1,72 @@
+# AI assistant
+
+Lets a user prompt an LLM from the Script Manager to change the open Pine script, using **their
+own API key**. This page records what exists, why it is shaped this way, and what is not verified.
+
+## Status
+
+| Part | State |
+| --- | --- |
+| `service/llm`: providers, streaming, errors | Done (phase 1) |
+| `service/keychain_ai_keys`: per-provider key store | Done (phase 1) |
+| Settings ▸ AI Assistant: provider, model, key, Test Connection | Done (phase 1) |
+| Assistant panel under the editor, proposal diff, accept as one undo step | Not started (phase 2) |
+| Compile-and-repair loop, runtime-error context, selection edits | Not started (phase 3) |
+
+## Why a user-supplied key
+
+- OpenAI and Anthropic API access is key-based. Neither offers "sign in and bill my account" OAuth
+  to a third-party desktop app, and consumer subscription logins (ChatGPT Plus, Claude Pro) are not
+  for third-party apps. Do not build on them.
+- OpenRouter offers an OAuth PKCE flow that returns a key. That could be a later "one-click" option;
+  it needs a loopback listener, which only the MCP server has today.
+- A hosted proxy would be the smoothest UX but means running a backend and billing. Out of scope.
+- There is no DegenView server in the path: requests go from the user's Mac to the provider.
+
+## Providers
+
+`ProviderKind` is `OpenAi`, `Anthropic` and `Compatible` (any host that copies OpenAI's chat
+completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
+
+- OpenAI: `POST {base}/chat/completions`, `Authorization: Bearer`, `max_completion_tokens` (its
+  reasoning models reject `max_tokens`).
+- Compatible: the same, with `max_tokens`, and the key is optional (a local server has none).
+- Anthropic: `POST {base}/v1/messages`, `x-api-key`, `anthropic-version: 2023-06-01`, top-level
+  `system`.
+- Both stream server-sent events. `sse::read_events` frames them; `openai::OpenAiDecoder` and
+  `anthropic::AnthropicDecoder` turn frames into text. A stream that ends without the provider's
+  closing frame is an error, never a half reply that looks complete.
+- Test Connection calls the models list (`GET /models`, `GET /v1/models`), which spends no tokens.
+
+## Rules
+
+- **Keys are Keychain-only** (`AiKeyStore`, service `es.nico.degenview.ai`, one account per
+  provider). Never put one in `ai.prefs`, a saved layout, a log, or an error message.
+  `HttpProvider` replaces the key with `[key]` in every error it returns.
+- `DEGENVIEW_OPENAI_KEY`, `DEGENVIEW_ANTHROPIC_KEY` and `DEGENVIEW_LLM_KEY` stand in when nothing is
+  saved (developer convenience, like the other providers' variables).
+- **Off macOS** the Keychain write fails; the store still keeps the key for the session and the page
+  says it is not saved for later.
+- **`ai.prefs`** (provider, models, compatible server URL) is a local `setting`; it is in the
+  never-sync test in `sync::policy` because it names the user's own account and server.
+- **Base URLs** must be `https://`, or `http://` to `localhost`, `127.0.0.1` or `::1`
+  (`validate_base_url`). A user name in the URL is rejected so `http://localhost@evil.example`
+  cannot pass.
+- **No redirects** are followed, so a redirect cannot carry the key to another host.
+- Blocking `ureq` on a worker thread, no async runtime (core guide). `cancel` is an `AtomicBool`
+  checked between SSE lines; a connection that stalls mid-line ends at the read timeout, so the UI
+  should also detach from the worker when the user presses Stop.
+- The first time the assistant is used, the user must be told the script and prompt are sent to the
+  provider (the Settings page already says so).
+
+## Verified and not
+
+Verified by tests: SSE framing; both wire formats against hand-written frames; request bodies and
+headers; a real `HttpProvider` against a loopback server (key header, streamed reply, 401 scrubbed,
+redirect refused, model list); key store behaviour including the refusing-Keychain case; the form
+rules on the Settings page.
+
+**Not verified**: any request to the real OpenAI or Anthropic API (no keys were used), so the frame
+shapes come from the providers' documentation rather than recorded traffic, and the suggested
+default model names (`gpt-5`, `claude-sonnet-5-5`) may need updating; the Settings page in a real
+window (layout, the eye button, the spinner); the Keychain path on a signed build.

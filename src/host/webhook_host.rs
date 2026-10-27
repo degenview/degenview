@@ -8,6 +8,7 @@ use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
 use crate::service::cache_control;
 use crate::service::disk_cache::{CacheStats, ClearOutcome};
 use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
+use crate::service::llm::prefs::AiPrefs;
 use crate::service::webhook_delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::store::Store;
 use crate::ui::settings_api_keys::StatusMessage;
@@ -56,6 +57,8 @@ impl Default for StorageEvents {
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
     snapshots: crate::host::snapshot_host::SnapshotHost,
+    /// The saved assistant settings, read from the store when Settings first needs them.
+    ai_prefs: Option<AiPrefs>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -120,6 +123,10 @@ impl WebhookHost {
         // drew a second title bar and let the page be dragged around within its own window.
         let endpoints = store.webhook_endpoints();
         let snapshot_prefs = self.snapshots.prefs();
+        let ai_prefs = self
+            .ai_prefs
+            .get_or_insert_with(|| AiPrefs::load(store))
+            .clone();
         let input = SettingsInput {
             notifications,
             health,
@@ -136,6 +143,7 @@ impl WebhookHost {
                 token_saved: crate::service::keychain_snapshot_token::SnapshotTokenStore::shared()
                     .is_configured(),
             },
+            ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
             sync,
             now_ms,
@@ -147,6 +155,14 @@ impl WebhookHost {
                 }
                 SettingsAction::Storage(action) => self.apply_storage(action, ui.ctx()),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
+                SettingsAction::Ai(crate::ui::settings_ai::AiAction::SavePrefs(prefs)) => {
+                    if let Err(error) = prefs.save(store) {
+                        self.state.ai.status = Some(StatusMessage::error(format!(
+                            "Could not save the settings: {error}"
+                        )));
+                    }
+                    self.ai_prefs = Some(prefs);
+                }
                 SettingsAction::SetTheme(theme) => {
                     let _ = store.set_setting(crate::ui::theme::THEME_KEY, &theme);
                     crate::ui::theme::apply(ui.ctx(), theme);

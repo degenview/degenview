@@ -76,6 +76,7 @@ pub mod scale_menu;
 pub mod script_alert_list;
 mod series_render;
 pub mod settings_about;
+pub mod settings_ai;
 pub mod settings_api_keys;
 mod settings_appearance;
 pub mod settings_card;

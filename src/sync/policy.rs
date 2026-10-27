@@ -318,6 +318,8 @@ mod tests {
             "scriptManager.layout",
             "pineLogs.prefs",
             "scriptDebug.state",
+            // Names this user's own account and server.
+            "ai.prefs",
             "scriptPreview.market",
             "scripts.demosSeeded",
             "addTicker.recentMarkets",

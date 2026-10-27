@@ -34,6 +34,7 @@ pub enum SettingsSection {
     Appearance,
     Alpaca,
     CoinMarketCap,
+    Ai,
     Notifications,
     Webhooks,
     Snapshots,
@@ -44,10 +45,11 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Appearance,
         Self::Alpaca,
         Self::CoinMarketCap,
+        Self::Ai,
         Self::Notifications,
         Self::Webhooks,
         Self::Snapshots,
@@ -69,6 +71,7 @@ impl SettingsSection {
             Self::Appearance => "Appearance",
             Self::Alpaca => "Alpaca",
             Self::CoinMarketCap => "CoinMarketCap",
+            Self::Ai => "AI Assistant",
             Self::Notifications => "Notifications",
             Self::Webhooks => "Webhooks",
             Self::Snapshots => "Snapshots",
@@ -85,6 +88,7 @@ impl SettingsSection {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
+            Self::Ai => Color32::from_rgb(255, 214, 10),
             Self::Notifications => Color32::from_rgb(255, 69, 58),
             Self::Webhooks => Color32::from_rgb(48, 176, 199),
             Self::Snapshots => Color32::from_rgb(255, 55, 95),
@@ -101,6 +105,7 @@ impl SettingsSection {
             Self::Appearance => "appearance",
             Self::Alpaca => "alpaca",
             Self::CoinMarketCap => "coinmarketcap",
+            Self::Ai => "ai",
             Self::Notifications => "notifications",
             Self::Webhooks => "webhooks",
             Self::Snapshots => "snapshots",
@@ -132,6 +137,8 @@ pub enum SettingsAction {
     Snapshots(crate::ui::settings_snapshots::SnapshotsAction),
     /// The MCP Server page asked the MCP host to change something.
     Mcp(McpAction),
+    /// The AI Assistant page changed the provider or model.
+    Ai(crate::ui::settings_ai::AiAction),
     /// An update was swapped in and a helper will reopen the app: quit now.
     QuitForUpdate,
     /// The About page chose which releases updates offer.
@@ -144,6 +151,7 @@ pub struct SettingsInput<'a> {
     pub webhooks: WebhookSettingsInput<'a>,
     pub mcp: McpSettingsInput<'a>,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsInput<'a>,
+    pub ai: crate::ui::settings_ai::AiSettingsInput<'a>,
     pub updates: &'a crate::host::update_host::UpdateHost,
     pub sync: &'a crate::host::sync_host::SyncHost,
     pub now_ms: i64,
@@ -154,6 +162,7 @@ pub struct SettingsState {
     pub section: SettingsSection,
     pub webhooks: WebhookSettingsState,
     pub api_keys: ApiKeysState,
+    pub ai: crate::ui::settings_ai::AiSettingsState,
     pub storage: StorageState,
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsState,
@@ -314,6 +323,7 @@ impl SettingsSection {
             Self::Appearance => Icon::Paintbrush,
             Self::Alpaca => Icon::ChartLine,
             Self::CoinMarketCap => Icon::Gauge,
+            Self::Ai => Icon::Sparkles,
             Self::Notifications => Icon::BellBadge,
             Self::Webhooks => Icon::ArrowUpRightSquare,
             Self::Snapshots => Icon::Camera,
@@ -433,6 +443,20 @@ pub fn show(
             if let Some(mut footer) = footer {
                 settings_api_keys::coinmarketcap_footer(&mut footer, &mut state.api_keys, store);
             }
+        }
+        SettingsSection::Ai => {
+            let mut ai_actions = Vec::new();
+            let footer = page_shell(
+                &mut page,
+                section,
+                "Describe a change and an AI model edits your Pine script, using your own API key.",
+                true,
+                |ui| crate::ui::settings_ai::body(ui, &mut state.ai, &input.ai),
+            );
+            if let Some(mut footer) = footer {
+                crate::ui::settings_ai::footer(&mut footer, &mut state.ai, &mut ai_actions);
+            }
+            actions.extend(ai_actions.into_iter().map(SettingsAction::Ai));
         }
         SettingsSection::Notifications => {
             page_shell(
