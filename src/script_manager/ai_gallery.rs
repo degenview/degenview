@@ -61,6 +61,29 @@ impl Scene<'_> {
         }
     }
 
+    /// One frame with these input events.
+    fn frame_with(&mut self, events: Vec<egui::Event>) {
+        theme::sync(&self.screen.ctx);
+        let manager = &mut self.rig.manager;
+        self.last = Some(self.screen.run(events, |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+
+    /// A click at `pos`: move, press, release.
+    fn click(&mut self, pos: egui::Pos2) {
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.frame_with(vec![egui::Event::PointerMoved(pos)]);
+        self.frame_with(vec![button(true)]);
+        self.frame_with(vec![button(false)]);
+        self.frames(3);
+    }
+
     fn save(&mut self, label: &str) {
         let output = self.last.take().expect("a frame");
         self.screen
@@ -122,11 +145,52 @@ fn gallery_of_the_assistant() {
                 },
                 "How would I add a length input?".to_owned(),
                 base,
-                Mode::Plan,
+                Mode::Ask,
                 Arc::new(|| {}),
             );
             scene.frames(12);
             scene.save("plan");
+            scene.rig.manager.ai.clear();
+
+            // A short exchange: the bubble, the reply, its actions, and Edit on the message.
+            let base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            scene.rig.manager.ai.start(
+                Box::new(crate::service::llm::mock::MockProvider::replying(vec![
+                    crate::service::llm::mock::MockProvider::text(&[
+                        "It calls `calculate` once per bar and **plots** the result, so the line follows the close.",
+                    ]),
+                ])),
+                ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                },
+                "What does this script do?".to_owned(),
+                base,
+                Mode::Ask,
+                Arc::new(|| {}),
+            );
+            scene.frames(12);
+            scene.save("chat");
+
+            // An error: the banner with Try again, the message waiting in the box.
+            scene.rig.manager.ai.notice = Some(super::ai::Notice::error(
+                "Rate limited: you exceeded your current quota. Check your plan and billing.",
+            ));
+            scene.rig.manager.ai.input = "What does this script do?".to_owned();
+            scene.frames(4);
+            scene.save("error");
+            scene.rig.manager.ai.notice = None;
+            scene.rig.manager.ai.input.clear();
             scene.rig.manager.ai.clear();
 
             // Edit mode from here on.
@@ -231,6 +295,33 @@ fn gallery_of_the_assistant() {
             scene.rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
             scene.frames(4);
             scene.save("applied");
+
+            // The model menu, open, over a loaded list.
+            scene.rig.manager.ai.models.insert(
+                ProviderKind::OpenAi,
+                super::ai_models::ModelList::Ready(
+                    ["gpt-5", "gpt-5-mini", "gpt-5-nano", "o3", "o4-mini"]
+                        .iter()
+                        .map(|m| (*m).to_owned())
+                        .collect(),
+                ),
+            );
+            scene.frames(2);
+            let chip = scene
+                .screen
+                .ctx
+                .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("ai-model-chip")));
+            if let Some(chip) = chip {
+                scene.click(chip.center());
+                scene.save("model-menu");
+                scene.frame_with(vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]);
+            }
         }
     }
 }

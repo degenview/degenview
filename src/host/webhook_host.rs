@@ -59,6 +59,7 @@ pub struct WebhookHost {
     snapshots: crate::host::snapshot_host::SnapshotHost,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
+    ai_prefs_read_at: Option<std::time::Instant>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -129,10 +130,16 @@ impl WebhookHost {
         // drew a second title bar and let the page be dragged around within its own window.
         let endpoints = store.webhook_endpoints();
         let snapshot_prefs = self.snapshots.prefs();
-        let ai_prefs = self
-            .ai_prefs
-            .get_or_insert_with(|| AiPrefs::load(store))
-            .clone();
+        // Read again every second: the assistant panel changes these too, in another window.
+        if self.ai_prefs.is_none()
+            || self
+                .ai_prefs_read_at
+                .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.ai_prefs = Some(AiPrefs::load(store));
+            self.ai_prefs_read_at = Some(std::time::Instant::now());
+        }
+        let ai_prefs = self.ai_prefs.clone().unwrap_or_default();
         let input = SettingsInput {
             notifications,
             health,
@@ -168,6 +175,18 @@ impl WebhookHost {
                         )));
                     }
                     self.ai_prefs = Some(prefs);
+                    self.ai_prefs_read_at = Some(std::time::Instant::now());
+                }
+                SettingsAction::Ai(crate::ui::settings_ai::AiAction::ClearHistory) => {
+                    use crate::script_manager::ai_history::History;
+                    let mut history = History::load(store);
+                    history.clear();
+                    self.state.ai.status = Some(match history.save(store) {
+                        Ok(()) => StatusMessage::ok("Saved conversations cleared."),
+                        Err(error) => {
+                            StatusMessage::error(format!("Could not clear them: {error}"))
+                        }
+                    });
                 }
                 SettingsAction::SetTheme(theme) => {
                     let _ = store.set_setting(crate::ui::theme::THEME_KEY, &theme);

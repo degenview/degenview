@@ -19,6 +19,8 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 #[derive(Clone, Debug, PartialEq)]
 pub enum AiAction {
     SavePrefs(AiPrefs),
+    /// Forget every saved assistant conversation.
+    ClearHistory,
 }
 
 pub struct AiSettingsInput<'a> {
@@ -28,6 +30,9 @@ pub struct AiSettingsInput<'a> {
 #[derive(Default)]
 pub struct AiSettingsState {
     loaded: bool,
+    /// The saved prefs the draft was last read from. When they change under it (the assistant panel
+    /// picked another model), the draft is read again, or Save here would put the old one back.
+    seen: AiPrefs,
     /// The provider, model and server being edited; applied on Save.
     pub draft: AiPrefs,
     pub key_input: String,
@@ -36,10 +41,11 @@ pub struct AiSettingsState {
 }
 
 impl AiSettingsState {
-    /// Fills the draft from the saved prefs, once.
+    /// Fills the draft from the saved prefs, and again whenever they change elsewhere.
     pub fn load(&mut self, prefs: &AiPrefs) {
-        if !self.loaded {
+        if !self.loaded || self.seen != *prefs {
             self.loaded = true;
+            self.seen = prefs.clone();
             self.draft = prefs.clone();
         }
     }
@@ -221,7 +227,12 @@ fn key_page(kind: ProviderKind) -> Option<(&'static str, &'static str)> {
     }
 }
 
-pub fn body(ui: &mut egui::Ui, state: &mut AiSettingsState, input: &AiSettingsInput) {
+pub fn body(
+    ui: &mut egui::Ui,
+    state: &mut AiSettingsState,
+    input: &AiSettingsInput,
+    actions: &mut Vec<AiAction>,
+) {
     let store = AiKeyStore::shared();
     state.load(input.prefs);
     state.poll_test();
@@ -284,6 +295,23 @@ pub fn body(ui: &mut egui::Ui, state: &mut AiSettingsState, input: &AiSettingsIn
         )),
         None,
     );
+    ui.add_space(18.0);
+    section(ui, "Conversations", None, |ui| {
+        card(ui, |ui| {
+            ui.add(
+                egui::Label::new(kit::text(
+                    "Each script's conversation with the assistant is kept on this Mac so it is there after a restart. It is never synced.",
+                    kit::size::SUBHEADLINE + 1.0,
+                    kit::REGULAR,
+                    theme::text_secondary(),
+                ))
+                .wrap(),
+            );
+            if kit::sheet_button(ui, "Clear saved conversations", false, true).clicked() {
+                actions.push(AiAction::ClearHistory);
+            }
+        });
+    });
     if let Some((label, url)) = key_page(state.kind()) {
         ui.add_space(18.0);
         link(ui, label, url);
@@ -476,5 +504,23 @@ mod tests {
         state.start_test(Err(LlmError::Config("Add your key.".to_owned())));
         assert!(!state.is_testing());
         assert_eq!(state.status, Some(StatusMessage::error("Add your key.")));
+    }
+
+    #[test]
+    fn the_draft_follows_prefs_that_change_elsewhere_but_not_its_own_edits() {
+        let mut state = AiSettingsState::default();
+        let saved = AiPrefs::default();
+        state.load(&saved);
+        // An unsaved edit survives frames where nothing changed underneath it.
+        state.draft.set_model(ProviderKind::OpenAi, "typed");
+        state.load(&saved);
+        assert_eq!(state.draft.openai_model, "typed");
+        // The assistant panel picked another model: the draft takes it, so Save cannot undo it.
+        let mut changed = saved.clone();
+        changed.set_model(ProviderKind::OpenAi, "from-the-panel");
+        state.load(&changed);
+        assert_eq!(state.draft.openai_model, "from-the-panel");
+        state.load(&changed);
+        assert_eq!(state.draft.openai_model, "from-the-panel");
     }
 }

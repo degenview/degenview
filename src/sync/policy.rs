@@ -320,6 +320,8 @@ mod tests {
             "scriptDebug.state",
             // Names this user's own account and server.
             "ai.prefs",
+            // Their prompts about their own scripts, and the model's replies.
+            "ai.history",
             "scriptPreview.market",
             "scripts.demosSeeded",
             "addTicker.recentMarkets",

@@ -451,7 +451,7 @@ pub fn show(
                 section,
                 "Describe a change and an AI model edits your Pine script, using your own API key.",
                 true,
-                |ui| crate::ui::settings_ai::body(ui, &mut state.ai, &input.ai),
+                |ui| crate::ui::settings_ai::body(ui, &mut state.ai, &input.ai, &mut ai_actions),
             );
             if let Some(mut footer) = footer {
                 crate::ui::settings_ai::footer(&mut footer, &mut state.ai, &mut ai_actions);
