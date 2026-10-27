@@ -85,6 +85,12 @@
   alert subscriptions. `timeframe.main_period` uses `Session::chart_bar_seconds`, which the security
   evaluator sets while `bar_seconds` is a requested timeframe's. `weekofyear` weeks run Sunday to Saturday and
   week 1 holds January 1 (inferred; the reference only says "week number of the year").
+- `strategy.*` statistics are `strategy_builtins::statistic`, computed from the broker on each read (the
+  trade lists) except the equity extremes, which `Broker` keeps as bars arrive (`EquityExtremes`, rolled back
+  with the rest of the state) and merges with the bar being run. Losses are negative in the averages
+  (`avg_losing_trade`) but positive in `grossloss`; a drawdown is measured from the running peak (starting at
+  the initial capital) and a run-up from the running trough; the percentages are against that peak / trough.
+  `margin_liquidation_price` stays a warned `na`: there is no margin model.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

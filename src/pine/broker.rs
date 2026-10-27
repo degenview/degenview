@@ -86,12 +86,14 @@ pub struct Broker {
     pub net_profit: f64,
     pub orders: Vec<Order>,
     equity_curve: Vec<f64>,
+    extremes: super::strategy::EquityExtremes,
     last_close: f64,
     next_sequence: usize,
 }
 
 impl Broker {
     pub fn new(settings: StrategySettings) -> Self {
+        let extremes = super::strategy::EquityExtremes::starting_at(settings.initial_capital);
         Self {
             settings,
             open_trades: Vec::new(),
@@ -99,6 +101,7 @@ impl Broker {
             net_profit: 0.0,
             orders: Vec::new(),
             equity_curve: Vec::new(),
+            extremes,
             last_close: 0.0,
             next_sequence: 0,
         }
@@ -157,7 +160,17 @@ impl Broker {
 
     pub fn record_equity(&mut self, close: f64) {
         self.last_close = close;
-        self.equity_curve.push(self.equity(close));
+        let equity = self.equity(close);
+        self.equity_curve.push(equity);
+        self.extremes.include(equity);
+    }
+
+    /// The equity curve's extremes up to the bar being run, whose equity at `price` is not recorded
+    /// until the bar ends.
+    pub fn equity_extremes(&self, price: f64) -> super::strategy::EquityExtremes {
+        let mut extremes = self.extremes;
+        extremes.include(self.equity(price));
+        extremes
     }
 
     pub fn report(&self) -> StrategyReport {

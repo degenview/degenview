@@ -1042,6 +1042,17 @@ impl Session {
     fn symbol_value(&self, name: &str) -> Option<RuntimeValue> {
         match name {
             "syminfo.mintick" => Some(RuntimeValue::Float(self.mintick)),
+            // The currency the results are in: the strategy's own, else the symbol's.
+            "strategy.account_currency" => Some(RuntimeValue::String(
+                self.working
+                    .broker
+                    .settings
+                    .currency
+                    .as_deref()
+                    .map(|code| code.strip_prefix("currency.").unwrap_or(code))
+                    .filter(|code| !code.is_empty() && *code != "NONE")
+                    .map_or_else(|| self.symbol.currency.clone(), str::to_owned),
+            )),
             "syminfo.minmove" | "syminfo.pricescale" => Some(
                 price_scale(self.mintick)
                     .map(|(minmove, pricescale)| {

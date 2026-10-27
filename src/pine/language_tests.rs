@@ -1751,3 +1751,197 @@ fn the_variables_that_need_data_the_app_lacks_read_na_with_a_warning() {
         4
     );
 }
+
+/// One-minute bars that open and close at `prices` (high and low one off), for strategies whose
+/// fills must be easy to follow: an order placed on a bar fills at the next bar's open.
+fn flat_bars(prices: &[f64]) -> Vec<Kline> {
+    prices
+        .iter()
+        .enumerate()
+        .map(|(index, price)| Kline {
+            open_time: index as i64 * 60_000,
+            close_time: (index as i64 + 1) * 60_000 - 1,
+            open: *price,
+            high: price + 1.0,
+            low: price - 1.0,
+            close: *price,
+            volume: 1.0,
+        })
+        .collect()
+}
+
+const STRATEGY_PRICES: [f64; 15] = [
+    100.0, 100.0, 110.0, 110.0, 100.0, 100.0, 90.0, 90.0, 100.0, 100.0, 100.0, 100.0, 100.0, 80.0,
+    80.0,
+];
+
+/// Four round trips of two units: a long for +20, a short for +20, a long for 0 and a long for -40.
+const STRATEGY_BODY: &str = "//@version=6\n\
+    strategy(\"S\", initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 2)\n\
+    if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
+    if bar_index == 2\n    strategy.close(\"L\")\n\
+    if bar_index == 4\n    strategy.entry(\"S\", strategy.short)\n\
+    if bar_index == 6\n    strategy.close(\"S\")\n\
+    if bar_index == 8\n    strategy.entry(\"L2\", strategy.long)\n\
+    if bar_index == 10\n    strategy.close(\"L2\")\n\
+    if bar_index == 11\n    strategy.entry(\"L3\", strategy.long)\n\
+    if bar_index == 12\n    strategy.close(\"L3\")\n";
+
+fn run_strategy(extra: &str, prices: &[f64]) -> Session {
+    let source = format!("{STRATEGY_BODY}{extra}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    if let Err(error) = session.evaluate(&flat_bars(prices)) {
+        panic!("{error:?}");
+    }
+    session
+}
+
+#[test]
+fn the_strategy_statistics_summarise_the_closed_trades() {
+    let session = run_strategy(
+        "closed = strategy.closedtrades\nnet = strategy.netprofit\n\
+         avg = strategy.avg_trade\navg_pct = strategy.avg_trade_percent\n\
+         win = strategy.avg_winning_trade\nwin_pct = strategy.avg_winning_trade_percent\n\
+         loss = strategy.avg_losing_trade\nloss_pct = strategy.avg_losing_trade_percent\n\
+         even = strategy.eventrades\nwins = strategy.wintrades\nlosses = strategy.losstrades\n\
+         gross_pct = strategy.grossprofit_percent\nnet_pct = strategy.netprofit_percent\n\
+         first = strategy.closedtrades.first_index",
+        &STRATEGY_PRICES,
+    );
+    let number = |name: &str| value(&session, name).number().unwrap();
+    assert_eq!(value(&session, "closed"), RuntimeValue::Int(4));
+    assert_eq!(number("net"), 0.0);
+    // +20, +20, 0, -40.
+    assert_eq!(number("avg"), 0.0);
+    assert_eq!(number("win"), 20.0);
+    assert_eq!(number("loss"), -40.0);
+    // 10 %, 10 %, 0 %, -20 % of what each put in.
+    assert!((number("avg_pct") - 0.0).abs() < 1e-9);
+    assert!((number("win_pct") - 10.0).abs() < 1e-9);
+    assert!((number("loss_pct") + 20.0).abs() < 1e-9);
+    assert_eq!(value(&session, "even"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "wins"), RuntimeValue::Int(2));
+    assert_eq!(value(&session, "losses"), RuntimeValue::Int(1));
+    // 40 of profit on 1000 of capital.
+    assert!((number("gross_pct") - 4.0).abs() < 1e-9);
+    assert_eq!(number("net_pct"), 0.0);
+    assert_eq!(value(&session, "first"), RuntimeValue::Int(0));
+}
+
+#[test]
+fn the_averages_are_na_until_there_is_a_trade_to_average() {
+    let session = run_strategy(
+        "avg = strategy.avg_trade\nwin = strategy.avg_winning_trade\nloss = strategy.avg_losing_trade_percent",
+        &STRATEGY_PRICES[..2],
+    );
+    for name in ["avg", "win", "loss"] {
+        assert_eq!(value(&session, name), RuntimeValue::Na, "{name}");
+    }
+}
+
+#[test]
+fn drawdown_and_run_up_follow_the_equity_curve() {
+    let session = run_strategy(
+        "drawdown = strategy.max_drawdown\ndrawdown_pct = strategy.max_drawdown_percent\n\
+         runup = strategy.max_runup\nrunup_pct = strategy.max_runup_percent",
+        &STRATEGY_PRICES,
+    );
+    let number = |name: &str| value(&session, name).number().unwrap();
+    // Equity runs 1000 → 1040 and falls back to 1000 when the last trade loses 40.
+    assert_eq!(number("drawdown"), 40.0);
+    assert!((number("drawdown_pct") - 40.0 / 1040.0 * 100.0).abs() < 1e-9);
+    assert_eq!(number("runup"), 40.0);
+    assert!((number("runup_pct") - 4.0).abs() < 1e-9);
+}
+
+#[test]
+fn the_extremes_include_the_bar_being_run() {
+    // On bar 6 the short is 20 in profit and not yet closed: equity 1040 is already the peak, and
+    // the bar-2 close of the long had put it at 1020.
+    let session = run_strategy(
+        "runup = strategy.max_runup\ndrawdown = strategy.max_drawdown",
+        &STRATEGY_PRICES[..7],
+    );
+    assert_eq!(value(&session, "runup"), RuntimeValue::Float(40.0));
+    assert_eq!(value(&session, "drawdown"), RuntimeValue::Float(0.0));
+}
+
+#[test]
+fn contracts_held_the_open_position_and_the_capital_it_holds() {
+    let session = run_strategy(
+        "all = strategy.max_contracts_held_all\nlong = strategy.max_contracts_held_long\n\
+         short = strategy.max_contracts_held_short\nentry = strategy.position_entry_name\n\
+         held = strategy.opentrades.capital_held\nopen_pct = strategy.openprofit_percent",
+        &STRATEGY_PRICES[..7],
+    );
+    assert_eq!(value(&session, "all"), RuntimeValue::Float(2.0));
+    assert_eq!(value(&session, "long"), RuntimeValue::Float(2.0));
+    assert_eq!(value(&session, "short"), RuntimeValue::Float(2.0));
+    // The short opened on bar 5 at 100 is still open on bar 6, where the close is 90.
+    assert_eq!(value(&session, "entry"), RuntimeValue::String("S".into()));
+    assert_eq!(value(&session, "held"), RuntimeValue::Float(200.0));
+    // 20 of open profit on the 1020 the first trade realized.
+    assert!((value(&session, "open_pct").number().unwrap() - 20.0 / 1020.0 * 100.0).abs() < 1e-9);
+    let flat = run_strategy(
+        "entry = strategy.position_entry_name\nheld = strategy.opentrades.capital_held\nnone_long = strategy.max_contracts_held_long",
+        &STRATEGY_PRICES[..1],
+    );
+    assert_eq!(value(&flat, "entry"), RuntimeValue::String(String::new()));
+    assert_eq!(value(&flat, "held"), RuntimeValue::Float(0.0));
+    assert_eq!(value(&flat, "none_long"), RuntimeValue::Float(0.0));
+}
+
+#[test]
+fn the_account_currency_is_the_strategys_or_the_symbols() {
+    let symbols = run_strategy(
+        "currency = strategy.account_currency",
+        &STRATEGY_PRICES[..2],
+    );
+    assert_eq!(
+        value(&symbols, "currency"),
+        RuntimeValue::String("USD".into())
+    );
+    let program = compiler::compile(
+        "//@version=6\nstrategy(\"S\", currency = currency.EUR)\ncode = strategy.account_currency",
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    assert!(session.evaluate(&bars(2)).is_ok());
+    assert_eq!(value(&session, "code"), RuntimeValue::String("EUR".into()));
+}
+
+#[test]
+fn the_margin_liquidation_price_is_na_with_a_warning() {
+    let body = "//@version=6\nstrategy(\"S\")\nprice = strategy.margin_liquidation_price";
+    let codes: Vec<String> = compiler::compile(body, Limits::default(), &NoLibraries)
+        .diagnostics
+        .into_iter()
+        .map(|d| d.code)
+        .collect();
+    assert!(codes.contains(&"PINE7003".to_owned()), "{codes:?}");
+    let session = run_strategy(
+        "price = strategy.margin_liquidation_price",
+        &STRATEGY_PRICES[..2],
+    );
+    assert_eq!(value(&session, "price"), RuntimeValue::Na);
+}

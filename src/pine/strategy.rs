@@ -83,6 +83,48 @@ pub struct Trade {
     pub profit: f64,
 }
 
+/// The extremes of the equity curve, kept as its points arrive: the largest fall from a peak and the
+/// largest rise from a trough, each in currency and as a percentage of the peak (or trough) it is
+/// measured from. The curve starts at the initial capital.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EquityExtremes {
+    peak: f64,
+    trough: f64,
+    pub max_drawdown: f64,
+    pub max_drawdown_percent: f64,
+    pub max_runup: f64,
+    pub max_runup_percent: f64,
+}
+
+impl EquityExtremes {
+    pub fn starting_at(initial_capital: f64) -> Self {
+        Self {
+            peak: initial_capital,
+            trough: initial_capital,
+            max_drawdown: 0.0,
+            max_drawdown_percent: 0.0,
+            max_runup: 0.0,
+            max_runup_percent: 0.0,
+        }
+    }
+
+    /// Takes the next point of the curve into account.
+    pub fn include(&mut self, equity: f64) {
+        self.peak = self.peak.max(equity);
+        self.trough = self.trough.min(equity);
+        let drawdown = self.peak - equity;
+        let runup = equity - self.trough;
+        self.max_drawdown = self.max_drawdown.max(drawdown);
+        self.max_runup = self.max_runup.max(runup);
+        if self.peak > 0.0 {
+            self.max_drawdown_percent = self.max_drawdown_percent.max(drawdown / self.peak * 100.0);
+        }
+        if self.trough > 0.0 {
+            self.max_runup_percent = self.max_runup_percent.max(runup / self.trough * 100.0);
+        }
+    }
+}
+
 /// Backtest result of a `strategy()` script.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StrategyReport {

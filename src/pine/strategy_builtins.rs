@@ -89,12 +89,7 @@ pub fn trade_property(
     let float = |value: f64| RuntimeValue::Float(value);
     let signed = |is_long: bool, quantity: f64| if is_long { quantity } else { -quantity };
     let percent = |profit: f64, price: f64, quantity: f64| {
-        let basis = price * quantity;
-        if basis == 0.0 {
-            RuntimeValue::Na
-        } else {
-            float(profit / basis * 100.0)
-        }
+        profit_percent(profit, price, quantity).map_or(RuntimeValue::Na, float)
     };
     if let Some(property) = closed {
         let known = matches!(
@@ -164,8 +159,118 @@ pub fn trade_property(
     })
 }
 
+/// A trade's profit as a percentage of what it put in (entry price × quantity); None when that is 0.
+fn profit_percent(profit: f64, price: f64, quantity: f64) -> Option<f64> {
+    let basis = price * quantity;
+    (basis != 0.0).then(|| profit / basis * 100.0)
+}
+
+/// The mean of `values`, `na` when there are none.
+fn mean(values: impl Iterator<Item = f64>) -> RuntimeValue {
+    let (sum, count) = values.fold((0.0, 0_usize), |(sum, count), value| {
+        (sum + value, count + 1)
+    });
+    if count == 0 {
+        RuntimeValue::Na
+    } else {
+        RuntimeValue::Float(sum / count as f64)
+    }
+}
+
+/// `value` as a percentage of `whole`, `na` when `whole` is not positive.
+fn share(value: f64, whole: f64) -> RuntimeValue {
+    if whole > 0.0 {
+        RuntimeValue::Float(value / whole * 100.0)
+    } else {
+        RuntimeValue::Na
+    }
+}
+
+/// The statistics over the closed trades and the equity curve. `na` where there is nothing to
+/// average. Losses are negative numbers, so the average losing trade is negative while
+/// `strategy.grossloss` is a positive total (inferred; the reference does not give the sign).
+fn statistic(name: &str, broker: &Broker, close: f64) -> Option<RuntimeValue> {
+    let trades = &broker.closed_trades;
+    let wins = || trades.iter().filter(|trade| trade.profit > 0.0);
+    let losses = || trades.iter().filter(|trade| trade.profit < 0.0);
+    let percent = |trade: &super::strategy::Trade| {
+        profit_percent(trade.profit, trade.entry_price, trade.quantity)
+    };
+    let initial = broker.settings.initial_capital;
+    Some(match name {
+        "strategy.avg_trade" => mean(trades.iter().map(|trade| trade.profit)),
+        "strategy.avg_trade_percent" => mean(trades.iter().filter_map(percent)),
+        "strategy.avg_winning_trade" => mean(wins().map(|trade| trade.profit)),
+        "strategy.avg_winning_trade_percent" => mean(wins().filter_map(percent)),
+        "strategy.avg_losing_trade" => mean(losses().map(|trade| trade.profit)),
+        "strategy.avg_losing_trade_percent" => mean(losses().filter_map(percent)),
+        "strategy.eventrades" => {
+            RuntimeValue::Int(trades.iter().filter(|trade| trade.profit == 0.0).count() as i64)
+        }
+        "strategy.grossprofit_percent" => share(wins().map(|trade| trade.profit).sum(), initial),
+        "strategy.netprofit_percent" => share(broker.net_profit, initial),
+        // Unrealized profit against the equity the closed trades have realized.
+        "strategy.openprofit_percent" => {
+            share(broker.open_profit(close), initial + broker.net_profit)
+        }
+        "strategy.max_drawdown" => RuntimeValue::Float(broker.equity_extremes(close).max_drawdown),
+        "strategy.max_drawdown_percent" => {
+            RuntimeValue::Float(broker.equity_extremes(close).max_drawdown_percent)
+        }
+        "strategy.max_runup" => RuntimeValue::Float(broker.equity_extremes(close).max_runup),
+        "strategy.max_runup_percent" => {
+            RuntimeValue::Float(broker.equity_extremes(close).max_runup_percent)
+        }
+        // The largest single trade, closed or still open.
+        "strategy.max_contracts_held_all"
+        | "strategy.max_contracts_held_long"
+        | "strategy.max_contracts_held_short" => {
+            let wanted = |is_long: bool| match name {
+                "strategy.max_contracts_held_long" => is_long,
+                "strategy.max_contracts_held_short" => !is_long,
+                _ => true,
+            };
+            RuntimeValue::Float(
+                trades
+                    .iter()
+                    .map(|trade| (trade.is_long, trade.quantity))
+                    .chain(
+                        broker
+                            .open_trades
+                            .iter()
+                            .map(|trade| (trade.is_long, trade.quantity)),
+                    )
+                    .filter(|(is_long, _)| wanted(*is_long))
+                    .fold(0.0, |most, (_, quantity)| f64::max(most, quantity)),
+            )
+        }
+        // The order that opened the position is the oldest of its open trades; "" when flat.
+        "strategy.position_entry_name" => RuntimeValue::String(
+            broker
+                .open_trades
+                .first()
+                .map(|trade| trade.entry_id.clone())
+                .unwrap_or_default(),
+        ),
+        // Every closed trade is kept, so the oldest is trade 0.
+        "strategy.closedtrades.first_index" => RuntimeValue::Int(0),
+        // What the open trades put in; there is no margin, so none of it is borrowed.
+        "strategy.opentrades.capital_held" => RuntimeValue::Float(
+            broker
+                .open_trades
+                .iter()
+                .map(|trade| trade.entry_price * trade.quantity)
+                .sum(),
+        ),
+        _ => return None,
+    })
+}
+
 /// The value a `strategy.*` identifier reads, or None when `name` is not one of them.
 pub fn strategy_value(name: &str, broker: &Broker, close: f64) -> Option<RuntimeValue> {
+    if let Some(value) = statistic(name, broker, close) {
+        return Some(value);
+    }
     match name {
         "strategy.position_size" => Some(RuntimeValue::Float(broker.position_size())),
         "strategy.position_avg_price" => {
