@@ -80,11 +80,40 @@ pub fn constant(name: &str) -> Option<RuntimeValue> {
 pub fn input_type(function: &str) -> ValueType {
     match function {
         "input.int" => ValueType::Int,
-        "input.float" => ValueType::Float,
+        "input.float" | "input.price" => ValueType::Float,
         "input.bool" => ValueType::Bool,
         "input.color" => ValueType::Color,
         "input.time" => ValueType::Time,
         _ => ValueType::String,
+    }
+}
+
+/// The value type of an input: what its function declares, or for the generic `input()` what its
+/// default value is.
+pub fn input_kind(function: &str, default: &super::program::InputValue) -> ValueType {
+    use super::program::InputValue;
+    if function != "input" {
+        return input_type(function);
+    }
+    match default {
+        InputValue::Int(_) => ValueType::Int,
+        InputValue::Float(_) | InputValue::Source(_) => ValueType::Float,
+        InputValue::Bool(_) => ValueType::Bool,
+        InputValue::Color(_) => ValueType::Color,
+        InputValue::String(_) => ValueType::String,
+    }
+}
+
+/// How an `input.*` function's input is edited, beyond its value type.
+pub fn input_control(function: &str) -> super::program::InputControl {
+    use super::program::InputControl;
+    match function {
+        "input.price" => InputControl::Price,
+        "input.symbol" => InputControl::Symbol,
+        "input.timeframe" => InputControl::Timeframe,
+        "input.session" => InputControl::Session,
+        "input.text_area" => InputControl::TextArea,
+        _ => InputControl::Standard,
     }
 }
 

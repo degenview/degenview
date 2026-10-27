@@ -170,9 +170,10 @@ pub fn identifier(name: &str) -> Inferred {
 pub fn input_result(name: &str) -> Option<ValueType> {
     match name {
         "input.int" | "input.time" => Some(ValueType::Int),
-        "input.float" | "input.source" => Some(ValueType::Float),
+        "input.float" | "input.source" | "input.price" => Some(ValueType::Float),
         "input.bool" => Some(ValueType::Bool),
-        "input.string" | "input.session" => Some(ValueType::String),
+        "input.string" | "input.session" | "input.symbol" | "input.timeframe"
+        | "input.text_area" => Some(ValueType::String),
         "input.color" => Some(ValueType::Color),
         _ => None,
     }

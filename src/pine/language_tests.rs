@@ -2147,3 +2147,123 @@ fn the_risk_and_oca_arguments_the_chart_cannot_honour_are_warned_about() {
         "only the alert message: {codes:?}"
     );
 }
+
+fn input_schema(body: &str) -> crate::pine::program::InputSchema {
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    program.input_schema
+}
+
+#[test]
+fn a_positional_input_argument_is_read_in_its_place() {
+    use crate::pine::program::InputValue;
+    let schema = input_schema(
+        "length = input.int(14, \"Length\", 1, 200, 2, \"How many bars\", \"row\", \"Settings\", true)\n\
+         plot(length)",
+    );
+    let input = &schema.inputs[0];
+    assert_eq!(input.default_value, InputValue::Int(14));
+    assert_eq!(input.title.as_deref(), Some("Length"));
+    assert_eq!(
+        (input.min_value, input.max_value, input.step),
+        (Some(1.0), Some(200.0), Some(2.0))
+    );
+    assert_eq!(input.tooltip.as_deref(), Some("How many bars"));
+    assert_eq!(input.inline.as_deref(), Some("row"));
+    assert_eq!(input.group.as_deref(), Some("Settings"));
+    assert!(input.confirm);
+}
+
+#[test]
+fn options_in_the_third_place_make_a_choice() {
+    use crate::pine::program::InputValue;
+    let schema = input_schema(
+        "mode = input.int(2, \"Mode\", [1, 2, 3], \"which\")\n\
+         kind = input.string(\"b\", \"Kind\", [\"a\", \"b\"])\nplot(mode)",
+    );
+    assert_eq!(
+        schema.inputs[0].options,
+        Some(vec![
+            InputValue::Int(1),
+            InputValue::Int(2),
+            InputValue::Int(3)
+        ])
+    );
+    assert_eq!(schema.inputs[0].min_value, None);
+    assert_eq!(schema.inputs[0].tooltip.as_deref(), Some("which"));
+    assert_eq!(schema.inputs[1].options.as_ref().map(Vec::len), Some(2));
+}
+
+#[test]
+fn the_input_kinds_that_were_plain_strings_and_floats_have_their_own_control() {
+    use crate::pine::program::{InputControl, InputValue};
+    let schema = input_schema(
+        "level = input.price(100.5, \"Level\")\n\
+         pair = input.symbol(\"BINANCE:BTCUSDT\", \"Symbol\")\n\
+         frame = input.timeframe(\"60\", \"Timeframe\")\n\
+         picked = input.timeframe(\"D\", \"Options\", [\"D\", \"W\"])\n\
+         hours = input.session(\"0930-1600\", \"Session\")\n\
+         notes = input.text_area(\"hello\", \"Notes\", \"free text\", \"Group\")\n\
+         generic = input(3.5, \"Generic\")\n\
+         plot(level)",
+    );
+    let found = |id: &str| schema.inputs.iter().find(|i| i.id == id).unwrap();
+    assert_eq!(found("level").control, InputControl::Price);
+    assert_eq!(found("level").kind, crate::pine::token::ValueType::Float);
+    assert_eq!(found("level").default_value, InputValue::Float(100.5));
+    assert_eq!(found("pair").control, InputControl::Symbol);
+    assert_eq!(found("frame").control, InputControl::Timeframe);
+    assert_eq!(found("picked").options.as_ref().map(Vec::len), Some(2));
+    assert_eq!(found("hours").control, InputControl::Session);
+    assert_eq!(found("notes").control, InputControl::TextArea);
+    assert_eq!(found("notes").tooltip.as_deref(), Some("free text"));
+    assert_eq!(found("notes").group.as_deref(), Some("Group"));
+    assert_eq!(found("generic").control, InputControl::Standard);
+    assert_eq!(
+        found("generic").kind,
+        crate::pine::token::ValueType::Float,
+        "from its default"
+    );
+}
+
+#[test]
+fn the_new_input_functions_return_their_defaults_typed() {
+    let session = run(
+        "level = input.price(100.5, \"Level\")\n\
+         pair = input.symbol(\"BINANCE:BTCUSDT\", \"Symbol\")\n\
+         frame = input.timeframe(\"60\", \"Timeframe\")\n\
+         hours = input.session(\"0930-1600\", \"Session\")\n\
+         notes = input.text_area(\"hello\\nthere\", \"Notes\")\n\
+         doubled = level * 2",
+        2,
+    );
+    assert_eq!(value(&session, "level"), RuntimeValue::Float(100.5));
+    assert_eq!(value(&session, "doubled"), RuntimeValue::Float(201.0));
+    assert_eq!(
+        value(&session, "pair"),
+        RuntimeValue::String("BINANCE:BTCUSDT".into())
+    );
+    assert_eq!(value(&session, "frame"), RuntimeValue::String("60".into()));
+    assert_eq!(
+        value(&session, "hours"),
+        RuntimeValue::String("0930-1600".into())
+    );
+    assert_eq!(
+        value(&session, "notes"),
+        RuntimeValue::String("hello\nthere".into())
+    );
+}
+
+#[test]
+fn the_input_arguments_that_change_nothing_are_warned_about() {
+    let codes = diagnostic_codes(
+        "a = input.int(1, \"A\", display = display.none)\n\
+         b = input.text_area(\"x\", \"B\", active = false)\nplot(a)",
+    );
+    assert_eq!(
+        codes.iter().filter(|c| *c == "PINE7001").count(),
+        2,
+        "{codes:?}"
+    );
+}

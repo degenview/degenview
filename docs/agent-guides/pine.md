@@ -107,6 +107,12 @@
   day. `allow_entry_in` and `max_position_size` act on `strategy.entry` only. Rules are checked at bars'
   closes, so a limit can be passed within a bar before it is seen. OCA groups (`oca_name` with `oca_type`
   cancel or reduce) apply to entries and orders; an exit's own `oca_name` is still ignored.
+- An `input.*` call's arguments are matched to parameters by name or by position in
+  `pine::input_arguments` (each function has its own order; `input.int`/`float` take a range or, when the
+  third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
+  `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
+  with their own controls (`script_manager::inputs`), and the stored value of each is the plain
+  `InputValue` it always was, so saved inputs are unchanged. `display` and `active` are warned about.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

@@ -639,9 +639,10 @@ impl TypeChecker {
             return;
         };
         let accepted: &[ValueType] = match name {
-            "input.float" => &[ValueType::Float, ValueType::Int],
+            "input.float" | "input.price" => &[ValueType::Float, ValueType::Int],
             "input.bool" => &[ValueType::Bool],
-            "input.string" | "input.session" => &[ValueType::String],
+            "input.string" | "input.session" | "input.symbol" | "input.timeframe"
+            | "input.text_area" => &[ValueType::String],
             "input.color" => &[ValueType::Color],
             _ => &[ValueType::Int],
         };

@@ -8,8 +8,8 @@ use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
 use crate::pine::{
-    array_builtins, drawings, map_builtins, math, matrix_builtins, strategy_builtins, strings, ta,
-    ta_extra,
+    array_builtins, drawings, input_arguments, map_builtins, math, matrix_builtins,
+    strategy_builtins, strings, ta, ta_extra,
 };
 use std::collections::BTreeSet;
 use std::ops::Range;
@@ -170,16 +170,6 @@ const DRAWING_COLLECTIONS: [&str; 6] = [
     "polyline.all",
 ];
 
-const INPUTS: [&str; 7] = [
-    "input.int",
-    "input.float",
-    "input.bool",
-    "input.string",
-    "input.color",
-    "input.source",
-    "input.time",
-];
-
 const COLORS: [&str; 19] = [
     "color.aqua",
     "color.black",
@@ -264,7 +254,7 @@ pub fn builtins() -> &'static [Item] {
             .chain(&ta_extra::FUNCTIONS)
             .chain(&math::SUPPORTED)
             .chain(&strings::SUPPORTED)
-            .chain(&INPUTS)
+            .chain(&input_arguments::FUNCTIONS)
             .chain(&array_builtins::KNOWN)
             .chain(&map_builtins::NAMES)
             .chain(&ACTIONS)

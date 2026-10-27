@@ -41,6 +41,9 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("strategy.close_all", close());
     table.insert("plot", plot());
     table.insert("plotarrow", plotarrow());
+    for function in std::iter::once("input").chain(super::input_arguments::FUNCTIONS) {
+        table.insert(function, input());
+    }
     for rule in [
         "strategy.risk.max_drawdown",
         "strategy.risk.max_intraday_loss",
@@ -153,6 +156,19 @@ fn plot() -> HashMap<&'static str, &'static str> {
             "The value is formatted by the chart's own rules.",
         ),
         ("linestyle", "The line is always solid."),
+    ])
+}
+
+fn input() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        (
+            "display",
+            "The input is not listed in the status line or the Data Window.",
+        ),
+        (
+            "active",
+            "The input can always be edited; it is never greyed out.",
+        ),
     ])
 }
 

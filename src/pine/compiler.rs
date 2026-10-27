@@ -8,6 +8,7 @@ use super::alert_frequency::AlertFrequency;
 use super::ast::{Argument, EnumMember, Expression, Statement};
 use super::builtins;
 use super::calendar;
+use super::input_arguments::InputArguments;
 use super::operators;
 use super::outputs::{LineExtend, LineStyle, MarkerLocation, MarkerShape, Size, TablePosition};
 use super::program::{
@@ -608,10 +609,9 @@ fn collect_inputs(
                 }
                 continue;
             }
-            let Some(default) = arguments
-                .iter()
-                .find(|a| a.name.is_none() || a.name.as_deref() == Some("defval"))
-            else {
+            let inputs = InputArguments::new(fn_name, arguments);
+            let constant = |expression: &Expression| constant_value(expression, environment);
+            let Some(default) = inputs.find("defval") else {
                 diagnostics.push(Diagnostic::error(
                     "PINE3010",
                     DiagnosticCategory::Semantic,
@@ -631,17 +631,18 @@ fn collect_inputs(
             };
             schema.inputs.push(InputDefinition {
                 id: name.clone(),
-                kind: builtins::input_type(fn_name),
+                kind: builtins::input_kind(fn_name, &default_value),
+                control: builtins::input_control(fn_name),
                 default_value,
-                title: input_title(arguments, environment),
-                tooltip: input_string(arguments, "tooltip", environment),
-                group: input_string(arguments, "group", environment),
-                inline: input_string(arguments, "inline", environment),
-                confirm: input_bool(arguments, "confirm"),
-                min_value: input_number(arguments, "minval", environment),
-                max_value: input_number(arguments, "maxval", environment),
-                step: input_number(arguments, "step", environment),
-                options: input_options(arguments, fn_name, environment),
+                title: input_title(&inputs, &constant),
+                tooltip: inputs.string("tooltip", &constant),
+                group: inputs.string("group", &constant),
+                inline: inputs.string("inline", &constant),
+                confirm: inputs.flag("confirm"),
+                min_value: inputs.number("minval", &constant),
+                max_value: inputs.number("maxval", &constant),
+                step: inputs.number("step", &constant),
+                options: input_options(&inputs, fn_name, environment),
                 option_titles: None,
             });
         }
@@ -673,12 +674,12 @@ fn enum_input(
     enums: &HashMap<String, Vec<EnumMember>>,
     environment: &HashMap<String, RuntimeValue>,
 ) -> Option<InputDefinition> {
-    let first = args
-        .iter()
-        .find(|a| a.name.is_none() || a.name.as_deref() == Some("defval"))?;
+    let inputs = InputArguments::new("input.enum", args);
+    let constant = |expression: &Expression| constant_value(expression, environment);
+    let first = inputs.find("defval")?;
     let (initial_name, _) = enum_member(&first.value, enums)?;
     let mut choices: Vec<(String, EnumMember)> = Vec::new();
-    if let Some(listed) = args.iter().find(|a| a.name.as_deref() == Some("options")) {
+    if let Some(listed) = inputs.find("options") {
         if let Expression::Tuple(values, _) = &listed.value {
             choices = values
                 .iter()
@@ -697,11 +698,12 @@ fn enum_input(
         id: variable.to_owned(),
         kind: ValueType::String,
         default_value: InputValue::String(initial_name.clone()),
-        title: input_title(args, environment),
-        tooltip: input_string(args, "tooltip", environment),
-        group: input_string(args, "group", environment),
-        inline: input_string(args, "inline", environment),
-        confirm: input_bool(args, "confirm"),
+        control: super::program::InputControl::Standard,
+        title: input_title(&inputs, &constant),
+        tooltip: inputs.string("tooltip", &constant),
+        group: inputs.string("group", &constant),
+        inline: inputs.string("inline", &constant),
+        confirm: inputs.flag("confirm"),
         min_value: None,
         max_value: None,
         step: None,
@@ -731,58 +733,21 @@ fn enum_member(
     Some((full.clone(), member))
 }
 
-fn input_string(
-    args: &[Argument],
-    key: &str,
-    environment: &HashMap<String, RuntimeValue>,
+/// The input's title: `title`, in the second place when passed by position.
+fn input_title(
+    inputs: &InputArguments,
+    constant: &dyn Fn(&Expression) -> Option<RuntimeValue>,
 ) -> Option<String> {
-    let argument = args.iter().find(|a| a.name.as_deref() == Some(key))?;
-    match constant_value(&argument.value, environment)? {
-        RuntimeValue::String(value) => Some(value),
-        _ => None,
-    }
+    inputs.string("title", constant)
 }
 
-fn input_number(
-    args: &[Argument],
-    key: &str,
-    environment: &HashMap<String, RuntimeValue>,
-) -> Option<f64> {
-    let argument = args.iter().find(|a| a.name.as_deref() == Some(key))?;
-    constant_value(&argument.value, environment)?.number()
-}
-
-fn input_bool(args: &[Argument], key: &str) -> bool {
-    matches!(
-        args.iter()
-            .find(|a| a.name.as_deref() == Some(key))
-            .map(|a| &a.value),
-        Some(Expression::Literal(super::ast::Literal::Bool(true), _))
-    )
-}
-
-fn input_title(args: &[Argument], environment: &HashMap<String, RuntimeValue>) -> Option<String> {
-    if let Some(title) = input_string(args, "title", environment) {
-        return Some(title);
-    }
-    let second = args.get(1).filter(|a| a.name.is_none())?;
-    match constant_value(&second.value, environment)? {
-        RuntimeValue::String(value) => Some(value),
-        _ => None,
-    }
-}
-
+/// The `options` the call lists, as values; None when it lists none or one of them is not constant.
 fn input_options(
-    args: &[Argument],
+    inputs: &InputArguments,
     function: &str,
     environment: &HashMap<String, RuntimeValue>,
 ) -> Option<Vec<InputValue>> {
-    let positional: Vec<&Argument> = args.iter().filter(|a| a.name.is_none()).collect();
-    let argument = args
-        .iter()
-        .find(|a| a.name.as_deref() == Some("options"))
-        .or_else(|| positional.get(2).copied())?;
-    let Expression::Tuple(values, _) = &argument.value else {
+    let Expression::Tuple(values, _) = &inputs.find("options")?.value else {
         return None;
     };
     let options: Vec<InputValue> = values

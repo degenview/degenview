@@ -41,10 +41,25 @@ pub enum InputValue {
     Source(String),
 }
 
+/// What an input is edited with, beyond what its value says: the string inputs of `input.symbol`,
+/// `input.timeframe`, `input.session` and `input.text_area` and the float of `input.price` hold the
+/// same kinds of value as `input.string` and `input.float` but are not typed the same way.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum InputControl {
+    #[default]
+    Standard,
+    Price,
+    Symbol,
+    Timeframe,
+    Session,
+    TextArea,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct InputDefinition {
     pub id: String,
     pub kind: ValueType,
+    pub control: InputControl,
     pub default_value: InputValue,
     pub title: Option<String>,
     pub tooltip: Option<String>,
