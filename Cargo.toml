@@ -89,6 +89,15 @@ objc2-user-notifications = { version = "0.3.2", features = [
     "UNUserNotificationCenter",
 ] }
 
+[profile.dev]
+# Line tables keep file:line in backtraces; full DWARF for every dependency was a third of a fresh target/.
+debug = "line-tables-only"
+# Do not leave per-object debug files (.o) behind for every rebuild.
+split-debuginfo = "off"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 lto = "thin"
 strip = true
