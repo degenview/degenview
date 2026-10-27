@@ -45,6 +45,12 @@
   converts to `pine::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
   use is `PINE4037`; an index or range outside the matrix is `PINE4010`. `Bound` holds six arguments
   (`matrix.fill`), so a new builtin with more needs `BOUND_CAPACITY` raised and `tools/pine-bench.sh` run.
+  Linear algebra (`det`, `inv`, `pinv`, `rank`, `eigenvalues`, `eigenvectors`) is `linalg::Dense`: LU for
+  `det`/`inv`, one-sided Jacobi SVD for `rank`/`pinv`, EISPACK `tred2`/`tql2` for the eigen-decomposition.
+  A `na` cell gives `na` (a matrix or array of `na` for the others) and a singular `inv` is a matrix of
+  `na`, so a script is never stopped by data. The eigen-decomposition only exists for a symmetric matrix;
+  anything else is `PINE4037` (TradingView names the same QL algorithm and does not say what it does
+  for other matrices).
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

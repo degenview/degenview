@@ -46,7 +46,7 @@ pub fn parameters(name: &str) -> &'static [&'static str] {
 }
 
 /// Every `matrix.*` function this module handles, without the prefix.
-pub const MEMBERS: [&str; 33] = [
+pub const MEMBERS: [&str; 49] = [
     "new",
     "get",
     "set",
@@ -80,6 +80,22 @@ pub const MEMBERS: [&str; 33] = [
     "swap_rows",
     "swap_columns",
     "trace",
+    "det",
+    "inv",
+    "pinv",
+    "rank",
+    "eigenvalues",
+    "eigenvectors",
+    "is_square",
+    "is_identity",
+    "is_diagonal",
+    "is_antidiagonal",
+    "is_symmetric",
+    "is_antisymmetric",
+    "is_triangular",
+    "is_stochastic",
+    "is_binary",
+    "is_zero",
 ];
 
 /// The functions that take two matrices (or a matrix and a number or vector) as `id1` and `id2`.
@@ -415,6 +431,13 @@ fn apply(
             ));
         }
         "trace" => return Ok(trace(matrix)),
+        "det" | "inv" | "pinv" | "rank" | "eigenvalues" | "eigenvectors" => {
+            return linear_algebra(call, matrix, state);
+        }
+        "is_square" | "is_identity" | "is_diagonal" | "is_antidiagonal" | "is_symmetric"
+        | "is_antisymmetric" | "is_triangular" | "is_stochastic" | "is_binary" | "is_zero" => {
+            return Ok(RuntimeValue::Bool(has_shape(member, matrix)));
+        }
         "sum" | "diff" | "mult" | "kron" | "concat" => return binary(call, matrix, state),
         "pow" => {
             let result = power(call, matrix)?;
@@ -624,14 +647,140 @@ fn power(call: &Call, matrix: &Matrix) -> Result<Matrix, Diagnostic> {
             call.range,
         ));
     };
-    let Ok(exponent) = u64::try_from(exponent) else {
-        return Err(dimensions(
-            call.name,
-            "a negative power is not supported",
-            call.range,
-        ));
+    let base = dense(matrix);
+    if base.data().iter().any(|value| value.is_nan()) {
+        return Ok(unavailable(matrix.rows(), matrix.columns()));
+    }
+    // A negative power is the power of the inverse; a singular matrix has none.
+    let base = if exponent < 0 {
+        match base.inverse() {
+            Some(inverse) => inverse,
+            None => return Ok(unavailable(matrix.rows(), matrix.columns())),
+        }
+    } else {
+        base
     };
-    Ok(matrix_of(&dense(matrix).power(exponent)))
+    Ok(matrix_of(&base.power(exponent.unsigned_abs())))
+}
+
+/// A matrix of `na`: what a calculation that has no answer (a singular inverse, a `na` input)
+/// gives instead of stopping the script.
+fn unavailable(rows: usize, columns: usize) -> Matrix {
+    Matrix::new(rows, columns, RuntimeValue::Na)
+}
+
+/// `det`, `inv`, `pinv`, `rank`, `eigenvalues` and `eigenvectors`, on `f64`s. A `na` element makes
+/// the answer `na` (an array or matrix of `na` for those); `inv` of a singular matrix is a matrix
+/// of `na`. Everything but `pinv` and `rank` needs a square matrix, and the eigenvalues need a
+/// symmetric one.
+fn linear_algebra(
+    call: &Call,
+    matrix: &Matrix,
+    state: &mut RuntimeState,
+) -> Result<RuntimeValue, Diagnostic> {
+    let (name, range) = (call.name, call.range);
+    let (rows, columns) = (matrix.rows(), matrix.columns());
+    if !matrix.is_square() && !matches!(call.member, "pinv" | "rank") {
+        return Err(dimensions(
+            name,
+            &format!("needs a square matrix, got {rows}×{columns}"),
+            range,
+        ));
+    }
+    let numbers = dense(matrix);
+    let has_na = numbers.data().iter().any(|value| value.is_nan());
+    let na_array = |state: &mut RuntimeState| new_array(state, vec![RuntimeValue::Na; rows]);
+    Ok(match call.member {
+        "det" if has_na => RuntimeValue::Na,
+        "det" => RuntimeValue::Float(numbers.determinant()),
+        "rank" if has_na => RuntimeValue::Na,
+        "rank" => RuntimeValue::Int(numbers.rank() as i64),
+        "inv" => new_matrix(
+            state,
+            match numbers.inverse().filter(|_| !has_na) {
+                Some(inverse) => matrix_of(&inverse),
+                None => unavailable(rows, columns),
+            },
+        ),
+        "pinv" if has_na => new_matrix(state, unavailable(columns, rows)),
+        "pinv" => new_matrix(state, matrix_of(&numbers.pseudo_inverse())),
+        "eigenvalues" | "eigenvectors" if has_na => {
+            if call.member == "eigenvalues" {
+                na_array(state)
+            } else {
+                new_matrix(state, unavailable(rows, columns))
+            }
+        }
+        _ => {
+            if !numbers.is_symmetric() {
+                return Err(dimensions(
+                    name,
+                    "the eigen-decomposition is only supported for a symmetric matrix",
+                    range,
+                ));
+            }
+            let Some((values, vectors)) = numbers.symmetric_eigen() else {
+                return Err(dimensions(name, "the QL iteration did not converge", range));
+            };
+            if call.member == "eigenvalues" {
+                new_array(state, values.into_iter().map(RuntimeValue::Float).collect())
+            } else {
+                new_matrix(state, matrix_of(&vectors))
+            }
+        }
+    })
+}
+
+/// The `is_*` tests. Only numbers qualify: a `na` cell fails every test it takes part in. The
+/// reference says `is_identity`, `is_diagonal`, `is_symmetric`, `is_antisymmetric` and
+/// `is_triangular` are false for a non-square matrix; `is_stochastic` is taken to be square too.
+fn has_shape(member: &str, matrix: &Matrix) -> bool {
+    let (rows, columns) = (matrix.rows(), matrix.columns());
+    let number = |row: usize, column: usize| matrix.get(row, column).number();
+    let cells = || (0..rows).flat_map(move |row| (0..columns).map(move |column| (row, column)));
+    let is = |row: usize, column: usize, wanted: f64| number(row, column) == Some(wanted);
+    let square = matrix.is_square();
+    match member {
+        "is_square" => square,
+        "is_zero" => cells().all(|(row, column)| is(row, column, 0.0)),
+        "is_binary" => cells().all(|(row, column)| is(row, column, 0.0) || is(row, column, 1.0)),
+        "is_diagonal" => {
+            square && cells().all(|(row, column)| row == column || is(row, column, 0.0))
+        }
+        "is_identity" => {
+            square
+                && cells().all(|(row, column)| is(row, column, f64::from(u8::from(row == column))))
+        }
+        "is_antidiagonal" => {
+            cells().all(|(row, column)| row + column + 1 == columns || is(row, column, 0.0))
+        }
+        "is_symmetric" => {
+            square
+                && cells().all(|(row, column)| {
+                    matches!((number(row, column), number(column, row)), (Some(a), Some(b)) if a == b)
+                })
+        }
+        "is_antisymmetric" => {
+            square
+                && cells().all(|(row, column)| {
+                    matches!((number(row, column), number(column, row)), (Some(a), Some(b)) if a == -b)
+                })
+        }
+        "is_triangular" => {
+            square
+                && (cells().all(|(row, column)| row <= column || is(row, column, 0.0))
+                    || cells().all(|(row, column)| row >= column || is(row, column, 0.0)))
+        }
+        _ => {
+            // "is_stochastic": non-negative with every row summing to one (a right stochastic matrix).
+            square
+                && cells().all(|(row, column)| number(row, column).is_some_and(|v| v >= 0.0))
+                && (0..rows).all(|row| {
+                    let sum: f64 = (0..columns).filter_map(|column| number(row, column)).sum();
+                    (sum - 1.0).abs() <= 1e-9
+                })
+        }
+    }
 }
 
 /// `sum`, `diff`, `mult`, `kron` and `concat`. Arithmetic keeps an element an int while both of its
@@ -1189,12 +1338,21 @@ mod tests {
                 .code,
             "PINE4037"
         );
-        assert_eq!(
-            run(&mut state, "matrix.pow", &[fibonacci, Int(-1)])
-                .unwrap_err()
-                .code,
-            "PINE4037"
-        );
+        // A negative power is the power of the inverse; a singular matrix has none.
+        let inverse_cubed = ok(&mut state, "matrix.pow", &[fibonacci, Int(-3)]);
+        let rows = rows_of(&state, &inverse_cubed);
+        // [[1,1],[1,0]]⁻³ = [[-1,2],[2,-3]].
+        for (row, expected) in rows.iter().zip([[-1.0, 2.0], [2.0, -3.0]]) {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!(
+                    matches!(cell, Float(got) if (got - want).abs() < 1e-12),
+                    "{rows:?}"
+                );
+            }
+        }
+        let singular = matrix_from(&mut state, &[&[1, 2], &[2, 4]]);
+        let none = ok(&mut state, "matrix.pow", &[singular, Int(-1)]);
+        assert_eq!(rows_of(&state, &none), [[Na, Na], [Na, Na]]);
     }
 
     #[test]
@@ -1385,5 +1543,222 @@ mod tests {
             assert!(!parameters(&name).is_empty(), "{name}");
         }
         assert!(!handles("matrix.nope") && !handles("array.get"));
+    }
+
+    fn float(value: &RuntimeValue) -> f64 {
+        value
+            .number()
+            .unwrap_or_else(|| panic!("not a number: {value:?}"))
+    }
+
+    #[test]
+    fn det_and_rank_read_the_matrix() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[6, 1, 1], &[4, -2, 5], &[2, 8, 7]]);
+        assert!(
+            (float(&ok(&mut state, "matrix.det", std::slice::from_ref(&m))) + 306.0).abs() < 1e-9
+        );
+        assert_eq!(ok(&mut state, "matrix.rank", &[m]), Int(3));
+        let flat = matrix_from(&mut state, &[&[1, 2, 3], &[4, 5, 6], &[7, 8, 9]]);
+        assert_eq!(
+            ok(&mut state, "matrix.rank", std::slice::from_ref(&flat)),
+            Int(2)
+        );
+        assert!(float(&ok(&mut state, "matrix.det", &[flat])).abs() < 1e-9);
+        let wide = matrix_from(&mut state, &[&[1, 0, 1], &[0, 1, 1]]);
+        assert_eq!(
+            ok(&mut state, "matrix.rank", std::slice::from_ref(&wide)),
+            Int(2)
+        );
+        let error = run(&mut state, "matrix.det", &[wide]).unwrap_err();
+        assert_eq!(error.code, "PINE4037");
+        assert!(error.message.contains("2×3"), "{}", error.message);
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(ok(&mut state, "matrix.det", &[empty]), Float(1.0));
+    }
+
+    #[test]
+    fn inv_undoes_the_matrix_and_pinv_matches_it_when_it_exists() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[4, 7], &[2, 6]]);
+        let inverse = ok(&mut state, "matrix.inv", std::slice::from_ref(&m));
+        for (row, expected) in rows_of(&state, &inverse)
+            .iter()
+            .zip([[0.6, -0.7], [-0.2, 0.4]])
+        {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!((float(cell) - want).abs() < 1e-12);
+            }
+        }
+        let pseudo = ok(&mut state, "matrix.pinv", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &pseudo), rows_of(&state, &inverse));
+        let singular = matrix_from(&mut state, &[&[1, 2], &[2, 4]]);
+        let none = ok(&mut state, "matrix.inv", std::slice::from_ref(&singular));
+        assert_eq!(rows_of(&state, &none), [[Na, Na], [Na, Na]]);
+        // The pseudoinverse of a singular matrix still exists: [[1,2],[2,4]]⁺ = [[.04,.08],[.08,.16]].
+        let pseudo = ok(&mut state, "matrix.pinv", &[singular]);
+        for (row, expected) in rows_of(&state, &pseudo)
+            .iter()
+            .zip([[0.04, 0.08], [0.08, 0.16]])
+        {
+            for (cell, want) in row.iter().zip(expected) {
+                assert!((float(cell) - want).abs() < 1e-12);
+            }
+        }
+        let tall = matrix_from(&mut state, &[&[1, 0], &[0, 1], &[0, 0]]);
+        let pseudo = ok(&mut state, "matrix.pinv", &[tall]);
+        assert_eq!(
+            (
+                rows_of(&state, &pseudo).len(),
+                rows_of(&state, &pseudo)[0].len()
+            ),
+            (2, 3)
+        );
+        let wide = matrix_from(&mut state, &[&[1, 2, 3]]);
+        assert_eq!(
+            run(&mut state, "matrix.inv", &[wide]).unwrap_err().code,
+            "PINE4037"
+        );
+    }
+
+    #[test]
+    fn a_na_cell_makes_the_linear_algebra_na() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[2, 1], &[1, 2]]);
+        ok(&mut state, "matrix.set", &[m.clone(), Int(0), Int(1), Na]);
+        assert_eq!(ok(&mut state, "matrix.det", std::slice::from_ref(&m)), Na);
+        assert_eq!(ok(&mut state, "matrix.rank", std::slice::from_ref(&m)), Na);
+        let inverse = ok(&mut state, "matrix.inv", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &inverse), [[Na, Na], [Na, Na]]);
+        let values = ok(&mut state, "matrix.eigenvalues", std::slice::from_ref(&m));
+        assert_eq!(items(&state, &values), [Na, Na]);
+        let vectors = ok(&mut state, "matrix.eigenvectors", std::slice::from_ref(&m));
+        assert_eq!(rows_of(&state, &vectors), [[Na, Na], [Na, Na]]);
+        let pseudo = ok(&mut state, "matrix.pinv", &[m]);
+        assert_eq!(rows_of(&state, &pseudo), [[Na, Na], [Na, Na]]);
+    }
+
+    #[test]
+    fn eigenvalues_and_vectors_of_a_symmetric_matrix() {
+        let mut state = RuntimeState::default();
+        let m = matrix_from(&mut state, &[&[2, 1], &[1, 2]]);
+        let values = ok(&mut state, "matrix.eigenvalues", std::slice::from_ref(&m));
+        let values = items(&state, &values);
+        assert!((float(&values[0]) - 1.0).abs() < 1e-12 && (float(&values[1]) - 3.0).abs() < 1e-12);
+        let vectors = ok(&mut state, "matrix.eigenvectors", std::slice::from_ref(&m));
+        let columns = rows_of(&state, &vectors);
+        // A·v = λ·v for each column v.
+        for (k, lambda) in values.iter().enumerate() {
+            let v = [float(&columns[0][k]), float(&columns[1][k])];
+            let image = [2.0 * v[0] + v[1], v[0] + 2.0 * v[1]];
+            assert!((image[0] - float(lambda) * v[0]).abs() < 1e-12);
+            assert!((image[1] - float(lambda) * v[1]).abs() < 1e-12);
+        }
+        let skew = matrix_from(&mut state, &[&[1, 2], &[3, 4]]);
+        for name in ["matrix.eigenvalues", "matrix.eigenvectors"] {
+            let error = run(&mut state, name, std::slice::from_ref(&skew)).unwrap_err();
+            assert_eq!(error.code, "PINE4037");
+            assert!(error.message.contains("symmetric"), "{}", error.message);
+        }
+    }
+
+    fn shape_answers(state: &mut RuntimeState, rows: &[&[i64]]) -> Vec<&'static str> {
+        let m = matrix_from(state, rows);
+        let mut names = Vec::new();
+        for member in MEMBERS.iter().filter(|member| member.starts_with("is_")) {
+            let answer = ok(state, &format!("matrix.{member}"), std::slice::from_ref(&m));
+            if answer == RuntimeValue::Bool(true) {
+                names.push(*member);
+            }
+        }
+        names
+    }
+
+    #[test]
+    fn the_shape_tests_agree_with_their_definitions() {
+        let mut state = RuntimeState::default();
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 0], &[0, 1]]),
+            [
+                "is_square",
+                "is_identity",
+                "is_diagonal",
+                "is_symmetric",
+                "is_triangular",
+                "is_stochastic",
+                "is_binary"
+            ]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 0], &[0, 0]]),
+            [
+                "is_square",
+                "is_diagonal",
+                "is_antidiagonal",
+                "is_symmetric",
+                "is_antisymmetric",
+                "is_triangular",
+                "is_binary",
+                "is_zero"
+            ]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 3], &[4, 0]]),
+            ["is_square", "is_antidiagonal"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 5], &[-5, 0]]),
+            ["is_square", "is_antidiagonal", "is_antisymmetric"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 2], &[0, 3]]),
+            ["is_square", "is_triangular"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 2], &[2, 5]]),
+            ["is_square", "is_symmetric"]
+        );
+        // A non-square matrix is none of the square-only kinds.
+        assert_eq!(
+            shape_answers(&mut state, &[&[1, 0, 0], &[0, 1, 0]]),
+            ["is_binary"]
+        );
+        assert_eq!(
+            shape_answers(&mut state, &[&[0, 0, 7]]),
+            ["is_antidiagonal"]
+        );
+        // Stochastic: non-negative rows that sum to one.
+        let m = ok(&mut state, "matrix.new", &[Int(2), Int(2), Float(0.5)]);
+        assert_eq!(
+            ok(&mut state, "matrix.is_stochastic", std::slice::from_ref(&m)),
+            RuntimeValue::Bool(true)
+        );
+        ok(
+            &mut state,
+            "matrix.set",
+            &[m.clone(), Int(0), Int(0), Float(0.6)],
+        );
+        assert_eq!(
+            ok(&mut state, "matrix.is_stochastic", std::slice::from_ref(&m)),
+            RuntimeValue::Bool(false)
+        );
+        // `na` is not zero, not binary, and not equal to its mirror.
+        let na = ok(&mut state, "matrix.new", &[Int(2), Int(2), Na]);
+        for member in ["is_zero", "is_binary", "is_symmetric", "is_identity"] {
+            assert_eq!(
+                ok(
+                    &mut state,
+                    &format!("matrix.{member}"),
+                    std::slice::from_ref(&na)
+                ),
+                RuntimeValue::Bool(false),
+                "{member}"
+            );
+        }
+        let empty = ok(&mut state, "matrix.new", &[Int(0), Int(0)]);
+        assert_eq!(
+            ok(&mut state, "matrix.is_square", &[empty]),
+            RuntimeValue::Bool(true)
+        );
     }
 }
