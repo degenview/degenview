@@ -78,14 +78,14 @@ impl SecurityDataProvider for WalkData {
     }
 }
 
-fn limits() -> Limits {
+pub(crate) fn limits() -> Limits {
     Limits {
         deadline_seconds: 600.0,
         ..Limits::default()
     }
 }
 
-fn symbol() -> SymbolInfo {
+pub(crate) fn symbol() -> SymbolInfo {
     SymbolInfo {
         ticker: "BTCUSDT".to_owned(),
         ticker_id: "BINANCE:BTCUSDT".to_owned(),

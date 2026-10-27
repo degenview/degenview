@@ -7,10 +7,7 @@
 use super::edit_ops;
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
-use crate::pine::{
-    array_builtins, drawings, input_arguments, map_builtins, math, matrix_builtins,
-    strategy_builtins, strings, ta, ta_extra,
-};
+use crate::pine::{misc_builtins, registry, ta_extra};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -98,78 +95,6 @@ const TYPES: [&str; 16] = [
     "volume_row",
 ];
 
-/// Names beyond the engine tables, each verified by `every_listed_name_is_supported`.
-const MORE_TA: [&str; 13] = [
-    "ta.barssince",
-    "ta.vwap",
-    "ta.dmi",
-    "ta.cum",
-    "ta.correlation",
-    "ta.tr",
-    "ta.atr",
-    "ta.bb",
-    "ta.pivothigh",
-    "ta.pivotlow",
-    "ta.sar",
-    "ta.supertrend",
-    "ta.linreg",
-];
-
-/// Scalar builtins, exercised end to end by `pine_host::call_site_tests` (the footprint ones by
-/// `pine::footprint_tests`).
-const MORE_SCALAR: [&str; 40] = [
-    "max_bars_back",
-    "ticker.new",
-    "ticker.standard",
-    "ticker.modify",
-    "ticker.inherit",
-    "log.info",
-    "log.warning",
-    "log.error",
-    "request.currency_rate",
-    "chart.point.new",
-    "request.security",
-    "timeframe.in_seconds",
-    "timeframe.change",
-    "str.format_time",
-    "runtime.error",
-    "color.r",
-    "color.g",
-    "color.b",
-    "color.t",
-    "color.from_gradient",
-    "fixnan",
-    "timeframe.from_seconds",
-    "request.footprint",
-    "footprint.buy_volume",
-    "footprint.sell_volume",
-    "footprint.total_volume",
-    "footprint.delta",
-    "footprint.poc",
-    "footprint.vah",
-    "footprint.val",
-    "footprint.rows",
-    "footprint.get_row_by_price",
-    "volume_row.up_price",
-    "volume_row.down_price",
-    "volume_row.buy_volume",
-    "volume_row.sell_volume",
-    "volume_row.total_volume",
-    "volume_row.delta",
-    "volume_row.has_buy_imbalance",
-    "volume_row.has_sell_imbalance",
-];
-
-/// Arrays of the drawings alive, read as variables.
-const DRAWING_COLLECTIONS: [&str; 6] = [
-    "line.all",
-    "label.all",
-    "box.all",
-    "table.all",
-    "linefill.all",
-    "polyline.all",
-];
-
 const COLORS: [&str; 19] = [
     "color.aqua",
     "color.black",
@@ -190,14 +115,6 @@ const COLORS: [&str; 19] = [
     "color.yellow",
     "color.new",
     "color.rgb",
-];
-
-const ACTIONS: [&str; 5] = [
-    "alert",
-    "alertcondition",
-    "strategy.entry",
-    "strategy.close",
-    "strategy.exit",
 ];
 
 const CONSTANTS: [&str; 24] = [
@@ -241,36 +158,23 @@ pub fn builtins() -> &'static [Item] {
         for name in catalog::FUNCTIONS {
             add(name, Kind::Function);
         }
-        for name in ta_extra::VARIABLES.iter().chain(&DRAWING_COLLECTIONS) {
+        for name in ta_extra::VARIABLES
+            .iter()
+            .chain(&registry::DRAWING_COLLECTIONS)
+        {
             add(name, Kind::Variable);
         }
         for name in catalog::RESERVED_CONSTANTS {
             add(name, Kind::Constant);
         }
-        for name in ta::SUPPORTED
-            .iter()
-            .chain(&MORE_TA)
-            .chain(&MORE_SCALAR)
-            .chain(&ta_extra::FUNCTIONS)
-            .chain(&math::SUPPORTED)
-            .chain(&strings::SUPPORTED)
-            .chain(&input_arguments::FUNCTIONS)
-            .chain(&array_builtins::KNOWN)
-            .chain(&map_builtins::NAMES)
-            .chain(&ACTIONS)
-            .chain(&strategy_builtins::NAMES)
-        {
-            add(name, Kind::Function);
-        }
-        for member in matrix_builtins::MEMBERS {
-            add(&format!("matrix.{member}"), Kind::Function);
-        }
-        for (namespace, members) in drawings::NAMESPACES {
-            for member in members {
-                add(&format!("{namespace}.{member}"), Kind::Function);
-            }
-        }
-        for name in drawings::CHART_POINT_NAMES {
+        // Every function the engine runs. Not the ones that answer `na` because the app has no such
+        // feed, which are registered so the compiler knows them but are not worth suggesting.
+        for name in registry::all_functions().iter().filter(|name| {
+            let name = name.as_str();
+            (!misc_builtins::UNAVAILABLE_FEEDS.contains(&name) || name == "request.currency_rate")
+                && !misc_builtins::CURRENCY_CONVERSIONS.contains(&name)
+                && name != "chart.point"
+        }) {
             add(name, Kind::Function);
         }
         for name in COLORS
@@ -400,7 +304,7 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::{alert_builtins, strategy_builtins};
+    use crate::pine::{array_builtins, drawings, map_builtins, matrix_builtins};
 
     fn labels(completion: &Completion) -> Vec<&str> {
         completion.items.iter().map(|i| i.label.as_str()).collect()
@@ -435,36 +339,11 @@ mod tests {
                 unsupported.push(name.to_owned());
             }
         };
-        for name in MORE_TA {
-            let known = ta::is_supported(name)
-                || matches!(
-                    name,
-                    "ta.cum"
-                        | "ta.barssince"
-                        | "ta.vwap"
-                        | "ta.dmi"
-                        | "ta.correlation"
-                        | "ta.tr"
-                        | "ta.atr"
-                        | "ta.bb"
-                        | "ta.pivothigh"
-                        | "ta.pivotlow"
-                        | "ta.sar"
-                        | "ta.supertrend"
-                );
-            check(name, known);
-        }
         for name in COLORS {
             check(
                 name,
                 crate::pine::builtins::color(name).is_some()
                     || matches!(name, "color.new" | "color.rgb"),
-            );
-        }
-        for name in ACTIONS {
-            check(
-                name,
-                alert_builtins::handles(name) || strategy_builtins::handles(name),
             );
         }
         for name in CONSTANTS {

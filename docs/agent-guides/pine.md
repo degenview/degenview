@@ -206,14 +206,19 @@
   a failure must not be handled in one place only. `ExecutionController` remembers its last failure
   (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
   read as a success.
-- `name_check` reports `PINE3053`, an error, on a call into `array`, `map`, `matrix`, `math`, `str` or `ta`
-  that the runtime does not accept (`array.resize`, `ta.covariance`), with a "Did you mean" for a name two
-  edits away. Each of those has its names listed in `unknown_member`: the dispatch tables plus a short
-  inline list (`TA_INLINE`, `STR_INLINE`) for what the session evaluates outside them. Add a function to
-  the interpreter and you must list it: a test reads the `ta.` names out of the engine's source, and the
-  editor's completion list is checked against the rule. `request`, `color` and the drawing namespaces are
-  dispatched from several places and stay unchecked. A false error on a script that runs is worse than a
-  missed typo; the Pine corpus must stay free of `PINE3053`.
+- **A new builtin is registered in `pine::registry`.** The registry gathers the per-module name lists
+  (`array_builtins::KNOWN`, `math::SUPPORTED`, `drawings::NAMESPACES`, `strategy_builtins::NAMES`, …) plus
+  the few names the session evaluates inline (`TA_INLINE`, `STR_INLINE`, `OTHER_FUNCTIONS`), and the
+  compiler and the editor's completion read it. The module tables stay what the interpreter dispatches
+  from; add the name there **and**, if it is evaluated inline, to the registry. Two guards fail until you
+  do: every registered function runs and is not `PINE4007` (registry ⊆ runtime), and every `"ns.member"`
+  literal under `src/pine` in a closed namespace is registered or a known value (runtime ⊆ registry).
+- In a **closed** namespace (`registry::CLOSED`) an unregistered call is `PINE3053`, an error, with a "Did
+  you mean". In a **value-closed** one (`CLOSED_VALUES`) an unknown variable read is `PINE3050`. A
+  namespace is added only when both guards pass and the Pine corpus is unchanged: `request` stays open
+  (it has its own `PINE9003`); `syminfo`, `strategy` and `runtime` stay open for values because Pine adds
+  variables there over time (`syminfo.cftc_code` failed the corpus). A false error on a script that runs is
+  worse than a missed typo.
 - A script that fails when it runs has no profile (`Profiler::finish`), only the failure, which the
   Problems list also shows.
 - Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the

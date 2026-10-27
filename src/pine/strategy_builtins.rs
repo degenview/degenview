@@ -154,6 +154,45 @@ fn set_risk_rule(name: &str, args: &[Arg], state: &mut RuntimeState) -> RuntimeV
     RuntimeValue::Void
 }
 
+/// The `strategy.closedtrades.<property>(n)` functions, which `trade_property` answers.
+pub const CLOSED_TRADE_PROPERTIES: [&str; 18] = [
+    "entry_bar_index",
+    "entry_id",
+    "entry_price",
+    "entry_time",
+    "exit_bar_index",
+    "exit_id",
+    "exit_price",
+    "exit_time",
+    "size",
+    "profit",
+    "profit_percent",
+    "commission",
+    "entry_comment",
+    "exit_comment",
+    "max_runup",
+    "max_runup_percent",
+    "max_drawdown",
+    "max_drawdown_percent",
+];
+
+/// The `strategy.opentrades.<property>(n)` functions, which `trade_property` answers.
+pub const OPEN_TRADE_PROPERTIES: [&str; 13] = [
+    "entry_bar_index",
+    "entry_id",
+    "entry_price",
+    "entry_time",
+    "size",
+    "profit",
+    "profit_percent",
+    "commission",
+    "entry_comment",
+    "max_runup",
+    "max_runup_percent",
+    "max_drawdown",
+    "max_drawdown_percent",
+];
+
 /// `strategy.closedtrades.exit_price(n)`, `strategy.opentrades.profit(n)`, …: one property of the
 /// `trade_number`th trade (0 is the oldest). `na` for a trade that does not exist. None when `name`
 /// is not a property this engine tracks (per-trade run-up and drawdown are not).
@@ -172,27 +211,7 @@ pub fn trade_property(
         profit_percent(profit, price, quantity).map_or(RuntimeValue::Na, float)
     };
     if let Some(property) = closed {
-        let known = matches!(
-            property,
-            "entry_bar_index"
-                | "entry_id"
-                | "entry_price"
-                | "entry_time"
-                | "exit_bar_index"
-                | "exit_id"
-                | "exit_price"
-                | "exit_time"
-                | "size"
-                | "profit"
-                | "profit_percent"
-                | "commission"
-                | "entry_comment"
-                | "exit_comment"
-                | "max_runup"
-                | "max_runup_percent"
-                | "max_drawdown"
-                | "max_drawdown_percent"
-        );
+        let known = CLOSED_TRADE_PROPERTIES.contains(&property);
         if !known {
             return None;
         }
@@ -223,22 +242,7 @@ pub fn trade_property(
         });
     }
     let property = open?;
-    if !matches!(
-        property,
-        "entry_bar_index"
-            | "entry_id"
-            | "entry_price"
-            | "entry_time"
-            | "size"
-            | "profit"
-            | "profit_percent"
-            | "commission"
-            | "entry_comment"
-            | "max_runup"
-            | "max_runup_percent"
-            | "max_drawdown"
-            | "max_drawdown_percent"
-    ) {
+    if !OPEN_TRADE_PROPERTIES.contains(&property) {
         return None;
     }
     let Some(trade) = index.and_then(|i| broker.open_trades.get(i)) else {
