@@ -1363,3 +1363,93 @@ fn the_cell_properties_the_chart_cannot_draw_are_warned_about() {
     assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 2);
     assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 3);
 }
+
+#[test]
+fn plotarrow_records_a_value_and_both_colors_for_each_bar() {
+    let session = run(
+        "plotarrow(bar_index % 3 - 1, \"arrows\", color.green, color.maroon, minheight = 8, maxheight = 40)",
+        6,
+    );
+    let output = session.output();
+    let arrow = &output.arrows[0];
+    assert_eq!(arrow.title.as_deref(), Some("arrows"));
+    assert_eq!(
+        arrow.values,
+        [-1, 0, 1, -1, 0, 1].map(|v| Some(f64::from(v)))
+    );
+    let color = |name: &str| crate::pine::builtins::color(name);
+    assert!(arrow.up_colors.iter().all(|c| *c == color("color.green")));
+    assert!(
+        arrow
+            .down_colors
+            .iter()
+            .all(|c| *c == color("color.maroon"))
+    );
+    assert_eq!((arrow.min_height, arrow.max_height), (8.0, 40.0));
+}
+
+#[test]
+fn plotarrow_without_options_has_the_defaults_and_na_draws_nothing() {
+    let session = run("plotarrow(bar_index == 1 ? na : 2.5)", 3);
+    let output = session.output();
+    let arrow = &output.arrows[0];
+    assert_eq!(arrow.values, [Some(2.5), None, Some(2.5)]);
+    assert_eq!((arrow.min_height, arrow.max_height), (5.0, 100.0));
+    assert_eq!(
+        arrow.up_colors[0],
+        Some(crate::pine::drawings::DEFAULT_COLOR)
+    );
+    assert_eq!(
+        arrow.down_colors[0],
+        crate::pine::builtins::color("color.red")
+    );
+    assert!(!arrow.force_overlay);
+}
+
+#[test]
+fn plotarrow_honours_offset_show_last_and_force_overlay() {
+    let session = run(
+        "plotarrow(bar_index + 1.0, offset = 1, show_last = 2, force_overlay = true)",
+        5,
+    );
+    let output = session.output();
+    // Bar i's value i+1 is shown on bar i+1, and only the last two bars keep their arrow.
+    assert_eq!(
+        output.arrows[0].values,
+        [None, None, None, Some(3.0), Some(4.0)]
+    );
+    assert!(output.has_forced_overlay());
+    let (pane, forced) = output.split_forced_overlay();
+    assert_eq!(forced.arrows.len(), 1);
+    assert_eq!(
+        pane.arrows[0].display & crate::pine::outputs::DISPLAY_PANE,
+        0,
+        "the pane no longer draws it"
+    );
+}
+
+#[test]
+fn plotarrow_is_no_longer_reserved_and_its_ignored_arguments_are_warned_about() {
+    assert!(
+        !diagnostic_codes("plotarrow(close)")
+            .iter()
+            .any(|c| c.starts_with("PINE3") || c.starts_with("PINE4"))
+    );
+    let codes = diagnostic_codes("plotarrow(close, editable = true, format = format.price)");
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 2);
+    assert!(diagnostic_codes("plotarrow(close, offset = 1)").contains(&"PINE7001".to_owned()));
+}
+
+#[test]
+fn the_stepline_diamond_style_is_a_style_of_its_own() {
+    let session = run("plot(close, style = plot.style_stepline_diamond)", 3);
+    assert_eq!(
+        session.output().plots[0].style,
+        crate::pine::outputs::PlotStyle::SteplineDiamond
+    );
+    assert!(
+        !diagnostic_codes("plot(close, style = plot.style_stepline_diamond)")
+            .contains(&"PINE7004".to_owned()),
+        "it is no longer drawn as something else"
+    );
+}

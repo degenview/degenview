@@ -705,6 +705,10 @@ impl Session {
                 .collect(),
             hlines: sorted_by_id(&w.hlines),
             markers: sorted_by_id(&w.markers),
+            arrows: sorted_by_id(&w.arrows)
+                .into_iter()
+                .map(super::outputs::ArrowOutput::finished)
+                .collect(),
             backgrounds: sorted_by_id(&w.backgrounds)
                 .into_iter()
                 .map(super::outputs::ColorOutput::finished)

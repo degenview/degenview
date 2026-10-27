@@ -69,6 +69,55 @@ pub fn font_size(size: Size) -> f32 {
     }
 }
 
+// MARK: Arrows and diamonds
+
+/// Half the width of a `plotarrow()` arrow's head, the longest the head grows, and the shaft's width.
+const ARROW_HALF_WIDTH: f32 = 4.5;
+const ARROW_HEAD_LENGTH: f32 = 7.0;
+const ARROW_SHAFT_WIDTH: f32 = 2.5;
+
+/// The pieces of one `plotarrow()` arrow: a triangular head and, for a long enough arrow, a shaft.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ArrowShape {
+    pub head: [Pos2; 3],
+    pub shaft: Option<Rect>,
+}
+
+/// An arrow of length `height` whose tip is at `tip`, pointing up (its tail below the tip on
+/// screen) or down. A short arrow is all head.
+pub fn arrow_shape(tip: Pos2, up: bool, height: f32) -> ArrowShape {
+    // Downwards on screen is +y: an up arrow's tail is below its tip.
+    let direction = if up { 1.0 } else { -1.0 };
+    let head = ARROW_HEAD_LENGTH.min(height);
+    let base = tip.y + direction * head;
+    let shaft = (height > head).then(|| {
+        let tail = tip.y + direction * height;
+        let (top, bottom) = if up { (base, tail) } else { (tail, base) };
+        Rect::from_min_max(
+            Pos2::new(tip.x - ARROW_SHAFT_WIDTH / 2.0, top),
+            Pos2::new(tip.x + ARROW_SHAFT_WIDTH / 2.0, bottom),
+        )
+    });
+    ArrowShape {
+        head: [
+            tip,
+            Pos2::new(tip.x - ARROW_HALF_WIDTH, base),
+            Pos2::new(tip.x + ARROW_HALF_WIDTH, base),
+        ],
+        shaft,
+    }
+}
+
+/// The corners of a diamond centred on `centre`.
+pub fn diamond_points(centre: Pos2, radius: f32) -> [Pos2; 4] {
+    [
+        Pos2::new(centre.x, centre.y - radius),
+        Pos2::new(centre.x + radius, centre.y),
+        Pos2::new(centre.x, centre.y + radius),
+        Pos2::new(centre.x - radius, centre.y),
+    ]
+}
+
 // MARK: Strokes
 
 /// The dash pattern a stroke of this style uses; the arrow styles are solid lines with arrowheads.
@@ -868,6 +917,41 @@ mod tests {
         let (point, anchor) = box_text_placement(rect, TextAlign::Center, TextAlign::Center, 4.0);
         assert_eq!(point, rect.center());
         assert_eq!(anchor, Align2::CENTER_CENTER);
+    }
+
+    #[test]
+    fn an_arrow_runs_from_its_tip_away_from_the_bar() {
+        let tip = Pos2::new(50.0, 100.0);
+        let up = arrow_shape(tip, true, 30.0);
+        assert_eq!(up.head[0], tip);
+        assert_eq!(
+            up.head[1].y, 107.0,
+            "an up arrow's head widens below its tip"
+        );
+        let shaft = up.shaft.unwrap();
+        assert_eq!((shaft.min.y, shaft.max.y), (107.0, 130.0));
+        let down = arrow_shape(tip, false, 30.0);
+        assert_eq!(down.head[1].y, 93.0);
+        let shaft = down.shaft.unwrap();
+        assert_eq!((shaft.min.y, shaft.max.y), (70.0, 93.0));
+        // A short arrow is only a head, cut down to its length.
+        let stub = arrow_shape(tip, true, 5.0);
+        assert_eq!(stub.head[1].y, 105.0);
+        assert_eq!(stub.shaft, None);
+        assert_eq!(
+            arrow_shape(tip, true, 7.0).shaft,
+            None,
+            "exactly the head: no shaft"
+        );
+    }
+
+    #[test]
+    fn a_diamond_has_its_corners_on_the_axes() {
+        let corners = diamond_points(Pos2::new(10.0, 20.0), 4.0);
+        assert_eq!(corners[0], Pos2::new(10.0, 16.0));
+        assert_eq!(corners[1], Pos2::new(14.0, 20.0));
+        assert_eq!(corners[2], Pos2::new(10.0, 24.0));
+        assert_eq!(corners[3], Pos2::new(6.0, 20.0));
     }
 
     #[test]

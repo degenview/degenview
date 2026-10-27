@@ -40,6 +40,7 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     table.insert("strategy.close", close());
     table.insert("strategy.close_all", close());
     table.insert("plot", plot());
+    table.insert("plotarrow", plotarrow());
     table.insert("hline", hline());
     table.insert("bgcolor", color_series());
     table.insert("barcolor", color_series());
@@ -166,6 +167,21 @@ fn plot() -> HashMap<&'static str, &'static str> {
             "The value is formatted by the chart's own rules.",
         ),
         ("linestyle", "The line is always solid."),
+    ])
+}
+
+fn plotarrow() -> HashMap<&'static str, &'static str> {
+    HashMap::from([
+        (
+            "offset",
+            "Partly. The arrows are shifted, but those that land past the last bar are not drawn.",
+        ),
+        ("editable", "Plot settings cannot be edited from the chart."),
+        ("format", "The value is formatted by the chart's own rules."),
+        (
+            "precision",
+            "The value is formatted by the chart's own rules.",
+        ),
     ])
 }
 
@@ -298,16 +314,10 @@ fn partly_supported_functions() -> [(&'static str, &'static str); 1] {
 }
 
 /// Argument values that make the engine draw something else, keyed function → argument → constant.
+/// None today: every constant the reference lists for these arguments is drawn as it says.
 fn ignored_values()
 -> HashMap<&'static str, HashMap<&'static str, HashMap<&'static str, &'static str>>> {
-    let mut plot: HashMap<&'static str, HashMap<&'static str, &'static str>> = HashMap::new();
-    let mut style = HashMap::new();
-    style.insert(
-        "plot.style_stepline_diamond",
-        "It is drawn as a plain line.",
-    );
-    plot.insert("style", style);
-    HashMap::from([("plot", plot)])
+    HashMap::new()
 }
 
 pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {

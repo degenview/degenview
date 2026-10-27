@@ -31,6 +31,8 @@ pub enum PlotStyle {
     Area,
     Circles,
     Cross,
+    /// A step line with a diamond wherever the value changes.
+    SteplineDiamond,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -606,6 +608,87 @@ pub struct MarkerOutput {
     pub force_overlay: bool,
 }
 
+/// `plotarrow()`: an up arrow below the bar for each positive value, a down arrow above it for each
+/// negative one, longer the larger the value.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ArrowOutput {
+    pub id: usize,
+    pub title: Option<String>,
+    pub values: Vec<Option<f64>>,
+    pub up_colors: Vec<Option<u32>>,
+    pub down_colors: Vec<Option<u32>>,
+    /// Bars the arrows are shifted by (positive moves them later). Applied when the run's output
+    /// is read; an arrow pushed past the last bar has no bar to sit on.
+    pub offset: i64,
+    /// `show_last`: only the last this many bars keep their arrow.
+    pub show_last: Option<usize>,
+    /// The shortest and the longest arrow, in pixels.
+    pub min_height: f64,
+    pub max_height: f64,
+    pub display: u32,
+    pub force_overlay: bool,
+}
+
+impl ArrowOutput {
+    /// The arrows with `offset` and then `show_last` applied.
+    pub fn finished(mut self) -> Self {
+        let offset = std::mem::take(&mut self.offset);
+        let length = self.values.len();
+        if offset != 0 {
+            let place = |index: usize| {
+                let target = index as i64 + offset;
+                (0..length as i64)
+                    .contains(&target)
+                    .then_some(target as usize)
+            };
+            let mut values = vec![None; length];
+            let mut up = vec![None; self.up_colors.len()];
+            let mut down = vec![None; self.down_colors.len()];
+            for index in 0..length {
+                let Some(target) = place(index) else {
+                    continue;
+                };
+                values[target] = self.values[index];
+                if let (Some(slot), Some(color)) = (up.get_mut(target), self.up_colors.get(index)) {
+                    *slot = *color;
+                }
+                if let (Some(slot), Some(color)) =
+                    (down.get_mut(target), self.down_colors.get(index))
+                {
+                    *slot = *color;
+                }
+            }
+            self.values = values;
+            self.up_colors = up;
+            self.down_colors = down;
+        }
+        if let Some(last) = self.show_last.take() {
+            let hidden = length.saturating_sub(last);
+            for value in self.values.iter_mut().take(hidden) {
+                *value = None;
+            }
+        }
+        self
+    }
+
+    /// The longest absolute value over the whole series, which `max_height` belongs to.
+    pub fn largest(&self) -> f64 {
+        self.values
+            .iter()
+            .flatten()
+            .fold(0.0, |largest, value| largest.max(value.abs()))
+    }
+
+    /// The arrow's length in pixels for `value`: `min_height` for the smallest, `max_height` at
+    /// `largest`, in proportion between.
+    pub fn height(&self, value: f64, largest: f64) -> f64 {
+        if largest <= 0.0 {
+            return self.min_height;
+        }
+        self.min_height + (self.max_height - self.min_height) * (value.abs() / largest)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolylineOutput {
     pub id: usize,
@@ -693,5 +776,60 @@ mod tests {
             time_anchored: false,
         };
         assert!(!line.is_complete());
+    }
+
+    fn arrows(values: &[Option<f64>]) -> ArrowOutput {
+        ArrowOutput {
+            id: 0,
+            title: None,
+            values: values.to_vec(),
+            up_colors: vec![Some(1); values.len()],
+            down_colors: vec![Some(2); values.len()],
+            offset: 0,
+            show_last: None,
+            min_height: 5.0,
+            max_height: 100.0,
+            display: DISPLAY_ALL,
+            force_overlay: false,
+        }
+    }
+
+    #[test]
+    fn an_arrows_length_is_in_proportion_to_the_largest_value() {
+        let output = arrows(&[Some(2.0), Some(-8.0), None, Some(4.0)]);
+        let largest = output.largest();
+        assert_eq!(largest, 8.0);
+        assert_eq!(output.height(8.0, largest), 100.0);
+        assert_eq!(
+            output.height(-8.0, largest),
+            100.0,
+            "the sign does not matter"
+        );
+        assert_eq!(output.height(0.0, largest), 5.0);
+        assert_eq!(output.height(4.0, largest), 52.5);
+        assert_eq!(
+            output.height(1.0, 0.0),
+            5.0,
+            "no non-zero value: the minimum"
+        );
+    }
+
+    #[test]
+    fn arrows_are_shifted_by_their_offset_and_trimmed_to_the_last_bars() {
+        let mut output = arrows(&[Some(1.0), Some(-2.0), Some(3.0), Some(4.0)]);
+        output.up_colors = vec![Some(10), Some(11), Some(12), Some(13)];
+        output.offset = 1;
+        let shifted = output.clone().finished();
+        assert_eq!(shifted.values, [None, Some(1.0), Some(-2.0), Some(3.0)]);
+        assert_eq!(shifted.up_colors, [None, Some(10), Some(11), Some(12)]);
+        assert_eq!(shifted.offset, 0, "applied once");
+        output.offset = -1;
+        assert_eq!(
+            output.clone().finished().values,
+            [Some(-2.0), Some(3.0), Some(4.0), None]
+        );
+        output.offset = 0;
+        output.show_last = Some(2);
+        assert_eq!(output.finished().values, [None, None, Some(3.0), Some(4.0)]);
     }
 }

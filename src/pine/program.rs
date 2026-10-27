@@ -5,8 +5,8 @@ use std::collections::HashSet;
 
 use super::ast::Statement;
 use super::outputs::{
-    BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine, LabelOutput,
-    LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
+    ArrowOutput, BoxOutput, CandleOutput, ColorOutput, DISPLAY_PANE, FillOutput, HorizontalLine,
+    LabelOutput, LineOutput, LinefillOutput, MarkerOutput, PlotOutput, PolylineOutput, TableOutput,
 };
 use super::state::AlertEvent;
 use super::strategy::{StrategyReport, StrategySettings};
@@ -213,6 +213,7 @@ pub struct VisualOutput {
     pub plots: Vec<PlotOutput>,
     pub hlines: Vec<HorizontalLine>,
     pub markers: Vec<MarkerOutput>,
+    pub arrows: Vec<ArrowOutput>,
     pub backgrounds: Vec<ColorOutput>,
     pub bar_colors: Vec<ColorOutput>,
     pub fills: Vec<FillOutput>,
@@ -235,6 +236,7 @@ impl VisualOutput {
     pub fn has_forced_overlay(&self) -> bool {
         self.plots.iter().any(|plot| plot.force_overlay)
             || self.markers.iter().any(|marker| marker.force_overlay)
+            || self.arrows.iter().any(|arrow| arrow.force_overlay)
             || self.candles.iter().any(|candle| candle.force_overlay)
     }
 
@@ -261,6 +263,12 @@ impl VisualOutput {
             if marker.force_overlay {
                 forced.markers.push(marker.clone());
                 marker.display &= !DISPLAY_PANE;
+            }
+        }
+        for arrow in &mut pane.arrows {
+            if arrow.force_overlay {
+                forced.arrows.push(arrow.clone());
+                arrow.display &= !DISPLAY_PANE;
             }
         }
         for candle in &mut pane.candles {

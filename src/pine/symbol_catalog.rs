@@ -283,8 +283,8 @@ pub const UNIMPLEMENTED_VARIABLES: &[&str] = &[
     "syminfo.recommendations_total",
 ];
 
-/// Pine functions this release does not implement (a call is a compile error).
-pub const RESERVED_FUNCTIONS: &[&str] = &["fixnan", "plotarrow"];
+/// Pine functions this release does not implement (a call is a runtime error). None today.
+pub const RESERVED_FUNCTIONS: &[&str] = &[];
 
 /// Whether `name` is a builtin variable.
 pub fn is_variable(name: &str) -> bool {
@@ -346,7 +346,8 @@ mod tests {
         assert!(is_reserved_constant("xloc.bar_time"));
         assert!(!is_reserved_constant("color.red"));
         assert!(is_unimplemented_variable("weekofyear"));
-        assert!(is_unimplemented_function("fixnan"));
+        assert!(!is_unimplemented_function("fixnan"));
+        assert!(!is_unimplemented_function("plotarrow"));
         assert!(!is_unimplemented_variable("close"));
     }
 }

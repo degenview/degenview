@@ -61,6 +61,13 @@
   say). A text size is `Size::Points(n)` when a script gives a number (`font_size` scales TradingView's 14
   points to this app's 12). Properties the chart cannot draw (cell tooltips, font family, bold/italic) are
   accepted and warned about through `ignored_features`, never silently dropped.
+- `plotarrow()` is `ArrowOutput` (per-bar value and both colours; `offset`/`show_last` applied by
+  `ArrowOutput::finished` when the output is read, like a plot's offset). The arrow length is `min_height` to
+  `max_height` in proportion to the value against the series' largest absolute value (inferred: the reference
+  only says larger values draw longer arrows), up arrows sit under the bar's low and down arrows over its
+  high. `plot.style_stepline_diamond` is `PlotStyle::SteplineDiamond`: a step line with a diamond where the
+  value changes. Shapes are in `pine_geometry` (`arrow_shape`, `diamond_points`), which is where to test them.
+  `ignored_features::ignored_values` (PINE7004) has no entry today but stays for the next unsupported constant.
 - Keep execution linear in bars: continue historical bars in working state
   (`Session::working_is_committed`), move `request.security` site state in/out, and share function
   bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.

@@ -47,6 +47,11 @@ const SIGNATURES: &[(&str, &str, &str)] = &[
         "",
     ),
     (
+        "plotarrow",
+        "series, title, colorup, colordown, offset, minheight, maxheight, editable, show_last, display, format, precision, force_overlay",
+        "",
+    ),
+    (
         "plotcandle",
         "open, high, low, close, title, color, wickcolor, bordercolor, display",
         "",

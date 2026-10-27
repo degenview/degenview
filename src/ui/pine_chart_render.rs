@@ -248,6 +248,7 @@ impl PineLayer<'_> {
         self.draw_lines(painter);
         self.draw_horizontal_lines(painter);
         self.draw_markers(painter);
+        self.draw_arrows(painter);
         self.draw_labels(painter);
     }
 
@@ -289,7 +290,10 @@ impl PineLayer<'_> {
                     .map(|value| Pos2::new(self.x_at(i), self.y(value)))
             };
             let color = |i: usize| self.visible_opt(&output.colors, i).unwrap_or(output.color);
-            if matches!(output.style, PlotStyle::Line | PlotStyle::Stepline) {
+            if matches!(
+                output.style,
+                PlotStyle::Line | PlotStyle::Stepline | PlotStyle::SteplineDiamond
+            ) {
                 self.draw_line_plot(painter, output, &point, &color);
             } else {
                 self.draw_discrete_plot(painter, output, &point, &color);
@@ -317,14 +321,28 @@ impl PineLayer<'_> {
                 color(i)
             };
             let mut path = vec![start];
+            // Where the value is new: a run's first bar when no earlier run owns it (a run that
+            // follows another starts on that one's last bar), and each bar whose value differs.
+            let mut changes = if i == 0 || point(i - 1).is_none() {
+                vec![start]
+            } else {
+                Vec::new()
+            };
             let mut j = i;
             let mut previous = start;
+            let stepped = matches!(
+                output.style,
+                PlotStyle::Stepline | PlotStyle::SteplineDiamond
+            );
             while j + 1 < count
                 && let Some(next) = point(j + 1)
                 && color(j + 1) == run_color
             {
-                if output.style == PlotStyle::Stepline {
+                if stepped {
                     path.push(Pos2::new(next.x, previous.y));
+                }
+                if next.y != previous.y {
+                    changes.push(next);
                 }
                 path.push(next);
                 previous = next;
@@ -337,6 +355,12 @@ impl PineLayer<'_> {
                     Stroke::new(output.line_width as f32, rgba(run_color)),
                     &[],
                 );
+                if output.style == PlotStyle::SteplineDiamond {
+                    let radius = (output.line_width as f32 * 2.0).max(DIAMOND_RADIUS);
+                    for centre in changes {
+                        draw_diamond(painter, centre, radius, rgba(run_color));
+                    }
+                }
             }
             i = if j == i { i + 1 } else { j };
         }
@@ -784,6 +808,53 @@ impl PineLayer<'_> {
         }
     }
 
+    // MARK: Arrows
+
+    /// `plotarrow()`: an up arrow whose tip sits just under a bar's low for each positive value and
+    /// a down arrow just over its high for each negative one. The length is in proportion to the
+    /// value against the series' largest (inferred: the reference only says that the larger the
+    /// value, the longer the arrow); in a script pane the arrows pin to its edges.
+    pub fn draw_arrows(&self, painter: &Painter) {
+        for arrow in self
+            .pine
+            .arrows
+            .iter()
+            .filter(|a| a.display & DISPLAY_PANE != 0)
+        {
+            let largest = arrow.largest();
+            for i in 0..self.count() {
+                let Some(value) = self.visible_opt(&arrow.values, i).filter(|v| *v != 0.0) else {
+                    continue;
+                };
+                let up = value > 0.0;
+                let colors = if up {
+                    &arrow.up_colors
+                } else {
+                    &arrow.down_colors
+                };
+                let Some(color) = self
+                    .visible_opt(colors, i)
+                    .filter(|color| is_visible(*color))
+                else {
+                    continue;
+                };
+                let location = if up {
+                    MarkerLocation::BelowBar
+                } else {
+                    MarkerLocation::AboveBar
+                };
+                let tip = self.marker_y(location, &[], i);
+                draw_arrow(
+                    painter,
+                    Pos2::new(self.x_at(i), tip),
+                    up,
+                    arrow.height(value, largest) as f32,
+                    rgba(color),
+                );
+            }
+        }
+    }
+
     // MARK: Labels
 
     /// Labels draw as a bubble with a pointer toward their anchor; a transparent label colour
@@ -987,6 +1058,31 @@ fn entry_arrow(painter: &Painter, long: bool, tip: Pos2, color: Color32) {
         color,
         Stroke::NONE,
     ));
+}
+
+/// Half the width of the diamonds a `plot.style_stepline_diamond` plot marks its changes with, at
+/// least.
+const DIAMOND_RADIUS: f32 = 3.5;
+
+fn draw_diamond(painter: &Painter, centre: Pos2, radius: f32, color: Color32) {
+    painter.add(Shape::convex_polygon(
+        geometry::diamond_points(centre, radius).to_vec(),
+        color,
+        Stroke::NONE,
+    ));
+}
+
+/// An arrow of length `height` whose tip is at `tip`, pointing up (its tail below) or down.
+fn draw_arrow(painter: &Painter, tip: Pos2, up: bool, height: f32, color: Color32) {
+    let arrow = geometry::arrow_shape(tip, up, height);
+    painter.add(Shape::convex_polygon(
+        arrow.head.to_vec(),
+        color,
+        Stroke::NONE,
+    ));
+    if let Some(shaft) = arrow.shaft {
+        painter.add(Shape::rect_filled(shaft, 0.0, color));
+    }
 }
 
 fn draw_label_shape(painter: &Painter, layout: &geometry::LabelLayout, fill: Color32) {
@@ -1396,6 +1492,66 @@ mod tests {
         incomplete.lines.push(output.lines[1].clone());
         let layer = self::layer(&incomplete, &candles, &x, &y);
         assert_eq!(shapes_drawn(|painter| layer.draw_lines(painter)), 0);
+    }
+
+    #[test]
+    fn arrows_draw_for_non_zero_values_with_a_visible_color() {
+        use crate::pine::outputs::{ArrowOutput, DISPLAY_ALL};
+        let candles = candles(4);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 4,
+            ..empty()
+        };
+        let arrow = |values: Vec<Option<f64>>, up: u32| ArrowOutput {
+            id: 0,
+            title: None,
+            up_colors: vec![Some(up); values.len()],
+            down_colors: vec![Some(0xFF00_00FF); values.len()],
+            values,
+            offset: 0,
+            show_last: None,
+            min_height: 5.0,
+            max_height: 100.0,
+            display: DISPLAY_ALL,
+            force_overlay: false,
+        };
+        // A long up arrow (head and shaft), a short down arrow (head only), `na` and zero (nothing).
+        output.arrows.push(arrow(
+            vec![Some(50.0), Some(-1.0), None, Some(0.0)],
+            0x2196_F3FF,
+        ));
+        let layer = layer(&output, &candles, &x, &y);
+        assert_eq!(shapes_drawn(|painter| layer.draw_arrows(painter)), 3);
+        // A fully transparent colour draws nothing.
+        let mut clear = VisualOutput {
+            bar_count: 4,
+            ..empty()
+        };
+        clear
+            .arrows
+            .push(arrow(vec![Some(50.0), None, None, None], 0x2196_F300));
+        let layer = self::layer(&clear, &candles, &x, &y);
+        assert_eq!(shapes_drawn(|painter| layer.draw_arrows(painter)), 0);
+    }
+
+    #[test]
+    fn the_diamond_step_line_marks_each_change_of_value() {
+        let candles = candles(4);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let values = vec![Some(100.0), Some(100.0), Some(110.0), Some(110.0)];
+        let drawn = |style| {
+            let mut output = VisualOutput {
+                bar_count: 4,
+                ..empty()
+            };
+            output.plots.push(plot_output(values.clone(), style));
+            let layer = layer(&output, &candles, &x, &y);
+            shapes_drawn(|painter| layer.draw_plots(painter))
+        };
+        let plain = drawn(PlotStyle::Stepline);
+        // The first bar and the one where the value moves to 110: two diamonds more.
+        assert_eq!(drawn(PlotStyle::SteplineDiamond), plain + 2);
     }
 
     #[test]
