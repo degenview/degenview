@@ -1,6 +1,6 @@
 [package]
 name = "degenview"
-version = "0.6.0-rc.7"
+version = "0.6.0-rc.8"
 edition = "2024"
 rust-version = "1.95"
 description = "A native macOS market dashboard, rewritten in Rust"
