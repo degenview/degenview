@@ -25,6 +25,7 @@ build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   env:
     CARGO_HOME: /run/build/degenview/cargo
+    CARGO_NET_OFFLINE: "true"
     # There is no .git in the sandbox; the workflow replaces this with the short commit hash.
     DEGENVIEW_BUILD_ID: unknown
 
@@ -32,7 +33,8 @@ modules:
   - name: degenview
     buildsystem: simple
     build-commands:
-      - pwd; env | grep -i cargo; ls -la . cargo | head -40; head -c 600 cargo/config; ls cargo/vendor | head -3
+      # The generator writes the vendored-sources config as `cargo/config`, which cargo deprecates.
+      - mv cargo/config cargo/config.toml
       # Only the app. `degenview-alert-agent` is the macOS login item and is not installed.
       - cargo --offline build --release --locked --bin degenview
       - install -Dm755 target/release/degenview -t /app/bin
