@@ -36,12 +36,18 @@ mod debug_tests;
 pub mod demo;
 pub mod diff;
 mod diff_view;
+mod disk_banner;
 pub mod drawer;
 mod drawer_intro;
 #[cfg(test)]
 mod drawer_tabs_tests;
 pub mod edit_ops;
 pub mod editor;
+mod external;
+#[cfg(test)]
+mod external_gallery;
+#[cfg(test)]
+mod external_tests;
 mod find;
 pub mod inputs;
 mod logs;
@@ -143,6 +149,10 @@ pub struct ChartInfo {
 
 /// UI events collected while drawing and applied once the frame's closures have finished.
 pub(crate) enum Cmd {
+    /// The file changed outside the app over unsaved typing: take the file's text.
+    DiskReload,
+    /// ... or keep the typing.
+    DiskKeep,
     Select(RowKey),
     ToggleFavorite(ScriptId),
     BeginRename(RowKey),
@@ -191,6 +201,8 @@ pub(crate) struct OpenScript {
     pub script_type: ScriptType,
     pub editor: EditorState,
     pub has_alerts: bool,
+    /// Whether the file is being edited outside the app, and the question that raises.
+    pub watch: external::Watch,
 }
 
 pub(crate) enum Sheet {
@@ -544,13 +556,28 @@ impl ScriptManager {
     }
 
     fn begin_frame(&mut self, ctx: &egui::Context) {
+        let now = Instant::now();
+        let mut scanned = false;
         if !self.loaded {
             self.first_load();
         } else if self.last_scan.elapsed() > Duration::from_millis(1500) {
             // Files edited, added or renamed outside the app show up.
             self.refresh();
+            scanned = true;
+        } else if self.external_scan_due(now) {
+            // The open script's own file moved: look at it now, not at the next full scan.
+            self.refresh();
+            scanned = true;
         }
-        ctx.request_repaint_after(Duration::from_millis(1500));
+        if scanned {
+            self.reconcile_open(ctx, now);
+        }
+        // A script being open is a file to follow, a little more often than the full scan.
+        ctx.request_repaint_after(if self.open.is_some() {
+            external::FAST_POLL
+        } else {
+            Duration::from_millis(1500)
+        });
         self.ai_begin_frame(ctx);
         if let Some(rx) = &self.export_rx
             && let Ok((id, destination)) = rx.try_recv()
@@ -798,6 +825,62 @@ impl ScriptManager {
         }
     }
 
+    /// Whether the open script's file has moved (or is still settling), so that the folder is worth
+    /// scanning before the next full scan. Only the file's metadata is read here.
+    fn external_scan_due(&mut self, now: Instant) -> bool {
+        let Some(open) = self.open.as_mut() else {
+            return false;
+        };
+        if !open.watch.poll_due(now) {
+            return false;
+        }
+        open.watch.note_poll(now);
+        let id = open.id.clone();
+        let stamp = self
+            .script_store
+            .as_mut()
+            .and_then(|store| store.file_stamp(&id));
+        self.open
+            .as_mut()
+            .is_some_and(|open| open.watch.wants_scan(stamp))
+    }
+
+    /// Compares what the last scan read of the open script's file with what the editor holds, and
+    /// acts on a file that was edited outside the app (see `external`).
+    fn reconcile_open(&mut self, ctx: &egui::Context, now: Instant) {
+        let Some(open) = self.open.as_mut() else {
+            return;
+        };
+        let Some(script) = self.scripts.iter().find(|script| script.id == open.id) else {
+            return;
+        };
+        let verdict = open.watch.observe(
+            now,
+            &script.source,
+            open.editor.saved_source(),
+            &open.editor.source,
+        );
+        match verdict {
+            external::Verdict::Nothing | external::Verdict::Conflict => {}
+            external::Verdict::Baseline => open.editor.mark_saved(),
+            external::Verdict::Reload(text) => self.adopt_disk_text(ctx, &text),
+        }
+    }
+
+    /// Shows the file's text in the open editor as its saved text. One undo step, so Undo brings
+    /// back what was there (typing included).
+    fn adopt_disk_text(&mut self, ctx: &egui::Context, text: &str) {
+        let Some(open) = self.open.as_mut() else {
+            return;
+        };
+        editor::apply_script(ctx, &mut open.editor, text);
+        open.editor.mark_saved();
+        open.watch.reloaded();
+        open.editor
+            .set_notice("Reloaded: the file changed outside the app.");
+        self.editor_changed();
+    }
+
     pub(crate) fn refresh(&mut self) {
         self.last_scan = Instant::now();
         let Some(scripts) = self.with_store(|store| store.all_scripts()) else {
@@ -902,6 +985,7 @@ impl ScriptManager {
             script_type: script.script_type,
             editor,
             has_alerts: false,
+            watch: external::Watch::default(),
         });
         self.prefs.selected_script_id = Some(script.id);
         self.refresh_debug_map();
@@ -1054,6 +1138,24 @@ impl ScriptManager {
             }
             Cmd::CreateAlert(id) => self.open_alert_sheet(&id),
             Cmd::Save => self.save_open(),
+            Cmd::DiskReload => {
+                let text = self
+                    .open
+                    .as_ref()
+                    .and_then(|open| open.watch.conflict.as_ref())
+                    .map(|conflict| conflict.text.clone());
+                if let Some(text) = text {
+                    self.adopt_disk_text(ctx, &text);
+                }
+            }
+            Cmd::DiskKeep => {
+                if let Some(open) = self.open.as_mut()
+                    && let Some(conflict) = open.watch.conflict.clone()
+                {
+                    open.editor.rebase_saved(&conflict.text);
+                    open.watch.keep();
+                }
+            }
             Cmd::Reveal(diagnostic) => {
                 if let Some(open) = self.open.as_mut() {
                     open.editor.reveal(&diagnostic);
@@ -1185,21 +1287,42 @@ impl ScriptManager {
     }
 
     fn save_open(&mut self) {
-        let Some(open) = self.open.as_ref() else {
+        let Some(open) = self.open.as_mut() else {
             return;
         };
+        // The file changed under unsaved typing and the person has not said which to keep: saving
+        // now would overwrite the outside edit.
+        if open.watch.conflict.is_some() {
+            return;
+        }
         let id = open.id.clone();
         // The editor shows what lands on disk: a saved script always ends in a newline.
         let source = store::with_trailing_newline(&open.editor.source);
-        if let Some(open) = self.open.as_mut() {
-            open.editor.source.clone_from(&source);
-        }
-        if let Some(script) = self.with_store(|store| store.save(&id, &source)) {
-            if let Some(open) = self.open.as_mut() {
-                open.editor.mark_saved();
-                open.script_type = script.script_type;
+        // What the editor last read from the file. If the file is no longer that, someone else wrote
+        // it and this save would overwrite their work.
+        let expected = open.editor.saved_source().to_owned();
+        let outcome = self
+            .script_store
+            .as_mut()
+            .map(|store| store.save_if_unchanged(&id, &source, &expected));
+        match outcome {
+            None => {}
+            Some(Ok(script)) => {
+                if let Some(open) = self.open.as_mut() {
+                    open.editor.source.clone_from(&source);
+                    open.editor.mark_saved();
+                    open.script_type = script.script_type;
+                }
+                self.refresh();
             }
-            self.refresh();
+            Some(Err(store::ScriptStoreError::ChangedOnDisk)) => {
+                // Not saved. Look at the file at once, without waiting for it to settle, so the
+                // question appears over the typing.
+                if let Some(open) = self.open.as_mut() {
+                    open.watch.force = true;
+                }
+            }
+            Some(Err(error)) => self.error = Some(error.to_string()),
         }
     }
 

@@ -31,6 +31,9 @@ pub enum ScriptStoreError {
     MissingScript,
     NameConflict,
     UnreadableFile,
+    /// The file was edited outside the app since the app last read it, so saving would overwrite
+    /// that edit.
+    ChangedOnDisk,
     Name(ScriptNameError),
     Io(String),
 }
@@ -41,6 +44,7 @@ impl fmt::Display for ScriptStoreError {
             Self::MissingScript => f.write_str("The script no longer exists."),
             Self::NameConflict => f.write_str("A script with that name already exists."),
             Self::UnreadableFile => f.write_str("The file isn't a readable text file."),
+            Self::ChangedOnDisk => f.write_str("The file changed outside the app."),
             Self::Name(error) => error.fmt(f),
             Self::Io(message) => f.write_str(message),
         }
@@ -102,6 +106,20 @@ impl Record {
             is_favorite: self.is_favorite,
             compile_record: self.compile_record,
         }
+    }
+}
+
+/// What tells that a file was rewritten without reading it: when, and how long.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FileStamp {
+    modified_ms: i64,
+    len: u64,
+}
+
+#[cfg(test)]
+impl FileStamp {
+    pub fn for_test(modified_ms: i64, len: u64) -> Self {
+        Self { modified_ms, len }
     }
 }
 
@@ -336,6 +354,36 @@ impl ScriptStore {
     pub fn file_path(&mut self, id: &str) -> Result<Option<PathBuf>> {
         self.load_if_needed()?;
         Ok(self.file_names.get(id).map(|n| self.scripts_dir.join(n)))
+    }
+
+    /// When the script's file was last written and how long it is, from its metadata alone: cheap
+    /// enough to ask several times a second. `None` if the file is not there.
+    pub fn file_stamp(&mut self, id: &str) -> Option<FileStamp> {
+        let path = self.file_path(id).ok()??;
+        let metadata = fs::metadata(path).ok()?;
+        Some(FileStamp {
+            modified_ms: system_time_ms(metadata.modified().ok()?),
+            len: metadata.len(),
+        })
+    }
+
+    /// `save`, unless the file is no longer what the caller last read (`expected_disk`): then
+    /// nothing is written and the answer is `ChangedOnDisk`. An edit made outside the app is never
+    /// silently overwritten by an editor that has not seen it. A file that is gone is saved anew.
+    pub fn save_if_unchanged(
+        &mut self,
+        id: &str,
+        source: &str,
+        expected_disk: &str,
+    ) -> Result<LocalScript> {
+        self.load_if_needed()?;
+        if let Some(path) = self.file_path(id)?
+            && let Some(on_disk) = read_source(&path)
+            && with_trailing_newline(&on_disk) != with_trailing_newline(expected_disk)
+        {
+            return Err(ScriptStoreError::ChangedOnDisk);
+        }
+        self.save(id, source)
     }
 
     /// Saves new source under the script's current name. The type follows the script's own
@@ -1105,5 +1153,51 @@ mod tests {
         // Latin-1 fallback still reads it.
         assert!(store.import_file(&binary).is_ok());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_save_is_refused_when_the_file_changed_outside_since_it_was_read() {
+        let (mut store, dir) = temp_store("checked-save");
+        let script = store
+            .create("Checked", ScriptType::Indicator, None, false)
+            .unwrap();
+        let read = store.script(&script.id).unwrap().unwrap().source;
+        let path = store.file_path(&script.id).unwrap().unwrap();
+        // Unchanged: saves.
+        let saved = store
+            .save_if_unchanged(&script.id, "//@version=6\nindicator(\"A\")\n", &read)
+            .unwrap();
+        // Another tool rewrites the file.
+        fs::write(&path, "//@version=6\nindicator(\"Outside\")\n").unwrap();
+        let refused = store.save_if_unchanged(&script.id, "mine\n", &saved.source);
+        assert!(matches!(refused, Err(ScriptStoreError::ChangedOnDisk)));
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "//@version=6\nindicator(\"Outside\")\n",
+            "the outside edit is untouched"
+        );
+        // A plain save still overwrites, as when the person chose to keep their version.
+        store.save(&script.id, "mine\n").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "mine\n");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_rewrite_changes_the_files_stamp_and_a_missing_file_has_none() {
+        let (mut store, dir) = temp_store("stamp");
+        let script = store
+            .create("Stamped", ScriptType::Indicator, None, false)
+            .unwrap();
+        let before = store.file_stamp(&script.id).unwrap();
+        assert_eq!(before, store.file_stamp(&script.id).unwrap());
+        let path = store.file_path(&script.id).unwrap().unwrap();
+        fs::write(
+            &path,
+            "a much longer text than the template had before\n".repeat(20),
+        )
+        .unwrap();
+        assert_ne!(before, store.file_stamp(&script.id).unwrap());
+        assert!(store.file_stamp("no-such-script").is_none());
+        let _ = fs::remove_dir_all(dir);
     }
 }

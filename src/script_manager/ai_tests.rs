@@ -1338,3 +1338,45 @@ fn the_switch_and_its_status_line_draw_in_a_small_panel() {
     rig.frame();
     rig.frame();
 }
+
+#[test]
+fn a_file_edited_outside_makes_a_waiting_proposal_stale_instead_of_being_overwritten() {
+    use std::time::{Duration, Instant};
+    let mut rig = Rig::new("ai-outside-edit");
+    open_panel(&mut rig);
+    rig.manager.save_open();
+    let before = source(&rig);
+    ask(
+        &mut rig,
+        script_reply(&format!("{before}// by the assistant\n")),
+    );
+    assert!(rig.manager.ai.proposal.is_some());
+    // Another tool rewrites the file, and the app picks it up.
+    let id = rig.manager.open.as_ref().unwrap().id.clone();
+    let path = rig
+        .manager
+        .script_store
+        .as_mut()
+        .unwrap()
+        .file_path(&id)
+        .unwrap()
+        .unwrap();
+    let outside = "//@version=6\nindicator(\"Outside\")\nplot(close)\n";
+    std::fs::write(path, outside).unwrap();
+    let t0 = Instant::now() + Duration::from_secs(10);
+    let ctx = rig.ctx.clone();
+    for ms in [0, 500, 1000] {
+        let now = t0 + Duration::from_millis(ms);
+        if rig.manager.external_scan_due(now) {
+            rig.manager.refresh();
+            rig.manager.reconcile_open(&ctx, now);
+        }
+    }
+    assert_eq!(source(&rig), outside);
+    // Applying the proposal now is refused, as it is when the person types: the outside edit stays.
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+    rig.frame();
+    assert_eq!(source(&rig), outside);
+    assert!(rig.manager.ai.proposal.is_none());
+    assert!(rig.manager.ai.notice.as_ref().unwrap().error);
+}
