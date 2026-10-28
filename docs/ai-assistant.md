@@ -11,7 +11,11 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | `service/keychain_ai_keys`: per-provider key store | Done (phase 1) |
 | Settings ▸ AI Assistant: provider, model, key, Test Connection | Done (phase 1) |
 | Assistant panel under the editor, proposal diff, accept as one undo step | Done (phase 2) |
-| Compile-and-repair loop, runtime-error context, selection edits | Not started (phase 3) |
+| Tool use in `service/llm` (wire formats, `stream_turn`); nothing calls a tool yet | Done (agent PR 1) |
+| Agent loop, private draft, `read_script`/`compile`/`edit_script`/`write_script`, tool steps in the panel | Done (agent PR 2) |
+| `profile` tool (profile the draft on frozen bars) | Done (agent PR 3) |
+| Plan mode (`submit_plan`, plan card with Approve / Revise / Discard) | Done (agent PR 4) |
+| Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
 ## Why a user-supplied key
 
@@ -59,6 +63,116 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - The first time the assistant is used, the user must be told the script and prompt are sent to the
   provider (the Settings page already says so).
 
+## Tool use
+
+`ChatRequest::tools` (`ToolSpec`: name, description, JSON Schema) lets a model call functions, and
+`LlmProvider::stream_turn` returns a `TurnReply { text, calls, stop }` instead of text alone. A provider
+that only chats keeps the default `stream_turn`, which wraps `stream_chat` and never calls a tool.
+`HttpProvider` implements both over the same decoders. The agent loop (next section) is the caller.
+
+- **Messages carry blocks.** `ChatMessage` keeps its `content` string and gains `tool_calls` (on an
+  assistant message) and `tool_results` (on the user message that answers them). A message with neither
+  is built exactly as before, and a request with no tools has no `tools` field.
+- **Anthropic**: `tools[].input_schema`; a `tool_use` block arrives as `content_block_start` (its `input`
+  is a placeholder, ignored) and `input_json_delta` fragments, joined per block index; results are
+  `tool_result` blocks first in a user message, with `is_error` set when the call failed.
+- **OpenAI and compatible hosts**: `tools[].function.parameters`; `delta.tool_calls` fragments joined by
+  `index` (a host that sends each whole call at index 0 with a new id is split, and a missing id is
+  made up as `call_N`); results are one `role: "tool"` message each, with a failure marked "Error: "
+  in its text because the format has no flag. Arguments are a string of JSON there.
+- **Arguments** are parsed when the turn ends. Empty means `{}` (a tool with no arguments streams
+  nothing); text that is not a JSON object leaves `ToolCall::malformed` set so the caller answers the
+  model with an error instead of failing the request.
+- **A turn of calls only is a reply** (`run_turn`); `run_stream` still rejects a reply with no text. A
+  turn that stopped at the token limit returns `Stop::MaxTokens` and **no calls**: their arguments are
+  cut off and cannot be trusted.
+- Anthropic extended thinking is off. With it on, the thinking blocks of a tool turn would have to be
+  sent back unchanged, which nothing here does.
+- Tests: hand-written frames for both formats (fragments, two calls, no arguments, bad arguments,
+  placeholder input), the request bodies, and a real `HttpProvider` against a loopback server that
+  streams a call. **Not verified**: a real OpenAI or Anthropic tool round trip; the frame shapes come
+  from the providers' documentation.
+
+## The agent loop
+
+A request is no longer one reply. `ai_agent::run` asks the model, runs the tools it calls, gives it the
+answers and asks again until it stops calling. It runs on the request's own thread, so `ai.rs` (state),
+`ai_host` (builds the request) and `ai_panel` (draws it) are as before.
+
+- **The assistant never touches the editor.** `ai_send` copies the open script into a `Draft`
+  (`ai_tools`); every tool reads or changes that copy. When the request ends the draft is compared with
+  the script the request started from and becomes the usual `Proposal`: summary card, review sheet, Apply
+  as one undo step, refused if the editor no longer holds `proposal.base`. "Nothing changes until Apply"
+  and "Ask never edits" are unchanged.
+- **Tools** (`ToolBox::new(mode, …)` offers and runs only the mode's own): `read_script(start?, end?)` (numbered
+  lines of the draft, 400 at a time), `compile()` (the draft's diagnostics, as the compiler words them),
+  and in Edit `edit_script(old, new)` and `write_script(text)`. A call to a tool the mode does not have is
+  an error *result* (the model is told), never an edit, so Ask cannot write even if the model tries.
+- **`edit_script` is an exact, unique match.** No match, or more than one (it lists the lines), is an
+  error the model reads and corrects. A change answers with whether the draft still compiles
+  ("Now: 1 error." and the first problems), so the model does not need a `compile` call to find out. The
+  draft is held with `\n` endings whatever the file uses, because the model writes `\n`;
+  `match_line_endings` puts the file's own back when the proposal is built.
+- **Limits are in the loop, not the prompt**: 12 calls to the model (`MAX_ROUNDS`; each resends the whole
+  conversation, so this bounds cost), a call repeated with the same arguments three times ends the
+  request, a tool answer is cut at 8,000 characters, `cancel` is checked between rounds and calls.
+- **Work is not thrown away.** When a request ends without finishing (the step limit, a repeated call, a
+  provider failure part-way) or the user presses Stop, and the draft differs from the script, it is
+  offered as a proposal with a `note` ("Incomplete. It used all 12 steps without finishing.", "Stopped
+  before it finished.") shown in orange on the card. It still goes through review. A failure still puts the
+  message back in the box and shows the provider's error; Stop still restores the message.
+- **A server that refuses tools** (HTTP 400/404/422 on the first request, as a local server that does not
+  know them may answer) is asked once more without tools and with the whole-script prompt
+  (`ai_prompt::system_prompt`), and the user is told. That path (a fenced script in the reply) is the
+  one that existed before and is unchanged. A request that fails a second time is the error.
+- **Two prompts.** `agent_system_prompt` (draft, tools, finish with one to three sentences and do not
+  paste the script) and `system_prompt` (the fallback). Both share `push_reference`, the list of what
+  this interpreter does not implement.
+- **What the panel shows.** Between a message and its reply, one line per tool call: a spinner while it
+  runs, then a check or a cross and what it came to ("Edited lines 12–14 · No problems"), which
+  opens to what the model was told; the text the model said before calling is shown muted. This trail
+  (`Assistant::steps`) is for the latest exchange only and is not saved. **History keeps the words**, so
+  the prompt tells the model to say what it found in its final reply.
+- Ask has the reading tools (it can look, not change), `profile` included. That makes an Ask turn able to
+  take several rounds; "why is this slow?" is the reason.
+
+### The `profile` tool
+
+`ai_profile::ProfileTool`, offered in every mode. It runs the **draft** (not the editor's text) through
+the engine's profiler (`pine::profile::ProfileSession`, [Pine profiler](pine-profiler.md)) on a frozen
+copy of the preview chart's bars, taken when the request was sent (`preview.debug_feed`, so at most 500
+candles, with the preview's inputs, symbol and timeframe). It is a session of its own on its own thread:
+no alerts, orders, preview or chart are touched. It is **not** the UI's `Profiler`, so it never draws on
+the editor's Profile column or tab and a profile the user made is not disturbed.
+
+- **What the model is told**: totals, the ten hottest lines by their own time (share, own time, time with
+  everything under it, executions, the line's source), the hottest block and function, time in no line,
+  time waiting for `request.security()` data, and how to read it (shares are meaningful, absolute times
+  are of that run, per statement not per expression, the clock's resolution, the profiler's cost). The
+  words are `ProfileMarks`' (`duration`, `percent`, `count`), so the model and the user see the same
+  figures.
+- **A second profile in the same request is compared with the first**: total time and measured
+  executions, with the change as a percentage. Executions are exact and do not vary; times do, and the
+  text says not to read a small difference in time as a result. Only complete profiles are compared.
+- **Refused as an answer, not a failure**: the draft has errors (they are listed), it is a library, the
+  preview had no bars, the script fails when it runs (a failure has no profile, as in the Profile tab), or
+  the request was stopped (the run is asked to stop; if it will not within three seconds the tool gives
+  up).
+- **What leaves the Mac**: the words above, including trimmed source lines (the script is sent anyway).
+  The bars never do.
+- **`security_data`** is the app's `KlineSecurityDataProvider`, as the Profile tab uses: a script that
+  reads another symbol may fetch its candles over the network, and that time is reported as waiting.
+- Tests: a real profile of a small loop (executions exact: 1,500 for a 50-iteration body on 30 bars),
+  the comparison, a failing script, no bars, a library, a stopped request, and the whole window in Ask.
+- Tests: the tools and the loop against the scripted provider (call, answer, final; several calls in a
+  turn; a failed call; Ask refused; step cap; repeat guard; cancel; refused tools; no tools = one request),
+  the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
+  and the whole window (an edit through tools, Apply, the trail drawing at a small size).
+  Pictures: `script_manager::ai_gallery` (scenes "tools", "tools-incomplete").
+- **Not verified**: any of this against a real model. The scripted provider returns what the wire
+  formats say a model returns; how well real models use these tools, how many rounds a typical request
+  takes, and what it costs have not been measured.
+
 ## The panel (phase 2)
 
 - `ai_panel` (view), `ai_host` (`impl ScriptManager`), `ai` (state), `ai_prompt` (pure text rules).
@@ -88,20 +202,37 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
   script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
 
-## Ask and Edit modes
+## Ask, Plan and Edit modes
 
-- A new conversation starts in **Ask**, and so does opening another script. The Ask | Edit switch
-  sits in the composer; it is locked while a request runs or a proposal waits, so Ask can never sit
-  beside an Apply button. Start over keeps the mode.
-- **Ask never changes the script, in code and not only in the prompt.** `Assistant::finish` makes no
-  `Proposal` for an Ask request even if the model returns a whole script, and `ai_accept` refuses
-  unless the mode is Edit. A script the model writes in Ask shows as a code block with a Copy
-  button. `ai_prompt::system_prompt(mode)` tells the model it cannot change the script, to answer
-  or give a short numbered plan, and to keep any snippet under about 15 lines.
-- Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit
-  reply's script (the current one is resent) but keeps an Ask reply whole.
-- An Ask reply with two or more numbered steps (`looks_like_plan`) gets an **Implement this plan**
-  button: it switches to Edit and sends `IMPLEMENT_MESSAGE`, with the plan already in history.
+- A new conversation starts in **Ask**, and so does opening another script. The Ask | Plan | Edit switch
+  sits in the composer; it is locked while a request runs or a proposal or plan waits, so Ask can never
+  sit beside an Apply button. Start over keeps the mode.
+- **Ask and Plan never change the script, in code and not only in the prompt.** `Assistant::finish` makes
+  no `Proposal` for either, even if the model returns a whole script; `ai_accept` and the review sheet
+  refuse unless the mode is Edit; and neither mode is offered a writing tool (`ToolBox` offers and runs
+  only the mode's own, so a call to `edit_script` in Ask or Plan is an error answer, never an edit).
+- **Ask** answers questions and may look: `read_script`, `compile`, `profile`. A script the model writes
+  in Ask shows as a code block with a Copy button. `ai_prompt::agent_system_prompt(Ask)` tells it to
+  answer, or give a short numbered plan, and to keep any snippet under about 15 lines. An Ask reply with
+  two or more numbered steps (`looks_like_plan`) still gets an **Implement this plan** button.
+- **Plan** is for "what should we do about this?" It has the same three reading tools and one more,
+  `submit_plan(summary, steps[{title, detail, lines?}], expected_effect?)` (`ai_plan`). The model looks
+  and measures, then calls it once; that **ends the request** (the loop returns at once, nothing more is
+  asked of the model). A plan is validated (a summary, 1 to 12 steps each with a title; long text is cut,
+  not refused); a plan that is not accepted is answered with why and the model may try again. A model
+  that answers in prose instead (nothing to change, or it cannot be done here) is a plain reply.
+- **The plan card** (`ai.plan`, like `proposal`, kept in memory only) sits under the plan, which is the
+  reply (its Markdown is the assistant turn, so it is in history and the transcript). **Approve and
+  implement** switches to Edit and sends `IMPLEMENT_MESSAGE` with the plan already in history, so the
+  Edit request makes those changes on a draft and ends in the usual proposal; **Revise** returns to the
+  box with "Revise the plan: " and stays in Plan; **Discard** drops it. The mode switch is locked while a
+  plan waits.
+- A plan is not saved across a restart: the conversation is (the plan's words, as a Plan reply), the card
+  is not. After a restart ask for the changes in Edit mode ("implement the plan above").
+- **Saved mode names**: `Plan` is stored as `"planning"`. `"plan"` was Ask's name before Plan mode
+  existed and still loads as Ask.
+- Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit reply's
+  script (the current one is resent) but keeps an Ask or Plan reply whole.
 - The user's message shows from the moment it is sent (`Assistant::pending_request`), not only
   when the reply ends, and the transcript scrolls to the end when a request starts or finishes.
 
@@ -186,6 +317,14 @@ rules on the Settings page.
 Also verified headlessly: a scripted provider driving the whole window (reply to proposal, accept,
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
+
+**Not verified (agent features, PRs for tool use, the loop, `profile` and Plan mode)**: any of it against a real
+model. Tool calls and plans are driven by a scripted provider that returns what the wire formats say a model
+returns. How well real models use `read_script`/`edit_script`/`profile`/`submit_plan`, how many rounds a
+typical request takes, what it costs, and whether the text `profile` returns is what a model needs to act
+on were not measured. The panel (the trail, the plan card, the Ask | Plan | Edit switch) was exercised
+headlessly and photographed (`ai_gallery`: `tools`, `tools-incomplete`, `plan`, `plan-empty`), not driven by
+hand beyond opening the app.
 
 **Not verified**: the model menu against real provider lists (the OpenAI filter is a heuristic; the
 "Use …" row is the way out) and clicking in it; the review sheet in a real window (clicking rows and toggles, scrolling a very long

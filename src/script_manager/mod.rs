@@ -7,17 +7,21 @@
 #![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet
 
 mod ai;
+mod ai_agent;
 #[cfg(test)]
 mod ai_gallery;
 pub mod ai_history;
 mod ai_host;
 mod ai_models;
 mod ai_panel;
+mod ai_plan;
+mod ai_profile;
 mod ai_prompt;
 mod ai_review;
 mod ai_review_view;
 #[cfg(test)]
 mod ai_tests;
+mod ai_tools;
 mod bottom_bar;
 mod completion;
 pub mod debug;

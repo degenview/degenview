@@ -27,8 +27,13 @@ const OMITTED: &str =
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
+    // Ask was called "plan" before there was a Plan mode, and saved conversations say so.
     #[serde(alias = "plan")]
     Ask,
+    /// Looks and measures with the reading tools, then hands the user a plan to approve. Never edits.
+    /// Saved as "planning" so it is never read as the old name of Ask.
+    #[serde(rename = "planning")]
+    Plan,
     Edit,
 }
 
@@ -36,14 +41,14 @@ impl Mode {
     pub fn title(self) -> &'static str {
         match self {
             Self::Ask => "Ask",
+            Self::Plan => "Plan",
             Self::Edit => "Edit",
         }
     }
 }
 
 /// What the Implement button sends after a plan.
-pub const IMPLEMENT_MESSAGE: &str =
-    "Implement the plan above. Make exactly those changes and return the complete updated script.";
+pub const IMPLEMENT_MESSAGE: &str = "Implement the plan above. Make exactly those changes, and check that the script still compiles.";
 
 /// One line of the conversation as the panel keeps it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,7 +75,7 @@ declaration unless asked to change it.\n\
 - If the message lists compiler errors, fix them.\n\
 - Write plain Markdown: short paragraphs and `code` for names.\n\n",
         ),
-        Mode::Ask => String::from(
+        Mode::Ask | Mode::Plan => String::from(
             "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
 interpreter. The user's current script and their question are in the last message. You are in ASK \
 mode: you cannot change the script, and nothing you write is applied to it.\n\n\
@@ -84,6 +89,79 @@ fine when it makes the point clearer.\n\
 - Write plain Markdown: short paragraphs, lists, and `code` for names.\n\n",
         ),
     };
+    push_reference(&mut prompt);
+    prompt
+}
+
+/// The prompt when the model has tools: it works on a private copy of the script and answers in
+/// prose, rather than returning a whole script to be compared.
+pub fn agent_system_prompt(mode: Mode) -> String {
+    let mut prompt = match mode {
+        Mode::Edit => String::from(
+            "You edit Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+interpreter. You work on a private copy of the user's script, the draft, with tools. Nothing reaches \
+their editor until they review your changes and apply them.\n\n\
+How to work:\n\
+- The current script, its compiler diagnostics and the request are in the last message. Use \
+`read_script` for a part of a long script you need to see again.\n\
+- Change the draft with `edit_script`: small exact replacements, with `old` copied from the script \
+and long enough to match once. Use `write_script` only when most of the script changes. Never put \
+the `12: ` line numbers that `read_script` prints into `old`, `new` or `text`.\n\
+- Each change tells you whether the draft still compiles. Fix errors you caused; call `compile` for \
+the full list. Stop when the draft compiles and does what was asked.\n\
+- If the user wants the script faster, call `profile` first to see where the time goes, change the \
+hottest lines, then `profile` again and compare. The executions are exact; the times vary a little \
+between runs, so do not claim an improvement the executions do not back. If it is already fast, or \
+nothing in it is worth changing, say so.\n\
+- Keep everything the user did not ask you to change: names, inputs, comments, formatting. Start \
+with //@version=6 and keep the existing indicator(), strategy() or library() declaration unless asked.\n\
+- If the user asks a question or no change is needed, answer in prose and change nothing.\n\
+- If the request cannot be done in this Pine implementation, say so and why instead of guessing.\n\
+- Finish with one to three sentences saying what you changed and why, with the figures you measured: \
+only this final message is kept, not what the tools returned. Do not paste the script; the user \
+reviews the changes as a diff. Write plain Markdown and `code` for names.\n\n",
+        ),
+        Mode::Plan => String::from(
+            "You plan changes to Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+interpreter. You are in PLAN mode: you cannot change the script, and nothing you do is applied. The \
+user's current script, its compiler diagnostics and their request are in the last message.\n\n\
+How to work:\n\
+- Look before you plan, with the tools that only look: `read_script` (a part of the script, with line \
+numbers), `compile` (the problems) and `profile` (runs the script on the preview chart's bars and says \
+where the time goes). For a request about speed, profile first and plan from what you measured.\n\
+- Then call `submit_plan` exactly once: a `summary` of what you found (with the figures you measured), \
+`steps` (each a `title`, a `detail` saying what to change and why, and the `lines` it applies to), and \
+the `expected_effect`, saying whether it is measured or a guess. After it you are done; add nothing.\n\
+- Plan only what the user asked, in the fewest steps that do it. Name what to change; do not write \
+the code, which the next stage does. Keep to what this Pine implementation can do.\n\
+- If nothing needs changing, or the request cannot be done here, say so in prose and do not call \
+`submit_plan`.\n\n",
+        ),
+        Mode::Ask => String::from(
+            "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+interpreter. You are in ASK mode: you cannot change the script, and nothing you write is applied to \
+it. The user's current script, its compiler diagnostics and their question are in the last message.\n\n\
+You have tools that only look: `read_script` (a part of the script, with line numbers), `compile` \
+(the problems) and `profile` (runs the script on the preview chart's bars and says where the time \
+goes). The script is already in front of you, so use them only when they help; for \"why is this slow?\" \
+call `profile` and answer from what it measured. Put the figures you rely on in your answer: only \
+your final message is kept, not what the tools returned.\n\n\
+How to answer:\n\
+- Answer the question directly and concisely, referring to names and lines in their script.\n\
+- If they want a change, give a short numbered plan: what to change and why, one step per item. Do \
+not write the code for it.\n\
+- Never write the complete script. A short snippet (under about 15 lines) in a ```pine fenced block is \
+fine when it makes the point clearer.\n\
+- If something cannot be done in this Pine implementation, say so and why instead of guessing.\n\
+- Write plain Markdown: short paragraphs, lists, and `code` for names.\n\n",
+        ),
+    };
+    push_reference(&mut prompt);
+    prompt
+}
+
+/// What the model must know about this interpreter, whichever way it is asked to answer.
+fn push_reference(prompt: &mut String) {
     prompt.push_str(
         "This interpreter is not TradingView, and some Pine is not implemented. Do not use these:\n",
     );
@@ -106,7 +184,6 @@ fine when it makes the point clearer.\n\
             prompt.push_str(&format!("\n```pine\n{}\n```\n", demo.source.trim_end()));
         }
     }
-    prompt
 }
 
 /// A fence longer than any run of backticks inside `text`, so code can never close it early.
@@ -168,7 +245,7 @@ pub fn build_messages(
             } => ChatMessage::assistant(without_script(text)),
             Turn::Assistant {
                 text,
-                mode: Mode::Ask,
+                mode: Mode::Ask | Mode::Plan,
             } => ChatMessage::assistant(text.clone()),
         })
         .collect();
@@ -544,7 +621,43 @@ mod tests {
     }
 
     #[test]
-    fn the_implement_message_asks_for_the_whole_script() {
-        assert!(IMPLEMENT_MESSAGE.contains("complete updated script"));
+    fn the_implement_message_asks_for_exactly_the_plan() {
+        assert!(IMPLEMENT_MESSAGE.contains("Implement the plan above"));
+        assert!(IMPLEMENT_MESSAGE.contains("exactly"));
+    }
+
+    #[test]
+    fn plan_is_saved_under_its_own_name_and_the_old_name_of_ask_still_reads_as_ask() {
+        assert_eq!(serde_json::to_string(&Mode::Plan).unwrap(), "\"planning\"");
+        for mode in [Mode::Ask, Mode::Plan, Mode::Edit] {
+            let saved = serde_json::to_string(&mode).unwrap();
+            assert_eq!(serde_json::from_str::<Mode>(&saved).unwrap(), mode);
+        }
+        assert_eq!(serde_json::from_str::<Mode>("\"plan\"").unwrap(), Mode::Ask);
+    }
+
+    #[test]
+    fn the_plan_prompt_asks_for_a_submitted_plan_and_for_no_edits() {
+        let prompt = agent_system_prompt(Mode::Plan);
+        assert!(prompt.contains("PLAN mode"));
+        assert!(prompt.contains("`submit_plan`"));
+        assert!(prompt.contains("`profile`"));
+        assert!(prompt.contains("cannot change the script"));
+        // The fallback for a server without tools is the numbered-plan prompt of Ask.
+        assert!(system_prompt(Mode::Plan).contains("numbered plan"));
+        assert!(!prompt.contains("`edit_script`"));
+    }
+
+    #[test]
+    fn a_plan_reply_is_kept_whole_in_history_like_an_ask_reply() {
+        let history = vec![
+            Turn::User("speed it up".to_owned()),
+            Turn::Assistant {
+                text: "1. a\n2. b".to_owned(),
+                mode: Mode::Plan,
+            },
+        ];
+        let messages = build_messages(&history, "x = 1", "go", &[]);
+        assert_eq!(messages[1].content, "1. a\n2. b");
     }
 }

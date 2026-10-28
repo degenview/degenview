@@ -7,11 +7,14 @@ use std::time::Duration;
 
 use eframe::egui;
 
+use super::ai_agent::AgentSetup;
 use super::ai_panel::PanelAction;
 use super::ai_prompt::Mode;
+use super::ai_tools::ToolBox;
 use super::debug_tests::Rig;
 use super::*;
 use crate::service::keychain_ai_keys::AiKeyStore;
+use crate::service::llm::mock::{MockProvider, Scripted};
 use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
 
 use crate::ui::render_tests::{Screen, gallery_dir};
@@ -143,6 +146,7 @@ fn gallery_of_the_assistant() {
                     system: String::new(),
                     messages: vec![ChatMessage::user("x")],
                     max_tokens: 10,
+                    tools: Vec::new(),
                 },
                 "How would I add a length input?".to_owned(),
                 base,
@@ -174,6 +178,7 @@ fn gallery_of_the_assistant() {
                     system: String::new(),
                     messages: vec![ChatMessage::user("x")],
                     max_tokens: 10,
+                    tools: Vec::new(),
                 },
                 "What does this script do?".to_owned(),
                 base,
@@ -223,6 +228,7 @@ fn gallery_of_the_assistant() {
                     system: String::new(),
                     messages: vec![ChatMessage::user("x")],
                     max_tokens: 10,
+                    tools: Vec::new(),
                 },
                 "Add an input for the length".to_owned(),
                 base.clone(),
@@ -231,7 +237,143 @@ fn gallery_of_the_assistant() {
             );
             scene.frames(12);
             scene.save("writing");
-            scene.rig.manager.ai.stop();
+            scene.rig.manager.ai.stop(&|_| Vec::new());
+
+            // The assistant with tools: what it did on the way, and the change it made.
+            let tools_base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            let edit = |id: &str, old: &str, new: &str| {
+                Scripted::call(
+                    id,
+                    "edit_script",
+                    serde_json::json!({"old": old, "new": new}),
+                )
+            };
+            for (label, turns) in [
+                (
+                    "tools",
+                    vec![
+                        Ok(Scripted::say("Let me read the function first.").then_call(
+                            "t1",
+                            "read_script",
+                            serde_json::json!({"start": 1, "end": 12}),
+                        )),
+                        Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+                        Ok(edit("t2", "offset = 9", "offset = 20")),
+                        Ok(edit("t3", "doubled + 10", "doubled + 20")),
+                        Ok(Scripted::say("The offset is now 20.")),
+                    ],
+                ),
+                (
+                    "tools-incomplete",
+                    vec![
+                        Ok(edit("t1", "doubled + 10", "doubled + 20")),
+                        Err(LlmError::rate_limited(
+                            "Too many requests. Try again in a minute.",
+                        )),
+                    ],
+                ),
+            ] {
+                let feed = scene
+                    .rig
+                    .manager
+                    .preview
+                    .debug_feed(super::model::now_ms(), false);
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::ai_host::diagnostics_of)
+                    .with_bars(feed);
+                let request = ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: tools.specs(),
+                };
+                scene.rig.manager.ai.start_agent(
+                    Box::new(MockProvider::turns(turns)),
+                    request,
+                    Some(AgentSetup {
+                        tools,
+                        fallback_system: String::new(),
+                    }),
+                    "Make the offset 20".to_owned(),
+                    tools_base.clone(),
+                    Mode::Edit,
+                    Arc::new(|| {}),
+                );
+                for _ in 0..200 {
+                    scene.frames(1);
+                    if !scene.rig.manager.ai.is_running() {
+                        break;
+                    }
+                }
+                // The transcript eases down to the end of the conversation; wait for it.
+                scene.frames(30);
+                scene.save(label);
+            }
+            scene.rig.manager.ai.clear();
+
+            // Plan mode: it looks, measures and hands over a plan to approve.
+            assert!(scene.rig.manager.ai.set_mode(Mode::Plan));
+            scene.frames(2);
+            scene.save("plan-empty");
+            let feed = scene
+                .rig
+                .manager
+                .preview
+                .debug_feed(super::model::now_ms(), false);
+            let plan_tools = ToolBox::new(Mode::Plan, &tools_base, super::ai_host::diagnostics_of)
+                .with_bars(feed);
+            let plan_request = ChatRequest {
+                model: "m".into(),
+                system: String::new(),
+                messages: vec![ChatMessage::user("x")],
+                max_tokens: 10,
+                tools: plan_tools.specs(),
+            };
+            let plan_turns = vec![
+                Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+                Ok(Scripted::call(
+                    "p2",
+                    "submit_plan",
+                    serde_json::json!({
+                        "summary": "Line 4 and 5 do most of the work: the function runs once a bar, and its result is computed twice.",
+                        "steps": [
+                            {"title": "Compute it once", "detail": "Store `doubled + 10` in a variable and reuse it instead of calling the function twice.", "lines": "4-5"},
+                            {"title": "Keep the plot", "detail": "Leave `plot(value)` as it is so the chart does not change."},
+                        ],
+                        "expected_effect": "Fewer executions per bar (measured: the function ran 500 times). The time saved is a guess."
+                    }),
+                )),
+            ];
+            scene.rig.manager.ai.start_agent(
+                Box::new(MockProvider::turns(plan_turns)),
+                plan_request,
+                Some(AgentSetup {
+                    tools: plan_tools,
+                    fallback_system: String::new(),
+                }),
+                "Make this script faster".to_owned(),
+                tools_base.clone(),
+                Mode::Plan,
+                Arc::new(|| {}),
+            );
+            for _ in 0..200 {
+                scene.frames(1);
+                if !scene.rig.manager.ai.is_running() {
+                    break;
+                }
+            }
+            scene.frames(30);
+            scene.save("plan");
+            scene.rig.manager.ai.clear();
+            scene.rig.manager.ai.set_mode(Mode::Edit);
 
             // A proposal with several kinds of change over a longer script.
             let rsi = super::demo::BUNDLED
@@ -269,6 +411,7 @@ fn gallery_of_the_assistant() {
                     system: String::new(),
                     messages: vec![ChatMessage::user("x")],
                     max_tokens: 10,
+                    tools: Vec::new(),
                 },
                 "Use 21, smooth it, restyle the plot, drop the midline, add an alert".to_owned(),
                 base,
