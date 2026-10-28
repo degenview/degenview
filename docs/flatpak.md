@@ -20,7 +20,7 @@ The workflow runs in two jobs. `prepare` runs on the plain runner: it generates
 has no network, so every crate is listed with its checksum), stamps the build id and today's release
 into copies of the manifest and metainfo, and lints them with `desktop-file-validate` and
 `appstreamcli validate --pedantic --no-net`. `build` runs `flatpak-builder` in the Flathub
-`freedesktop-26.08` container and bundles the result, once per CPU in a matrix: x86_64 on
+`freedesktop-26.08` container and bundles the result, once per CPU in a matrix (pull requests build x86_64 only, `arm64: false`; a release builds both): x86_64 on
 `ubuntu-latest` and aarch64 natively on GitHub's free `ubuntu-24.04-arm` runner (the container
 image is multi-arch; no emulation). `cargo-sources.json` is the same for both and is never committed.
 

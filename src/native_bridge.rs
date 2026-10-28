@@ -1,5 +1,6 @@
 use eframe::egui;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeCommand {
     NewTab,
@@ -784,6 +785,7 @@ fn picture_on(board: &objc2_app_kit::NSPasteboard) -> Option<Vec<u8>> {
 }
 
 /// The path a `file://` URL names, with its percent escapes undone. `None` for any other URL.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn file_url_path(url: &str) -> Option<std::path::PathBuf> {
     let rest = url.strip_prefix("file://")?;
     // `file:///Users/me/a.png` has an empty host; `file://localhost/...` is the same place.

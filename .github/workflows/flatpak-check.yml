@@ -26,4 +26,6 @@ jobs:
     name: Flatpak
     uses: ./.github/workflows/flatpak.yml
     with:
+      # The manifest and Cargo.lock are the same for both CPUs; the release builds arm64 too.
+      arm64: false
       bundle-prefix: DegenView-ci-linux

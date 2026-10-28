@@ -10,6 +10,10 @@ on:
         description: "Git ref to build; empty builds the ref that triggered the caller"
         type: string
         default: ""
+      arm64:
+        description: "Also build for aarch64; pull requests skip it, a release does not"
+        type: boolean
+        default: true
       bundle-prefix:
         description: "Start of each bundle's file name; the CPU label and .flatpak follow, e.g. DegenView-v0.1.0-linux"
         type: string
@@ -81,15 +85,8 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            label: x64
-            runner: ubuntu-latest
-          # GitHub's free arm64 runners build natively; the container image is multi-arch.
-          - arch: aarch64
-            label: arm64
-            runner: ubuntu-24.04-arm
+      # GitHub's free arm64 runners build natively; the container image is multi-arch.
+      matrix: ${{ fromJSON(inputs.arm64 && '{"include":[{"arch":"x86_64","label":"x64","runner":"ubuntu-latest"},{"arch":"aarch64","label":"arm64","runner":"ubuntu-24.04-arm"}]}' || '{"include":[{"arch":"x86_64","label":"x64","runner":"ubuntu-latest"}]}') }}
     container:
       # The tag must match `runtime-version` in the manifest.
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08

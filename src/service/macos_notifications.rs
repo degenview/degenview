@@ -5,6 +5,7 @@ use crate::model::alert::AlertNotificationPermission;
 use crate::model::alert_notification::NotificationContent;
 use std::sync::Arc;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const SOUND_NAME: &str = "Glass";
 
 pub fn is_disabled() -> bool {

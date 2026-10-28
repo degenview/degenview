@@ -3,6 +3,7 @@
 
 use crate::model::alert::AlertServiceState;
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const AGENT_BUNDLE_ID: &str = "es.nico.degenview.alert-agent";
 
 #[allow(dead_code)] // `Unavailable` is constructed by the non-macOS implementation.
