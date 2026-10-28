@@ -64,6 +64,12 @@ fn ask_in(rig: &mut Rig, mode: Mode, reply: Result<Vec<String>, LlmError>) {
 
 /// Sends a request with tools, answered by `turns`, and runs frames until it ends.
 fn ask_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmError>>) {
+    begin_with_tools(rig, mode, turns);
+    wait_for_request(rig);
+}
+
+/// Sends a request with tools without waiting for it.
+fn begin_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmError>>) {
     assert!(rig.manager.ai.set_mode(mode));
     let base = source(rig);
     let feed = rig.manager.preview.debug_feed(model::now_ms(), false);
@@ -84,6 +90,9 @@ fn ask_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmErro
         mode,
         Arc::new(|| {}),
     );
+}
+
+fn wait_for_request(rig: &mut Rig) {
     for _ in 0..400 {
         rig.frame();
         if !rig.manager.ai.is_running() {
@@ -1116,6 +1125,218 @@ fn a_new_plan_or_proposal_scrolls_into_view_so_its_buttons_can_be_pressed() {
         transcript_at_end(&rig),
         "the proposal card is below the fold"
     );
+}
+
+// MARK: Auto
+
+fn set_auto(rig: &mut Rig, on: bool) {
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::SetAuto(on)));
+    rig.frame();
+}
+
+/// An edit that adds a comment line at the top: clean, and it compiles.
+fn comment_edit(rig: &Rig) -> Scripted {
+    let first = source(rig).lines().next().unwrap().to_owned();
+    Scripted::call(
+        "e1",
+        "edit_script",
+        serde_json::json!({"old": first, "new": format!("// auto\n{first}")}),
+    )
+}
+
+#[test]
+fn manual_is_the_default_and_keeps_the_review_card() {
+    let mut rig = Rig::new("ai-manual-default");
+    open_panel(&mut rig);
+    assert!(!rig.manager.ai.prefs.auto_apply);
+    let before = source(&rig);
+    let turns = vec![Ok(comment_edit(&rig)), Ok(Scripted::say("Done."))];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    assert_eq!(source(&rig), before);
+    assert!(rig.manager.ai.proposal.is_some());
+}
+
+#[test]
+fn auto_applies_a_clean_change_and_one_undo_brings_the_script_back() {
+    let mut rig = Rig::new("ai-auto-apply");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let before = source(&rig);
+    let turns = vec![
+        Ok(comment_edit(&rig)),
+        Ok(Scripted::say("Added a comment.")),
+    ];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    rig.frame();
+    assert!(source(&rig).starts_with("// auto\n"));
+    assert!(rig.manager.ai.proposal.is_none());
+    let notice = rig.manager.ai.notice.clone().expect("a notice");
+    assert!(!notice.error);
+    assert!(
+        notice.text.starts_with("Applied automatically"),
+        "{}",
+        notice.text
+    );
+    assert!(notice.text.contains("Undo"));
+    // It is applied to the editor, not saved.
+    assert!(rig.manager.open.as_ref().unwrap().editor.is_dirty());
+    rig.frame();
+    rig.frame_with(vec![egui::Event::Key {
+        key: egui::Key::Z,
+        physical_key: None,
+        pressed: true,
+        repeat: false,
+        modifiers: egui::Modifiers::COMMAND,
+    }]);
+    assert_eq!(
+        source(&rig),
+        before,
+        "one undo brings back the whole change"
+    );
+}
+
+#[test]
+fn auto_holds_a_result_that_does_not_compile() {
+    let mut rig = Rig::new("ai-auto-errors");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let before = source(&rig);
+    let turns = vec![
+        Ok(Scripted::call(
+            "e1",
+            "edit_script",
+            serde_json::json!({"old": "plot(value)", "new": "plot(value"}),
+        )),
+        Ok(Scripted::say("Changed the plot.")),
+    ];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    rig.frame();
+    assert_eq!(source(&rig), before, "nothing was applied");
+    let proposal = rig.manager.ai.proposal.clone().expect("held for review");
+    assert!(proposal.errors > 0);
+    let note = proposal.note.unwrap();
+    assert!(
+        note.starts_with("Not applied automatically: it has"),
+        "{note}"
+    );
+}
+
+#[test]
+fn auto_holds_a_request_that_did_not_finish() {
+    let mut rig = Rig::new("ai-auto-incomplete");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let before = source(&rig);
+    let turns = vec![
+        Ok(comment_edit(&rig)),
+        Err(LlmError::rate_limited("slow down")),
+    ];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    rig.frame();
+    assert_eq!(source(&rig), before);
+    let note = rig.manager.ai.proposal.clone().unwrap().note.unwrap();
+    assert!(note.starts_with("Incomplete"), "{note}");
+    assert!(
+        note.ends_with("Not applied automatically: it did not finish."),
+        "{note}"
+    );
+}
+
+#[test]
+fn auto_does_not_overwrite_text_typed_while_the_assistant_worked() {
+    let mut rig = Rig::new("ai-auto-typed");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let turns = vec![Ok(comment_edit(&rig)), Ok(Scripted::say("Done."))];
+    begin_with_tools(&mut rig, Mode::Edit, turns);
+    let typed = format!("{}// typed meanwhile\n", source(&rig));
+    rig.set_source(&typed);
+    wait_for_request(&mut rig);
+    rig.frame();
+    assert_eq!(source(&rig), typed);
+    let note = rig.manager.ai.proposal.clone().expect("held").note.unwrap();
+    assert!(
+        note.contains("the script changed while the assistant worked"),
+        "{note}"
+    );
+}
+
+#[test]
+fn auto_leaves_ask_and_plan_alone() {
+    let mut rig = Rig::new("ai-auto-ask-plan");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let before = source(&rig);
+    ask_in(
+        &mut rig,
+        Mode::Ask,
+        script_reply(&format!("{before}// x\n")),
+    );
+    assert_eq!(source(&rig), before);
+    assert!(rig.manager.ai.proposal.is_none());
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    assert_eq!(source(&rig), before);
+    assert!(rig.manager.ai.plan.is_some());
+}
+
+#[test]
+fn an_approved_plan_ends_applied_when_auto_is_on() {
+    let mut rig = Rig::new("ai-auto-plan");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::ApprovePlan));
+    rig.frame();
+    assert_eq!(rig.manager.ai.mode, Mode::Edit);
+    // The implementing request (the test key store is empty, so the real one is refused).
+    let turns = vec![
+        Ok(comment_edit(&rig)),
+        Ok(Scripted::say("Added the comment.")),
+    ];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    rig.frame();
+    assert!(source(&rig).starts_with("// auto\n"));
+}
+
+#[test]
+fn the_switch_is_saved_on_this_mac_and_survives_a_reload() {
+    let mut rig = Rig::new("ai-auto-saved");
+    open_panel(&mut rig);
+    set_auto(&mut rig, true);
+    let saved = AiPrefs::load(&rig.shared.lock().unwrap());
+    assert!(saved.auto_apply);
+    // Another read of the store (the host does this every second and a half) keeps it.
+    rig.manager.ai.prefs = AiPrefs::load(&rig.shared.lock().unwrap());
+    assert!(rig.manager.ai.prefs.auto_apply);
+    set_auto(&mut rig, false);
+    assert!(!AiPrefs::load(&rig.shared.lock().unwrap()).auto_apply);
+}
+
+#[test]
+fn the_switch_cannot_change_while_a_request_runs() {
+    let mut rig = Rig::new("ai-auto-running");
+    open_panel(&mut rig);
+    let turns = vec![Ok(Scripted::say("thinking"))];
+    begin_with_tools(&mut rig, Mode::Edit, turns);
+    assert!(rig.manager.ai.is_running());
+    let ctx = rig.ctx.clone();
+    rig.manager.ai_action(PanelAction::SetAuto(true), &ctx);
+    assert!(!rig.manager.ai.prefs.auto_apply);
+    wait_for_request(&mut rig);
+}
+
+#[test]
+fn the_switch_and_its_status_line_draw_in_a_small_panel() {
+    let mut rig = Rig::new("ai-auto-draw");
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(700.0, 420.0),
+    ));
+    open_panel(&mut rig);
+    assert!(rig.manager.ai.set_mode(Mode::Edit));
+    set_auto(&mut rig, true);
+    rig.frame();
+    rig.frame();
 }
 
 #[test]
