@@ -32,6 +32,7 @@ modules:
   - name: degenview
     buildsystem: simple
     build-commands:
+      - pwd; env | grep -i cargo; ls -la . cargo | head -40; head -c 600 cargo/config; ls cargo/vendor | head -3
       # Only the app. `degenview-alert-agent` is the macOS login item and is not installed.
       - cargo --offline build --release --locked --bin degenview
       - install -Dm755 target/release/degenview -t /app/bin
