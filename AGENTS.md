@@ -24,6 +24,7 @@ scenario matches the work:
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
+| The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
 | iCloud Sync, the sync outbox, CloudKit, or anything that persists user data | [iCloud Sync](docs/icloud-sync.md) |
 
 For cross-cutting work, load all matching guides. These files contain implementation constraints,
@@ -81,6 +82,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 
 - [Architecture](docs/architecture.md) — module map and data flow.
 - [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
+- [Flatpak](docs/flatpak.md) — the manifest and reusable workflow, sandbox permissions, why the update check stays on, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.

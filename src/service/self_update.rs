@@ -98,7 +98,14 @@ impl Prepared {
 /// The `.app` bundle this process runs from, when it can be replaced in place.
 pub fn install_target() -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
-        return Err("Automatic updates are only available on macOS.".to_owned());
+        // A Flatpak installed from a downloaded bundle has no remote, so `flatpak update` finds
+        // nothing: the release page is where the next one comes from.
+        return Err(if crate::service::sandbox::is_flatpak() {
+            "This Flatpak cannot update itself. Download the new .flatpak from the release page."
+        } else {
+            "Automatic updates are only available on macOS."
+        }
+        .to_owned());
     }
     let exe = std::env::current_exe()
         .and_then(|exe| exe.canonicalize())

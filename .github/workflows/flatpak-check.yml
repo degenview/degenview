@@ -1,0 +1,29 @@
+name: Flatpak check
+
+# Builds the Flatpak on pull requests that can break it, so a bad manifest or a crate that no
+# longer builds in the sandbox shows up before a release tag does. The bundle is uploaded as an
+# artifact of the run for trying out.
+on:
+  pull_request:
+    paths:
+      - packaging/flatpak/**
+      - Cargo.lock
+      - Cargo.toml
+      - assets/brand/DegenView-512.png
+      - .github/workflows/flatpak.yml
+      - .github/workflows/flatpak-check.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flatpak-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  flatpak:
+    name: Flatpak
+    uses: ./.github/workflows/flatpak.yml
+    with:
+      bundle-name: DegenView-ci-linux-x64.flatpak

@@ -231,6 +231,6 @@ DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_ -- --ignored
   did not register in that window, so no placement, editing, dragging or sheet was driven in a real
   window: those are covered by the controller tests only.
 * **IME**, VoiceOver and a real-window drag of a table border were not exercised.
-* **Windows and Linux**: the file panel and the clipboard picture are macOS-only; drag and drop work
-  where egui reports them.
+* **Windows and Linux**: the clipboard picture is macOS-only; drag and drop work where egui reports
+  them. The file panel is the XDG portal on Linux (see [Flatpak](flatpak.md)) and absent on Windows.
 * **No Cmd+V of an image**, and a dropped file lands in the middle of the chart (see Images).

@@ -17,7 +17,7 @@ run them on your own machine, keep every line of source on your device.
 - **Crypto** — Search Binance, Coinbase, CoinGecko, and DEXScreener side by side; DEX pairs
   use GeckoTerminal for historical OHLCV.
 - **Stocks** — US equities through Alpaca's IEX feed (credentials stored securely in Keychain on
-  macOS, or in environment variables elsewhere).
+  macOS and in the Secret Service on Linux, or in environment variables).
 - **Prediction markets** — Polymarket and Kalshi events, charted as probabilities. No key needed.
 - **CoinMarketCap indices** — Altcoin Season and Crypto Fear and Greed, historical or latest.
 - **Live updates** — Binance and Coinbase crypto receive WebSocket updates; other sources
@@ -117,7 +117,7 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 - macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64)
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
-  and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS
+  and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
 - No CoinMarketCap API key is required; adding one in Settings is optional
   (`DEGENVIEW_CMC_API_KEY`)
 
@@ -184,8 +184,20 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
+Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak`, which needs no
+manual install steps and runs sandboxed (network, display and GPU only):
+
+```bash
+flatpak install --user DegenView-<tag>-linux-x64.flatpak
+flatpak run es.nico.degenview
+```
+
+A bundle has no remote, so `flatpak update` does not find newer versions; download the next one
+from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
+
 Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel),
-Windows, and Linux binaries and publishes a GitHub release you can download.
+Windows, and Linux binaries (a tarball and a Flatpak) and publishes a GitHub release you can
+download.
 
 ## Documentation
 

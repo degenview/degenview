@@ -67,6 +67,17 @@ jobs:
             exit 1
           fi
 
+  # The Flatpak bundle is a Linux asset like the tarball: it must exist before the release is
+  # published, because the release is immutable. Built from source inside the Flatpak SDK, so it
+  # does not share the `build` job's cargo cache.
+  flatpak:
+    name: Build Flatpak
+    needs: verify
+    uses: ./.github/workflows/flatpak.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+      bundle-name: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux-x64.flatpak
+
   build:
     name: Build ${{ matrix.name }}
     needs: verify
@@ -234,7 +245,7 @@ jobs:
 
   release:
     name: Publish release
-    needs: build
+    needs: [build, flatpak]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -280,6 +291,7 @@ jobs:
             echo "- **macOS (Intel):** \`DegenView-${RELEASE_TAG}-macos-x64.zip\`"
             echo "- **Windows (x64):** \`DegenView-${RELEASE_TAG}-windows-x64.zip\`"
             echo "- **Linux (x64):** \`DegenView-${RELEASE_TAG}-linux-x64.tar.gz\`"
+            echo "- **Linux (x64, Flatpak):** \`DegenView-${RELEASE_TAG}-linux-x64.flatpak\`, installed with \`flatpak install --user DegenView-${RELEASE_TAG}-linux-x64.flatpak\`"
             echo
             echo "The macOS builds are signed with a Developer ID and notarized by Apple. The Windows build is unsigned; you may need to approve it in system security settings on first launch."
           } > notes.md

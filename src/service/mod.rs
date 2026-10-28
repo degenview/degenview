@@ -36,6 +36,8 @@ pub mod portfolio_history;
 pub mod portfolio_performers;
 pub mod portfolio_quotes;
 mod rate_limit;
+pub mod sandbox;
+pub mod secret_service;
 pub mod self_update;
 pub mod snapshot_export;
 pub mod snapshot_job;

@@ -1,0 +1,113 @@
+name: Flatpak
+
+# Builds the Linux Flatpak bundle. Reusable: release.yml calls it for a tag (the bundle is attached
+# to the release), flatpak-check.yml calls it on pull requests that touch the packaging so a broken
+# manifest is found before a tag is cut.
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to build; empty builds the ref that triggered the caller"
+        type: string
+        default: ""
+      bundle-name:
+        description: "File name of the bundle, e.g. DegenView-v0.1.0-linux-x64.flatpak"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  MANIFEST_DIR: packaging/flatpak
+
+jobs:
+  # Everything that needs no sandbox runs on the plain runner, where Python and apt are known to
+  # work: the offline crate list, the stamped files and the lint. The next job only builds.
+  prepare:
+    name: Prepare Flatpak sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      # `flatpak-cargo-generator.py` turns Cargo.lock into the `cargo-sources.json` the manifest
+      # builds from (a Flatpak build has no network). Pinned to a commit: it is build tooling.
+      - name: Generate cargo-sources.json
+        env:
+          GENERATOR_COMMIT: 9d86d336a39b9af38b86f114b6ce5820fe260f91
+        run: |
+          python3 -m venv "$RUNNER_TEMP/generator"
+          "$RUNNER_TEMP/generator/bin/pip" install --quiet 'aiohttp>=3.9.5,<4' 'PyYAML>=6.0.2,<7' 'tomlkit>=0.13.3,<1'
+          curl -fsSL -o "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+            "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/${GENERATOR_COMMIT}/cargo/flatpak-cargo-generator.py"
+          "$RUNNER_TEMP/generator/bin/python" "$RUNNER_TEMP/flatpak-cargo-generator.py" \
+            Cargo.lock -o "$MANIFEST_DIR/cargo-sources.json"
+
+      # The version comes from Cargo.toml, which the Release workflow has already checked against
+      # the tag. A hyphenated version is a pre-release, which AppStream calls "development".
+      - name: Stamp build id and release
+        run: |
+          version=$(awk '/^\[/ { in_package = ($0 == "[package]") } in_package && /^version = "/ { gsub(/^version = "|"$/, ""); print; exit }' Cargo.toml)
+          case "$version" in *-*) type=' type="development"' ;; *) type="" ;; esac
+          sed -i "s|<release version=\"0.0.0\" date=\"1970-01-01\"/>|<release version=\"${version}\" date=\"$(date -u +%F)\"${type}/>|" \
+            "$MANIFEST_DIR/es.nico.degenview.metainfo.xml"
+          sed -i "s|DEGENVIEW_BUILD_ID: unknown|DEGENVIEW_BUILD_ID: $(git rev-parse --short=9 HEAD)|" \
+            "$MANIFEST_DIR/es.nico.degenview.yml"
+          grep -n "<release " "$MANIFEST_DIR/es.nico.degenview.metainfo.xml"
+          grep -n "DEGENVIEW_BUILD_ID" "$MANIFEST_DIR/es.nico.degenview.yml"
+          ! grep -qF 'version="0.0.0"' "$MANIFEST_DIR/es.nico.degenview.metainfo.xml"
+          ! grep -qF 'BUILD_ID: unknown' "$MANIFEST_DIR/es.nico.degenview.yml"
+
+      - name: Validate the launcher and the AppStream metadata
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends appstream desktop-file-utils
+          desktop-file-validate "$MANIFEST_DIR/es.nico.degenview.desktop"
+          # No network: the screenshot lives on `main` and may not exist yet on a new branch.
+          appstreamcli validate --pedantic --no-net "$MANIFEST_DIR/es.nico.degenview.metainfo.xml"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: flatpak-sources
+          path: ${{ env.MANIFEST_DIR }}
+          if-no-files-found: error
+
+  build:
+    name: Build Flatpak
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    container:
+      # The tag must match `runtime-version` in the manifest.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: flatpak-sources
+          path: ${{ env.MANIFEST_DIR }}
+
+      # No cache: a tag run cannot restore one saved elsewhere (docs/agent-guides/releases-updates.md),
+      # so saving it would only use up space.
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: ${{ inputs.bundle-name }}
+          manifest-path: ${{ env.MANIFEST_DIR }}/es.nico.degenview.yml
+          repository-url: https://dl.flathub.org/repo/flathub.flatpakrepo
+          cache: false
+          restore-cache: false
+          save-cache: false
+          upload-artifact: false
+
+      # The release job downloads every `DegenView-*` artifact into dist/.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: DegenView-linux-x64-flatpak
+          path: ${{ inputs.bundle-name }}
+          if-no-files-found: error

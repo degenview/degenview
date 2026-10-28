@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DegenView
+Comment=Market dashboard with a local Pine Script engine
+Exec=degenview
+Icon=es.nico.degenview
+Terminal=false
+Categories=Office;Finance;
+Keywords=markets;charts;crypto;stocks;trading;pine;
+StartupWMClass=es.nico.degenview
