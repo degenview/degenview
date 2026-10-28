@@ -9,6 +9,7 @@
 use crate::service::keychain_api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
+use crate::service::llm::report::ErrorReport;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_window::{card, footer_row, section, status_badge};
@@ -18,8 +19,11 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusMessage {
+    /// What the status says; for a provider's failure, its headline.
     pub text: String,
     pub is_error: bool,
+    /// A provider's failure with more to say than its headline (detail, request id).
+    pub report: Option<ErrorReport>,
 }
 
 impl StatusMessage {
@@ -27,6 +31,7 @@ impl StatusMessage {
         Self {
             text: text.into(),
             is_error: false,
+            report: None,
         }
     }
 
@@ -34,6 +39,16 @@ impl StatusMessage {
         Self {
             text: text.into(),
             is_error: true,
+            report: None,
+        }
+    }
+
+    /// A provider's failure: the headline is the text, the rest is kept for a card.
+    pub(crate) fn failure(report: ErrorReport) -> Self {
+        Self {
+            text: report.headline.clone(),
+            is_error: true,
+            report: report.has_more().then_some(report),
         }
     }
 }
@@ -340,19 +355,10 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
-/// What a footer says about `status`: an error long enough to need it is cut to its headline (the
-/// provider's paragraph is the hover text), anything else is shown as it is.
+/// What a footer says about `status`. `footer_row` cuts it to one line.
 pub(crate) fn footer_status(status: &Option<StatusMessage>) -> Option<(String, bool)> {
     let status = status.as_ref()?;
-    Some((footer_text(&status.text, status.is_error), status.is_error))
-}
-
-pub(crate) fn footer_text(text: &str, is_error: bool) -> String {
-    if is_error && text.chars().count() > 70 {
-        crate::service::llm::summary::summarize(text).headline
-    } else {
-        text.to_owned()
-    }
+    Some((status.text.clone(), status.is_error))
 }
 
 /// A destructive footer button: the regular button with red text.

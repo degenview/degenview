@@ -14,8 +14,10 @@
 pub mod anthropic;
 pub mod openai;
 pub mod prefs;
+pub mod report;
+#[cfg(test)]
+pub mod sample;
 pub mod sse;
-pub mod summary;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -139,11 +141,19 @@ pub struct Done {
 pub enum LlmError {
     Cancelled,
     /// 401 / 403: the key is wrong, expired, or not allowed to use the model.
-    Auth(String),
-    RateLimited(String),
+    Auth {
+        message: String,
+        request_id: Option<String>,
+    },
+    RateLimited {
+        message: String,
+        request_id: Option<String>,
+    },
     Http {
         status: u16,
         message: String,
+        /// The provider's id for the request, from its response header.
+        request_id: Option<String>,
     },
     Network(String),
     /// The server answered, but not in the format expected.
@@ -152,17 +162,68 @@ pub enum LlmError {
     Config(String),
 }
 
+impl LlmError {
+    pub fn auth(message: impl Into<String>) -> Self {
+        Self::Auth {
+            message: message.into(),
+            request_id: None,
+        }
+    }
+
+    pub fn rate_limited(message: impl Into<String>) -> Self {
+        Self::RateLimited {
+            message: message.into(),
+            request_id: None,
+        }
+    }
+
+    pub fn http(status: u16, message: impl Into<String>) -> Self {
+        Self::Http {
+            status,
+            message: message.into(),
+            request_id: None,
+        }
+    }
+
+    /// The same error carrying the provider's id for the request.
+    pub fn with_request_id(self, id: Option<String>) -> Self {
+        match self {
+            Self::Auth { message, .. } => Self::Auth {
+                message,
+                request_id: id,
+            },
+            Self::RateLimited { message, .. } => Self::RateLimited {
+                message,
+                request_id: id,
+            },
+            Self::Http {
+                status, message, ..
+            } => Self::Http {
+                status,
+                message,
+                request_id: id,
+            },
+            other => other,
+        }
+    }
+}
+
 impl std::fmt::Display for LlmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Cancelled => f.write_str("Cancelled"),
-            Self::Auth(message) => write!(f, "The provider rejected the API key: {message}"),
-            Self::RateLimited(message) => write!(f, "Rate limited: {message}"),
+            Self::Auth { message, .. } => {
+                write!(f, "The provider rejected the API key: {message}")
+            }
+            Self::RateLimited { message, .. } => write!(f, "Rate limited: {message}"),
             Self::Http {
                 status: 200,
                 message,
+                ..
             } => f.write_str(message),
-            Self::Http { status, message } => write!(f, "HTTP {status}: {message}"),
+            Self::Http {
+                status, message, ..
+            } => write!(f, "HTTP {status}: {message}"),
             Self::Network(message) => write!(f, "Network error: {message}"),
             Self::Protocol(message) | Self::Config(message) => f.write_str(message),
         }
@@ -368,6 +429,7 @@ impl HttpProvider {
         }
         .map_err(|error| LlmError::Network(self.scrub(&error.to_string())))?;
         let status = response.status().as_u16();
+        let request_id = request_id(response.headers());
         let (_, mut body) = response.into_parts();
         if (200..300).contains(&status) {
             return Ok(body);
@@ -378,7 +440,7 @@ impl HttpProvider {
             .lossy_utf8(true)
             .read_to_string()
             .unwrap_or_default();
-        Err(self.scrub_error(error_for_status(status, &text)))
+        Err(self.scrub_error(error_for_status(status, &text).with_request_id(request_id)))
     }
 
     fn scrub(&self, text: &str) -> String {
@@ -390,11 +452,28 @@ impl HttpProvider {
 
     fn scrub_error(&self, error: LlmError) -> LlmError {
         match error {
-            LlmError::Auth(m) => LlmError::Auth(self.scrub(&m)),
-            LlmError::RateLimited(m) => LlmError::RateLimited(self.scrub(&m)),
-            LlmError::Http { status, message } => LlmError::Http {
+            LlmError::Auth {
+                message,
+                request_id,
+            } => LlmError::Auth {
+                message: self.scrub(&message),
+                request_id,
+            },
+            LlmError::RateLimited {
+                message,
+                request_id,
+            } => LlmError::RateLimited {
+                message: self.scrub(&message),
+                request_id,
+            },
+            LlmError::Http {
+                status,
+                message,
+                request_id,
+            } => LlmError::Http {
                 status,
                 message: self.scrub(&message),
+                request_id,
             },
             LlmError::Network(m) => LlmError::Network(self.scrub(&m)),
             LlmError::Protocol(m) => LlmError::Protocol(self.scrub(&m)),
@@ -480,10 +559,25 @@ pub(crate) fn error_for_status(status: u16, body: &str) -> LlmError {
             }
         });
     match status {
-        401 | 403 => LlmError::Auth(message),
-        429 => LlmError::RateLimited(message),
-        _ => LlmError::Http { status, message },
+        401 | 403 => LlmError::auth(message),
+        429 => LlmError::rate_limited(message),
+        _ => LlmError::http(status, message),
     }
+}
+
+/// The id a provider gives the request: OpenAI and most hosts that copy it send `x-request-id`,
+/// Anthropic `request-id`. A header is outside input, so only a short run of the characters ids are
+/// made of is kept.
+fn request_id(headers: &ureq::http::HeaderMap) -> Option<String> {
+    ["x-request-id", "request-id"].into_iter().find_map(|name| {
+        let value = headers.get(name)?.to_str().ok()?.trim();
+        let valid = !value.is_empty()
+            && value.len() <= 128
+            && value
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'));
+        valid.then(|| value.to_owned())
+    })
 }
 
 /// A scripted provider for tests: each call to `stream_chat` takes the next canned reply.
@@ -590,34 +684,25 @@ mod tests {
         let provider =
             HttpProvider::new(ProviderKind::OpenAi, "", Some("sk-secret".to_owned())).unwrap();
         let error = provider.scrub_error(error_for_status(401, body));
-        assert_eq!(
-            error,
-            LlmError::Auth("Incorrect API key provided: [key]".to_owned())
-        );
+        assert_eq!(error, LlmError::auth("Incorrect API key provided: [key]"));
         assert!(!error.to_string().contains("sk-secret"));
     }
 
     #[test]
     fn statuses_map_to_error_kinds() {
-        assert!(matches!(error_for_status(401, "{}"), LlmError::Auth(_)));
-        assert!(matches!(error_for_status(403, ""), LlmError::Auth(_)));
+        assert!(matches!(error_for_status(401, "{}"), LlmError::Auth { .. }));
+        assert!(matches!(error_for_status(403, ""), LlmError::Auth { .. }));
         assert!(matches!(
             error_for_status(429, ""),
-            LlmError::RateLimited(_)
+            LlmError::RateLimited { .. }
         ));
         assert_eq!(
             error_for_status(500, "<html>oops</html>"),
-            LlmError::Http {
-                status: 500,
-                message: "<html>oops</html>".to_owned()
-            }
+            LlmError::http(500, "<html>oops</html>")
         );
         assert_eq!(
             error_for_status(502, "  "),
-            LlmError::Http {
-                status: 502,
-                message: "no details".to_owned()
-            }
+            LlmError::http(502, "no details")
         );
     }
 
@@ -709,6 +794,16 @@ mod tests {
         content_type: &str,
         body: &str,
     ) -> (String, std::thread::JoinHandle<String>) {
+        serve_once_with(status, content_type, "", body)
+    }
+
+    /// `serve_once` with extra response header lines (each ending in `\r\n`).
+    fn serve_once_with(
+        status: &str,
+        content_type: &str,
+        headers: &str,
+        body: &str,
+    ) -> (String, std::thread::JoinHandle<String>) {
         use std::io::{Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!(
@@ -716,7 +811,7 @@ mod tests {
             listener.local_addr().unwrap().port()
         );
         let response = format!(
-            "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\nconnection: close\r\n\r\n{body}"
+            "HTTP/1.1 {status}\r\ncontent-type: {content_type}\r\n{headers}connection: close\r\n\r\n{body}"
         );
         let handle = std::thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
@@ -793,7 +888,40 @@ mod tests {
             .stream_chat(&hello_request(), &AtomicBool::new(false), &mut |_| {})
             .unwrap_err();
         server.join().unwrap();
-        assert_eq!(error, LlmError::Auth("bad key [key]".to_owned()));
+        assert_eq!(error, LlmError::auth("bad key [key]"));
+    }
+
+    #[test]
+    fn a_failure_carries_the_request_id_from_the_response_header() {
+        for (header, status, want) in [
+            (
+                "x-request-id: req_abc-123",
+                "500 Internal Server Error",
+                Some("req_abc-123"),
+            ),
+            (
+                "request-id: req_anthropic_9",
+                "429 Too Many Requests",
+                Some("req_anthropic_9"),
+            ),
+            ("x-other: nothing", "500 Internal Server Error", None),
+            // A header that is not an id is not kept.
+            (
+                "x-request-id: has spaces and <markup>",
+                "500 Internal Server Error",
+                None,
+            ),
+        ] {
+            let body = r#"{"error":{"message":"whatever the provider says"}}"#;
+            let (base, server) =
+                serve_once_with(status, "application/json", &format!("{header}\r\n"), body);
+            let provider = HttpProvider::new(ProviderKind::Compatible, &base, None).unwrap();
+            let error = provider.list_models().unwrap_err();
+            server.join().unwrap();
+            let report = error.report();
+            assert_eq!(report.request_id.as_deref(), want, "{header}");
+            assert_eq!(report.detail, "whatever the provider says");
+        }
     }
 
     #[test]

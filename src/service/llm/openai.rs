@@ -74,10 +74,7 @@ impl Decoder for OpenAiDecoder {
         let value: Value = serde_json::from_str(data)
             .map_err(|_| LlmError::Protocol("unreadable stream chunk".to_owned()))?;
         if let Some(message) = value.pointer("/error/message").and_then(Value::as_str) {
-            return Err(LlmError::Http {
-                status: 200,
-                message: message.to_owned(),
-            });
+            return Err(LlmError::http(200, message));
         }
         // `choices` is empty on the trailing usage chunk some hosts send.
         let Some(choice) = value.pointer("/choices/0") else {

@@ -13,6 +13,7 @@ use super::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
+use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -22,8 +23,11 @@ use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Notice {
+    /// What the notice says; for a provider's failure, its headline.
     pub text: String,
     pub error: bool,
+    /// A provider's failure, with its detail and request id.
+    pub report: Option<ErrorReport>,
 }
 
 impl Notice {
@@ -31,13 +35,31 @@ impl Notice {
         Self {
             text: text.into(),
             error: true,
+            report: None,
         }
+    }
+
+    /// An error from a provider, whole.
+    pub fn failure(report: ErrorReport) -> Self {
+        Self {
+            text: report.headline.clone(),
+            error: true,
+            report: Some(report),
+        }
+    }
+
+    /// The error as a report: the provider's own, or a plain message of ours.
+    pub fn error_report(&self) -> ErrorReport {
+        self.report
+            .clone()
+            .unwrap_or_else(|| ErrorReport::message(self.text.clone()))
     }
 
     pub fn info(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             error: false,
+            report: None,
         }
     }
 }
@@ -60,7 +82,7 @@ enum Event {
 }
 
 /// The answer to a model-list request: the ids, or why they could not be had.
-type ModelsReceiver = Receiver<Result<Vec<String>, String>>;
+type ModelsReceiver = Receiver<Result<Vec<String>, ErrorReport>>;
 
 /// A request in flight. Dropping it asks the thread to stop.
 struct Run {
@@ -201,10 +223,10 @@ impl Assistant {
         let kind = *kind;
         let list = match receiver.try_recv() {
             Ok(Ok(ids)) => ModelList::Ready(ai_models::usable_chat_models(kind, &ids)),
-            Ok(Err(message)) => ModelList::Failed(message),
+            Ok(Err(report)) => ModelList::Failed(report),
             Err(TryRecvError::Empty) => return,
             Err(TryRecvError::Disconnected) => {
-                ModelList::Failed("The model list stopped unexpectedly.".to_owned())
+                ModelList::Failed(ErrorReport::message("The model list stopped unexpectedly."))
             }
         };
         self.models.insert(kind, list);
@@ -324,7 +346,7 @@ impl Assistant {
                 if self.input.is_empty() {
                     self.input = typed;
                 }
-                self.notice = Some(Notice::error(error.to_string()));
+                self.notice = Some(Notice::failure(error.report()));
             }
             Ok(done) => {
                 self.turns.push(Turn::User(typed));
@@ -535,8 +557,8 @@ mod tests {
     fn a_failed_request_puts_the_message_back_for_another_try() {
         let mut assistant = Assistant::default();
         assistant.start(
-            Box::new(MockProvider::replying(vec![Err(LlmError::RateLimited(
-                "slow down".into(),
+            Box::new(MockProvider::replying(vec![Err(LlmError::rate_limited(
+                "slow down",
             ))])),
             request(),
             "make it red".to_owned(),
@@ -557,7 +579,7 @@ mod tests {
             "an unanswered message is not history"
         );
         let notice = assistant.notice.unwrap();
-        assert!(notice.error && notice.text.contains("slow down"));
+        assert!(notice.error && notice.error_report().detail.contains("slow down"));
     }
 
     #[test]
@@ -830,12 +852,12 @@ mod tests {
         );
 
         let mut failing = MockProvider::replying(vec![]);
-        failing.models = Err(LlmError::Auth("bad key".to_owned()));
+        failing.models = Err(LlmError::auth("bad key"));
         assistant.begin_model_fetch(ProviderKind::Anthropic, Box::new(failing), wake());
         wait(&mut assistant, ProviderKind::Anthropic);
         assert!(matches!(
             assistant.models.get(&ProviderKind::Anthropic),
-            Some(ModelList::Failed(message)) if message.contains("bad key")
+            Some(ModelList::Failed(report)) if report.detail.contains("bad key")
         ));
     }
 }

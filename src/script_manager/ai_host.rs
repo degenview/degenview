@@ -205,7 +205,7 @@ impl ScriptManager {
             Err(error) => {
                 self.ai
                     .models
-                    .insert(kind, ModelList::Failed(error.to_string()));
+                    .insert(kind, ModelList::Failed(error.report()));
             }
         }
     }
@@ -278,7 +278,7 @@ impl ScriptManager {
         ) {
             Ok(provider) => provider,
             Err(error) => {
-                self.ai.notice = Some(Notice::error(error.to_string()));
+                self.ai.notice = Some(Notice::failure(error.report()));
                 return;
             }
         };

@@ -987,14 +987,14 @@ mod tests {
         use crate::ui::settings_ai::{self, AiSettingsInput};
         use crate::ui::settings_api_keys::StatusMessage;
         use crate::ui::theme::AppTheme;
-        let long = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error. (Please include the request ID f3762b57-a48f-45e4-bd18-d3a34c646c59 in your email.)";
+        let failure = crate::service::llm::sample::server_error().report();
         let _ = AiKeyStore::shared();
         for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
             let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, 0.0));
             theme::apply(&screen.ctx, app_theme);
             let prefs = AiPrefs::default();
             let mut state = settings_ai::AiSettingsState::default();
-            state.status = Some(StatusMessage::error(long));
+            state.status = Some(StatusMessage::failure(failure.clone()));
             let mut actions = Vec::new();
             let mut last = None;
             for _ in 0..3 {
@@ -1027,7 +1027,7 @@ mod tests {
     #[test]
     fn a_long_status_never_pushes_the_footer_buttons_out_of_the_bar() {
         use crate::ui::render_tests::{Screen, gallery_dir};
-        let long = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error.";
+        let long = crate::service::llm::sample::prose(60);
         for width in [380.0_f32, 560.0, 900.0] {
             let mut screen = Screen::new(Vec2::new(width, 80.0));
             let mut last = None;

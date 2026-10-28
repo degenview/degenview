@@ -2,6 +2,7 @@
 //! call, which for OpenAI includes embedding, speech and image models that cannot answer a chat; the
 //! menu hides those, and a "type a name" row stays as the way out when the filter is wrong.
 
+use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{LlmProvider, ProviderKind};
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
@@ -13,7 +14,7 @@ pub enum ModelList {
     Unloaded,
     Loading,
     Ready(Vec<String>),
-    Failed(String),
+    Failed(ErrorReport),
 }
 
 /// Ids that are not chat models, by the words OpenAI puts in their names.
@@ -65,10 +66,10 @@ pub fn matching<'a>(models: &'a [String], query: &str) -> Vec<&'a String> {
 pub fn fetch(
     provider: Box<dyn LlmProvider>,
     wake: Arc<dyn Fn() + Send + Sync>,
-) -> Receiver<Result<Vec<String>, String>> {
+) -> Receiver<Result<Vec<String>, ErrorReport>> {
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
-        let _ = sender.send(provider.list_models().map_err(|error| error.to_string()));
+        let _ = sender.send(provider.list_models().map_err(|error| error.report()));
         wake();
     });
     receiver
@@ -136,7 +137,7 @@ mod tests {
 
     #[test]
     fn fetching_delivers_the_list_or_the_error() {
-        let wait = |receiver: Receiver<Result<Vec<String>, String>>| {
+        let wait = |receiver: Receiver<Result<Vec<String>, ErrorReport>>| {
             let deadline = Instant::now() + Duration::from_secs(5);
             loop {
                 if let Ok(answer) = receiver.try_recv() {
@@ -151,8 +152,8 @@ mod tests {
         assert_eq!(wait(ok), Ok(vec!["mock-1".to_owned()]));
 
         let mut failing = MockProvider::replying(vec![]);
-        failing.models = Err(LlmError::Auth("bad key".to_owned()));
+        failing.models = Err(LlmError::auth("bad key"));
         let err = wait(fetch(Box::new(failing), wake));
-        assert!(err.unwrap_err().contains("bad key"));
+        assert!(err.unwrap_err().detail.contains("bad key"));
     }
 }

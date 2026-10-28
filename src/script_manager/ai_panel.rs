@@ -279,13 +279,13 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
             });
             ui.add_space(6.0);
         }
-        ModelList::Failed(message) => {
+        ModelList::Failed(report) => {
             ui.add_space(4.0);
             egui::Frame::new()
                 .inner_margin(Margin::symmetric(MENU_INSET as i8, 0))
                 .show(ui, |ui| {
                     ui.set_width(inner);
-                    let notice = ErrorNotice::new("models", &message).retry("Try again");
+                    let notice = ErrorNotice::new("models", &report).retry("Try again");
                     if error_notice::show(ui, &notice) == Some(ErrorEvent::Retry) {
                         actions.push(PanelAction::LoadModels);
                     }
@@ -627,7 +627,8 @@ fn implement_button(ui: &mut Ui) -> bool {
 /// A message about the last request: an error (with Try again) or a note. Dismissable.
 fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Vec<PanelAction>) {
     if notice.error {
-        let mut card = ErrorNotice::new("panel", &notice.text).dismissable();
+        let report = notice.error_report();
+        let mut card = ErrorNotice::new("panel", &report).dismissable();
         if can_retry {
             card = card.retry("Try again");
         }

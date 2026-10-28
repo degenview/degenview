@@ -1,10 +1,10 @@
 //! A provider error as a card: a headline, a few lines of detail, the request id and the buttons
 //! that follow from it. The assistant's panel, its model menu and Settings all show the same
 //! error, so they share this instead of printing the provider's paragraph on one line. The text
-//! is split by [`crate::service::llm::summary`]; what is cut from view is still on the clipboard
-//! behind **Copy details**.
+//! comes as an [`ErrorReport`], built from the structure of the error and never by reading its prose;
+//! what is cut from view is still on the clipboard behind **Copy details**.
 
-use crate::service::llm::summary::{ErrorSummary, summarize};
+use crate::service::llm::report::ErrorReport;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -17,8 +17,7 @@ use std::time::{Duration, Instant};
 const COPIED: Duration = Duration::from_millis(1500);
 
 pub struct ErrorNotice<'a> {
-    /// The whole error text, as the provider and `LlmError` wrote it.
-    pub text: &'a str,
+    pub report: &'a ErrorReport,
     /// Lines of detail shown; the rest is behind Copy details and the hover text.
     pub detail_lines: usize,
     /// The label of a retry button, if the error can be retried.
@@ -30,9 +29,9 @@ pub struct ErrorNotice<'a> {
 }
 
 impl<'a> ErrorNotice<'a> {
-    pub fn new(id: impl std::hash::Hash + std::fmt::Debug, text: &'a str) -> Self {
+    pub fn new(id: impl std::hash::Hash + std::fmt::Debug, report: &'a ErrorReport) -> Self {
         Self {
-            text,
+            report,
             detail_lines: 3,
             retry: None,
             dismiss: false,
@@ -64,7 +63,6 @@ pub enum ErrorEvent {
 
 /// Draws the card across the width it is given and reports a click on Try again or Dismiss.
 pub fn show(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
-    let summary = summarize(notice.text);
     let tint = kit::RED;
     let mut event = None;
     egui::Frame::new()
@@ -82,7 +80,7 @@ pub fn show(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
                 ui.vertical(|ui| {
                     ui.set_width(column);
                     ui.spacing_mut().item_spacing.y = 4.0;
-                    body(ui, notice, &summary, column);
+                    body(ui, notice, column);
                     if let Some(clicked) = buttons(ui, notice) {
                         event = Some(clicked);
                     }
@@ -102,7 +100,8 @@ pub fn show(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
 }
 
 /// The headline, the clipped detail and the request id.
-fn body(ui: &mut Ui, notice: &ErrorNotice<'_>, summary: &ErrorSummary, width: f32) {
+fn body(ui: &mut Ui, notice: &ErrorNotice<'_>, width: f32) {
+    let summary = notice.report;
     let headline = lines(
         ui,
         &summary.headline,
@@ -126,10 +125,10 @@ fn body(ui: &mut Ui, notice: &ErrorNotice<'_>, summary: &ErrorSummary, width: f3
         let clipped = detail.rows.len() >= notice.detail_lines && detail.elided;
         let response = ui.add(egui::Label::new(detail).selectable(true));
         if clipped {
-            response.on_hover_text(notice.text);
+            response.on_hover_text(summary.copy_text());
         }
     } else if summary.headline.chars().count() > 60 {
-        response.on_hover_text(notice.text);
+        response.on_hover_text(summary.copy_text());
     }
     if let Some(id) = &summary.request_id {
         // An id is one long word: it breaks wherever the line ends, so all of it shows.
@@ -171,7 +170,7 @@ fn buttons(ui: &mut Ui, notice: &ErrorNotice<'_>) -> Option<ErrorEvent> {
             (Icon::CopyDoc, "Copy details")
         };
         if kit::push_button(ui, Some(icon), label, !copied).clicked() {
-            ui.ctx().copy_text(notice.text.to_owned());
+            ui.ctx().copy_text(notice.report.copy_text());
             ui.ctx()
                 .data_mut(|data| data.insert_temp(notice.id, Instant::now()));
             ui.ctx().request_repaint_after(COPIED);
@@ -213,34 +212,41 @@ mod tests {
     use crate::ui::render_tests::{Screen, gallery_dir};
     use eframe::egui::vec2;
 
-    const LONG: &str = "HTTP 500: The server had an error processing your request. Sorry about that! You can retry your request, or contact us through our help center at help.openai.com if you keep seeing this error. (Please include the request ID f3762b57-a48f-45e4-bd18-d3a34c646c59 in your email.)";
-
     #[test]
-    fn a_long_error_stays_inside_the_width_it_is_given() {
-        for width in [240.0, 300.0, 520.0] {
-            let mut screen = Screen::new(vec2(width + 40.0, 400.0));
-            let mut last = None;
-            for _ in 0..3 {
-                last = Some(screen.run(Vec::new(), |ui| {
-                    ui.set_max_width(width);
-                    let start = ui.min_rect();
-                    show(
-                        ui,
-                        &ErrorNotice::new("test", LONG)
-                            .retry("Try again")
-                            .dismissable(),
+    fn every_shape_of_error_stays_inside_the_width_it_is_given() {
+        for (shape, error) in crate::service::llm::sample::shapes() {
+            let report = error.report();
+            for width in [240.0, 300.0, 520.0] {
+                let mut screen = Screen::new(vec2(width + 40.0, 500.0));
+                let mut last = None;
+                for _ in 0..3 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        ui.set_max_width(width);
+                        show(
+                            ui,
+                            &ErrorNotice::new("test", &report)
+                                .retry("Try again")
+                                .dismissable(),
+                        );
+                        let used = ui.min_rect();
+                        assert!(
+                            used.width() <= width + 1.0,
+                            "{shape} at {width}: the card used {:?}",
+                            used.size()
+                        );
+                        assert!(
+                            used.height() < 280.0,
+                            "{shape} at {width}: the card used {:?}",
+                            used.size()
+                        );
+                    }));
+                }
+                if gallery_dir().is_some() {
+                    screen.save(
+                        &format!("error-notice-{shape}-{width}"),
+                        last.expect("a frame"),
                     );
-                    let used = ui.min_rect();
-                    assert!(
-                        used.width() <= width + 1.0,
-                        "{width}: card used {:?} from {start:?}",
-                        used.size()
-                    );
-                    assert!(used.height() < 250.0, "{width}: {:?}", used.size());
-                }));
-            }
-            if gallery_dir().is_some() {
-                screen.save(&format!("error-notice-{width}"), last.expect("a frame"));
+                }
             }
         }
     }

@@ -6,6 +6,7 @@
 
 use crate::service::keychain_ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
+use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
 use crate::ui::alert_center::Tone;
 use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
@@ -38,7 +39,7 @@ pub struct AiSettingsState {
     pub draft: AiPrefs,
     pub key_input: String,
     pub status: Option<StatusMessage>,
-    test: Option<Receiver<Result<usize, String>>>,
+    test: Option<Receiver<Result<usize, ErrorReport>>>,
 }
 
 impl AiSettingsState {
@@ -175,7 +176,7 @@ impl AiSettingsState {
         let provider = match provider {
             Ok(provider) => provider,
             Err(error) => {
-                self.status = Some(StatusMessage::error(error.to_string()));
+                self.status = Some(StatusMessage::failure(error.report()));
                 return;
             }
         };
@@ -185,7 +186,7 @@ impl AiSettingsState {
             let outcome = provider
                 .list_models()
                 .map(|models| models.len())
-                .map_err(|error| error.to_string());
+                .map_err(|error| error.report());
             let _ = sender.send(outcome);
         });
     }
@@ -197,9 +198,9 @@ impl AiSettingsState {
         let outcome = match receiver.try_recv() {
             Ok(outcome) => outcome,
             Err(TryRecvError::Empty) => return,
-            Err(TryRecvError::Disconnected) => {
-                Err("The connection test stopped unexpectedly.".to_owned())
-            }
+            Err(TryRecvError::Disconnected) => Err(ErrorReport::message(
+                "The connection test stopped unexpectedly.",
+            )),
         };
         self.test = None;
         self.status = Some(match outcome {
@@ -207,7 +208,7 @@ impl AiSettingsState {
             Ok(count) => {
                 StatusMessage::ok(format!("Connection successful. {count} models available."))
             }
-            Err(message) => StatusMessage::error(message),
+            Err(report) => StatusMessage::failure(report),
         });
     }
 }
@@ -320,18 +321,22 @@ pub fn body(
     }
 }
 
-/// Whether an error is too long for the footer's one line: it also gets a card in the page, with
-/// the provider's whole message, its request id and a button to copy them.
+/// Whether an error has more to say than the footer's one line: it also gets a card in the page,
+/// with the provider's message, its request id and a button to copy them.
 pub(crate) fn needs_card(status: &StatusMessage) -> bool {
-    status.is_error && status.text.chars().count() > 70
+    status.is_error && status.report.is_some()
 }
 
 /// The full error at the top of the page, where it is seen without scrolling, until it is dismissed or another result replaces it.
 fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
-    let Some(status) = state.status.as_ref().filter(|status| needs_card(status)) else {
+    let Some(report) = state
+        .status
+        .as_ref()
+        .and_then(|status| status.report.as_ref())
+    else {
         return;
     };
-    let notice = ErrorNotice::new("ai-settings", &status.text)
+    let notice = ErrorNotice::new("ai-settings", report)
         .detail_lines(4)
         .dismissable();
     if error_notice::show(ui, &notice) == Some(ErrorEvent::Dismiss) {
@@ -518,12 +523,12 @@ mod tests {
         );
 
         let mut mock = MockProvider::replying(vec![]);
-        mock.models = Err(LlmError::Auth("bad key".to_owned()));
+        mock.models = Err(LlmError::auth("bad key"));
         state.start_test(Ok(Box::new(mock)));
         wait_for_test(&mut state);
         let status = state.status.clone().unwrap();
         assert!(status.is_error);
-        assert!(status.text.contains("bad key"));
+        assert!(status.report.unwrap().detail.contains("bad key"));
     }
 
     #[test]
