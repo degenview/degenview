@@ -289,6 +289,7 @@ impl ScriptManager {
             system: ai_prompt::system_prompt(self.ai.mode),
             messages: ai_prompt::build_messages(&self.ai.turns, &source, &typed, &diagnostics),
             max_tokens: MAX_REPLY_TOKENS,
+            tools: Vec::new(),
         };
         let repaint = ctx.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
