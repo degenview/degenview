@@ -265,6 +265,7 @@ fn gallery_of_the_assistant() {
                             "read_script",
                             serde_json::json!({"start": 1, "end": 12}),
                         )),
+                        Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
                         Ok(edit("t2", "offset = 9", "offset = 20")),
                         Ok(edit("t3", "doubled + 10", "doubled + 20")),
                         Ok(Scripted::say("The offset is now 20.")),
@@ -280,7 +281,13 @@ fn gallery_of_the_assistant() {
                     ],
                 ),
             ] {
-                let tools = ToolBox::new(Mode::Edit, &tools_base, super::ai_host::diagnostics_of);
+                let feed = scene
+                    .rig
+                    .manager
+                    .preview
+                    .debug_feed(super::model::now_ms(), false);
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::ai_host::diagnostics_of)
+                    .with_bars(feed);
                 let request = ChatRequest {
                     model: "m".into(),
                     system: String::new(),
