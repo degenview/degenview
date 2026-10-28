@@ -14,6 +14,7 @@ pub mod ai_history;
 mod ai_host;
 mod ai_models;
 mod ai_panel;
+mod ai_profile;
 mod ai_prompt;
 mod ai_review;
 mod ai_review_view;

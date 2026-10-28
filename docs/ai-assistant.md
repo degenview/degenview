@@ -13,7 +13,7 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | Assistant panel under the editor, proposal diff, accept as one undo step | Done (phase 2) |
 | Tool use in `service/llm` (wire formats, `stream_turn`); nothing calls a tool yet | Done (agent PR 1) |
 | Agent loop, private draft, `read_script`/`compile`/`edit_script`/`write_script`, tool steps in the panel | Done (agent PR 2) |
-| `profile` tool (profile the draft on frozen bars) | Planned (agent PR 3) |
+| `profile` tool (profile the draft on frozen bars) | Done (agent PR 3) |
 | Plan mode (`submit_plan`, plan card) | Planned (agent PR 4) |
 | Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
@@ -133,7 +133,37 @@ answers and asks again until it stops calling. It runs on the request's own thre
   opens to what the model was told; the text the model said before calling is shown muted. This trail
   (`Assistant::steps`) is for the latest exchange only and is not saved. **History keeps the words**, so
   the prompt tells the model to say what it found in its final reply.
-- Ask has the reading tools (it can look, not change). That makes an Ask turn able to take several rounds.
+- Ask has the reading tools (it can look, not change), `profile` included. That makes an Ask turn able to
+  take several rounds; "why is this slow?" is the reason.
+
+### The `profile` tool
+
+`ai_profile::ProfileTool`, offered in every mode. It runs the **draft** (not the editor's text) through
+the engine's profiler (`pine::profile::ProfileSession`, [Pine profiler](pine-profiler.md)) on a frozen
+copy of the preview chart's bars, taken when the request was sent (`preview.debug_feed`, so at most 500
+candles, with the preview's inputs, symbol and timeframe). It is a session of its own on its own thread:
+no alerts, orders, preview or chart are touched. It is **not** the UI's `Profiler`, so it never draws on
+the editor's Profile column or tab and a profile the user made is not disturbed.
+
+- **What the model is told**: totals, the ten hottest lines by their own time (share, own time, time with
+  everything under it, executions, the line's source), the hottest block and function, time in no line,
+  time waiting for `request.security()` data, and how to read it (shares are meaningful, absolute times
+  are of that run, per statement not per expression, the clock's resolution, the profiler's cost). The
+  words are `ProfileMarks`' (`duration`, `percent`, `count`), so the model and the user see the same
+  figures.
+- **A second profile in the same request is compared with the first**: total time and measured
+  executions, with the change as a percentage. Executions are exact and do not vary; times do, and the
+  text says not to read a small difference in time as a result. Only complete profiles are compared.
+- **Refused as an answer, not a failure**: the draft has errors (they are listed), it is a library, the
+  preview had no bars, the script fails when it runs (a failure has no profile, as in the Profile tab), or
+  the request was stopped (the run is asked to stop; if it will not within three seconds the tool gives
+  up).
+- **What leaves the Mac**: the words above, including trimmed source lines (the script is sent anyway).
+  The bars never do.
+- **`security_data`** is the app's `KlineSecurityDataProvider`, as the Profile tab uses: a script that
+  reads another symbol may fetch its candles over the network, and that time is reported as waiting.
+- Tests: a real profile of a small loop (executions exact: 1,500 for a 50-iteration body on 30 bars),
+  the comparison, a failing script, no bars, a library, a stopped request, and the whole window in Ask.
 - Tests: the tools and the loop against the scripted provider (call, answer, final; several calls in a
   turn; a failed call; Ask refused; step cap; repeat guard; cancel; refused tools; no tools = one request),
   the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
