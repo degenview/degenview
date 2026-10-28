@@ -15,6 +15,10 @@ pub struct AiPrefs {
     pub compatible_model: String,
     /// The server the compatible provider talks to.
     pub compatible_base_url: String,
+    /// Apply a clean change from an Edit request to the editor without asking. Off (Manual) until
+    /// the user turns it on. A safety choice about this user's own scripts, so it stays on this Mac
+    /// with the rest of `ai.prefs`.
+    pub auto_apply: bool,
 }
 
 impl AiPrefs {
@@ -76,6 +80,15 @@ mod tests {
     }
 
     #[test]
+    fn auto_apply_is_off_unless_it_was_saved_on() {
+        assert!(!AiPrefs::default().auto_apply);
+        let old: AiPrefs = serde_json::from_str(r#"{"provider":"openAi"}"#).unwrap();
+        assert!(!old.auto_apply);
+        let on: AiPrefs = serde_json::from_str(r#"{"autoApply":true}"#).unwrap();
+        assert!(on.auto_apply);
+    }
+
+    #[test]
     fn the_model_falls_back_to_the_providers_suggestion() {
         let mut prefs = AiPrefs::default();
         assert_eq!(
@@ -117,6 +130,7 @@ mod tests {
             ..AiPrefs::default()
         };
         prefs.set_model(ProviderKind::Compatible, "llama");
+        prefs.auto_apply = true;
         prefs.save(&store).unwrap();
         assert_eq!(AiPrefs::load(&store), prefs);
         assert_eq!(

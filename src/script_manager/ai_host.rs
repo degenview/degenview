@@ -2,7 +2,7 @@
 //! accepted proposal to the editor, and follows the open script around. The state and the rules
 //! about replies live in `ai`; the words sent to the model in `ai_prompt`.
 
-use super::ai::Notice;
+use super::ai::{Notice, auto_apply_check};
 use super::ai_agent::AgentSetup;
 use super::ai_history::History;
 use super::ai_models::ModelList;
@@ -42,7 +42,7 @@ fn key_available(kind: ProviderKind) -> bool {
 impl ScriptManager {
     /// Once a frame: a different open script starts a new conversation, and whatever the model has
     /// written since the last frame is taken in.
-    pub(super) fn ai_begin_frame(&mut self) {
+    pub(super) fn ai_begin_frame(&mut self, ctx: &egui::Context) {
         let open_id = self.open.as_ref().map(|open| open.id.clone());
         if self.ai.script_id != open_id {
             self.ai.reset(open_id);
@@ -54,6 +54,9 @@ impl ScriptManager {
             self.ai.finish(finished, &diagnostics_of);
             if self.ai.turns.len() != before {
                 self.ai_persist_history();
+            }
+            if self.ai.auto_requested && self.ai.proposal.is_some() {
+                self.ai_auto_apply(ctx);
             }
         }
         let stale = self
@@ -161,6 +164,13 @@ impl ScriptManager {
                 self.ai.model_filter.clear();
                 self.ai_save_prefs();
                 self.ai_load_models(ctx);
+            }
+            PanelAction::SetAuto(on) => {
+                // The request in flight was sent under the old setting and keeps it.
+                if !self.ai.is_running() {
+                    self.ai.prefs.auto_apply = on;
+                    self.ai_save_prefs();
+                }
             }
             PanelAction::SetMode(mode) => {
                 self.ai.set_mode(mode);
@@ -454,6 +464,29 @@ impl ScriptManager {
     /// Puts the proposed script in the editor as one undo step, unless the editor has moved on
     /// from the script the model was shown.
     fn ai_accept(&mut self, ctx: &egui::Context) {
+        self.apply_proposal(ctx, Applied::Manual);
+    }
+
+    /// Auto: applies the proposal that just arrived if it is clean, as Apply all would. Otherwise it
+    /// waits for the user like any proposal, with the reason on its card.
+    fn ai_auto_apply(&mut self, ctx: &egui::Context) {
+        let (Some(proposal), Some(open)) = (self.ai.proposal.as_mut(), self.open.as_ref()) else {
+            return;
+        };
+        match auto_apply_check(proposal, &open.editor.source) {
+            Ok(()) => self.apply_proposal(ctx, Applied::Auto),
+            Err(reason) => {
+                let held = format!("Not applied automatically: {reason}");
+                proposal.note = Some(match proposal.note.take() {
+                    Some(note) => format!("{note} {held}"),
+                    None => held,
+                });
+            }
+        }
+    }
+
+    /// The one place a proposal reaches the editor, for the Apply button and for Auto.
+    fn apply_proposal(&mut self, ctx: &egui::Context, how: Applied) {
         // A proposal only exists after an Edit request, and the mode cannot change while one waits;
         // this guard makes "Ask never changes the script" true even if that ever slips.
         if self.ai.mode != Mode::Edit {
@@ -469,10 +502,28 @@ impl ScriptManager {
             ));
             return;
         }
+        let (changes, added, removed) = (
+            proposal.changes.hunks().len(),
+            proposal.changes.lines_added(),
+            proposal.changes.lines_removed(),
+        );
         editor::apply_script(ctx, &mut open.editor, &proposal.script);
         open.editor.request_compile();
         self.ai.proposal = None;
         self.ai.review = None;
-        self.ai.notice = Some(Notice::info("Applied. Undo brings the old script back."));
+        self.ai.notice = Some(Notice::info(match how {
+            Applied::Manual => "Applied. Undo brings the old script back.".to_owned(),
+            Applied::Auto => format!(
+                "Applied automatically \u{b7} {changes} change{} (+{added} \u{2212}{removed}). Undo brings the old script back.",
+                if changes == 1 { "" } else { "s" }
+            ),
+        }));
     }
+}
+
+/// Who applied a proposal.
+#[derive(Clone, Copy)]
+enum Applied {
+    Manual,
+    Auto,
 }
